@@ -1,0 +1,173 @@
+---
+icon: lucide/arrow-up-circle
+---
+
+# Upgrading
+
+Getting a new version, and (optionally) moving an existing install to the
+current `/opt` layout.
+
+!!! tip "You almost never need to move the install directory"
+    Version upgrades work **wherever Danbyte already lives** — `/srv/danbyte`,
+    `/opt/danbyte`, or a custom path. The systemd units are home-relative
+    (`%h/danbyte`), so nothing is hard-wired to a location. The `/opt` default
+    only affects **new** installs. Relocating an existing one is cosmetic and
+    entirely optional — see [Move an install to /opt](#move-an-install-to-opt)
+    if you want to, and skip it otherwise.
+
+## Upgrade to a new version
+
+=== "In-app (recommended)"
+
+    **Settings → Updates → Upgrade.** One click checks out the new release,
+    installs dependencies, migrates the database, rebuilds the frontend,
+    restarts the services and health-checks — with the "Danbyte is updating"
+    page shown to visitors in the meantime.
+
+    - The DB is **backed up** before migrating; on failure the code is rolled
+      back to the starting commit and the services restarted automatically.
+      (A migration that already ran is *not* auto-reverted — the backup is your
+      net there.)
+    - Turn on **automatic updates** on the same page to track new releases
+      hands-off.
+    - **Airgapped install?** Tick **Settings → Updates → Airgapped install
+      (disable update check)**. Danbyte then never contacts the release repo —
+      no version check, no auto-update — and you upgrade only by uploading a
+      bundle (below). Turning it on forces automatic updates off.
+
+    Under the hood this runs `scripts/danbyte-upgrade.sh <version>`, detached, so
+    it survives the service restart.
+
+=== "Manual (git install)"
+
+    Run **as the service user** (`sudo machinectl shell danbyte@`), from the app
+    directory (`~/danbyte`):
+
+    ```bash
+    cd ~/danbyte
+    git fetch --tags
+    git checkout vX.Y.Z
+
+    # Python deps (uv, or pip inside the venv)
+    uv sync --frozen  ||  .venv/bin/pip install -r requirements.txt
+
+    .venv/bin/python manage.py migrate
+    make collectstatic frontend-build
+
+    # Restart whatever this install runs (prod shown; dev uses danbyte-backend)
+    systemctl --user restart danbyte-web danbyte-ws danbyte-workers danbyte-frontend-prod
+    ```
+
+    Back up the database first: `pg_dump danbyte > ~/danbyte-$(date +%F).sql`.
+
+=== "Offline bundle"
+
+    Download the release bundle, unpack, and re-run the installer — it's
+    **idempotent**: it keeps your existing `.env`, re-runs migrate + collectstatic
+    + frontend, and restarts the services on the freshly-deployed code.
+
+    ```bash
+    tar xzf danbyte-<version>-linux-x86_64.tar.gz
+    cd danbyte-<version>-linux-x86_64
+    sudo ./install.sh                     # reuses the existing install + .env
+    ```
+
+    A re-run also **backfills `DANBYTE_LOG_DIR`** into an older `.env`, so file
+    logging (below) switches on without hand-editing.
+
+    You can also upgrade in-app **without unpacking**: **Settings → Updates →
+    Upgrade from a bundle** takes the same `.tar.gz`, verifies it, backs up the
+    DB, migrates, and restarts — the offline equivalent of the one-click flow.
+    Pair this with the **Airgapped install** toggle so Danbyte never tries to
+    reach the release repo.
+
+!!! tip "Health endpoint"
+
+    `GET /api/health/` is unauthenticated and returns `{"status": "ok",
+    "database": true, "version": "X.Y.Z"}` (HTTP 503 if the database is
+    unreachable). Point a load balancer or uptime probe at it; the release
+    pipeline's install-smoke uses it to prove the bundle actually serves
+    requests.
+
+## Which install do I have?
+
+```bash
+getent passwd danbyte | cut -d: -f6      # the service user's home …
+# … the app is in <home>/danbyte, e.g. /srv/danbyte/danbyte or /opt/danbyte/danbyte
+
+# or ask systemd directly:
+sudo -u danbyte XDG_RUNTIME_DIR=/run/user/$(id -u danbyte) \
+  systemctl --user show danbyte-web -p WorkingDirectory
+```
+
+## Move an install to /opt
+
+Optional — only to match the current default layout. It moves the service
+user's home (app included) from `/srv/danbyte` to `/opt/danbyte`, repoints the
+nginx static paths, and turns on `/var/log/danbyte` logging. **The database is
+untouched.** Back up first.
+
+=== "Script"
+
+    From the app directory, as root:
+
+    ```bash
+    cd ~danbyte/danbyte            # or wherever the app is
+    sudo ./scripts/danbyte-relocate.sh          # → /opt/danbyte
+    # custom target / user:
+    sudo ./scripts/danbyte-relocate.sh --to /opt/danbyte --user danbyte
+    ```
+
+    It stops the services, moves the home with `usermod -m`, repoints the nginx
+    `root`/`alias` paths, creates `/var/log/danbyte`, restarts, and
+    health-checks. If something looks wrong afterwards, the move is reversible:
+    `sudo usermod -m -d /srv/danbyte danbyte` (then restart).
+
+=== "Manual"
+
+    As root. Replace `danbyte` if you used a different service user.
+
+    ```bash
+    U=danbyte; UID_=$(id -u "$U")
+    asuser() { sudo -u "$U" env HOME="$1" XDG_RUNTIME_DIR=/run/user/$UID_ "${@:2}"; }
+
+    # 1. stop services + the user's systemd manager
+    asuser /srv/danbyte systemctl --user stop \
+      danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-docs
+    loginctl disable-linger "$U"; loginctl terminate-user "$U"; sleep 2
+
+    # 2. move the home (contents included) and update the passwd entry
+    sudo usermod -m -d /opt/danbyte "$U"
+    sudo chmod 755 /opt/danbyte && sudo chmod o+x /opt/danbyte /opt/danbyte/danbyte
+    loginctl enable-linger "$U"
+
+    # 3. repoint nginx static/media/maintenance roots
+    sudo sed -i 's#/srv/danbyte/#/opt/danbyte/#g' /etc/nginx/sites-available/danbyte.conf
+    sudo nginx -t && sudo systemctl reload nginx
+
+    # 4. logging (see below), then restart
+    sudo install -d -o "$U" -g "$U" -m 755 /var/log/danbyte
+    asuser /opt/danbyte systemctl --user daemon-reload
+    asuser /opt/danbyte systemctl --user start \
+      danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-docs
+    ```
+
+## Turn on /var/log/danbyte logging
+
+Installs from before file logging log only to the systemd journal
+(`journalctl --user`). To also write `/var/log/danbyte/danbyte.log` (app —
+Django, workers, monitoring) and `gunicorn-*.log`:
+
+```bash
+# as root — dir owned by the service user
+sudo install -d -o danbyte -g danbyte -m 755 /var/log/danbyte
+
+# as the service user — point the app at it and restart
+echo 'DANBYTE_LOG_DIR=/var/log/danbyte' >> ~/danbyte/.env
+systemctl --user restart danbyte-web danbyte-workers danbyte-ws
+```
+
+`make logs` still follows the journal; `make logs-file` tails the files. See the
+[Logs](installation.md#logs) section for what lands where. Leaving
+`DANBYTE_LOG_DIR` unset keeps logging on the console/journal only (the dev
+default).

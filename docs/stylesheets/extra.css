@@ -1,0 +1,22 @@
+/* Secret-generator widget on the install guide. The generated value replaces
+   its placeholder token in place inside a normal code block, so the theme's own
+   copy button copies it — no separate copy affordance. */
+.gen-secret {
+  font-weight: 700;
+  /* Stand out from the surrounding config text. */
+  color: var(--md-code-hl-string-color, #0a7);
+  word-break: break-all;
+}
+button[data-secret-regen] {
+  margin-top: 0.4rem;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.75rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.2rem;
+  background: var(--md-default-bg-color);
+  color: var(--md-default-fg-color--light);
+  cursor: pointer;
+}
+button[data-secret-regen]:hover {
+  color: var(--md-default-fg-color);
+}

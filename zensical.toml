@@ -1,0 +1,197 @@
+# ───────────────────────────────────────────────────────────────────────────
+# Danbyte documentation site — Zensical
+# ───────────────────────────────────────────────────────────────────────────
+
+[project]
+site_name = "Danbyte"
+site_description = "Customizable IPAM / DCIM — docs"
+site_author = "Daniel K."
+copyright = "Copyright &copy; 2026 Danbyte"
+docs_dir = "docs"
+site_dir = "site"
+
+extra_css = ["stylesheets/extra.css"]
+# Client-side secret generator for the install guide — fills [data-secret]
+# placeholders with crypto-random values in the reader's browser.
+extra_javascript = ["javascripts/gen-secrets.js"]
+
+# Explicit navigation.
+nav = [
+  { "Home" = "index.md" },
+  { "Getting started" = [
+    { "Installation"      = "getting-started/installation.md" },
+    { "Upgrading"         = "getting-started/upgrading.md" },
+    { "Dev workflow"      = "getting-started/dev-workflow.md" },
+  ] },
+  { "IPAM" = [
+    "ipam/index.md",
+    { "Prefixes"          = "features/prefix-crud.md" },
+    { "The prefix tree"   = "features/tree-and-sections.md" },
+    { "Space map"         = "features/space-map.md" },
+    { "Gateway autospawn" = "features/gateway-autospawn.md" },
+    { "VLANs, VRFs & route targets" = "features/ipam-objects.md" },
+    { "Zones"             = "models/zone.md" },
+    { "IP statuses & roles" = "features/catalogs-and-settings.md" },
+    { "Search & MAC tracking" = "features/search-and-macs.md" },
+  ] },
+  { "DCIM" = [
+    "dcim/index.md",
+    { "Devices"           = "dcim/devices.md" },
+    { "Virtual chassis"   = "dcim/virtual-chassis.md" },
+    { "Device catalog"    = "dcim/device-catalog.md" },
+    { "Racks"             = "dcim/racks.md" },
+    { "Floor plans"       = "features/floor-plans.md" },
+    { "Interfaces"        = "dcim/interfaces.md" },
+    { "Virtual & aggregate interfaces" = "dcim/virtual-interfaces.md" },
+    { "Assigning IP addresses" = "dcim/ip-assignment.md" },
+    { "Cabling & connections" = "dcim/cabling.md" },
+    { "Fibre strands" = "dcim/fiber.md" },
+    { "Interface & cable types" = "dcim/type-taxonomy.md" },
+  ] },
+  { "Organization" = [
+    "organization/index.md",
+    { "Contacts"          = "features/contacts.md" },
+    { "Regions & locations" = "features/regions-locations.md" },
+  ] },
+  { "Circuits & links" = [
+    "connectivity/index.md",
+    { "Circuits"          = "features/circuits.md" },
+    { "Power"             = "features/power.md" },
+    { "Wireless"          = "features/wireless.md" },
+    { "VPN tunnels"       = "features/vpn.md" },
+  ] },
+  { "Monitoring & compliance" = [
+    "monitoring/index.md",
+    { "Monitoring"        = "features/monitoring.md" },
+    { "Outposts (remote engines)" = "monitoring/outposts.md" },
+    { "SNMP discovery"    = "features/snmp-discovery.md" },
+    { "Compliance"        = "features/compliance.md" },
+  ] },
+  { "Automation & integrations" = [
+    "automation/index.md",
+    { "Config contexts"   = "features/config-contexts.md" },
+    { "Export templates"  = "features/export-templates.md" },
+    { "Config drift (Ansible/Terraform)" = "features/iac-runner.md" },
+    { "Advanced: custom-field-driven playbook" = "features/cf-driven-playbook.md" },
+    { "Webhooks"          = "features/webhooks.md" },
+    { "Import & export"   = "features/import-export.md" },
+    { "Import from NetBox" = "features/netbox-import.md" },
+  ] },
+  { "Access & history" = [
+    "access/index.md",
+    { "Permissions & access" = "features/permissions.md" },
+    { "Site separation"   = "access/site-separation.md" },
+    { "Change log"        = "features/change-log.md" },
+    { "Journals"          = "features/journals.md" },
+  ] },
+  { "Customize" = [
+    { "Tags & custom fields" = "features/tags-and-custom-fields.md" },
+  ] },
+  { "Working with data" = [
+    "working-with-data/index.md",
+    { "Dashboard"         = "features/dashboard.md" },
+    { "Object numbers (IDs)" = "features/object-numbers.md" },
+    { "Table columns"     = "features/table-preferences.md" },
+    { "Exporting tables"  = "features/exporting-tables.md" },
+  ] },
+  { "Architecture" = [
+    { "Overview"          = "architecture/overview.md" },
+    { "Stack"             = "architecture/stack.md" },
+    { "Data model"        = "architecture/data-model.md" },
+    { "Isolation: Tenant + VRF" = "architecture/tenant-vrf.md" },
+    { "Tenant settings & overrides" = "architecture/tenant-settings.md" },
+    { "shadcn / design tokens" = "architecture/shadcn-tokens.md" },
+  ] },
+  { "Data models" = [
+    { "Tenant"            = "models/tenant.md" },
+    { "VRF"               = "models/vrf.md" },
+    { "Site"              = "models/site.md" },
+    { "VLAN"              = "models/vlan.md" },
+    { "Prefix"            = "models/prefix.md" },
+    { "IP address"        = "models/ip-address.md" },
+    { "Tag"               = "models/tag.md" },
+  ] },
+  { "Reference" = [
+    { "URL routes"        = "reference/url-routes.md" },
+    { "Settings"          = "reference/settings.md" },
+    { "Makefile"          = "reference/makefile.md" },
+    { "Reverse proxy (nginx/443)" = "reference/nginx-proxy.md" },
+    { "Icons"             = "reference/icons.md" },
+  ] },
+  { "Design" = [
+    { "Visual language"   = "design/visual-language.md" },
+  ] },
+]
+
+[project.theme]
+language = "en"
+features = [
+  "navigation.instant",
+  "navigation.tracking",
+  # Top-level menu lives in the LEFT SIDEBAR (no top tabs). Categories are
+  # collapsible — we deliberately omit `navigation.sections` (which would force
+  # every category open) and `navigation.expand` (which would expand all).
+  "navigation.indexes",
+  "navigation.top",
+  "navigation.footer",
+  "search.suggest",
+  "search.highlight",
+  "search.share",
+  "content.code.copy",
+  "content.code.annotate",
+  "toc.follow",
+]
+
+[[project.theme.palette]]
+scheme = "default"
+primary = "black"
+accent  = "light-blue"
+toggle  = { icon = "material/weather-night", name = "Switch to dark mode" }
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "black"
+accent  = "light-blue"
+toggle  = { icon = "material/weather-sunny", name = "Switch to light mode" }
+
+# ───────────────────────────────────────────────────────────────────────────
+# Markdown extensions
+# ───────────────────────────────────────────────────────────────────────────
+
+[project.markdown_extensions.abbr]
+[project.markdown_extensions.admonition]
+[project.markdown_extensions.attr_list]
+[project.markdown_extensions.def_list]
+[project.markdown_extensions.footnotes]
+[project.markdown_extensions.md_in_html]
+[project.markdown_extensions.toc]
+permalink = true
+
+[project.markdown_extensions.pymdownx.betterem]
+[project.markdown_extensions.pymdownx.caret]
+[project.markdown_extensions.pymdownx.details]
+[project.markdown_extensions.pymdownx.emoji]
+emoji_generator = "zensical.extensions.emoji.to_svg"
+emoji_index     = "zensical.extensions.emoji.twemoji"
+
+[project.markdown_extensions.pymdownx.highlight]
+anchor_linenums         = true
+line_spans              = "__span"
+pygments_lang_class     = true
+
+[project.markdown_extensions.pymdownx.inlinehilite]
+[project.markdown_extensions.pymdownx.keys]
+[project.markdown_extensions.pymdownx.magiclink]
+[project.markdown_extensions.pymdownx.mark]
+[project.markdown_extensions.pymdownx.smartsymbols]
+
+[project.markdown_extensions.pymdownx.superfences]
+
+[project.markdown_extensions.pymdownx.tabbed]
+alternate_style       = true
+combine_header_slug   = true
+
+[project.markdown_extensions.pymdownx.tasklist]
+custom_checkbox = true
+
+[project.markdown_extensions.pymdownx.tilde]
