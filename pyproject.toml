@@ -1,0 +1,38 @@
+# Tooling config for the Danbyte backend. Dependencies still live in
+# requirements.txt; this file only configures ruff (lint+format) and coverage.
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+extend-exclude = ["**/migrations/**", ".venv", "reference"]
+
+[tool.ruff.lint]
+# Conservative to start (real-error families) so adoption is low-friction; the
+# CI step is advisory (continue-on-error) until the tree is clean, then promote.
+select = ["E", "F", "I", "B", "UP"]
+ignore = [
+  "E501",  # line length — long lines are pervasive; the formatter owns this
+  "B008",  # function call in default arg (DRF/Django pattern)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests*.py" = ["F401", "F841"]
+
+[tool.coverage.run]
+source = ["."]
+branch = true
+omit = [
+  "**/migrations/**",
+  "**/tests*.py",
+  "**/test_utils.py",
+  "manage.py",
+  "*/wsgi.py",
+  "*/asgi.py",
+  ".venv/**",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+# No --fail-under yet: CI reports the number so we can set a floor once it's
+# baselined. Tighten via `make coverage` / the CI step when ready.

@@ -1,0 +1,20 @@
+[project]
+name = "danbyte-checks"
+version = "0.1.0"
+description = "Danbyte's protocol check engine — one Django-free implementation of every check kind, shared by the core and the Outpost agent so results never drift."
+requires-python = ">=3.11"
+dependencies = [
+    "icmplib>=3.0",   # icmp
+    "httpx>=0.27",    # http
+    "pysnmp>=6.2",    # snmp
+    "asyncssh>=2.14", # ssh
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = []
+packages = ["danbyte_checks"]
+package-dir = { "danbyte_checks" = "." }

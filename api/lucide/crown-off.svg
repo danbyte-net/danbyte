@@ -1,0 +1,16 @@
+<svg
+  class="lucide lucide-crown-off"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M6.44 6.44L2.02 6.02a.5.5 0 0 0-.798.52L4.054 16.78a1 1 0 0 0 .957.734h8m6.526-1.78L21.98 6.54a.5.5 0 0 0-.798-.52l-4.276 3.665a1 1 0 0 1-1.516-.294L12.438 3.27a.5.5 0 0 0-.876 0L9.49 7.16" />
+  <path d="M5 21h14" />
+  <path d="m2 2 20 20" />
+</svg>
