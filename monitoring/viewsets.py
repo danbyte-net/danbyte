@@ -106,6 +106,7 @@ class MonitoringEngineViewSet(viewsets.ModelViewSet):
         from django.db.models import Count
 
         from api.models import Location, Site
+        from auth_api import rbac
 
         from .models import (
             CheckState,
@@ -113,10 +114,18 @@ class MonitoringEngineViewSet(viewsets.ModelViewSet):
             MonitoringSettings,
             StateTransition,
         )
+        from .views import _scope_ip_keyed
 
         engine = self.get_object()
-        default_id = MonitoringSettings.for_tenant(engine.tenant).default_engine_id
-        states = CheckState.objects.filter(engine=engine)
+        tenant = engine.tenant
+        default_id = MonitoringSettings.for_tenant(tenant).default_engine_id
+        # Row/site scope: an engine spans every site in the tenant. Without this
+        # a Site-A viewer read Site-B IP addresses (via `recent`) plus site /
+        # location names off any engine id. Restrict the check data to IPs the
+        # caller may view, and the bound site/location names to their scope.
+        states = _scope_ip_keyed(
+            request, tenant, CheckState.objects.filter(engine=engine)
+        )
         by_status = {
             r["status"]: r["n"]
             for r in states.values("status").annotate(n=Count("id"))
@@ -126,9 +135,17 @@ class MonitoringEngineViewSet(viewsets.ModelViewSet):
         )
         site_ids = [b.object_id for b in bindings if b.scope == "site"]
         loc_ids = [b.object_id for b in bindings if b.scope == "location"]
-        sites = list(Site.objects.filter(id__in=site_ids).values("id", "name"))
+        sites = list(
+            rbac.restrict_queryset(
+                Site.objects.filter(id__in=site_ids), request.user, tenant,
+                "site", "view",
+            ).values("id", "name")
+        )
         locations = list(
-            Location.objects.filter(id__in=loc_ids).values("id", "name")
+            rbac.restrict_queryset(
+                Location.objects.filter(id__in=loc_ids), request.user, tenant,
+                "location", "view",
+            ).values("id", "name")
         )
         recent = (
             StateTransition.objects.filter(

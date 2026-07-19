@@ -135,9 +135,12 @@ class AutomationTargetViewSet(TenantScopedViewSet):
         """Bulk deploy: dispatch the given devices to this target in one run.
 
         Body: {"device_ids": ["<uuid>", ...]}. Device ids are validated against
-        the target's tenant, so a caller can't deploy a device they can't see.
+        the caller's row/site view scope for `device` (not just the target's
+        tenant) — otherwise a Site-A operator could enqueue a deploy / AWX job
+        against Site-B devices they can't see.
         """
         from api.models import Device
+        from auth_api import rbac
 
         target = self.get_object()
         if not target.enabled:
@@ -147,8 +150,10 @@ class AutomationTargetViewSet(TenantScopedViewSet):
             return Response({"detail": "device_ids must be a non-empty list."},
                             status=400)
         valid = list(
-            Device.objects.filter(tenant=target.tenant, id__in=ids)
-            .values_list("id", flat=True)
+            rbac.restrict_queryset(
+                Device.objects.filter(tenant=target.tenant, id__in=ids),
+                request.user, target.tenant, "device", "view",
+            ).values_list("id", flat=True)
         )
         if not valid:
             return Response(
@@ -240,8 +245,12 @@ class DeployRunViewSet(TenantScopedViewSet):
         from api.models import Device
 
         valid = list(
-            Device.objects.filter(tenant=target.tenant, id__in=run.device_ids)
-            .values_list("id", flat=True)
+            rbac.restrict_queryset(
+                Device.objects.filter(
+                    tenant=target.tenant, id__in=run.device_ids
+                ),
+                request.user, target.tenant, "device", "view",
+            ).values_list("id", flat=True)
         )
         if not valid:
             return Response(

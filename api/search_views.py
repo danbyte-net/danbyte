@@ -63,7 +63,7 @@ def search(request):
         "sites":         _search_sites(q, u, tenant, limit),
         "tenants":       _search_tenants(q, u, limit),
         "devices":       _search_devices(q, u, tenant, limit),
-        "tags":          _search_tags(q, limit),
+        "tags":          _search_tags(q, tenant, limit),
     }
     total = sum(len(g) for g in groups.values())
     return Response({"q": q, "total": total, "groups": groups})
@@ -250,8 +250,14 @@ def _search_devices(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
     ]
 
 
-def _search_tags(q: str, limit: int) -> list[dict]:
-    qs = Tag.objects.filter(Q(name__icontains=q) | Q(slug__icontains=q)).order_by("name")[:limit]
+def _search_tags(q: str, tenant: Tenant, limit: int) -> list[dict]:
+    # Tags are tenant-scoped (NULL tenant = deployment-global). Without this
+    # filter the search leaked every tenant's tag names/slugs/colors.
+    qs = (
+        Tag.objects.filter(Q(tenant=tenant) | Q(tenant__isnull=True))
+        .filter(Q(name__icontains=q) | Q(slug__icontains=q))
+        .order_by("name")[:limit]
+    )
     serialized = TagSerializer(qs, many=True).data
     return [
         {

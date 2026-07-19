@@ -213,6 +213,27 @@ def _collapse(links):
 
 # ─── Graph assembly ─────────────────────────────────────────────────────────
 
+def device_scope_q(user, tenant):
+    """A ``Q`` bounding devices to the caller's ``device.view`` row/site scope,
+    or ``None`` when unrestricted (superuser / unscoped grant). Feed into the
+    graph builders' ``scope_q``."""
+    from auth_api import rbac
+
+    q = rbac.row_filter(user, tenant, "device", "view")
+    return q if (q is not None and q is not True) else None
+
+
+def viewable_device_ids(user, tenant):
+    """Set of device pks the caller may view (for redaction in device_paths)."""
+    from auth_api import rbac
+
+    return set(
+        rbac.restrict_queryset(
+            Device.objects.filter(tenant=tenant), user, tenant, "device", "view"
+        ).values_list("id", flat=True)
+    )
+
+
 def _build_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
                  collapse=True, scope_q=None):
     links = _physical_links(tenant)
@@ -422,11 +443,16 @@ def topology_view(request):
     return Response(graph)
 
 
-def device_paths(device):
+def device_paths(device, viewable_ids=None):
     """Flat end-to-end runs for every cabled port on a device — the cable
     page's path-strip design, one strip per port. Each run alternates
     ``seg`` (a cable) and ``chip`` (a device + the ports the run used on it);
-    panels are crossed front⇄rear like the topology collapse."""
+    panels are crossed front⇄rear like the topology collapse.
+
+    ``viewable_ids`` (a set of device pks, or None = unrestricted) bounds which
+    devices' names/ids are revealed — a run that crosses into a device the
+    caller can't view renders a redacted ``(restricted)`` chip instead of
+    leaking its name/ports (site-scope safe)."""
     from .fiber_colors import fiber_color, is_fiber_type
     from .models import FiberSettings
 
@@ -460,6 +486,12 @@ def device_paths(device):
     def chip(dev, port_pairs, panel):
         """``port_pairs`` = [(port_obj, kind)] — interface ports carry their
         id so the frontend can make the name itself a click target."""
+        # Redact devices outside the caller's view scope — a physical run can
+        # cross into another site's device; show that a hop exists without
+        # leaking its identity.
+        if viewable_ids is not None and dev.id not in viewable_ids:
+            return {"t": "chip", "device_id": None, "device": "(restricted)",
+                    "ports": [], "panel": panel, "restricted": True}
         return {
             "t": "chip",
             "device_id": str(dev.id),
@@ -642,10 +674,11 @@ def cable_strand_path(cable, strand):
     }
 
 
-def trace_device_graph(tenant, trace_graph):
+def trace_device_graph(tenant, trace_graph, scope_q=None):
     """A device-level graph (the same adaptive stencil cards as the main map)
     for the devices a trace passes through, with the traced cables marked.
-    Panels are shown (collapse off) so the full physical path renders."""
+    Panels are shown (collapse off) so the full physical path renders.
+    ``scope_q`` bounds nodes to the caller's viewable devices (site scope)."""
     from django.db.models import Q
 
     dev_ids = {
@@ -660,15 +693,18 @@ def trace_device_graph(tenant, trace_graph):
     }
     if not dev_ids:
         return {"nodes": [], "edges": []}
-    g = _build_graph(tenant, device_filter_q=Q(id__in=dev_ids), collapse=False)
+    g = _build_graph(tenant, device_filter_q=Q(id__in=dev_ids), collapse=False,
+                     scope_q=scope_q)
     for e in g["edges"]:
         e["data"]["marked"] = e["data"].get("cable_id") in cable_ids
     return g
 
 
-def device_trace_map(device):
+def device_trace_map(device, scope_q=None):
     """Device-page mini map: the device's 1-hop neighbourhood with panels
-    collapsed. Kept as the DeviceViewSet ``map`` action's implementation."""
+    collapsed. Kept as the DeviceViewSet ``map`` action's implementation.
+    ``scope_q`` bounds the graph to the caller's viewable devices (site scope)."""
     return _build_graph(
-        device.tenant, focus_id=str(device.id), depth=1, collapse=True
+        device.tenant, focus_id=str(device.id), depth=1, collapse=True,
+        scope_q=scope_q,
     )

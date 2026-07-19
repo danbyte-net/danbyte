@@ -433,6 +433,16 @@ def site_map_cables(request):
     if rbac.row_filter(request.user, tenant, "cable", "view") is None:
         return Response({"cables": []})
 
+    # A cable is only drawn when the caller may view BOTH endpoint devices —
+    # otherwise the map would leak a Site-B device (name/coords) to a Site-A
+    # user via the cable line. (cable.view has no site path of its own.)
+    viewable_devs = set(
+        rbac.restrict_queryset(
+            Device.objects.filter(tenant=tenant),
+            request.user, tenant, "device", "view",
+        ).values_list("id", flat=True)
+    )
+
     # Sites the caller may see, with coordinates — the fallback anchor.
     site_pt = {}
     for s in rbac.restrict_queryset(
@@ -454,6 +464,8 @@ def site_map_cables(request):
     for cab, dev_a, pa, ka, dev_b, pb, kb in _physical_links(tenant):
         if cab.id in seen:
             continue  # one segment per cable (first resolvable hop wins)
+        if dev_a.id not in viewable_devs or dev_b.id not in viewable_devs:
+            continue  # an endpoint outside the caller's site scope → drop
         a_pt = resolve(dev_a)
         b_pt = resolve(dev_b)
         if not a_pt or not b_pt:

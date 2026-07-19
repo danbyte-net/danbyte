@@ -847,12 +847,18 @@ class PrefixViewSet(CloneableMixin, TenantScopedViewSet):
         # child_nets are ipaddress network instances; cidr_to_pk lets the
         # frontend deep-link a "used" cell to /prefixes/{id}/ without a second
         # round trip.
+        from auth_api import rbac
+
         child_nets = []
         cidr_to_pk: dict[str, str] = {}
+        # Only sibling prefixes the caller may view feed the space map — a
+        # site-scoped user must not learn another site's child prefixes.
         for sib in (
-            Prefix.objects
-            .filter(tenant=prefix.tenant, vrf=prefix.vrf)
-            .exclude(pk=prefix.pk)
+            rbac.restrict_queryset(
+                Prefix.objects.filter(tenant=prefix.tenant, vrf=prefix.vrf)
+                .exclude(pk=prefix.pk),
+                request.user, prefix.tenant, "prefix", "view",
+            )
             .only("id", "cidr")
         ):
             sn = sib.network
@@ -893,12 +899,20 @@ class PrefixViewSet(CloneableMixin, TenantScopedViewSet):
         we'll add it when a customer pushes that envelope.
         """
         import ipaddress as ip
+
+        from auth_api import rbac
+
         prefix = self.get_object()
-        qs = (
+        # Row/site scope the child IPs — the prefix being viewable doesn't imply
+        # ipaddress.view on every IP inside it (a site-scoped or absent
+        # ipaddress grant must not enumerate them). Mirrors DeviceViewSet.ips /
+        # InterfaceViewSet.ips.
+        qs = rbac.restrict_queryset(
             IPAddress.objects
             .filter(prefix=prefix)
             .select_related("status", "role", "assigned_device")
-            .prefetch_related("tags")
+            .prefetch_related("tags"),
+            request.user, prefix.tenant, "ipaddress", "view",
         )
         # IPAddressField is a string; sort numerically so 10.0.0.2 lands
         # before 10.0.0.10 — Django's default lexicographic sort doesn't.
@@ -1404,9 +1418,17 @@ class TagViewSet(CatalogLocalityMixin, TenantScopedViewSet):
             ("routetarget", "Route target", RouteTarget,  lambda o: o.name,                    "/route-targets/"),
             ("device",      "Device",       Device,       lambda o: o.name,                    "/devices/"),
         ]
+        from auth_api import rbac
+
         results = []
         for slug, label, model, name_fn, base in specs:
-            for o in model.objects.filter(tags=tag, tenant=tenant).distinct():
+            # Row/site scope each type — a site-scoped user must only see the
+            # tagged objects they may actually view, not every tagged row.
+            tagged = rbac.restrict_queryset(
+                model.objects.filter(tags=tag, tenant=tenant).distinct(),
+                request.user, tenant, slug, "view",
+            )
+            for o in tagged:
                 results.append({
                     "type": slug,
                     "type_label": label,
@@ -1473,6 +1495,14 @@ class CustomFieldViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         qs = ref.model.objects.all()
         if ref.tenant_field:
             qs = qs.filter(**{ref.tenant_field: tenant})
+        # Row/site scope the preview rows — never reveal objects the caller
+        # can't view (an arbitrary ?model= must not become a scoped-data probe).
+        from auth_api import rbac
+        from auth_api.object_types import is_registered
+
+        _slug = ref.model._meta.model_name
+        if is_registered(_slug):
+            qs = rbac.restrict_queryset(qs, request.user, tenant, _slug, "view")
         qs = apply_scope_to_queryset(qs, model_slug, field.scope_rules or {})[:20]
         results = []
         for obj in qs:
@@ -2306,13 +2336,19 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
     def map(self, request, pk=None):
         """Device-level topology: trace through any patch panels and show the
         chain of devices reached, collapsing front/rear ports away."""
-        from .topology_views import device_trace_map
-        return Response(device_trace_map(self.get_object()))
+        from .topology_views import device_scope_q, device_trace_map
+        dev = self.get_object()
+        return Response(device_trace_map(
+            dev, scope_q=device_scope_q(request.user, dev.tenant)
+        ))
 
     @action(detail=True, methods=["get"], url_path="paths")
     def paths(self, request, pk=None):
-        from .topology_views import device_paths
-        return Response(device_paths(self.get_object()))
+        from .topology_views import device_paths, viewable_device_ids
+        dev = self.get_object()
+        return Response(device_paths(
+            dev, viewable_ids=viewable_device_ids(request.user, dev.tenant)
+        ))
 
 
 class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
@@ -2491,12 +2527,15 @@ class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
     @action(detail=True, methods=["get"], url_path="trace")
     def trace(self, request, pk=None):
         from .trace import trace as run_trace
-        from .topology_views import trace_device_graph
+        from .topology_views import device_scope_q, trace_device_graph
         iface = self.get_object()
         graph = run_trace([("interface", iface)])
         return Response({
             "origin": {"type": "interface", "id": str(iface.id)},
-            "device_graph": trace_device_graph(iface.device.tenant, graph),
+            "device_graph": trace_device_graph(
+                iface.device.tenant, graph,
+                scope_q=device_scope_q(request.user, iface.device.tenant),
+            ),
             **graph,
         })
 
@@ -2586,13 +2625,16 @@ class CableViewSet(TenantScopedViewSet):
     @action(detail=True, methods=["get"], url_path="trace")
     def trace(self, request, pk=None):
         from .trace import trace as run_trace, point_from_termination
-        from .topology_views import trace_device_graph
+        from .topology_views import device_scope_q, trace_device_graph
         cable = self.get_object()
         starts = [point_from_termination(t) for t in cable.terminations.all()]
         graph = run_trace(starts)
         return Response({
             "origin": {"type": "cable", "id": str(cable.id)},
-            "device_graph": trace_device_graph(cable.tenant, graph),
+            "device_graph": trace_device_graph(
+                cable.tenant, graph,
+                scope_q=device_scope_q(request.user, cable.tenant),
+            ),
             **graph,
         })
 

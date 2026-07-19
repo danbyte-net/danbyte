@@ -38,6 +38,17 @@ ergonomics on top:
     reads, so cross-site troubleshooting keeps working. If someone should
     only *see* their own site, give them the **Site viewer** role instead.
 
+!!! note "Read scope is honoured everywhere"
+    When a grant *is* site- or tenant-scoped (the **Site viewer** role, or any
+    `ObjectPermission` with `sites`/`tenants` set), that scope applies uniformly
+    — not just on the primary list and detail pages, but on every secondary
+    surface that reaches related rows: global search, a tag's *usage* panel,
+    custom-field scope previews, prefix space maps, device topology/traces, the
+    site map, generic CSV/JSON imports (including the objects a row *references*
+    by name), automation-target deploys, monitoring-engine stats, and audit /
+    journal history. A Site-A viewer never sees Site-B rows through a side door,
+    and a note can only be attached to an object the author may actually view.
+
 ## Creating prefixes: your space, or a fresh one
 
 A site editor can create prefixes two ways:

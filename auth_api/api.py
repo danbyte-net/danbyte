@@ -207,6 +207,37 @@ class UserViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(username__icontains=s) | qs.filter(email__icontains=s)
         return qs
 
+    def _forbid_superuser_target(self, obj):
+        """A non-superuser deployment admin must not modify a superuser account.
+
+        UserSerializer.validate() strips is_superuser/is_staff so a deployment
+        admin can't promote *itself*, but nothing stopped it from resetting an
+        existing superuser's password/email (then logging in as them) and
+        bypassing all RBAC. Guard every write path (update/delete/send-reset)
+        against a superuser target unless the actor is itself a superuser.
+        """
+        from rest_framework.exceptions import PermissionDenied
+
+        actor = getattr(self.request, "user", None)
+        if getattr(obj, "is_superuser", False) and not (
+            actor is not None and actor.is_superuser
+        ):
+            raise PermissionDenied(
+                "Only a superuser may modify a superuser account."
+            )
+
+    def update(self, request, *args, **kwargs):
+        self._forbid_superuser_target(self.get_object())
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        self._forbid_superuser_target(self.get_object())
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        self._forbid_superuser_target(self.get_object())
+        return super().destroy(request, *args, **kwargs)
+
     @action(detail=True, methods=["post"], url_path="send-reset")
     def send_reset(self, request, pk=None):
         """Email this user a set/reset-password link. Does **not** change or
@@ -214,6 +245,7 @@ class UserViewSet(viewsets.ModelViewSet):
         changes only when the user follows the link and chooses a new one.
         """
         user = self.get_object()
+        self._forbid_superuser_target(user)
         if not user.email:
             return Response(
                 {"detail": "This user has no email address to send a link to."},
@@ -382,6 +414,23 @@ class ObjectPermissionViewSet(viewsets.ModelViewSet):
     serializer_class = ObjectPermissionSerializer
     permission_classes = [IsAuthenticated, RBACObjectPermission, DeploymentAdminForWrites]
     rbac_object_type = "objectpermission"
+
+    def get_queryset(self):
+        # Scope to permissions that APPLY to the active tenant — an empty
+        # ``tenants`` set means "all tenants" (global), otherwise the active
+        # tenant must be in it. Without this the list exposed every tenant's
+        # ObjectPermission rows (their names/constraints/site scoping).
+        from django.db.models import Q
+
+        from api.views import _get_active_tenant
+
+        qs = super().get_queryset()
+        if getattr(self.request.user, "is_superuser", False):
+            return qs
+        tenant = _get_active_tenant(self.request)
+        if tenant is None:
+            return qs.none()
+        return qs.filter(Q(tenants=tenant) | Q(tenants__isnull=True)).distinct()
 
 
 # ─── Registry (for the permission form pickers) ──────────────────────────────

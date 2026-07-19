@@ -37,9 +37,19 @@ def _ser(v):
 
 
 def _field_dict(instance) -> dict:
+    # Never send secrets to an external URL. EncryptedJSONField columns decrypt
+    # transparently on read, so a naive getattr() would ship plaintext SNMP
+    # creds / API tokens in the webhook payload. Mask via the same classifier
+    # the audit trail and exports use (core.secret_fields) — "•••" when set,
+    # None when empty, so the payload shows a field changed without its value.
+    from core.secret_fields import is_secret_field
+
     out = {}
     for f in instance._meta.concrete_fields:
         if f.name in _SKIP_FIELDS:
+            continue
+        if is_secret_field(instance, f):
+            out[f.name] = "•••" if getattr(instance, f.attname, None) else None
             continue
         out[f.name] = _ser(getattr(instance, f.attname, None))
     return out

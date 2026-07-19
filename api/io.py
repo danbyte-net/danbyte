@@ -165,7 +165,7 @@ class ModelIOHandler:
         return {c: row.get(c, "") for c in self.column_names()}
 
     # ── import ────────────────────────────────────────────────────────────
-    def lookup(self, row, tenant):
+    def lookup(self, row, tenant, user=None):
         """Find the existing row to update: by id, then natural key. ``None`` →
         a new object will be created. Raises on an ambiguous natural key."""
         base = self.model._default_manager.all()
@@ -190,7 +190,7 @@ class ModelIOHandler:
                     return None
                 field = self.model._meta.get_field(nk)
                 if field.is_relation:
-                    filt[field.name] = _coerce(field, val, tenant)
+                    filt[field.name] = _coerce(field, val, tenant, user)
                 else:
                     filt[nk] = val
             matches = list(base.filter(**filt)[:2])
@@ -202,7 +202,7 @@ class ModelIOHandler:
                 return matches[0]
         return None
 
-    def apply(self, existing, row, tenant):
+    def apply(self, existing, row, tenant, user=None):
         """Build/mutate + validate (no save). Returns
         ``(obj, action, changes, tag_names)``. ``tag_names`` is ``None`` when the
         file has no ``tags`` column (leave tags untouched)."""
@@ -235,7 +235,7 @@ class ModelIOHandler:
             ):
                 fk_set[field.name] = None
                 continue
-            val = _coerce(field, raw, tenant)
+            val = _coerce(field, raw, tenant, user)
             if field.is_relation:
                 fk_set[field.name] = val
             else:
@@ -271,9 +271,14 @@ class ModelIOHandler:
         obj.save()
         if tag_names is not None:
             tags = []
+            # Tags are tenant-scoped (name unique per tenant). Keying the
+            # lookup on name alone reused / created tags across tenant lines
+            # (and could raise MultipleObjectsReturned when the name exists in
+            # more than one tenant) — bind to the object's own tenant.
+            tenant = getattr(obj, "tenant", None)
             for name in tag_names:
                 t, _ = Tag.objects.get_or_create(
-                    name=name, defaults={"slug": slugify(name)}
+                    name=name, tenant=tenant, defaults={"slug": slugify(name)}
                 )
                 tags.append(t)
             obj.tags.set(tags)

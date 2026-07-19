@@ -252,13 +252,13 @@ def io_import_view(request, slug):
     for i, row in enumerate(rows, start=1):
         try:
             with transaction.atomic():
-                existing = handler.lookup(row, tenant)
+                existing = handler.lookup(row, tenant, request.user)
                 if existing is not None and not change_qs.filter(
                     pk=existing.pk
                 ).exists():
                     raise PermissionRow("not permitted to update this row")
                 obj, action, changes, tag_names = handler.apply(
-                    existing, row, tenant
+                    existing, row, tenant, request.user
                 )
                 if action == "create" and not can_add:
                     raise PermissionRow("creating new rows needs 'add' permission")

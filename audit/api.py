@@ -82,6 +82,16 @@ def _can_view_object(request, object_type_label, object_id) -> bool:
 
     if any(f.name == "tenant" for f in model._meta.fields):
         base = base.filter(tenant=tenant)
+    else:
+        # Tenant-less models (Interface, ports, Module, VMInterface, …) reach
+        # their tenant only through their site path. Bind to the active tenant
+        # there, or an unscoped grant's restrict_queryset would match another
+        # tenant's row and let a note be attached to it.
+        from auth_api.site_paths import site_path_for
+
+        sp = site_path_for(slug, tenant)
+        if sp and sp != "id":
+            base = base.filter(**{f"{sp}__tenant": tenant})
     scoped = rbac.restrict_queryset(base, request.user, tenant, slug, "view")
     return scoped.filter(pk=object_id).exists()
 
@@ -98,6 +108,29 @@ def _object_site_id(object_type_label, object_id):
         return None
     obj = model._default_manager.filter(pk=object_id).first()
     return entry_site_id(obj) if obj is not None else None
+
+
+def _tenant_gate(tenant):
+    """Q selecting audit rows that belong to the active tenant — safe for
+    tenant-LESS models (Interface, ports, Module, VMInterface, MAC, floor plans,
+    component templates), which stamp tenant_id=NULL. Those are admitted only
+    when their stored ``object_site_id`` is a Site in this tenant, so a foreign
+    tenant's component history can't be read via the old blanket
+    ``tenant__isnull=True`` branch. core.tenant (tenant-less, site-less) is
+    admitted here and clamped to the active tenant by ``_visibility_q``;
+    tenant-less rows with no resolvable site are NOT admitted (fail closed)."""
+    if tenant is None:
+        return Q(pk__in=[])
+    from api.models import Site
+
+    site_ids = list(
+        Site.objects.filter(tenant=tenant).values_list("id", flat=True)
+    )
+    return (
+        Q(tenant=tenant)
+        | Q(tenant__isnull=True, object_site_id__in=site_ids)
+        | Q(tenant__isnull=True, object_type="core.tenant")
+    )
 
 
 def _visibility_q(request):
@@ -320,17 +353,17 @@ class ChangeLogViewSet(viewsets.ReadOnlyModelViewSet):
         # Detail: one entry by id, within the active tenant (+ tenant-less
         # entries for global models) so a foreign entry UUID can't be read by IDOR.
         if self.action == "retrieve":
-            qs = self.queryset.filter(Q(tenant=tenant) | Q(tenant__isnull=True))
+            qs = self.queryset.filter(_tenant_gate(tenant))
             return qs.filter(vis) if vis is not None else qs
 
         p = self.request.query_params
         object_id = p.get("object_id")
 
         # Per-object history (a detail-page History tab): scope to that object,
-        # within the active tenant (+ tenant-less global models).
+        # within the active tenant (tenant-less component rows bound by site).
         if object_id:
             qs = self.queryset.filter(object_id=object_id).filter(
-                Q(tenant=tenant) | Q(tenant__isnull=True)
+                _tenant_gate(tenant)
             )
             otype = p.get("object_type")
             if otype:
@@ -388,10 +421,11 @@ class JournalEntryViewSet(viewsets.ModelViewSet):
         # cross-site notes the type filter would let through.
         vis = _visibility_q(self.request)
         if otype and oid:
-            # Scope to the active tenant (+ tenant-less global models) so a
-            # foreign object UUID can't leak its notes by IDOR.
+            # Active-tenant gate that is safe for tenant-less component models
+            # (bound by object_site_id), so a foreign object UUID can't leak its
+            # notes by IDOR.
             out = qs.filter(object_type=otype, object_id=oid).filter(
-                Q(tenant=tenant) | Q(tenant__isnull=True)
+                _tenant_gate(tenant)
             )
             return out.filter(vis) if vis is not None else out
         out = qs.filter(tenant=tenant) if tenant else qs.none()

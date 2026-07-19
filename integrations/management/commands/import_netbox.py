@@ -126,31 +126,52 @@ class NetBoxClient:
 
         self.base = base_url.rstrip("/")
         self.guard = guard
+        self.verify = verify
+        self._headers = {
+            "Authorization": f"Token {token}",
+            "Accept": "application/json",
+        }
         if guard:
             from core.ssrf import assert_public_url
 
             assert_public_url(self.base)
-        self.client = httpx.Client(
-            # NetBox's front-port / rear-port list endpoints compute
-            # link_peers per row and can be far slower than the rest of the
-            # API on cabled patch panels — 60s was enough for 80k interface
-            # templates but not always for a 250-row port page.
-            timeout=120,
-            verify=verify,
-            follow_redirects=not guard,
-            headers={
-                "Authorization": f"Token {token}",
-                "Accept": "application/json",
-            },
-        )
+            # Guarded (web-triggered, attacker-controlled host): don't touch the
+            # target with a plain httpx client — assert_public_url only
+            # resolve-and-checks, and httpx re-resolves at connect time, so the
+            # host could DNS-rebind to 169.254.169.254 / an internal address
+            # between the two. Every guarded fetch goes through
+            # core.ssrf.safe_get, which pins the connection to the validated IP
+            # and refuses redirects.
+            self.client = None
+        else:
+            self.client = httpx.Client(
+                # NetBox's front-port / rear-port list endpoints compute
+                # link_peers per row and can be far slower than the rest of the
+                # API on cabled patch panels — 60s was enough for 80k interface
+                # templates but not always for a 250-row port page.
+                timeout=120,
+                verify=verify,
+                follow_redirects=True,
+                headers=self._headers,
+            )
 
     def _get(self, url: str):
+        if self.guard:
+            # Pinned, redirect-refusing GET — closes the DNS-rebinding TOCTOU.
+            import requests
+
+            from core.ssrf import safe_get
+
+            try:
+                return safe_get(
+                    url, headers=self._headers, timeout=120, verify=self.verify
+                )
+            except requests.exceptions.Timeout:
+                return safe_get(
+                    url, headers=self._headers, timeout=120, verify=self.verify
+                )
         import httpx
 
-        if self.guard:
-            from core.ssrf import assert_public_url
-
-            assert_public_url(url)
         try:
             return self.client.get(url)
         except httpx.TimeoutException:
