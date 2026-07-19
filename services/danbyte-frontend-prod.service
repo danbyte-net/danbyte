@@ -1,0 +1,21 @@
+[Unit]
+# Production frontend: serve the BUILT SSR app on :3000 (vite preview runs the
+# production server bundle from `vite build`). Use this INSTEAD of
+# danbyte-frontend (the Vite dev server) in production. Run `make frontend-build`
+# first; rebuild + restart this unit to ship UI changes.
+Description=Danbyte frontend (built SSR, port 3000)
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h/danbyte/frontend
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node node_modules/vite/bin/vite.js preview --port 3000 --host 127.0.0.1
+Restart=always
+RestartSec=2
+
+# Logs: journalctl --user -fu danbyte-frontend-prod
+
+[Install]
+WantedBy=default.target

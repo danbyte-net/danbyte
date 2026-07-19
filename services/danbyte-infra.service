@@ -1,0 +1,17 @@
+[Unit]
+Description=Danbyte infrastructure (Postgres + Redis via docker compose)
+Requires=docker.service
+After=docker.service network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=%h/danbyte
+ExecStart=/usr/bin/docker compose up -d postgres redis
+ExecStop=/usr/bin/docker compose stop postgres redis
+
+# Requires Docker. If not installed: `sudo apt install docker.io docker-compose-plugin`
+# then `sudo usermod -aG docker $USER` and re-login.
+
+[Install]
+WantedBy=default.target

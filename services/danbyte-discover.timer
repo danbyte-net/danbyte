@@ -1,0 +1,13 @@
+[Unit]
+Description=Run Danbyte subnet discovery (per-prefix interval gated in-app)
+
+[Timer]
+# Fire every 5 min; run_discovery only sweeps prefixes whose configured
+# discovery_interval_minutes has elapsed, so the in-app setting is the real knob.
+OnCalendar=*:0/5
+OnBootSec=120
+Persistent=true
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=Danbyte auto-upgrade check (self-update to the latest release)
+
+[Timer]
+# Every 20 min: check the release repo and upgrade if enabled + in the window.
+# A blank maintenance window means real-time (upgrade as soon as one appears).
+OnCalendar=*:0/20
+OnBootSec=120
+Persistent=true
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target

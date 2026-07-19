@@ -1,0 +1,19 @@
+[Unit]
+Description=Danbyte frontend (Vite dev server, port 3000)
+After=network.target
+# Don't let reloader/crash loops trip the start-limit and leave the dev server
+# permanently down (the recurring-502 cause — nginx proxies :80 → :3000).
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h/danbyte/frontend
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/node node_modules/vite/bin/vite.js dev --port 3000 --host
+Restart=always
+RestartSec=2
+
+# Logs: journalctl --user -fu danbyte-frontend
+[Install]
+WantedBy=default.target

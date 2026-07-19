@@ -1,0 +1,13 @@
+[Unit]
+Description=Run the Danbyte monitoring dispatcher every minute
+
+[Timer]
+# Minute-resolution beat: select due checks and enqueue worker jobs.
+OnCalendar=*:0/1
+# Run a catch-up tick on boot rather than waiting for the next minute boundary.
+OnBootSec=30
+Persistent=true
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

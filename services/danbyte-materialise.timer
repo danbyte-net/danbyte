@@ -1,0 +1,11 @@
+[Unit]
+Description=Rebuild Danbyte CheckState rows every 5 minutes
+
+[Timer]
+OnCalendar=*:0/5
+OnBootSec=20
+Persistent=true
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

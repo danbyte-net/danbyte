@@ -1,0 +1,17 @@
+[Unit]
+Description=Danbyte subnet discovery (opt-in ICMP sweep)
+After=network.target
+Wants=danbyte-infra.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/danbyte/.venv/bin/python manage.py discover_subnets
+# A sweep opens up to MONITORING_SWEEP_CONCURRENCY ICMP sockets. Raise the fd
+# ceiling (as the worker pool does) so large prefixes don't hit EMFILE. The code
+# also caps concurrency to this limit as a backstop (see _sweep_concurrency).
+LimitNOFILE=65535
+
+# Triggered every 30 minutes by danbyte-discover.timer.
+# Logs: journalctl --user -fu danbyte-discover

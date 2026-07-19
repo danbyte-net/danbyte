@@ -1,0 +1,13 @@
+[Unit]
+Description=Danbyte monitoring materialiser (rebuild CheckState from assignments)
+After=network.target
+Wants=danbyte-infra.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/danbyte/.venv/bin/python manage.py materialise_checks
+
+# Triggered every few minutes by danbyte-materialise.timer.
+# Logs: journalctl --user -fu danbyte-materialise

@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (migrate + test + coverage)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: danbyte
+          POSTGRES_USER: danbyte
+          POSTGRES_PASSWORD: danbyte
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U danbyte"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      DB_NAME: danbyte
+      DB_USER: danbyte
+      DB_PASSWORD: danbyte
+      REDIS_URL: redis://127.0.0.1:6379/0
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: '6379'
+      # Satisfy the prod SECRET_KEY guard regardless of DEBUG.
+      DJANGO_SECRET_KEY: ci-not-a-real-secret
+      DEBUG: 'True'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - name: System deps (python-ldap build headers)
+        run: |
+          # Drop flaky third-party apt sources (Chrome/etc.) so their transient
+          # "Hash Sum mismatch" can't fail our update; retry once for good measure.
+          sudo rm -f /etc/apt/sources.list.d/*google* /etc/apt/sources.list.d/*chrome* || true
+          sudo apt-get update || sudo apt-get update
+          sudo apt-get install -y build-essential libldap2-dev libsasl2-dev
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt coverage ruff
+      - name: Migrations apply cleanly
+        run: |
+          python manage.py migrate --noinput
+          python manage.py makemigrations --check --dry-run
+      - name: Test (with coverage)
+        run: |
+          coverage run --source='.' manage.py test --noinput
+          coverage report
+      # Undefined-name (F821) is a hard gate — it catches the class of bug
+      # that shipped a NameError past the suite. Everything else stays advisory.
+      - name: Ruff undefined-names (gate)
+        run: ruff check --select F821 .
+      - name: Ruff (advisory — not yet a gate)
+        continue-on-error: true
+        run: ruff check .
+
+  frontend:
+    name: Frontend (typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      # Build first — it regenerates the TanStack routeTree that typecheck reads.
+      - name: Build
+        run: npm run build
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Prettier (advisory)
+        continue-on-error: true
+        run: npm run check
+      - name: ESLint (advisory — large pre-existing baseline)
+        continue-on-error: true
+        run: npm run lint

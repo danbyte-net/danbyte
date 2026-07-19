@@ -1,0 +1,13 @@
+[Unit]
+Description=Danbyte — auto-upgrade to the latest release (if enabled + in window)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/danbyte/.venv/bin/python manage.py auto_upgrade
+
+# Triggered every 20 min by danbyte-auto-upgrade.timer.
+# Logs: journalctl --user -fu danbyte-auto-upgrade

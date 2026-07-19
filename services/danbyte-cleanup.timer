@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Danbyte stale-IP cleanup daily
+
+[Timer]
+OnCalendar=*-*-* 04:42:00
+OnBootSec=150
+Persistent=true
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,23 @@
+[Unit]
+# Production WebSockets: daphne serving ONLY the ASGI websocket routes
+# (danbyte.asgi:application) on 127.0.0.1:8002. nginx proxies /ws/ here. Keep
+# this separate from the HTTP path (gunicorn / danbyte-web) — daphne in front of
+# all HTTP wedges plain requests.
+Description=Danbyte websockets (daphne ASGI, 127.0.0.1:8002)
+After=network.target
+Wants=danbyte-infra.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+# Config read from %h/danbyte/.env (see danbyte-web.service).
+ExecStart=%h/danbyte/.venv/bin/daphne -b 127.0.0.1 -p 8002 danbyte.asgi:application
+Restart=always
+RestartSec=2
+
+# Logs: journalctl --user -fu danbyte-ws
+
+[Install]
+WantedBy=default.target

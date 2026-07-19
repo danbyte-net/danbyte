@@ -1,0 +1,15 @@
+[Unit]
+Description=Danbyte documentation site (Zensical dev server, port 8001)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/danbyte
+ExecStart=%h/danbyte/.venv/bin/zensical serve -a 127.0.0.1:8001
+Restart=on-failure
+RestartSec=2
+
+# Hot-reload on .md changes. Logs: journalctl --user -fu danbyte-docs
+
+[Install]
+WantedBy=default.target

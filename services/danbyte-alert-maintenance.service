@@ -1,0 +1,13 @@
+[Unit]
+Description=Danbyte alert maintenance (renotify / escalate / flap dampening)
+After=network.target
+Wants=danbyte-infra.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/danbyte/.venv/bin/python manage.py alert_maintenance
+
+# Triggered every minute by danbyte-alert-maintenance.timer.
+# Logs: journalctl --user -fu danbyte-alert-maintenance

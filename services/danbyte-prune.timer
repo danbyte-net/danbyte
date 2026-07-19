@@ -1,0 +1,11 @@
+[Unit]
+Description=Prune Danbyte monitoring time-series daily
+
+[Timer]
+OnCalendar=*-*-* 04:17:00
+OnBootSec=120
+Persistent=true
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target

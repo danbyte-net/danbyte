@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="refresh" content="15" />
+    <title>Danbyte is updating</title>
+    <style>
+      :root { color-scheme: light dark; }
+      * { box-sizing: border-box; }
+      /* Base (light) rules first, then the dark overrides LAST so they win in
+         source order — otherwise a later base rule beats the media query and
+         you get white-on-white in dark mode. */
+      body {
+        margin: 0; min-height: 100vh; display: grid; place-items: center;
+        font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: #fafafa; color: #18181b;
+      }
+      .card {
+        max-width: 30rem; margin: 1.5rem; padding: 2rem;
+        background: #fff; border: 1px solid #e4e4e7; border-radius: 0.75rem;
+        text-align: center;
+      }
+      h1 { font-size: 1.25rem; margin: 0.75rem 0 0.5rem; letter-spacing: -0.01em; }
+      .muted { color: #71717a; font-size: 0.875rem; }
+      .spinner {
+        width: 2rem; height: 2rem; margin: 0 auto; border-radius: 50%;
+        border: 3px solid currentColor; border-right-color: transparent;
+        opacity: 0.4; animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @media (prefers-color-scheme: dark) {
+        body { background: #09090b; color: #fafafa; }
+        .card { background: #18181b; border-color: #27272a; }
+        .muted { color: #a1a1aa; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="spinner" aria-hidden="true"></div>
+      <h1>Danbyte is updating</h1>
+      <p class="muted">
+        A new version is being installed. This usually takes a minute or two —
+        the page will refresh automatically.
+      </p>
+    </div>
+  </body>
+</html>

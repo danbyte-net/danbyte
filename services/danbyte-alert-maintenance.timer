@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Danbyte alert maintenance every minute
+
+[Timer]
+OnCalendar=*:0/1
+OnBootSec=75
+Persistent=true
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target

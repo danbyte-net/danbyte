@@ -1,0 +1,33 @@
+[Unit]
+Description=Danbyte RQ worker pool (default, high, low queues)
+After=network.target
+Wants=danbyte-infra.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+# A *pool* of workers (not a single rqworker) so sharded jobs — monitoring
+# sweeps and the discovery shard fan-out — actually run in parallel. With one
+# worker a 33-shard /16 discovery would still drain one shard at a time.
+# Override the size with `Environment=RQ_WORKERS=N` (or a drop-in).
+Environment=RQ_WORKERS=8
+ExecStart=%h/danbyte/.venv/bin/python manage.py rqworker-pool default high low --num-workers ${RQ_WORKERS}
+Restart=on-failure
+RestartSec=3
+# Warm shutdown: SIGINT tells RQ to finish the current job and exit cleanly
+# (SIGTERM was being ignored, so systemd waited the full default 90s stop-timeout
+# on every restart/upgrade). Cap the wait so an upgrade restart is quick — any
+# job still running at the cap is SIGKILLed and re-queued (monitoring jobs are
+# idempotent and rescheduled).
+KillSignal=SIGINT
+TimeoutStopSec=15
+# Each worker's ICMP sweep opens up to MONITORING_SWEEP_CONCURRENCY sockets, so
+# the pool can hold RQ_WORKERS × that many at once. Raise the fd ceiling so
+# large prefixes (a /15 is ~131k hosts, sharded) don't hit EMFILE.
+LimitNOFILE=65535
+
+# Logs: journalctl --user -fu danbyte-workers
+
+[Install]
+WantedBy=default.target

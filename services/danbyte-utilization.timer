@@ -1,0 +1,11 @@
+[Unit]
+Description=Evaluate Danbyte prefix utilization every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+OnBootSec=90
+Persistent=true
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

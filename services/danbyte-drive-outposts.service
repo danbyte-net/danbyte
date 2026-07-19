@@ -1,0 +1,13 @@
+[Unit]
+Description=Danbyte — drive SSH-transport Outposts (run their checks over SSH)
+After=network.target
+Wants=danbyte-infra.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/danbyte/.venv/bin/python manage.py drive_outposts
+
+# Triggered every minute by danbyte-drive-outposts.timer.
+# Logs: journalctl --user -fu danbyte-drive-outposts

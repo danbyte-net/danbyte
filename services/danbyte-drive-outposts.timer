@@ -1,0 +1,13 @@
+[Unit]
+Description=Drive the SSH-transport Danbyte Outposts every minute
+
+[Timer]
+# Minute-resolution beat: for SSH engines (Danbyte dials in), claim due checks,
+# run them over SSH, and ingest results. HTTPS-pull Outposts drive themselves.
+OnCalendar=*:0/1
+OnBootSec=45
+Persistent=true
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,139 @@
+# ───────────────────────────────────────────────────────────────────────────
+# Danbyte — PRODUCTION single-port (443) reverse proxy.
+#
+# Install with:
+#   make proxy-install NGINX_TMPL=deploy/nginx/danbyte.prod.conf.template \
+#                      PROXY_HOST=danbyte.example.com
+# (use a real CA cert in production rather than the self-signed default).
+#
+# Topology (vs the dev template):
+#     https://@@SERVER_NAME@@/          → built SSR frontend  (:3000, vite preview)
+#     https://@@SERVER_NAME@@/api/      → gunicorn WSGI        (:8000, danbyte-web)
+#     https://@@SERVER_NAME@@/admin/    → gunicorn WSGI        (:8000)
+#     https://@@SERVER_NAME@@/static/   → STATIC_ROOT on disk  (collectstatic)
+#     https://@@SERVER_NAME@@/ws/        → daphne ASGI          (:8002, danbyte-ws)
+#     https://@@SERVER_NAME@@/docs/     → Zensical docs        (:8001, danbyte-docs)
+# ───────────────────────────────────────────────────────────────────────────
+
+map $http_upgrade $danbyte_conn_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+# Plain HTTP → redirect to HTTPS.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name @@SERVER_NAME@@;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name @@SERVER_NAME@@;
+
+    ssl_certificate     @@CERT@@;
+    ssl_certificate_key @@KEY@@;
+
+    # Don't advertise the nginx version.
+    server_tokens off;
+
+    # ── Security headers ──────────────────────────────────────────────────
+    # Set at the proxy so they apply to EVERY upstream uniformly (SPA on :3000,
+    # API/admin on :8000, static, docs) — the node SSR server sets none of its
+    # own. `always` so they're emitted on error responses too. Locations that
+    # declare their own add_header (the maintenance page) intentionally opt out.
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "same-origin" always;
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=()" always;
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+    add_header Cross-Origin-Resource-Policy "same-origin" always;
+    # CSP is ENFORCED. The SPA loads only same-origin bundled assets (verified:
+    # no external scripts/styles/fonts, no eval, no web workers; the WebSocket is
+    # same-origin so connect-src 'self' covers it). 'unsafe-inline' covers the
+    # SSR hydration + chart <style> injection — the remaining hardening step is a
+    # nonce-based script-src to drop 'unsafe-inline' (needs SSR nonce plumbing).
+    # img-src additionally allows tile.openstreetmap.org — the Site map's
+    # default raster tiles. If you configure a custom tile server in
+    # Settings → Deployment → Map tiles, add its origin here too.
+    # report-uri feeds /api/csp-report/ so any real-browser violation is logged
+    # (danbyte.csp) rather than silently breaking — watch it before tightening.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org https://server.arcgisonline.com; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; report-uri /api/csp-report/" always;
+
+    client_max_body_size 512m;
+
+    # ── Django static (admin + DRF browsable API), served straight from disk
+    #    after `make collectstatic`. gunicorn does NOT serve static with DEBUG off.
+    location /static/ {
+        alias @@STATIC_ROOT@@/;
+        access_log off;
+        expires 7d;
+    }
+
+    # ── Uploaded media (device-type images, …), straight from MEDIA_ROOT.
+    location /media/ {
+        alias @@MEDIA_ROOT@@/;
+        access_log off;
+        expires 7d;
+    }
+
+    # ── Documentation (Zensical, :8001).
+    location /docs/ {
+        proxy_pass http://127.0.0.1:8001/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ── REST API + admin → gunicorn WSGI (:8000).
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location /admin/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ── Presence WebSocket → daphne ASGI (:8002). Kept off the HTTP path.
+    location /ws/ {
+        proxy_pass http://127.0.0.1:8002;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $danbyte_conn_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+    }
+
+    # ── Built SSR frontend (:3000, danbyte-frontend-prod).
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $danbyte_conn_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ── "Danbyte is updating" page — served instead of a raw 502 when the
+    #    backend is down (e.g. during an in-app upgrade restart).
+    error_page 502 503 504 @danbyte_maintenance;
+    location @danbyte_maintenance {
+        root @@MAINTENANCE_ROOT@@;
+        rewrite ^ /maintenance.html break;
+        internal;
+        add_header Retry-After 30 always;
+    }
+}

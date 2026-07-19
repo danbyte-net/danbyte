@@ -1,0 +1,28 @@
+[Unit]
+Description=Danbyte Django backend (dev runserver, port 8000)
+After=network.target
+Wants=danbyte-infra.service
+# Don't let repeated reloader crashes during editing trip the start-limit and
+# leave the dev server permanently down (the recurring-502 cause).
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+Environment=ALLOWED_HOSTS=localhost,127.0.0.1,crosk-main-10-37.netbird.cloud,100.92.10.37,192.168.0.202,87.52.105.142
+Environment=CSRF_TRUSTED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,https://87.52.105.142,http://87.52.105.142,https://87.52.105.142:8443
+Environment=DB_NAME=danbyte
+Environment=DB_USER=danbyte
+Environment=DB_PASSWORD=danbyte
+Environment=DB_HOST=127.0.0.1
+Environment=DB_PORT=5432
+ExecStart=%h/danbyte/.venv/bin/python manage.py runserver 0.0.0.0:8000
+Restart=always
+RestartSec=2
+
+# Will fail until `make migrate` has been run against a live Postgres.
+# Logs: journalctl --user -fu danbyte-backend
+
+[Install]
+WantedBy=default.target

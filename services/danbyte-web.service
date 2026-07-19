@@ -1,0 +1,24 @@
+[Unit]
+# Production HTTP: gunicorn serving the WSGI app on 127.0.0.1:8000, behind
+# nginx. Use this INSTEAD of danbyte-backend (the dev runserver) in production.
+# WebSockets are served by danbyte-ws (daphne), not here.
+Description=Danbyte web (gunicorn WSGI, 127.0.0.1:8000)
+After=network.target
+Wants=danbyte-infra.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+# Config (DB creds, DJANGO_SECRET_KEY, DEBUG=False, ALLOWED_HOSTS, …) is read
+# from %h/danbyte/.env via settings' load_dotenv() — keep secrets out of the unit.
+ExecStart=%h/danbyte/.venv/bin/gunicorn danbyte.wsgi:application \
+    --config %h/danbyte/deploy/gunicorn.conf.py
+Restart=always
+RestartSec=2
+
+# Logs: journalctl --user -fu danbyte-web
+
+[Install]
+WantedBy=default.target

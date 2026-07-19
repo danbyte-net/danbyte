@@ -1,0 +1,16 @@
+[Unit]
+Description=Danbyte design mockup server (static HTML, port 8080)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/danbyte/design
+ExecStart=/usr/bin/python3 -m http.server 8080 --bind 127.0.0.1
+Restart=on-failure
+RestartSec=2
+
+# Open with: http://localhost:8080/index.html
+# Logs: journalctl --user -fu danbyte-mockups
+
+[Install]
+WantedBy=default.target
