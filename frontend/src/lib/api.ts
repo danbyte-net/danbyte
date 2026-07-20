@@ -3265,6 +3265,19 @@ export interface SystemUpgradeStatus {
   error?: string
 }
 
+/** GET /api/system/info — instant, network-free runtime + version facts. */
+export interface SystemInfo {
+  version: string
+  commit: string
+  tag: string
+  git_install: boolean
+  python: string
+  django: string
+  postgres: string
+  redis: string
+  platform: string
+}
+
 /** GET /api/system/updates — current version + the release repo's versions. */
 export interface SystemUpdates {
   current: { version: string; commit: string }

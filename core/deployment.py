@@ -418,6 +418,20 @@ def health(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+def system_info(request):
+    """Instant, network-free runtime info (version + Python/Django/PostgreSQL/
+    Redis) for the Updates page. Deliberately separate from ``system_updates``
+    so the version + environment always render immediately, even when the
+    release-repo check is slow, failing, or disabled (airgapped)."""
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    from .version import system_info as _system_info
+
+    return Response(_system_info())
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def system_updates(request):
     """Current version + the release repo's versions (with changelog), and
     whether a newer one exists. Read-only; ``users.manage`` only."""

@@ -94,14 +94,22 @@ PYEOF
   # Don't rely on a pipe's exit status (gzip masks pg_dump's). Dump to a temp
   # file, check pg_dump succeeded AND produced a non-trivial file, THEN gzip.
   DUMP_TMP="$BACKUP_DIR/.pre-$VERSION.sql.tmp"
-  if pg_dump -h "${PGHOST:-localhost}" -p "${PGPORT:-5432}" \
-       -U "${PGUSER:-}" "${PGDB:-}" > "$DUMP_TMP" 2>/dev/null \
+  DUMP_ERR="$BACKUP_DIR/.pre-$VERSION.err"
+  # -w: never prompt for a password. Detached (no tty), a prompt would block
+  # forever — the classic "stuck on Backup…". `timeout` bounds a wedged
+  # connection too. Capture stderr so the real reason reaches the UI.
+  [ -n "${PGPASSWORD:-}" ] || PG_NOPW="-w"
+  if command -v timeout >/dev/null 2>&1; then DUMP_TIMEOUT="timeout 900"; else DUMP_TIMEOUT=""; fi
+  if $DUMP_TIMEOUT pg_dump ${PG_NOPW:-} -h "${PGHOST:-localhost}" -p "${PGPORT:-5432}" \
+       -U "${PGUSER:-}" "${PGDB:-}" > "$DUMP_TMP" 2>"$DUMP_ERR" \
      && [ -s "$DUMP_TMP" ]; then
     gzip -c "$DUMP_TMP" > "$BACKUP_FILE"
-    rm -f "$DUMP_TMP"
+    rm -f "$DUMP_TMP" "$DUMP_ERR"
   else
-    rm -f "$DUMP_TMP"
-    fail backup "db backup failed (pg_dump errored or produced an empty dump) — aborting before any migration"
+    reason="$(tail -c 300 "$DUMP_ERR" 2>/dev/null | tr '\n' ' ')"
+    rm -f "$DUMP_TMP" "$DUMP_ERR"
+    [ -n "$reason" ] || reason="pg_dump errored or produced an empty dump (timed out after 900s, or auth/connection failed)"
+    fail backup "db backup failed — aborting before any migration: $reason"
   fi
 else
   echo "upgrade: pg_dump not found — skipping db backup" >&2

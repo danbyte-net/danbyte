@@ -382,6 +382,7 @@ urlpatterns = [
          name="my-default-prefix"),
     # In-app updates — current version + available releases (users.manage).
     path("health/", deployment.health, name="health"),
+    path("system/info/", deployment.system_info, name="system-info"),
     path("system/updates/", deployment.system_updates, name="system-updates"),
     path("system/upgrade/", upgrade.system_upgrade, name="system-upgrade"),
     path("system/upgrade/upload/", upgrade.system_upgrade_upload,

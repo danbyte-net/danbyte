@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type {
   DeploymentSettings,
+  SystemInfo,
   SystemUpdates,
   SystemUpgradeStatus,
 } from "@/lib/api"
@@ -31,6 +32,13 @@ function UpdatesSettingsPage() {
   const { canManageDeployment: canManage, isLoading } = useMe()
   const qc = useQueryClient()
 
+  // Instant, network-free: version + environment. Renders immediately even
+  // when the release-repo check below is slow/failing/disabled (airgapped).
+  const info = useQuery({
+    queryKey: ["system-info"],
+    queryFn: () => api<SystemInfo>("/api/system/info/"),
+    enabled: canManage,
+  })
   const updates = useQuery({
     queryKey: ["system-updates"],
     queryFn: () => api<SystemUpdates>("/api/system/updates/"),
@@ -135,13 +143,14 @@ function UpdatesSettingsPage() {
         to view updates.
       </p>
     )
-  if (updates.isError) return <QueryError error={updates.error} />
+  if (info.isError) return <QueryError error={info.error} />
 
   const d = updates.data
+  const sys = info.data
 
   return (
     <div className="max-w-5xl space-y-8">
-      {/* Current version */}
+      {/* Current version — driven by the instant, network-free info endpoint. */}
       <section>
         <div className="flex items-center gap-3">
           <h2 className="text-lg font-semibold tracking-tight">Updates</h2>
@@ -150,7 +159,8 @@ function UpdatesSettingsPage() {
               Update available
             </Badge>
           ) : (
-            d && (
+            d &&
+            !d.error && (
               <Badge variant="secondary" className="text-[11px]">
                 Up to date
               </Badge>
@@ -159,18 +169,48 @@ function UpdatesSettingsPage() {
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
           Running{" "}
-          <span className="font-mono">v{d?.current.version ?? "—"}</span>
-          {d?.current.commit && (
-            <span className="font-mono text-xs"> ({d.current.commit})</span>
+          <span className="font-mono">v{sys?.version ?? "…"}</span>
+          {sys?.commit && (
+            <span className="font-mono text-xs"> ({sys.commit})</span>
           )}
           . Releases are read from{" "}
-          <span className="font-mono text-xs">{d?.repo_url}</span>.
+          <span className="font-mono text-xs">
+            {d?.repo_url ?? settings.data?.release_repo_url ?? "…"}
+          </span>
+          .
         </p>
-        {d?.error && (
-          <p className="mt-1 text-[13px] text-destructive">
-            Couldn’t reach the repo: {d.error}
+        {settings.data?.disable_update_check ? (
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            Airgapped mode is on — the release repo is never contacted. Upgrade
+            by uploading a bundle below.
           </p>
+        ) : (
+          d?.error && (
+            <p className="mt-1 text-[13px] text-destructive">
+              Couldn’t reach the repo: {d.error}
+            </p>
+          )
         )}
+
+        {/* System info — Postgres/Django/etc, loads instantly. */}
+        <dl className="mt-4 grid max-w-2xl grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 rounded-lg border border-border p-4 text-[13px]">
+          {(
+            [
+              ["Danbyte", sys ? `v${sys.version}` : "…"],
+              ["Commit", sys?.commit || (sys ? "not a git install" : "…")],
+              ["Python", sys?.python || "…"],
+              ["Django", sys?.django || "…"],
+              ["PostgreSQL", sys?.postgres || "—"],
+              ["Redis", sys?.redis || "—"],
+              ["Platform", sys?.platform || "…"],
+            ] as const
+          ).map(([label, value]) => (
+            <div key={label} className="contents">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="font-mono text-xs">{value}</dd>
+            </div>
+          ))}
+        </dl>
       </section>
 
       {/* Release repo config */}

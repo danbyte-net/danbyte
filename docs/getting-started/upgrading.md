@@ -17,6 +17,14 @@ current `/opt` layout.
 
 ## Upgrade to a new version
 
+!!! info "The Updates page loads instantly"
+    **Settings → Updates** shows the running version and an environment table
+    (Python, Django, PostgreSQL, Redis, platform) from a local, network-free
+    check — so it renders immediately even on an airgapped or offline box. The
+    release-repo check (the list of available versions) runs separately; if it's
+    slow, failing, or disabled, the version and environment still show right
+    away.
+
 === "In-app (recommended)"
 
     **Settings → Updates → Upgrade.** One click checks out the new release,

@@ -39,6 +39,51 @@ def system_version() -> dict:
     return {"version": version, "commit": git_commit(), "tag": tag}
 
 
+def _postgres_version() -> str:
+    """PostgreSQL server version (e.g. "16.2"), or "" if unavailable."""
+    try:
+        from django.db import connection
+
+        with connection.cursor() as cur:
+            cur.execute("SHOW server_version")
+            return ((cur.fetchone() or [""])[0] or "").split()[0]
+    except Exception:  # noqa: BLE001 — best-effort, never fatal
+        return ""
+
+
+def _redis_version() -> str:
+    """Redis server version behind the RQ/cache connection, or "" if down."""
+    try:
+        import django_rq
+
+        conn = django_rq.get_connection("default")
+        return str(conn.info("server").get("redis_version", "") or "")
+    except Exception:  # noqa: BLE001 — best-effort, never fatal
+        return ""
+
+
+def system_info() -> dict:
+    """Local, network-free runtime facts for the Updates/About page.
+
+    Never contacts the release repo, so it renders **instantly** — even on an
+    airgapped or offline install where the release check times out. Pairs the
+    running version with the component versions operators ask for when
+    diagnosing (Python, Django, PostgreSQL, Redis)."""
+    import platform
+
+    import django
+
+    return {
+        **system_version(),  # version, commit, tag
+        "git_install": bool(git_commit()),
+        "python": platform.python_version(),
+        "django": django.get_version(),
+        "postgres": _postgres_version(),
+        "redis": _redis_version(),
+        "platform": platform.platform(terse=True),
+    }
+
+
 def _norm(tag: str) -> tuple:
     """A comparable tuple for `vX.Y.Z` / `X.Y.Z` (non-numeric parts ignored)."""
     parts = (tag or "").lstrip("vV").split("-")[0].split(".")

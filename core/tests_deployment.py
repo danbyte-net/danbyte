@@ -733,6 +733,36 @@ class SystemUpdatesAirgappedTests(APITestCase):
         lr.assert_not_called()
 
 
+class SystemInfoTests(APITestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser(
+            "admin", "admin@acme.com", "pw"
+        )
+
+    def test_info_is_instant_and_never_fetches_the_repo(self):
+        # The info endpoint must render version + environment WITHOUT ever
+        # contacting the release repo — that's what makes the version load
+        # instantly even when the repo check is slow/failing/airgapped.
+        from unittest.mock import patch
+
+        self.client.force_login(self.admin)
+        with patch("core.github.list_releases") as lr:
+            r = self.client.get("/api/system/info/")
+        self.assertEqual(r.status_code, 200, r.content)
+        d = r.json()
+        for key in ("version", "python", "django", "postgres"):
+            self.assertIn(key, d)
+        self.assertTrue(d["python"])
+        self.assertTrue(d["django"])
+        lr.assert_not_called()
+
+    def test_info_requires_manage(self):
+        user = get_user_model().objects.create_user("plain", password="pw")
+        self.client.force_login(user)
+        r = self.client.get("/api/system/info/")
+        self.assertEqual(r.status_code, 403)
+
+
 class HealthApiTests(APITestCase):
     def test_health_is_public_and_reports_version(self):
         # No auth — a load balancer / install-smoke hits it anonymously.
