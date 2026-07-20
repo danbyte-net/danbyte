@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Cable as CableIcon, Pencil, Trash2 } from "lucide-react"
+import { Cable as CableIcon, Pencil, Trash2, Workflow } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api, type Interface } from "@/lib/api"
@@ -114,6 +114,19 @@ function Body({ iface: i }: { iface: Interface }) {
                 <Badge variant="secondary">Disabled</Badge>
               )}
               {i.virtual && <Badge variant="secondary">Virtual</Badge>}
+              {i.tunnel_terminations.map((tt) => (
+                <Link
+                  key={tt.id}
+                  to="/tunnels/$id"
+                  params={{ id: tt.tunnel.id }}
+                  title={`${tt.role_display} termination on tunnel ${tt.tunnel.name}`}
+                >
+                  <Badge variant="secondary" className="gap-1 hover:bg-muted">
+                    <Workflow className="h-3 w-3" />
+                    {tt.tunnel.name}
+                  </Badge>
+                </Link>
+              ))}
             </div>
             {i.tags.length > 0 && (
               <div className="mt-2">
@@ -422,6 +435,30 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
       ) : (
         dash
       ),
+    },
+    {
+      label: "Tunnels",
+      value:
+        i.tunnel_terminations.length > 0 ? (
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {i.tunnel_terminations.map((tt) => (
+              <span key={tt.id} className="inline-flex items-center gap-1">
+                <Link
+                  to="/tunnels/$id"
+                  params={{ id: tt.tunnel.id }}
+                  className="text-[13px] text-primary hover:underline"
+                >
+                  {tt.tunnel.name}
+                </Link>
+                <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+                  {tt.role_display}
+                </Badge>
+              </span>
+            ))}
+          </span>
+        ) : (
+          dash
+        ),
     },
     {
       label: "Sub-interfaces",

@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
-import { useCallback, useState } from "react"
+import { lazy, Suspense, useCallback, useState } from "react"
 import { toast } from "sonner"
 
 import { api, type Tunnel, type TunnelTermination } from "@/lib/api"
@@ -38,6 +38,13 @@ import { CustomFieldValues } from "@/components/custom-field-display"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
+// Lazy like the topology canvas — React Flow stays out of the main bundle.
+const TunnelMap = lazy(() =>
+  import("@/components/tunnels/tunnel-map").then((m) => ({
+    default: m.TunnelMap,
+  }))
+)
+
 export const Route = createFileRoute("/tunnels/$id")({
   component: TunnelDetail,
 })
@@ -62,7 +69,7 @@ function TunnelDetail() {
 
 function Body({ tunnel: t }: { tunnel: Tunnel }) {
   const [tab, setTab] = useState<
-    "overview" | "terminations" | "journal" | "history"
+    "overview" | "map" | "terminations" | "journal" | "history"
   >("overview")
   const nav = useNavigate()
   const { canDo } = useMe()
@@ -145,6 +152,7 @@ function Body({ tunnel: t }: { tunnel: Tunnel }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
+        { value: "map", label: "Map" },
         {
           value: "terminations",
           label: "Terminations",
@@ -158,6 +166,15 @@ function Body({ tunnel: t }: { tunnel: Tunnel }) {
     >
       <DetailTab value="overview">
         <TunnelOverview tunnel={t} />
+      </DetailTab>
+      <DetailTab value="map">
+        <Suspense
+          fallback={
+            <div className="h-96 animate-pulse rounded-lg bg-muted/30" />
+          }
+        >
+          <TunnelMap tunnel={t} />
+        </Suspense>
       </DetailTab>
       <DetailTab value="terminations">
         <TerminationsTab tunnel={t} canEdit={canDo("tunnel", "change")} />

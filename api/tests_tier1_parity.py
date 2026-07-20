@@ -117,6 +117,43 @@ class TunnelTerminationTests(_TenantAPITestCase):
         }, format="json")
         self.assertEqual(r.status_code, 400)
 
+    def test_interface_exposes_tunnel_terminations(self):
+        term = TunnelTermination.objects.create(
+            tunnel=self.tunnel, role="hub", interface=self.iface,
+            outside_ip=self.ip,
+        )
+        body = self.client.get(f"/api/interfaces/{self.iface.id}/").json()
+        (tt,) = body["tunnel_terminations"]
+        self.assertEqual(tt["id"], str(term.id))
+        self.assertEqual(tt["role"], "hub")
+        self.assertEqual(tt["role_display"], "Hub")
+        self.assertEqual(tt["tunnel"], {
+            "id": str(self.tunnel.id), "name": "vpn-1",
+        })
+        # The device-scoped interface list carries the field too.
+        rows = self.client.get(
+            f"/api/devices/{self.dev.id}/interfaces/"
+        ).json()["results"]
+        row = next(r for r in rows if r["id"] == str(self.iface.id))
+        self.assertEqual(row["tunnel_terminations"][0]["tunnel"]["name"], "vpn-1")
+
+    def test_interface_without_terminations_returns_empty_list(self):
+        body = self.client.get(f"/api/interfaces/{self.iface.id}/").json()
+        self.assertEqual(body["tunnel_terminations"], [])
+
+    def test_interface_tunnel_terminations_are_tenant_scoped(self):
+        # A stored cross-tenant termination (writes reject these, but never
+        # trust stored relations) must not leak the foreign tunnel.
+        other = Tenant.objects.create(
+            org=self.tenant.org, name="Other", slug="other"
+        )
+        foreign = Tunnel.objects.create(tenant=other, name="foreign-vpn")
+        TunnelTermination.objects.create(
+            tunnel=foreign, role="peer", interface=self.iface
+        )
+        body = self.client.get(f"/api/interfaces/{self.iface.id}/").json()
+        self.assertEqual(body["tunnel_terminations"], [])
+
 
 class ConsolePowerComponentTests(_TenantAPITestCase):
     def setUp(self):

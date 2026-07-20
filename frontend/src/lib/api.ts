@@ -1468,6 +1468,13 @@ export interface Interface {
   cable: CableMini | null
   cable_count: number
   ip_addresses: { id: string; ip_address: string }[]
+  /** VPN tunnel ends this interface terminates (the "in a tunnel" chip). */
+  tunnel_terminations: {
+    id: string
+    role: TunnelTerminationRole
+    role_display: string
+    tunnel: { id: string; name: string }
+  }[]
   /** Virtual / logical interface (sub-interface, LAG, loopback, tunnel). */
   virtual: boolean
   /** The interface this one nests under (sub-interface parent), if any. */

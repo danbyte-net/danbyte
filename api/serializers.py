@@ -1900,6 +1900,7 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     )
 
     ip_addresses = serializers.SerializerMethodField()
+    tunnel_terminations = serializers.SerializerMethodField()
 
     @staticmethod
     def _mini(rel):
@@ -1935,6 +1936,20 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         return [
             {"id": str(ip.id), "ip_address": ip.ip_address}
             for ip in obj.ip_addresses.all()
+        ]
+
+    def get_tunnel_terminations(self, obj):
+        # Tunnel ends this interface terminates — the frontend's "in a tunnel"
+        # indicator. Prefetched via `tunnel_terminations__tunnel` on the
+        # viewset querysets — no N+1. Defensive tenant filter: a termination's
+        # tunnel must live in the interface's own tenant (cross-tenant links
+        # are rejected on write, but never trust stored relations).
+        return [
+            {"id": str(t.id), "role": t.role,
+             "role_display": t.get_role_display(),
+             "tunnel": {"id": str(t.tunnel_id), "name": t.tunnel.name}}
+            for t in obj.tunnel_terminations.all()
+            if t.tunnel.tenant_id == obj.device.tenant_id
         ]
 
     def validate(self, attrs):
@@ -1980,11 +1995,11 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
                   "mode", "mode_display", "vlan", "vlan_id",
                   "tagged_vlans", "tagged_vlan_ids", "vrf", "vrf_id",
                   "tags", "tag_ids",
-                  "cable", "cable_count", "ip_addresses",
+                  "cable", "cable_count", "ip_addresses", "tunnel_terminations",
                   "virtual", "parent", "parent_id", "child_count",
                   "lag", "lag_id", "lag_member_count", "bridge", "bridge_id",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "tunnel_terminations", "created_at", "updated_at"]
 
 
 class InterfaceMiniSerializer(NumIdModelSerializer):

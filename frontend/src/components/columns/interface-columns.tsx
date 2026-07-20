@@ -1,6 +1,6 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
-import { Cable as CableIcon, Pencil, Waypoints } from "lucide-react"
+import { Cable as CableIcon, Pencil, Waypoints, Workflow } from "lucide-react"
 
 import type { Interface } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
@@ -84,6 +84,23 @@ export function buildInterfaceColumns(): ColumnDef<NestedInterface>[] {
                 mgmt
               </Badge>
             )}
+            {row.original.tunnel_terminations.map((tt) => (
+              <Link
+                key={tt.id}
+                to="/tunnels/$id"
+                params={{ id: tt.tunnel.id }}
+                title={`${tt.role_display} termination on tunnel ${tt.tunnel.name}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Badge
+                  variant="secondary"
+                  className="h-4 gap-1 px-1.5 text-[10px] hover:bg-muted"
+                >
+                  <Workflow className="h-2.5 w-2.5" />
+                  {tt.tunnel.name}
+                </Badge>
+              </Link>
+            ))}
             {row.original.lag && (
               <span className="text-[11px] text-muted-foreground">
                 · LAG {row.original.lag.name}
