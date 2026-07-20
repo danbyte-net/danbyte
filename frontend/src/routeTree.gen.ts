@@ -110,6 +110,7 @@ import { Route as PrefixesIndexRouteImport } from './routes/prefixes.index'
 import { Route as PowerPanelsIndexRouteImport } from './routes/power-panels.index'
 import { Route as PowerFeedsIndexRouteImport } from './routes/power-feeds.index'
 import { Route as PlatformsIndexRouteImport } from './routes/platforms.index'
+import { Route as PlatformGroupsIndexRouteImport } from './routes/platform-groups.index'
 import { Route as PermissionsIndexRouteImport } from './routes/permissions.index'
 import { Route as ModuleTypesIndexRouteImport } from './routes/module-types.index'
 import { Route as ManufacturersIndexRouteImport } from './routes/manufacturers.index'
@@ -209,6 +210,8 @@ import { Route as PowerPanelsNewRouteImport } from './routes/power-panels.new'
 import { Route as PowerFeedsNewRouteImport } from './routes/power-feeds.new'
 import { Route as PlatformsNewRouteImport } from './routes/platforms.new'
 import { Route as PlatformsIdRouteImport } from './routes/platforms.$id'
+import { Route as PlatformGroupsNewRouteImport } from './routes/platform-groups.new'
+import { Route as PlatformGroupsIdRouteImport } from './routes/platform-groups.$id'
 import { Route as PermissionsNewRouteImport } from './routes/permissions.new'
 import { Route as ModuleTypesNewRouteImport } from './routes/module-types.new'
 import { Route as ModuleTypesIdRouteImport } from './routes/module-types.$id'
@@ -304,6 +307,7 @@ import { Route as PrefixesIdEditRouteImport } from './routes/prefixes.$id_.edit'
 import { Route as PowerPanelsIdEditRouteImport } from './routes/power-panels.$id_.edit'
 import { Route as PowerFeedsIdEditRouteImport } from './routes/power-feeds.$id_.edit'
 import { Route as PlatformsIdEditRouteImport } from './routes/platforms.$id_.edit'
+import { Route as PlatformGroupsIdEditRouteImport } from './routes/platform-groups.$id_.edit'
 import { Route as PermissionsIdEditRouteImport } from './routes/permissions.$id_.edit'
 import { Route as ModuleTypesIdEditRouteImport } from './routes/module-types.$id_.edit'
 import { Route as ManufacturersIdEditRouteImport } from './routes/manufacturers.$id_.edit'
@@ -319,6 +323,7 @@ import { Route as FloorTileTypesIdEditRouteImport } from './routes/floor-tile-ty
 import { Route as FhrpGroupsIdEditRouteImport } from './routes/fhrp-groups.$id_.edit'
 import { Route as ExportTemplatesIdEditRouteImport } from './routes/export-templates.$id_.edit'
 import { Route as DevicesIdEditRouteImport } from './routes/devices.$id_.edit'
+import { Route as DevicesIdComplianceRouteImport } from './routes/devices.$id_.compliance'
 import { Route as DeviceTypesIdEditRouteImport } from './routes/device-types.$id_.edit'
 import { Route as DeviceRolesIdEditRouteImport } from './routes/device-roles.$id_.edit'
 import { Route as CustomFieldsIdEditRouteImport } from './routes/custom-fields.$id_.edit'
@@ -845,6 +850,11 @@ const PlatformsIndexRoute = PlatformsIndexRouteImport.update({
   path: '/platforms/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlatformGroupsIndexRoute = PlatformGroupsIndexRouteImport.update({
+  id: '/platform-groups/',
+  path: '/platform-groups/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PermissionsIndexRoute = PermissionsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -1340,6 +1350,16 @@ const PlatformsIdRoute = PlatformsIdRouteImport.update({
   path: '/platforms/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlatformGroupsNewRoute = PlatformGroupsNewRouteImport.update({
+  id: '/platform-groups/new',
+  path: '/platform-groups/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlatformGroupsIdRoute = PlatformGroupsIdRouteImport.update({
+  id: '/platform-groups/$id',
+  path: '/platform-groups/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PermissionsNewRoute = PermissionsNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -1815,6 +1835,11 @@ const PlatformsIdEditRoute = PlatformsIdEditRouteImport.update({
   path: '/platforms/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlatformGroupsIdEditRoute = PlatformGroupsIdEditRouteImport.update({
+  id: '/platform-groups/$id_/edit',
+  path: '/platform-groups/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PermissionsIdEditRoute = PermissionsIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
@@ -1888,6 +1913,11 @@ const ExportTemplatesIdEditRoute = ExportTemplatesIdEditRouteImport.update({
 const DevicesIdEditRoute = DevicesIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
+  getParentRoute: () => DevicesRoute,
+} as any)
+const DevicesIdComplianceRoute = DevicesIdComplianceRouteImport.update({
+  id: '/$id_/compliance',
+  path: '/$id/compliance',
   getParentRoute: () => DevicesRoute,
 } as any)
 const DeviceTypesIdEditRoute = DeviceTypesIdEditRouteImport.update({
@@ -2128,6 +2158,8 @@ export interface FileRoutesByFullPath {
   '/module-types/$id': typeof ModuleTypesIdRoute
   '/module-types/new': typeof ModuleTypesNewRoute
   '/permissions/new': typeof PermissionsNewRoute
+  '/platform-groups/$id': typeof PlatformGroupsIdRoute
+  '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
   '/platforms/new': typeof PlatformsNewRoute
   '/power-feeds/new': typeof PowerFeedsNewRoute
@@ -2227,6 +2259,7 @@ export interface FileRoutesByFullPath {
   '/manufacturers/': typeof ManufacturersIndexRoute
   '/module-types/': typeof ModuleTypesIndexRoute
   '/permissions/': typeof PermissionsIndexRoute
+  '/platform-groups/': typeof PlatformGroupsIndexRoute
   '/platforms/': typeof PlatformsIndexRoute
   '/power-feeds/': typeof PowerFeedsIndexRoute
   '/power-panels/': typeof PowerPanelsIndexRoute
@@ -2278,6 +2311,7 @@ export interface FileRoutesByFullPath {
   '/custom-fields/$id/edit': typeof CustomFieldsIdEditRoute
   '/device-roles/$id/edit': typeof DeviceRolesIdEditRoute
   '/device-types/$id/edit': typeof DeviceTypesIdEditRoute
+  '/devices/$id/compliance': typeof DevicesIdComplianceRoute
   '/devices/$id/edit': typeof DevicesIdEditRoute
   '/export-templates/$id/edit': typeof ExportTemplatesIdEditRoute
   '/fhrp-groups/$id/edit': typeof FhrpGroupsIdEditRoute
@@ -2293,6 +2327,7 @@ export interface FileRoutesByFullPath {
   '/manufacturers/$id/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id/edit': typeof ModuleTypesIdEditRoute
   '/permissions/$id/edit': typeof PermissionsIdEditRoute
+  '/platform-groups/$id/edit': typeof PlatformGroupsIdEditRoute
   '/platforms/$id/edit': typeof PlatformsIdEditRoute
   '/power-feeds/$id/edit': typeof PowerFeedsIdEditRoute
   '/power-panels/$id/edit': typeof PowerPanelsIdEditRoute
@@ -2405,6 +2440,8 @@ export interface FileRoutesByTo {
   '/module-types/$id': typeof ModuleTypesIdRoute
   '/module-types/new': typeof ModuleTypesNewRoute
   '/permissions/new': typeof PermissionsNewRoute
+  '/platform-groups/$id': typeof PlatformGroupsIdRoute
+  '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
   '/platforms/new': typeof PlatformsNewRoute
   '/power-feeds/new': typeof PowerFeedsNewRoute
@@ -2504,6 +2541,7 @@ export interface FileRoutesByTo {
   '/manufacturers': typeof ManufacturersIndexRoute
   '/module-types': typeof ModuleTypesIndexRoute
   '/permissions': typeof PermissionsIndexRoute
+  '/platform-groups': typeof PlatformGroupsIndexRoute
   '/platforms': typeof PlatformsIndexRoute
   '/power-feeds': typeof PowerFeedsIndexRoute
   '/power-panels': typeof PowerPanelsIndexRoute
@@ -2555,6 +2593,7 @@ export interface FileRoutesByTo {
   '/custom-fields/$id/edit': typeof CustomFieldsIdEditRoute
   '/device-roles/$id/edit': typeof DeviceRolesIdEditRoute
   '/device-types/$id/edit': typeof DeviceTypesIdEditRoute
+  '/devices/$id/compliance': typeof DevicesIdComplianceRoute
   '/devices/$id/edit': typeof DevicesIdEditRoute
   '/export-templates/$id/edit': typeof ExportTemplatesIdEditRoute
   '/fhrp-groups/$id/edit': typeof FhrpGroupsIdEditRoute
@@ -2570,6 +2609,7 @@ export interface FileRoutesByTo {
   '/manufacturers/$id/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id/edit': typeof ModuleTypesIdEditRoute
   '/permissions/$id/edit': typeof PermissionsIdEditRoute
+  '/platform-groups/$id/edit': typeof PlatformGroupsIdEditRoute
   '/platforms/$id/edit': typeof PlatformsIdEditRoute
   '/power-feeds/$id/edit': typeof PowerFeedsIdEditRoute
   '/power-panels/$id/edit': typeof PowerPanelsIdEditRoute
@@ -2738,6 +2778,8 @@ export interface FileRoutesById {
   '/module-types/$id': typeof ModuleTypesIdRoute
   '/module-types/new': typeof ModuleTypesNewRoute
   '/permissions/new': typeof PermissionsNewRoute
+  '/platform-groups/$id': typeof PlatformGroupsIdRoute
+  '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
   '/platforms/new': typeof PlatformsNewRoute
   '/power-feeds/new': typeof PowerFeedsNewRoute
@@ -2837,6 +2879,7 @@ export interface FileRoutesById {
   '/manufacturers/': typeof ManufacturersIndexRoute
   '/module-types/': typeof ModuleTypesIndexRoute
   '/permissions/': typeof PermissionsIndexRoute
+  '/platform-groups/': typeof PlatformGroupsIndexRoute
   '/platforms/': typeof PlatformsIndexRoute
   '/power-feeds/': typeof PowerFeedsIndexRoute
   '/power-panels/': typeof PowerPanelsIndexRoute
@@ -2888,6 +2931,7 @@ export interface FileRoutesById {
   '/custom-fields/$id_/edit': typeof CustomFieldsIdEditRoute
   '/device-roles/$id_/edit': typeof DeviceRolesIdEditRoute
   '/device-types/$id_/edit': typeof DeviceTypesIdEditRoute
+  '/devices/$id_/compliance': typeof DevicesIdComplianceRoute
   '/devices/$id_/edit': typeof DevicesIdEditRoute
   '/export-templates/$id_/edit': typeof ExportTemplatesIdEditRoute
   '/fhrp-groups/$id_/edit': typeof FhrpGroupsIdEditRoute
@@ -2903,6 +2947,7 @@ export interface FileRoutesById {
   '/manufacturers/$id_/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id_/edit': typeof ModuleTypesIdEditRoute
   '/permissions/$id_/edit': typeof PermissionsIdEditRoute
+  '/platform-groups/$id_/edit': typeof PlatformGroupsIdEditRoute
   '/platforms/$id_/edit': typeof PlatformsIdEditRoute
   '/power-feeds/$id_/edit': typeof PowerFeedsIdEditRoute
   '/power-panels/$id_/edit': typeof PowerPanelsIdEditRoute
@@ -3072,6 +3117,8 @@ export interface FileRouteTypes {
     | '/module-types/$id'
     | '/module-types/new'
     | '/permissions/new'
+    | '/platform-groups/$id'
+    | '/platform-groups/new'
     | '/platforms/$id'
     | '/platforms/new'
     | '/power-feeds/new'
@@ -3171,6 +3218,7 @@ export interface FileRouteTypes {
     | '/manufacturers/'
     | '/module-types/'
     | '/permissions/'
+    | '/platform-groups/'
     | '/platforms/'
     | '/power-feeds/'
     | '/power-panels/'
@@ -3222,6 +3270,7 @@ export interface FileRouteTypes {
     | '/custom-fields/$id/edit'
     | '/device-roles/$id/edit'
     | '/device-types/$id/edit'
+    | '/devices/$id/compliance'
     | '/devices/$id/edit'
     | '/export-templates/$id/edit'
     | '/fhrp-groups/$id/edit'
@@ -3237,6 +3286,7 @@ export interface FileRouteTypes {
     | '/manufacturers/$id/edit'
     | '/module-types/$id/edit'
     | '/permissions/$id/edit'
+    | '/platform-groups/$id/edit'
     | '/platforms/$id/edit'
     | '/power-feeds/$id/edit'
     | '/power-panels/$id/edit'
@@ -3349,6 +3399,8 @@ export interface FileRouteTypes {
     | '/module-types/$id'
     | '/module-types/new'
     | '/permissions/new'
+    | '/platform-groups/$id'
+    | '/platform-groups/new'
     | '/platforms/$id'
     | '/platforms/new'
     | '/power-feeds/new'
@@ -3448,6 +3500,7 @@ export interface FileRouteTypes {
     | '/manufacturers'
     | '/module-types'
     | '/permissions'
+    | '/platform-groups'
     | '/platforms'
     | '/power-feeds'
     | '/power-panels'
@@ -3499,6 +3552,7 @@ export interface FileRouteTypes {
     | '/custom-fields/$id/edit'
     | '/device-roles/$id/edit'
     | '/device-types/$id/edit'
+    | '/devices/$id/compliance'
     | '/devices/$id/edit'
     | '/export-templates/$id/edit'
     | '/fhrp-groups/$id/edit'
@@ -3514,6 +3568,7 @@ export interface FileRouteTypes {
     | '/manufacturers/$id/edit'
     | '/module-types/$id/edit'
     | '/permissions/$id/edit'
+    | '/platform-groups/$id/edit'
     | '/platforms/$id/edit'
     | '/power-feeds/$id/edit'
     | '/power-panels/$id/edit'
@@ -3681,6 +3736,8 @@ export interface FileRouteTypes {
     | '/module-types/$id'
     | '/module-types/new'
     | '/permissions/new'
+    | '/platform-groups/$id'
+    | '/platform-groups/new'
     | '/platforms/$id'
     | '/platforms/new'
     | '/power-feeds/new'
@@ -3780,6 +3837,7 @@ export interface FileRouteTypes {
     | '/manufacturers/'
     | '/module-types/'
     | '/permissions/'
+    | '/platform-groups/'
     | '/platforms/'
     | '/power-feeds/'
     | '/power-panels/'
@@ -3831,6 +3889,7 @@ export interface FileRouteTypes {
     | '/custom-fields/$id_/edit'
     | '/device-roles/$id_/edit'
     | '/device-types/$id_/edit'
+    | '/devices/$id_/compliance'
     | '/devices/$id_/edit'
     | '/export-templates/$id_/edit'
     | '/fhrp-groups/$id_/edit'
@@ -3846,6 +3905,7 @@ export interface FileRouteTypes {
     | '/manufacturers/$id_/edit'
     | '/module-types/$id_/edit'
     | '/permissions/$id_/edit'
+    | '/platform-groups/$id_/edit'
     | '/platforms/$id_/edit'
     | '/power-feeds/$id_/edit'
     | '/power-panels/$id_/edit'
@@ -3965,6 +4025,8 @@ export interface RootRouteChildren {
   IpsBulkEditRoute: typeof IpsBulkEditRoute
   IpsNewRoute: typeof IpsNewRoute
   JobsIdRoute: typeof JobsIdRoute
+  PlatformGroupsIdRoute: typeof PlatformGroupsIdRoute
+  PlatformGroupsNewRoute: typeof PlatformGroupsNewRoute
   PlatformsIdRoute: typeof PlatformsIdRoute
   PlatformsNewRoute: typeof PlatformsNewRoute
   RackRolesIdRoute: typeof RackRolesIdRoute
@@ -3983,6 +4045,7 @@ export interface RootRouteChildren {
   ClustersIndexRoute: typeof ClustersIndexRoute
   DeviceRolesIndexRoute: typeof DeviceRolesIndexRoute
   JobsIndexRoute: typeof JobsIndexRoute
+  PlatformGroupsIndexRoute: typeof PlatformGroupsIndexRoute
   PlatformsIndexRoute: typeof PlatformsIndexRoute
   RackRolesIndexRoute: typeof RackRolesIndexRoute
   RacksIndexRoute: typeof RacksIndexRoute
@@ -3996,6 +4059,7 @@ export interface RootRouteChildren {
   ClustersIdEditRoute: typeof ClustersIdEditRoute
   DeviceRolesIdEditRoute: typeof DeviceRolesIdEditRoute
   IpsIdEditRoute: typeof IpsIdEditRoute
+  PlatformGroupsIdEditRoute: typeof PlatformGroupsIdEditRoute
   PlatformsIdEditRoute: typeof PlatformsIdEditRoute
   RackRolesIdEditRoute: typeof RackRolesIdEditRoute
   RacksIdEditRoute: typeof RacksIdEditRoute
@@ -4713,6 +4777,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlatformsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/platform-groups/': {
+      id: '/platform-groups/'
+      path: '/platform-groups'
+      fullPath: '/platform-groups/'
+      preLoaderRoute: typeof PlatformGroupsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/permissions/': {
       id: '/permissions/'
       path: '/'
@@ -5406,6 +5477,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlatformsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/platform-groups/new': {
+      id: '/platform-groups/new'
+      path: '/platform-groups/new'
+      fullPath: '/platform-groups/new'
+      preLoaderRoute: typeof PlatformGroupsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/platform-groups/$id': {
+      id: '/platform-groups/$id'
+      path: '/platform-groups/$id'
+      fullPath: '/platform-groups/$id'
+      preLoaderRoute: typeof PlatformGroupsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/permissions/new': {
       id: '/permissions/new'
       path: '/new'
@@ -6071,6 +6156,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlatformsIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/platform-groups/$id_/edit': {
+      id: '/platform-groups/$id_/edit'
+      path: '/platform-groups/$id/edit'
+      fullPath: '/platform-groups/$id/edit'
+      preLoaderRoute: typeof PlatformGroupsIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/permissions/$id_/edit': {
       id: '/permissions/$id_/edit'
       path: '/$id/edit'
@@ -6174,6 +6266,13 @@ declare module '@tanstack/react-router' {
       path: '/$id/edit'
       fullPath: '/devices/$id/edit'
       preLoaderRoute: typeof DevicesIdEditRouteImport
+      parentRoute: typeof DevicesRoute
+    }
+    '/devices/$id_/compliance': {
+      id: '/devices/$id_/compliance'
+      path: '/$id/compliance'
+      fullPath: '/devices/$id/compliance'
+      preLoaderRoute: typeof DevicesIdComplianceRouteImport
       parentRoute: typeof DevicesRoute
     }
     '/device-types/$id_/edit': {
@@ -6542,6 +6641,7 @@ interface DevicesRouteChildren {
   DevicesIdRoute: typeof DevicesIdRoute
   DevicesNewRoute: typeof DevicesNewRoute
   DevicesIndexRoute: typeof DevicesIndexRoute
+  DevicesIdComplianceRoute: typeof DevicesIdComplianceRoute
   DevicesIdEditRoute: typeof DevicesIdEditRoute
 }
 
@@ -6549,6 +6649,7 @@ const DevicesRouteChildren: DevicesRouteChildren = {
   DevicesIdRoute: DevicesIdRoute,
   DevicesNewRoute: DevicesNewRoute,
   DevicesIndexRoute: DevicesIndexRoute,
+  DevicesIdComplianceRoute: DevicesIdComplianceRoute,
   DevicesIdEditRoute: DevicesIdEditRoute,
 }
 
@@ -7347,6 +7448,8 @@ const rootRouteChildren: RootRouteChildren = {
   IpsBulkEditRoute: IpsBulkEditRoute,
   IpsNewRoute: IpsNewRoute,
   JobsIdRoute: JobsIdRoute,
+  PlatformGroupsIdRoute: PlatformGroupsIdRoute,
+  PlatformGroupsNewRoute: PlatformGroupsNewRoute,
   PlatformsIdRoute: PlatformsIdRoute,
   PlatformsNewRoute: PlatformsNewRoute,
   RackRolesIdRoute: RackRolesIdRoute,
@@ -7365,6 +7468,7 @@ const rootRouteChildren: RootRouteChildren = {
   ClustersIndexRoute: ClustersIndexRoute,
   DeviceRolesIndexRoute: DeviceRolesIndexRoute,
   JobsIndexRoute: JobsIndexRoute,
+  PlatformGroupsIndexRoute: PlatformGroupsIndexRoute,
   PlatformsIndexRoute: PlatformsIndexRoute,
   RackRolesIndexRoute: RackRolesIndexRoute,
   RacksIndexRoute: RacksIndexRoute,
@@ -7378,6 +7482,7 @@ const rootRouteChildren: RootRouteChildren = {
   ClustersIdEditRoute: ClustersIdEditRoute,
   DeviceRolesIdEditRoute: DeviceRolesIdEditRoute,
   IpsIdEditRoute: IpsIdEditRoute,
+  PlatformGroupsIdEditRoute: PlatformGroupsIdEditRoute,
   PlatformsIdEditRoute: PlatformsIdEditRoute,
   RackRolesIdEditRoute: RackRolesIdEditRoute,
   RacksIdEditRoute: RacksIdEditRoute,
