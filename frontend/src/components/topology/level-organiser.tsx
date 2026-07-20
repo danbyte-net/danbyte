@@ -120,8 +120,13 @@ export function LevelOrganiser({
           <Layers className="h-3.5 w-3.5" /> Levels
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-60 p-2">
-        <div className="mb-1.5 px-1 text-[11px] text-muted-foreground">
+      {/* Long role lists must scroll inside the popover, not overflow the
+          viewport — cap to the available height. */}
+      <PopoverContent
+        align="end"
+        className="flex max-h-[min(70vh,32rem)] w-60 flex-col p-2"
+      >
+        <div className="mb-1.5 shrink-0 px-1 text-[11px] text-muted-foreground">
           Drag roles into tier order. Link two rows to put them on the{" "}
           <span className="font-medium">same level</span>.
         </div>
@@ -139,7 +144,7 @@ export function LevelOrganiser({
               items={ordered}
               strategy={verticalListSortingStrategy}
             >
-              <ul>
+              <ul className="min-h-0 flex-1 overflow-y-auto pr-0.5">
                 {ordered.map((name, i) => {
                   const bonded = i > 0 && bonds.includes(name)
                   return (
@@ -201,7 +206,7 @@ export function LevelOrganiser({
               onChange([])
               onBonds([])
             }}
-            className="mt-2 w-full rounded px-1 py-1 text-left text-[11px] text-muted-foreground hover:text-foreground"
+            className="mt-2 w-full shrink-0 rounded px-1 py-1 text-left text-[11px] text-muted-foreground hover:text-foreground"
           >
             Clear — lay out by structure
           </button>

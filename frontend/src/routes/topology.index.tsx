@@ -10,7 +10,7 @@ import {
   Trash2,
   X,
 } from "lucide-react"
-import { lazy, Suspense, useMemo, useRef, useState } from "react"
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import {
@@ -164,6 +164,34 @@ function clearStoredPositions() {
   }
 }
 
+// Display settings (Levels order/bonds/distances, direction, colour mode,
+// edge routing) for the DEFAULT topology — like the dragged positions above,
+// they must survive a reload. Saved views persist theirs via Save.
+const DISPLAY_KEY = "danbyte-topology-display"
+interface StoredDisplay {
+  colorMode?: EdgeColorMode
+  direction?: "LR" | "TB"
+  roleOrder?: string[]
+  roleBonds?: string[]
+  roleDistance?: Record<string, number>
+  edgeRouting?: "routed" | "straight"
+}
+function readStoredDisplay(): StoredDisplay {
+  try {
+    const raw = localStorage.getItem(DISPLAY_KEY)
+    return raw ? (JSON.parse(raw) as StoredDisplay) : {}
+  } catch {
+    return {}
+  }
+}
+function writeStoredDisplay(d: StoredDisplay) {
+  try {
+    localStorage.setItem(DISPLAY_KEY, JSON.stringify(d))
+  } catch {
+    /* quota / private mode — non-fatal */
+  }
+}
+
 function TopologyPage() {
   const { device: deepLinkDevice } = Route.useSearch()
   const { canDo } = useMe()
@@ -171,17 +199,26 @@ function TopologyPage() {
   const canvas = useRef<CanvasHandle>(null)
 
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
-  const [colorMode, setColorMode] = useState<EdgeColorMode>("cable")
-  const [direction, setDirection] = useState<"LR" | "TB">("LR")
-  const [roleOrder, setRoleOrder] = useState<string[]>([])
+  // Hydrate display settings from the stored default-view display, so Levels /
+  // direction / colours survive a reload (saved views carry their own).
+  const stored = useRef(readStoredDisplay()).current
+  const [colorMode, setColorMode] = useState<EdgeColorMode>(
+    stored.colorMode ?? "cable"
+  )
+  const [direction, setDirection] = useState<"LR" | "TB">(
+    stored.direction ?? "LR"
+  )
+  const [roleOrder, setRoleOrder] = useState<string[]>(stored.roleOrder ?? [])
   // Roles bonded to the level of the role above them — lets several roles share
   // one level (core switches beside routers, say).
-  const [roleBonds, setRoleBonds] = useState<string[]>([])
-  const [roleDistance, setRoleDistance] = useState<Record<string, number>>({})
+  const [roleBonds, setRoleBonds] = useState<string[]>(stored.roleBonds ?? [])
+  const [roleDistance, setRoleDistance] = useState<Record<string, number>>(
+    stored.roleDistance ?? {}
+  )
   // Edge rendering: "routed" bends cables around cards; "straight" is the plain
   // orthogonal (smoothstep) line. A user choice, not tied to layout mode.
   const [edgeRouting, setEdgeRouting] = useState<"routed" | "straight">(
-    "routed"
+    stored.edgeRouting ?? "routed"
   )
   const [search, setSearch] = useState("")
   const [focus, setFocus] = useState<{ id: string; depth: number } | null>(
@@ -204,6 +241,28 @@ function TopologyPage() {
     setViewId("none")
     setPositions(undefined)
   }
+
+  // Persist the DEFAULT view's display settings across reloads. Only while no
+  // saved view is selected — a saved view's settings belong to that view.
+  useEffect(() => {
+    if (viewId !== "none") return
+    writeStoredDisplay({
+      colorMode,
+      direction,
+      roleOrder,
+      roleBonds,
+      roleDistance,
+      edgeRouting,
+    })
+  }, [
+    viewId,
+    colorMode,
+    direction,
+    roleOrder,
+    roleBonds,
+    roleDistance,
+    edgeRouting,
+  ])
 
   // ── Option lists (shared picker caches) ──
   const sites = useQuery({
@@ -635,9 +694,19 @@ function TopologyPage() {
           value={viewId}
           onValueChange={(v) => {
             if (v === "none") {
+              // Back to the default view — restore its stored drag arrangement
+              // AND display settings BEFORE flipping viewId, so the persist
+              // effect re-saves the restored values, not the saved view's.
+              const d = readStoredDisplay()
+              setColorMode(d.colorMode ?? "cable")
+              setDirection(d.direction ?? "LR")
+              setRoleOrder(d.roleOrder ?? [])
+              setRoleBonds(d.roleBonds ?? [])
+              setRoleDistance(d.roleDistance ?? {})
+              setEdgeRouting(d.edgeRouting ?? "routed")
               setViewId("none")
-              // Back to the default view — restore its saved drag arrangement.
               setPositions(readStoredPositions())
+              if (d.roleOrder?.length) setLayoutTick((t) => t + 1)
               return
             }
             const view = views.data?.results.find((x) => x.id === v)

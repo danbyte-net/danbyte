@@ -40,10 +40,23 @@ export type StencilData = TopoNode["data"] & {
 export const CENTER_W = 178
 export const CENTER_H = 46
 const STRIP_H = 20 // top / bottom horizontal strip
-const COL_W = 64 // left / right vertical column
-const CHIP_W = 58 // one port in a horizontal strip
+const COL_W = 64 // left / right vertical column MINIMUM
+const CHIP_W = 58 // one port in a horizontal strip MINIMUM
 const ROW_H = 16 // one port in a vertical column
 export const STENCIL_FOOTER = 14
+
+// Port names render in full (no truncation) — cells size to their text.
+// 9px monospace ≈ 5.5px/char; padding = px-1.5 (12) + dot (4) + gap (4).
+const CHAR_W = 5.5
+const CELL_PAD = 22
+function chipW(name: string): number {
+  return Math.max(CHIP_W, Math.ceil(name.length * CHAR_W) + CELL_PAD)
+}
+function colWFor(ports: FlatPort[]): number {
+  let w = COL_W
+  for (const p of ports) w = Math.max(w, chipW(p.name))
+  return w
+}
 
 const KIND_DOT: Record<TopoPortKind, string> = {
   interface: "bg-zinc-400 dark:bg-zinc-500",
@@ -95,16 +108,24 @@ function bySide(d: StencilData) {
 /** Card w/h from the per-side port counts. Strips size to their own ports,
  * so a device with three uplinks on top and one downlink on bottom gets a
  * wide top strip and a narrow bottom one. */
+/** Sum of the chip widths on a horizontal strip (top/bottom) — each chip sizes
+ * to its own full port name, so the strip is as wide as its labels need. */
+function stripW(ports: FlatPort[]): number {
+  return ports.reduce((sum, p) => sum + chipW(p.name), 0)
+}
+
 export function stencilSize(d: StencilData): { width: number; height: number } {
   const s = bySide(d)
   const hasL = s.L.length > 0
   const hasR = s.R.length > 0
   const hasT = s.T.length > 0
   const hasB = s.B.length > 0
+  const lW = hasL ? colWFor(s.L) : 0
+  const rW = hasR ? colWFor(s.R) : 0
   const width =
-    (hasL ? COL_W : 0) +
-    (hasR ? COL_W : 0) +
-    Math.max(CENTER_W, s.T.length * CHIP_W, s.B.length * CHIP_W)
+    lW +
+    rW +
+    Math.max(CENTER_W, stripW(s.T), stripW(s.B))
   const height =
     (hasT ? STRIP_H : 0) +
     (hasB ? STRIP_H : 0) +
@@ -133,17 +154,22 @@ function PortCell({
   return (
     <div
       className={
-        "relative flex min-w-0 items-center gap-1 px-1.5 " +
-        (vertical ? "" : "flex-1 justify-center")
+        "relative flex items-center gap-1 px-1.5 " +
+        (vertical ? "" : "justify-center")
       }
-      style={vertical ? { height: ROW_H } : { height: STRIP_H }}
+      style={
+        vertical
+          ? { height: ROW_H }
+          : { height: STRIP_H, width: chipW(port.name) }
+      }
     >
       <Handle type="target" id={id} position={POS[side]} className={HANDLE} />
       <Handle type="source" id={id} position={POS[side]} className={HANDLE} />
       <span
         className={`h-1 w-1 shrink-0 rounded-full ${KIND_DOT[port.kind]}`}
       />
-      <span className="truncate font-mono text-[9px] leading-none">
+      {/* Full port name — no truncation; cells are sized to fit it. */}
+      <span className="font-mono text-[9px] leading-none whitespace-nowrap">
         {port.name}
       </span>
     </div>
@@ -168,6 +194,10 @@ export function StencilNode({ data, selected }: NodeProps) {
   const hasT = s.T.length > 0
   const hasB = s.B.length > 0
   const { width } = stencilSize(d)
+  // Side columns size to their widest full port name (matches stencilSize, so
+  // dagre's reserved box and the DOM agree and handles land correctly).
+  const lW = hasL ? colWFor(s.L) : 0
+  const rW = hasR ? colWFor(s.R) : 0
 
   const ring = selected
     ? "border-primary ring-2 ring-primary/30"
@@ -182,7 +212,7 @@ export function StencilNode({ data, selected }: NodeProps) {
       }`}
       style={{
         width,
-        gridTemplateColumns: `${hasL ? COL_W : 0}px minmax(0,1fr) ${hasR ? COL_W : 0}px`,
+        gridTemplateColumns: `${lW}px minmax(0,1fr) ${rW}px`,
         gridTemplateRows: `${hasT ? STRIP_H : 0}px minmax(0,1fr) ${hasB ? STRIP_H : 0}px`,
       }}
     >
