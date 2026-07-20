@@ -17,6 +17,7 @@ import {
 
 import {
   api,
+  type FloorplanPopoverConfig,
   type Paginated,
   type SiteMapConnection,
   type SiteMapDevice,
@@ -292,6 +293,16 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   )
   const canEditAny =
     data.sites.some((s) => s.can_edit) || canDo("device", "change")
+
+  // Shared popover config — the SAME effective floorplan-popover settings the
+  // floor-plan canvas uses, so which linked-device fields show on a device
+  // popover is consistent between the floor plan and the site map.
+  const popoverCfg = useQuery({
+    queryKey: ["floorplan-popover-effective"],
+    queryFn: () => api<FloorplanPopoverConfig>("/api/floorplan-popover/"),
+    staleTime: 10 * 60_000,
+  })
+  const popoverFields = popoverCfg.data?.fields
 
   // Marker palette: user-created tile types + device roles.
   const tileTypes = useQuery({
@@ -1295,6 +1306,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
               {!selectedRoute && selDevice && (
                 <DevicePopover
                   device={selDevice}
+                  fields={popoverFields}
                   cableIds={cablesByDevice.get(selDevice.id) ?? []}
                   onTrace={(ids) => {
                     traceCables(ids)
@@ -1694,26 +1706,33 @@ function SitePopover({
 
 function DevicePopover({
   device: d,
+  fields,
   cableIds,
   onTrace,
   onClose,
 }: {
   device: SiteMapDevice
+  /** Effective floorplan-popover fields (shared with the floor plan). Undefined
+   * while loading → show the defaults; once loaded, honour the admin's config. */
+  fields?: string[]
   cableIds: string[]
   onTrace: (ids: string[]) => void
   onClose: () => void
 }) {
+  // Map the site-map device fields to the shared floorplan-popover vocabulary
+  // (linked_* = the linked device's attributes). Name + type stay as identity.
+  const show = (key: string) => !fields || fields.includes(key)
   return (
     <div className="grid gap-2">
       <PopHeader title={d.name} mono onClose={onClose} />
       <div className="flex flex-wrap items-center gap-1.5">
-        {d.status && (
+        {show("linked_status") && d.status && (
           <ColorBadge
             name={d.status.name}
             color={d.status.color || undefined}
           />
         )}
-        {d.role && (
+        {show("linked_role") && d.role && (
           <ColorBadge name={d.role.name} color={d.role.color || undefined} />
         )}
         {d.device_type && <Badge variant="outline">{d.device_type}</Badge>}
@@ -1725,7 +1744,7 @@ function DevicePopover({
           className="max-h-14 w-full rounded-md border border-border object-contain"
         />
       )}
-      {d.site && (
+      {show("linked_site") && d.site && (
         <div className="text-[12px] text-muted-foreground">
           <Link
             to="/sites/$id"
