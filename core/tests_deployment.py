@@ -763,6 +763,50 @@ class SystemInfoTests(APITestCase):
         self.assertEqual(r.status_code, 403)
 
 
+class UpgradeCancelTests(APITestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser(
+            "admin", "admin@acme.com", "pw"
+        )
+
+    def test_cancel_clears_a_stuck_lock(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        self.client.force_login(self.admin)
+        with tempfile.TemporaryDirectory() as d:
+            lock = Path(d) / ".upgrade.lock"
+            guard = Path(d) / ".upgrade.lock.guard"
+            status = Path(d) / ".upgrade-status.json"
+            bundle = Path(d) / ".upgrade-bundle.tar.gz"
+            # A stale lock from an interrupted detached upgrade whose child
+            # process is long gone (pid can't match anything alive).
+            lock.write_text(json.dumps({
+                "owner": "stale", "phase": "running", "via": "detached",
+                "child_pid": 2 ** 31 - 1,
+            }))
+            status.write_text(json.dumps({"state": "running", "step": "deploy"}))
+            with patch.multiple(
+                "core.upgrade",
+                LOCK_FILE=lock, LOCK_GUARD_FILE=guard,
+                STATUS_FILE=status, BUNDLE_UPLOAD=bundle,
+            ):
+                r = self.client.post("/api/system/upgrade/cancel/")
+            self.assertEqual(r.status_code, 200, r.content)
+            self.assertTrue(r.json()["cleared"])
+            self.assertTrue(r.json()["had_lock"])
+            self.assertFalse(lock.exists())
+            self.assertFalse(status.exists())
+
+    def test_cancel_requires_manage(self):
+        user = get_user_model().objects.create_user("plain", password="pw")
+        self.client.force_login(user)
+        r = self.client.post("/api/system/upgrade/cancel/")
+        self.assertEqual(r.status_code, 403)
+
+
 class HealthApiTests(APITestCase):
     def test_health_is_public_and_reports_version(self):
         # No auth — a load balancer / install-smoke hits it anonymously.

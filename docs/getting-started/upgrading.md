@@ -165,6 +165,30 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
     pipeline's install-smoke uses it to prove the bundle actually serves
     requests.
 
+!!! warning "\"An upgrade is already running\" (stuck lock)"
+
+    If a previous upgrade was interrupted (a killed process, a reboot mid-run),
+    its single-slot lock can be left behind and every new upgrade is refused
+    with **"An upgrade is already running."**
+
+    **Fix from the UI:** **Settings → Updates → Releases → "Clear a stuck
+    upgrade"**. It removes the stale lock only when no upgrade process is
+    genuinely alive (it refuses while a real upgrade is in progress), then you
+    can start a new one.
+
+    Equivalently, `POST /api/system/upgrade/cancel/` (users.manage).
+
+    **Last resort (shell), if the UI itself is down** — as the service user,
+    remove the lock files from the app directory (`<service-home>/danbyte`):
+
+    ```bash
+    APP="$(getent passwd danbyte | cut -d: -f6)/danbyte"
+    # confirm nothing is actually upgrading first:
+    ps -eo pid,cmd | grep -E "danbyte-upgrade|upgrade-bundle" | grep -v grep
+    sudo -u danbyte rm -f "$APP/.upgrade.lock" "$APP/.upgrade.lock.guard" \
+                          "$APP/.upgrade-status.json" "$APP/.upgrade-bundle.tar.gz"
+    ```
+
 ## Which install do I have?
 
 ```bash

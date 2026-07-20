@@ -778,3 +778,60 @@ def system_upgrade_status(request):
     if not _require_manage(request):
         return Response({"detail": "users.manage required."}, status=403)
     return Response(_read_status())
+
+
+def _upgrade_process_alive() -> bool:
+    """True only when the lock names a process that is *verifiably* still alive.
+
+    Used by the cancel action to refuse clearing a genuinely-running upgrade.
+    Unlike ``_lock_is_active`` (which stays True under ambiguity so a second
+    upgrade can't race a maybe-running one), this returns True only on a
+    positive identity match — so a stuck lock left by a dead/interrupted
+    upgrade is correctly reported as not-alive and can be cleared.
+    """
+    lock = _read_lock_unlocked()
+    if lock is None:
+        return False
+    for pid_key, start_key in (
+        ("child_pid", "child_pid_start"),
+        ("owner_pid", "owner_pid_start"),
+    ):
+        pid = lock.get(pid_key)
+        if pid is not None and _pid_matches(pid, lock.get(start_key)) is True:
+            return True
+    if lock.get("via") not in (None, "detached") and _systemd_unit_active() is True:
+        return True
+    return False
+
+
+def _force_clear_upgrade_lock() -> None:
+    """Remove the lock + transient upgrade files regardless of owner. The
+    guarded caller must first confirm no real upgrade process is alive."""
+    with _upgrade_lock_guard():
+        for path in (LOCK_FILE, STATUS_FILE, BUNDLE_UPLOAD):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def system_upgrade_cancel(request):
+    """Clear a STUCK upgrade lock so a new upgrade can start. users.manage only.
+
+    Refuses (409) if an upgrade process is genuinely still alive — otherwise
+    removes the lock + stale status so the next attempt isn't blocked by "An
+    upgrade is already running." (A dead/interrupted upgrade, or a lock left
+    un-expirable by a missing status file, is the case this fixes.)"""
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    if _upgrade_process_alive():
+        return Response(
+            {"detail": "An upgrade is genuinely still running — wait for it to "
+                       "finish or fail before cancelling."},
+            status=409,
+        )
+    had_lock = LOCK_FILE.exists()
+    _force_clear_upgrade_lock()
+    return Response({"cleared": True, "had_lock": had_lock})

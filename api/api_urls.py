@@ -389,6 +389,8 @@ urlpatterns = [
          name="system-upgrade-upload"),
     path("system/upgrade/status/", upgrade.system_upgrade_status,
          name="system-upgrade-status"),
+    path("system/upgrade/cancel/", upgrade.system_upgrade_cancel,
+         name="system-upgrade-cancel"),
     # LDAP / Active Directory (admin, users.manage).
     path("deployment/ldap/", ldap_settings, name="deployment-ldap"),
     path("deployment/ldap/test/", ldap_test, name="deployment-ldap-test"),

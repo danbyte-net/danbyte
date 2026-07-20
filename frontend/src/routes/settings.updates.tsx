@@ -133,6 +133,26 @@ function UpdatesSettingsPage() {
     onSuccess: () => setUpgrading(true),
     onError: (e: unknown) => apiErrorToast(e, "Bundle upload failed"),
   })
+  // Clear a STUCK upgrade lock — for when a previous upgrade was interrupted
+  // and "An upgrade is already running" blocks new ones. The backend refuses
+  // (409) if an upgrade is genuinely still alive, so this is safe to offer.
+  const cancelStuck = useMutation({
+    mutationFn: () =>
+      api<{ cleared: boolean; had_lock: boolean }>(
+        "/api/system/upgrade/cancel/",
+        { method: "POST" },
+      ),
+    onSuccess: (r) => {
+      setUpgrading(false)
+      void qc.invalidateQueries({ queryKey: ["upgrade-status"] })
+      toast.success(
+        r.had_lock
+          ? "Cleared the stuck upgrade — you can start a new one now."
+          : "No upgrade lock was set; nothing to clear.",
+      )
+    },
+    onError: (e: unknown) => apiErrorToast(e, "Couldn’t clear the upgrade"),
+  })
   const st = status.data
 
   if (isLoading) return null
@@ -438,6 +458,22 @@ function UpdatesSettingsPage() {
           Danbyte. Post-migration rollback isn’t automatic — the backup is the
           net.
         </p>
+        <div className="flex items-center gap-3 border-t border-border pt-3">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            disabled={cancelStuck.isPending}
+            onClick={() => cancelStuck.mutate()}
+          >
+            {cancelStuck.isPending ? "Clearing…" : "Clear a stuck upgrade"}
+          </Button>
+          <p className="text-[11px] text-muted-foreground">
+            Use only if a previous upgrade was interrupted and “An upgrade is
+            already running” blocks new ones. It’s refused while an upgrade is
+            genuinely in progress.
+          </p>
+        </div>
       </section>
 
       {/* Confirm before upgrading. */}
