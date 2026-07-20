@@ -2,55 +2,16 @@
 
 from django.db import migrations, models
 
-
-def _backfill_site(apps, schema_editor):
-    """Best-effort: stamp object_site_id on existing rows from their live
-    object. Rows whose object was already deleted stay NULL (their site can't be
-    recovered) — new writes carry the site from the moment this ships."""
-    from django.apps import apps as live_apps
-
-    from auth_api.site_paths import site_path_for
-
-    def resolve(label, oid):
-        try:
-            model = live_apps.get_model(label)
-        except Exception:  # noqa: BLE001
-            return None
-        slug = model._meta.model_name
-        path = site_path_for(slug, None)
-        if not path:
-            return None
-        obj = model._default_manager.filter(pk=oid).first()
-        if obj is None:
-            return None
-        if path == "id":
-            return obj.pk
-        parts = path.split("__")
-        cur = obj
-        for part in parts[:-1]:
-            cur = getattr(cur, part, None)
-            if cur is None:
-                return None
-        return getattr(cur, f"{parts[-1]}_id", None)
-
-    for name in ("ChangeLogEntry", "JournalEntry"):
-        Model = apps.get_model("audit", name)
-        # Cache per (type, id) so a hot object isn't resolved repeatedly.
-        cache: dict = {}
-        batch = []
-        for row in Model.objects.all().iterator(chunk_size=1000):
-            key = (row.object_type, row.object_id)
-            if key not in cache:
-                cache[key] = resolve(row.object_type, row.object_id)
-            sid = cache[key]
-            if sid is not None:
-                row.object_site_id = sid
-                batch.append(row)
-            if len(batch) >= 1000:
-                Model.objects.bulk_update(batch, ["object_site_id"])
-                batch = []
-        if batch:
-            Model.objects.bulk_update(batch, ["object_site_id"])
+# NOTE: this migration originally ran a data-backfill (`_backfill_site`) that
+# called the LIVE ``auth_api.site_paths.site_path_for`` → ``DeploymentSettings
+# .load()``. On an upgrade from an older database that backfill executed a
+# SELECT referencing model columns that a *later* migration adds
+# (``core.disable_update_check``), so — depending on the migration plan order —
+# it crashed with "column core_deploymentsettings.disable_update_check does not
+# exist". The backfill is redundant anyway: ``0007_backfill_audit_site_scope``
+# re-stamps every ``object_site_id IS NULL`` row correctly, using *historical*
+# models (``apps.get_model``) instead of live app code. So this migration now
+# only adds the columns; the backfill lives solely in 0007.
 
 
 class Migration(migrations.Migration):
@@ -70,5 +31,4 @@ class Migration(migrations.Migration):
             name='object_site_id',
             field=models.UUIDField(blank=True, db_index=True, null=True),
         ),
-        migrations.RunPython(_backfill_site, migrations.RunPython.noop),
     ]
