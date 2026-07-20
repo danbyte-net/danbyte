@@ -10,7 +10,7 @@ import {
   FormText,
   FormTextarea,
 } from "@/components/forms"
-import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 
 export interface CustomFieldInputsProps {
   /** Model slug, e.g. "prefix" — must match the field's applies_to. */
@@ -129,11 +129,7 @@ function OneField({
     case "date":
       return (
         <Field label={label} hint={hint}>
-          <Input
-            type="date"
-            value={asString(value)}
-            onChange={(e) => onChange(e.target.value)}
-          />
+          <DatePicker value={asString(value)} onChange={onChange} />
         </Field>
       )
     case "select":

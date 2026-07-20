@@ -22,7 +22,12 @@ export function useUserPrefs() {
         method: "PUT",
         body: JSON.stringify(patch),
       }),
-    onSuccess: (data) => qc.setQueryData(["user-prefs"], data),
+    onSuccess: (data) => {
+      qc.setQueryData(["user-prefs"], data)
+      // /api/me/ carries values RESOLVED from prefs (me.datetime) — refresh it
+      // so formatting picks the change up without a reload.
+      qc.invalidateQueries({ queryKey: ["me"] })
+    },
   })
   return {
     values: q.data?.values ?? {},

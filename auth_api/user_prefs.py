@@ -34,6 +34,14 @@ DEFAULTS: dict[str, Any] = {
     "theme":          "system",    # system | light | dark — initial render.
     "time_format":    "relative",  # relative | absolute — how timestamps show.
 
+    # ─── Date & time display ─────────────────────────────────────────────
+    # "auto" = inherit the tenant default (TenantSettings.override_datetime
+    # or the deployment default — core.effective_settings.effective_datetime).
+    # Anything else is a personal override; resolution in datetime_prefs().
+    "date_format":    "auto",      # auto | a DeploymentSettings.DATE_FORMAT_CHOICES key
+    "time_style":     "auto",      # auto | 24h | 12h
+    "timezone":       "auto",      # auto | IANA tz name (e.g. Europe/Copenhagen)
+
     # ─── Space map ───────────────────────────────────────────────────────
     # Deepest prefix length the subnet map draws, per family. Defaults = the
     # family's natural floor (no extra restriction); a user can make it
@@ -107,6 +115,41 @@ def get_page_size(user, tenant=None) -> int:
     except (TypeError, ValueError):
         return DEFAULTS["page_size"]
     return value if value in PAGE_SIZE_CHOICES else DEFAULTS["page_size"]
+
+
+def datetime_prefs(user, tenant=None) -> dict:
+    """The EFFECTIVE date/time display settings for this user + tenant:
+    ``{"date_format", "time_style", "timezone"}``.
+
+    Resolution per key: the user's pref when it is a *valid* explicit value —
+    "auto" (the default), an unknown format, or a bogus timezone all fall
+    through to the tenant-effective value
+    (:func:`core.effective_settings.effective_datetime_values`, i.e. the
+    tenant's override group or the deployment default). Invalid stored values
+    degrade instead of erroring, matching :func:`get_page_size`.
+    """
+    from zoneinfo import ZoneInfo
+
+    from core.effective_settings import effective_datetime_values
+    from core.models import DeploymentSettings
+
+    out = effective_datetime_values(tenant)
+    date_formats = {key for key, _ in DeploymentSettings.DATE_FORMAT_CHOICES}
+    df = get(user, "date_format", tenant=tenant)
+    if df in date_formats:
+        out["date_format"] = df
+    style = get(user, "time_style", tenant=tenant)
+    if style in {"24h", "12h"}:
+        out["time_style"] = style
+    tz = get(user, "timezone", tenant=tenant)
+    if isinstance(tz, str) and tz and tz != "auto":
+        try:
+            ZoneInfo(tz)
+        except (ValueError, KeyError, OSError):
+            pass
+        else:
+            out["timezone"] = tz
+    return out
 
 
 def set_user(user, key: str, value: Any) -> None:

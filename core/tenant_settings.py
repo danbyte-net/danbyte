@@ -10,6 +10,7 @@ Fernet-encrypted; reads expose ``*_set`` booleans. LDAP overrides live in
 """
 from __future__ import annotations
 
+from django.conf import settings
 from django.core import mail
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
@@ -57,6 +58,11 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
             "allow_site_settings",
             # sharing & delegation
             "allow_site_editor_delegation",
+            # date & time display (its own override group)
+            "override_datetime",
+            "date_format",
+            "time_style",
+            "display_timezone",
             "updated_at",
         ]
         read_only_fields = ["updated_at"]
@@ -75,6 +81,11 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
         from core.deployment import clean_popover_overrides
 
         return clean_popover_overrides(value)
+
+    def validate_display_timezone(self, value):
+        from core.deployment import clean_display_timezone
+
+        return clean_display_timezone(value)
 
     def update(self, instance, validated_data):
         pw = validated_data.pop("smtp_password", None)
@@ -112,6 +123,10 @@ def _deployment_defaults() -> dict:
         "allow_site_editor_delegation": dep.allow_site_editor_delegation,
         "ldap_enabled": dep.ldap_enabled,
         "ldap_server_uri": dep.ldap_server_uri,
+        "date_format": dep.date_format,
+        "time_style": dep.time_style,
+        # Resolved for the "inherit" summary — blank means the server default.
+        "display_timezone": dep.display_timezone or settings.TIME_ZONE,
     }
 
 

@@ -68,11 +68,23 @@ and behaves for you:
 | **Theme** | Light or dark — applied immediately. |
 | **Table density** | Comfortable or compact rows. |
 | **Page size** | How many rows per page in tables. |
+| **Timestamps** | Relative ("3h ago") or absolute in tables — the exact form is always on hover. |
+| **Date format** | How calendar dates render: ISO (`2026-01-31`), `31.01.2026`, `01/31/2026`, `31 Jan 2026`, … |
+| **Clock** | 24-hour (`14:30`) or 12-hour (`2:30 PM`). |
+| **Timezone** | The IANA timezone times render in (e.g. `Europe/Copenhagen`). |
 | **Striped rows** | Alternating row shading on/off. |
 | **Confirm before deleting** | Whether delete actions ask for confirmation. |
 
 These are saved to your own profile, so they follow you and don't affect other
 users. Each acts as a personal override on top of the tenant default.
+
+Date format, clock, and timezone default to **Auto (tenant default)**: they
+follow the tenant's *Date & time* group under **Settings → This tenant**,
+which in turn inherits the deployment default (**Settings → Deployment →
+General**) until a tenant admin overrides it. Pick an explicit value to
+override just for yourself; set it back to Auto to inherit again. Date pickers
+across the app display dates in whatever format resolves for you (the value
+stored is always ISO).
 
 ## See also
 

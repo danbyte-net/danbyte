@@ -5,14 +5,11 @@ import {
   eolCountdown,
   lifecyclePct,
 } from "@/components/cells/lifecycle-cell"
+import { useDateFormat } from "@/lib/datetime"
 
 // "Lifecycle" overview card — device type + platform detail pages. Shows the
 // lifetime progress bar (release → EoL) plus every vendor date the user
 // entered. Rendered even when empty, so the feature is discoverable.
-
-function fmtDate(d: string | null): React.ReactNode {
-  return d ? <span className="num">{d}</span> : dash
-}
 
 export function LifecycleCard({
   item,
@@ -21,6 +18,9 @@ export function LifecycleCard({
   item: LifecycleInfo
   title?: string
 }) {
+  const { formatDate } = useDateFormat()
+  const fmtDate = (d: string | null): React.ReactNode =>
+    d ? <span className="num">{formatDate(d)}</span> : dash
   const pct = lifecyclePct(item)
   const rows: KvRow[] = [
     {

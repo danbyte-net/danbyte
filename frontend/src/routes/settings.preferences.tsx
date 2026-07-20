@@ -7,7 +7,7 @@ import { TABLES, type TableMeta } from "@/lib/tables"
 import { api, type ColumnPrefSummary } from "@/lib/api"
 import { useUserPrefs } from "@/lib/use-user-prefs"
 import { useTheme } from "@/components/theme-provider"
-import { FormCheckbox, FormSelect } from "@/components/forms"
+import { FormCheckbox, FormCombobox, FormSelect } from "@/components/forms"
 import { Button } from "@/components/ui/button"
 import { TwoFactorSection } from "@/components/two-factor-section"
 import { ApiTokensSection } from "@/components/api-tokens-section"
@@ -90,6 +90,26 @@ function TableLayoutsSection() {
   )
 }
 
+// The tenant default is the "auto" value for the date/time settings — see
+// auth_api.user_prefs (user override → tenant default → deployment default).
+const AUTO = "auto"
+
+const DATE_FORMAT_OPTIONS = [
+  { value: "YYYY-MM-DD", label: "2026-01-31 (ISO)" },
+  { value: "DD.MM.YYYY", label: "31.01.2026" },
+  { value: "DD/MM/YYYY", label: "31/01/2026" },
+  { value: "MM/DD/YYYY", label: "01/31/2026" },
+  { value: "DD MMM YYYY", label: "31 Jan 2026" },
+]
+
+function timezoneOptions(): { value: string; label: string }[] {
+  const zones =
+    typeof Intl.supportedValuesOf === "function"
+      ? Intl.supportedValuesOf("timeZone")
+      : ["UTC"]
+  return zones.map((z) => ({ value: z, label: z }))
+}
+
 function DisplaySection() {
   const { theme, toggleTheme } = useTheme()
   const { values, setPref } = useUserPrefs()
@@ -98,6 +118,9 @@ function DisplaySection() {
   const pageSize = String(values.page_size ?? 25)
   const confirm = values.confirm_destructive !== false
   const timeFormat = String(values.time_format ?? "relative")
+  const dateFormat = String(values.date_format ?? AUTO)
+  const timeStyle = String(values.time_style ?? AUTO)
+  const timezone = String(values.timezone ?? AUTO)
   const landing = String(values.landing_page ?? "/")
   const v4Max = String(values.space_map_v4_max ?? 31)
   const v6Max = String(values.space_map_v6_max ?? 128)
@@ -147,6 +170,36 @@ function DisplaySection() {
             { value: "relative", label: "Relative (3h ago)" },
             { value: "absolute", label: "Absolute (date & time)" },
           ]}
+        />
+        <FormSelect
+          label="Date format"
+          hint="How calendar dates render for you — Auto follows the tenant default"
+          value={dateFormat}
+          onChange={(v) => v && setPref("date_format", v)}
+          options={[
+            { value: AUTO, label: "Auto (tenant default)" },
+            ...DATE_FORMAT_OPTIONS,
+          ]}
+        />
+        <FormSelect
+          label="Clock"
+          value={timeStyle}
+          onChange={(v) => v && setPref("time_style", v)}
+          options={[
+            { value: AUTO, label: "Auto (tenant default)" },
+            { value: "24h", label: "24-hour (14:30)" },
+            { value: "12h", label: "12-hour (2:30 PM)" },
+          ]}
+        />
+        <FormCombobox
+          label="Timezone"
+          hint="Times render in this IANA timezone — Auto follows the tenant default"
+          value={timezone === AUTO ? null : timezone}
+          onChange={(v) => setPref("timezone", v ?? AUTO)}
+          noneLabel="Auto (tenant default)"
+          placeholder="Auto (tenant default)"
+          searchPlaceholder="Search timezones…"
+          options={timezoneOptions()}
         />
         <FormSelect
           label="Landing page"

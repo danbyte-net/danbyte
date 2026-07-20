@@ -7,6 +7,7 @@ import { api, type TenantSettings } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { FormCombobox, FormSelect } from "@/components/forms"
 import { OverrideCard } from "@/components/settings/override-card"
 import { QueryError } from "@/components/query-error"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -14,6 +15,27 @@ import { apiErrorToast } from "@/lib/api-toast"
 export const Route = createFileRoute("/settings/tenant")({
   component: TenantGeneralPage,
 })
+
+const DATE_FORMAT_OPTIONS = [
+  { value: "YYYY-MM-DD", label: "2026-01-31 (ISO)" },
+  { value: "DD.MM.YYYY", label: "31.01.2026" },
+  { value: "DD/MM/YYYY", label: "31/01/2026" },
+  { value: "MM/DD/YYYY", label: "01/31/2026" },
+  { value: "DD MMM YYYY", label: "31 Jan 2026" },
+]
+
+const TIME_STYLE_OPTIONS = [
+  { value: "24h", label: "24-hour (14:30)" },
+  { value: "12h", label: "12-hour (2:30 PM)" },
+]
+
+function timezoneOptions(): { value: string; label: string }[] {
+  const zones =
+    typeof Intl.supportedValuesOf === "function"
+      ? Intl.supportedValuesOf("timeZone")
+      : ["UTC"]
+  return zones.map((z) => ({ value: z, label: z }))
+}
 
 const DEVICE_FIELDS: { key: string; label: string; hint: string }[] = [
   { key: "comments", label: "Comments", hint: "Long-form notes on a device" },
@@ -59,6 +81,10 @@ function TenantGeneralPage() {
           enhanced_site_separation: form!.enhanced_site_separation,
           allow_site_settings: form!.allow_site_settings,
           allow_site_editor_delegation: form!.allow_site_editor_delegation,
+          override_datetime: form!.override_datetime,
+          date_format: form!.date_format,
+          time_style: form!.time_style,
+          display_timezone: form!.display_timezone,
         }),
       }),
     onSuccess: (data) => {
@@ -156,6 +182,49 @@ function TenantGeneralPage() {
               ))}
             </div>
           </div>
+        </div>
+      </OverrideCard>
+
+      <OverrideCard
+        title="Date & time"
+        description="How dates and times render for this tenant's users — each user can still pick their own under Preferences."
+        overridden={form.override_datetime}
+        onOverriddenChange={(v) => set("override_datetime", v)}
+        summary={
+          <span>
+            Dates {dep.date_format} ·{" "}
+            {dep.time_style === "12h" ? "12-hour" : "24-hour"} clock ·{" "}
+            {dep.display_timezone}
+          </span>
+        }
+      >
+        <div className="grid gap-4 sm:max-w-md">
+          <FormSelect
+            label="Date format"
+            value={form.date_format}
+            onChange={(v) =>
+              v && set("date_format", v as TenantSettings["date_format"])
+            }
+            options={DATE_FORMAT_OPTIONS}
+          />
+          <FormSelect
+            label="Clock"
+            value={form.time_style}
+            onChange={(v) =>
+              v && set("time_style", v as TenantSettings["time_style"])
+            }
+            options={TIME_STYLE_OPTIONS}
+          />
+          <FormCombobox
+            label="Timezone"
+            hint="IANA timezone times render in. Server default = the backend's TIME_ZONE."
+            value={form.display_timezone || null}
+            onChange={(v) => set("display_timezone", v ?? "")}
+            noneLabel="Server default"
+            placeholder="Server default"
+            searchPlaceholder="Search timezones…"
+            options={timezoneOptions()}
+          />
         </div>
       </OverrideCard>
 

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Activity, ArrowRight } from "lucide-react"
 
 import { api, type CheckStatus, type IpChecksResponse } from "@/lib/api"
+import { useDateFormat } from "@/lib/datetime"
 import { MixedStatusBadge } from "./mixed-status-badge"
 
 /**
@@ -22,6 +23,7 @@ export function IpMonitoringSummary({
     queryKey: ["ip-checks", ipId],
     queryFn: () => api<IpChecksResponse>(`/api/monitoring/ips/${ipId}/checks/`),
   })
+  const { formatDate } = useDateFormat()
   const checks = q.data?.checks ?? []
   const counts = checks.reduce<Partial<Record<CheckStatus, number>>>(
     (acc, c) => {
@@ -47,7 +49,7 @@ export function IpMonitoringSummary({
           </span>
           {lastSeen && (
             <span className="text-muted-foreground">
-              · seen {new Date(lastSeen).toLocaleDateString()}
+              · seen {formatDate(lastSeen)}
             </span>
           )}
         </>

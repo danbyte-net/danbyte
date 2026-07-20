@@ -18,7 +18,12 @@ import {
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Field, FormCheckbox } from "@/components/forms"
+import {
+  Field,
+  FormCheckbox,
+  FormCombobox,
+  FormSelect,
+} from "@/components/forms"
 import {
   SettingsCard,
   SettingsGrid,
@@ -46,6 +51,27 @@ const DEVICE_FIELDS: {
   { key: "latitude", label: "Latitude", hint: "GPS coordinates (for maps)" },
   { key: "longitude", label: "Longitude", hint: "GPS coordinates (for maps)" },
 ]
+
+const DATE_FORMAT_OPTIONS = [
+  { value: "YYYY-MM-DD", label: "2026-01-31 (ISO)" },
+  { value: "DD.MM.YYYY", label: "31.01.2026" },
+  { value: "DD/MM/YYYY", label: "31/01/2026" },
+  { value: "MM/DD/YYYY", label: "01/31/2026" },
+  { value: "DD MMM YYYY", label: "31 Jan 2026" },
+]
+
+const TIME_STYLE_OPTIONS = [
+  { value: "24h", label: "24-hour (14:30)" },
+  { value: "12h", label: "12-hour (2:30 PM)" },
+]
+
+function timezoneOptions(): { value: string; label: string }[] {
+  const zones =
+    typeof Intl.supportedValuesOf === "function"
+      ? Intl.supportedValuesOf("timeZone")
+      : ["UTC"]
+  return zones.map((z) => ({ value: z, label: z }))
+}
 
 export const Route = createFileRoute("/settings/admin")({
   component: AdminPage,
@@ -118,6 +144,9 @@ function DeploymentSection() {
   const [driftEnabled, setDriftEnabled] = useState(false)
   const [driftInterval, setDriftInterval] = useState<string | null>(null)
   const [humanIds, setHumanIds] = useState(true)
+  const [dateFormat, setDateFormat] = useState<string>("YYYY-MM-DD")
+  const [timeStyle, setTimeStyle] = useState<string>("24h")
+  const [displayTz, setDisplayTz] = useState("")
   useEffect(() => {
     if (data) {
       setName(data.deployment_name)
@@ -133,6 +162,9 @@ function DeploymentSection() {
       setDriftEnabled(data.config_drift_enabled)
       setDriftInterval(String(data.config_drift_interval_minutes))
       setHumanIds(data.human_ids_enabled)
+      setDateFormat(data.date_format)
+      setTimeStyle(data.time_style)
+      setDisplayTz(data.display_timezone)
     }
   }, [data])
 
@@ -203,6 +235,51 @@ function DeploymentSection() {
             className="w-40"
           />
         </Field>
+      </SettingsCard>
+
+      <SettingsCard
+        title="Date & time"
+        description="Default date format, clock, and timezone for the whole install. Tenants can override under Settings → This tenant; users under Preferences."
+        onSave={() =>
+          save.mutate({
+            key: "datetime",
+            patch: {
+              date_format: dateFormat as DeploymentSettings["date_format"],
+              time_style: timeStyle as DeploymentSettings["time_style"],
+              display_timezone: displayTz,
+            },
+          })
+        }
+        dirty={
+          dateFormat !== data.date_format ||
+          timeStyle !== data.time_style ||
+          displayTz !== data.display_timezone
+        }
+        saving={savingKey === "datetime"}
+        saveLabel="Save date & time"
+      >
+        <FormSelect
+          label="Date format"
+          value={dateFormat}
+          onChange={(v) => v && setDateFormat(v)}
+          options={DATE_FORMAT_OPTIONS}
+        />
+        <FormSelect
+          label="Clock"
+          value={timeStyle}
+          onChange={(v) => v && setTimeStyle(v)}
+          options={TIME_STYLE_OPTIONS}
+        />
+        <FormCombobox
+          label="Timezone"
+          hint="IANA timezone times render in. Server default = the backend's TIME_ZONE (UTC unless configured)."
+          value={displayTz || null}
+          onChange={(v) => setDisplayTz(v ?? "")}
+          noneLabel="Server default"
+          placeholder="Server default"
+          searchPlaceholder="Search timezones…"
+          options={timezoneOptions()}
+        />
       </SettingsCard>
 
       <SettingsCard

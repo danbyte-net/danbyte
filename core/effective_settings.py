@@ -102,6 +102,34 @@ def effective_device_fields(tenant) -> dict:
     return out
 
 
+def effective_datetime(tenant):
+    """The object whose date/time display defaults apply.
+
+    Its own override group (like separation and the popover): flipping the
+    date format must not force a tenant to fork the whole UI-policy group.
+    Carries ``date_format`` / ``time_style`` / ``display_timezone``. Per-user
+    overrides sit ON TOP of this — see ``auth_api.user_prefs.datetime_prefs``.
+    """
+    ts = _tenant_row(tenant)
+    if ts is not None and ts.override_datetime:
+        return ts
+    return _deployment()
+
+
+def effective_datetime_values(tenant) -> dict:
+    """The tenant-effective date/time display settings, fully resolved:
+    ``{"date_format", "time_style", "timezone"}`` where a blank stored
+    timezone falls back to the server's ``TIME_ZONE``."""
+    from django.conf import settings
+
+    row = effective_datetime(tenant)
+    return {
+        "date_format": row.date_format,
+        "time_style": row.time_style,
+        "timezone": row.display_timezone or settings.TIME_ZONE,
+    }
+
+
 def effective_floorplan_row(tenant):
     """The object whose floor-plan popover config applies.
 
