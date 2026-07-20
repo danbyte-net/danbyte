@@ -86,7 +86,7 @@ function EmailSettingsPage() {
   ) => setForm((f) => (f ? { ...f, [key]: value } : f))
 
   return (
-    <div>
+    <div className="space-y-6">
       <SettingsHeader title="Email & Delivery">
         The deployment-wide mail server and outbound-delivery options. Each card
         saves on its own.

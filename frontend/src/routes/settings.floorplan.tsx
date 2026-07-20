@@ -295,7 +295,7 @@ function FloorplanSettingsPage() {
   )
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-4xl space-y-6">
       <div className="mb-4">
         <h1 className="text-base font-medium">Floor plans</h1>
         <p className="mt-1 text-xs text-muted-foreground">

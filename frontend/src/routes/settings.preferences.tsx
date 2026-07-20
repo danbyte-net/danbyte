@@ -24,7 +24,7 @@ export const Route = createFileRoute("/settings/preferences")({
 
 function PreferencesPage() {
   return (
-    <div>
+    <div className="space-y-6">
       <SettingsHeader title="Preferences">
         Your account — how Danbyte looks for you, your sign-in, and your keys.
         These apply to you only, not the whole tenant.

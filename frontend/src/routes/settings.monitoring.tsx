@@ -19,7 +19,7 @@ function MonitoringSettingsPage() {
       </p>
     )
   return (
-    <div>
+    <div className="space-y-6">
       <div className="mb-4">
         <h1 className="text-base font-medium">Monitoring</h1>
         <p className="mt-1 max-w-prose text-xs text-muted-foreground">

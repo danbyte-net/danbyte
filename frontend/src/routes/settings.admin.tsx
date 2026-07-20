@@ -65,7 +65,7 @@ function AdminPage() {
     )
   }
   return (
-    <div>
+    <div className="space-y-6">
       <SettingsHeader title="General">
         Deployment-wide settings for this whole install. Each card saves on its
         own — the button only writes the fields above it.
