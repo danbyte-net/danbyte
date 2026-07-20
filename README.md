@@ -1,5 +1,10 @@
 <div align="center">
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/danbyte-logo-white.png">
+  <img src="docs/assets/readme/danbyte-logo.png" alt="Danbyte" width="360">
+</picture>
+
 # Danbyte
 
 **A customizable IPAM / DCIM platform — one place for your IP space, your physical gear, and how it all connects.**
