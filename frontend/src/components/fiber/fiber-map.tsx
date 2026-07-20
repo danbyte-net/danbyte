@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Waypoints } from "lucide-react"
 
-import { fiberColor } from "@/lib/fiber"
+import { fiberColor, TIA_598C } from "@/lib/fiber"
 import type { FiberColorEntry } from "@/lib/fiber"
 import { Input } from "@/components/ui/input"
 import {
@@ -54,7 +54,11 @@ export function FiberMap({
   highlight?: number | null
   onHighlight?: (position: number | null) => void
 }) {
-  const per = palette.length || 12
+  // Fall back to the standard palette when none is supplied (or during the
+  // first paint of the settings page, before local state is populated) — an
+  // empty palette made `tube` below undefined and crashed on `tube.hex`.
+  const pal = palette.length ? palette : TIA_598C
+  const per = pal.length
   const units = Math.ceil(count / per)
   const multi = units > 1
 
@@ -62,7 +66,7 @@ export function FiberMap({
     <div className="max-w-lg space-y-4">
       {Array.from({ length: units }, (_, u) => {
         const start = u * per
-        const tube = palette[u % per]
+        const tube = pal[u % pal.length]
         const cells = Array.from(
           { length: Math.min(per, count - start) },
           (__, i) => start + i + 1
@@ -85,7 +89,7 @@ export function FiberMap({
                 <StrandCell
                   key={pos}
                   pos={pos}
-                  palette={palette}
+                  palette={pal}
                   anno={strands[String(pos)]}
                   editable={editable}
                   highlighted={highlight === pos}

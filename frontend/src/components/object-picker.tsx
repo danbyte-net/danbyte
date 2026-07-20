@@ -214,6 +214,7 @@ export function ObjectPicker<
           type="button"
           variant="outline"
           size="icon"
+          className="shrink-0"
           disabled={disabled}
           aria-label={`Advanced ${spec.noun} search`}
           title="Advanced search…"
