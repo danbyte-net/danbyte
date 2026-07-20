@@ -1,4 +1,3 @@
-import { NmapSweepButton } from "@/components/nmap-sweep-button"
 import { useCallback, useMemo, useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
@@ -252,7 +251,6 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
               </Link>
             </Button>
           )}
-          {canAddIp && <NmapSweepButton prefixId={p.id} />}
           {canAddIp && (
             <Button size="sm" asChild>
               <Link to="/ips/new" search={{ address: undefined, prefix: p.id }}>

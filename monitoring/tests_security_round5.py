@@ -103,7 +103,7 @@ class DiscoveryDestinationScopeTests(_ScopedMonitoringBase):
         )
         self.assertEqual(response.status_code, 403)
 
-    def test_exact_site_destination_is_allowed_and_nmap_uses_same_gate(self):
+    def test_exact_site_destination_is_allowed(self):
         allowed = Prefix.objects.create(
             tenant=self.tenant,
             cidr="10.0.0.0/8",
@@ -124,12 +124,11 @@ class DiscoveryDestinationScopeTests(_ScopedMonitoringBase):
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response.json().get("skipped"), "too_large")
 
-        with patch("monitoring.views.sweep_prefix") as sweep:
-            response = self.client.post(
-                f"/api/monitoring/prefixes/{shared_destination.id}/nmap-sweep/"
-            )
+        # A destination outside the caller's site scope is refused.
+        response = self.client.post(
+            f"/api/monitoring/prefixes/{shared_destination.id}/discover/"
+        )
         self.assertEqual(response.status_code, 403)
-        sweep.assert_not_called()
 
 
 class ChildRollupScopeTests(_ScopedMonitoringBase):

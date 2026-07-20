@@ -310,52 +310,6 @@ class SnmpTopologyParseTests(APITestCase):
         self.assertEqual(out[0]["if_index"], "2")
         self.assertEqual(out[0]["mac"], "00:11:22:33:44:55")
 
-    def test_parse_nmap_grepable(self):
-        from monitoring.nmap_sweep import parse_nmap_grepable
-        sample = (
-            "# Nmap scan\n"
-            "Host: 10.0.0.5 ()\tStatus: Up\n"
-            "Host: 10.0.0.6 (host6)\tStatus: Up\n"
-            "Host: 10.0.0.7 ()\tStatus: Down\n"
-        )
-        self.assertEqual(parse_nmap_grepable(sample), ["10.0.0.5", "10.0.0.6"])
-
-
-class NmapSweepTests(APITestCase):
-    def setUp(self):
-        from api.models import Prefix
-        org = Organization.objects.create(name="O", slug="o")
-        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
-        self.prefix = Prefix.objects.create(tenant=self.tenant, cidr="10.0.0.0/24")
-        admin = User.objects.create_superuser("admin", "a@b.c", "x")
-        self.client.force_login(admin)
-        s = self.client.session
-        s["current_tenant_id"] = str(self.tenant.id)
-        s.save()
-
-    @patch("monitoring.nmap_sweep.nmap_ping_sweep")
-    def test_sweep_seeds_discovered_ips(self, mock_sweep):
-        from api.models import IPAddress
-        mock_sweep.return_value = ["10.0.0.5", "10.0.0.6"]
-        r = self.client.post(
-            f"/api/monitoring/prefixes/{self.prefix.id}/nmap-sweep/", {}, format="json"
-        )
-        self.assertEqual(r.status_code, 200, r.content)
-        self.assertEqual(r.json()["created"], 2)
-        self.assertTrue(
-            IPAddress.objects.filter(tenant=self.tenant, ip_address="10.0.0.5").exists()
-        )
-
-    @patch("monitoring.nmap_sweep.shutil.which", return_value=None)
-    def test_sweep_without_nmap_returns_400(self, _which):
-        # When nmap isn't on the host → graceful 400, not a 500. Mock its absence
-        # so the test is deterministic regardless of whether the host has nmap.
-        r = self.client.post(
-            f"/api/monitoring/prefixes/{self.prefix.id}/nmap-sweep/", {}, format="json"
-        )
-        self.assertEqual(r.status_code, 400)
-        self.assertIn("nmap", r.json()["detail"].lower())
-
 
 class SnmpFleetDriftTests(APITestCase):
     """Tenant-wide SNMP drift list (the config-drift page's SNMP tab)."""

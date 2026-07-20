@@ -73,18 +73,17 @@ ADMIN_LOGIN="$(logname 2>/dev/null || echo "${SUDO_USER:-}")"
 # means you terminate TLS elsewhere (or run direct), so don't require it.
 if [ "$DO_NGINX" -eq 1 ]; then
   step "OS packages (postgresql, redis-server, nginx)"
-  PKGS="postgresql redis-server nginx nmap"
-  CHECK_BINS="psql redis-server nginx nmap"
+  PKGS="postgresql redis-server nginx"
+  CHECK_BINS="psql redis-server nginx"
 else
   step "OS packages (postgresql, redis-server) — skipping nginx (--no-nginx)"
-  PKGS="postgresql redis-server nmap"
-  CHECK_BINS="psql redis-server nmap"
+  PKGS="postgresql redis-server"
+  CHECK_BINS="psql redis-server"
 fi
 need_pkg=0
 for b in $CHECK_BINS; do command -v "$b" >/dev/null 2>&1 || need_pkg=1; done
 if [ "$need_pkg" -eq 1 ]; then
   if command -v apt-get >/dev/null 2>&1; then
-    # nmap powers the optional L3 host sweep; the rest are core services.
     DEBIAN_FRONTEND=noninteractive apt-get install -y $PKGS \
       || die "apt could not install $PKGS — install them, then re-run."
   else

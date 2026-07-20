@@ -20,7 +20,6 @@ This page is organised by task. Jump to:
 - [Scheduled polling & utilisation](#scheduled-polling) — the sparkline series
 - [Drift & reconciliation](#drift-and-reconciliation) — accept observed into intent
 - [Topology: LLDP & ARP](#topology) — neighbours and the ARP table
-- [nmap L3 sweep](#nmap-sweep) — seed live hosts as discovered IPs
 - [Permissions](#permissions)
 
 ## Observed vs intended {#observed-vs-intended}
@@ -202,24 +201,6 @@ adjacent on more than one link, which port pair). Creating the cable needs
 `cable.add`, and both interfaces must already exist — if an end is missing,
 accept its interface drift first. Once cabled, the ghost is replaced by a solid
 edge.
-
-## nmap L3 sweep {#nmap-sweep}
-
-LLDP/ARP needs SNMP on each device. To find live hosts on a subnet **without**
-touching every device, use the **Scan (nmap)** button on a prefix. It shells out
-to `nmap -sn` (a ping sweep — no port scan, no root needed) and seeds any live
-host that isn't already recorded as a **discovered** IP in that prefix, exactly
-like the built-in ICMP discovery path (same VRF scoping, same auto-discovered
-status, same cleanup eligibility).
-
-`nmap` must be installed on the Danbyte host:
-
-```bash
-sudo apt install nmap
-```
-
-If it isn't, the button returns a clean error ("nmap is not installed") rather
-than failing — nothing is created.
 
 ## Permissions {#permissions}
 

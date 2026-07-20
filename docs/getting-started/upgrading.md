@@ -136,7 +136,7 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
       **database** — it runs `migrate`, never `flush`. Credentials stay
       decryptable (it backfills `MONITORING_SECRET_KEY` from your `SECRET_KEY`
       when missing).
-    - **OS packages** (postgresql, redis-server, nginx, nmap) are only installed
+    - **OS packages** (postgresql, redis-server, nginx) are only installed
       if a binary is *missing*. On a box that already runs Danbyte they're all
       present, so the installer **skips apt entirely** — no network needed. On a
       truly bare airgapped host, pre-install those packages (or point apt at a

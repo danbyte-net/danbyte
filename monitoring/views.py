@@ -57,7 +57,6 @@ from .snmp_resolve import resolve_device_profile
 from .snmp_poll import poll_device
 from .snmp_util import compute_device_utilization
 from .snmp_drift import apply_drift_action, compute_device_drift, sync_device_from_snmp
-from .nmap_sweep import NmapError, sweep_prefix
 
 # How many recent results feed the per-check sparkline.
 SPARK_POINTS = 30
@@ -1479,34 +1478,6 @@ def device_snmp_utilization_view(request, device_id):
         return err
     device, _tenant = resolved
     return Response({"interfaces": compute_device_utilization(device)})
-
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def prefix_nmap_sweep_view(request, prefix_id):
-    """nmap ping-sweep a prefix → seed live hosts as discovered IPs."""
-    tenant = _get_active_tenant(request)
-    if tenant is None:
-        return Response({"detail": "No active tenant."}, status=403)
-    # Seeds IPAddress rows (and runs a scan) — gate like the IP form.
-    if not rbac.has_action(request.user, tenant, "ipaddress", "add"):
-        return Response(
-            {"detail": "You do not have permission to add IP addresses."},
-            status=403,
-        )
-    prefix, _ = _scoped_get(request, Prefix, "prefix", "view", prefix_id)
-    if prefix is None:
-        return Response({"detail": "Prefix not found."}, status=404)
-    if not _can_discover_into_prefix(request, tenant, prefix):
-        return Response(
-            {"detail": "Your IP-add grant does not cover rows created here."},
-            status=403,
-        )
-    try:
-        result = sweep_prefix(prefix, tenant)
-    except NmapError as exc:
-        return Response({"detail": str(exc)}, status=400)
-    return Response(result)
 
 
 @api_view(["GET"])

@@ -69,11 +69,10 @@ class SnmpDiscoveryRbacTests(_TenantClientMixin, APITestCase):
         )
         self.assertEqual(r.status_code, 403)
 
-    def test_reader_cannot_discover_or_sweep(self):
+    def test_reader_cannot_discover(self):
         self._client(self._user("ro3", group="Read-only"))
         for url in (
             f"/api/monitoring/prefixes/{self.prefix.id}/discover/",
-            f"/api/monitoring/prefixes/{self.prefix.id}/nmap-sweep/",
             "/api/monitoring/bulk-discover/",
         ):
             r = self.client.post(url, {}, format="json")
