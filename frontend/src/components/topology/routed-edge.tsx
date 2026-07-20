@@ -1,5 +1,65 @@
-import { BaseEdge, getSmoothStepPath } from "@xyflow/react"
+import { BaseEdge, Position } from "@xyflow/react"
 import type { EdgeProps } from "@xyflow/react"
+
+// How far a cable travels straight out of its port before it may turn. Keeping
+// this generous means a cable clears its own card edge (and its neighbours'
+// ports) before bending sideways, instead of jogging across them immediately.
+const STUB = 26
+
+const DIR: Record<Position, [number, number]> = {
+  [Position.Top]: [0, -1],
+  [Position.Bottom]: [0, 1],
+  [Position.Left]: [-1, 0],
+  [Position.Right]: [1, 0],
+}
+
+/** Deterministic per-edge offset so cables sharing a run don't stack into one
+ * line — each gets its own channel a few px apart. Derived from the edge id so
+ * it's stable across renders. */
+function stagger(id: string): number {
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0
+  return (((h % 9) + 9) % 9) * 7 - 28 // -28..28 in 7px steps
+}
+
+/** An orthogonal path that leaves the source port straight (a STUB), crosses a
+ * staggered mid-channel, then enters the target port straight. Used when no
+ * node-avoiding waypoints are available. */
+function stubbedPts(
+  sx: number,
+  sy: number,
+  sp: Position,
+  tx: number,
+  ty: number,
+  tp: Position,
+  off: number
+): [number, number][] {
+  const sv = DIR[sp] ?? [1, 0]
+  const tv = DIR[tp] ?? [-1, 0]
+  const s1: [number, number] = [sx + sv[0] * STUB, sy + sv[1] * STUB]
+  const t1: [number, number] = [tx + tv[0] * STUB, ty + tv[1] * STUB]
+  const vertical = sp === Position.Top || sp === Position.Bottom
+  if (vertical) {
+    const chY = (s1[1] + t1[1]) / 2 + off
+    return [
+      [sx, sy],
+      s1,
+      [s1[0], chY],
+      [t1[0], chY],
+      t1,
+      [tx, ty],
+    ]
+  }
+  const chX = (s1[0] + t1[0]) / 2 + off
+  return [
+    [sx, sy],
+    s1,
+    [chX, s1[1]],
+    [chX, t1[1]],
+    t1,
+    [tx, ty],
+  ]
+}
 
 /** Rounded orthogonal-ish path through a list of points. */
 function roundedPath(pts: [number, number][], r: number): string {
@@ -57,15 +117,20 @@ export function RoutedEdge({
   const wp = (data?.waypoints as [number, number][] | undefined) ?? []
 
   if (wp.length < 2) {
-    const [path, lx, ly] = getSmoothStepPath({
+    // No node-avoiding waypoints: build a stubbed orthogonal path so the cable
+    // leaves its port straight (clearing the card edge + sibling ports) and
+    // parallel cables fan into separate channels instead of overlapping.
+    const pts = stubbedPts(
       sourceX,
       sourceY,
-      sourcePosition: sourcePosition,
+      sourcePosition,
       targetX,
       targetY,
-      targetPosition: targetPosition,
-      borderRadius: 14,
-    })
+      targetPosition,
+      stagger(id)
+    )
+    const path = roundedPath(pts, 10)
+    const [lx, ly] = pts[Math.floor(pts.length / 2)]
     return (
       <BaseEdge
         id={id}

@@ -226,7 +226,11 @@ export function layoutNodes(
   g.setDefaultEdgeLabel(() => ({}))
   g.setGraph({
     rankdir: direction,
-    nodesep: 64,
+    // More cross-axis room between siblings + an explicit edge gap so parallel
+    // cables get their own lane and are less likely to overlap or be forced to
+    // route under a neighbouring card.
+    nodesep: 96,
+    edgesep: 24,
     ranksep: 220,
     ranker: "network-simplex",
     align: "UL",
