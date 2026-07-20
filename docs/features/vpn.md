@@ -76,6 +76,36 @@ one), with:
 A point-to-point tunnel has two *peer* terminations; a hub-and-spoke design has
 one *hub* and many *spokes*.
 
+## Tunnel map
+
+The tunnel's detail page has a **Map** tab — a read-only topology view of the
+tunnel drawn from its terminations:
+
+- **Hub-and-spoke** tunnels put the hub(s) in the centre with every spoke on a
+  ring around them, one link per hub ↔ spoke.
+- **Point-to-point / peer** tunnels show the peers side by side (three or more
+  form a ring, fully meshed).
+
+Each card shows the terminating device (or VM), the interface, the **outside
+IP**, and the end's role; clicking a card jumps to that interface (or VM).
+The map fills in as you add terminations — an empty tunnel just points you to
+the Terminations tab.
+
+## Where tunnels show up on interfaces
+
+An interface that terminates a tunnel is flagged everywhere interfaces are
+listed:
+
+- **Interface tables** (the interfaces list, a device's Interfaces tab, the
+  whole-stack view) show a small tunnel chip next to the interface name,
+  linking to the tunnel.
+- The **interface detail** page shows the same chip in its header and lists
+  each tunnel with the end's role under **Relationships → Tunnels**.
+
+Behind this, the interface API (`/api/interfaces/`) exposes a read-only
+`tunnel_terminations` field — `[{id, role, role_display, tunnel: {id, name}}]`,
+scoped to the interface's tenant.
+
 ### Tunnel status
 
 | Status | Meaning |

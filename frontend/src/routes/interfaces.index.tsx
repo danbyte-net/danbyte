@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Cable as CableIcon } from "lucide-react"
+import { Cable as CableIcon, Workflow } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api, type Interface, type Paginated } from "@/lib/api"
@@ -176,13 +176,31 @@ function buildColumns({
       accessorKey: "name",
       header: ({ column }) => <SortHeader column={column} label="Interface" />,
       cell: ({ row }) => (
-        <Link
-          to="/interfaces/$id"
-          params={{ id: row.original.id }}
-          className="font-mono font-medium hover:underline"
-        >
-          {row.original.name}
-        </Link>
+        <div className="flex items-center gap-1.5">
+          <Link
+            to="/interfaces/$id"
+            params={{ id: row.original.id }}
+            className="font-mono font-medium hover:underline"
+          >
+            {row.original.name}
+          </Link>
+          {row.original.tunnel_terminations.map((tt) => (
+            <Link
+              key={tt.id}
+              to="/tunnels/$id"
+              params={{ id: tt.tunnel.id }}
+              title={`${tt.role_display} termination on tunnel ${tt.tunnel.name}`}
+            >
+              <Badge
+                variant="secondary"
+                className="h-4 gap-1 px-1.5 text-[10px] hover:bg-muted"
+              >
+                <Workflow className="h-2.5 w-2.5" />
+                {tt.tunnel.name}
+              </Badge>
+            </Link>
+          ))}
+        </div>
       ),
     },
     {

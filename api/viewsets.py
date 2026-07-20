@@ -2318,8 +2318,11 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
 
         device = self.get_object()
         qs = (
-            device.interfaces.select_related("vlan", "parent", "lag", "bridge")
-            .prefetch_related("tags", "ip_addresses", "children", "lag_members")
+            device.interfaces.select_related("device", "vlan", "parent", "lag", "bridge")
+            .prefetch_related(
+                "tags", "ip_addresses", "children", "lag_members",
+                "tunnel_terminations__tunnel",
+            )
             .order_by("name")
         )
         qs = rbac.restrict_queryset(
@@ -2367,7 +2370,8 @@ class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
         )
         .prefetch_related(
             "tags", "terminations__cable", "ip_addresses", "children",
-            "lag_members", "tagged_vlans", "mac_addresses"
+            "lag_members", "tagged_vlans", "mac_addresses",
+            "tunnel_terminations__tunnel",
         )
         .order_by("device__name", "name")
     )
