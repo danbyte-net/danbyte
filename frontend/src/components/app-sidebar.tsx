@@ -1034,37 +1034,72 @@ function FavoritesSection() {
         </SidebarMenu>
       </SidebarGroupContent>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Manage favorites</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <Input
-                value={folderName}
-                onChange={(e) => setFolderName(e.target.value)}
-                placeholder="Folder name"
-              />
-              <Button type="button" size="sm" onClick={createFolder}>
-                Add folder
-              </Button>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-[1fr_1.5fr_auto]">
-              <Input
-                value={label}
-                onChange={(e) => setLabel(e.target.value)}
-                placeholder="Bookmark label"
-              />
-              <Input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="/prefixes?status=active"
-              />
-              <Button type="button" size="sm" onClick={createBookmark}>
-                Add
-              </Button>
-            </div>
-            <div className="max-h-72 overflow-auto rounded-md border border-border">
+          <div className="flex flex-col gap-5">
+            <section className="space-y-2">
+              <h3 className="text-[11px] font-semibold tracking-[0.04em] text-muted-foreground uppercase">
+                New folder
+              </h3>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={folderName}
+                  onChange={(e) => setFolderName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && createFolder()}
+                  placeholder="Folder name"
+                  className="h-8"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!folderName.trim()}
+                  onClick={createFolder}
+                >
+                  Add folder
+                </Button>
+              </div>
+            </section>
+
+            <section className="space-y-2">
+              <h3 className="text-[11px] font-semibold tracking-[0.04em] text-muted-foreground uppercase">
+                New bookmark
+              </h3>
+              <div className="space-y-2">
+                <Input
+                  value={label}
+                  onChange={(e) => setLabel(e.target.value)}
+                  placeholder="Label (e.g. Active prefixes)"
+                  className="h-8"
+                />
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && createBookmark()}
+                    placeholder="/prefixes?status=active"
+                    className="h-8 font-mono text-xs"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!url.trim()}
+                    onClick={createBookmark}
+                  >
+                    Add
+                  </Button>
+                </div>
+              </div>
+            </section>
+
+            {(folders.length > 0 || bookmarks.length > 0) && (
+              <section className="space-y-2">
+                <h3 className="text-[11px] font-semibold tracking-[0.04em] text-muted-foreground uppercase">
+                  Organise
+                </h3>
+                <div className="max-h-72 overflow-auto rounded-lg border border-border">
               {[...folders]
                 .sort((a, b) => a.name.localeCompare(b.name))
                 .map((folder) => (
@@ -1145,7 +1180,9 @@ function FavoritesSection() {
                     </Button>
                   </div>
                 ))}
-            </div>
+                </div>
+              </section>
+            )}
           </div>
         </DialogContent>
       </Dialog>
