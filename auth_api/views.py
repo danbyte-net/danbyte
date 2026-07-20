@@ -158,6 +158,7 @@ def me_json(request):
     from core.models import DeploymentSettings
     from .permissions import can_manage_deployment
     from .rbac import editable_sites, effective_actions
+    from .user_prefs import datetime_prefs
 
     perms = user_perms(user)  # legacy flat slugs (kept for back-compat)
     tenant = _get_active_tenant(request)
@@ -221,6 +222,9 @@ def me_json(request):
         # manage settings for ("all" | [ids]; [] = the section stays hidden).
         "site_settings_enabled": bool(separation.allow_site_settings),
         "settings_sites": _settings_sites_payload(request.user, tenant),
+        # Resolved date/time display settings (user override → tenant default
+        # → deployment default) — the SPA's single read point for formatting.
+        "datetime": datetime_prefs(user, tenant),
         "active_tenant": (
             {"id": str(tenant.id), "name": tenant.name, "slug": tenant.slug}
             if tenant is not None else None

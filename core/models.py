@@ -379,6 +379,42 @@ class DeploymentSettings(TimestampedModel):
         help_text="Timestamp of the last scheduled config-drift dispatch.",
     )
 
+    # ─── date & time display ──────────────────────────────────────────────
+    # Deployment-wide defaults for how the UI renders dates and times. A
+    # tenant may override the group (TenantSettings.override_datetime); a
+    # user may override the tenant via the "auto"-valued prefs keys in
+    # auth_api.user_prefs. Resolution: user → tenant → deployment.
+    DATE_FORMAT_CHOICES = [
+        ("YYYY-MM-DD", "2026-01-31 (ISO)"),
+        ("DD.MM.YYYY", "31.01.2026"),
+        ("DD/MM/YYYY", "31/01/2026"),
+        ("MM/DD/YYYY", "01/31/2026"),
+        ("DD MMM YYYY", "31 Jan 2026"),
+    ]
+    TIME_STYLE_CHOICES = [
+        ("24h", "24-hour (14:30)"),
+        ("12h", "12-hour (2:30 PM)"),
+    ]
+    date_format = models.CharField(
+        max_length=16,
+        choices=DATE_FORMAT_CHOICES,
+        default="YYYY-MM-DD",
+        help_text="How the UI renders calendar dates by default.",
+    )
+    time_style = models.CharField(
+        max_length=4,
+        choices=TIME_STYLE_CHOICES,
+        default="24h",
+        help_text="24-hour or 12-hour AM/PM clock for rendered times.",
+    )
+    display_timezone = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="IANA timezone (e.g. Europe/Copenhagen) the UI renders "
+        "times in. Blank = the server's TIME_ZONE.",
+    )
+
     # ─── human-readable object numbers (numid) ───────────────────────────
     human_ids_enabled = models.BooleanField(
         default=True,
@@ -629,6 +665,20 @@ class TenantSettings(TimestampedModel):
 
     # ─── sharing & delegation (mirrors DeploymentSettings) ─────────────────
     allow_site_editor_delegation = models.BooleanField(default=False)
+
+    # ─── date & time display (its OWN override group, mirrors Deployment) ──
+    # Same reasoning as separation/popover: changing the date format must not
+    # force a tenant to fork the whole UI-policy group.
+    override_datetime = models.BooleanField(default=False)
+    date_format = models.CharField(
+        max_length=16,
+        choices=DeploymentSettings.DATE_FORMAT_CHOICES,
+        default="YYYY-MM-DD",
+    )
+    time_style = models.CharField(
+        max_length=4, choices=DeploymentSettings.TIME_STYLE_CHOICES, default="24h"
+    )
+    display_timezone = models.CharField(max_length=64, blank=True, default="")
 
     # ─── LDAP / Active Directory (mirrors DeploymentSettings) ──────────────
     ldap_enabled = models.BooleanField(default=False)

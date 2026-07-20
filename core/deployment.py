@@ -19,6 +19,23 @@ from auth_api.permissions import can_manage_deployment
 from .models import DeploymentSettings
 
 
+def clean_display_timezone(value: str) -> str:
+    """Validate an IANA timezone name. Blank = inherit (server / deployment).
+    Shared by the deployment and tenant settings serializers."""
+    from zoneinfo import ZoneInfo
+
+    value = (value or "").strip()
+    if not value:
+        return ""
+    try:
+        ZoneInfo(value)
+    except (ValueError, KeyError, OSError):
+        raise serializers.ValidationError(
+            f"'{value}' is not a valid IANA timezone (e.g. Europe/Copenhagen)."
+        )
+    return value
+
+
 class DeploymentSettingsSerializer(serializers.ModelSerializer):
     # Write-only secret; never serialised back. A blank value on update leaves
     # the stored password untouched (so the form needn't re-enter it).
@@ -60,6 +77,9 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "config_drift_interval_minutes",
             "config_drift_last_run",
             "human_ids_enabled",
+            "date_format",
+            "time_style",
+            "display_timezone",
             "release_repo_url",
             "release_repo_token",
             "release_repo_token_set",
@@ -113,6 +133,9 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
 
     def validate_map_satellite_url(self, value):
         return self.validate_map_tile_url(value)
+
+    def validate_display_timezone(self, value):
+        return clean_display_timezone(value)
 
     def get_smtp_password_set(self, obj) -> bool:
         return bool((obj.secrets or {}).get("password"))

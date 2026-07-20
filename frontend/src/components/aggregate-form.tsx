@@ -11,6 +11,7 @@ import {
   type TagOption,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -147,11 +148,7 @@ export function AggregateForm({
           hint="optional"
           error={fieldErrors.date_added}
         >
-          <Input
-            type="date"
-            value={dateAdded}
-            onChange={(e) => setDateAdded(e.target.value)}
-          />
+          <DatePicker value={dateAdded} onChange={setDateAdded} />
         </Field>
       </div>
 

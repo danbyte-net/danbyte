@@ -198,6 +198,25 @@ export interface Paginated<T> {
   results: T[]
 }
 
+// ─── Date & time display settings ────────────────────────────────────────
+// Cascade: user pref ("auto" = inherit) → tenant override → deployment
+// default. /api/me/ carries the RESOLVED values; the raw editable ones live
+// on /api/me/prefs/, /api/tenant-settings/ and /api/deployment/email/.
+export type DateFormat =
+  | "YYYY-MM-DD"
+  | "DD.MM.YYYY"
+  | "DD/MM/YYYY"
+  | "MM/DD/YYYY"
+  | "DD MMM YYYY"
+export type TimeStyle = "24h" | "12h"
+
+export interface DateTimeSettings {
+  date_format: DateFormat
+  time_style: TimeStyle
+  /** IANA name, always resolved (never blank). */
+  timezone: string
+}
+
 // ─── Identity + permissions (GET /auth/me/) ─────────────────────────────
 // Anonymous callers get { is_authenticated: false, perms: [] }.
 export interface Me {
@@ -237,6 +256,8 @@ export interface Me {
     totp_confirmed: boolean
     email_available: boolean
   }
+  /** Resolved date/time display settings (user → tenant → deployment). */
+  datetime?: DateTimeSettings
 }
 
 // ─── Session login + MFA (POST /api/auth/...) ───────────────────────────────
@@ -3838,6 +3859,10 @@ export interface DeploymentSettings {
   config_drift_interval_minutes: number
   config_drift_last_run: string | null
   human_ids_enabled: boolean
+  date_format: DateFormat
+  time_style: TimeStyle
+  /** Raw stored value — blank inherits the server's TIME_ZONE. */
+  display_timezone: string
   release_repo_url: string
   release_repo_token_set: boolean
   disable_update_check: boolean
@@ -3888,6 +3913,10 @@ export interface TenantSettingsDefaults {
   allow_site_editor_delegation: boolean
   ldap_enabled: boolean
   ldap_server_uri: string
+  date_format: DateFormat
+  time_style: TimeStyle
+  /** Resolved for the "inherit" summary — never blank. */
+  display_timezone: string
 }
 
 export interface TenantSettings {
@@ -3907,6 +3936,11 @@ export interface TenantSettings {
   device_field_visibility: Record<string, boolean>
   human_ids_enabled: boolean
   allow_site_editor_delegation: boolean
+  override_datetime: boolean
+  date_format: DateFormat
+  time_style: TimeStyle
+  /** Raw stored value — blank inherits the server's TIME_ZONE. */
+  display_timezone: string
   updated_at: string
   deployment_defaults: TenantSettingsDefaults
 }

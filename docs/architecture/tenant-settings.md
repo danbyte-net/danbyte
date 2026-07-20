@@ -10,7 +10,7 @@ Two settings stores:
 | Store | Scope | Holds |
 |---|---|---|
 | `DeploymentSettings` (`core/models.py`, singleton `pk=1`) | whole install | SMTP defaults, deployment LDAP, updates/release repo, `public_base_url`, proxy/timeouts, drift scheduler, retention, deployment name — plus the **defaults** for every overridable group |
-| `TenantSettings` (`core/models.py`, OneToOne per tenant) | one tenant | overrides for **Email/SMTP**, **LDAP/AD**, **UI policy** (device-field visibility, human-IDs), **Delegation** (site-editor delegation), **Site separation** (`enhanced_site_separation`, `allow_site_settings` — its own `override_separation` toggle, like the floor-plan popover group) |
+| `TenantSettings` (`core/models.py`, OneToOne per tenant) | one tenant | overrides for **Email/SMTP**, **LDAP/AD**, **UI policy** (device-field visibility, human-IDs), **Delegation** (site-editor delegation), **Site separation** (`enhanced_site_separation`, `allow_site_settings` — its own `override_separation` toggle, like the floor-plan popover group), **Date & time** (`date_format`, `time_style`, `display_timezone` — its own `override_datetime` toggle) |
 | `SiteSettings` (`core/models.py`, OneToOne per site) | one site | **Email/SMTP only (v1)** — site-local relay + From address, for orgs whose sites run their own IT. Gated by `allow_site_settings` + site-admin qualification (`core/site_settings.py`) |
 
 Each group on `TenantSettings` carries an `override_*` toggle. **Off (and no
@@ -20,10 +20,19 @@ backend builder, the sharing gates) accept either object unchanged.
 
 Resolution lives in `core/effective_settings.py`:
 `effective_email(tenant, site=None)` / `effective_sharing(tenant)` /
-`effective_ui(tenant)` / `effective_separation(tenant)` return the most
-specific row whose toggle is on, else `DeploymentSettings.load()`.
+`effective_ui(tenant)` / `effective_separation(tenant)` /
+`effective_datetime(tenant)` return the most specific row whose toggle is on,
+else `DeploymentSettings.load()`.
 (`separation_enabled(tenant)` is the bool shortcut the RBAC fencing reads —
 see [Enhanced site separation](../access/site-separation.md).)
+
+**Date & time has a third, per-user layer.** `auth_api.user_prefs` carries
+`date_format` / `time_style` / `timezone` prefs whose default is `"auto"` =
+inherit the tenant-effective value; `datetime_prefs(user, tenant)` resolves
+the full cascade (user → tenant → deployment; a blank stored timezone falls
+back to the server's `TIME_ZONE`). `/api/me/` exposes the **resolved** values
+as `datetime` — the SPA's single read point for date/time formatting
+(`frontend/src/lib/datetime.ts`, `useDateFormat()`).
 
 **What site email affects (v1)** — only sends that are about a single
 site-bound object resolve the site layer: per-object monitoring alerts and

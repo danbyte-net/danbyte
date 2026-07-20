@@ -1,5 +1,5 @@
 import type { LifecycleInfo } from "@/lib/api"
-import { FormText } from "@/components/forms"
+import { FormDate, FormText } from "@/components/forms"
 
 // Shared "Lifecycle" form section — device types (hardware) and platforms
 // (OS) carry the same vendor lifecycle window. The user picks the dates;
@@ -59,31 +59,27 @@ export function LifecycleFormSection({
         </p>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <FormText
+        <FormDate
           label="Released"
-          type="date"
           value={value.release_date}
           onChange={set("release_date")}
           hint="GA / first ship"
           error={errors.release_date}
         />
-        <FormText
+        <FormDate
           label="End of sale"
-          type="date"
           value={value.end_of_sale}
           onChange={set("end_of_sale")}
           error={errors.end_of_sale}
         />
-        <FormText
+        <FormDate
           label="End of security updates"
-          type="date"
           value={value.end_of_security_updates}
           onChange={set("end_of_security_updates")}
           error={errors.end_of_security_updates}
         />
-        <FormText
+        <FormDate
           label="End of support (EoL)"
-          type="date"
           value={value.end_of_support}
           onChange={set("end_of_support")}
           error={errors.end_of_support}

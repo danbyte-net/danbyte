@@ -1,5 +1,6 @@
 import { type ColumnDef } from "@tanstack/react-table"
 import { SortHeader } from "@/components/data-table"
+import { useDateFormat } from "@/lib/datetime"
 import { useUserPrefs } from "@/lib/use-user-prefs"
 
 // Relative-time helper. Pure — call anywhere.
@@ -14,7 +15,8 @@ export function timeAgo(iso: string): string {
 }
 
 /** Timestamp cell honouring the user's `time_format` preference (relative vs
- * absolute). The absolute form is always available on hover. */
+ * absolute). The absolute form — rendered per the effective date/time display
+ * settings (format, 12/24h clock, timezone) — is always available on hover. */
 export function TimeCell({
   iso,
   align,
@@ -23,8 +25,9 @@ export function TimeCell({
   align?: "left" | "right"
 }) {
   const { values } = useUserPrefs()
+  const { formatDateTime } = useDateFormat()
   const absolute = values.time_format === "absolute"
-  const exact = new Date(iso).toLocaleString()
+  const exact = formatDateTime(iso)
   return (
     <span
       title={exact}
