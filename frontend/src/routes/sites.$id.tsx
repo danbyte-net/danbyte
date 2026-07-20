@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { Pencil, Plus, Trash2 } from "lucide-react"
@@ -62,7 +63,7 @@ function SiteDetail() {
 }
 
 function SiteDetailBody({ site: s }: { site: Site }) {
-  const [tab, setTab] = useState<
+  const [tab, setTab] = useUrlTab<
     | "overview"
     | "devices"
     | "prefixes"

@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
@@ -39,7 +40,7 @@ function DeviceRoleDetail() {
 }
 
 function Body({ role: r }: { role: DeviceRole }) {
-  const [tab, setTab] = useState<"devices" | "journal" | "history">("devices")
+  const [tab, setTab] = useUrlTab<"devices" | "journal" | "history">("devices")
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<DeviceRole | null>(null)
   const goBack = useCallback(() => nav({ to: "/device-roles" }), [nav])

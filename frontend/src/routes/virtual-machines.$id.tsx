@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
@@ -52,7 +53,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
   const { canDo } = useMe()
   const canEdit = canDo("virtualmachine", "change")
   const canDelete = canDo("virtualmachine", "delete")
-  const [tab, setTab] = useState<
+  const [tab, setTab] = useUrlTab<
     | "overview"
     | "components"
     | "services"

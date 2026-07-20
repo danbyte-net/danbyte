@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { Pencil, Trash2 } from "lucide-react"
@@ -41,7 +42,7 @@ function TagDetail() {
 }
 
 function TagDetailBody({ tag: t }: { tag: Tag }) {
-  const [tab, setTab] = useState<"objects" | "journal" | "history">("objects")
+  const [tab, setTab] = useUrlTab<"objects" | "journal" | "history">("objects")
   const nav = useNavigate()
   const { canDo, editableSites } = useMe()
   const canPromote =

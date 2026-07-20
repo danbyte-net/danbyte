@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Crown, Pencil, Plus, Trash2, Unlink } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
@@ -88,7 +89,7 @@ function sortMembers(members: VirtualChassisMember[]): VirtualChassisMember[] {
 }
 
 function Body({ vc }: { vc: VirtualChassis }) {
-  const [tab, setTab] = useState<
+  const [tab, setTab] = useUrlTab<
     "overview" | "interfaces" | "journal" | "history"
   >("overview")
   const nav = useNavigate()

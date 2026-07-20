@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
@@ -34,7 +35,7 @@ function AsnDetail() {
 }
 
 function Body({ asn: a }: { asn: ASN }) {
-  const [tab, setTab] = useState<"journal" | "history">("journal")
+  const [tab, setTab] = useUrlTab<"journal" | "history">("journal")
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<ASN | null>(null)
   const goBack = useCallback(() => nav({ to: "/asns" }), [nav])

@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
 import { useQuery } from "@tanstack/react-query"
 import { Camera, Minus, Pencil, Plus, Trash2 } from "lucide-react"
@@ -49,7 +50,7 @@ function RackDetail() {
 }
 
 function RackDetailBody({ rack: r }: { rack: Rack }) {
-  const [tab, setTab] = useState<
+  const [tab, setTab] = useUrlTab<
     "overview" | "devices" | "journal" | "history"
   >("overview")
   const { canDo } = useMe()

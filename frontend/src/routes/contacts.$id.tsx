@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { Pencil, Trash2 } from "lucide-react"
@@ -46,7 +47,7 @@ function ContactDetail() {
 }
 
 function Body({ contact: c }: { contact: Contact }) {
-  const [tab, setTab] = useState<
+  const [tab, setTab] = useUrlTab<
     "overview" | "assignments" | "journal" | "history"
   >("overview")
   const nav = useNavigate()

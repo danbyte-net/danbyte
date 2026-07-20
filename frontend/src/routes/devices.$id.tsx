@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
 import { ShowOnSiteMap } from "@/components/show-on-site-map"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -169,7 +170,7 @@ function Body({ device: d }: { device: Device }) {
   const [deleting, setDeleting] = useState<Device | null>(null)
   const [syncingType, setSyncingType] = useState(false)
   const { tab: tabFromUrl } = Route.useSearch()
-  const [tab, setTab] = useState<DeviceTab>(tabFromUrl ?? "overview")
+  const [tab, setTab] = useUrlTab<DeviceTab>(tabFromUrl ?? "overview")
   const goBack = useCallback(() => nav({ to: "/devices" }), [nav])
 
   return (

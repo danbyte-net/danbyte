@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { Pencil, Trash2 } from "lucide-react"
@@ -41,7 +42,7 @@ function RtDetail() {
 }
 
 function RtDetailBody({ rt: r }: { rt: RouteTarget }) {
-  const [tab, setTab] = useState<"overview" | "vrfs" | "journal" | "history">(
+  const [tab, setTab] = useUrlTab<"overview" | "vrfs" | "journal" | "history">(
     "overview"
   )
   const nav = useNavigate()

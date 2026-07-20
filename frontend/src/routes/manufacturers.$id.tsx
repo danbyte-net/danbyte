@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { ExternalLink, Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
@@ -42,7 +43,7 @@ function ManufacturerDetail() {
 }
 
 function Body({ manufacturer: m }: { manufacturer: Manufacturer }) {
-  const [tab, setTab] = useState<
+  const [tab, setTab] = useUrlTab<
     "device-types" | "module-types" | "journal" | "history"
   >("device-types")
   const nav = useNavigate()

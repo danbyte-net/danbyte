@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
@@ -38,7 +39,7 @@ function AggregateDetail() {
 }
 
 function Body({ aggregate: a }: { aggregate: Aggregate }) {
-  const [tab, setTab] = useState<"overview" | "journal" | "history">("overview")
+  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">("overview")
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<Aggregate | null>(null)
   const goBack = useCallback(() => nav({ to: "/aggregates" }), [nav])

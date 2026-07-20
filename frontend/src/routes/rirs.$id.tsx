@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { Pencil, Trash2 } from "lucide-react"
@@ -38,7 +39,7 @@ function RirDetail() {
 }
 
 function Body({ rir: r }: { rir: RIR }) {
-  const [tab, setTab] = useState<"aggregates" | "journal" | "history">(
+  const [tab, setTab] = useUrlTab<"aggregates" | "journal" | "history">(
     "aggregates"
   )
   const { humanIds } = useMe()

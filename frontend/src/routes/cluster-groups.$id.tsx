@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
@@ -39,7 +40,7 @@ function Body({ clusterGroup: m }: { clusterGroup: ClusterGroup }) {
   const { canDo, humanIds } = useMe()
   const canEdit = canDo("clustergroup", "change")
   const canDelete = canDo("clustergroup", "delete")
-  const [tab, setTab] = useState<"clusters" | "journal" | "history">("clusters")
+  const [tab, setTab] = useUrlTab<"clusters" | "journal" | "history">("clusters")
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<ClusterGroup | null>(null)
   const goBack = useCallback(() => nav({ to: "/cluster-groups" }), [nav])

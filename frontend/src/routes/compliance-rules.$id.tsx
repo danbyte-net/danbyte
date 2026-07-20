@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { BookOpenText, Pencil, RefreshCw, Trash2 } from "lucide-react"
@@ -58,7 +59,7 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
   const canEdit = canDo("compliancerule", "change")
   const canDelete = canDo("compliancerule", "delete")
   const [deleting, setDeleting] = useState<ComplianceRule | null>(null)
-  const [tab, setTab] = useState<"affected" | "journal" | "history">("affected")
+  const [tab, setTab] = useUrlTab<"affected" | "journal" | "history">("affected")
 
   return (
     <DetailShell

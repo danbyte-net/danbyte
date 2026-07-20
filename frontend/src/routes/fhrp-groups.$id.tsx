@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Pencil, Plus, Trash2, X } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
@@ -47,7 +48,7 @@ function FhrpGroupDetail() {
 }
 
 function Body({ group: g }: { group: FHRPGroup }) {
-  const [tab, setTab] = useState<
+  const [tab, setTab] = useUrlTab<
     "overview" | "members" | "journal" | "history"
   >("overview")
   const nav = useNavigate()

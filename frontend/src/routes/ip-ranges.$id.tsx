@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
@@ -41,7 +42,7 @@ function IpRangeDetail() {
 function Body({ range: r }: { range: IPRange }) {
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<IPRange | null>(null)
-  const [tab, setTab] = useState<
+  const [tab, setTab] = useUrlTab<
     "overview" | "available" | "journal" | "history"
   >("overview")
   const goBack = useCallback(() => nav({ to: "/ip-ranges" }), [nav])

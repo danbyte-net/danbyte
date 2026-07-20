@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { Cable as CableIcon, Pencil, Trash2, Workflow } from "lucide-react"
 import { useCallback, useState } from "react"
@@ -44,7 +45,7 @@ function InterfaceDetail() {
 }
 
 function Body({ iface: i }: { iface: Interface }) {
-  const [tab, setTab] = useState<
+  const [tab, setTab] = useUrlTab<
     "overview" | "ips" | "trace" | "journal" | "history"
   >("overview")
   const nav = useNavigate()

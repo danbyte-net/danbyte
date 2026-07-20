@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Pencil, Plus, Trash2 } from "lucide-react"
@@ -65,7 +66,7 @@ function fmtKbps(kbps: number | null): React.ReactNode {
 }
 
 function Body({ circuit: c }: { circuit: Circuit }) {
-  const [tab, setTab] = useState<
+  const [tab, setTab] = useUrlTab<
     "overview" | "terminations" | "journal" | "history"
   >("overview")
   const nav = useNavigate()

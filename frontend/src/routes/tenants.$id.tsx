@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowRightLeft, Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
@@ -40,7 +41,7 @@ function TenantDetail() {
 }
 
 function TenantDetailBody({ tenant: t }: { tenant: Tenant }) {
-  const [tab, setTab] = useState<"overview" | "journal" | "history">("overview")
+  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">("overview")
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<Tenant | null>(null)
   const qc = useQueryClient()

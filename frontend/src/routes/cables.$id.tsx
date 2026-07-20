@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import {
   TraceOnMapButton,
   TraceOnSiteMapButton,
@@ -85,7 +86,7 @@ function TerminationBox({ t }: { t: Termination }) {
 }
 
 function Body({ cable: c }: { cable: Cable }) {
-  const [tab, setTab] = useState<"overview" | "trace" | "journal" | "history">(
+  const [tab, setTab] = useUrlTab<"overview" | "trace" | "journal" | "history">(
     "overview"
   )
   const nav = useNavigate()

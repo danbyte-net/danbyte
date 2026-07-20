@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
 import { lazy, Suspense, useCallback, useState } from "react"
@@ -68,7 +69,7 @@ function TunnelDetail() {
 }
 
 function Body({ tunnel: t }: { tunnel: Tunnel }) {
-  const [tab, setTab] = useState<
+  const [tab, setTab] = useUrlTab<
     "overview" | "map" | "terminations" | "journal" | "history"
   >("overview")
   const nav = useNavigate()

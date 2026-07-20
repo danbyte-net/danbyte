@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
@@ -49,7 +50,7 @@ function DeviceTypeDetail() {
 }
 
 function Body({ deviceType: d }: { deviceType: DeviceType }) {
-  const [tab, setTab] = useState<
+  const [tab, setTab] = useUrlTab<
     "overview" | "components" | "faceplate" | "devices" | "journal" | "history"
   >("overview")
   const { canDo, editableSites } = useMe()

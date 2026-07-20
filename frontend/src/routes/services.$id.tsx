@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { Activity } from "lucide-react"
 import { toast } from "sonner"
-import { useState } from "react"
 
 import {
   api,
@@ -53,7 +53,7 @@ function ServiceDetail() {
 }
 
 function ServiceDetailBody({ service: s }: { service: Service }) {
-  const [tab, setTab] = useState<"overview" | "journal" | "history">("overview")
+  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">("overview")
   const { humanIds } = useMe()
 
   // The monitor endpoint resolves the target IP as: the service's own IP,

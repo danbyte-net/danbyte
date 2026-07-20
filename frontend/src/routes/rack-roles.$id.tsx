@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
@@ -37,7 +38,7 @@ function RackRoleDetail() {
 }
 
 function Body({ role: r }: { role: RackRole }) {
-  const [tab, setTab] = useState<"racks" | "journal" | "history">("racks")
+  const [tab, setTab] = useUrlTab<"racks" | "journal" | "history">("racks")
   const nav = useNavigate()
   const { canDo, humanIds } = useMe()
   const [deleting, setDeleting] = useState<RackRole | null>(null)

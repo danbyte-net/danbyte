@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { ChevronRight, CopyPlus, Pencil, Plus, Search } from "lucide-react"
@@ -96,7 +97,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   const canAddPrefix = canDo("prefix", "add")
   const canDeletePrefix = objCan(p, "delete", canDo("prefix", "delete"))
   const canAddIp = canDo("ipaddress", "add")
-  const [tab, setTab] = useState<
+  const [tab, setTab] = useUrlTab<
     | "overview"
     | "ips"
     | "children"

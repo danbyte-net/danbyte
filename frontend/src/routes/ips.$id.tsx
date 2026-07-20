@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Copy,
@@ -59,7 +60,7 @@ function IPDetail() {
 
 function IPDetailBody({ ip }: { ip: IPAddress }) {
   const [deleteOpen, setDeleteOpen] = useState<IPAddress | null>(null)
-  const [tab, setTab] = useState<
+  const [tab, setTab] = useUrlTab<
     "overview" | "monitoring" | "journal" | "history"
   >("overview")
   const qc = useQueryClient()

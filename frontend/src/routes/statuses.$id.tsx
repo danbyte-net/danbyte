@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
@@ -44,7 +45,7 @@ function IpStatusDetail() {
 }
 
 function Body({ status: s }: { status: Status }) {
-  const [tab, setTab] = useState<"overview" | "ips" | "journal" | "history">(
+  const [tab, setTab] = useUrlTab<"overview" | "ips" | "journal" | "history">(
     "overview"
   )
   const nav = useNavigate()

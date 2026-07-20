@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { Pencil, Plus } from "lucide-react"
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 
 import {
   api,
@@ -62,7 +63,7 @@ function Body({ location: l }: { location: Location }) {
   const floorPlan = floorPlans.data?.results[0]
   const rows = prefixes.data?.results ?? []
   const columns = useMemo<ColumnDef<Prefix>[]>(() => buildColumns(), [])
-  const [tab, setTab] = useState<
+  const [tab, setTab] = useUrlTab<
     "overview" | "devices" | "racks" | "prefixes" | "journal" | "history"
   >("overview")
 

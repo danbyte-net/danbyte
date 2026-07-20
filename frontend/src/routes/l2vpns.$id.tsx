@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
@@ -61,7 +62,7 @@ function L2vpnDetail() {
 }
 
 function Body({ l2vpn: v }: { l2vpn: L2VPN }) {
-  const [tab, setTab] = useState<
+  const [tab, setTab] = useUrlTab<
     "overview" | "terminations" | "journal" | "history"
   >("overview")
   const nav = useNavigate()

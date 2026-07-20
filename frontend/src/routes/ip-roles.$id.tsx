@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
@@ -38,7 +39,7 @@ function IpRoleDetail() {
 }
 
 function Body({ role: r }: { role: IPRole }) {
-  const [tab, setTab] = useState<"ips" | "journal" | "history">("ips")
+  const [tab, setTab] = useUrlTab<"ips" | "journal" | "history">("ips")
   const nav = useNavigate()
   const { canDo } = useMe()
   const canEdit = canDo("iprole", "change")
