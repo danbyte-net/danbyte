@@ -807,6 +807,76 @@ class UpgradeCancelTests(APITestCase):
         self.assertEqual(r.status_code, 403)
 
 
+def _png_bytes() -> bytes:
+    """Smallest valid PNG Pillow will open (a 1×1 image)."""
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGBA", (1, 1), (0, 0, 0, 0)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+class DeploymentFaviconApiTests(APITestCase):
+    URL = "/api/deployment/favicon/"
+
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser(
+            "admin", "admin@acme.com", "pw"
+        )
+
+    def _upload(self, data: bytes, name="fav.png", ctype="image/png"):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        return self.client.post(
+            self.URL,
+            {"favicon": SimpleUploadedFile(name, data, content_type=ctype)},
+            format="multipart",
+        )
+
+    def test_requires_manage_permission(self):
+        reader = get_user_model().objects.create_user("reader", "r@acme.com", "pw")
+        self.client.force_login(reader)
+        self.assertEqual(self._upload(_png_bytes()).status_code, 403)
+
+    def test_default_favicon_url_is_null(self):
+        self.client.force_login(self.admin)
+        r = self.client.get("/api/deployment/email/")
+        self.assertIsNone(r.json()["favicon_url"])
+
+    def test_upload_sets_favicon_and_me_exposes_it(self):
+        self.client.force_login(self.admin)
+        r = self._upload(_png_bytes())
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.json()["favicon_url"])
+        # The SPA reads the favicon from /api/me/.
+        me = self.client.get("/api/me/").json()
+        self.assertTrue(me["favicon_url"])
+        DeploymentSettings.load().favicon.delete(save=False)
+
+    def test_non_image_rejected(self):
+        self.client.force_login(self.admin)
+        r = self._upload(b"not really an image", name="x.png")
+        self.assertEqual(r.status_code, 400)
+        self.assertIsNone(DeploymentSettings.load().favicon.name or None)
+
+    def test_svg_rejected(self):
+        # SVG must not land on the media origin (script-in-SVG stored XSS).
+        self.client.force_login(self.admin)
+        svg = b'<svg xmlns="http://www.w3.org/2000/svg"><script>1</script></svg>'
+        r = self._upload(svg, name="x.svg", ctype="image/svg+xml")
+        self.assertEqual(r.status_code, 400)
+
+    def test_delete_clears_favicon(self):
+        self.client.force_login(self.admin)
+        self._upload(_png_bytes())
+        r = self.client.delete(self.URL)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIsNone(r.json()["favicon_url"])
+        self.assertFalse(DeploymentSettings.load().favicon)
+
+
 class HealthApiTests(APITestCase):
     def test_health_is_public_and_reports_version(self):
         # No auth — a load balancer / install-smoke hits it anonymously.

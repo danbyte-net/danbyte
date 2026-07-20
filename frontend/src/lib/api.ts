@@ -234,6 +234,8 @@ export interface Me {
   can_manage_deployment?: boolean
   can_edit_tenant?: boolean
   deployment_name?: string
+  /** Custom browser-tab icon URL (Admin → Identity); null/absent = default. */
+  favicon_url?: string | null
   /** Whether to surface per-tenant human-readable numbers (numid) in the UI. */
   human_ids_enabled?: boolean
   active_tenant?: { id: string; name: string; slug: string } | null
@@ -3920,6 +3922,8 @@ export interface DeploymentSettings {
   outbound_proxy: string
   deployment_name: string
   changelog_retention_days: number
+  /** Absolute URL of the custom favicon; null = the Danbyte default. */
+  favicon_url: string | null
   ssrf_allowlist: string[]
   map_tile_url: string
   map_tile_attribution: string

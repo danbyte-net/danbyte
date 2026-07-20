@@ -10,7 +10,8 @@ import re
 
 from django.core import mail
 from rest_framework import serializers
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, parser_classes, permission_classes
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
@@ -48,6 +49,9 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
     release_repo_token_set = serializers.SerializerMethodField()
+    # Absolute URL of the custom favicon (read-only); null = the Danbyte
+    # default. Uploaded via the dedicated multipart endpoint below.
+    favicon_url = serializers.SerializerMethodField()
 
     class Meta:
         model = DeploymentSettings
@@ -65,6 +69,7 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "outbound_proxy",
             "deployment_name",
             "changelog_retention_days",
+            "favicon_url",
             "ssrf_allowlist",
             "map_tile_url",
             "map_tile_attribution",
@@ -91,7 +96,14 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "update_window_end",
             "updated_at",
         ]
-        read_only_fields = ["updated_at", "config_drift_last_run"]
+        read_only_fields = ["updated_at", "config_drift_last_run", "favicon_url"]
+
+    def get_favicon_url(self, obj) -> str | None:
+        if not obj.favicon:
+            return None
+        url = obj.favicon.url
+        request = self.context.get("request")
+        return request.build_absolute_uri(url) if request else url
 
     def validate_ssrf_allowlist(self, value):
         """Each entry must parse as an address/CIDR — a typo that silently
@@ -171,12 +183,70 @@ def deployment_settings(request):
     if not _require_manage(request):
         return Response({"detail": "users.manage required."}, status=403)
     obj = DeploymentSettings.load()
+    ctx = {"request": request}
     if request.method == "PUT":
         ser = DeploymentSettingsSerializer(obj, data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
         ser.save()
-        return Response(DeploymentSettingsSerializer(obj).data)
-    return Response(DeploymentSettingsSerializer(obj).data)
+        return Response(DeploymentSettingsSerializer(obj, context=ctx).data)
+    return Response(DeploymentSettingsSerializer(obj, context=ctx).data)
+
+
+# Upload cap — a favicon is tiny; anything larger is a mistake or abuse.
+FAVICON_MAX_BYTES = 1024 * 1024
+FAVICON_MAX_DIM = 1024
+
+
+@api_view(["POST", "DELETE"])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def deployment_favicon(request):
+    """Set (POST multipart ``favicon``) or clear (DELETE) the custom browser-tab
+    icon. Deployment-wide branding, so ``users.manage`` only. Rejects anything
+    Pillow can't open as a raster image — which also rules out SVG, keeping a
+    script-carrying SVG off the same-origin media path."""
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    obj = DeploymentSettings.load()
+    ctx = {"request": request}
+
+    if request.method == "DELETE":
+        if obj.favicon:
+            obj.favicon.delete(save=False)
+            obj.favicon = None
+            obj.save(update_fields=["favicon", "updated_at"])
+        return Response(DeploymentSettingsSerializer(obj, context=ctx).data)
+
+    upload = request.FILES.get("favicon")
+    if not upload:
+        return Response({"detail": "No favicon file provided."}, status=400)
+    if upload.size > FAVICON_MAX_BYTES:
+        return Response(
+            {"detail": "Favicon too large (max 1 MB)."}, status=400
+        )
+    # Validate it's a real raster image (also rejects SVG — Pillow can't open
+    # it — so no active content lands on the media origin).
+    try:
+        from PIL import Image
+
+        image = Image.open(upload)
+        image.verify()
+        if max(image.size) > FAVICON_MAX_DIM:
+            return Response(
+                {"detail": f"Favicon too large (max {FAVICON_MAX_DIM}px)."},
+                status=400,
+            )
+    except Exception:
+        return Response(
+            {"detail": "Not a valid image. Use a PNG or ICO file."}, status=400
+        )
+    upload.seek(0)
+
+    if obj.favicon:
+        obj.favicon.delete(save=False)
+    obj.favicon = upload
+    obj.save(update_fields=["favicon", "updated_at"])
+    return Response(DeploymentSettingsSerializer(obj, context=ctx).data)
 
 
 # ── optional built-in device fields — admin-controlled visibility ────────

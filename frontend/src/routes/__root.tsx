@@ -79,7 +79,20 @@ export const Route = createRootRoute({
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Danbyte" },
     ],
-    links: [{ rel: "stylesheet", href: appCss }],
+    links: [
+      { rel: "stylesheet", href: appCss },
+      // Default brand favicon (the blue Danbyte "D"). A custom favicon set in
+      // Admin → Identity overrides the <link> href at runtime (see AppLayout).
+      { rel: "icon", href: "/favicon.ico", sizes: "any" },
+      {
+        rel: "icon",
+        type: "image/png",
+        href: "/favicon-32.png",
+        sizes: "32x32",
+      },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+      { rel: "manifest", href: "/manifest.json" },
+    ],
     scripts: [
       // No `src` → inline script in <head>; no defer/async → blocking,
       // exactly what we want for a pre-paint theme class.
@@ -115,6 +128,30 @@ function AppLayout() {
   useEffect(() => {
     document.title = me.deployment_name?.trim() || "Danbyte"
   }, [me.deployment_name])
+
+  // Swap the browser-tab icon to the admin's custom favicon when one is set
+  // (Admin → Identity), else restore the shipped Danbyte defaults. Mirrors the
+  // deployment-name → tab-title branding above. Only the `rel="icon"` links are
+  // managed here; `apple-touch-icon` / `manifest` are left as declared.
+  useEffect(() => {
+    if (typeof document === "undefined") return
+    const head = document.head
+    head
+      .querySelectorAll<HTMLLinkElement>('link[rel="icon"]')
+      .forEach((l) => l.remove())
+    const add = (attrs: Record<string, string>) => {
+      const link = document.createElement("link")
+      link.rel = "icon"
+      Object.entries(attrs).forEach(([k, v]) => link.setAttribute(k, v))
+      head.appendChild(link)
+    }
+    if (me.favicon_url) {
+      add({ href: me.favicon_url })
+    } else {
+      add({ href: "/favicon.ico", sizes: "any" })
+      add({ href: "/favicon-32.png", type: "image/png", sizes: "32x32" })
+    }
+  }, [me.favicon_url])
 
   // Auth guard: once /api/me/ resolves, send anonymous visitors to the login
   // page (remembering where they were headed). Public routes render bare,

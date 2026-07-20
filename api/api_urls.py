@@ -354,6 +354,9 @@ urlpatterns = [
          name="deployment-email"),
     path("deployment/email/test/", deployment.deployment_test_email,
          name="deployment-email-test"),
+    # Custom browser-tab favicon (upload / clear) — users.manage only.
+    path("deployment/favicon/", deployment.deployment_favicon,
+         name="deployment-favicon"),
     # Optional built-in device fields — admin-controlled visibility.
     path("deployment/device-fields/", deployment.device_field_visibility,
          name="deployment-device-fields"),

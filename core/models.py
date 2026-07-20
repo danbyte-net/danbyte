@@ -280,6 +280,13 @@ class DeploymentSettings(TimestampedModel):
         help_text="Days to keep change-log / audit entries before pruning. "
         "0 = keep forever.",
     )
+    favicon = models.ImageField(
+        upload_to="branding/",
+        null=True,
+        blank=True,
+        help_text="Custom browser-tab icon for this install. Blank = the "
+        "default Danbyte icon. A small square PNG/ICO works best.",
+    )
 
     # ─── optional built-in device fields (admin-controlled visibility) ─────
     device_field_visibility = models.JSONField(

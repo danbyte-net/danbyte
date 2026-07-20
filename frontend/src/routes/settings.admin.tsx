@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Lock } from "lucide-react"
@@ -125,6 +125,91 @@ function AdminPage() {
   )
 }
 
+// The favicon is a file, not a JSON field, so it saves the moment you pick one
+// (its own multipart endpoint) rather than riding the Identity card's Save.
+function FaviconField({ faviconUrl }: { faviconUrl: string | null }) {
+  const qc = useQueryClient()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState<null | "upload" | "reset">(null)
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["deployment-email"] })
+    qc.invalidateQueries({ queryKey: ["me"] }) // live-swaps the tab icon
+  }
+
+  const upload = async (file: File) => {
+    setBusy("upload")
+    try {
+      const body = new FormData()
+      body.append("favicon", file)
+      await api("/api/deployment/favicon/", { method: "POST", body })
+      refresh()
+      toast.success("Favicon updated")
+    } catch (e) {
+      apiErrorToast(e)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const reset = async () => {
+    setBusy("reset")
+    try {
+      await api("/api/deployment/favicon/", { method: "DELETE" })
+      refresh()
+      toast.success("Favicon reset to the Danbyte default")
+    } catch (e) {
+      apiErrorToast(e)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <Field
+      label="Browser-tab icon"
+      hint="Shown in the browser tab and bookmarks. A small square PNG or ICO works best; max 1 MB. Blank = the Danbyte icon."
+    >
+      <div className="flex items-center gap-3">
+        <img
+          src={faviconUrl || "/favicon-32.png"}
+          alt=""
+          className="size-8 rounded border border-border bg-background object-contain p-0.5"
+        />
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/png,image/x-icon,image/vnd.microsoft.icon,image/jpeg,image/gif,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) void upload(f)
+            e.target.value = ""
+          }}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy !== null}
+          onClick={() => inputRef.current?.click()}
+        >
+          {busy === "upload" ? "Uploading…" : "Upload…"}
+        </Button>
+        {faviconUrl && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy !== null}
+            onClick={() => void reset()}
+          >
+            {busy === "reset" ? "Resetting…" : "Reset to default"}
+          </Button>
+        )}
+      </div>
+    </Field>
+  )
+}
+
 function DeploymentSection() {
   const qc = useQueryClient()
   const { data } = useQuery({
@@ -235,6 +320,7 @@ function DeploymentSection() {
             className="w-40"
           />
         </Field>
+        <FaviconField faviconUrl={data.favicon_url} />
       </SettingsCard>
 
       <SettingsCard

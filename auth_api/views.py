@@ -206,6 +206,11 @@ def me_json(request):
         },
         "can_edit_tenant": "tenants.edit" in perms or "tenant" in permissions,
         "deployment_name": ds.deployment_name,
+        # Custom browser-tab icon (Admin → Identity); null = the Danbyte
+        # default. The SPA swaps the <link rel=icon> href to this at runtime.
+        "favicon_url": (
+            request.build_absolute_uri(ds.favicon.url) if ds.favicon else None
+        ),
         # Whether the SPA should surface per-tenant human-readable numbers (numid).
         "human_ids_enabled": ui.human_ids_enabled,
         # Sharing & delegation feature flags for the SPA (per-tenant effective).

@@ -9,7 +9,7 @@ Two settings stores:
 
 | Store | Scope | Holds |
 |---|---|---|
-| `DeploymentSettings` (`core/models.py`, singleton `pk=1`) | whole install | SMTP defaults, deployment LDAP, updates/release repo, `public_base_url`, proxy/timeouts, drift scheduler, retention, deployment name — plus the **defaults** for every overridable group |
+| `DeploymentSettings` (`core/models.py`, singleton `pk=1`) | whole install | SMTP defaults, deployment LDAP, updates/release repo, `public_base_url`, proxy/timeouts, drift scheduler, retention, deployment name, branding (`favicon`) — plus the **defaults** for every overridable group |
 | `TenantSettings` (`core/models.py`, OneToOne per tenant) | one tenant | overrides for **Email/SMTP**, **LDAP/AD**, **UI policy** (device-field visibility, human-IDs), **Delegation** (site-editor delegation), **Site separation** (`enhanced_site_separation`, `allow_site_settings` — its own `override_separation` toggle, like the floor-plan popover group), **Date & time** (`date_format`, `time_style`, `display_timezone` — its own `override_datetime` toggle) |
 | `SiteSettings` (`core/models.py`, OneToOne per site) | one site | **Email/SMTP only (v1)** — site-local relay + From address, for orgs whose sites run their own IT. Gated by `allow_site_settings` + site-admin qualification (`core/site_settings.py`) |
 
@@ -49,6 +49,20 @@ a site editor there. Holding only the `sitesettings` grant does NOT make
 someone an infrastructure editor (it's excluded from `editable_sites`).
 Deployment-only groups (updates, public URL, proxy, drift, retention) have no
 tenant counterpart by design — updates patch the shared process.
+
+## Branding
+
+`deployment_name` (blank = `"Danbyte"`) drives the sidebar header, the browser
+tab **title**, and the login page. The tab **icon** is the `favicon` image:
+blank = the shipped default (the blue Danbyte "D", `frontend/public/favicon.*`),
+else the uploaded file served from media. Both live on `DeploymentSettings` and
+are set from Settings → Deployment → **Identity** (`users.manage`). The favicon
+uploads via `POST /api/deployment/favicon/` (multipart; `DELETE` clears it) —
+only Pillow-decodable raster images are accepted, which rules out SVG so no
+active content lands on the media origin. `me_json` returns `favicon_url`
+(null = default) and the SPA swaps the `<link rel="icon">` href at runtime
+(`__root.tsx`), the same pattern that brands the tab title from
+`deployment_name`.
 
 ## Two admin tiers
 
