@@ -89,6 +89,74 @@ current `/opt` layout.
     Pair this with the **Airgapped install** toggle so Danbyte never tries to
     reach the release repo.
 
+### Airgapped upgrade with the installer (step by step)
+
+The most thorough path for an offline box — it re-asserts the **production**
+service set (gunicorn + daphne + workers + built frontend), so it also repairs
+a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
+
+1. **On an internet-connected machine**, download the bundle for the target
+   version from the releases page — `danbyte-<version>-linux-x86_64.tar.gz`
+   (e.g. `https://github.com/danbyte-net/danbyte/releases`).
+
+2. **Copy it to the server** (any path; `/tmp` is fine):
+
+    ```bash
+    scp danbyte-<version>-linux-x86_64.tar.gz you@server:/tmp/
+    ```
+
+3. **On the server, unpack and run the installer as root.** It auto-detects the
+   existing service user (`danbyte`) and *its* home, so it upgrades the install
+   in place — you do **not** pass a path:
+
+    ```bash
+    cd /tmp
+    tar xzf danbyte-<version>-linux-x86_64.tar.gz
+    cd danbyte-<version>-linux-x86_64
+    sudo ./install.sh --host danbyte.example.com      # your real hostname/IP
+    ```
+
+    Add `--no-nginx` if you terminate TLS / manage nginx yourself and don't want
+    the installer to touch it.
+
+4. **Verify** once it finishes:
+
+    ```bash
+    curl -s http://127.0.0.1:8000/api/health/; echo
+    # -> {"status": "ok", "database": true, "version": "<new version>"}
+    ```
+
+    Or open **Settings → Updates** — the version and the environment table
+    (Python / Django / PostgreSQL / Redis) load instantly and show the new
+    version.
+
+!!! note "What it keeps, what it needs"
+
+    - **Keeps** your existing `.env` (prints `keeping existing …/.env`) and your
+      **database** — it runs `migrate`, never `flush`. Credentials stay
+      decryptable (it backfills `MONITORING_SECRET_KEY` from your `SECRET_KEY`
+      when missing).
+    - **OS packages** (postgresql, redis-server, nginx, nmap) are only installed
+      if a binary is *missing*. On a box that already runs Danbyte they're all
+      present, so the installer **skips apt entirely** — no network needed. On a
+      truly bare airgapped host, pre-install those packages (or point apt at a
+      local mirror) first.
+    - Take a DB snapshot first if you want a manual net:
+      `sudo -u danbyte pg_dump danbyte | gzip > ~/danbyte-$(date +%F).sql.gz`.
+
+!!! tip "Prefer this over the dev runserver in production"
+
+    A production install should run the **gunicorn** unit (`danbyte-web`), not
+    the dev **`danbyte-backend`** (runserver) unit — runserver's autoreload
+    restarts the app when files change, which can interrupt an in-place upgrade.
+    Re-running `install.sh` enables the correct prod units. To disable a
+    stray runserver unit by hand:
+
+    ```bash
+    sudo -u danbyte env XDG_RUNTIME_DIR=/run/user/$(id -u danbyte) \
+      systemctl --user disable --now danbyte-backend.service
+    ```
+
 !!! tip "Health endpoint"
 
     `GET /api/health/` is unauthenticated and returns `{"status": "ok",
