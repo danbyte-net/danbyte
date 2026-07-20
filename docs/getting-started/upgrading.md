@@ -25,6 +25,13 @@ current `/opt` layout.
     slow, failing, or disabled, the version and environment still show right
     away.
 
+!!! tip "Open tabs reload themselves after an upgrade"
+    A new release ships freshly-hashed frontend assets, so a browser tab still
+    running the previous build would ask for chunk files that no longer exist.
+    Danbyte detects that failed load and reloads the tab once to pick up the new
+    build — no hard refresh needed. If a tab ever seems stuck after an upgrade,
+    a normal reload always clears it.
+
 === "In-app (recommended)"
 
     **Settings → Updates → Upgrade.** One click checks out the new release,
