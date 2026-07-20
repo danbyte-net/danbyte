@@ -4894,6 +4894,8 @@ export interface VirtualChassis {
   master: { id: string; name: string } | null
   members: VirtualChassisMember[]
   member_count: number
+  primary_ip: { id: string; ip_address: string } | null
+  oob_ip: { id: string; ip_address: string } | null
   description: string
   comments: string
   tags: Tag[]

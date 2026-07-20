@@ -4610,7 +4610,7 @@ class L2VPNTerminationViewSet(TenantScopedViewSet):
 class VirtualChassisViewSet(TenantScopedViewSet):
     queryset = (
         VirtualChassis.objects
-        .select_related("master")
+        .select_related("master", "master__primary_ip", "master__oob_ip")
         .prefetch_related("members__status", "tags")
         .order_by("name")
     )

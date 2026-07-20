@@ -11,6 +11,7 @@ import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { numidColumn } from "@/components/cells/numid"
+import { tagsColumn } from "@/components/cells/tag-list"
 import { RowActions } from "@/components/row-actions"
 import { VirtualChassisDeleteDialog } from "@/components/virtual-chassis-delete-dialog"
 import { useMe } from "@/lib/use-me"
@@ -103,11 +104,46 @@ function VirtualChassisPage() {
         },
       },
       {
+        id: "primary_ip",
+        accessorFn: (v) => v.primary_ip?.ip_address ?? "",
+        header: "Primary IP",
+        cell: ({ row }) =>
+          row.original.primary_ip ? (
+            <Link
+              to="/ips/$id"
+              params={{ id: row.original.primary_ip.id }}
+              className="font-mono text-xs hover:underline"
+            >
+              {row.original.primary_ip.ip_address}
+            </Link>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+      {
+        id: "oob_ip",
+        accessorFn: (v) => v.oob_ip?.ip_address ?? "",
+        header: "OOB IP",
+        cell: ({ row }) =>
+          row.original.oob_ip ? (
+            <Link
+              to="/ips/$id"
+              params={{ id: row.original.oob_ip.id }}
+              className="font-mono text-xs hover:underline"
+            >
+              {row.original.oob_ip.ip_address}
+            </Link>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+      tagsColumn<VirtualChassis>({ getTags: (r) => r.tags ?? [] }),
+      {
         id: "description",
         accessorKey: "description",
         header: "Description",
         cell: ({ row }) => (
-          <span className="line-clamp-1 block text-muted-foreground">
+          <span className="block whitespace-nowrap text-muted-foreground">
             {row.original.description || "—"}
           </span>
         ),

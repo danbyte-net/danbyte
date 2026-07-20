@@ -4573,11 +4573,26 @@ class VirtualChassisSerializer(
     )
     members = serializers.SerializerMethodField()
     member_count = serializers.SerializerMethodField()
+    # The stack's management addresses come from its master device.
+    primary_ip = serializers.SerializerMethodField()
+    oob_ip = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
     )
+
+    @staticmethod
+    def _ip_mini(ip):
+        return (
+            {"id": str(ip.id), "ip_address": ip.ip_address} if ip else None
+        )
+
+    def get_primary_ip(self, obj):
+        return self._ip_mini(obj.master.primary_ip if obj.master_id else None)
+
+    def get_oob_ip(self, obj):
+        return self._ip_mini(obj.master.oob_ip if obj.master_id else None)
 
     def get_members(self, obj):
         return [
@@ -4615,7 +4630,8 @@ class VirtualChassisSerializer(
     class Meta:
         model = VirtualChassis
         fields = ["id", "name", "domain", "master", "master_id",
-                  "members", "member_count", "description", "comments",
+                  "members", "member_count", "primary_ip", "oob_ip",
+                  "description", "comments",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "members", "member_count",
