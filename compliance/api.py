@@ -10,7 +10,7 @@ from api.viewsets import TenantScopedViewSet
 from api.views import _get_active_tenant
 from auth_api import rbac
 
-from .engine import evaluate
+from .engine import evaluate, evaluate_for_object
 from .models import OBJECT_TYPES, ComplianceRule
 
 
@@ -57,7 +57,7 @@ class ComplianceRuleSerializer(serializers.ModelSerializer):
     class Meta:
         model = ComplianceRule
         fields = [
-            "id", "name", "description", "enabled", "severity",
+            "id", "name", "description", "remediation", "enabled", "severity",
             "object_type", "object_type_label", "check_type",
             "check_type_display", "field", "pattern", "tag", "cf_key",
             "created_at", "updated_at",
@@ -142,7 +142,18 @@ class ComplianceRuleViewSet(TenantScopedViewSet):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def compliance_evaluate(request):
-    """Evaluate enabled rules against current data → violations."""
+    """Evaluate enabled rules against current data → violations.
+
+    Optional query params narrow the flat ``violations`` list (the per-rule
+    ``rules`` summary and ``total_violations`` always reflect the full,
+    unfiltered evaluation):
+
+    - ``severity``    — comma-separated severities (critical,warning,info)
+    - ``object_type`` — comma-separated object types (device,prefix,…)
+    - ``rule``        — a rule id (or ``config-drift``)
+    - ``object``      — an object id (e.g. one device)
+    - ``q``           — case-insensitive substring over object repr + rule name
+    """
     tenant = _get_active_tenant(request)
     if tenant is None:
         return Response({"rules": [], "violations": [], "total_violations": 0})
@@ -150,7 +161,112 @@ def compliance_evaluate(request):
         return Response({"detail": "compliancerule.view required."}, status=403)
     result = evaluate(tenant)
     _append_config_drift(result, tenant)
+    result["violations"] = _filter_violations(result["violations"], request)
     return Response(result)
+
+
+def _filter_violations(violations: list[dict], request) -> list[dict]:
+    """Apply the evaluate endpoint's optional query-param filters."""
+    p = request.query_params
+    severities = {s for s in (p.get("severity") or "").split(",") if s}
+    types = {t for t in (p.get("object_type") or "").split(",") if t}
+    rule_id = p.get("rule") or ""
+    object_id = p.get("object") or ""
+    needle = (p.get("q") or "").strip().lower()
+
+    def keep(v: dict) -> bool:
+        if severities and v["severity"] not in severities:
+            return False
+        if types and v["object_type"] not in types:
+            return False
+        if rule_id and v["rule_id"] != rule_id:
+            return False
+        if object_id and v["object_id"] != object_id:
+            return False
+        if needle and needle not in v["object_repr"].lower() \
+                and needle not in v["rule_name"].lower():
+            return False
+        return True
+
+    if not (severities or types or rule_id or object_id or needle):
+        return violations
+    return [v for v in violations if keep(v)]
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def compliance_device_status(request, device_id):
+    """One device's compliance status: the rules it currently fails (with
+    their remediation guides), or an all-clear flag.
+
+    RBAC: requires ``compliancerule.view`` plus row-scoped visibility of the
+    device itself — a device outside the caller's constraints 404s
+    (non-leaking), the same contract as the rest of the app.
+    """
+    from api.models import Device
+
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"detail": "No active tenant selected."}, status=403)
+    if not rbac.has_action(request.user, tenant, "compliancerule", "view"):
+        return Response({"detail": "compliancerule.view required."}, status=403)
+    qs = Device.objects.filter(tenant=tenant)
+    qs = rbac.restrict_queryset(qs, request.user, tenant, "device", "view")
+    device = qs.filter(pk=device_id).first()
+    if device is None:
+        return Response({"detail": "Not found."}, status=404)
+
+    failed = evaluate_for_object(tenant, "device", device)
+    violations = [
+        {
+            "rule_id": str(rule.id),
+            "rule_name": rule.name,
+            "severity": rule.severity,
+            "description": rule.description,
+            "remediation": rule.remediation,
+            "check_type": rule.check_type,
+            "field": rule.field,
+            "pattern": rule.pattern,
+            "tag": rule.tag,
+            "cf_key": rule.cf_key,
+        }
+        for rule in failed
+    ]
+    if _device_has_config_drift(tenant, device):
+        violations.append(
+            {
+                "rule_id": CONFIG_DRIFT_RULE_ID,
+                "rule_name": "Config drift",
+                "severity": "warning",
+                "description": "The device's live configuration has drifted "
+                               "from its intended (IaC) configuration.",
+                "remediation": "",
+                "check_type": "",
+                "field": "",
+                "pattern": "",
+                "tag": "",
+                "cf_key": "",
+            }
+        )
+    return Response(
+        {
+            "device": {"id": str(device.pk), "name": device.name or str(device.pk)},
+            "all_clear": not violations,
+            "total": len(violations),
+            "violations": violations,
+        }
+    )
+
+
+def _device_has_config_drift(tenant, device) -> bool:
+    """Mirror of :func:`_append_config_drift` for a single device."""
+    try:
+        from integrations.models import DeviceConfigState
+    except Exception:  # noqa: BLE001
+        return False
+    return DeviceConfigState.objects.filter(
+        tenant=tenant, device=device, status="drift"
+    ).exists()
 
 
 # Synthetic rule id for IaC config drift — not a real ComplianceRule. The

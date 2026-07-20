@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, type MouseEvent } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { TriangleAlert } from "lucide-react"
@@ -89,6 +89,10 @@ function worstSeverity(violations: ComplianceViolation[]): ComplianceSeverity {
 export interface ViolationBadgeProps {
   /** UUID of the object to look up. */
   objectId: string
+  /** The object's compliance object type. Devices get a dedicated per-device
+   * compliance page, so `objectType="device"` routes the marker there instead
+   * of the global Compliance list. */
+  objectType?: string
   /** Pre-resolved map (pass it from a list to avoid one hook per row). When
    * omitted the component subscribes to the shared evaluation itself. */
   map?: Map<string, ComplianceViolation[]>
@@ -106,6 +110,7 @@ export interface ViolationBadgeProps {
  */
 export function ViolationBadge({
   objectId,
+  objectType,
   map,
   prominent,
   className,
@@ -121,30 +126,51 @@ export function ViolationBadge({
   const n = violations.length
   const label = `${n} compliance violation${n === 1 ? "" : "s"}`
 
+  const linkClass = cn(
+    prominent
+      ? cn(
+          "inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset",
+          SEVERITY_PILL[severity]
+        )
+      : cn(
+          "inline-flex shrink-0 items-center align-middle",
+          SEVERITY_TONE[severity]
+        ),
+    className
+  )
+  const stop = (e: MouseEvent) => e.stopPropagation()
+  const inner = (
+    <>
+      <TriangleAlert className="h-3.5 w-3.5" />
+      {prominent && <span className="num">{n}</span>}
+    </>
+  )
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Link
-          to="/compliance"
-          search={{ tab: "violations" }}
-          aria-label={label}
-          className={cn(
-            prominent
-              ? cn(
-                  "inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset",
-                  SEVERITY_PILL[severity]
-                )
-              : cn(
-                  "inline-flex shrink-0 items-center align-middle",
-                  SEVERITY_TONE[severity]
-                ),
-            className
-          )}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <TriangleAlert className="h-3.5 w-3.5" />
-          {prominent && <span className="num">{n}</span>}
-        </Link>
+        {objectType === "device" ? (
+          // Devices have a dedicated per-device compliance status page.
+          <Link
+            to="/devices/$id/compliance"
+            params={{ id: objectId }}
+            aria-label={label}
+            className={linkClass}
+            onClick={stop}
+          >
+            {inner}
+          </Link>
+        ) : (
+          <Link
+            to="/compliance"
+            search={{ tab: "violations" }}
+            aria-label={label}
+            className={linkClass}
+            onClick={stop}
+          >
+            {inner}
+          </Link>
+        )}
       </TooltipTrigger>
       <TooltipContent
         side="top"

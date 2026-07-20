@@ -63,6 +63,26 @@ def _violates(rule: ComplianceRule, obj, tag_slugs) -> bool:
     return False
 
 
+def evaluate_for_object(tenant, object_type: str, obj) -> list[ComplianceRule]:
+    """The enabled rules of ``object_type`` that ``obj`` currently fails.
+
+    Single-object companion to :func:`evaluate` — powers the per-device
+    compliance status endpoint without scanning the whole tenant. One rule
+    fails one object at most once, so the failed rules *are* the violations.
+    """
+    rules = ComplianceRule.objects.filter(
+        tenant=tenant, enabled=True, object_type=object_type
+    )
+    tag_slugs: set[str] | None = None
+    failed = []
+    for rule in rules:
+        if rule.check_type == "required_tag" and tag_slugs is None:
+            tag_slugs = {t.slug for t in obj.tags.all()}
+        if _violates(rule, obj, tag_slugs or set()):
+            failed.append(rule)
+    return failed
+
+
 def evaluate(tenant, rules=None, cap: int = 5000) -> dict:
     """Return per-rule violation counts + a flat violation list."""
     if rules is None:

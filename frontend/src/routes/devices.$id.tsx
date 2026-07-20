@@ -228,7 +228,7 @@ function Body({ device: d }: { device: Device }) {
               <div className="font-mono text-2xl font-semibold tracking-tight">
                 {d.name}
               </div>
-              <ViolationBadge objectId={d.id} prominent />
+              <ViolationBadge objectId={d.id} objectType="device" prominent />
             </div>
             <div className="mt-2 flex items-center gap-2">
               <StatusBadge status={d.status} />
