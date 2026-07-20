@@ -236,7 +236,7 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
       accessorKey: "description",
       header: "Description",
       cell: ({ row }) => (
-        <span className="line-clamp-1 block max-w-[34ch] text-muted-foreground">
+        <span className="block whitespace-nowrap text-muted-foreground">
           {row.original.description || "—"}
         </span>
       ),

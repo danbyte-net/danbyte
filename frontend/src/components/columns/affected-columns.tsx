@@ -31,7 +31,7 @@ function descCol<T extends { description: string }>(): ColumnDef<T> {
     accessorKey: "description",
     header: "Description",
     cell: ({ row }) => (
-      <span className="line-clamp-1 block text-muted-foreground">
+      <span className="block whitespace-nowrap text-muted-foreground">
         {row.original.description || "—"}
       </span>
     ),

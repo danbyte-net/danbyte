@@ -231,7 +231,7 @@ export function buildIpColumns<T = IPAddress>(
         if (!ip) return null
         return (
           <span
-            className="line-clamp-1 block text-muted-foreground"
+            className="block whitespace-nowrap text-muted-foreground"
             title={ip.description}
           >
             {ip.description || "—"}

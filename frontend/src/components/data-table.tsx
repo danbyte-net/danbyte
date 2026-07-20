@@ -466,10 +466,11 @@ export function DataTable<T>({
       )}
 
       {/* Table.
-          `overflow-hidden` clips the row hover background to the rounded
-          corners — without it, the row's `bg` leaks past the border-radius
-          on first/last rows. */}
-      <div className="overflow-hidden rounded-lg border border-border">
+          `overflow-x-auto` lets a wide table (full, non-truncated cells) scroll
+          horizontally instead of clipping; it still clips the row hover
+          background to the rounded corners (overflow-y computes to auto), so the
+          `bg` doesn't leak past the border-radius on first/last rows. */}
+      <div className="overflow-x-auto rounded-lg border border-border">
         <Table data-stripes={stripes ? "on" : "off"}>
           <TableHeader
             className={
@@ -558,8 +559,12 @@ export function DataTable<T>({
                         key={cell.id}
                         className={
                           "py-2 text-sm " +
+                          // Never truncate. The flex column still absorbs extra
+                          // width, but shows its content in full; if that makes
+                          // the table wider than its container, the wrapper
+                          // scrolls horizontally instead of clipping cells.
                           (flexColumn && cell.column.id === flexColumn
-                            ? "w-full max-w-0 truncate"
+                            ? "w-full whitespace-nowrap"
                             : "whitespace-nowrap")
                         }
                       >

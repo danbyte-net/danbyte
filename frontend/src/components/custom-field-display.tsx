@@ -72,7 +72,21 @@ export function formatCustomValue(
     return <span className="num">{String(v)}</span>
   }
   if (type === "object" && def?.related_model) {
-    return <ObjectValue slug={def.related_model} id={String(v)} />
+    // The stored value may be a bare id OR a serialized object dict — pull the
+    // id out either way so we never pass "[object Object]" to ObjectValue.
+    const id =
+      v && typeof v === "object"
+        ? String((v as Record<string, unknown>).id ?? "")
+        : String(v)
+    if (id) return <ObjectValue slug={def.related_model} id={id} />
+  }
+  // Any object value (e.g. a MAC/related dict on a field whose def we couldn't
+  // resolve) — show a sensible label instead of "[object Object]".
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>
+    const label =
+      o.name ?? o.label ?? o.display ?? o.mac_address ?? o.address ?? o.value
+    return <span>{label != null ? String(label) : JSON.stringify(v)}</span>
   }
   return <span>{String(v)}</span>
 }
