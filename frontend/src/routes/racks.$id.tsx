@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
 import { useQuery } from "@tanstack/react-query"
-import { Camera, Pencil, Trash2 } from "lucide-react"
+import { Camera, Minus, Pencil, Plus, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useRef, useState } from "react"
 import { type ColumnDef } from "@tanstack/react-table"
 
@@ -175,7 +175,7 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
       </DetailTab>
       <DetailTab value="devices">
         <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
-          <RackElevation rack={r} scale={1.6} draggable />
+          <RackElevation rack={r} scale={0.6} draggable />
           <div className="min-w-0 flex-1">
             <RackDevicesPane rackId={r.id} />
           </div>
@@ -351,10 +351,35 @@ function RackOverview({ rack: r }: { rack: Rack }) {
 /** NetBox-style paired elevations — front and rear side by side, one shared
  * display-mode toggle. Full-depth devices show hatched on the face they're
  * not mounted on. */
+// Zoom presets (px per mm). Names/Images default to a compact fit-on-screen
+// scale; Render defaults larger so ports stay legible. Users can zoom in/out.
+const ZOOM_STEPS = [0.45, 0.6, 0.8, 1.0, 1.3, 1.6, 2.0]
+const DEFAULT_ZOOM: Record<RackDisplayMode, number> = {
+  names: 0.6,
+  images: 0.6,
+  render: 1.35,
+}
+
 function RackFaces({ rack }: { rack: Rack }) {
   const [mode, setMode] = useState<RackDisplayMode>("names")
   const [labels, setLabels] = useState(true)
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM.names)
   const facesRef = useRef<HTMLDivElement>(null)
+
+  // Reset to the mode's sensible default zoom when switching modes.
+  const changeMode = (m: RackDisplayMode) => {
+    setMode(m)
+    setZoom(DEFAULT_ZOOM[m])
+  }
+  const stepZoom = (dir: -1 | 1) => {
+    const i = ZOOM_STEPS.findIndex((z) => z >= zoom)
+    const cur = i < 0 ? ZOOM_STEPS.length - 1 : i
+    const next = Math.min(
+      ZOOM_STEPS.length - 1,
+      Math.max(0, cur + dir)
+    )
+    setZoom(ZOOM_STEPS[next])
+  }
 
   // Snapshot both faces to a PNG (html-to-image), theme-aware background.
   const exportPng = async () => {
@@ -377,7 +402,7 @@ function RackFaces({ rack }: { rack: Rack }) {
       <div className="mb-3 flex items-center gap-3">
         <SegmentedTabs<RackDisplayMode>
           value={mode}
-          onValueChange={setMode}
+          onValueChange={changeMode}
           items={[
             { value: "names", label: "Names" },
             { value: "images", label: "Images" },
@@ -395,6 +420,29 @@ function RackFaces({ rack }: { rack: Rack }) {
             Text
           </label>
         )}
+        {/* Zoom — shrink to fit the whole rack on screen, or zoom in for detail. */}
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => stepZoom(-1)}
+            disabled={zoom <= ZOOM_STEPS[0]}
+            aria-label="Zoom out"
+          >
+            <Minus className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => stepZoom(1)}
+            disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
+            aria-label="Zoom in"
+          >
+            <Plus className="h-3 w-3" />
+          </Button>
+        </div>
         <Button
           variant="outline"
           size="sm"
@@ -419,7 +467,7 @@ function RackFaces({ rack }: { rack: Rack }) {
               mode={mode}
               labels={labels}
               showHeader={false}
-              scale={1.6}
+              scale={zoom}
               draggable
             />
           </div>
