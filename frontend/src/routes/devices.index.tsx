@@ -202,7 +202,7 @@ function buildColumns({
           >
             {row.original.name}
           </Link>
-          <ViolationBadge objectId={row.original.id} />
+          <ViolationBadge objectId={row.original.id} objectType="device" />
         </span>
       ),
     },

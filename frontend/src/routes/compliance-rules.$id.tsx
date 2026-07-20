@@ -2,7 +2,7 @@ import { useMemo, useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Pencil, RefreshCw, Trash2 } from "lucide-react"
+import { BookOpenText, Pencil, RefreshCw, Trash2 } from "lucide-react"
 
 import {
   api,
@@ -17,6 +17,7 @@ import {
   affectedColumnsFor,
   AFFECTED_FLEX_COLUMN,
 } from "@/components/columns/affected-columns"
+import { Markdown } from "@/components/markdown"
 import { QueryError } from "@/components/query-error"
 import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -124,6 +125,15 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="affected">
+        {r.remediation && (
+          <div className="mb-4 rounded-lg border border-border bg-card px-4 py-3">
+            <h2 className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-foreground uppercase">
+              <BookOpenText className="h-3.5 w-3.5 text-muted-foreground" />
+              How to fix
+            </h2>
+            <Markdown source={r.remediation} />
+          </div>
+        )}
         <AffectedObjects
           ruleId={r.id}
           ruleName={r.name}

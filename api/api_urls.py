@@ -67,6 +67,7 @@ from audit.api import ChangeLogViewSet, JournalEntryViewSet
 from customization.api_views import customization_meta, object_labels
 from compliance.api import (
     ComplianceRuleViewSet,
+    compliance_device_status,
     compliance_evaluate,
     compliance_object_types,
 )
@@ -300,6 +301,8 @@ urlpatterns = [
     path("presence/", presence_list, name="presence-list"),
     path("compliance/evaluate/", compliance_evaluate, name="compliance-evaluate"),
     path("compliance/object-types/", compliance_object_types, name="compliance-object-types"),
+    path("compliance/devices/<uuid:device_id>/", compliance_device_status,
+         name="compliance-device-status"),
     path("rbac/object-types/", rbac_object_types, name="rbac-object-types"),
     path("rbac/site-role/", create_site_role, name="rbac-site-role"),
     path("users/<int:user_id>/access-summary/", user_access_summary,

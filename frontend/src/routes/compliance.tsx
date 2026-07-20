@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
@@ -9,6 +9,7 @@ import {
   Search,
   ShieldCheck,
   Trash2,
+  X,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -26,7 +27,7 @@ import { Input } from "@/components/ui/input"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
-import { FacetGroup, FilterRail, toggleInSet } from "@/components/filter-rail"
+import { FacetGroup, FilterRail } from "@/components/filter-rail"
 import { useMe } from "@/lib/use-me"
 import {
   AlertDialog,
@@ -42,15 +43,41 @@ import { QueryError } from "@/components/query-error"
 import { apiErrorToast } from "@/lib/api-toast"
 
 type Tab = "violations" | "rules"
-interface Search {
+
+/** URL-backed state of the Violations tab — filters live in the query string
+ * so a filtered view is shareable and survives back/forward. Deep-linkable:
+ * `/compliance?tab=violations&device=<id>&rule=<id>&severity=critical`. */
+interface ComplianceSearch {
   tab: Tab
+  /** Free-text search over object + rule name. */
+  q?: string
+  /** Comma-separated severities (critical,warning,info). */
+  severity?: string
+  /** Comma-separated object types (device,prefix,…). */
+  type?: string
+  /** A single rule id (or `config-drift`). */
+  rule?: string
+  /** A single object id (e.g. one device). */
+  device?: string
+}
+
+const optStr = (v: unknown): string | undefined =>
+  typeof v === "string" && v !== "" ? v : undefined
+
+function normalizeSearch(s: Record<string, unknown>): ComplianceSearch {
+  return {
+    tab: s.tab === "rules" ? "rules" : "violations",
+    q: optStr(s.q),
+    severity: optStr(s.severity),
+    type: optStr(s.type),
+    rule: optStr(s.rule),
+    device: optStr(s.device),
+  }
 }
 
 export const Route = createFileRoute("/compliance")({
   component: CompliancePage,
-  validateSearch: (s: Record<string, unknown>): Search => ({
-    tab: s.tab === "rules" ? "rules" : "violations",
-  }),
+  validateSearch: normalizeSearch,
 })
 
 export const SEV_VARIANT: Record<
@@ -72,7 +99,15 @@ const SEVERITIES: ComplianceSeverity[] = ["critical", "warning", "info"]
 function CompliancePage() {
   const { tab } = Route.useSearch()
   const nav = useNavigate()
-  const go = (t: Tab) => nav({ to: "/compliance", search: { tab: t } })
+  // Preserve the violation filters in the URL when hopping between tabs.
+  const go = (t: Tab) =>
+    nav({
+      to: "/compliance",
+      search: (prev): ComplianceSearch => ({
+        ...normalizeSearch(prev),
+        tab: t,
+      }),
+    })
 
   const evalQ = useQuery({
     queryKey: ["compliance-eval"],
@@ -124,11 +159,81 @@ function ViolationsTab({
   q: ReturnType<typeof useQuery<ComplianceEvaluation>>
 }) {
   const data = q.data
-  const [search, setSearch] = useState("")
-  const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set())
-  const [sevFilter, setSevFilter] = useState<Set<string>>(new Set())
+  const urlSearch = Route.useSearch()
+  const nav = useNavigate()
+
+  // All filters are URL state (shareable + back/forward-safe). Facet sets are
+  // encoded comma-separated; empty selections drop the param entirely.
+  const patchSearch = (patch: Partial<ComplianceSearch>) =>
+    nav({
+      to: "/compliance",
+      search: (prev): ComplianceSearch => {
+        const cur = normalizeSearch(prev)
+        return {
+          tab: patch.tab ?? cur.tab,
+          q: "q" in patch ? patch.q : cur.q,
+          severity: "severity" in patch ? patch.severity : cur.severity,
+          type: "type" in patch ? patch.type : cur.type,
+          rule: "rule" in patch ? patch.rule : cur.rule,
+          device: "device" in patch ? patch.device : cur.device,
+        }
+      },
+      replace: true,
+    })
+
+  const typeFilter = useMemo(
+    () => new Set((urlSearch.type ?? "").split(",").filter(Boolean)),
+    [urlSearch.type]
+  )
+  const sevFilter = useMemo(
+    () => new Set((urlSearch.severity ?? "").split(",").filter(Boolean)),
+    [urlSearch.severity]
+  )
+  const toggleFacet = (
+    key: "type" | "severity",
+    set: Set<string>,
+    v: string
+  ) => {
+    const next = new Set(set)
+    if (next.has(v)) next.delete(v)
+    else next.add(v)
+    patchSearch({ [key]: next.size ? [...next].join(",") : undefined })
+  }
+
+  // Debounced free-text search → the `q` URL param. Back/forward restores the
+  // box from the URL; typing never gets clobbered by a stale URL echo.
+  const urlQ = urlSearch.q ?? ""
+  const [search, setSearch] = useState(urlQ)
+  const pushedQ = useRef(urlQ)
+  useEffect(() => {
+    if (urlQ !== pushedQ.current) {
+      pushedQ.current = urlQ
+      setSearch(urlQ)
+    }
+  }, [urlQ])
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (search !== urlQ) {
+        pushedQ.current = search
+        patchSearch({ q: search || undefined })
+      }
+    }, 300)
+    return () => clearTimeout(t)
+    // Deliberately keyed on `search` alone: this is a one-way debounce.
+  }, [search])
 
   const all = useMemo(() => data?.violations ?? [], [data])
+
+  // Deep-link filters (`rule`, `device`) surface as dismissible chips; their
+  // labels resolve from the evaluation itself.
+  const ruleChip = urlSearch.rule
+    ? (all.find((v) => v.rule_id === urlSearch.rule)?.rule_name ??
+      urlSearch.rule)
+    : null
+  const deviceChip = urlSearch.device
+    ? (all.find((v) => v.object_id === urlSearch.device)?.object_repr ??
+      urlSearch.device)
+    : null
 
   // Object-type facets with counts, from the live evaluation.
   const typeFacets = useMemo(() => {
@@ -158,6 +263,8 @@ function ViolationsTab({
     return all.filter((v) => {
       if (typeFilter.size > 0 && !typeFilter.has(v.object_type)) return false
       if (sevFilter.size > 0 && !sevFilter.has(v.severity)) return false
+      if (urlSearch.rule && v.rule_id !== urlSearch.rule) return false
+      if (urlSearch.device && v.object_id !== urlSearch.device) return false
       if (
         needle &&
         !v.object_repr.toLowerCase().includes(needle) &&
@@ -166,7 +273,7 @@ function ViolationsTab({
         return false
       return true
     })
-  }, [all, search, typeFilter, sevFilter])
+  }, [all, search, typeFilter, sevFilter, urlSearch.rule, urlSearch.device])
 
   const columns = useMemo<ColumnDef<ComplianceViolation>[]>(
     () => [
@@ -250,13 +357,13 @@ function ViolationsTab({
           label="Object type"
           options={typeFacets}
           selected={typeFilter}
-          onToggle={(v) => toggleInSet(typeFilter, v, setTypeFilter)}
+          onToggle={(v) => toggleFacet("type", typeFilter, v)}
         />
         <FacetGroup
           label="Severity"
           options={sevFacets}
           selected={sevFilter}
-          onToggle={(v) => toggleInSet(sevFilter, v, setSevFilter)}
+          onToggle={(v) => toggleFacet("severity", sevFilter, v)}
         />
       </FilterRail>
 
@@ -271,6 +378,20 @@ function ViolationsTab({
               className="h-8 w-64 pl-8 text-xs"
             />
           </div>
+          {ruleChip && (
+            <FilterChip
+              label="Rule"
+              value={ruleChip}
+              onClear={() => patchSearch({ rule: undefined })}
+            />
+          )}
+          {deviceChip && (
+            <FilterChip
+              label="Object"
+              value={deviceChip}
+              onClear={() => patchSearch({ device: undefined })}
+            />
+          )}
           <span className="text-xs text-muted-foreground">
             {rows.length} of {all.length}
           </span>
@@ -317,6 +438,32 @@ function ViolationsTab({
         </div>
       </div>
     </div>
+  )
+}
+
+/** A dismissible pill for a deep-link filter (`rule` / `device` URL params). */
+function FilterChip({
+  label,
+  value,
+  onClear,
+}: {
+  label: string
+  value: string
+  onClear: () => void
+}) {
+  return (
+    <span className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-muted/40 pr-1 pl-2 text-xs">
+      <span className="text-muted-foreground">{label}:</span>
+      <span className="font-medium">{value}</span>
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label={`Clear ${label.toLowerCase()} filter`}
+        className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </span>
   )
 }
 
@@ -476,7 +623,12 @@ function RulesTab({ evaluation }: { evaluation?: ComplianceEvaluation }) {
   )
 }
 
-export function ruleSummary(r: ComplianceRule): string {
+export function ruleSummary(
+  r: Pick<ComplianceRule, "field" | "pattern" | "tag" | "cf_key"> & {
+    check_type: string
+    check_type_display?: string
+  }
+): string {
   switch (r.check_type) {
     case "required":
       return `${r.field} must be set`
@@ -489,7 +641,7 @@ export function ruleSummary(r: ComplianceRule): string {
     case "required_cf":
       return `cf “${r.cf_key}” must be set`
     default:
-      return r.check_type_display
+      return r.check_type_display ?? r.check_type
   }
 }
 

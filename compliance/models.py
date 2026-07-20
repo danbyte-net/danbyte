@@ -48,6 +48,13 @@ class ComplianceRule(TimestampedModel):
     )
     name = models.CharField(max_length=120)
     description = models.TextField(blank=True, default="")
+    # Operator-authored Markdown "how to fix" guide, rendered wherever the
+    # rule's violations are shown (rule detail, per-device compliance page).
+    remediation = models.TextField(
+        blank=True,
+        default="",
+        help_text="Markdown remediation guide shown alongside violations.",
+    )
     enabled = models.BooleanField(default=True)
     severity = models.CharField(
         max_length=8, choices=Severity.choices, default=Severity.WARNING

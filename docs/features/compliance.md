@@ -29,6 +29,7 @@ is stored — results are always computed fresh from the current data.
    |---|---|
    | **Name** | A short label for the rule. |
    | **Description** | Optional note explaining the rationale. |
+   | **How to fix** | Optional **Markdown remediation guide** — step-by-step instructions rendered wherever the rule's violations appear (see below). |
    | **Enabled** | Turn the rule off to skip it during evaluation without deleting it. |
    | **Severity** | `Critical`, `Warning`, or `Info`. Used for sorting and triage — it does not block or enforce anything. |
    | **Object type** | What the rule applies to: prefix, IP address, device, VLAN, VRF, or site. |
@@ -64,6 +65,32 @@ severity, object type, the object itself, and the rule it broke. You can:
 - **Click an object** to jump to its detail page, or **click a rule** to open the
   rule's detail page.
 
+### Filters live in the URL
+
+Every violation filter is kept in the page's query string, so a filtered view is
+**shareable and bookmarkable** and survives the browser's back/forward buttons.
+For example:
+
+```
+/compliance?tab=violations&severity=critical,warning&type=device&q=core
+/compliance?tab=violations&rule=<rule-id>
+/compliance?tab=violations&device=<object-id>
+```
+
+| Parameter | Meaning |
+|---|---|
+| `q` | Free-text search over object and rule name (the search box). |
+| `severity` | Comma-separated severities (`critical`, `warning`, `info`). |
+| `type` | Comma-separated object types (`device`, `prefix`, …). |
+| `rule` | A single rule id — only that rule's violations. |
+| `device` | A single object id — only that object's violations. |
+
+`rule` and `device` are deep-link filters: when present they appear as
+dismissible chips next to the search box. The same parameters are accepted by
+the API endpoint (`GET /api/compliance/evaluate/?severity=…&rule=…&object=…&q=…`),
+which narrows the returned violation list while keeping the per-rule summary and
+total unfiltered.
+
 !!! tip "Large data sets are capped"
     To stay fast on big tenants, the flat violations list is capped at 5,000
     entries, and each rule scans up to 5,000 rows. The **counts** stay exact even
@@ -74,15 +101,44 @@ severity, object type, the object itself, and the rule it broke. You can:
 Click a rule name to open its detail page. It shows the rule's configuration plus
 an **affected objects** table — the rows it currently fails, rendered with the
 same columns you'd see on that object type's normal list. A **Re-evaluate**
-button refreshes it on demand.
+button refreshes it on demand. If the rule has a **How to fix** guide, it is
+rendered above the affected-objects table.
+
+### Remediation guides ("How to fix")
+
+Each rule can carry a Markdown remediation guide, edited on the rule form
+(requires the *change* permission on compliance rules, like any other rule
+edit). It supports headings, ordered/unordered lists, fenced and inline code,
+bold/italic, and `https://` links, and is rendered:
+
+- on the rule's detail page, above the affected objects, and
+- on the per-device compliance page, expandable per failing rule via
+  **How to fix**.
+
+The renderer never interprets raw HTML — markup in the guide is shown as plain
+text.
+
+### Per-device compliance page
+
+Every device has a dedicated compliance status page at
+`/devices/<id>/compliance`. It shows either **"All green — no violations"**
+when the device passes every enabled rule, or one card per failing rule with
+its severity, what the rule asserts, and the expandable remediation guide.
+Config drift (from IaC integrations) appears here too, linking to the
+Config-drift page. A **Re-evaluate** button refreshes the status on demand.
+
+The page is backed by `GET /api/compliance/devices/<id>/`, which is
+tenant-scoped and requires the compliance *view* permission plus visibility of
+the device itself.
 
 ### Violation markers on objects
 
 Wherever a compliance object appears — its detail page header and its row in list
 pages — a small warning marker shows up if that object is failing any rule. The
 marker is tinted by the worst severity (critical = red, warning = amber,
-info = neutral) and its tooltip names the failing rules with a link back to the
-Compliance page. Clean objects show nothing.
+info = neutral) and its tooltip names the failing rules. For **devices** the
+marker links to that device's compliance page; for other object types it links
+back to the Compliance page. Clean objects show nothing.
 
 ## Export the results
 

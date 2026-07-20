@@ -49,6 +49,7 @@ export function ComplianceRuleForm({
   const isEdit = !!rule
   const [name, setName] = useState(rule?.name ?? "")
   const [description, setDescription] = useState(rule?.description ?? "")
+  const [remediation, setRemediation] = useState(rule?.remediation ?? "")
   const [objectType, setObjectType] = useState(rule?.object_type ?? "prefix")
   const [check, setCheck] = useState<ComplianceCheck>(
     rule?.check_type ?? "required"
@@ -67,6 +68,7 @@ export function ComplianceRuleForm({
       const body = {
         name: name.trim(),
         description,
+        remediation,
         object_type: objectType,
         check_type: check,
         severity,
@@ -128,6 +130,18 @@ export function ComplianceRuleForm({
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           className="min-h-16 text-[13px]"
+        />
+      </Field>
+
+      <Field
+        label="How to fix"
+        hint="Optional — Markdown remediation guide shown with this rule's violations (headings, lists, `code`, **bold**, links)"
+      >
+        <Textarea
+          value={remediation}
+          onChange={(e) => setRemediation(e.target.value)}
+          placeholder={"1. Open the device\n2. Set the missing field…"}
+          className="min-h-28 font-mono text-[13px]"
         />
       </Field>
 

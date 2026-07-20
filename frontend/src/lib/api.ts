@@ -3557,6 +3557,8 @@ export interface ComplianceRule {
   id: string
   name: string
   description: string
+  /** Markdown "how to fix" guide, shown alongside the rule's violations. */
+  remediation: string
   enabled: boolean
   severity: ComplianceSeverity
   object_type: string
@@ -3608,6 +3610,30 @@ export interface ComplianceRuleViolations {
    * genuine per-type table on the rule detail page. */
   objects: Record<string, unknown>[]
   total: number
+}
+
+/** One failed rule on the per-device compliance status page. */
+export interface DeviceComplianceViolation {
+  rule_id: string
+  rule_name: string
+  severity: ComplianceSeverity
+  description: string
+  /** Markdown "how to fix" guide (may be empty). */
+  remediation: string
+  check_type: string
+  field: string
+  pattern: string
+  tag: string
+  cf_key: string
+}
+
+/** Response of GET /api/compliance/devices/<id>/ — one device's compliance
+ * status: all-clear, or the rules it currently fails (grouped per rule). */
+export interface DeviceComplianceStatus {
+  device: { id: string; name: string }
+  all_clear: boolean
+  total: number
+  violations: DeviceComplianceViolation[]
 }
 
 /** Live progress for a fanned-out discovery run (polled while shards drain). */
