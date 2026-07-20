@@ -8,6 +8,7 @@ import {
   type ManufacturerOption,
   type Paginated,
   type Platform,
+  type PlatformGroupOption,
   type PlatformWritePayload,
 } from "@/lib/api"
 import {
@@ -50,6 +51,9 @@ export function PlatformForm({
   const [name, setName] = useState(platform?.name ?? "")
   const [slug, setSlug] = useState(platform?.slug ?? "")
   const [slugDirty, setSlugDirty] = useState(isEdit)
+  const [groupId, setGroupId] = useState<string | null>(
+    platform?.group?.id ?? null
+  )
   const [manufacturerId, setManufacturerId] = useState<string | null>(
     platform?.manufacturer?.id ?? null
   )
@@ -64,6 +68,7 @@ export function PlatformForm({
     setName(platform.name)
     setSlug(platform.slug)
     setSlugDirty(true)
+    setGroupId(platform.group?.id ?? null)
     setManufacturerId(platform.manufacturer?.id ?? null)
     setConfigTemplateId(platform.config_template?.id ?? null)
     setDescription(platform.description)
@@ -76,6 +81,12 @@ export function PlatformForm({
     if (!slugDirty && !isEdit) setSlug(slugify(v))
   }
 
+  const groups = useQuery({
+    queryKey: ["platform-groups-picker"],
+    queryFn: () =>
+      api<Paginated<PlatformGroupOption>>("/api/platform-groups/?picker=1"),
+    staleTime: 10 * 60_000,
+  })
   const manufacturers = useQuery({
     queryKey: ["manufacturers-picker"],
     queryFn: () =>
@@ -96,6 +107,7 @@ export function PlatformForm({
       const payload: PlatformWritePayload = {
         name: name.trim(),
         slug: slug.trim() || slugify(name),
+        group_id: groupId,
         manufacturer_id: manufacturerId,
         config_template_id: configTemplateId,
         description: description.trim(),
@@ -153,6 +165,33 @@ export function PlatformForm({
         }}
         mono
         error={fieldErrors.slug}
+      />
+      <FormCombobox
+        label="Group"
+        hint="optional"
+        value={groupId}
+        onChange={setGroupId}
+        options={(groups.data?.results ?? []).map((g) => ({
+          value: g.id,
+          label: g.name,
+        }))}
+        noneLabel="No group"
+        placeholder="Select a group…"
+        searchPlaceholder="Search groups…"
+        emptyText="No platform groups."
+        error={fieldErrors.group_id}
+        quickAdd={
+          <QuickAddDialog
+            title="New platform group"
+            endpoint="/api/platform-groups/"
+            fields={[{ name: "name", label: "Name", required: true }]}
+            onCreated={(g) => {
+              qc.invalidateQueries({ queryKey: ["platform-groups-picker"] })
+              qc.invalidateQueries({ queryKey: ["platform-groups"] })
+              setGroupId(g.id)
+            }}
+          />
+        }
       />
       <FormCombobox
         label="Manufacturer"

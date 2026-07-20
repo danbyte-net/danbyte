@@ -399,6 +399,12 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
     model = models.CharField(max_length=255, blank=True,
                              help_text="Vendor part / model identifier.")
     part_number = models.CharField(max_length=128, blank=True)
+    platform = models.ForeignKey(
+        "Platform", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="device_types",
+        help_text="Default OS platform for devices of this type. A device "
+        "without its own platform inherits it (its effective platform).",
+    )
     u_height = models.PositiveSmallIntegerField(
         default=1,
         help_text="Height in rack units. 0 for non-rack devices.",
@@ -2975,6 +2981,45 @@ class DeviceRole(NumIdMixin, TimestampedModel, CustomFieldsMixin):
         return self.name
 
 
+class PlatformGroup(NumIdMixin, TimestampedModel):
+    """A grouping of platforms (Windows, Linux, network NOS, …).
+    Self-nesting, so OS families can carry sub-families."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="platform_groups"
+    )
+    name = models.CharField(max_length=128)
+    slug = models.SlugField(max_length=128)
+    parent = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="children",
+    )
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "slug"], name="uniq_platformgroup_tenant_slug"
+            )
+        ]
+
+    def clean(self):
+        # Cycle guard — a group can't be its own ancestor.
+        seen, node = {self.pk}, self.parent
+        while node is not None:
+            if node.pk in seen:
+                from django.core.exceptions import ValidationError
+
+                raise ValidationError({"parent": "This would create a cycle."})
+            seen.add(node.pk)
+            node = node.parent
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class Platform(NumIdMixin, TimestampedModel, LifecycleMixin):
     """An OS / software platform (Cisco IOS-XE, Ubuntu 22.04, VMware ESXi)."""
 
@@ -2984,6 +3029,10 @@ class Platform(NumIdMixin, TimestampedModel, LifecycleMixin):
     )
     name = models.CharField(max_length=128)
     slug = models.SlugField(max_length=128)
+    group = models.ForeignKey(
+        PlatformGroup, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="platforms",
+    )
     manufacturer = models.ForeignKey(
         Manufacturer, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="platforms",

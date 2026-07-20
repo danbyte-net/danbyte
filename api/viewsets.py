@@ -39,7 +39,7 @@ from .models import (
     PowerFeed, PowerOutlet, PowerOutletTemplate, PowerPanel, PowerPort,
     PowerPortTemplate, Prefix, Provider, ProviderNetwork, RearPort,
     RearPortTemplate,
-    DeviceRole, Platform, Rack, RackRole, RIR, RouteTarget, Service, ServiceTemplate, Site, VirtualMachine, VMInterface, VLAN, VLANGroup, VRF, Zone,
+    DeviceRole, Platform, PlatformGroup, Rack, RackRole, RIR, RouteTarget, Service, ServiceTemplate, Site, VirtualMachine, VMInterface, VLAN, VLANGroup, VRF, Zone,
     WirelessLAN, WirelessLANGroup,
     Tunnel, TunnelGroup, TunnelTermination, IPSecProfile,
     L2VPN, L2VPNTermination, VirtualChassis,
@@ -126,6 +126,8 @@ from .serializers import (
     RackRoleSerializer,
     RackRoleMiniSerializer,
     DeviceRoleSerializer,
+    PlatformGroupMiniSerializer,
+    PlatformGroupSerializer,
     PlatformSerializer,
     ServiceSerializer,
     ServiceTemplateSerializer,
@@ -1867,7 +1869,7 @@ def _check_unique_name(model, serializer, tenant, noun):
 
 class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
     queryset = (
-        DeviceType.objects.select_related("manufacturer").prefetch_related("tags").all().order_by("name")
+        DeviceType.objects.select_related("manufacturer", "platform").prefetch_related("tags").all().order_by("name")
     )
     serializer_class = DeviceTypeSerializer
     pagination_class = StandardPagination
@@ -2037,7 +2039,7 @@ def _region_and_descendant_ids(region_id):
 
 class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
     queryset = (
-        Device.objects.select_related("device_type", "site", "primary_ip")
+        Device.objects.select_related("device_type", "device_type__platform", "site", "primary_ip")
         .prefetch_related("tags").all().order_by("name")
     )
     serializer_class = DeviceSerializer
@@ -3454,6 +3456,61 @@ class DeviceRoleViewSet(TenantScopedViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
+class PlatformGroupViewSet(TenantScopedViewSet):
+    """Groupings of platforms (Windows, Linux, network NOS, …) — self-nesting."""
+
+    queryset = PlatformGroup.objects.all().order_by("name")
+    serializer_class = PlatformGroupSerializer
+    pagination_class = StandardPagination
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return PlatformGroupMiniSerializer
+        return PlatformGroupSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related("parent")
+        if self.request:
+            s = self.request.query_params.get("search", "").strip()
+            if s:
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+        return qs.annotate(
+            platform_count_annotated=Count("platforms")
+        ).order_by("name")
+
+    def _slug(self, serializer, tenant):
+        data = serializer.validated_data
+        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
+        slug = data.get("slug") or slugify(name)
+        data["slug"] = slug
+        clash = PlatformGroup.objects.filter(tenant=tenant, slug=slug)
+        if serializer.instance is not None:
+            clash = clash.exclude(pk=serializer.instance.pk)
+        if clash.exists():
+            raise ValidationError({"slug": "Name already in use."})
+
+    def perform_create(self, serializer):
+        tenant = self._tenant_or_403()
+        self._slug(serializer, tenant)
+        serializer.save(tenant=tenant)
+
+    def perform_update(self, serializer):
+        self._slug(serializer, self._tenant_or_403())
+        serializer.save()
+
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        n = obj.platforms.count()
+        if n:
+            return Response(
+                {"detail": f"{n} platform{'s' if n != 1 else ''} belong to this "
+                           "group — reassign or delete them first."},
+                status=drf_status.HTTP_409_CONFLICT,
+            )
+        return super().destroy(request, *args, **kwargs)
+
+
 class PlatformViewSet(DeviceRoleViewSet):
     queryset = Platform.objects.all().order_by("name")
     serializer_class = PlatformSerializer
@@ -3466,11 +3523,16 @@ class PlatformViewSet(DeviceRoleViewSet):
         return PlatformSerializer
 
     def get_queryset(self):
-        qs = TenantScopedViewSet.get_queryset(self).select_related("manufacturer")
+        qs = TenantScopedViewSet.get_queryset(self).select_related(
+            "manufacturer", "group"
+        )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+            g = self.request.query_params.get("group")
+            if g:
+                qs = qs.filter(group_id=g)
             lc = self.request.query_params.get("lifecycle")
             if lc:
                 qs = _apply_lifecycle_filter(qs, lc)

@@ -88,6 +88,7 @@ from .viewsets import (
     RackViewSet,
     RackRoleViewSet,
     DeviceRoleViewSet,
+    PlatformGroupViewSet,
     PlatformViewSet,
     ServiceViewSet,
     ServiceTemplateViewSet,
@@ -232,6 +233,7 @@ router.register(r"vm-interfaces",  VMInterfaceViewSet, basename="vm-interface")
 router.register(r"racks",         RackViewSet,        basename="rack")
 router.register(r"rack-roles",    RackRoleViewSet,    basename="rack-role")
 router.register(r"device-roles",  DeviceRoleViewSet,  basename="device-role")
+router.register(r"platform-groups", PlatformGroupViewSet, basename="platform-group")
 router.register(r"platforms",     PlatformViewSet,    basename="platform")
 router.register(r"services",      ServiceViewSet,     basename="service")
 router.register(r"service-templates", ServiceTemplateViewSet, basename="service-template")

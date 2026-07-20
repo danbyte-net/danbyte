@@ -27,7 +27,7 @@ from .models import (
     DeviceBay, DeviceBayTemplate, InventoryItem, InventoryItemTemplate,
     TopologyView,
     Module, ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModuleType,
-    NumIdMixin, Platform, weight_kg,
+    NumIdMixin, Platform, PlatformGroup, weight_kg,
     ConfigContext, ExportTemplate, Location, PowerFeed, PowerOutlet,
     PowerOutletTemplate, PowerPanel, PowerPort, PowerPortTemplate,
     Prefix, Provider, ProviderNetwork, Rack, RackRole, RearPort,
@@ -1319,6 +1319,11 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
         source="manufacturer", queryset=Manufacturer.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    platform = serializers.SerializerMethodField()
+    platform_id = TenantScopedPrimaryKeyRelatedField(
+        source="platform", queryset=Platform.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
         source="tags", queryset=Tag.objects.all(),
@@ -1327,6 +1332,10 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     device_count = serializers.SerializerMethodField()
     front_image = serializers.SerializerMethodField()
     rear_image = serializers.SerializerMethodField()
+
+    def get_platform(self, obj):
+        p = obj.platform
+        return {"id": str(p.id), "name": p.name} if p else None
 
     def get_device_count(self, obj) -> int:
         v = getattr(obj, "device_count_annotated", None)
@@ -1419,7 +1428,8 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
         model = DeviceType
         fields = [
             "owning_site", "owning_site_id", "permissions", "id", "name", "manufacturer", "manufacturer_id", "model",
-                  "part_number", "u_height", "rack_width", "description",
+                  "part_number", "platform", "platform_id",
+                  "u_height", "rack_width", "description",
                   "front_image", "rear_image", "faceplate",
                   "is_full_depth", "airflow", "weight", "weight_unit",
                   "subdevice_role", "exclude_from_utilization",
@@ -1467,6 +1477,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     rack_width = serializers.SerializerMethodField()
     role = serializers.SerializerMethodField()
     platform = serializers.SerializerMethodField()
+    effective_platform = serializers.SerializerMethodField()
     location = serializers.SerializerMethodField()
     cluster = serializers.SerializerMethodField()
 
@@ -1575,6 +1586,12 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                 "release_date": p.release_date,
                 "end_of_support": p.end_of_support,
                 "lifecycle_state": p.lifecycle_state}
+
+    def get_effective_platform(self, obj):
+        # The device's own platform wins; otherwise fall back to its type's
+        # default. Read-only and derived — the stored field is untouched.
+        p = obj.platform or (obj.device_type.platform if obj.device_type else None)
+        return {"id": str(p.id), "name": p.name} if p else None
 
     def get_location(self, obj):
         loc = obj.location
@@ -1746,6 +1763,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         model = Device
         fields = ["id", "numid", "name", "device_type", "device_type_id", "site", "site_id",
                   "role", "role_id", "platform", "platform_id",
+                  "effective_platform",
                   "rack", "rack_id", "position", "face", "rack_side",
                   "u_height", "rack_width",
                   "location", "location_id", "cluster", "cluster_id",
@@ -3327,6 +3345,48 @@ class DeviceRoleSerializer(CustomFieldsSerializerMixin, NumIdModelSerializer):
                             "created_at", "updated_at"]
 
 
+class PlatformGroupMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = PlatformGroup
+        fields = ["id", "name", "slug"]
+
+
+class PlatformGroupSerializer(NumIdModelSerializer):
+    slug = serializers.SlugField(required=False, allow_blank=True)
+    parent = PlatformGroupMiniSerializer(read_only=True)
+    parent_id = TenantScopedPrimaryKeyRelatedField(
+        source="parent", queryset=PlatformGroup.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    platform_count = serializers.SerializerMethodField()
+    child_count = serializers.SerializerMethodField()
+
+    def get_platform_count(self, obj) -> int:
+        v = getattr(obj, "platform_count_annotated", None)
+        return v if v is not None else obj.platforms.count()
+
+    def get_child_count(self, obj) -> int:
+        return obj.children.count()
+
+    def validate_parent_id(self, value):
+        if value and self.instance:
+            node = value
+            while node is not None:
+                if node.pk == self.instance.pk:
+                    raise serializers.ValidationError(
+                        "This would create a cycle."
+                    )
+                node = node.parent
+        return value
+
+    class Meta:
+        model = PlatformGroup
+        fields = ["id", "name", "slug", "parent", "parent_id", "description",
+                  "platform_count", "child_count", "created_at", "updated_at"]
+        read_only_fields = ["id", "platform_count", "child_count",
+                            "created_at", "updated_at"]
+
+
 class PlatformMiniSerializer(NumIdModelSerializer):
     lifecycle_state = serializers.ReadOnlyField()
 
@@ -3338,6 +3398,11 @@ class PlatformMiniSerializer(NumIdModelSerializer):
 
 class PlatformSerializer(NumIdModelSerializer):
     slug = serializers.SlugField(required=False, allow_blank=True)
+    group = PlatformGroupMiniSerializer(read_only=True)
+    group_id = TenantScopedPrimaryKeyRelatedField(
+        source="group", queryset=PlatformGroup.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     manufacturer = ManufacturerMiniSerializer(read_only=True)
     manufacturer_id = TenantScopedPrimaryKeyRelatedField(
         source="manufacturer", queryset=Manufacturer.objects.all(),
@@ -3361,7 +3426,8 @@ class PlatformSerializer(NumIdModelSerializer):
 
     class Meta:
         model = Platform
-        fields = ["id", "name", "slug", "manufacturer", "manufacturer_id",
+        fields = ["id", "name", "slug", "group", "group_id",
+                  "manufacturer", "manufacturer_id",
                   "config_template", "config_template_id",
                   "description", *LIFECYCLE_FIELDS,
                   "device_count", "created_at", "updated_at"]

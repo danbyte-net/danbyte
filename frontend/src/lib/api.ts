@@ -933,6 +933,8 @@ export interface DeviceType extends LifecycleInfo {
   manufacturer: { id: string; name: string } | null
   model: string
   part_number: string
+  /** Default OS platform for devices of this type (effective-platform fallback). */
+  platform: { id: string; name: string } | null
   u_height: number
   /** Horizontal rack footprint — "half" mounts two side-by-side per U. */
   rack_width: "full" | "half"
@@ -966,6 +968,7 @@ export interface DeviceTypeWritePayload {
   manufacturer_id?: string | null
   model?: string
   part_number?: string
+  platform_id?: string | null
   u_height?: number
   rack_width?: "full" | "half"
   description?: string
@@ -1026,6 +1029,8 @@ export interface Device {
     end_of_support?: string | null
     lifecycle_state?: LifecycleState
   } | null
+  /** Read-only: the device's own platform, else its type's default. */
+  effective_platform: { id: string; name: string } | null
   status: StatusMini | null
   serial_number: string
   asset_tag: string
@@ -1199,11 +1204,39 @@ export interface DeviceRoleOption {
 
 // ─── DCIM: platforms ────────────────────────────────────────────────────────
 
+export interface PlatformGroup {
+  id: string
+  numid: number | null
+  name: string
+  slug: string
+  parent: { id: string; name: string; slug: string } | null
+  description: string
+  platform_count: number
+  child_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface PlatformGroupWritePayload {
+  name: string
+  slug?: string
+  parent_id?: string | null
+  description?: string
+}
+
+/** Picker shape (?picker=1) — PlatformGroupMiniSerializer. */
+export interface PlatformGroupOption {
+  id: string
+  name: string
+  slug: string
+}
+
 export interface Platform extends LifecycleInfo {
   id: string
   numid: number | null
   name: string
   slug: string
+  group: { id: string; name: string; slug: string } | null
   manufacturer: { id: string; name: string; slug: string } | null
   config_template: { id: string; name: string } | null
   description: string
@@ -1215,6 +1248,7 @@ export interface Platform extends LifecycleInfo {
 export interface PlatformWritePayload {
   name: string
   slug?: string
+  group_id?: string | null
   manufacturer_id?: string | null
   config_template_id?: string | null
   description?: string
