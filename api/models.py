@@ -288,7 +288,7 @@ class Site(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         return self.name
 
 
-class Manufacturer(NumIdMixin, TimestampedModel):
+class Manufacturer(NumIdMixin, TimestampedModel, TaggableMixin):
     """Maker of a device (Dell, Cisco, Juniper, …)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -2936,7 +2936,7 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 
 # ─── Device roles + platforms (shared by Device + VirtualMachine) ────────────
-class DeviceRole(NumIdMixin, TimestampedModel, CustomFieldsMixin):
+class DeviceRole(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """Functional role of a device or VM (core switch, hypervisor, …). Coloured."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -2975,7 +2975,7 @@ class DeviceRole(NumIdMixin, TimestampedModel, CustomFieldsMixin):
         return self.name
 
 
-class Platform(NumIdMixin, TimestampedModel, LifecycleMixin):
+class Platform(NumIdMixin, TimestampedModel, LifecycleMixin, TaggableMixin):
     """An OS / software platform (Cisco IOS-XE, Ubuntu 22.04, VMware ESXi)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

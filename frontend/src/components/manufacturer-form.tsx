@@ -9,6 +9,7 @@ import {
 } from "@/lib/api"
 import {
   FormFooter,
+  FormTags,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -34,12 +35,16 @@ export function ManufacturerForm({
   const [description, setDescription] = useState(
     manufacturer?.description ?? ""
   )
+  const [tagIds, setTagIds] = useState<number[]>(
+    manufacturer?.tags?.map((t) => t.id) ?? []
+  )
 
   useEffect(() => {
     if (!manufacturer) return
     setName(manufacturer.name)
     setUrl(manufacturer.url)
     setDescription(manufacturer.description)
+    setTagIds(manufacturer.tags?.map((t) => t.id) ?? [])
     reset()
   }, [manufacturer, reset])
 
@@ -49,6 +54,7 @@ export function ManufacturerForm({
         name: name.trim(),
         url: url.trim(),
         description: description.trim(),
+        tag_ids: tagIds,
       }
       if (isEdit)
         return api<Manufacturer>(`/api/manufacturers/${manufacturer!.id}/`, {
@@ -103,6 +109,12 @@ export function ManufacturerForm({
         value={description}
         onChange={setDescription}
         error={fieldErrors.description}
+      />
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
       />
       <FormFooter
         onCancel={onCancel}

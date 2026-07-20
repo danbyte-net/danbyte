@@ -801,6 +801,7 @@ export interface Manufacturer {
   slug: string
   url: string
   description: string
+  tags: Tag[]
   device_type_count: number
   owning_site?: { id: string; name: string } | null
   permissions?: ObjectPerms
@@ -812,6 +813,7 @@ export interface ManufacturerWritePayload {
   name: string
   url?: string
   description?: string
+  tag_ids?: number[]
 }
 
 export interface ManufacturerOption {
@@ -1173,6 +1175,7 @@ export interface DeviceRole {
   config_template: { id: string; name: string } | null
   description: string
   custom_fields: Record<string, unknown>
+  tags: Tag[]
   device_count: number
   vm_count: number
   created_at: string
@@ -1188,6 +1191,7 @@ export interface DeviceRoleWritePayload {
   config_template_id?: string | null
   description?: string
   custom_fields?: Record<string, unknown>
+  tag_ids?: number[]
 }
 
 export interface DeviceRoleOption {
@@ -1207,6 +1211,7 @@ export interface Platform extends LifecycleInfo {
   manufacturer: { id: string; name: string; slug: string } | null
   config_template: { id: string; name: string } | null
   description: string
+  tags: Tag[]
   device_count: number
   created_at: string
   updated_at: string
@@ -1223,6 +1228,7 @@ export interface PlatformWritePayload {
   end_of_security_updates?: string | null
   end_of_support?: string | null
   lifecycle_url?: string
+  tag_ids?: number[]
 }
 
 export interface PlatformOption {

@@ -1254,9 +1254,14 @@ class ManufacturerMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name"]
 
 
-class ManufacturerSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, NumIdModelSerializer):
+class ManufacturerSerializer(TaggableSerializerMixin, OwningSiteSerializerMixin, ObjectPermsSerializerMixin, NumIdModelSerializer):
     slug = serializers.SlugField(required=False, allow_blank=True)
     device_type_count = serializers.SerializerMethodField()
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
 
     def get_device_type_count(self, obj) -> int:
         v = getattr(obj, "device_type_count_annotated", None)
@@ -1266,6 +1271,7 @@ class ManufacturerSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMix
         model = Manufacturer
         fields = [
             "owning_site", "owning_site_id", "permissions", "id", "name", "slug", "url", "description",
+                  "tags", "tag_ids",
                   "device_type_count", "created_at", "updated_at"]
         read_only_fields = ["id", "device_type_count", "created_at", "updated_at"]
 
@@ -3296,7 +3302,7 @@ class DeviceRoleMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name", "slug", "color", "is_patch_panel", "has_fov"]
 
 
-class DeviceRoleSerializer(CustomFieldsSerializerMixin, NumIdModelSerializer):
+class DeviceRoleSerializer(TaggableSerializerMixin, CustomFieldsSerializerMixin, NumIdModelSerializer):
     cf_model = "devicerole"
     slug = serializers.SlugField(required=False, allow_blank=True)
     config_template = serializers.SerializerMethodField()
@@ -3306,6 +3312,11 @@ class DeviceRoleSerializer(CustomFieldsSerializerMixin, NumIdModelSerializer):
     )
     device_count = serializers.SerializerMethodField()
     vm_count = serializers.SerializerMethodField()
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
 
     def get_config_template(self, obj):
         t = obj.config_template
@@ -3320,7 +3331,7 @@ class DeviceRoleSerializer(CustomFieldsSerializerMixin, NumIdModelSerializer):
     class Meta:
         model = DeviceRole
         fields = ["id", "name", "slug", "color", "is_patch_panel", "has_fov",
-                  "description", "custom_fields",
+                  "description", "custom_fields", "tags", "tag_ids",
                   "config_template", "config_template_id",
                   "device_count", "vm_count", "created_at", "updated_at"]
         read_only_fields = ["id", "device_count", "vm_count",
@@ -3336,7 +3347,7 @@ class PlatformMiniSerializer(NumIdModelSerializer):
                   "release_date", "end_of_support", "lifecycle_state"]
 
 
-class PlatformSerializer(NumIdModelSerializer):
+class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     slug = serializers.SlugField(required=False, allow_blank=True)
     manufacturer = ManufacturerMiniSerializer(read_only=True)
     manufacturer_id = TenantScopedPrimaryKeyRelatedField(
@@ -3349,6 +3360,11 @@ class PlatformSerializer(NumIdModelSerializer):
         write_only=True, required=False, allow_null=True,
     )
     device_count = serializers.SerializerMethodField()
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
 
     def get_config_template(self, obj):
         t = obj.config_template
@@ -3363,7 +3379,7 @@ class PlatformSerializer(NumIdModelSerializer):
         model = Platform
         fields = ["id", "name", "slug", "manufacturer", "manufacturer_id",
                   "config_template", "config_template_id",
-                  "description", *LIFECYCLE_FIELDS,
+                  "description", "tags", "tag_ids", *LIFECYCLE_FIELDS,
                   "device_count", "created_at", "updated_at"]
         read_only_fields = ["id", "device_count", "lifecycle_state",
                             "created_at", "updated_at"]

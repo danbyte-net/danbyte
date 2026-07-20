@@ -15,6 +15,7 @@ import {
   FormCheckbox,
   FormFooter,
   FormRow,
+  FormTags,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -59,6 +60,9 @@ export function DeviceRoleForm({
   const [customFields, setCustomFields] = useState<Record<string, unknown>>(
     role?.custom_fields ?? {}
   )
+  const [tagIds, setTagIds] = useState<number[]>(
+    role?.tags?.map((t) => t.id) ?? []
+  )
 
   useEffect(() => {
     if (!role) return
@@ -71,6 +75,7 @@ export function DeviceRoleForm({
     setConfigTemplateId(role.config_template?.id ?? null)
     setDescription(role.description)
     setCustomFields(role.custom_fields)
+    setTagIds(role.tags?.map((t) => t.id) ?? [])
     reset()
   }, [role, reset])
 
@@ -99,6 +104,7 @@ export function DeviceRoleForm({
         config_template_id: configTemplateId,
         description: description.trim(),
         custom_fields: customFields,
+        tag_ids: tagIds,
       }
       if (isEdit)
         return api<DeviceRole>(`/api/device-roles/${role.id}/`, {
@@ -198,6 +204,12 @@ export function DeviceRoleForm({
         model="devicerole"
         value={customFields}
         onChange={setCustomFields}
+      />
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
       />
       <FormFooter
         onCancel={onCancel}

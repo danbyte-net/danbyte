@@ -13,6 +13,7 @@ import {
 import {
   FormCombobox,
   FormFooter,
+  FormTags,
   FormText,
   FormTextarea,
   QuickAddDialog,
@@ -58,6 +59,9 @@ export function PlatformForm({
   )
   const [description, setDescription] = useState(platform?.description ?? "")
   const [lifecycle, setLifecycle] = useState(lifecycleFormValue(platform))
+  const [tagIds, setTagIds] = useState<number[]>(
+    platform?.tags?.map((t) => t.id) ?? []
+  )
 
   useEffect(() => {
     if (!platform) return
@@ -68,6 +72,7 @@ export function PlatformForm({
     setConfigTemplateId(platform.config_template?.id ?? null)
     setDescription(platform.description)
     setLifecycle(lifecycleFormValue(platform))
+    setTagIds(platform.tags?.map((t) => t.id) ?? [])
     reset()
   }, [platform, reset])
 
@@ -99,6 +104,7 @@ export function PlatformForm({
         manufacturer_id: manufacturerId,
         config_template_id: configTemplateId,
         description: description.trim(),
+        tag_ids: tagIds,
         ...lifecyclePayload(lifecycle),
       }
       if (isEdit)
@@ -205,6 +211,12 @@ export function PlatformForm({
         value={lifecycle}
         onChange={setLifecycle}
         errors={fieldErrors}
+      />
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
       />
       <FormFooter
         onCancel={onCancel}
