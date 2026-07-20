@@ -558,6 +558,12 @@ function DeviceOverview({
           {d.platform.name}
           <LifecycleFlag state={d.platform.lifecycle_state} />
         </span>
+      ) : d.effective_platform ? (
+        // No platform of its own — inherited from the device type.
+        <span className="inline-flex items-center gap-2">
+          {d.effective_platform.name}
+          <span className="text-[11px] text-muted-foreground">(from type)</span>
+        </span>
       ) : (
         dash
       ),

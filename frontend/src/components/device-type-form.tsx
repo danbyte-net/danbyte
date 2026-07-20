@@ -8,10 +8,12 @@ import {
   type DeviceTypeWritePayload,
   type ManufacturerOption,
   type Paginated,
+  type PlatformOption,
   type TagOption,
 } from "@/lib/api"
 import {
   Field,
+  FormCombobox,
   FormFooter,
   FormSelect,
   FormText,
@@ -47,6 +49,9 @@ export function DeviceTypeForm({
   )
   const [model, setModel] = useState(deviceType?.model ?? "")
   const [partNumber, setPartNumber] = useState(deviceType?.part_number ?? "")
+  const [platformId, setPlatformId] = useState<string | null>(
+    deviceType?.platform?.id ?? null
+  )
   const [uHeight, setUHeight] = useState(
     deviceType ? String(deviceType.u_height) : "1"
   )
@@ -82,6 +87,7 @@ export function DeviceTypeForm({
     setManufacturerId(deviceType.manufacturer?.id ?? null)
     setModel(deviceType.model)
     setPartNumber(deviceType.part_number)
+    setPlatformId(deviceType.platform?.id ?? null)
     setUHeight(String(deviceType.u_height))
     setRackWidth(deviceType.rack_width)
     setDescription(deviceType.description)
@@ -103,6 +109,11 @@ export function DeviceTypeForm({
       api<Paginated<ManufacturerOption>>("/api/manufacturers/?picker=1"),
     staleTime: 10 * 60_000,
   })
+  const platforms = useQuery({
+    queryKey: ["platforms-picker"],
+    queryFn: () => api<Paginated<PlatformOption>>("/api/platforms/?picker=1"),
+    staleTime: 10 * 60_000,
+  })
   const tags = useQuery({
     queryKey: ["tags-picker"],
     queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
@@ -116,6 +127,7 @@ export function DeviceTypeForm({
         manufacturer_id: manufacturerId,
         model: model.trim(),
         part_number: partNumber.trim(),
+        platform_id: platformId,
         u_height: uHeight.trim() === "" ? 0 : Number(uHeight),
         rack_width: rackWidth,
         description: description.trim(),
@@ -195,6 +207,21 @@ export function DeviceTypeForm({
           error={fieldErrors.part_number}
         />
       </div>
+      <FormCombobox
+        label="Platform"
+        hint="optional — default OS for devices of this type"
+        value={platformId}
+        onChange={setPlatformId}
+        options={(platforms.data?.results ?? []).map((p) => ({
+          value: p.id,
+          label: p.name,
+        }))}
+        noneLabel="No platform"
+        placeholder="Select a platform…"
+        searchPlaceholder="Search platforms…"
+        emptyText="No platforms."
+        error={fieldErrors.platform_id}
+      />
       <div className="grid grid-cols-2 gap-3">
         <FormText
           label="Rack units (U)"

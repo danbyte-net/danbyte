@@ -364,6 +364,12 @@ const sections: NavSection[] = [
             objectType: "platform",
           },
           {
+            title: "Platform groups",
+            url: "/platform-groups",
+            icon: Layers,
+            objectType: "platformgroup",
+          },
+          {
             title: "Manufacturers",
             url: "/manufacturers",
             icon: Factory,

@@ -73,6 +73,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.DeviceType", "Device types", "DCIM"),
     ("api.ModuleType", "Module types", "DCIM"),
     ("api.DeviceRole", "Device roles", "DCIM"),
+    ("api.PlatformGroup", "Platform groups", "DCIM"),
     ("api.Platform", "Platforms", "DCIM"),
     ("api.Manufacturer", "Manufacturers", "DCIM"),
     ("api.Rack", "Racks", "DCIM"),

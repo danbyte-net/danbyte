@@ -83,6 +83,7 @@ AUDITED_MODELS = [
     "api.RackRole",
     "api.Rack",
     "api.DeviceRole",
+    "api.PlatformGroup",
     "api.Platform",
     "api.Service",
     "api.ServiceTemplate",

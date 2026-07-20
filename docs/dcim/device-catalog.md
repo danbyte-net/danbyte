@@ -8,7 +8,7 @@ Before you add devices, it helps to define the **catalog** they draw from:
 who makes the hardware, what models exist, and how you classify devices. You
 build this once and reuse it across every device.
 
-There are four catalog objects, each with its own sidebar page:
+There are five catalog objects, each with its own sidebar page:
 
 | Object | Answers | Example |
 |---|---|---|
@@ -16,6 +16,7 @@ There are four catalog objects, each with its own sidebar page:
 | **Device type** | What model is it? | Catalyst 9300-48P |
 | **Device role** | What job does it do? | Access switch, core, firewall |
 | **Platform** | What OS does it run? | IOS-XE, JunOS, PAN-OS |
+| **Platform group** | What OS family is that? | Windows, Linux, network NOS |
 
 ## Manufacturers
 
@@ -36,6 +37,9 @@ same type, so you describe the hardware once.
 Fields:
 
 - **Manufacturer**, **model**, **part number**
+- **Platform** — optional default OS for devices of this type. A device
+  without a platform of its own inherits it — see
+  [effective platform](#platform-groups-and-the-effective-platform)
 - **Height (U)** — how many rack units it occupies
 - **Rack width** — full (default) or **half**, for gear like a Mellanox SN2010
   where two units mount side-by-side in one U (see
@@ -256,6 +260,26 @@ A **platform** is the operating system / NOS a device runs — IOS-XE, JunOS,
 PAN-OS, Cumulus. Platforms are handy for filtering and for configuration
 rendering.
 
+### Platform groups and the effective platform
+
+**Platform groups** (their own sidebar page) organise platforms into families —
+"Windows", "Linux", "Others" — and can **nest** via an optional parent group
+(e.g. "Debian family" under "Linux"). A platform optionally points at one
+group. Groups are catalog objects like the rest: tenant-scoped, empty until
+you define them, and deletable only once no platform references them.
+
+A **device type** can also carry an optional **platform** — the OS the
+hardware generically runs. That gives every device an **effective platform**:
+
+- the device's **own** platform, when set — e.g. the type says *Windows*
+  (generic) but this box runs *Windows 11 22H2*;
+- otherwise the **type's** platform (the fallback).
+
+The device's stored platform field is untouched — the fallback is derived and
+read-only (`effective_platform` on the device API). The device Overview shows
+the inherited value with a *(from type)* hint, so you can tell an explicit
+platform from an inherited one at a glance.
+
 ## Lifecycle (EoS / EoL)
 
 Device types and platforms both carry optional vendor lifecycle dates —
@@ -266,5 +290,6 @@ table, and each device's overview. See
 
 ---
 
-All four are **yours to define** — Danbyte ships none of them, so your catalog
-contains exactly the vendors, models, roles, and platforms your network uses.
+All five are **yours to define** — Danbyte ships none of them, so your catalog
+contains exactly the vendors, models, roles, platforms, and platform groups
+your network uses.
