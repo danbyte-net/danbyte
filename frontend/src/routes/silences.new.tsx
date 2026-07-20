@@ -12,7 +12,7 @@ function NewSilencePage() {
   const back = () =>
     nav({
       to: "/alerts",
-      search: { tab: "silences", state: "firing", severity: "all" },
+      search: { tab: "silences", state: "firing", severity: "all", ack: "all", q: "", site: "all" },
     })
   return (
     <EditPageShell

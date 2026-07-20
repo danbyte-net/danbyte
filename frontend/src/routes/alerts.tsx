@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useEffect, useState } from "react"
 import {
   useQuery,
   useMutation,
@@ -6,7 +7,14 @@ import {
   keepPreviousData,
 } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { BellRing, BellOff, Check, Activity, ArrowUpCircle } from "lucide-react"
+import {
+  BellRing,
+  BellOff,
+  Check,
+  Activity,
+  ArrowUpCircle,
+  Search,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -15,7 +23,9 @@ import {
   type AlertSeverity,
   type AlertsResponse,
   type MonitoringAlert,
+  type Paginated,
 } from "@/lib/api"
+import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { Button } from "@/components/ui/button"
@@ -30,10 +40,14 @@ import { SilencesList } from "@/components/monitoring/silences-list"
 import { apiErrorToast } from "@/lib/api-toast"
 
 type AlertsTab = "alerts" | "rules" | "channels" | "silences"
+type AckFilter = "all" | "acknowledged" | "unacknowledged"
 interface AlertsSearch {
   tab: AlertsTab
   state: AlertLifecycle
   severity: AlertSeverity | "all"
+  ack: AckFilter
+  q: string
+  site: string
 }
 
 export const Route = createFileRoute("/alerts")({
@@ -46,6 +60,11 @@ export const Route = createFileRoute("/alerts")({
     severity: ["critical", "warning", "info"].includes(s.severity as string)
       ? (s.severity as AlertSeverity)
       : "all",
+    ack: ["acknowledged", "unacknowledged"].includes(s.ack as string)
+      ? (s.ack as AckFilter)
+      : "all",
+    q: typeof s.q === "string" ? s.q : "",
+    site: typeof s.site === "string" ? s.site : "all",
   }),
 })
 
@@ -59,7 +78,7 @@ const SEV_VARIANT: Record<
 }
 
 function AlertsPage() {
-  const { tab, state, severity } = Route.useSearch()
+  const { tab, state, severity, ack, q: search, site } = Route.useSearch()
   const nav = useNavigate()
   const go = (next: Partial<AlertsSearch>) =>
     nav({
@@ -69,16 +88,41 @@ function AlertsPage() {
         state: next.state ?? (prev.state as AlertLifecycle) ?? "firing",
         severity:
           next.severity ?? (prev.severity as AlertSeverity | "all") ?? "all",
+        ack: next.ack ?? (prev.ack as AckFilter) ?? "all",
+        q: next.q ?? (prev.q as string) ?? "",
+        site: next.site ?? (prev.site as string) ?? "all",
       }),
+      replace: next.q !== undefined, // typing shouldn't spam history
     })
 
-  const q = useQuery({
-    queryKey: ["alerts", state, severity],
+  // Debounce the search box → URL, so each keystroke doesn't refetch.
+  const [searchDraft, setSearchDraft] = useState(search)
+  useEffect(() => setSearchDraft(search), [search])
+  useEffect(() => {
+    if (searchDraft === search) return
+    const t = setTimeout(() => go({ q: searchDraft }), 300)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchDraft])
+
+  const sites = useQuery({
+    queryKey: ["sites-picker"],
     queryFn: () =>
-      api<AlertsResponse>(
-        `/api/monitoring/alerts/?status=${state}` +
-          (severity !== "all" ? `&severity=${severity}` : "")
-      ),
+      api<Paginated<{ id: string; name: string }>>("/api/sites/?picker=1"),
+    staleTime: 10 * 60_000,
+    enabled: tab === "alerts",
+  })
+
+  const q = useQuery({
+    queryKey: ["alerts", state, severity, ack, search, site],
+    queryFn: () => {
+      const p = new URLSearchParams({ status: state })
+      if (severity !== "all") p.set("severity", severity)
+      if (ack !== "all") p.set("ack", ack)
+      if (search) p.set("q", search)
+      if (site !== "all") p.set("site", site)
+      return api<AlertsResponse>(`/api/monitoring/alerts/?${p}`)
+    },
     placeholderData: keepPreviousData,
     refetchInterval: 30_000,
     enabled: tab === "alerts",
@@ -127,7 +171,7 @@ function AlertsPage() {
           </div>
         ) : (
           <div className="mx-auto max-w-6xl space-y-3">
-            {/* Firing / Resolved + severity filters */}
+            {/* Firing / Resolved + severity + ack + search + site filters */}
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center gap-1">
                 {(["firing", "resolved"] as const).map((s) => (
@@ -151,6 +195,48 @@ function AlertsPage() {
                     count={sv === "all" ? undefined : counts[sv]}
                   />
                 ))}
+              </div>
+              <span className="mx-1 h-4 w-px bg-border" />
+              <div className="flex items-center gap-1">
+                {(
+                  [
+                    ["all", "Any ack"],
+                    ["unacknowledged", "Unacked"],
+                    ["acknowledged", "Acked"],
+                  ] as const
+                ).map(([v, label]) => (
+                  <FilterButton
+                    key={v}
+                    active={ack === v}
+                    onClick={() => go({ ack: v })}
+                    label={label}
+                    count={v === "acknowledged" ? counts.acknowledged : undefined}
+                  />
+                ))}
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                <select
+                  value={site}
+                  onChange={(e) => go({ site: e.target.value })}
+                  className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                  aria-label="Filter by site"
+                >
+                  <option value="all">All sites</option>
+                  {(sites.data?.results ?? []).map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={searchDraft}
+                    onChange={(e) => setSearchDraft(e.target.value)}
+                    placeholder="IP, description, rule…"
+                    className="h-8 w-56 pl-7 text-xs"
+                  />
+                </div>
               </div>
             </div>
 

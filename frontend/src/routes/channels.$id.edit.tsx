@@ -16,7 +16,7 @@ function EditChannelPage() {
   const back = () =>
     nav({
       to: "/alerts",
-      search: { tab: "channels", state: "firing", severity: "all" },
+      search: { tab: "channels", state: "firing", severity: "all", ack: "all", q: "", site: "all" },
     })
 
   const q = useQuery({

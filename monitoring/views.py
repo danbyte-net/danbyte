@@ -1083,6 +1083,18 @@ def alerts_view(request):
         qs = qs.filter(acknowledged_at__isnull=False)
     elif ack == "unacknowledged":
         qs = qs.filter(acknowledged_at__isnull=True)
+    # Free-text narrowing — target IP, its description, or the rule name — and
+    # a site filter, so a long alert list is navigable.
+    q = (request.query_params.get("q") or "").strip()
+    if q:
+        qs = qs.filter(
+            Q(target_ip__ip_address__icontains=q)
+            | Q(target_ip__description__icontains=q)
+            | Q(template__name__icontains=q)
+        )
+    site = request.query_params.get("site")
+    if site:
+        qs = qs.filter(target_ip__site_id=site)
     rows = list(qs.order_by("-opened_at")[:200])
 
     # Annotate which firing alerts are currently muted by a silence — one
