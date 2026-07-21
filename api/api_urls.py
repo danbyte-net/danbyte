@@ -44,6 +44,7 @@ from auth_api.api import (
 )
 from core import (
     deployment,
+    service_api,
     site_settings as site_settings_mod,
     tenant_settings as tenant_settings_mod,
     upgrade,
@@ -337,6 +338,12 @@ urlpatterns = [
     path("jobs/", include("jobs.api_urls")),
     # Plugin framework: installed-plugin inventory + each plugin's own API.
     path("plugins/", include("plugins.api_urls")),
+    # Service control (restart units, apply plugins) — superuser only.
+    path("services/", service_api.services_list, name="services-list"),
+    path("services/restart-all/", service_api.restart_danbyte,
+         name="services-restart-all"),
+    path("services/<str:key>/restart/", service_api.service_restart,
+         name="service-restart"),
     # Identity + per-table column preferences for the React frontend. The
     # auth_api HTML urlconf isn't mounted (archived), so these JSON views are
     # surfaced here under /api/ where the SPA can reach them.
