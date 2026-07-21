@@ -64,7 +64,6 @@ function TableLayoutsSection() {
 
   return (
     <SettingsCard
-      className="mt-4"
       title="Table layouts"
       description={
         <>

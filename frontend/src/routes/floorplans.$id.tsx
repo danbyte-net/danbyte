@@ -762,7 +762,7 @@ function FloorPlanPage() {
   if (!plan) return null
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* ── Header ──────────────────────────────────────────────────── */}
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6">
         <Button variant="ghost" size="sm" asChild className="-ml-2">

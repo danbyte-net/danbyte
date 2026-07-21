@@ -194,9 +194,13 @@ function AppLayout() {
     >
       <AppSidebar variant="inset" />
       <PresenceProvider>
-        <SidebarInset className="min-h-0 overflow-hidden">
+        <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
           <SiteHeader />
-          <div className="flex min-h-0 flex-1 flex-col">
+          {/* min-w-0 is load-bearing on mobile: without it a wide table/tab
+              strip forces this column past the viewport and SidebarInset's
+              overflow-hidden clips it (unreachable). With it, the width is
+              capped and the page's own overflow-x-auto containers scroll. */}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <Outlet />
           </div>
         </SidebarInset>

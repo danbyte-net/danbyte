@@ -178,7 +178,7 @@ function MonitoringPage() {
   const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0)
 
   return (
-    <div className="flex h-full flex-1 flex-col bg-muted/30">
+    <div className="flex h-full min-w-0 flex-1 flex-col bg-muted/30">
       <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border bg-background px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
         <h1 className="flex items-center gap-2 text-base font-semibold">
           <Activity className="h-4 w-4 text-muted-foreground" />

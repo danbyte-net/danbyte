@@ -74,7 +74,7 @@ export function DetailShell({
   useRegisterPresence(presence?.type ?? "", presence?.id, "viewing")
 
   return (
-    <div className="flex h-full flex-1 flex-col">
+    <div className="flex h-full min-w-0 flex-1 flex-col">
       <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
         <nav className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Button variant="ghost" size="sm" asChild className="h-6 px-1">
@@ -107,9 +107,9 @@ export function DetailShell({
       <Tabs
         value={tab}
         onValueChange={onTabChange}
-        className="flex min-h-0 flex-1 flex-col gap-0"
+        className="flex min-h-0 min-w-0 flex-1 flex-col gap-0"
       >
-        <div className="flex h-10 items-center border-b border-border px-4 lg:px-6">
+        <div className="flex h-10 min-w-0 items-center border-b border-border px-4 lg:px-6">
           <SegmentedTabs value={tab} onValueChange={onTabChange} items={tabs} />
         </div>
         {children}
@@ -136,8 +136,8 @@ export function DetailTab({
       value={value}
       className={cn(
         bare
-          ? "m-0 flex min-h-0 flex-1"
-          : "m-0 flex-1 overflow-auto p-4 lg:p-6",
+          ? "m-0 flex min-h-0 min-w-0 flex-1"
+          : "m-0 min-w-0 flex-1 overflow-auto p-4 lg:p-6",
         className
       )}
     >

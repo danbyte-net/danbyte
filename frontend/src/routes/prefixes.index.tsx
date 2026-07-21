@@ -158,7 +158,7 @@ function PrefixesPage() {
     <Tabs
       value={tab}
       onValueChange={(v) => setTab(v as typeof tab)}
-      className="flex min-h-0 flex-1 flex-col"
+      className="flex min-h-0 min-w-0 flex-1 flex-col"
     >
       <div className="flex h-10 items-center border-b border-border px-4 lg:px-6">
         <SegmentedTabs
