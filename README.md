@@ -97,7 +97,7 @@ feature, the data model, the API, and the architecture notes. A few good
 starting points:
 
 - [installation guide](https://docs.danbyte.net/getting-started/installation/)
-- [[IPAM objects](https://docs.danbyte.net/ipam/) · [Device catalog](https://docs.danbyte.net/dcim/device-catalog/)
+- [IPAM objects](https://docs.danbyte.net/ipam/) · [Device catalog](https://docs.danbyte.net/dcim/device-catalog/)
 - [NetBox import](https://docs.danbyte.net/features/netbox-import/)
 - [Permissions & access](https://docs.danbyte.net/features/permissions/)
 
