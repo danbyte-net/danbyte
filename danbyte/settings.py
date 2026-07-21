@@ -84,6 +84,24 @@ INSTALLED_APPS = [
 PLUGINS = [p for p in os.getenv("PLUGINS", "").split(",") if p.strip()]
 PLUGINS_CONFIG: dict = {}
 
+# Offline / airgapped installs: uploaded plugin archives are extracted here (a
+# writable dir on the import path), and their module names recorded in
+# `<dir>/installed.json`. Keep it OUTSIDE the app tree in production so an
+# upgrade never wipes it (DANBYTE_PLUGIN_DIR). Read the manifest at import time
+# and treat those names exactly like PLUGINS entries.
+PLUGIN_UPLOAD_DIR = Path(os.getenv("DANBYTE_PLUGIN_DIR", BASE_DIR / "plugins_local"))
+if PLUGIN_UPLOAD_DIR.is_dir() and str(PLUGIN_UPLOAD_DIR) not in sys.path:
+    sys.path.insert(0, str(PLUGIN_UPLOAD_DIR))
+try:
+    _manifest = PLUGIN_UPLOAD_DIR / "installed.json"
+    if _manifest.is_file():
+        import json as _json
+
+        _uploaded = _json.loads(_manifest.read_text() or "{}").get("plugins", [])
+        PLUGINS += [p for p in _uploaded if p and p not in PLUGINS]
+except Exception:  # a corrupt manifest must never block boot
+    pass
+
 # The bundled reference plugin is loaded in the test environment (only) so the
 # whole plugin framework is exercised end to end by the normal suite. It never
 # loads in production unless an operator names it in PLUGINS explicitly.

@@ -100,6 +100,8 @@ export interface PluginInfo {
   min_version: string | null
   max_version: string | null
   unapplied_migrations: string[]
+  /** Installed via offline upload (vs a pip-installed PLUGINS entry). */
+  uploaded: boolean
 }
 
 export interface PluginList {

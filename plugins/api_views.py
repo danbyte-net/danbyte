@@ -5,7 +5,8 @@ now this is a read-only inventory of what the deployment has installed.
 """
 from __future__ import annotations
 
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, parser_classes, permission_classes
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -23,13 +24,18 @@ def plugins_list(request):
     """
     from core.services import pending_migrations_by_app
 
+    from .install import uploaded_names
+
     pending = pending_migrations_by_app()
+    uploaded = set(uploaded_names())
     # Map plugin module → its Django app_label (last dotted component).
     app_labels = {cfg.name: cfg.label for cfg in loaded_configs()}
     report = plugin_report()
     for entry in report:
         label = app_labels.get(entry["module"])
         entry["unapplied_migrations"] = pending.get(label, []) if label else []
+        # Installed via upload (offline) → the UI offers Uninstall.
+        entry["uploaded"] = entry["module"] in uploaded
     return Response(
         {
             "plugins": report,
@@ -38,6 +44,53 @@ def plugins_list(request):
             "has_pending_migrations": bool(pending),
         }
     )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def plugin_upload(request):
+    """Install a plugin from an uploaded archive (superuser only).
+
+    Offline/airgapped alternative to pip: extract a .tar.gz/.zip of the plugin
+    into the import path. Uploading a plugin runs its code on restart — remote
+    code execution by design — so this is superuser-gated. Activate with Apply
+    (migrate + restart).
+    """
+    if not getattr(request.user, "is_superuser", False):
+        return Response({"detail": "Superuser required."}, status=403)
+    upload = request.FILES.get("archive")
+    if not upload:
+        return Response({"detail": "No archive uploaded (field 'archive')."}, status=400)
+
+    from .install import PluginInstallError, install_archive
+
+    try:
+        result = install_archive(upload)
+    except PluginInstallError as exc:
+        return Response({"detail": str(exc)}, status=400)
+    return Response(
+        {
+            "installed": result["name"],
+            "detail": f"Installed '{result['name']}'. Apply changes to activate.",
+        }
+    )
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def plugin_uninstall(request, slug: str):
+    """Remove an uploaded plugin by its module name (superuser only). Takes
+    effect on the next restart."""
+    if not getattr(request.user, "is_superuser", False):
+        return Response({"detail": "Superuser required."}, status=403)
+    from .install import uninstall
+
+    if not uninstall(slug):
+        return Response(
+            {"detail": "Not an uploaded plugin (or already removed)."}, status=404
+        )
+    return Response({"removed": slug, "detail": "Removed. Apply changes to finish."})
 
 
 @api_view(["GET", "PATCH"])

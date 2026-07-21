@@ -1,6 +1,7 @@
+import { useRef } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { RefreshCw } from "lucide-react"
+import { RefreshCw, Upload } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -79,6 +80,16 @@ function PluginsSection() {
     onError: (e) => apiErrorToast(e),
   })
 
+  const uninstall = useMutation({
+    mutationFn: (module: string) =>
+      api(`/api/plugins/${module}/uploaded/`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["plugins-list"] })
+      toast.success("Removed — Apply changes to finish.")
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
   if (!list.data) return null
   const plugins = list.data.plugins
   const pending = list.data.has_pending_migrations
@@ -88,11 +99,13 @@ function PluginsSection() {
       title="Installed plugins"
       description={
         <>
-          Plugins are installed as packages and applied on restart. Enable or
-          disable each one for this tenant. Blank list = none installed.
+          Plugins install as Python packages (pip, or upload an archive below
+          for offline installs) and apply on restart. Enable or disable each one
+          for this tenant. Blank list = none installed.
         </>
       }
     >
+      {me.is_superuser && <UploadPlugin qc={qc} />}
       {pending && me.is_superuser && (
         <div className="mb-3 flex items-center justify-between rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
           <span>Unapplied database migrations detected.</span>
@@ -114,8 +127,10 @@ function PluginsSection() {
             <PluginRow
               key={p.module}
               plugin={p}
+              canManage={!!me.is_superuser}
               onToggle={(enabled) => toggle.mutate({ slug: p.slug, enabled })}
-              busy={toggle.isPending}
+              onUninstall={() => uninstall.mutate(p.module)}
+              busy={toggle.isPending || uninstall.isPending}
             />
           ))}
         </div>
@@ -124,13 +139,65 @@ function PluginsSection() {
   )
 }
 
+function UploadPlugin({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const upload = useMutation({
+    mutationFn: (file: File) => {
+      const body = new FormData()
+      body.append("archive", file)
+      return api<{ installed: string }>("/api/plugins/upload/", {
+        method: "POST",
+        body,
+      })
+    },
+    onSuccess: (d) => {
+      qc.invalidateQueries({ queryKey: ["plugins-list"] })
+      toast.success(`Installed '${d.installed}'. Apply changes to activate.`)
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  return (
+    <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+      <span className="text-muted-foreground">
+        Offline install: upload a plugin archive (.tar.gz / .zip). Runs its code
+        on restart — superuser only.
+      </span>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".tar.gz,.tgz,.tar,.zip,application/gzip,application/zip,application/x-tar"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          if (f) void upload.mutate(f)
+          e.target.value = ""
+        }}
+      />
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={upload.isPending}
+        onClick={() => inputRef.current?.click()}
+      >
+        <Upload className="h-3.5 w-3.5" />
+        {upload.isPending ? "Uploading…" : "Upload plugin"}
+      </Button>
+    </div>
+  )
+}
+
 function PluginRow({
   plugin,
+  canManage,
   onToggle,
+  onUninstall,
   busy,
 }: {
   plugin: PluginInfo
+  canManage: boolean
   onToggle: (enabled: boolean) => void
+  onUninstall: () => void
   busy: boolean
 }) {
   const loaded = plugin.state === "loaded"
@@ -142,6 +209,11 @@ function PluginRow({
           <Badge variant={STATE_VARIANT[plugin.state] ?? "outline"}>
             {plugin.state}
           </Badge>
+          {plugin.uploaded && (
+            <Badge variant="outline" className="text-[10px]">
+              uploaded
+            </Badge>
+          )}
           {plugin.version && (
             <span className="text-[11px] text-muted-foreground">
               v{plugin.version}
@@ -157,6 +229,17 @@ function PluginRow({
           </div>
         )}
       </div>
+      {canManage && plugin.uploaded && (
+        <ConfirmButton
+          label="Uninstall"
+          pendingLabel="Removing…"
+          title={`Uninstall ${plugin.name}?`}
+          body="Removes the uploaded plugin files and manifest entry. Takes effect after Apply changes (restart)."
+          onConfirm={onUninstall}
+          disabled={busy}
+          small
+        />
+      )}
       {loaded && (
         <Switch
           defaultChecked

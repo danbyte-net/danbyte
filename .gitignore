@@ -80,3 +80,6 @@ notes/
 /skills-lock.json
 /scripts_seed_cable_demo.py
 /scripts_seed_fiber_demo.py
+
+# Uploaded (offline) plugins — runtime data, never committed
+plugins_local/

@@ -17,10 +17,13 @@ from .registry import loaded_configs
 urlpatterns = [
     path("", api_views.plugins_list, name="plugins-list"),
     path("apply/", api_views.plugins_apply, name="plugins-apply"),
+    path("upload/", api_views.plugin_upload, name="plugins-upload"),
     path("ui/", ui_views.plugin_ui, name="plugins-ui"),
     # Must precede the per-plugin includes below, or the "<slug>/" mount would
-    # shadow "<slug>/config/".
+    # shadow these framework sub-routes.
     path("<str:slug>/config/", api_views.plugin_config, name="plugin-config"),
+    path("<str:slug>/uploaded/", api_views.plugin_uninstall,
+         name="plugin-uninstall"),
 ]
 
 for _cfg in loaded_configs():

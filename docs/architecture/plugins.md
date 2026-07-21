@@ -44,6 +44,29 @@ there and skipped — it never blocks boot.
     keeps its tables. To remove it, drop it from `PLUGINS`, restart, and (if you
     want the data gone) handle its tables yourself.
 
+### Offline / airgapped install (upload an archive)
+
+For a box that can't reach PyPI, a **superuser** can upload the plugin source
+instead of `pip install`: **Settings → Deployment → Plugins & services →
+Upload plugin**, and pick a `.tar.gz` / `.tgz` / `.tar` / `.zip` of the plugin
+(a `git archive`, a GitHub source download, or an sdist all work). Danbyte
+extracts the package into `DANBYTE_PLUGIN_DIR` (default `plugins_local/`, a
+writable dir kept on `sys.path`) and records its module name in
+`installed.json`; on the next **Apply changes** (migrate + restart) it loads
+exactly like a `PLUGINS` entry. Uploaded plugins show an **uploaded** tag and an
+**Uninstall** action.
+
+!!! danger "Uploading a plugin runs its code"
+    An uploaded plugin executes in-process with full access on the next restart
+    — it is remote code execution by design, so upload/uninstall are
+    **superuser-only**. Extraction is hardened (path-traversal blocked, size and
+    member caps), but only upload plugins you trust. Keep `DANBYTE_PLUGIN_DIR`
+    outside the app tree in production so upgrades don't wipe uploaded plugins.
+    This path installs the plugin's *source* (no dependency resolution) — a
+    plugin needing extra PyPI packages still needs those installed separately.
+    `POST /api/plugins/upload/` (multipart `archive`) /
+    `DELETE /api/plugins/<module>/uploaded/` back the UI.
+
 ## Anatomy of a plugin
 
 A plugin package looks like a small Django app plus one registration module:
