@@ -101,6 +101,7 @@ register_page(
         ),
         tabs=("overview", "history"),
         audited=True,
+        audit_type="danbyte_example_plugin.widget",
     )
 )
 

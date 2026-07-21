@@ -183,6 +183,7 @@ import { Route as SettingsTenantRouteImport } from './routes/settings.tenant'
 import { Route as SettingsSnmpRouteImport } from './routes/settings.snmp'
 import { Route as SettingsSiteRouteImport } from './routes/settings.site'
 import { Route as SettingsPreferencesRouteImport } from './routes/settings.preferences'
+import { Route as SettingsPluginsRouteImport } from './routes/settings.plugins'
 import { Route as SettingsMonitoringRouteImport } from './routes/settings.monitoring'
 import { Route as SettingsLdapRouteImport } from './routes/settings.ldap'
 import { Route as SettingsFloorplanRouteImport } from './routes/settings.floorplan'
@@ -309,6 +310,7 @@ import { Route as PowerFeedsIdEditRouteImport } from './routes/power-feeds.$id_.
 import { Route as PlatformsIdEditRouteImport } from './routes/platforms.$id_.edit'
 import { Route as PlatformGroupsIdEditRouteImport } from './routes/platform-groups.$id_.edit'
 import { Route as PermissionsIdEditRouteImport } from './routes/permissions.$id_.edit'
+import { Route as PSlugSplatRouteImport } from './routes/p.$slug.$'
 import { Route as ModuleTypesIdEditRouteImport } from './routes/module-types.$id_.edit'
 import { Route as ManufacturersIdEditRouteImport } from './routes/manufacturers.$id_.edit'
 import { Route as LocationsIdEditRouteImport } from './routes/locations.$id_.edit'
@@ -1215,6 +1217,11 @@ const SettingsPreferencesRoute = SettingsPreferencesRouteImport.update({
   path: '/preferences',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsPluginsRoute = SettingsPluginsRouteImport.update({
+  id: '/plugins',
+  path: '/plugins',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsMonitoringRoute = SettingsMonitoringRouteImport.update({
   id: '/monitoring',
   path: '/monitoring',
@@ -1845,6 +1852,11 @@ const PermissionsIdEditRoute = PermissionsIdEditRouteImport.update({
   path: '/$id/edit',
   getParentRoute: () => PermissionsRoute,
 } as any)
+const PSlugSplatRoute = PSlugSplatRouteImport.update({
+  id: '/p/$slug/$',
+  path: '/p/$slug/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ModuleTypesIdEditRoute = ModuleTypesIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
@@ -2187,6 +2199,7 @@ export interface FileRoutesByFullPath {
   '/settings/floorplan': typeof SettingsFloorplanRoute
   '/settings/ldap': typeof SettingsLdapRoute
   '/settings/monitoring': typeof SettingsMonitoringRoute
+  '/settings/plugins': typeof SettingsPluginsRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
   '/settings/site': typeof SettingsSiteRoute
   '/settings/snmp': typeof SettingsSnmpRoute
@@ -2326,6 +2339,7 @@ export interface FileRoutesByFullPath {
   '/locations/$id/edit': typeof LocationsIdEditRoute
   '/manufacturers/$id/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id/edit': typeof ModuleTypesIdEditRoute
+  '/p/$slug/$': typeof PSlugSplatRoute
   '/permissions/$id/edit': typeof PermissionsIdEditRoute
   '/platform-groups/$id/edit': typeof PlatformGroupsIdEditRoute
   '/platforms/$id/edit': typeof PlatformsIdEditRoute
@@ -2469,6 +2483,7 @@ export interface FileRoutesByTo {
   '/settings/floorplan': typeof SettingsFloorplanRoute
   '/settings/ldap': typeof SettingsLdapRoute
   '/settings/monitoring': typeof SettingsMonitoringRoute
+  '/settings/plugins': typeof SettingsPluginsRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
   '/settings/site': typeof SettingsSiteRoute
   '/settings/snmp': typeof SettingsSnmpRoute
@@ -2608,6 +2623,7 @@ export interface FileRoutesByTo {
   '/locations/$id/edit': typeof LocationsIdEditRoute
   '/manufacturers/$id/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id/edit': typeof ModuleTypesIdEditRoute
+  '/p/$slug/$': typeof PSlugSplatRoute
   '/permissions/$id/edit': typeof PermissionsIdEditRoute
   '/platform-groups/$id/edit': typeof PlatformGroupsIdEditRoute
   '/platforms/$id/edit': typeof PlatformsIdEditRoute
@@ -2807,6 +2823,7 @@ export interface FileRoutesById {
   '/settings/floorplan': typeof SettingsFloorplanRoute
   '/settings/ldap': typeof SettingsLdapRoute
   '/settings/monitoring': typeof SettingsMonitoringRoute
+  '/settings/plugins': typeof SettingsPluginsRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
   '/settings/site': typeof SettingsSiteRoute
   '/settings/snmp': typeof SettingsSnmpRoute
@@ -2946,6 +2963,7 @@ export interface FileRoutesById {
   '/locations/$id_/edit': typeof LocationsIdEditRoute
   '/manufacturers/$id_/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id_/edit': typeof ModuleTypesIdEditRoute
+  '/p/$slug/$': typeof PSlugSplatRoute
   '/permissions/$id_/edit': typeof PermissionsIdEditRoute
   '/platform-groups/$id_/edit': typeof PlatformGroupsIdEditRoute
   '/platforms/$id_/edit': typeof PlatformsIdEditRoute
@@ -3146,6 +3164,7 @@ export interface FileRouteTypes {
     | '/settings/floorplan'
     | '/settings/ldap'
     | '/settings/monitoring'
+    | '/settings/plugins'
     | '/settings/preferences'
     | '/settings/site'
     | '/settings/snmp'
@@ -3285,6 +3304,7 @@ export interface FileRouteTypes {
     | '/locations/$id/edit'
     | '/manufacturers/$id/edit'
     | '/module-types/$id/edit'
+    | '/p/$slug/$'
     | '/permissions/$id/edit'
     | '/platform-groups/$id/edit'
     | '/platforms/$id/edit'
@@ -3428,6 +3448,7 @@ export interface FileRouteTypes {
     | '/settings/floorplan'
     | '/settings/ldap'
     | '/settings/monitoring'
+    | '/settings/plugins'
     | '/settings/preferences'
     | '/settings/site'
     | '/settings/snmp'
@@ -3567,6 +3588,7 @@ export interface FileRouteTypes {
     | '/locations/$id/edit'
     | '/manufacturers/$id/edit'
     | '/module-types/$id/edit'
+    | '/p/$slug/$'
     | '/permissions/$id/edit'
     | '/platform-groups/$id/edit'
     | '/platforms/$id/edit'
@@ -3765,6 +3787,7 @@ export interface FileRouteTypes {
     | '/settings/floorplan'
     | '/settings/ldap'
     | '/settings/monitoring'
+    | '/settings/plugins'
     | '/settings/preferences'
     | '/settings/site'
     | '/settings/snmp'
@@ -3904,6 +3927,7 @@ export interface FileRouteTypes {
     | '/locations/$id_/edit'
     | '/manufacturers/$id_/edit'
     | '/module-types/$id_/edit'
+    | '/p/$slug/$'
     | '/permissions/$id_/edit'
     | '/platform-groups/$id_/edit'
     | '/platforms/$id_/edit'
@@ -4059,6 +4083,7 @@ export interface RootRouteChildren {
   ClustersIdEditRoute: typeof ClustersIdEditRoute
   DeviceRolesIdEditRoute: typeof DeviceRolesIdEditRoute
   IpsIdEditRoute: typeof IpsIdEditRoute
+  PSlugSplatRoute: typeof PSlugSplatRoute
   PlatformGroupsIdEditRoute: typeof PlatformGroupsIdEditRoute
   PlatformsIdEditRoute: typeof PlatformsIdEditRoute
   RackRolesIdEditRoute: typeof RackRolesIdEditRoute
@@ -5288,6 +5313,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsPreferencesRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/plugins': {
+      id: '/settings/plugins'
+      path: '/plugins'
+      fullPath: '/settings/plugins'
+      preLoaderRoute: typeof SettingsPluginsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/monitoring': {
       id: '/settings/monitoring'
       path: '/monitoring'
@@ -6169,6 +6201,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/permissions/$id/edit'
       preLoaderRoute: typeof PermissionsIdEditRouteImport
       parentRoute: typeof PermissionsRoute
+    }
+    '/p/$slug/$': {
+      id: '/p/$slug/$'
+      path: '/p/$slug/$'
+      fullPath: '/p/$slug/$'
+      preLoaderRoute: typeof PSlugSplatRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/module-types/$id_/edit': {
       id: '/module-types/$id_/edit'
@@ -7058,6 +7097,7 @@ interface SettingsRouteChildren {
   SettingsFloorplanRoute: typeof SettingsFloorplanRoute
   SettingsLdapRoute: typeof SettingsLdapRoute
   SettingsMonitoringRoute: typeof SettingsMonitoringRoute
+  SettingsPluginsRoute: typeof SettingsPluginsRoute
   SettingsPreferencesRoute: typeof SettingsPreferencesRoute
   SettingsSiteRoute: typeof SettingsSiteRoute
   SettingsSnmpRoute: typeof SettingsSnmpRoute
@@ -7074,6 +7114,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsFloorplanRoute: SettingsFloorplanRoute,
   SettingsLdapRoute: SettingsLdapRoute,
   SettingsMonitoringRoute: SettingsMonitoringRoute,
+  SettingsPluginsRoute: SettingsPluginsRoute,
   SettingsPreferencesRoute: SettingsPreferencesRoute,
   SettingsSiteRoute: SettingsSiteRoute,
   SettingsSnmpRoute: SettingsSnmpRoute,
@@ -7482,6 +7523,7 @@ const rootRouteChildren: RootRouteChildren = {
   ClustersIdEditRoute: ClustersIdEditRoute,
   DeviceRolesIdEditRoute: DeviceRolesIdEditRoute,
   IpsIdEditRoute: IpsIdEditRoute,
+  PSlugSplatRoute: PSlugSplatRoute,
   PlatformGroupsIdEditRoute: PlatformGroupsIdEditRoute,
   PlatformsIdEditRoute: PlatformsIdEditRoute,
   RackRolesIdEditRoute: RackRolesIdEditRoute,

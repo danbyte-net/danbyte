@@ -59,6 +59,7 @@ import {
   Folder,
   Plus,
   Trash2,
+  Puzzle,
 } from "lucide-react"
 
 import {
@@ -108,6 +109,8 @@ import {
 import { docsUrl } from "@/lib/docs"
 import { useMe } from "@/lib/use-me"
 import { useBookmarks } from "@/lib/use-bookmarks"
+import { usePluginUi } from "@/lib/plugins"
+import { DynamicIcon } from "@/components/dynamic-icon"
 import { apiErrorToast } from "@/lib/api-toast"
 
 // Information architecture mirrors the original Danbyte CLAUDE.md — the
@@ -773,6 +776,7 @@ function NavGroup({
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { canManage, canDo, can } = useMe()
+  const pluginUi = usePluginUi()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   // The group that owns the current page stays open even if the user collapsed
   // it. An item matches if its URL is the path or a parent of it.
@@ -802,6 +806,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     .filter((section) => section.clusters.length > 0)
   const sectionUrls = (section: (typeof visibleSections)[number]) =>
     section.clusters.flatMap((c) => c.items).map((i) => i.url)
+
+  // Server-driven plugin nav: group enabled plugins' items by their `section`,
+  // gated by the SAME RBAC rule as core nav (object_type/perm).
+  const pluginNav = (pluginUi.data?.nav ?? []).filter((n) =>
+    n.object_type ? canDo(n.object_type, "view") : n.perm ? can(n.perm) : true
+  )
+  const pluginGroups = new Map<string, typeof pluginNav>()
+  for (const item of pluginNav) {
+    const key = item.section || "Plugins"
+    if (!pluginGroups.has(key)) pluginGroups.set(key, [])
+    pluginGroups.get(key)!.push(item)
+  }
   return (
     <Sidebar collapsible="icon" {...props}>
       {/* Header: tenant switcher.
@@ -873,6 +889,37 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </SidebarMenu>
               </React.Fragment>
             ))}
+          </NavGroup>
+        ))}
+
+        {/* Plugin-contributed nav (server-driven, RBAC-gated above). */}
+        {Array.from(pluginGroups.entries()).map(([label, items]) => (
+          <NavGroup
+            key={`plugin:${label}`}
+            label={label}
+            icon={Puzzle}
+            hasActive={inGroup(items.map((i) => i.url))}
+          >
+            <SidebarMenu>
+              {items.map((item) => (
+                <SidebarMenuItem key={item.url}>
+                  <SidebarMenuButton
+                    asChild
+                    size="sm"
+                    className="h-6"
+                    tooltip={item.title}
+                  >
+                    <Link to={item.url as never}>
+                      <DynamicIcon
+                        name={item.icon}
+                        className="hidden group-data-[collapsible=icon]:block"
+                      />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
           </NavGroup>
         ))}
 
@@ -1106,86 +1153,86 @@ function FavoritesSection() {
                   Organise
                 </h3>
                 <div className="max-h-72 overflow-auto rounded-lg border border-border">
-              {[...folders]
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map((folder) => (
-                  <div
-                    key={folder.id}
-                    className="flex items-center gap-2 border-b border-border px-3 py-2 last:border-b-0"
-                  >
-                    <Folder className="size-4 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate text-sm">
-                      {folder.name}
-                    </span>
-                    <select
-                      className="h-8 rounded-md border border-border bg-background px-2 text-xs"
-                      value={folder.parent ?? ""}
-                      onChange={(e) =>
-                        updateFolder.mutate({
-                          id: folder.id,
-                          parent: e.target.value || null,
-                        })
-                      }
-                    >
-                      <option value="">Root</option>
-                      {folders
-                        .filter((f) => f.id !== folder.id)
-                        .map((f) => (
-                          <option key={f.id} value={f.id}>
-                            {f.name}
-                          </option>
-                        ))}
-                    </select>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      title="Delete folder"
-                      onClick={() => removeFolder.mutate(folder.id)}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </div>
-                ))}
-              {[...bookmarks]
-                .sort((a, b) => a.label.localeCompare(b.label))
-                .map((bookmark) => (
-                  <div
-                    key={bookmark.id}
-                    className="flex items-center gap-2 border-b border-border px-3 py-2 last:border-b-0"
-                  >
-                    <Bookmark className="size-4 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate text-sm">
-                      {bookmark.label}
-                    </span>
-                    <select
-                      className="h-8 rounded-md border border-border bg-background px-2 text-xs"
-                      value={bookmark.folder ?? ""}
-                      onChange={(e) =>
-                        update.mutate({
-                          id: bookmark.id,
-                          folder: e.target.value || null,
-                        })
-                      }
-                    >
-                      <option value="">Root</option>
-                      {folders.map((f) => (
-                        <option key={f.id} value={f.id}>
-                          {f.name}
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      title="Delete bookmark"
-                      onClick={() => remove.mutate(bookmark.id)}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </div>
-                ))}
+                  {[...folders]
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((folder) => (
+                      <div
+                        key={folder.id}
+                        className="flex items-center gap-2 border-b border-border px-3 py-2 last:border-b-0"
+                      >
+                        <Folder className="size-4 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate text-sm">
+                          {folder.name}
+                        </span>
+                        <select
+                          className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                          value={folder.parent ?? ""}
+                          onChange={(e) =>
+                            updateFolder.mutate({
+                              id: folder.id,
+                              parent: e.target.value || null,
+                            })
+                          }
+                        >
+                          <option value="">Root</option>
+                          {folders
+                            .filter((f) => f.id !== folder.id)
+                            .map((f) => (
+                              <option key={f.id} value={f.id}>
+                                {f.name}
+                              </option>
+                            ))}
+                        </select>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          title="Delete folder"
+                          onClick={() => removeFolder.mutate(folder.id)}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    ))}
+                  {[...bookmarks]
+                    .sort((a, b) => a.label.localeCompare(b.label))
+                    .map((bookmark) => (
+                      <div
+                        key={bookmark.id}
+                        className="flex items-center gap-2 border-b border-border px-3 py-2 last:border-b-0"
+                      >
+                        <Bookmark className="size-4 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate text-sm">
+                          {bookmark.label}
+                        </span>
+                        <select
+                          className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                          value={bookmark.folder ?? ""}
+                          onChange={(e) =>
+                            update.mutate({
+                              id: bookmark.id,
+                              folder: e.target.value || null,
+                            })
+                          }
+                        >
+                          <option value="">Root</option>
+                          {folders.map((f) => (
+                            <option key={f.id} value={f.id}>
+                              {f.name}
+                            </option>
+                          ))}
+                        </select>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          title="Delete bookmark"
+                          onClick={() => remove.mutate(bookmark.id)}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    ))}
                 </div>
               </section>
             )}

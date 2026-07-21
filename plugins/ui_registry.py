@@ -46,6 +46,8 @@ class PageSpec:
     fields: tuple[ColumnSpec, ...] = ()       # detail attribute rows
     tabs: tuple[str, ...] = ("overview",)     # e.g. ("overview","history")
     audited: bool = False
+    # "app_label.model" for the History tab's changelog query (when audited).
+    audit_type: str | None = None
 
 
 @dataclass(frozen=True)

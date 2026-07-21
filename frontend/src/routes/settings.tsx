@@ -57,6 +57,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: "/settings/admin", label: "General" },
       { to: "/settings/updates", label: "Updates" },
+      { to: "/settings/plugins", label: "Plugins & services" },
       { to: "/settings/email", label: "Email & Delivery" },
       { to: "/settings/ldap", label: "Directory (LDAP)" },
     ],
