@@ -15,15 +15,17 @@ extra_css = ["stylesheets/extra.css"]
 # placeholders with crypto-random values in the reader's browser.
 extra_javascript = ["javascripts/gen-secrets.js"]
 
-# Explicit navigation. Kept to a handful of top-level areas so the menu is easy
-# to scan: Getting started · Features (every product area, nested) · Architecture
-# (incl. data models) · Reference. Sub-sections are collapsible.
+# Explicit navigation — a single, collapsible LEFT sidebar (no top tabs).
+# Grouped by intent so each section is easy to reason about: the product areas
+# under "Features", then Customization, Integrations & automation,
+# Administration, Plugins, and finally the developer Architecture / Reference.
 nav = [
   { "Home" = "index.md" },
   { "Getting started" = [
     { "Installation"      = "getting-started/installation.md" },
     { "Upgrading"         = "getting-started/upgrading.md" },
     { "Dev workflow"      = "getting-started/dev-workflow.md" },
+    { "The dashboard"     = "features/dashboard.md" },
   ] },
   { "Features" = [
     { "IPAM" = [
@@ -51,17 +53,17 @@ nav = [
       { "Fibre strands"     = "dcim/fiber.md" },
       { "Interface & cable types" = "dcim/type-taxonomy.md" },
     ] },
-    { "Organization" = [
-      "organization/index.md",
-      { "Contacts"          = "features/contacts.md" },
-      { "Regions & locations" = "features/regions-locations.md" },
-    ] },
-    { "Circuits & links" = [
+    { "Circuits & connectivity" = [
       "connectivity/index.md",
       { "Circuits"          = "features/circuits.md" },
       { "Power"             = "features/power.md" },
       { "Wireless"          = "features/wireless.md" },
       { "VPN tunnels"       = "features/vpn.md" },
+    ] },
+    { "Organization" = [
+      "organization/index.md",
+      { "Contacts"          = "features/contacts.md" },
+      { "Regions & locations" = "features/regions-locations.md" },
     ] },
     { "Monitoring & compliance" = [
       "monitoring/index.md",
@@ -70,39 +72,37 @@ nav = [
       { "SNMP discovery"    = "features/snmp-discovery.md" },
       { "Compliance"        = "features/compliance.md" },
     ] },
-    { "Automation & integrations" = [
-      "automation/index.md",
-      { "Config contexts"   = "features/config-contexts.md" },
-      { "Export templates"  = "features/export-templates.md" },
-      { "Config drift (Ansible/Terraform)" = "features/iac-runner.md" },
-      { "Advanced: custom-field-driven playbook" = "features/cf-driven-playbook.md" },
-      { "Webhooks"          = "features/webhooks.md" },
-      { "Import & export"   = "features/import-export.md" },
-      { "Import from NetBox" = "features/netbox-import.md" },
-    ] },
-    { "Access & history" = [
-      "access/index.md",
-      { "Permissions & access" = "features/permissions.md" },
-      { "Site separation"   = "access/site-separation.md" },
-      { "Change log"        = "features/change-log.md" },
-      { "Journals"          = "features/journals.md" },
-    ] },
-    { "Working with data" = [
-      "working-with-data/index.md",
-      { "Dashboard"         = "features/dashboard.md" },
-      { "Tags & custom fields" = "features/tags-and-custom-fields.md" },
-      { "Object numbers (IDs)" = "features/object-numbers.md" },
-      { "Table columns"     = "features/table-preferences.md" },
-      { "Exporting tables"  = "features/exporting-tables.md" },
-    ] },
   ] },
+  { "Customization" = [
+    { "Tags & custom fields" = "features/tags-and-custom-fields.md" },
+    { "Config contexts"   = "features/config-contexts.md" },
+    { "Export templates"  = "features/export-templates.md" },
+    { "Object numbers (IDs)" = "features/object-numbers.md" },
+    { "Table columns"     = "features/table-preferences.md" },
+  ] },
+  { "Integrations & automation" = [
+    "automation/index.md",
+    { "Config drift (Ansible/Terraform)" = "features/iac-runner.md" },
+    { "Advanced: custom-field-driven playbook" = "features/cf-driven-playbook.md" },
+    { "Webhooks"          = "features/webhooks.md" },
+    { "Import & export"   = "features/import-export.md" },
+    { "Import from NetBox" = "features/netbox-import.md" },
+    { "Exporting tables"  = "features/exporting-tables.md" },
+  ] },
+  { "Administration" = [
+    "access/index.md",
+    { "Permissions & access" = "features/permissions.md" },
+    { "Site separation"   = "access/site-separation.md" },
+    { "Change log"        = "features/change-log.md" },
+    { "Journals"          = "features/journals.md" },
+  ] },
+  { "Plugins" = "architecture/plugins.md" },
   { "Architecture" = [
     { "Overview"          = "architecture/overview.md" },
     { "Stack"             = "architecture/stack.md" },
     { "Data model"        = "architecture/data-model.md" },
     { "Isolation: Tenant + VRF" = "architecture/tenant-vrf.md" },
     { "Tenant settings & overrides" = "architecture/tenant-settings.md" },
-    { "Plugins"           = "architecture/plugins.md" },
     { "Design tokens"     = "architecture/shadcn-tokens.md" },
     { "Visual language"   = "design/visual-language.md" },
     { "Data models" = [
@@ -129,10 +129,9 @@ language = "en"
 features = [
   "navigation.instant",
   "navigation.tracking",
-  # Top-level areas are sticky TABS across the top (only a handful now), and the
-  # left sidebar shows the active area's collapsible sub-sections + index pages.
-  "navigation.tabs",
-  "navigation.tabs.sticky",
+  # One collapsible LEFT sidebar (deliberately NO top tabs and NO
+  # navigation.sections — categories stay collapsed until opened, so the menu is
+  # short to scan). navigation.indexes makes a section's index page clickable.
   "navigation.indexes",
   "navigation.top",
   "navigation.footer",
