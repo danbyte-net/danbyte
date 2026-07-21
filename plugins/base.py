@@ -30,6 +30,9 @@ class DanbytePluginConfig(AppConfig):
     max_version: str | None = None
     # Per-plugin default settings, merged into settings.PLUGINS_CONFIG[slug].
     default_settings: dict = {}
+    # Enablement default when no PluginConfig row overrides it (an installed
+    # plugin is active everywhere unless a tenant/deployment row turns it off).
+    default_enabled: bool = True
     # URL/nav slug; defaults to the app label. Also the /api/plugins/<slug>/ mount.
     slug: str | None = None
 

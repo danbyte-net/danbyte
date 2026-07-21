@@ -40,6 +40,68 @@ def plugins_list(request):
     )
 
 
+@api_view(["GET", "PATCH"])
+@permission_classes([IsAuthenticated])
+def plugin_config(request, slug: str):
+    """Read or set a plugin's enablement.
+
+    GET returns the effective state for the caller's active tenant plus the raw
+    tenant/deployment rows. PATCH ``{enabled, scope}`` upserts a row: scope
+    ``"tenant"`` (default) needs tenant-admin (``can_manage_admin``); scope
+    ``"deployment"`` needs deployment-admin (``can_manage_deployment``).
+    """
+    from auth_api.permissions import can_manage_admin, can_manage_deployment
+
+    from api.views import _get_active_tenant
+    from .models import PluginConfig
+    from .registry import get_plugin
+    from .resolve import plugin_enabled
+
+    if get_plugin(slug) is None:
+        return Response({"detail": "Unknown or not-loaded plugin."}, status=404)
+
+    tenant = _get_active_tenant(request)
+
+    def _row(t):
+        return PluginConfig.objects.filter(plugin_slug=slug, tenant=t).first()
+
+    if request.method == "GET":
+        tenant_row = _row(tenant) if tenant is not None else None
+        dep_row = _row(None)
+        return Response(
+            {
+                "slug": slug,
+                "enabled": plugin_enabled(slug, tenant),
+                "tenant_enabled": tenant_row.enabled if tenant_row else None,
+                "deployment_enabled": dep_row.enabled if dep_row else None,
+                "default_enabled": bool(
+                    getattr(get_plugin(slug), "default_enabled", True)
+                ),
+            }
+        )
+
+    scope = request.data.get("scope", "tenant")
+    enabled = request.data.get("enabled")
+    if not isinstance(enabled, bool):
+        return Response({"detail": "`enabled` must be a boolean."}, status=400)
+
+    if scope == "deployment":
+        if not can_manage_deployment(request.user):
+            return Response({"detail": "Deployment admin required."}, status=403)
+        target_tenant = None
+    else:
+        if tenant is None:
+            return Response({"detail": "No active tenant."}, status=400)
+        if not can_manage_admin(request.user, tenant):
+            return Response({"detail": "Tenant admin required."}, status=403)
+        target_tenant = tenant
+
+    PluginConfig.objects.update_or_create(
+        plugin_slug=slug, tenant=target_tenant, defaults={"enabled": enabled}
+    )
+    return Response({"slug": slug, "enabled": plugin_enabled(slug, tenant)})
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def plugins_apply(request):

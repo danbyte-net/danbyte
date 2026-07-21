@@ -17,6 +17,9 @@ from .registry import loaded_configs
 urlpatterns = [
     path("", api_views.plugins_list, name="plugins-list"),
     path("apply/", api_views.plugins_apply, name="plugins-apply"),
+    # Must precede the per-plugin includes below, or the "<slug>/" mount would
+    # shadow "<slug>/config/".
+    path("<str:slug>/config/", api_views.plugin_config, name="plugin-config"),
 ]
 
 for _cfg in loaded_configs():

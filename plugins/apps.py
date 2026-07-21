@@ -17,4 +17,9 @@ class PluginsConfig(AppConfig):
     def ready(self):
         from django.utils.module_loading import autodiscover_modules
 
+        # Record enable/disable changes in the change log.
+        from audit import register_audited_model
+
+        register_audited_model("plugins.PluginConfig")
+
         autodiscover_modules("danbyte_plugin")
