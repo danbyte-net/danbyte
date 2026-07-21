@@ -56,6 +56,21 @@ class CheckKind(models.TextChoices):
     EXEC = "exec", "Script / exec"
 
 
+def check_kinds() -> list[tuple[str, str]]:
+    """All selectable check kinds — the built-in enum plus any plugin-registered
+    checker kinds (label falls back to the kind slug). The checker registry is
+    the source of truth for what can actually run; this merges human labels in.
+    """
+    from monitoring.checkers import CHECKER_REGISTRY
+
+    labels = dict(CheckKind.choices)
+    out = list(CheckKind.choices)
+    for kind in sorted(CHECKER_REGISTRY):
+        if kind not in labels:
+            out.append((kind, kind))
+    return out
+
+
 class CheckStatus(models.TextChoices):
     UP = "up", "Up"
     DOWN = "down", "Down"
@@ -104,7 +119,7 @@ class CheckTemplate(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     name = models.CharField(max_length=120)
     slug = models.SlugField(max_length=120)
-    kind = models.CharField(max_length=8, choices=CheckKind.choices)
+    kind = models.CharField(max_length=32, choices=CheckKind.choices)
 
     params = models.JSONField(
         default=dict,
@@ -489,7 +504,7 @@ class CheckResult(models.Model):
         blank=True,
         related_name="results",
     )
-    kind = models.CharField(max_length=8, choices=CheckKind.choices)
+    kind = models.CharField(max_length=32, choices=CheckKind.choices)
 
     timestamp = models.DateTimeField(default=timezone.now, db_index=True)
     status = models.CharField(max_length=8, choices=CheckStatus.choices)
@@ -556,7 +571,7 @@ class CheckState(TimestampedModel):
         help_text="Which engine runs this check — resolved from the target's "
         "site/location at materialise time (null = the tenant's local engine).",
     )
-    kind = models.CharField(max_length=8, choices=CheckKind.choices)
+    kind = models.CharField(max_length=32, choices=CheckKind.choices)
 
     interval_seconds = models.PositiveIntegerField(
         null=True,
@@ -1149,7 +1164,7 @@ class Alert(TimestampedModel):
         related_name="alerts",
         help_text="The rule that set this alert's severity (null = default policy).",
     )
-    kind = models.CharField(max_length=8, choices=CheckKind.choices)
+    kind = models.CharField(max_length=32, choices=CheckKind.choices)
 
     dedup_key = models.CharField(
         max_length=120,
@@ -1296,7 +1311,7 @@ class StateTransition(models.Model):
         blank=True,
         related_name="transitions",
     )
-    kind = models.CharField(max_length=8, choices=CheckKind.choices)
+    kind = models.CharField(max_length=32, choices=CheckKind.choices)
 
     from_status = models.CharField(max_length=8, choices=CheckStatus.choices)
     to_status = models.CharField(max_length=8, choices=CheckStatus.choices)

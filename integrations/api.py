@@ -78,9 +78,22 @@ class AutomationTargetSerializer(serializers.ModelSerializer):
     )
     token_set = serializers.SerializerMethodField()
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+    # A plain CharField (not the model's ChoiceField) so plugin-registered
+    # automation kinds validate; the built-ins awx/webhook are registered too.
+    kind = serializers.CharField()
 
     def get_token_set(self, obj) -> bool:
         return bool(obj.token)
+
+    def validate_kind(self, value):
+        from .providers import automation_kinds, automation_provider
+
+        if automation_provider(value) is None:
+            raise serializers.ValidationError(
+                f"Unknown automation kind '{value}'. Available: "
+                f"{', '.join(automation_kinds()) or '(none registered)'}."
+            )
+        return value
 
     def update(self, instance, validated):
         if validated.get("token", None) == "":

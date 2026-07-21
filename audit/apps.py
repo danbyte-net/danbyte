@@ -127,9 +127,10 @@ class AuditConfig(AppConfig):
         from django.apps import apps
 
         from . import signals
+        from .registry import _DYNAMIC_AUDITED
 
         models = []
-        for label in AUDITED_MODELS:
+        for label in AUDITED_MODELS + _DYNAMIC_AUDITED:
             app_label, model_name = label.split(".")
             try:
                 models.append(apps.get_model(app_label, model_name))

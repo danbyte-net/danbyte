@@ -111,7 +111,9 @@ class CheckTemplateSerializer(serializers.ModelSerializer):
         return n if n is not None else obj.assignments.count()
 
     def validate_kind(self, value):
-        if value not in CheckKind.values:
+        # The checker registry is the source of truth (built-ins + plugin kinds),
+        # not the CheckKind enum — so a plugin-registered kind validates too.
+        if get_checker(value) is None:
             raise serializers.ValidationError(f"unknown kind '{value}'")
         return value
 

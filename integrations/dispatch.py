@@ -24,6 +24,64 @@ def _device_payload(tenant, device_ids):
     }
 
 
+# ── built-in automation providers ────────────────────────────────────────────
+# Each is run(target, payload, event) -> (status, detail). Registered below so a
+# plugin can add more (or override) via integrations.providers.
+
+
+def _awx_provider(target, payload, event):
+    if not target.job_template_id:
+        return "failed", "No job_template_id set."
+    url = (
+        target.base_url.rstrip("/")
+        + f"/api/v2/job_templates/{target.job_template_id}/launch/"
+    )
+    resp = safe_post(
+        url,
+        json={"extra_vars": payload},
+        headers={"Authorization": f"Bearer {target.token or ''}"},
+        timeout=15,
+        verify=target.ssl_verify,
+    )
+    if resp.status_code in (200, 201, 202):
+        job = ""
+        try:
+            job = f" (job {resp.json().get('id')})"
+        except Exception:  # noqa: BLE001
+            pass
+        return "launched", f"AWX job launched{job}."
+    return "failed", f"AWX returned {resp.status_code}: {resp.text[:300]}"
+
+
+def _webhook_provider(target, payload, event):
+    body = json.dumps(payload).encode()
+    headers = {
+        "Content-Type": "application/json",
+        "X-Danbyte-Event": f"deploy.{event}",
+        "X-Danbyte-Delivery": str(uuid.uuid4()),
+    }
+    if target.token:
+        sig = hmac.new(target.token.encode(), body, hashlib.sha512).hexdigest()
+        headers["X-Danbyte-Signature"] = f"sha512={sig}"
+    resp = safe_post(
+        target.base_url, data=body, headers=headers, timeout=15,
+        verify=target.ssl_verify,
+    )
+    if 200 <= resp.status_code < 300:
+        return "launched", f"Webhook accepted ({resp.status_code})."
+    return "failed", f"Webhook returned {resp.status_code}."
+
+
+def _register_builtin_providers():
+    from .providers import register_automation_provider
+
+    register_automation_provider("awx", _awx_provider)
+    register_automation_provider("webhook", _webhook_provider)
+
+
+_register_builtin_providers()
+
+
 def dispatch_deploy(target_id, device_ids, event="manual", run_id=None):
     """Fire the target. Returns a small result dict and updates the DeployRun."""
     import requests
@@ -51,47 +109,16 @@ def dispatch_deploy(target_id, device_ids, event="manual", run_id=None):
     payload = {**_device_payload(target.tenant, device_ids), "event": event}
     payload.update(target.extra_vars or {})
 
-    try:
-        if target.kind == "awx":
-            if not target.job_template_id:
-                return finish("failed", "No job_template_id set.")
-            url = (
-                target.base_url.rstrip("/")
-                + f"/api/v2/job_templates/{target.job_template_id}/launch/"
-            )
-            resp = safe_post(
-                url,
-                json={"extra_vars": payload},
-                headers={"Authorization": f"Bearer {target.token or ''}"},
-                timeout=15,
-                verify=target.ssl_verify,
-            )
-            if resp.status_code in (200, 201, 202):
-                job = ""
-                try:
-                    job = f" (job {resp.json().get('id')})"
-                except Exception:  # noqa: BLE001
-                    pass
-                return finish("launched", f"AWX job launched{job}.")
-            return finish("failed", f"AWX returned {resp.status_code}: {resp.text[:300]}")
+    # Select the provider by kind; an unknown kind degrades to the generic
+    # webhook rather than crashing (plugins register their own via
+    # integrations.providers.register_automation_provider).
+    from .providers import automation_provider
 
-        # generic webhook
-        body = json.dumps(payload).encode()
-        headers = {
-            "Content-Type": "application/json",
-            "X-Danbyte-Event": f"deploy.{event}",
-            "X-Danbyte-Delivery": str(uuid.uuid4()),
-        }
-        if target.token:
-            sig = hmac.new(target.token.encode(), body, hashlib.sha512).hexdigest()
-            headers["X-Danbyte-Signature"] = f"sha512={sig}"
-        resp = safe_post(
-            target.base_url, data=body, headers=headers, timeout=15,
-            verify=target.ssl_verify,
-        )
-        if 200 <= resp.status_code < 300:
-            return finish("launched", f"Webhook accepted ({resp.status_code}).")
-        return finish("failed", f"Webhook returned {resp.status_code}.")
+    provider = automation_provider(target.kind) or automation_provider("webhook")
+
+    try:
+        status, detail = provider(target, payload, event)
+        return finish(status, detail)
     except Exception as exc:  # noqa: BLE001
         logger.warning("deploy dispatch error (%s): %s", target.name, exc)
         return finish("failed", str(exc))

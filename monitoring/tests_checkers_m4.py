@@ -22,9 +22,12 @@ def _run(kind, target, params, timeout=1500, secret=None):
 
 class RegistryM4Tests(TestCase):
     def test_all_kinds_registered(self):
-        self.assertEqual(
-            set(CHECKER_REGISTRY),
+        # The built-ins must all be present. Plugins may register additional
+        # kinds (e.g. the example plugin's example_ping in the test env), so
+        # this is a subset check, not exact equality.
+        self.assertLessEqual(
             {"icmp", "tcp", "udp", "http", "snmp", "ssh", "telnet", "exec"},
+            set(CHECKER_REGISTRY),
         )
 
 
