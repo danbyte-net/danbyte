@@ -84,6 +84,12 @@ INSTALLED_APPS = [
 PLUGINS = [p for p in os.getenv("PLUGINS", "").split(",") if p.strip()]
 PLUGINS_CONFIG: dict = {}
 
+# The bundled reference plugin is loaded in the test environment (only) so the
+# whole plugin framework is exercised end to end by the normal suite. It never
+# loads in production unless an operator names it in PLUGINS explicitly.
+if TESTING and "danbyte_example_plugin" not in PLUGINS:
+    PLUGINS.append("danbyte_example_plugin")
+
 if PLUGINS:
     from danbyte import __version__ as _danbyte_version
     from danbyte.plugin_loader import discover as _discover_plugins
