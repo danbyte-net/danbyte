@@ -591,7 +591,44 @@ def device_paths(device, viewable_ids=None):
             "panel": panel,
         }
 
+    def trace_outward(dev, port, kind, position, seen):
+        """Follow front⇄rear pass-throughs outward from a cabled hop until a real
+        endpoint (or a dead-end). Returns ``(steps, complete)`` — steps starts
+        with a chip and alternates chip/seg, always ending on a chip."""
+        steps = []
+        complete = True
+        while True:
+            if kind not in ("front_port", "rear_port"):
+                steps.append(chip(dev, [(port, kind)], False))
+                break
+            if _is_splitter_side(kind, port):
+                # A splitter legitimately ends the run — its N outputs are
+                # separate runs, not a continuation.
+                steps.append(chip(dev, [(port, kind)], False))
+                break
+            if port.id in seen:
+                complete = False
+                steps.append(chip(dev, [(port, kind)], True))
+                break
+            seen.add(port.id)
+            strand = _strand_of(port, kind, position)
+            if strand is None:
+                complete = False
+                steps.append(chip(dev, [(port, kind)], True))
+                break
+            skind, sport, spos = strand
+            hops = by_port.get((skind, sport.id), [])
+            steps.append(chip(dev, [(port, kind), (sport, skind)], True))
+            if not hops:
+                complete = False  # the strand's far side is uncabled
+                break
+            cab2, dev, port, kind = hops[0]
+            steps.append(seg(cab2, strand=spos))
+            position = spos
+        return steps, complete
+
     runs = []
+    seen_runs = set()  # frozenset(cable_ids) → drop mirror-image duplicates
     for cab, da, pa, ka, db, pb, kb in links:
         # Orient so this device is the origin; a cable touching it on both
         # ends yields two runs (one per port), which is what you'd expect.
@@ -601,42 +638,54 @@ def device_paths(device, viewable_ids=None):
         ):
             if odev.id != device.id:
                 continue
-            # Start the run with this device drawn as a chip (like every other
-            # node), flagged so the frontend borders it as "you are here".
-            origin_chip = chip(odev, [(oport, okind)], False)
-            origin_chip["origin"] = True
-            steps = [origin_chip, seg(cab)]
-            complete = True
-            seen = set()
-            dev, port, kind, position = fdev, fport, fkind, 1
-            while True:
-                if kind not in ("front_port", "rear_port"):
-                    steps.append(chip(dev, [(port, kind)], False))
-                    break
-                if _is_splitter_side(kind, port):
-                    # The run legitimately ends at the splitter — its N
-                    # outputs are separate runs, not a continuation.
-                    steps.append(chip(dev, [(port, kind)], False))
-                    break
-                if port.id in seen:
-                    complete = False
-                    steps.append(chip(dev, [(port, kind)], True))
-                    break
-                seen.add(port.id)
-                strand = _strand_of(port, kind, position)
-                if strand is None:
-                    complete = False
-                    steps.append(chip(dev, [(port, kind)], True))
-                    break
-                skind, sport, spos = strand
-                hops = by_port.get((skind, sport.id), [])
-                steps.append(chip(dev, [(port, kind), (sport, skind)], True))
-                if not hops:
-                    complete = False  # the strand's far side is uncabled
-                    break
-                cab2, dev, port, kind = hops[0]
-                steps.append(seg(cab2, strand=spos))
-                position = spos
+
+            is_panel = okind in ("front_port", "rear_port") and not _is_splitter_side(
+                okind, oport
+            )
+            seen = {oport.id}
+
+            if is_panel:
+                # This device IS a patch panel: draw the whole run *through* it —
+                # the panel sits mid-path (highlighted), with the far endpoints on
+                # each side — instead of a fragment that starts at the panel.
+                right, a_complete = trace_outward(fdev, fport, fkind, 1, seen)
+                left = []
+                b_complete = True
+                ports_here = [(oport, okind)]
+                partner = _strand_of(oport, okind, 1)
+                if partner is not None:
+                    skind, sport, spos = partner
+                    ports_here.append((sport, skind))
+                    seen.add(sport.id)
+                    bhops = by_port.get((skind, sport.id), [])
+                    if bhops:
+                        cabB, bdev, bport, bkind = bhops[0]
+                        bsteps, b_complete = trace_outward(bdev, bport, bkind, spos, seen)
+                        # Reverse so the far end reads left→panel.
+                        left = list(reversed([seg(cabB, strand=spos), *bsteps]))
+                    else:
+                        b_complete = False  # partner side uncabled
+                panel_chip = chip(odev, ports_here, True)
+                panel_chip["origin"] = True
+                steps = [*left, panel_chip, seg(cab), *right]
+                complete = a_complete and b_complete
+            else:
+                # Endpoint origin (interface / console / power / splitter): start
+                # at this device's port and trace one way to the far end.
+                origin_chip = chip(odev, [(oport, okind)], False)
+                origin_chip["origin"] = True
+                right, complete = trace_outward(fdev, fport, fkind, 1, seen)
+                steps = [origin_chip, seg(cab), *right]
+
+            # A panel's run is discovered from both its front and rear port (and
+            # both cable orientations) — collapse those to one by cable set.
+            cable_ids = frozenset(
+                s["cable_id"] for s in steps if s["t"] == "seg" and s.get("cable_id")
+            )
+            if cable_ids and cable_ids in seen_runs:
+                continue
+            seen_runs.add(cable_ids)
+
             runs.append({
                 "origin": {"name": oport.name,
                            "kind": _KIND_OF.get(okind, "interface")},

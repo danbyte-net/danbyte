@@ -72,6 +72,15 @@ Danbyte checks a few things when you save, so your data stays clean:
 | **Valid gateway** | If you set a gateway, it must be a valid IP address. |
 | **No duplicates in a VRF** | The same block can't exist twice in the same VRF. The same block *can* exist in two different VRFs — that's expected and supported. |
 
+## Carving a subnet re-homes its IPs
+
+Each IP belongs to exactly one prefix. When you create a **child prefix** (from
+the detail page's *Add child prefix*, the [space map](space-map.md), or the API),
+Danbyte automatically **moves the IP addresses it now most-specifically
+contains** onto the new prefix — pulling them down from the broader parent so
+they aren't stranded. It never steals IPs that belong to an existing
+more-specific child, and only affects the same tenant + VRF.
+
 ## Gateway autospawn
 
 If you leave the **gateway** field blank and the prefix's site has a gateway

@@ -340,29 +340,63 @@ def _next_available_ips(prefix, *, count: int = 5) -> list[str]:
     return out
 
 
-def _reparent_ips_into(prefix) -> int:
-    """Re-parent every IP in the same (tenant, vrf) whose address falls
-    inside ``prefix.network`` onto ``prefix``.
+def reparent_ips_into(prefix) -> int:
+    """When a new prefix is created, pull in the IPs it now *most-specifically*
+    contains: IPs in the same (tenant, VRF) that fall inside ``prefix`` but are
+    currently parented to a **broader ancestor** prefix — WITHOUT stealing IPs
+    that belong to an existing more-specific child of ``prefix``.
 
-    Triggered by ``?adopt=1`` on the create form, set by the space map
-    when the user picks a "dirty" cell (free of prefixes but containing
-    stray IPs). Returns the count moved.
+    Danbyte pins each IP to exactly one prefix (``IPAddress.prefix`` FK), so
+    carving a subnet out of a parent must re-home the covered IPs or they'd stay
+    stranded on the parent (the bug behind "created a subnet in the map view and
+    the IPs didn't move"). Returns the number of IPs moved.
     """
     net = prefix.network
     if net is None:
         return 0
     first = int(net.network_address)
     last = int(net.broadcast_address)
-    moved = 0
-    qs = IPAddress.objects.filter(tenant=prefix.tenant, vrf=prefix.vrf).exclude(prefix=prefix)
-    for ip in qs.iterator():
-        try:
-            addr_int = int(ipaddress.ip_address(ip.ip_address))
-        except ValueError:
+    new_len = net.prefixlen
+
+    # Existing prefixes more specific than this one, same tenant+VRF, inside its
+    # range — an IP within one of those belongs there, not on ``prefix``.
+    children = []
+    for p in (
+        Prefix.objects.filter(tenant=prefix.tenant, vrf=prefix.vrf)
+        .exclude(pk=prefix.pk)
+    ):
+        pn = p.network
+        if pn is None or pn.prefixlen <= new_len:
             continue
-        if first <= addr_int <= last:
+        if int(pn.network_address) >= first and int(pn.broadcast_address) <= last:
+            children.append((int(pn.network_address), int(pn.broadcast_address)))
+
+    def covered_by_child(addr_int: int) -> bool:
+        return any(lo <= addr_int <= hi for lo, hi in children)
+
+    moved = 0
+    with transaction.atomic():
+        qs = (
+            IPAddress.objects.filter(tenant=prefix.tenant, vrf=prefix.vrf)
+            .exclude(prefix=prefix)
+            .select_related("prefix")
+        )
+        for ip in qs.iterator():
+            cur = ip.prefix
+            cur_net = cur.network if cur else None
+            # Only pull from a broader (or unparented) prefix — never steal from
+            # a same-or-more-specific one.
+            if cur_net is not None and cur_net.prefixlen >= new_len:
+                continue
+            try:
+                addr_int = int(ipaddress.ip_address(ip.ip_address))
+            except ValueError:
+                continue
+            if not (first <= addr_int <= last) or covered_by_child(addr_int):
+                continue
             ip.prefix = prefix
-            ip.save(update_fields=["prefix"])
+            ip.vrf = prefix.vrf  # keep the IP's VRF consistent with its prefix
+            ip.save(update_fields=["prefix", "vrf"])
             moved += 1
     return moved
 

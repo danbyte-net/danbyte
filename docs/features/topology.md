@@ -18,6 +18,12 @@ end-to-end path on the right.
 
 Port names in a path strip that resolve to a real interface are **clickable** (pointer cursor) — jump straight to the interface. The device card lists its first five runs with a **Show all** toggle.
 
+**Viewing a patch panel** shows the *whole* run drawn **through** it — the panel
+sits mid-path (highlighted as "you are here", with its front/rear ports) and the
+real endpoints appear on either side — rather than a fragment that starts at the
+panel. Each physical run appears once (the front- and rear-port views collapse
+to a single strip).
+
 Every **device page** carries the same language: its Topology card defaults
 to **Paths** — one flat end-to-end strip per cabled port (linked chips,
 panels crossed `front ⇄ rear`, segments in the cable's color) — with a

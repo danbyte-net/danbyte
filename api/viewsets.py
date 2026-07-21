@@ -727,6 +727,20 @@ class PrefixViewSet(CloneableMixin, TenantScopedViewSet):
             _autospawn_gateway(prefix, request=self.request)
         except Exception:  # noqa: BLE001
             pass
+        # Re-home the IPs this new subnet most-specifically contains — carving a
+        # child out of a parent must move the covered IPs onto it (they'd
+        # otherwise stay stranded on the parent). Best-effort: never block the
+        # create if re-homing hits a problem.
+        try:
+            from .views import reparent_ips_into
+
+            reparent_ips_into(prefix)
+        except Exception:  # noqa: BLE001
+            import logging
+
+            logging.getLogger("danbyte.api").exception(
+                "reparent_ips_into failed for new prefix %s", prefix.pk
+            )
 
     def _assert_write_in_site_scope(self, response, action):
         # Base check: the new/edited prefix's own site must be in scope.
