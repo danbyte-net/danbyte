@@ -1,14 +1,10 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
-import {
-  Cable as CableIcon,
-  Pencil,
-  TriangleAlert,
-  Waypoints,
-  Workflow,
-} from "lucide-react"
+import { Cable as CableIcon, Pencil, Waypoints, Workflow } from "lucide-react"
 
-import type { Interface } from "@/lib/api"
+import { DriftBadge } from "@/components/drift-detail"
+
+import type { Interface, SnmpDriftItem } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { CableStatusControl } from "@/components/cable-status-control"
@@ -56,12 +52,12 @@ export function nestInterfaces(rows: Interface[]): NestedInterface[] {
  * prepends/appends its own columns (a Member column, or the row actions).
  */
 export function buildInterfaceColumns(opts?: {
-  /** Interface ids that have SNMP config drift — badged so drift is easy to
-   * spot without leaving source-of-truth (review/accept stays in the Drift
-   * panel). */
-  driftIds?: Set<string>
+  /** SNMP drift items grouped by interface id — each drifted row gets a badge
+   * whose popover lists exactly what differs (review/accept stays in the Drift
+   * panel; source of truth is untouched). */
+  driftByIface?: Map<string, SnmpDriftItem[]>
 }): ColumnDef<NestedInterface>[] {
-  const driftIds = opts?.driftIds
+  const driftByIface = opts?.driftByIface
   return [
     {
       id: "name",
@@ -96,15 +92,8 @@ export function buildInterfaceColumns(opts?: {
                 mgmt
               </Badge>
             )}
-            {driftIds?.has(row.original.id) && (
-              <Badge
-                variant="warning"
-                className="h-4 gap-1 px-1.5 text-[10px]"
-                title="Config drift — what SNMP observed differs from the source of truth. Review it in the Drift panel."
-              >
-                <TriangleAlert className="h-2.5 w-2.5" />
-                drift
-              </Badge>
+            {driftByIface && (
+              <DriftBadge items={driftByIface.get(row.original.id) ?? []} />
             )}
             {row.original.tunnel_terminations.map((tt) => (
               <Link

@@ -27,6 +27,7 @@ import type {
   Interface,
   PrefixIpStatus,
   Rack,
+  SnmpDriftItem,
   VirtualChassis,
 } from "@/lib/api"
 import { RackElevation } from "@/components/rack-elevation"
@@ -1296,15 +1297,17 @@ function DeviceInterfacesPane({
   const driftQ = useQuery({
     queryKey: ["device-snmp-drift", deviceId],
     queryFn: () =>
-      api<{ drift: { interface_id?: string | null }[] }>(
+      api<{ drift: SnmpDriftItem[] }>(
         `/api/monitoring/devices/${deviceId}/snmp/drift/`
       ),
   })
-  const driftIds = useMemo(() => {
-    const s = new Set<string>()
-    for (const it of driftQ.data?.drift ?? [])
-      if (it.interface_id) s.add(it.interface_id)
-    return s
+  const driftByIface = useMemo(() => {
+    const m = new Map<string, SnmpDriftItem[]>()
+    for (const it of driftQ.data?.drift ?? []) {
+      const id = "interface_id" in it ? it.interface_id : null
+      if (id) m.set(id, [...(m.get(id) ?? []), it])
+    }
+    return m
   }, [driftQ.data])
   const columns = useMemo<ColumnDef<NestedInterface>[]>(() => {
     // Same columns + same row actions as the whole-stack table (shared builders)
@@ -1321,7 +1324,7 @@ function DeviceInterfacesPane({
     })
     return [
       ...(canEdit ? [selectionColumn<NestedInterface>()] : []),
-      ...buildInterfaceColumns({ driftIds }),
+      ...buildInterfaceColumns({ driftByIface }),
       ...(actions ? [actions] : []),
     ]
   }, [
@@ -1331,7 +1334,7 @@ function DeviceInterfacesPane({
     canEdit,
     canChangeCable,
     canConnect,
-    driftIds,
+    driftByIface,
   ])
   if (q.isLoading)
     return <p className="text-sm text-muted-foreground">Loading…</p>

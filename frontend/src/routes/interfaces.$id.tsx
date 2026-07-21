@@ -1,10 +1,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { Cable as CableIcon, Pencil, Trash2, Workflow } from "lucide-react"
+import {
+  Cable as CableIcon,
+  Pencil,
+  Trash2,
+  TriangleAlert,
+  Workflow,
+} from "lucide-react"
 import { useCallback, useState } from "react"
 
-import { api, type Interface } from "@/lib/api"
+import { api, type Interface, type SnmpDriftItem } from "@/lib/api"
+import { DriftDescription, driftKey } from "@/components/drift-detail"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
@@ -476,7 +483,9 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
   ]
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="space-y-6">
+      <InterfaceDriftAlert deviceId={i.device.id} interfaceId={i.id} />
+      <div className="grid gap-6 lg:grid-cols-2">
       <div className="space-y-6">
         <KvCard title="Interface" rows={attributes} />
         <KvCard title="Switching" rows={switching} />
@@ -493,6 +502,57 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
           />
         </div>
       )}
+      </div>
+    </div>
+  )
+}
+
+// Config-drift callout on the interface detail page — lists exactly what SNMP
+// observed that differs from the source of truth, with a link into the device's
+// Drift panel to review/accept. Renders nothing when there's no drift.
+function InterfaceDriftAlert({
+  deviceId,
+  interfaceId,
+}: {
+  deviceId: string
+  interfaceId: string
+}) {
+  const q = useQuery({
+    queryKey: ["device-snmp-drift", deviceId],
+    queryFn: () =>
+      api<{ drift: SnmpDriftItem[] }>(
+        `/api/monitoring/devices/${deviceId}/snmp/drift/`
+      ),
+  })
+  const items = (q.data?.drift ?? []).filter(
+    (it) => "interface_id" in it && it.interface_id === interfaceId
+  )
+  if (items.length === 0) return null
+  return (
+    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+      <div className="mb-1.5 flex items-center gap-2 text-sm font-semibold text-amber-700 dark:text-amber-400">
+        <TriangleAlert className="h-4 w-4" />
+        Config drift on this interface
+      </div>
+      <p className="mb-2 text-[12px] text-muted-foreground">
+        SNMP observed values that differ from the source of truth. Review and
+        accept them in the device's{" "}
+        <Link
+          to="/devices/$id"
+          params={{ id: deviceId }}
+          className="text-primary hover:underline"
+        >
+          Drift panel
+        </Link>{" "}
+        — nothing changes here until you do.
+      </p>
+      <ul className="space-y-1.5 text-[13px]">
+        {items.map((it) => (
+          <li key={driftKey(it)}>
+            <DriftDescription item={it} />
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

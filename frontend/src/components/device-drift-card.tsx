@@ -2,10 +2,11 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { toast } from "sonner"
-import { ArrowRight, Check, Plus, RefreshCw, X } from "lucide-react"
+import { Check, Plus, RefreshCw, X } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type { SnmpDriftItem } from "@/lib/api"
+import { DriftDescription, driftKey } from "@/components/drift-detail"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Section } from "@/components/ui/section"
@@ -211,95 +212,3 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
 }
 
 /** A stable identity for a drift item, so we can track dismissals and keys. */
-function driftKey(item: SnmpDriftItem): string {
-  switch (item.kind) {
-    case "device_field":
-      return `device_field:${item.field}`
-    case "interface_missing":
-      return `interface_missing:${item.name}`
-    case "interface_mismatch":
-      return `interface_mismatch:${item.interface_id}:${item.field}`
-    case "interface_stale":
-      return `interface_stale:${item.interface_id}`
-    case "ip_missing":
-      return `ip_missing:${item.interface_id}:${item.ip}`
-    case "switch_link_suggested":
-      return `switch_link:${item.ip_id}:${item.interface_id}`
-  }
-}
-
-function val(v: string | boolean): string {
-  if (typeof v === "boolean") return v ? "enabled" : "disabled"
-  return v || "—"
-}
-
-function DriftDescription({ item }: { item: SnmpDriftItem }) {
-  if (item.kind === "device_field") {
-    return (
-      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <span className="text-muted-foreground">{item.label}</span>
-        <span className="font-mono line-through opacity-60">
-          {item.intended || "—"}
-        </span>
-        <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-        <span className="font-mono">{item.observed}</span>
-      </span>
-    )
-  }
-  if (item.kind === "interface_missing") {
-    return (
-      <span className="flex items-center gap-2">
-        <Badge variant="secondary">new interface</Badge>
-        <span className="font-mono">{item.name}</span>
-        {item.observed.mac && (
-          <span className="font-mono text-[11px] text-muted-foreground">
-            {item.observed.mac}
-          </span>
-        )}
-      </span>
-    )
-  }
-  if (item.kind === "interface_mismatch") {
-    return (
-      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <span className="font-mono">{item.name}</span>
-        <span className="text-muted-foreground">{item.field}</span>
-        <span className="font-mono line-through opacity-60">
-          {val(item.intended)}
-        </span>
-        <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-        <span className="font-mono">{val(item.observed)}</span>
-      </span>
-    )
-  }
-  if (item.kind === "ip_missing") {
-    return (
-      <span className="flex items-center gap-2">
-        <Badge variant="secondary">discovered IP</Badge>
-        <span className="font-mono">{item.ip}</span>
-        <span className="text-muted-foreground">on</span>
-        <span className="font-mono">{item.name}</span>
-      </span>
-    )
-  }
-  if (item.kind === "switch_link_suggested") {
-    return (
-      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <Badge variant="secondary">switch link</Badge>
-        <span className="font-mono">{item.ip}</span>
-        <span className="font-mono line-through opacity-60">
-          {item.intended}
-        </span>
-        <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-        <span className="font-mono">{item.observed}</span>
-      </span>
-    )
-  }
-  // stale
-  return (
-    <span className="flex items-center gap-2">
-      <Badge variant="secondary">not seen on device</Badge>
-      <span className="font-mono">{item.name}</span>
-    </span>
-  )
-}
