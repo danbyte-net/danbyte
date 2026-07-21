@@ -95,7 +95,7 @@ export interface PluginInfo {
   version: string
   author: string
   description: string
-  state: "loaded" | "incompatible" | "error"
+  state: "loaded" | "incompatible" | "error" | "pending"
   error: string
   min_version: string | null
   max_version: string | null
@@ -107,6 +107,10 @@ export interface PluginInfo {
 export interface PluginList {
   plugins: PluginInfo[]
   has_pending_migrations: boolean
+  /** An uploaded plugin is on disk but not loaded yet — restart needed. */
+  pending_restart: boolean
+  /** Whether to show the "Apply changes" prompt (migrations or pending load). */
+  needs_apply: boolean
 }
 
 export function usePlugins() {

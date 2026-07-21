@@ -82,6 +82,22 @@ class PluginUploadTests(APITestCase):
             self.assertTrue((Path(self._tmp.name) / "danbyte_uptest" / "apps.py").is_file())
             self.assertIn("danbyte_uptest", uploaded_names())
 
+    def test_uploaded_plugin_shows_as_pending_without_refresh(self):
+        # After upload the plugin isn't loaded yet, but /api/plugins/ must list
+        # it as "pending" so the UI updates live and prompts Apply (restart).
+        self.client.force_login(self.superuser)
+        with self._override():
+            self._upload(_plugin_tar())
+            data = self.client.get("/api/plugins/").json()
+            entry = next(
+                (p for p in data["plugins"] if p["module"] == "danbyte_uptest"), None
+            )
+            self.assertIsNotNone(entry)
+            self.assertEqual(entry["state"], "pending")
+            self.assertTrue(entry["uploaded"])
+            self.assertTrue(data["pending_restart"])
+            self.assertTrue(data["needs_apply"])
+
     def test_rejects_archive_without_a_plugin(self):
         self.client.force_login(self.superuser)
         buf = io.BytesIO()

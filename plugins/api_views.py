@@ -36,12 +36,41 @@ def plugins_list(request):
         entry["unapplied_migrations"] = pending.get(label, []) if label else []
         # Installed via upload (offline) → the UI offers Uninstall.
         entry["uploaded"] = entry["module"] in uploaded
+
+    # Uploaded plugins that aren't in the boot report yet are installed on disk
+    # but not loaded until the next restart. Surface them as "pending" so the UI
+    # updates the moment an upload finishes (no page refresh) and prompts Apply.
+    seen = {e["module"] for e in report}
+    for module in uploaded:
+        if module in seen:
+            continue
+        report.append(
+            {
+                "module": module,
+                "slug": module,
+                "name": module,
+                "version": "",
+                "author": "",
+                "description": "Uploaded — Apply changes (restart) to load it.",
+                "state": "pending",
+                "error": "",
+                "min_version": None,
+                "max_version": None,
+                "unapplied_migrations": [],
+                "uploaded": True,
+            }
+        )
+
+    pending_restart = any(e["state"] == "pending" for e in report)
     return Response(
         {
             "plugins": report,
-            # Any pending migration across the whole install (plugins or core) —
-            # the signal for the "Apply changes" action.
+            # Any pending migration across the install (plugins or core).
             "has_pending_migrations": bool(pending),
+            # A plugin is uploaded but not yet loaded — Apply (restart) needed.
+            "pending_restart": pending_restart,
+            # Single signal the UI keys the "Apply changes" prompt on.
+            "needs_apply": bool(pending) or pending_restart,
         }
     )
 

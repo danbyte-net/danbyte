@@ -53,6 +53,7 @@ const STATE_VARIANT: Record<string, "secondary" | "destructive" | "outline"> = {
   loaded: "secondary",
   incompatible: "outline",
   error: "destructive",
+  pending: "outline",
 }
 
 function PluginsSection() {
@@ -92,7 +93,9 @@ function PluginsSection() {
 
   if (!list.data) return null
   const plugins = list.data.plugins
-  const pending = list.data.has_pending_migrations
+  // Show the Apply prompt for unapplied migrations OR an uploaded plugin that
+  // isn't loaded yet (needs a restart).
+  const pending = list.data.needs_apply ?? list.data.has_pending_migrations
 
   return (
     <SettingsCard
@@ -108,7 +111,11 @@ function PluginsSection() {
       {me.is_superuser && <UploadPlugin qc={qc} />}
       {pending && me.is_superuser && (
         <div className="mb-3 flex items-center justify-between rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
-          <span>Unapplied database migrations detected.</span>
+          <span>
+            {list.data.has_pending_migrations
+              ? "Plugin changes are pending (database migrations + restart)."
+              : "An uploaded plugin needs a restart to load."}
+          </span>
           <ConfirmButton
             label="Apply changes"
             pendingLabel="Applying…"
