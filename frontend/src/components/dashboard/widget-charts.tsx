@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router"
+import { Link, useNavigate } from "@tanstack/react-router"
 import {
   Bar,
   BarChart,
@@ -31,13 +31,16 @@ function configFor(data: DashDist[]): ChartConfig {
   return cfg
 }
 
-/** Donut + side legend that fills its tile height. */
+/** Donut + side legend that fills its tile height. `link` (optional) turns each
+ * legend row into a jump to the matching list page. */
 export function DistDonut({
   data,
   unit = "total",
+  link,
 }: {
   data: DashDist[]
   unit?: string
+  link?: (name: string) => string | undefined
 }) {
   if (!data.length) return <Empty />
   const sum = data.reduce((n, d) => n + d.count, 0)
@@ -91,25 +94,50 @@ export function DistDonut({
         </PieChart>
       </ChartContainer>
       <ul className="grid w-full grid-cols-2 gap-x-3 gap-y-1 text-[12px] sm:flex-1 sm:grid-cols-1">
-        {data.slice(0, 6).map((d) => (
-          <li key={d.name} className="flex items-center gap-1.5">
-            <span
-              className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
-              style={{ backgroundColor: d.color }}
-            />
-            <span className="truncate text-muted-foreground">{d.name}</span>
-            <span className="num ml-auto font-medium text-foreground tabular-nums">
-              {d.count.toLocaleString()}
-            </span>
-          </li>
-        ))}
+        {data.slice(0, 6).map((d) => {
+          const to = link?.(d.name)
+          const row = (
+            <>
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
+                style={{ backgroundColor: d.color }}
+              />
+              <span className="truncate text-muted-foreground">{d.name}</span>
+              <span className="num ml-auto font-medium text-foreground tabular-nums">
+                {d.count.toLocaleString()}
+              </span>
+            </>
+          )
+          return (
+            <li key={d.name}>
+              {to ? (
+                <Link
+                  to={to}
+                  className="flex items-center gap-1.5 rounded px-1 -mx-1 hover:bg-muted/50"
+                >
+                  {row}
+                </Link>
+              ) : (
+                <span className="flex items-center gap-1.5">{row}</span>
+              )}
+            </li>
+          )
+        })}
       </ul>
     </div>
   )
 }
 
-/** Horizontal bars sized to their content. */
-export function DistBar({ data }: { data: DashDist[] }) {
+/** Horizontal bars sized to their content. `link` (optional) makes a bar click
+ * jump to the matching list page. */
+export function DistBar({
+  data,
+  link,
+}: {
+  data: DashDist[]
+  link?: (name: string) => string | undefined
+}) {
+  const navigate = useNavigate()
   if (!data.length) return <Empty />
   const chartData = data.map((d) => ({ ...d, fill: d.color }))
   const h = Math.max(120, data.length * 38 + 8)
@@ -141,7 +169,19 @@ export function DistBar({ data }: { data: DashDist[] }) {
           cursor={false}
           content={<ChartTooltipContent hideLabel />}
         />
-        <Bar dataKey="count" radius={5}>
+        <Bar
+          dataKey="count"
+          radius={5}
+          cursor={link ? "pointer" : undefined}
+          onClick={
+            link
+              ? (d: { name?: string }) => {
+                  const to = d?.name ? link(d.name) : undefined
+                  if (to) navigate({ to })
+                }
+              : undefined
+          }
+        >
           <LabelList
             dataKey="count"
             position="right"

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { lazy, type ReactNode } from "react"
 
 import type { DashboardData } from "@/lib/api"
 import {
@@ -12,6 +12,11 @@ import {
 import { RecentDevices, RecentIps, RecentPrefixes } from "./widget-tables"
 import { BookmarksWidget } from "./widget-bookmarks"
 import { OsmMapWidget } from "./widget-osm-map"
+
+// Lazy — pulls in the floor-plan canvas only when the widget is actually shown.
+const FloorplanWidget = lazy(() =>
+  import("./widget-floorplan").then((m) => ({ default: m.FloorplanWidget }))
+)
 
 export type WidgetId =
   | "bookmarks"
@@ -34,6 +39,7 @@ export type WidgetId =
   | "check-status"
   | "alerts-severity"
   | "map"
+  | "floorplan"
 
 // Bento sizes → grid spans on a 6-col, ~168px auto-row grid.
 export type WidgetSize = "sq" | "wide" | "big"
@@ -106,35 +112,45 @@ export const CATALOG: WidgetDef[] = [
     title: "IPs by status",
     description: "Address status breakdown",
     size: "sq",
-    render: (d) => <DistDonut data={d.ip_by_status} unit="IPs" />,
+    render: (d) => (
+      <DistDonut data={d.ip_by_status} unit="IPs" link={() => "/prefixes"} />
+    ),
   },
   {
     id: "ip-role",
     title: "IPs by role",
     description: "Address role breakdown",
     size: "sq",
-    render: (d) => <DistDonut data={d.ip_by_role} unit="IPs" />,
+    render: (d) => (
+      <DistDonut data={d.ip_by_role} unit="IPs" link={() => "/prefixes"} />
+    ),
   },
   {
     id: "ip-scope",
     title: "Public vs private IPs",
     description: "Address reachability split",
     size: "sq",
-    render: (d) => <DistDonut data={d.ip_by_scope} unit="IPs" />,
+    render: (d) => (
+      <DistDonut data={d.ip_by_scope} unit="IPs" link={() => "/prefixes"} />
+    ),
   },
   {
     id: "prefix-family",
     title: "Prefixes by family",
     description: "IPv4 vs IPv6",
     size: "sq",
-    render: (d) => <DistDonut data={d.prefix_by_family} unit="prefixes" />,
+    render: (d) => (
+      <DistDonut data={d.prefix_by_family} unit="prefixes" link={() => "/prefixes"} />
+    ),
   },
   {
     id: "prefix-status",
     title: "Prefixes by status",
     description: "Container / active / reserved",
     size: "sq",
-    render: (d) => <DistDonut data={d.prefix_by_status} unit="prefixes" />,
+    render: (d) => (
+      <DistDonut data={d.prefix_by_status} unit="prefixes" link={() => "/prefixes"} />
+    ),
   },
   {
     id: "top-prefixes",
@@ -148,42 +164,50 @@ export const CATALOG: WidgetDef[] = [
     title: "Devices by status",
     description: "Operational state",
     size: "sq",
-    render: (d) => <DistDonut data={d.device_by_status} unit="devices" />,
+    render: (d) => (
+      <DistDonut data={d.device_by_status} unit="devices" link={() => "/devices"} />
+    ),
   },
   {
     id: "device-type",
     title: "Devices by type",
     description: "Top device types",
     size: "wide",
-    render: (d) => <DistBar data={d.device_by_type} />,
+    render: (d) => <DistBar data={d.device_by_type} link={() => "/devices"} />,
   },
   {
     id: "device-site",
     title: "Devices by site",
     description: "Where devices live",
     size: "wide",
-    render: (d) => <DistBar data={d.device_by_site} />,
+    render: (d) => <DistBar data={d.device_by_site} link={() => "/devices"} />,
   },
   {
     id: "device-manufacturer",
     title: "Devices by manufacturer",
     description: "Vendor split",
     size: "wide",
-    render: (d) => <DistBar data={d.device_by_manufacturer} />,
+    render: (d) => (
+      <DistBar data={d.device_by_manufacturer} link={() => "/devices"} />
+    ),
   },
   {
     id: "check-status",
     title: "Monitoring status",
     description: "Checks by current status",
     size: "sq",
-    render: (d) => <DistDonut data={d.check_by_status} unit="checks" />,
+    render: (d) => (
+      <DistDonut data={d.check_by_status} unit="checks" link={() => "/monitoring"} />
+    ),
   },
   {
     id: "alerts-severity",
     title: "Firing alerts",
     description: "Open alerts by severity",
     size: "sq",
-    render: (d) => <DistDonut data={d.alerts_by_severity} unit="alerts" />,
+    render: (d) => (
+      <DistDonut data={d.alerts_by_severity} unit="alerts" link={() => "/monitoring"} />
+    ),
   },
   {
     id: "map",
@@ -191,6 +215,13 @@ export const CATALOG: WidgetDef[] = [
     description: "Your sites, devices, and cables on a live map",
     size: "big",
     render: () => <OsmMapWidget />,
+  },
+  {
+    id: "floorplan",
+    title: "Floor plan",
+    description: "A floor plan with live tile status",
+    size: "big",
+    render: () => <FloorplanWidget />,
   },
 ]
 
@@ -202,13 +233,18 @@ export const CATALOG_BY_ID = Object.fromEntries(
 // Counts live in the always-on stat band, so the Inventory widget is opt-in.
 export const DEFAULT_LAYOUT: WidgetId[] = [
   "bookmarks",
-  "recent-prefixes",
   "recent-activity",
   "reachable-gauge",
-  "recent-ips",
+  "check-status",
+  "alerts-severity",
+  "map",
   "top-prefixes",
   "ip-status",
-  "recent-devices",
+  "recent-prefixes",
+  "recent-ips",
   "device-status",
-  "check-status",
+  "device-type",
+  "device-site",
+  "recent-devices",
+  "floorplan",
 ]
