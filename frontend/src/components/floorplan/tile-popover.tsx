@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import {
   api,
+  type CheckStatus,
   type CustomField,
   type Device,
   type FloorPlanLiveState,
@@ -13,13 +14,13 @@ import {
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
+import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { TagList } from "@/components/cells/tag-list"
 import {
   formatCustomValue,
   useCustomFieldDefs,
 } from "@/components/custom-field-display"
-import { cn } from "@/lib/utils"
 import { tileName, utilizationColor } from "@/components/floorplan/floor-canvas"
 
 type LiveTile = FloorPlanLiveState["tiles"][string]
@@ -187,18 +188,9 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
     render: ({ live }) => {
       const c = live?.check
       if (!c) return null
-      const tone =
-        c === "down" || c === "stale"
-          ? "bg-red-500"
-          : c === "degraded"
-            ? "bg-amber-500"
-            : "bg-emerald-500"
-      return (
-        <span className="inline-flex items-center gap-1.5">
-          <span className={cn("h-1.5 w-1.5 rounded-full", tone)} />
-          {c}
-        </span>
-      )
+      // The real monitoring status pill (same palette as everywhere else),
+      // not a bare dot — matches the "Object status" badge above it.
+      return <CheckStatusBadge status={c as CheckStatus} />
     },
   },
   color: {
