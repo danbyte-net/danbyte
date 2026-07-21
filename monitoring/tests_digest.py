@@ -90,6 +90,53 @@ class DigestBuildTests(TestCase):
         self.assertIsNone(data["reachable_pct"])
         self.assertEqual(data["firing_total"], 0)
         self.assertEqual(data["transitions"], [])
+        self.assertEqual(data["chains"], [])
+        self.assertEqual(data["went_down"], 0)
+
+    def test_chains_group_by_prefix_and_count_window_activity(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from api.models import IPAddress, Prefix
+        from monitoring.digest import render_html, render_text
+        from monitoring.models import StateTransition
+
+        org = Organization.objects.create(name="O", slug="o")
+        tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        pfx = Prefix.objects.create(tenant=tenant, cidr="10.0.0.0/24")
+        ip = IPAddress.objects.create(
+            tenant=tenant, prefix=pfx, ip_address="10.0.0.5", dns_name="host.example"
+        )
+        now = timezone.now()
+
+        def _t(from_s, to_s, minutes_ago):
+            StateTransition.objects.create(
+                tenant=tenant, target_ip=ip, kind="icmp",
+                from_status=from_s, to_status=to_s,
+                at=now - timedelta(minutes=minutes_ago),
+            )
+
+        _t("up", "down", 30)
+        _t("down", "up", 10)
+
+        data = build_digest(tenant, now - timedelta(days=1))
+        self.assertEqual(data["went_down"], 1)
+        self.assertEqual(data["came_up"], 1)
+        # One prefix group, one IP chain: entering "up" + two transitions.
+        self.assertEqual(len(data["chains"]), 1)
+        pfx_cidr, chain_list = data["chains"][0]
+        self.assertEqual(pfx_cidr, "10.0.0.0/24")
+        self.assertEqual(len(chain_list), 1)
+        self.assertEqual(
+            [s["status"] for s in chain_list[0]["segments"]],
+            ["up", "down", "up"],
+        )
+        # Renders: DNS label + a coloured badge in the HTML, chain in text.
+        html = render_html(data, "Danbyte")
+        self.assertIn("host.example", html)
+        self.assertIn("#ef4444", html)  # red-500 "down" badge
+        self.assertIn("10.0.0.0/24", render_text(data))
 
 
 @override_settings(EMAIL_BACKEND=LOCMEM)

@@ -542,9 +542,17 @@ need to cover the sparkline/history windows.
 A scheduled summary email of the monitoring picture — a lightweight status
 report (like ping-monitor "digest" mails) delivered on your cadence rather than
 alert-by-alert. Each digest covers, per tenant: check counts by status (up /
-down / degraded / stale) with a reachable %, currently-firing alerts by
-severity, recent status changes in the window, and a count of configuration
-changes.
+down / degraded / stale) with a reachable %, window activity counters (how many
+IPs went down / came up / went stale), currently-firing alerts by severity, and
+a count of configuration changes.
+
+The **State changes** section lists every IP that changed state in the window,
+grouped by prefix. Each IP is drawn as a horizontal **chain of status badges** —
+the status it entered the window with, then one coloured badge per transition
+(`Up → Down (Jul 20 03:01) → Up (Jul 20 03:07)`) — so a flapping host reads at a
+glance. Badges use Danbyte's status palette (green up, red down/stale, amber
+degraded), and a heavily-flapping network is capped so the mail stays a
+reasonable size.
 
 Configure it under **Settings → Deployment → General → Email digest**
 (deployment-wide default) — enable it, choose **daily** or **weekly** (with a

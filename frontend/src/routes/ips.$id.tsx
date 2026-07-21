@@ -132,6 +132,16 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
               primary
             </Badge>
           )}
+          {ip.is_secondary_for_device && (
+            <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+              secondary
+            </Badge>
+          )}
+          {ip.is_oob_for_device && (
+            <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+              OOB
+            </Badge>
+          )}
         </span>
       ) : (
         <span className="text-muted-foreground">—</span>
@@ -152,6 +162,61 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
         <span className="text-muted-foreground">—</span>
       ),
       copy: ip.assigned_interface?.name ?? "",
+    },
+    {
+      label: "Virtual machine",
+      value: ip.assigned_vm ? (
+        <Link
+          to="/virtual-machines/$id"
+          params={{ id: ip.assigned_vm.id }}
+          className="text-primary hover:underline"
+        >
+          {ip.assigned_vm.name}
+        </Link>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
+      copy: ip.assigned_vm?.name ?? "",
+    },
+    {
+      label: "VM interface",
+      value: ip.assigned_vm_interface ? (
+        <span className="font-mono">{ip.assigned_vm_interface.name}</span>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
+      copy: ip.assigned_vm_interface?.name ?? "",
+    },
+    {
+      label: "Switch",
+      value: ip.switch ? (
+        <DeviceCell device={ip.switch} />
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
+      copy: ip.switch?.name ?? "",
+    },
+    {
+      label: "Switch port",
+      value: ip.switch_interface ? (
+        <span className="inline-flex items-center gap-2">
+          <Link
+            to="/interfaces/$id"
+            params={{ id: ip.switch_interface.id }}
+            className="font-mono text-primary hover:underline"
+          >
+            {ip.switch_interface.name}
+          </Link>
+          {ip.switch_interface.virtual_chassis && (
+            <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+              {ip.switch_interface.virtual_chassis.name}
+            </Badge>
+          )}
+        </span>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
+      copy: ip.switch_interface?.name ?? "",
     },
     {
       label: "MAC address",
@@ -185,6 +250,17 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
         <span className="text-muted-foreground">never</span>
       ),
       copy: ip.last_seen ?? "",
+    },
+    {
+      label: "Discovered",
+      value: ip.discovered ? (
+        <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+          discovered
+        </Badge>
+      ) : (
+        <span className="text-muted-foreground">manual</span>
+      ),
+      copy: ip.discovered ? "discovered" : "manual",
     },
   ]
 
