@@ -920,7 +920,10 @@ class PrefixViewSet(CloneableMixin, TenantScopedViewSet):
         # IPAddressField is a string; sort numerically so 10.0.0.2 lands
         # before 10.0.0.10 — Django's default lexicographic sort doesn't.
         rows = sorted(qs, key=lambda r: int(ip.ip_address(r.ip_address)))
-        ser = IPAddressSerializer(rows, many=True)
+        # Pass the request in context so the serializer's per-object `permissions`
+        # (change/delete) resolves for the current user — without it every row
+        # reports change:false and the table's Edit/Delete row actions vanish.
+        ser = IPAddressSerializer(rows, many=True, context=self.get_serializer_context())
         return Response({"count": len(rows), "results": ser.data})
 
     # ── Bulk delete ─────────────────────────────────────────────────────
@@ -2313,7 +2316,12 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
         qs = rbac.restrict_queryset(
             qs, request.user, device.tenant, "ipaddress", "view"
         )
-        return Response({"count": qs.count(), "results": IPAddressSerializer(qs, many=True).data})
+        return Response({
+            "count": qs.count(),
+            "results": IPAddressSerializer(
+                qs, many=True, context=self.get_serializer_context()
+            ).data,
+        })
 
     @action(detail=True, methods=["get"], url_path="interfaces")
     def interfaces(self, request, pk=None):

@@ -353,6 +353,7 @@ urlpatterns = [
     path("plugins/", include("plugins.api_urls")),
     # Service control (restart units, apply plugins) — superuser only.
     path("services/", service_api.services_list, name="services-list"),
+    path("services/workers/", service_api.set_workers, name="services-workers"),
     path("services/restart-all/", service_api.restart_danbyte,
          name="services-restart-all"),
     path("services/<str:key>/restart/", service_api.service_restart,

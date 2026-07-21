@@ -189,8 +189,10 @@ class NetBoxClient:
         qs = f"{query}&limit=250" if query else "limit=250"
         return f"{self.base}/api/{p.strip('/')}/?{qs}"
 
-    def list(self, path: str) -> list[dict]:
-        """All objects at /api/<path>/, following pagination."""
+    def list(self, path: str, on_page=None) -> list[dict]:
+        """All objects at /api/<path>/, following pagination. ``on_page(count)``
+        is called after each page with the running total, so a slow multi-page
+        fetch can report live progress instead of looking frozen."""
         url = self.list_url(path)
         out: list[dict] = []
         while url:
@@ -198,6 +200,8 @@ class NetBoxClient:
             r.raise_for_status()
             data = r.json()
             out.extend(data.get("results", []))
+            if on_page is not None:
+                on_page(len(out))
             url = data.get("next")
         return out
 
@@ -410,7 +414,15 @@ class _Importer:
         if (only and key not in only) or key in skip:
             return
         try:
-            rows = self.nb.list(path)
+            # Report each page as it arrives — a big type (thousands of rows,
+            # many pages) otherwise shows no movement for the whole fetch.
+            rows = self.nb.list(
+                path,
+                on_page=lambda got: self.on_progress(
+                    self._step_i, self._step_total, key, dict(self.stats),
+                    fetching={"key": key, "rows": got},
+                ),
+            )
         except Exception as e:  # noqa: BLE001
             if optional:
                 self.notes.append(
@@ -442,6 +454,10 @@ class _Importer:
             self._cur_key = step.__name__.removeprefix("imp_").removeprefix(
                 "finalize_"
             )
+            # Emit BEFORE the step runs so the UI shows the current step name
+            # immediately — otherwise a slow step looks frozen on the previous
+            # one (or blank, for the first step).
+            self.on_progress(i, self._step_total, self._cur_key, dict(self.stats))
             step()
             self.on_progress(i, self._step_total, self._cur_key, dict(self.stats))
 

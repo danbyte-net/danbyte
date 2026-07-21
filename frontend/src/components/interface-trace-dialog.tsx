@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { linearizeTrace, PathStrip } from "@/components/cable-trace-path"
+import { TraceSection } from "@/components/topology/trace-section"
 
 export interface TraceTarget {
   id: string
@@ -54,12 +55,15 @@ export function InterfaceTraceDialog({
               <PathStrip steps={steps} highlightPort={target?.name} />
             </div>
           </>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            This run branches (breakout) or can't be drawn flat — the interface
-            page has the full trace graph.
-          </p>
-        )}
+        ) : target ? (
+          // Breakout / looped / otherwise non-linear runs can't be a flat
+          // strip — render the full trace graph inline (shares this dialog's
+          // trace cache) instead of sending the user off to the interface page.
+          <TraceSection
+            url={`/api/interfaces/${target.id}/trace/`}
+            queryKey={["trace", "interface", target.id]}
+          />
+        ) : null}
         {target && (
           <Button size="sm" variant="outline" className="w-fit" asChild>
             <Link to="/interfaces/$id" params={{ id: target.id }}>

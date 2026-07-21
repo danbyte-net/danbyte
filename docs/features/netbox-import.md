@@ -27,7 +27,9 @@ the job queue, so you can watch it progress and leave the page.
    Danbyte — it **overwrites local edits**, so it's off by default.
 3. **Run** — a progress bar tracks the current step (e.g. *devices · 12/58*), and
    a live table fills in per type: fetched / new / existing / updated / failed /
-   skipped.
+   skipped. While a large type is being pulled you'll see a live *fetching N
+   rows…* counter, so a slow multi-page fetch reads as working, not stuck. The
+   import runs on the **default** job queue so it starts promptly.
 4. **Result** — totals, any notes, and a table of failures (one row per object
    that couldn't be created, with the reason). After a clean dry run, a
    **Run for real** button appears.

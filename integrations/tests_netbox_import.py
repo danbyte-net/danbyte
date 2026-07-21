@@ -25,8 +25,11 @@ class FakeClient:
     def __init__(self, data: dict):
         self.data = data
 
-    def list(self, path: str) -> list[dict]:
-        return self.data.get(path.strip("/"), [])
+    def list(self, path: str, on_page=None) -> list[dict]:
+        rows = self.data.get(path.strip("/"), [])
+        if on_page is not None:
+            on_page(len(rows))
+        return rows
 
     def get_bytes(self, url: str) -> bytes:
         return b""
@@ -361,7 +364,7 @@ class InsecureFlagTests(ImporterBase):
 
         class BrokenClient:
             def __init__(self, *a, **k): pass
-            def list(self, path): raise RuntimeError("certificate verify failed")
+            def list(self, path, on_page=None): raise RuntimeError("certificate verify failed")
             def get_bytes(self, url): raise RuntimeError("nope")
 
         run = NetBoxImportRun.objects.create(
@@ -475,10 +478,10 @@ class DryRunReportTests(ImporterBase):
 
     def test_fetch_failure_is_visible_in_the_report_table(self):
         class HalfBrokenClient(FakeClient):
-            def list(self, path):
+            def list(self, path, on_page=None):
                 if path.strip("/") == "dcim/front-ports":
                     raise RuntimeError("boom: gateway timeout")
-                return super().list(path)
+                return super().list(path, on_page=on_page)
 
         base = {
             "only": set(), "skip": set(), "with_images": False,
@@ -614,10 +617,10 @@ class FloorplanImportTests(ImporterBase):
 
     def test_missing_plugin_is_a_note_not_a_failure(self):
         class NoPluginClient(FakeClient):
-            def list(self, path):
+            def list(self, path, on_page=None):
                 if path.strip("/").startswith("plugins/map/"):
                     raise RuntimeError("404 Not Found")
-                return super().list(path)
+                return super().list(path, on_page=on_page)
 
         base = {
             "only": set(), "skip": set(), "with_images": False,

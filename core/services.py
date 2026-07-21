@@ -14,8 +14,10 @@ Never manages the database. The set of manageable units is configurable via
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import uuid
+from pathlib import Path
 
 from django.conf import settings
 
@@ -23,6 +25,9 @@ from .upgrade import _systemd_env
 
 RESTART_SCRIPT = settings.BASE_DIR / "scripts" / "danbyte-restart.sh"
 APPLY_SCRIPT = settings.BASE_DIR / "scripts" / "danbyte-apply-plugins.sh"
+
+WORKERS_UNIT = "danbyte-workers"
+WORKER_MIN, WORKER_MAX = 1, 64
 
 # key → {unit, label, core}. `core` units are what "Restart Danbyte" cycles.
 # Overridable via settings.MANAGEABLE_SERVICES; only units that exist on the box
@@ -123,6 +128,72 @@ def restart_danbyte() -> dict:
     """Restart the core Danbyte units together."""
     core_keys = [s["key"] for s in list_services() if s["core"]]
     return restart_services(core_keys)
+
+
+# ── Worker pool size ─────────────────────────────────────────────────────────
+# The worker count is RQ_WORKERS in the danbyte-workers unit. We persist the
+# desired value on DeploymentSettings and apply it by writing a systemd drop-in
+# (RQ_WORKERS=N), reloading systemd, and restarting *only* the workers unit —
+# which, unlike the web unit, can be restarted straight from the web process.
+
+def _worker_dropin_path() -> Path:
+    base = Path(os.path.expanduser("~/.config/systemd/user")) / f"{WORKERS_UNIT}.service.d"
+    return base / "override.conf"
+
+
+def worker_config() -> dict:
+    """Configured worker count + bounds + whether this environment manages it."""
+    from core.models import DeploymentSettings
+
+    managed = "workers" in {s["key"] for s in list_services()}
+    return {
+        "rq_workers": DeploymentSettings.load().rq_workers,
+        "min": WORKER_MIN,
+        "max": WORKER_MAX,
+        "managed": managed,
+    }
+
+
+def set_worker_count(n: int) -> dict:
+    """Persist + apply the RQ worker-pool size. Saves the setting always; only
+    writes the drop-in / restarts when the workers unit is managed here."""
+    from core.models import DeploymentSettings
+
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return {"ok": False, "detail": "Worker count must be a whole number."}
+    if n < WORKER_MIN or n > WORKER_MAX:
+        return {"ok": False, "detail": f"Worker count must be {WORKER_MIN}–{WORKER_MAX}."}
+
+    ds = DeploymentSettings.load()
+    ds.rq_workers = n
+    ds.save(update_fields=["rq_workers", "updated_at"])
+
+    if "workers" not in {s["key"] for s in list_services()}:
+        return {"ok": False, "saved": True, "rq_workers": n,
+                "detail": "Saved, but the workers service isn't managed in this environment."}
+
+    try:
+        path = _worker_dropin_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"[Service]\nEnvironment=RQ_WORKERS={n}\n")
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "saved": True, "rq_workers": n,
+                "detail": f"Saved, but could not write the systemd drop-in: {exc}"}
+
+    # Re-read units so the new RQ_WORKERS is picked up, then restart the pool.
+    try:
+        subprocess.run(
+            ["systemctl", "--user", "daemon-reload"],
+            capture_output=True, text=True, timeout=15, env=_systemd_env(),
+        )
+    except Exception:  # noqa: BLE001 — restart below still applies on next boot
+        pass
+    result = restart_services(["workers"])
+    result["saved"] = True
+    result["rq_workers"] = n
+    return result
 
 
 # ── plugin apply (migrate + restart) ─────────────────────────────────────────

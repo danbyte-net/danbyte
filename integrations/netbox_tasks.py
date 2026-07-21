@@ -1,4 +1,4 @@
-"""Run a NetBox import off the RQ ``low`` queue, reporting live progress.
+"""Run a NetBox import off the RQ ``default`` queue, reporting live progress.
 
 Mirrors ``integrations/dispatch.py``: create the DB row synchronously, enqueue
 the work, and fall back to running inline if Redis is down so the import still
@@ -48,7 +48,7 @@ def run_netbox_import(run_id: str) -> None:
     except Exception:  # noqa: BLE001 — inline (no RQ job) or rq missing
         job = None
 
-    def on_progress(step_i, step_total, key, stats):
+    def on_progress(step_i, step_total, key, stats, fetching=None):
         totals = {
             k: 0
             for k in ("fetched", "created", "existed", "updated", "failed", "skipped")
@@ -60,6 +60,9 @@ def run_netbox_import(run_id: str) -> None:
         run.progress = {
             "step": step_i, "total": step_total, "key": key,
             "pct": pct, "totals": totals, "by_type": stats,
+            # Live per-page fetch counter ({"key","rows"}) while a big type is
+            # being pulled — proves the run is alive during a slow fetch.
+            "fetching": fetching,
         }
         run.save(update_fields=["progress", "updated_at"])
         if job is not None:
@@ -136,7 +139,12 @@ def enqueue_netbox_import(tenant, url, token, *, dry_run, update_existing,
     try:
         import django_rq
 
-        django_rq.get_queue("low").enqueue(
+        # `default`, not `low`: an import is user-initiated and watched, so it
+        # must start promptly. `low` is drained last by the worker pool (after
+        # the every-minute monitoring dispatch on `default`/`high`), which left
+        # imports queued for a long time. With a worker pool, one worker on the
+        # import still leaves the rest for checks.
+        django_rq.get_queue("default").enqueue(
             run_netbox_import, str(run.id), job_timeout=3600,
         )
     except Exception:  # noqa: BLE001 — Redis down: run inline so it still happens

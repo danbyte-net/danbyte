@@ -4916,6 +4916,8 @@ export interface NetBoxImportRun {
     pct?: number
     totals?: NetBoxTypeTotals
     by_type?: Record<string, NetBoxTypeTotals>
+    /** Live per-page fetch counter while a big type is being pulled. */
+    fetching?: { key: string; rows: number } | null
   }
   report: {
     totals?: NetBoxTypeTotals

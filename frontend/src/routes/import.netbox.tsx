@@ -411,6 +411,12 @@ function RunPanel({
                   )
                 </span>
               )}
+              {run.progress?.fetching && (
+                <span className="text-muted-foreground tabular-nums">
+                  · fetching {run.progress.fetching.rows.toLocaleString()} row
+                  {run.progress.fetching.rows === 1 ? "" : "s"}…
+                </span>
+              )}
             </>
           ) : run.status === "success" ? (
             <>

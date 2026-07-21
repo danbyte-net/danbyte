@@ -34,7 +34,32 @@ def services_list(request):
     """Manageable systemd user units + live state (superuser only)."""
     if not _require_superuser(request):
         return Response({"detail": "Superuser required."}, status=403)
-    return Response({"services": services.list_services()})
+    return Response({
+        "services": services.list_services(),
+        "workers": services.worker_config(),
+    })
+
+
+@extend_schema(
+    summary="Set the RQ worker-pool size and restart the workers (superuser only)",
+    tags=["services"],
+    request=OpenApiTypes.OBJECT,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Apply result: saved flag, applied rq_workers, and restart status.",
+    ),
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def set_workers(request):
+    """Persist + apply the RQ worker-pool size (superuser only)."""
+    if not _require_superuser(request):
+        return Response({"detail": "Superuser required."}, status=403)
+    result = services.set_worker_count(request.data.get("count"))
+    # A save that couldn't apply (unmanaged env / drop-in error) still persisted
+    # the setting — surface it as 200 with ok=false so the UI can explain.
+    status = 200 if (result.get("ok") or result.get("saved")) else 400
+    return Response(result, status=status)
 
 
 @extend_schema(

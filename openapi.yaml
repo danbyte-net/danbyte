@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Danbyte API
-  version: 0.9.7
+  version: 0.9.8
   description: 'REST API for Danbyte — IPAM / DCIM and network operations. Authenticate
     with a scoped **API token** (`Authorization: Token <key>`) or, from a browser
     session, the logged-in session cookie. Every request is scoped to your active
@@ -27109,6 +27109,39 @@ paths:
                 type: object
                 additionalProperties: {}
           description: Restart result with an `ok` flag and per-unit details.
+  /api/services/workers/:
+    post:
+      operationId: services_workers_create
+      description: Persist + apply the RQ worker-pool size (superuser only).
+      summary: Set the RQ worker-pool size and restart the workers (superuser only)
+      tags:
+      - services
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: 'Apply result: saved flag, applied rq_workers, and restart
+            status.'
   /api/site-map/:
     get:
       operationId: site_map_retrieve

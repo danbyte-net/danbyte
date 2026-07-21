@@ -1,7 +1,7 @@
-import { useRef } from "react"
+import { useRef, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { RefreshCw, Upload } from "lucide-react"
+import { RefreshCw, Upload, Cpu } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -10,7 +10,9 @@ import {
   useServices,
   type PluginInfo,
   type ServiceInfo,
+  type WorkerConfig,
 } from "@/lib/plugins"
+import { Input } from "@/components/ui/input"
 import { useMe } from "@/lib/use-me"
 import {
   SettingsCard,
@@ -301,6 +303,10 @@ function ServicesSection() {
           icon
         />
       </div>
+
+      {services.data?.workers && (
+        <WorkersControl workers={services.data.workers} />
+      )}
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No manageable services detected in this environment.
@@ -320,6 +326,68 @@ function ServicesSection() {
         </div>
       )}
     </SettingsCard>
+  )
+}
+
+function WorkersControl({ workers }: { workers: WorkerConfig }) {
+  const qc = useQueryClient()
+  const [count, setCount] = useState(String(workers.rq_workers))
+
+  const apply = useMutation({
+    mutationFn: () =>
+      api<{ ok: boolean; detail?: string; rq_workers?: number }>(
+        "/api/services/workers/",
+        { method: "POST", body: JSON.stringify({ count: Number(count) }) }
+      ),
+    onSuccess: (r) => {
+      toast.success(
+        r.ok
+          ? `Worker pool set to ${r.rq_workers} — restarting…`
+          : (r.detail ?? "Saved.")
+      )
+      setTimeout(() => qc.invalidateQueries({ queryKey: ["services"] }), 4000)
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  const n = Number(count)
+  const dirty = n !== workers.rq_workers
+  const valid =
+    Number.isInteger(n) && n >= workers.min && n <= workers.max
+
+  return (
+    <div className="mb-3 rounded-lg border border-border p-3">
+      <div className="flex items-center gap-2 text-[13px] font-medium">
+        <Cpu className="size-4 text-muted-foreground" />
+        Background workers (RQ pool)
+      </div>
+      <p className="mt-0.5 text-[12px] text-muted-foreground">
+        How many worker processes run jobs in parallel — more workers clear
+        queued scans/imports faster (uses more RAM/CPU). Applying restarts the
+        worker pool; other services are untouched.
+      </p>
+      <div className="mt-2 flex items-center gap-2">
+        <Input
+          type="number"
+          min={workers.min}
+          max={workers.max}
+          value={count}
+          onChange={(e) => setCount(e.target.value)}
+          className="w-24"
+        />
+        <Button
+          size="sm"
+          onClick={() => apply.mutate()}
+          disabled={!dirty || !valid || apply.isPending}
+        >
+          {apply.isPending ? "Applying…" : "Apply"}
+        </Button>
+        <span className="text-[11px] text-muted-foreground">
+          {workers.min}–{workers.max}
+          {!workers.managed && " · not managed in this environment"}
+        </span>
+      </div>
+    </div>
   )
 }
 

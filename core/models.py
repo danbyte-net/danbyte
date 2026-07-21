@@ -223,6 +223,12 @@ class DeploymentSettings(TimestampedModel):
 
     id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
 
+    # ─── background workers ──────────────────────────────────────────────
+    # How many RQ worker processes the pool runs. Applied by writing a systemd
+    # drop-in (RQ_WORKERS) and restarting danbyte-workers (Settings → Services,
+    # superuser). Default mirrors the unit's baked-in RQ_WORKERS=8.
+    rq_workers = models.PositiveSmallIntegerField(default=8)
+
     # ─── email / SMTP transport ──────────────────────────────────────────
     email_enabled = models.BooleanField(
         default=False,

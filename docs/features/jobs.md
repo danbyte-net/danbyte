@@ -70,6 +70,17 @@ built-in **local** engine plus any **Outposts** — with each one's last
 normally shows **online**. It's the fastest way to confirm a remote site's agent
 is alive and reporting.
 
+## Worker pool size
+
+The number of RQ worker processes decides how many jobs run in parallel — more
+workers clear a backlog of queued scans/imports faster, at the cost of more
+RAM/CPU. Superusers can change it under **Settings → Deployment → Services →
+Background workers**: set a value (1–64) and **Apply**. That writes a systemd
+drop-in (`RQ_WORKERS`) and restarts *only* the worker pool — the web, database,
+and other services are untouched. The default is **8**. On installs where the
+worker unit isn't managed by systemd, the value is saved but must be applied by
+hand.
+
 ## Job detail
 
 The detail page shows everything recorded for one job: its ID, function,

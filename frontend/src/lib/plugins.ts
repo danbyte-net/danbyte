@@ -138,10 +138,19 @@ export interface ServiceInfo {
   state: string // active | inactive | failed | unknown
 }
 
+export interface WorkerConfig {
+  rq_workers: number
+  min: number
+  max: number
+  /** Whether the workers unit is managed (systemd) in this environment. */
+  managed: boolean
+}
+
 export function useServices(enabled = true) {
   return useQuery({
     queryKey: ["services"],
-    queryFn: () => api<{ services: ServiceInfo[] }>("/api/services/"),
+    queryFn: () =>
+      api<{ services: ServiceInfo[]; workers: WorkerConfig }>("/api/services/"),
     enabled,
   })
 }
