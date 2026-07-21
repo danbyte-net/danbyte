@@ -11,6 +11,15 @@ from audit import register_audited_model
 from auth_api.object_types import register_object_type
 from customization.object_registry import ReferenceModel, register_reference_model
 from integrations.providers import register_automation_provider
+from plugins.ui_registry import (
+    ColumnSpec,
+    NavItemSpec,
+    PageSpec,
+    PanelSpec,
+    register_dashboard_panel,
+    register_nav_item,
+    register_page,
+)
 
 from . import checks  # noqa: F401 — registers the example_ping check kind
 
@@ -39,3 +48,67 @@ def _noop_runner(target, payload, event):
 
 
 register_automation_provider("noop", _noop_runner)
+
+
+# 5. Server-driven UI — a nav item, a list + detail page, and a dashboard panel.
+#    No plugin JavaScript: the generic frontend renders these from the metadata.
+_WIDGETS_API = "/api/plugins/example/widgets/"
+
+register_nav_item(
+    NavItemSpec(
+        plugin="example",
+        title="Widgets",
+        url="/p/example/widgets",
+        icon="box",
+        section="Plugins",
+        object_type="widget",  # RBAC-gated in the sidebar, like core nav
+    )
+)
+
+register_page(
+    PageSpec(
+        plugin="example",
+        path="widgets",
+        kind="list",
+        title="Widgets",
+        endpoint=_WIDGETS_API,
+        object_type="widget",
+        columns=(
+            ColumnSpec("name", "Name", "mono"),
+            ColumnSpec("description", "Description"),
+            ColumnSpec("tags", "Tags", "tags"),
+            ColumnSpec("updated_at", "Updated", "time"),
+        ),
+        detail_route="/p/example/widgets/$id",
+    )
+)
+
+register_page(
+    PageSpec(
+        plugin="example",
+        path="widgets/$id",
+        kind="detail",
+        title="Widget",
+        endpoint=_WIDGETS_API,
+        object_type="widget",
+        title_field="name",
+        fields=(
+            ColumnSpec("name", "Name", "mono"),
+            ColumnSpec("description", "Description"),
+            ColumnSpec("tags", "Tags", "tags"),
+            ColumnSpec("created_at", "Created", "time"),
+            ColumnSpec("updated_at", "Updated", "time"),
+        ),
+        tabs=("overview", "history"),
+        audited=True,
+    )
+)
+
+register_dashboard_panel(
+    PanelSpec(
+        plugin="example",
+        title="Widgets",
+        endpoint=_WIDGETS_API + "?page_size=1",
+        kind="count",
+    )
+)

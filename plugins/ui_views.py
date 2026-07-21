@@ -1,0 +1,25 @@
+"""Server-driven plugin UI metadata — consumed by the generic React renderer."""
+from __future__ import annotations
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def plugin_ui(request):
+    """Nav items / pages / dashboard panels contributed by the plugins enabled
+    for the caller's active tenant.
+
+    Enablement is filtered here; per-object RBAC stays authoritative downstream —
+    nav items carry ``object_type``/``perm`` for the frontend's existing
+    visibility gate, and each page's data endpoint enforces its own RBAC.
+    """
+    from api.views import _get_active_tenant
+
+    from .resolve import enabled_plugins
+    from .ui_registry import ui_payload
+
+    tenant = _get_active_tenant(request)
+    return Response(ui_payload(enabled_plugins(tenant)))

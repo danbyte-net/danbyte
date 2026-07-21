@@ -11,12 +11,13 @@ from importlib.util import find_spec
 
 from django.urls import include, path
 
-from . import api_views
+from . import api_views, ui_views
 from .registry import loaded_configs
 
 urlpatterns = [
     path("", api_views.plugins_list, name="plugins-list"),
     path("apply/", api_views.plugins_apply, name="plugins-apply"),
+    path("ui/", ui_views.plugin_ui, name="plugins-ui"),
     # Must precede the per-plugin includes below, or the "<slug>/" mount would
     # shadow "<slug>/config/".
     path("<str:slug>/config/", api_views.plugin_config, name="plugin-config"),
