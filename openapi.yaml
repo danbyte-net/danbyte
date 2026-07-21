@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Danbyte API
-  version: 0.9.8
+  version: 0.9.9
   description: 'REST API for Danbyte — IPAM / DCIM and network operations. Authenticate
     with a scoped **API token** (`Authorization: Token <key>`) or, from a browser
     session, the logged-in session cookie. Every request is scoped to your active
@@ -29781,12 +29781,39 @@ paths:
   /api/tenants/bulk-delete/:
     post:
       operationId: tenants_bulk_delete_create
+      description: POST {ids:[...]} → force-delete each tenant and everything it owns.
+      tags:
+      - tenants
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TenantRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TenantRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+          description: ''
+  /api/tenants/bulk-update/:
+    post:
+      operationId: tenants_bulk_update_create
       description: |-
-        Tenants. Reads + ``switch``/``active`` stay open to every member (the
-        tenant switcher must work for users with no explicit tenant grant), but
-        WRITES are RBAC-gated on the registered ``tenant`` type — without this,
-        any member of a tenant could DELETE it (single or bulk) or mint new ones,
-        since the base permission is only ``IsAuthenticated``.
+        POST {ids:[...], fields:{group_id?, is_active?}} → 200.
+
+        Only ``group`` and active status are bulk-editable — name/slug are the
+        tenant's identity (unique per org) and never make sense to set en masse.
       tags:
       - tenants
       requestBody:

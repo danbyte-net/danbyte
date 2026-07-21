@@ -35,12 +35,19 @@ def entry_site_id(instance):
         return None
     if path == "id":  # the Site model itself
         return instance.pk
+    from django.core.exceptions import ObjectDoesNotExist
+
     parts = path.split("__")
     obj = instance
     # Walk intermediate FKs (e.g. device__site → obj.device), then read the
-    # final FK's id column directly.
-    for part in parts[:-1]:
-        obj = getattr(obj, part, None)
-        if obj is None:
-            return None
-    return getattr(obj, f"{parts[-1]}_id", None)
+    # final FK's id column directly. A FK descriptor raises DoesNotExist (not
+    # AttributeError) when the id is set but the row is already gone — which
+    # happens mid-cascade during a teardown — so treat that as "unresolvable".
+    try:
+        for part in parts[:-1]:
+            obj = getattr(obj, part, None)
+            if obj is None:
+                return None
+        return getattr(obj, f"{parts[-1]}_id", None)
+    except ObjectDoesNotExist:
+        return None

@@ -58,6 +58,17 @@ def _field_dict(instance) -> dict:
     return out
 
 
+def _safe_repr(instance) -> str:
+    """``str(instance)`` for the log, but never crash the operation being logged:
+    a model's ``__str__`` may dereference a related row that's already been
+    deleted mid-cascade (e.g. TunnelTermination -> interface), which raises
+    DoesNotExist. Fall back to a stable type+pk label in that case."""
+    try:
+        return str(instance)[:255]
+    except Exception:  # noqa: BLE001 — logging must not break the delete/save
+        return f"{instance._meta.label} {instance.pk}"[:255]
+
+
 def _record(instance, action, changes, pre=None, post=None):
     from .site_capture import entry_site_id
 
@@ -70,7 +81,7 @@ def _record(instance, action, changes, pre=None, post=None):
         object_type=instance._meta.label_lower,
         object_label=instance._meta.verbose_name.title(),
         object_id=str(instance.pk),
-        object_repr=str(instance)[:255],
+        object_repr=_safe_repr(instance),
         object_site_id=entry_site_id(instance),
         changes=changes,
         pre_change=pre,

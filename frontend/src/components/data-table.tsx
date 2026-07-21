@@ -487,8 +487,14 @@ export function DataTable<T>({
                     className={
                       "text-xs " +
                       (flexColumn && h.column.id === flexColumn
-                        ? "w-full"
-                        : "whitespace-nowrap")
+                        ? "w-full "
+                        : "whitespace-nowrap ") +
+                      // Pin the row-actions column to the right edge so Edit/
+                      // Delete stay reachable on wide tables (many columns) that
+                      // scroll horizontally, instead of vanishing off the edge.
+                      (h.column.id === "actions"
+                        ? "sticky right-0 z-20 bg-muted/40 shadow-[inset_1px_0_0_var(--border)]"
+                        : "")
                     }
                   >
                     {h.isPlaceholder
@@ -564,8 +570,13 @@ export function DataTable<T>({
                           // the table wider than its container, the wrapper
                           // scrolls horizontally instead of clipping cells.
                           (flexColumn && cell.column.id === flexColumn
-                            ? "w-full whitespace-nowrap"
-                            : "whitespace-nowrap")
+                            ? "w-full whitespace-nowrap "
+                            : "whitespace-nowrap ") +
+                          // Keep the row-actions column pinned to the right edge
+                          // (see the header note) so it never scrolls out of reach.
+                          (cell.column.id === "actions"
+                            ? "sticky right-0 bg-background shadow-[inset_1px_0_0_var(--border)]"
+                            : "")
                         }
                       >
                         {flexRender(

@@ -1610,7 +1610,7 @@ class TenantViewSet(viewsets.ModelViewSet):
     pagination_class = StandardPagination
     queryset = Tenant.objects.all().order_by("name")
     serializer_class = TenantSerializer
-    rbac_action_map = {"bulk_delete": "delete"}
+    rbac_action_map = {"bulk_delete": "delete", "bulk_update": "change"}
 
     def get_permissions(self):
         perms = super().get_permissions()
@@ -1688,17 +1688,65 @@ class TenantViewSet(viewsets.ModelViewSet):
             return Response({"id": None})
         return Response(TenantPickerSerializer(tenant).data)
 
+    def destroy(self, request, *args, **kwargs):
+        # A tenant's own catalogs (Status/VRF/Site/DeviceRole/…) PROTECT it, so a
+        # plain delete always 409s once the tenant has data. This is the
+        # deliberate teardown — the UI's type-the-name confirm is the guard.
+        from core.tenant_delete import force_delete_tenant
+
+        tenant = self.get_object()
+        log_bulk_delete([tenant])
+        force_delete_tenant(tenant)
+        return Response(status=drf_status.HTTP_204_NO_CONTENT)
+
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
+        """POST {ids:[...]} → force-delete each tenant and everything it owns."""
+        from core.tenant_delete import force_delete_tenant
+
         ids = request.data.get("ids") or []
         if not isinstance(ids, list) or not ids:
             raise ValidationError({"ids": "Provide a non-empty list of tenant IDs."})
+        rows = list(self.get_queryset().filter(pk__in=ids))
+        log_bulk_delete(rows)  # log intent before the rows (and their data) vanish
+        deleted = 0
         with transaction.atomic():
-            _qs = self.get_queryset().filter(pk__in=ids)
-            _rows = list(_qs)
-            deleted, _ = _qs.delete()
-            log_bulk_delete(_rows)
+            for tenant in rows:
+                force_delete_tenant(tenant)
+                deleted += 1
         return Response({"deleted": deleted}, status=drf_status.HTTP_200_OK)
+
+    @action(detail=False, methods=["post"], url_path="bulk-update")
+    def bulk_update(self, request):
+        """POST {ids:[...], fields:{group_id?, is_active?}} → 200.
+
+        Only ``group`` and active status are bulk-editable — name/slug are the
+        tenant's identity (unique per org) and never make sense to set en masse.
+        """
+        ids = request.data.get("ids") or []
+        fields = request.data.get("fields") or {}
+        if not isinstance(ids, list) or not ids:
+            raise ValidationError({"ids": "Provide a non-empty list of tenant IDs."})
+        if not isinstance(fields, dict) or not fields:
+            raise ValidationError({"fields": "Provide at least one field to update."})
+
+        updates: dict = {}
+        if "group_id" in fields:
+            gid = fields["group_id"]
+            if gid and not TenantGroup.objects.filter(pk=gid).exists():
+                raise ValidationError({"group_id": "Tenant group not found."})
+            updates["group_id"] = gid  # None clears the group
+        if "is_active" in fields:
+            updates["is_active"] = bool(fields["is_active"])
+        if not updates:
+            raise ValidationError({"fields": "No editable fields provided."})
+
+        qs = self.get_queryset().filter(pk__in=ids)
+        with transaction.atomic():
+            rows = list(qs)
+            updated = qs.update(**updates)
+            log_bulk_update(rows, updates)
+        return Response({"updated": updated}, status=drf_status.HTTP_200_OK)
 
 
 class _IpCatalogViewSet(CatalogLocalityMixin, TenantScopedViewSet):

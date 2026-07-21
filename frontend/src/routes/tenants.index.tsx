@@ -14,6 +14,7 @@ import { timeAgoColumn } from "@/components/cells/time-ago"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TenantDeleteDialog } from "@/components/tenant-delete-dialog"
+import { TenantBulkBar } from "@/components/tenant-bulk-bar"
 import { TenantGroupsSection } from "@/components/tenant-groups-section"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
@@ -24,6 +25,7 @@ export const Route = createFileRoute("/tenants/")({ component: TenantsPage })
 function TenantsPage() {
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<Tenant | null>(null)
+  const [selected, setSelected] = useState<Tenant[]>([])
   const qc = useQueryClient()
   const { canDo } = useMe()
   const canAdd = canDo("tenant", "add")
@@ -105,7 +107,11 @@ function TenantsPage() {
         columns={columns}
         flexColumn="description"
         tableId="tenants"
+        onSelectedRowsChange={canDelete || canEdit ? setSelected : undefined}
       />
+      {(canDelete || canEdit) && (
+        <TenantBulkBar selected={selected} onCleared={() => setSelected([])} />
+      )}
       <TenantGroupsSection />
       <TenantDeleteDialog
         tenant={deleting}
