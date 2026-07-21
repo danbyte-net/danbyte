@@ -82,7 +82,7 @@ It prints the generated admin password when it finishes — open
 > works fully offline.
 
 Building from source or setting up a dev checkout? See the
-**[installation guide](docs/getting-started/installation.md)**.
+**[installation guide](https://docs.danbyte.net/getting-started/installation/)**.
 
 ## Tech stack
 
@@ -96,10 +96,10 @@ The full docs live in **[`docs/`](docs/index.md)** — installation, every
 feature, the data model, the API, and the architecture notes. A few good
 starting points:
 
-- [Installation](docs/getting-started/installation.md)
-- [IPAM objects](docs/features/ipam-objects.md) · [Device catalog](docs/dcim/device-catalog.md)
-- [NetBox import](docs/features/netbox-import.md)
-- [Permissions & access](docs/features/permissions.md)
+- [installation guide](https://docs.danbyte.net/getting-started/installation/)
+- [[IPAM objects](https://docs.danbyte.net/ipam/) · [Device catalog](https://docs.danbyte.net/dcim/device-catalog/)
+- [NetBox import](https://docs.danbyte.net/features/netbox-import/)
+- [Permissions & access](https://docs.danbyte.net/features/permissions/)
 
 ## Status
 
@@ -112,23 +112,3 @@ release settles. Feedback and issues are welcome.
 Danbyte is licensed under the **Apache License, Version 2.0** — see
 [LICENSE](LICENSE) and [NOTICE](NOTICE). You may use, modify, and distribute
 it (including commercially) under the terms of that license.
-
----
-
-<details>
-<summary><b>Screenshots wanted</b> (for whoever fills these in)</summary>
-
-The placeholders above are marked with `<!-- SCREENSHOT: ... -->`. The shots
-that would sell the project fastest, in priority order:
-
-1. **Dashboard**, dark mode — the hero image.
-2. **Prefixes list page** — the canonical dense table with the filter rail.
-3. **A device detail page** — showing the rack elevation + interfaces.
-4. **A floor plan** — with a few device/camera tiles placed.
-5. **The topology map** — an interesting connected graph.
-6. **NetBox import** — the live-progress run panel mid-import.
-
-Drop them in `docs/assets/readme/` and uncomment the matching `![...]` lines.
-1600px-wide PNGs look crisp on GitHub; dark mode reads best for the hero.
-
-</details>
