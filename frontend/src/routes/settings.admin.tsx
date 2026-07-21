@@ -228,6 +228,10 @@ function DeploymentSection() {
   const [satAttrib, setSatAttrib] = useState("")
   const [driftEnabled, setDriftEnabled] = useState(false)
   const [driftInterval, setDriftInterval] = useState<string | null>(null)
+  const [digestEnabled, setDigestEnabled] = useState(false)
+  const [digestFrequency, setDigestFrequency] = useState("weekly")
+  const [digestWeekday, setDigestWeekday] = useState("0")
+  const [digestRecipients, setDigestRecipients] = useState("")
   const [humanIds, setHumanIds] = useState(true)
   const [dateFormat, setDateFormat] = useState<string>("YYYY-MM-DD")
   const [timeStyle, setTimeStyle] = useState<string>("24h")
@@ -246,6 +250,10 @@ function DeploymentSection() {
       setSatAttrib(data.map_satellite_attribution ?? "")
       setDriftEnabled(data.config_drift_enabled)
       setDriftInterval(String(data.config_drift_interval_minutes))
+      setDigestEnabled(data.digest_enabled)
+      setDigestFrequency(data.digest_frequency)
+      setDigestWeekday(String(data.digest_weekday))
+      setDigestRecipients(data.digest_recipients)
       setHumanIds(data.human_ids_enabled)
       setDateFormat(data.date_format)
       setTimeStyle(data.time_style)
@@ -270,6 +278,13 @@ function DeploymentSection() {
       qc.invalidateQueries({ queryKey: ["me"] })
       toast.success("Saved")
     },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  const testDigest = useMutation({
+    mutationFn: () =>
+      api("/api/tenant-settings/digest/test/", { method: "POST", body: "{}" }),
+    onSuccess: () => toast.success("Test digest sent for the active tenant."),
     onError: (e) => apiErrorToast(e),
   })
 
@@ -602,6 +617,93 @@ function DeploymentSection() {
               className="w-40"
             />
           </Field>
+        )}
+      </SettingsCard>
+
+      <SettingsCard
+        title="Email digest"
+        description="Email a periodic monitoring/status summary (up/down, alerts, recent changes) to a recipient list. Deployment-wide default; a tenant can override it."
+        onSave={() =>
+          save.mutate({
+            key: "digest",
+            patch: {
+              digest_enabled: digestEnabled,
+              digest_frequency: digestFrequency as "daily" | "weekly",
+              digest_weekday: Math.max(
+                0,
+                Math.min(6, Number(digestWeekday) || 0)
+              ),
+              digest_recipients: digestRecipients,
+            },
+          })
+        }
+        dirty={
+          digestEnabled !== data.digest_enabled ||
+          digestFrequency !== data.digest_frequency ||
+          digestWeekday !== String(data.digest_weekday) ||
+          digestRecipients !== data.digest_recipients
+        }
+        saving={savingKey === "digest"}
+        saveLabel="Save digest"
+      >
+        <FormCheckbox
+          label="Send an email digest"
+          checked={digestEnabled}
+          onChange={setDigestEnabled}
+          hint="A scheduled summary email — daily, or weekly on a chosen day."
+        />
+        {digestEnabled && (
+          <>
+            <FormSelect
+              label="Frequency"
+              value={digestFrequency}
+              onChange={(v) => v && setDigestFrequency(v)}
+              options={[
+                { value: "daily", label: "Daily" },
+                { value: "weekly", label: "Weekly" },
+              ]}
+            />
+            {digestFrequency === "weekly" && (
+              <FormSelect
+                label="Day of week"
+                value={digestWeekday}
+                onChange={(v) => v && setDigestWeekday(v)}
+                options={[
+                  { value: "0", label: "Monday" },
+                  { value: "1", label: "Tuesday" },
+                  { value: "2", label: "Wednesday" },
+                  { value: "3", label: "Thursday" },
+                  { value: "4", label: "Friday" },
+                  { value: "5", label: "Saturday" },
+                  { value: "6", label: "Sunday" },
+                ]}
+              />
+            )}
+            <Field
+              label="Recipients"
+              hint="Comma- or newline-separated email addresses."
+            >
+              <textarea
+                className="min-h-16 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm"
+                value={digestRecipients}
+                onChange={(e) => setDigestRecipients(e.target.value)}
+                placeholder="ops@example.com, oncall@example.com"
+              />
+            </Field>
+            <div>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={testDigest.isPending}
+                onClick={() => testDigest.mutate()}
+              >
+                {testDigest.isPending ? "Sending…" : "Send test digest"}
+              </Button>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Sends the active tenant's digest now to the recipients above.
+              </p>
+            </div>
+          </>
         )}
       </SettingsCard>
 

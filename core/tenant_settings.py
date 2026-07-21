@@ -63,9 +63,16 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
             "date_format",
             "time_style",
             "display_timezone",
+            # email digest (its own override group)
+            "override_digest",
+            "digest_enabled",
+            "digest_frequency",
+            "digest_weekday",
+            "digest_recipients",
+            "digest_last_run",
             "updated_at",
         ]
-        read_only_fields = ["updated_at"]
+        read_only_fields = ["updated_at", "digest_last_run"]
 
     def get_smtp_password_set(self, obj) -> bool:
         return bool((obj.secrets or {}).get("password"))
@@ -189,6 +196,33 @@ def tenant_test_email(request):
         "to": to,
         "via": "tenant" if getattr(eff, "tenant_id", None) else "deployment",
     })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def tenant_test_digest(request):
+    """Send the active tenant's monitoring digest right now (tenant-admin only),
+    ignoring the enabled flag and schedule. Goes to ``{"to": "..."}`` if given,
+    else the configured digest recipients, else the requester."""
+    tenant, err = _tenant_or_403(request)
+    if err:
+        return err
+    from core.email import parse_recipients
+    from monitoring.digest import send_tenant_digest
+
+    to = (request.data or {}).get("to")
+    recipients = parse_recipients(to) if to else None
+    if not recipients and not request.user.email:
+        recipients = None  # fall through to configured recipients
+    ok = send_tenant_digest(
+        tenant, force=True, recipients=recipients or ([request.user.email] if request.user.email else None)
+    )
+    if not ok:
+        return Response(
+            {"ok": False, "error": "No recipients (add some, or pass 'to')."},
+            status=400,
+        )
+    return Response({"ok": True})
 
 
 @api_view(["GET"])

@@ -3935,6 +3935,10 @@ export interface DeploymentSettings {
   config_drift_enabled: boolean
   config_drift_interval_minutes: number
   config_drift_last_run: string | null
+  digest_enabled: boolean
+  digest_frequency: "daily" | "weekly"
+  digest_weekday: number
+  digest_recipients: string
   human_ids_enabled: boolean
   date_format: DateFormat
   time_style: TimeStyle

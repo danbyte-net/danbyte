@@ -536,3 +536,30 @@ busy install), so Danbyte automatically prunes old results (default **30 days**,
 days, kept longer as an audit timeline) on a schedule. The rolled-up per-check
 state and the status-change timeline carry the long-term story; raw results only
 need to cover the sparkline/history windows.
+
+## Email digest
+
+A scheduled summary email of the monitoring picture — a lightweight status
+report (like ping-monitor "digest" mails) delivered on your cadence rather than
+alert-by-alert. Each digest covers, per tenant: check counts by status (up /
+down / degraded / stale) with a reachable %, currently-firing alerts by
+severity, recent status changes in the window, and a count of configuration
+changes.
+
+Configure it under **Settings → Deployment → General → Email digest**
+(deployment-wide default) — enable it, choose **daily** or **weekly** (with a
+weekday), and set the **recipients** (comma/newline-separated). A tenant can
+override the whole group (schedule + recipients) via its own settings, so an MSP
+sends each customer their own digest. Use **Send test digest** to email one
+immediately for the active tenant.
+
+Delivery uses the same effective SMTP cascade as every other email
+(tenant/site override → deployment relay), and the message is sent as a branded
+HTML email with a plain-text fallback. Sending is driven by a daily systemd
+timer (`danbyte-digest`) → `manage.py send_digest`, which gates each tenant on
+its frequency, weekday, and last-sent date; nothing is sent twice in a day. Send
+one by hand with:
+
+```bash
+.venv/bin/python manage.py send_digest --tenant <slug> --force
+```

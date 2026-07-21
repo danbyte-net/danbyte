@@ -89,6 +89,16 @@ def effective_ui(tenant):
     return _deployment()
 
 
+def effective_digest(tenant):
+    """The object whose email-digest schedule/recipients apply (its own
+    override group, mirroring email). ``digest_last_run`` is NOT read from here
+    — that is tracked per-tenant on TenantSettings."""
+    ts = _tenant_row(tenant)
+    if ts is not None and ts.override_digest:
+        return ts
+    return _deployment()
+
+
 def effective_device_fields(tenant) -> dict:
     """The merged optional-device-field visibility map for this tenant:
     server defaults ← the effective (deployment or tenant) stored values."""

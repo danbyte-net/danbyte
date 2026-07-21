@@ -386,6 +386,28 @@ class DeploymentSettings(TimestampedModel):
         help_text="Timestamp of the last scheduled config-drift dispatch.",
     )
 
+    # ─── scheduled email digest (opt-in, off by default) ──────────────────
+    # Deployment-wide DEFAULTS; a tenant can override the whole group via
+    # TenantSettings.override_digest. Per-tenant send bookkeeping
+    # (digest_last_run) lives on TenantSettings.
+    DIGEST_FREQUENCY_CHOICES = [("daily", "Daily"), ("weekly", "Weekly")]
+    digest_enabled = models.BooleanField(
+        default=False,
+        help_text="Email a periodic monitoring/status digest to the recipients "
+        "below.",
+    )
+    digest_frequency = models.CharField(
+        max_length=8, choices=DIGEST_FREQUENCY_CHOICES, default="weekly",
+    )
+    digest_weekday = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Day to send the weekly digest (0=Monday … 6=Sunday).",
+    )
+    digest_recipients = models.TextField(
+        blank=True, default="",
+        help_text="Digest recipients — comma/newline-separated email addresses.",
+    )
+
     # ─── date & time display ──────────────────────────────────────────────
     # Deployment-wide defaults for how the UI renders dates and times. A
     # tenant may override the group (TenantSettings.override_datetime); a
@@ -686,6 +708,20 @@ class TenantSettings(TimestampedModel):
         max_length=4, choices=DeploymentSettings.TIME_STYLE_CHOICES, default="24h"
     )
     display_timezone = models.CharField(max_length=64, blank=True, default="")
+
+    # ─── email digest (mirrors DeploymentSettings; own override group) ────
+    override_digest = models.BooleanField(default=False)
+    digest_enabled = models.BooleanField(default=False)
+    digest_frequency = models.CharField(
+        max_length=8,
+        choices=DeploymentSettings.DIGEST_FREQUENCY_CHOICES,
+        default="weekly",
+    )
+    digest_weekday = models.PositiveSmallIntegerField(default=0)
+    digest_recipients = models.TextField(blank=True, default="")
+    # Per-tenant send bookkeeping — used regardless of override, so each tenant
+    # is gated independently even when they share the deployment schedule.
+    digest_last_run = models.DateTimeField(null=True, blank=True)
 
     # ─── LDAP / Active Directory (mirrors DeploymentSettings) ──────────────
     ldap_enabled = models.BooleanField(default=False)
