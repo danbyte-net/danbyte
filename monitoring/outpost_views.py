@@ -15,6 +15,14 @@ import hmac
 
 from django.http import FileResponse, Http404, HttpResponse
 from django.utils import timezone
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
+from rest_framework import serializers
 from rest_framework.authentication import (
     BaseAuthentication,
     SessionAuthentication,
@@ -134,6 +142,25 @@ def _client_ip(request) -> str:
     return request.META.get("REMOTE_ADDR", "") or ""
 
 
+@extend_schema(
+    summary="Outpost heartbeat: record agent facts, return poll interval + work summary",
+    tags=["outpost"],
+    request=inline_serializer(
+        name="OutpostHelloRequest",
+        fields={
+            "version": serializers.CharField(required=False),
+            "hostname": serializers.CharField(required=False),
+            "ip": serializers.CharField(required=False),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "Engine identity, poll interval, assigned check count, and an "
+            "optional self-update target version."
+        ),
+    ),
+)
 @api_view(["POST"])
 @authentication_classes([OutpostAuthentication])
 @permission_classes([IsAuthenticated])
@@ -183,6 +210,32 @@ def _update_target(engine, agent_version):
     return default.version
 
 
+@extend_schema(
+    methods=["GET"],
+    summary="Claim and return this Outpost's due checks",
+    tags=["outpost"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "The claimed due checks, the poll interval, and whether a "
+            "discovery sweep is pending."
+        ),
+    ),
+)
+@extend_schema(
+    methods=["POST"],
+    summary="Claim and return this Outpost's due checks",
+    tags=["outpost"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "The claimed due checks, the poll interval, and whether a "
+            "discovery sweep is pending."
+        ),
+    ),
+)
 @api_view(["GET", "POST"])
 @authentication_classes([OutpostAuthentication])
 @permission_classes([IsAuthenticated])
@@ -202,6 +255,33 @@ def outpost_work_view(request):
     })
 
 
+@extend_schema(
+    summary="Ingest check results the Outpost ran (same finalise path as the core)",
+    tags=["outpost"],
+    request=inline_serializer(
+        name="OutpostResultsRequest",
+        fields={
+            "results": serializers.ListField(
+                child=inline_serializer(
+                    name="OutpostResultItem",
+                    fields={
+                        "state_id": serializers.CharField(),
+                        "status": serializers.ChoiceField(
+                            choices=sorted(_STATUSES)
+                        ),
+                        "latency_ms": serializers.FloatField(required=False),
+                        "detail": serializers.JSONField(required=False),
+                    },
+                ),
+                required=False,
+            ),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The number of results ingested.",
+    ),
+)
 @api_view(["POST"])
 @authentication_classes([OutpostAuthentication])
 @permission_classes([IsAuthenticated])
@@ -256,6 +336,15 @@ def build_snmp_work(engine) -> list[dict]:
     return work
 
 
+@extend_schema(
+    summary="This Outpost's SNMP discovery targets and resolved credentials",
+    tags=["outpost"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The SNMP devices to poll and the re-poll interval.",
+    ),
+)
 @api_view(["GET"])
 @authentication_classes([OutpostAuthentication])
 @permission_classes([IsAuthenticated])
@@ -271,6 +360,28 @@ def outpost_snmp_work_view(request):
     })
 
 
+@extend_schema(
+    summary="Ingest SNMP results the Outpost fetched (same persistence as a local poll)",
+    tags=["outpost"],
+    request=inline_serializer(
+        name="OutpostSnmpResultsRequest",
+        fields={
+            "results": serializers.ListField(
+                child=inline_serializer(
+                    name="OutpostSnmpResultItem",
+                    fields={
+                        "device_id": serializers.CharField(),
+                    },
+                ),
+                required=False,
+            ),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The number of SNMP results ingested.",
+    ),
+)
 @api_view(["POST"])
 @authentication_classes([OutpostAuthentication])
 @permission_classes([IsAuthenticated])
@@ -300,6 +411,15 @@ def outpost_snmp_results_view(request):
     return Response({"ingested": ingested})
 
 
+@extend_schema(
+    summary="Discovery prefixes this Outpost should ICMP-sweep",
+    tags=["outpost"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The prefixes to sweep and the re-sweep interval.",
+    ),
+)
 @api_view(["GET"])
 @authentication_classes([OutpostAuthentication])
 @permission_classes([IsAuthenticated])
@@ -319,6 +439,31 @@ def outpost_sweep_work_view(request):
     })
 
 
+@extend_schema(
+    summary="Ingest an Outpost's sweep results (create IPs for new responders)",
+    tags=["outpost"],
+    request=inline_serializer(
+        name="OutpostDiscoveredRequest",
+        fields={
+            "results": serializers.ListField(
+                child=inline_serializer(
+                    name="OutpostDiscoveredItem",
+                    fields={
+                        "prefix_id": serializers.CharField(),
+                        "alive": serializers.ListField(
+                            child=serializers.CharField(), required=False
+                        ),
+                    },
+                ),
+                required=False,
+            ),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The number of IP addresses created.",
+    ),
+)
 @api_view(["POST"])
 @authentication_classes([OutpostAuthentication])
 @permission_classes([IsAuthenticated])
@@ -439,6 +584,23 @@ echo "Danbyte Outpost {release.version} installed and started."
 """
 
 
+@extend_schema(
+    summary="Generated POSIX-sh Outpost installer script",
+    tags=["outpost"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="v",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Release version to install; defaults to the default release.",
+        ),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.STR,
+        description="The rendered shell installer script (text/x-shellscript).",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def outpost_install_script_view(request):
@@ -465,6 +627,18 @@ def outpost_install_script_view(request):
     )
 
 
+@extend_schema(
+    summary="Download the stored Outpost build artifact for a version",
+    tags=["outpost"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.BINARY,
+        description=(
+            "The build artifact as a file download (valid Outpost token or "
+            "signed-in admin required)."
+        ),
+    ),
+)
 @api_view(["GET"])
 # Session only, so the default JWT auth doesn't reject the Outpost's raw Bearer
 # token; the token is checked inline below.

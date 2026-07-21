@@ -11,6 +11,8 @@ Full CRUD on the MAC *objects* themselves lives at ``/api/mac-addresses/``
 """
 from __future__ import annotations
 
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -51,6 +53,17 @@ def _mac_object(m: MACAddress, *, with_custom_fields: bool = False) -> dict:
     return obj
 
 
+@extend_schema(
+    summary="List every MAC address known in the active tenant, aggregated from "
+    "interfaces, IP↔MAC pairings and first-class MAC objects",
+    tags=["mac-addresses"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Aggregated MAC rows: {count, results:[{mac, interfaces[], "
+        "ips[], objects[]}]}.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def mac_list_view(request):
@@ -109,6 +122,17 @@ def mac_list_view(request):
     return Response({"count": len(results), "results": results})
 
 
+@extend_schema(
+    summary="Detail for one MAC address: interfaces bearing it, IPs paired with "
+    "it, and first-class MAC objects recorded for it",
+    tags=["mac-addresses"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="{mac, objects[], interfaces[], ips[]} for the given MAC "
+        "address, or 404 when nothing carries it.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def mac_detail_view(request, mac):

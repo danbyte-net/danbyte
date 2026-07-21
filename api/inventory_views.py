@@ -10,6 +10,14 @@ from __future__ import annotations
 
 import re
 
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
+from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -137,6 +145,51 @@ def device_groups(d) -> list[str]:
     return groups
 
 
+@extend_schema(
+    summary="Ansible dynamic-inventory JSON for the active tenant's devices",
+    tags=["inventory"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="has_primary_ip",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Only devices with a primary IP (1/true/yes).",
+        ),
+        OpenApiParameter(
+            name="status",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Filter by device status slug.",
+        ),
+        OpenApiParameter(
+            name="site",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Filter by site name.",
+        ),
+        OpenApiParameter(
+            name="role",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Filter by device role slug.",
+        ),
+        OpenApiParameter(
+            name="platform",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Filter by platform slug.",
+        ),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "Standard Ansible inventory-script JSON: `_meta.hostvars` per device "
+            "(danbyte metadata, interfaces, custom fields, merged config context, "
+            "ansible_host) plus site/region/role/platform/status/tag groups."
+        ),
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def ansible_inventory(request):

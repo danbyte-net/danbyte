@@ -9,6 +9,14 @@ from __future__ import annotations
 import ipaddress
 
 from django.db.models import Count
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
+from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -139,6 +147,20 @@ def _empty_dashboard() -> dict:
     return {"counts": {}, "reachable_pct": None, **{k: [] for k in keys}}
 
 
+@extend_schema(
+    summary="Batched, tenant-scoped dashboard aggregation payload",
+    tags=["dashboard"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "Single dashboard payload: object counts, IPAM/DCIM distributions, "
+            "recent activity feeds, top prefixes by utilisation, and monitoring "
+            "roll-ups — all scoped to the active tenant and the caller's RBAC "
+            "view grants. Empty-shaped payload when the user has no active tenant."
+        ),
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def dashboard_view(request):

@@ -9,7 +9,15 @@ so it lives independently of the VM CRUD viewset.
 from __future__ import annotations
 
 from django.core.exceptions import ValidationError
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
 from jinja2 import TemplateError
+from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -22,6 +30,36 @@ from .models import ExportTemplate, VirtualMachine
 from .views import _get_active_tenant
 
 
+@extend_schema(
+    summary="Render a VM's Terraform/tfvars config from an ExportTemplate",
+    tags=["integrations"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="template",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="ID of an ExportTemplate with object_type=virtualmachine.",
+        ),
+    ],
+    responses={
+        200: inline_serializer(
+            name="VMRenderResponse",
+            fields={
+                "output": serializers.CharField(),
+                "template": serializers.CharField(),
+            },
+        ),
+        400: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="No active tenant, unknown template, or render error.",
+        ),
+        404: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="VM not found or outside the caller's scope.",
+        ),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def vm_render_view(request, pk):

@@ -12,6 +12,12 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.core import mail
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -148,6 +154,31 @@ def _tenant_or_403(request):
     return tenant, None
 
 
+@extend_schema(
+    methods=["GET"],
+    summary="Get the active tenant's settings overrides (tenant-admin only)",
+    tags=["tenant-settings"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "Tenant settings fields plus a `deployment_defaults` object "
+            "describing the inherited deployment values."
+        ),
+    ),
+)
+@extend_schema(
+    methods=["PUT"],
+    summary="Update the active tenant's settings overrides (tenant-admin only)",
+    tags=["tenant-settings"],
+    request=TenantSettingsSerializer,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "Updated tenant settings fields plus a `deployment_defaults` object."
+        ),
+    ),
+)
 @api_view(["GET", "PUT"])
 @permission_classes([IsAuthenticated])
 def tenant_settings(request):
@@ -166,6 +197,23 @@ def tenant_settings(request):
     return Response(data)
 
 
+@extend_schema(
+    summary="Send a test email through the tenant's effective SMTP config",
+    tags=["tenant-settings"],
+    request=inline_serializer(
+        name="TenantTestEmailRequest",
+        fields={
+            "to": serializers.EmailField(
+                required=False,
+                help_text="Recipient; defaults to the requester's email.",
+            ),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Result: `{ok, to, via}` on success, `{ok: false, error}` on failure.",
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def tenant_test_email(request):
@@ -198,6 +246,26 @@ def tenant_test_email(request):
     })
 
 
+@extend_schema(
+    summary="Send the active tenant's monitoring digest now (tenant-admin only)",
+    tags=["tenant-settings"],
+    request=inline_serializer(
+        name="TenantTestDigestRequest",
+        fields={
+            "to": serializers.CharField(
+                required=False,
+                help_text=(
+                    "Recipient(s); falls back to configured digest recipients, "
+                    "then the requester."
+                ),
+            ),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="`{ok: true}` on success, `{ok: false, error}` when there are no recipients.",
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def tenant_test_digest(request):
@@ -225,6 +293,15 @@ def tenant_test_digest(request):
     return Response({"ok": True})
 
 
+@extend_schema(
+    summary="Get the effective optional-device-field visibility for the active tenant",
+    tags=["tenant-settings"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Map of optional device-field keys to their effective visibility booleans.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def device_fields_view(request):
@@ -237,6 +314,18 @@ def device_fields_view(request):
     return Response(effective_device_fields(tenant))
 
 
+@extend_schema(
+    summary="Get the default prefix for new addresses from the user's home site",
+    tags=["tenant-settings"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "`{prefix: null}` when there is no single home-site default, else "
+            "`{prefix: {id, cidr}, site: {id, name}}`."
+        ),
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def my_default_prefix(request):
@@ -278,6 +367,15 @@ def my_default_prefix(request):
     )
 
 
+@extend_schema(
+    summary="Get the effective floor-plan popover config for the active tenant",
+    tags=["tenant-settings"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Effective floor-plan popover configuration for the active tenant.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def floorplan_popover_view(request):
@@ -291,6 +389,41 @@ def floorplan_popover_view(request):
     return Response(effective_floorplan_popover(tenant))
 
 
+@extend_schema(
+    methods=["GET"],
+    summary="Get this tenant's floor-plan popover config (tenant-admin only)",
+    tags=["tenant-settings"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "`{override, popover_fields, tile_overrides, available, defaults, "
+            "deployment_defaults}` describing this tenant's popover config."
+        ),
+    ),
+)
+@extend_schema(
+    methods=["PUT"],
+    summary="Update this tenant's floor-plan popover config (tenant-admin only)",
+    tags=["tenant-settings"],
+    request=inline_serializer(
+        name="TenantFloorplanPopoverUpdateRequest",
+        fields={
+            "override": serializers.BooleanField(
+                required=False,
+                help_text="This tenant's own popover override switch.",
+            ),
+            "popover_fields": serializers.ListField(
+                child=serializers.CharField(), required=False
+            ),
+            "tile_overrides": serializers.DictField(required=False),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Updated popover config (same shape as GET).",
+    ),
+)
 @api_view(["GET", "PUT"])
 @permission_classes([IsAuthenticated])
 def tenant_floorplan_popover(request):

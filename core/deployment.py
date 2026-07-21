@@ -9,6 +9,12 @@ from __future__ import annotations
 import re
 
 from django.core import mail
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
 from rest_framework import serializers
 from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -181,6 +187,20 @@ def _require_manage(request):
     return can_manage_deployment(request.user)
 
 
+@extend_schema(
+    methods=["GET"],
+    summary="Read deployment-wide Email & Delivery settings",
+    tags=["deployment"],
+    request=None,
+    responses=DeploymentSettingsSerializer,
+)
+@extend_schema(
+    methods=["PUT"],
+    summary="Update deployment-wide Email & Delivery settings",
+    tags=["deployment"],
+    request=DeploymentSettingsSerializer,
+    responses=DeploymentSettingsSerializer,
+)
 @api_view(["GET", "PUT"])
 @permission_classes([IsAuthenticated])
 def deployment_settings(request):
@@ -201,6 +221,23 @@ FAVICON_MAX_BYTES = 1024 * 1024
 FAVICON_MAX_DIM = 1024
 
 
+@extend_schema(
+    methods=["POST"],
+    summary="Upload the custom browser-tab favicon",
+    tags=["deployment"],
+    request=inline_serializer(
+        name="DeploymentFaviconUpload",
+        fields={"favicon": serializers.ImageField()},
+    ),
+    responses=DeploymentSettingsSerializer,
+)
+@extend_schema(
+    methods=["DELETE"],
+    summary="Clear the custom browser-tab favicon",
+    tags=["deployment"],
+    request=None,
+    responses=DeploymentSettingsSerializer,
+)
 @api_view(["POST", "DELETE"])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
@@ -365,6 +402,20 @@ class DeviceFieldVisibilitySerializer(serializers.Serializer):
         return instance
 
 
+@extend_schema(
+    methods=["GET"],
+    summary="Read optional device-field visibility toggles",
+    tags=["deployment"],
+    request=None,
+    responses=DeviceFieldVisibilitySerializer,
+)
+@extend_schema(
+    methods=["PUT"],
+    summary="Update optional device-field visibility toggles",
+    tags=["deployment"],
+    request=DeviceFieldVisibilitySerializer,
+    responses=DeviceFieldVisibilitySerializer,
+)
 @api_view(["GET", "PUT"])
 @permission_classes([IsAuthenticated])
 def device_field_visibility(request):
@@ -474,6 +525,20 @@ class FloorplanPopoverSerializer(serializers.Serializer):
         return instance
 
 
+@extend_schema(
+    methods=["GET"],
+    summary="Read deployment-wide floor-plan tile popover config",
+    tags=["deployment"],
+    request=None,
+    responses=FloorplanPopoverSerializer,
+)
+@extend_schema(
+    methods=["PUT"],
+    summary="Update deployment-wide floor-plan tile popover config",
+    tags=["deployment"],
+    request=FloorplanPopoverSerializer,
+    responses=FloorplanPopoverSerializer,
+)
 @api_view(["GET", "PUT"])
 @permission_classes([IsAuthenticated])
 def floorplan_popover(request):
@@ -488,6 +553,19 @@ def floorplan_popover(request):
     return Response(FloorplanPopoverSerializer(obj).data)
 
 
+@extend_schema(
+    summary="Liveness/readiness probe with version and DB status",
+    tags=["deployment"],
+    request=None,
+    responses=inline_serializer(
+        name="HealthResponse",
+        fields={
+            "status": serializers.CharField(),
+            "database": serializers.BooleanField(),
+            "version": serializers.CharField(),
+        },
+    ),
+)
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def health(request):
@@ -513,6 +591,15 @@ def health(request):
     )
 
 
+@extend_schema(
+    summary="Network-free runtime info (versions of Python/Django/PostgreSQL/Redis)",
+    tags=["deployment"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Version plus Python/Django/PostgreSQL/Redis environment info.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def system_info(request):
@@ -527,6 +614,15 @@ def system_info(request):
     return Response(_system_info())
 
 
+@extend_schema(
+    summary="Available release versions and whether an update exists",
+    tags=["deployment"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Current version, release-repo versions with changelog, and update-available flag.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def system_updates(request):
@@ -569,6 +665,18 @@ def system_updates(request):
     })
 
 
+@extend_schema(
+    summary="Send a test email to verify SMTP configuration",
+    tags=["deployment"],
+    request=inline_serializer(
+        name="DeploymentTestEmailRequest",
+        fields={"to": serializers.EmailField(required=False)},
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Delivery result: {ok: bool, to?: str, error?: str}.",
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def deployment_test_email(request):

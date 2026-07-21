@@ -5,6 +5,14 @@ SPA polls one endpoint to both announce itself and learn who else is here.
 """
 from __future__ import annotations
 
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
+from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -49,6 +57,32 @@ def _may_view(user, tenant, object_type: str) -> bool:
     return rbac.has_action(user, tenant, slug, "view")
 
 
+@extend_schema(
+    summary="Announce presence on an object and get who else is present",
+    tags=["presence"],
+    request=inline_serializer(
+        name="PresenceHeartbeatRequest",
+        fields={
+            "object_type": serializers.CharField(
+                help_text="RBAC model slug (e.g. 'device'); app_label. prefix tolerated."
+            ),
+            "object_id": serializers.CharField(),
+            "mode": serializers.ChoiceField(
+                choices=["viewing", "editing"], required=False, default="viewing"
+            ),
+        },
+    ),
+    responses={
+        200: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="{'present': [...]} — other users currently on the object.",
+        ),
+        400: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="object_type and object_id are required.",
+        ),
+    },
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def presence_heartbeat(request):
@@ -76,6 +110,31 @@ def presence_heartbeat(request):
     )
 
 
+@extend_schema(
+    summary="Read who is present on an object without announcing yourself",
+    tags=["presence"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="object_type",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="RBAC model slug (e.g. 'device'); app_label. prefix tolerated.",
+        ),
+        OpenApiParameter(
+            name="object_id",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Target object id.",
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="{'present': [...]} — other users currently on the object.",
+        )
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def presence_list(request):
@@ -94,6 +153,25 @@ def presence_list(request):
     )
 
 
+@extend_schema(
+    summary="Drop your presence on an object (best-effort, on unmount)",
+    tags=["presence"],
+    request=inline_serializer(
+        name="PresenceLeaveRequest",
+        fields={
+            "object_type": serializers.CharField(
+                help_text="RBAC model slug (e.g. 'device'); app_label. prefix tolerated."
+            ),
+            "object_id": serializers.CharField(),
+        },
+    ),
+    responses={
+        200: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="{'ok': true}.",
+        )
+    },
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def presence_leave(request):

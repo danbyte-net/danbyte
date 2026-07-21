@@ -18,7 +18,14 @@ import json
 
 from django.db import transaction
 from django.http import HttpResponse, StreamingHttpResponse
-from rest_framework import status
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
+from rest_framework import serializers, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -52,6 +59,18 @@ def _can(request, tenant, slug, action) -> bool:
     )
 
 
+@extend_schema(
+    summary="List object types the user may export and/or import",
+    tags=["import-export"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "An ``object_types`` array; each entry is the type metadata plus "
+            "``can_export`` and ``can_import`` booleans for the current user."
+        ),
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def io_types_view(request):
@@ -68,6 +87,18 @@ def io_types_view(request):
     return Response({"object_types": out})
 
 
+@extend_schema(
+    summary="Columns, field metadata, and natural key for an object type",
+    tags=["import-export"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "``fields`` (per-field metadata), ``columns`` (ordered column "
+            "names), and ``natural_key`` for the requested object type."
+        ),
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def io_fields_view(request, slug):
@@ -88,6 +119,38 @@ def _scoped_qs(request, tenant, handler, model, action):
     return handler.export_queryset(qs)
 
 
+@extend_schema(
+    summary="Stream RBAC-scoped rows of an object type as CSV, JSON, or XLSX",
+    tags=["import-export"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="fmt",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Export format: 'csv' (default), 'json', or 'xlsx'.",
+        ),
+        OpenApiParameter(
+            name="ids",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Comma-separated primary keys to restrict the export to.",
+        ),
+        OpenApiParameter(
+            name="<field>",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "Any concrete model field name may be passed as an exact-match "
+                "filter to further narrow the RBAC-scoped rows."
+            ),
+        ),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.BINARY,
+        description="An attachment file download (CSV, JSON, or XLSX).",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def io_export_view(request, slug):
@@ -212,6 +275,43 @@ def _parse_upload(request):
     return parse_rows(data.get("content", ""), data.get("format", "csv"))
 
 
+@extend_schema(
+    summary="Upsert rows for an object type (dry-run preview or commit)",
+    tags=["import-export"],
+    request=inline_serializer(
+        name="IoImportRequest",
+        fields={
+            "file": serializers.FileField(
+                required=False,
+                help_text="Multipart XLSX upload of rows to import.",
+            ),
+            "rows": serializers.ListField(
+                child=serializers.DictField(),
+                required=False,
+                help_text="Pre-parsed array of row objects.",
+            ),
+            "content": serializers.CharField(
+                required=False,
+                help_text="Raw CSV or JSON body (paired with 'format').",
+            ),
+            "format": serializers.CharField(
+                required=False,
+                help_text="Format of 'content': 'csv' (default) or 'json'.",
+            ),
+            "dry_run": serializers.BooleanField(
+                required=False,
+                help_text="When true, validate and preview without committing.",
+            ),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "Import outcome: ``total``, ``created``, ``updated``, ``errors`` "
+            "(per-row), ``dry_run``, and ``preview`` (per-row when dry-run)."
+        ),
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def io_import_view(request, slug):

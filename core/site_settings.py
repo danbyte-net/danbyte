@@ -17,6 +17,8 @@ password is write-only, Fernet-encrypted, exposed as ``smtp_password_set``.
 from __future__ import annotations
 
 from django.core import mail
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -126,6 +128,32 @@ def _parent_defaults(tenant) -> dict:
     }
 
 
+@extend_schema(
+    methods=["GET"],
+    summary="Get one site's email settings overrides with parent defaults (site-admin gated)",
+    tags=["site-settings"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "Site email settings (SiteSettings fields, `smtp_password_set`) plus a "
+            "`site` object and inherited `parent_defaults`."
+        ),
+    ),
+)
+@extend_schema(
+    methods=["PUT"],
+    summary="Update one site's email settings overrides (site-admin gated)",
+    tags=["site-settings"],
+    request=SiteSettingsSerializer,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "Updated site email settings plus a `site` object and inherited "
+            "`parent_defaults`."
+        ),
+    ),
+)
 @api_view(["GET", "PUT"])
 @permission_classes([IsAuthenticated])
 def site_settings(request, site_id):
@@ -144,6 +172,23 @@ def site_settings(request, site_id):
     return Response(data)
 
 
+@extend_schema(
+    summary="Send a test email through the site's effective SMTP config (site-admin gated)",
+    tags=["site-settings"],
+    request=inline_serializer(
+        name="SiteTestEmailRequest",
+        fields={
+            "to": serializers.EmailField(
+                required=False,
+                help_text="Recipient address; defaults to the requesting user's email.",
+            ),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Result with `ok`, the resolved `to` recipient, and `via` config layer.",
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def site_test_email(request, site_id):

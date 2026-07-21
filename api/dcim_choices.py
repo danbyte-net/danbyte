@@ -530,11 +530,33 @@ COMMON_SPEEDS: list[str] = [
 
 
 from django.apps import apps
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
+from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 
+@extend_schema(
+    summary="DCIM type/choice vocabularies for interface, cable, and port dropdowns",
+    tags=["dcim"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "Single source of truth for the DCIM dropdowns: grouped interface, "
+            "cable, console/power/aux/front-port type choices (each row carries "
+            "value/label/group), duplex/mode/PoE options, connector fibre counts, "
+            "and common speed suggestions."
+        ),
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def dcim_choices_view(request):

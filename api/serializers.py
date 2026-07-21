@@ -5,6 +5,8 @@ matching list / detail page actually renders, no kitchen-sink output.
 from __future__ import annotations
 
 from django.db import transaction
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from core.models import Tag, Tenant, TenantGroup
@@ -463,6 +465,7 @@ class VLANMiniSerializer(NumIdModelSerializer):
         model = VLAN
         fields = ["id", "vlan_id", "name", "zone"]
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_zone(self, obj):
         z = obj.zone
         if not z:
@@ -503,10 +506,12 @@ class VLANSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
     def get_prefix_count(self, obj) -> int:
         return obj.prefixes.count()
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_group(self, obj):
         g = obj.group
         return {"id": str(g.id), "name": g.name} if g else None
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_zone(self, obj):
         z = obj.zone
         if not z:
@@ -577,12 +582,14 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
         write_only=True, required=False, allow_null=True,
     )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_region(self, obj):
         return (
             {"id": str(obj.region_id), "name": obj.region.name}
             if obj.region_id else None
         )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_default_prefix(self, obj):
         return (
             {"id": str(obj.default_prefix_id), "cidr": obj.default_prefix.cidr}
@@ -1053,6 +1060,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
         dev = obj.assigned_device
         return bool(dev and dev.oob_ip_id == obj.id)
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_assigned_interface(self, obj):
         i = obj.assigned_interface
         if i is None:
@@ -1063,6 +1071,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
             "device": {"id": str(i.device_id), "name": i.device.name},
         }
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_switch_interface(self, obj):
         i = obj.switch_interface
         if i is None:
@@ -1078,6 +1087,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
             ),
         }
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_assigned_vm(self, obj):
         vm = obj.assigned_vm
         if vm is None:
@@ -1085,6 +1095,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
         return {"id": str(vm.id), "name": vm.name,
                 "status": vm.status.name if vm.status_id else None}
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_assigned_vm_interface(self, obj):
         i = obj.assigned_vm_interface
         if i is None:
@@ -1260,6 +1271,7 @@ class DeviceVcPickerSerializer(DevicePickerSerializer):
     class Meta(DevicePickerSerializer.Meta):
         fields = DevicePickerSerializer.Meta.fields + ["virtual_chassis"]
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_virtual_chassis(self, obj):
         vc = obj.virtual_chassis
         return {"id": str(vc.id), "name": vc.name} if vc else None
@@ -1332,10 +1344,10 @@ class DeviceTypeMiniSerializer(NumIdModelSerializer):
     rear_image = serializers.SerializerMethodField()
     lifecycle_state = serializers.ReadOnlyField()
 
-    def get_front_image(self, obj):
+    def get_front_image(self, obj) -> str | None:
         return _img_url(self, obj.front_image)
 
-    def get_rear_image(self, obj):
+    def get_rear_image(self, obj) -> str | None:
         return _img_url(self, obj.rear_image)
 
     class Meta:
@@ -1366,6 +1378,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     front_image = serializers.SerializerMethodField()
     rear_image = serializers.SerializerMethodField()
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_platform(self, obj):
         p = obj.platform
         return {"id": str(p.id), "name": p.name} if p else None
@@ -1374,10 +1387,10 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
         v = getattr(obj, "device_count_annotated", None)
         return v if v is not None else obj.device_set.count()
 
-    def get_front_image(self, obj):
+    def get_front_image(self, obj) -> str | None:
         return _img_url(self, obj.front_image)
 
-    def get_rear_image(self, obj):
+    def get_rear_image(self, obj) -> str | None:
         return _img_url(self, obj.rear_image)
 
     # Faceplate layout doc — v1 envelope, port slots reference component-
@@ -1481,7 +1494,7 @@ class ImageAttachmentSerializer(serializers.ModelSerializer):
 
     image = serializers.SerializerMethodField()
 
-    def get_image(self, obj):
+    def get_image(self, obj) -> str | None:
         return _img_url(self, obj.image)
 
     class Meta:
@@ -1580,15 +1593,19 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             "dns_name": ip.dns_name,
         }
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_primary_ip(self, obj):
         return self._ip_mini(obj.primary_ip)
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_secondary_ip(self, obj):
         return self._ip_mini(obj.secondary_ip)
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_oob_ip(self, obj):
         return self._ip_mini(obj.oob_ip)
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_rack(self, obj):
         r = obj.rack
         if r is None:
@@ -1604,11 +1621,13 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     def get_rack_width(self, obj) -> str:
         return (obj.device_type.rack_width if obj.device_type else "") or "full"
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_role(self, obj):
         r = obj.role
         return {"id": str(r.id), "name": r.name, "slug": r.slug,
                 "color": r.color} if r else None
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_platform(self, obj):
         p = obj.platform
         if not p:
@@ -1620,16 +1639,19 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                 "end_of_support": p.end_of_support,
                 "lifecycle_state": p.lifecycle_state}
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_effective_platform(self, obj):
         # The device's own platform wins; otherwise fall back to its type's
         # default. Read-only and derived — the stored field is untouched.
         p = obj.platform or (obj.device_type.platform if obj.device_type else None)
         return {"id": str(p.id), "name": p.name} if p else None
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_location(self, obj):
         loc = obj.location
         return {"id": str(loc.id), "name": loc.name} if loc else None
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cluster(self, obj):
         c = obj.cluster
         return {"id": str(c.id), "name": c.name} if c else None
@@ -1644,11 +1666,13 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             if "vc_position" not in getattr(v, "fields", ())
         ]
 
+    @extend_schema_field(serializers.ListField())
     def get_vc_renamed_interfaces(self, obj):
         # Set by DeviceViewSet.perform_update when a stack-membership change
         # renamed {position}-templated interfaces; null on ordinary reads.
         return getattr(obj, "_vc_renamed_interfaces", None)
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_virtual_chassis(self, obj):
         vc = obj.virtual_chassis
         if vc is None:
@@ -1659,6 +1683,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             "member_count": vc.members.count(),
         }
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_config_template(self, obj):
         from .models import resolve_config_template
 
@@ -1876,6 +1901,7 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     tags = TagSerializer(many=True, read_only=True)
     cable = serializers.SerializerMethodField()
 
+    @extend_schema_field(serializers.ListField())
     def get_mac_addresses(self, obj):
         primary = (obj.mac_address or "").lower()
         return [
@@ -1933,18 +1959,22 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     def _mini(rel):
         return {"id": str(rel.id), "name": rel.name} if rel else None
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cable(self, obj):
         return _point_cable(obj)
 
     def get_cable_count(self, obj) -> int:
         return obj.terminations.count()
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_parent(self, obj):
         return self._mini(obj.parent)
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_lag(self, obj):
         return self._mini(obj.lag)
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_bridge(self, obj):
         return self._mini(obj.bridge)
 
@@ -1958,6 +1988,7 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     def get_type_display(self, obj) -> str:
         return obj.get_type_display()
 
+    @extend_schema_field(serializers.ListField())
     def get_ip_addresses(self, obj):
         # Prefetched via `ip_addresses` on the viewset querysets — no N+1.
         return [
@@ -1965,6 +1996,7 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
             for ip in obj.ip_addresses.all()
         ]
 
+    @extend_schema_field(serializers.ListField())
     def get_tunnel_terminations(self, obj):
         # Tunnel ends this interface terminates — the frontend's "in a tunnel"
         # indicator. Prefetched via `tunnel_terminations__tunnel` on the
@@ -2103,6 +2135,7 @@ class RearPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         write_only=True, required=False, many=True,
     )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cable(self, obj):
         return _point_cable(obj)
 
@@ -2162,6 +2195,7 @@ class FrontPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         write_only=True, required=False, many=True,
     )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cable(self, obj):
         return _point_cable(obj)
 
@@ -2214,6 +2248,7 @@ class _DevicePortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         write_only=True, required=False, many=True,
     )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cable(self, obj):
         return _point_cable(obj)
 
@@ -2440,6 +2475,7 @@ class InventoryItemSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         write_only=True, required=False, many=True,
     )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_parent(self, obj):
         return (
             {"id": str(obj.parent_id), "name": obj.parent.name}
@@ -2528,6 +2564,7 @@ class ModuleBaySerializer(TaggableSerializerMixin, NumIdModelSerializer):
     # The installed module (if any) — enough for the bays table.
     module = serializers.SerializerMethodField()
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_module(self, obj):
         m = getattr(obj, "module", None)
         if m is None:
@@ -2569,12 +2606,14 @@ class ModuleSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         write_only=True, required=False, many=True,
     )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_module_bay(self, obj):
         return {"id": str(obj.module_bay_id), "name": obj.module_bay.name,
                 "position": obj.module_bay.position}
 
     module_type_faceplate = serializers.SerializerMethodField()
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_module_type_faceplate(self, obj):
         return obj.module_type.faceplate
 
@@ -2626,6 +2665,7 @@ class PowerOutletTemplateSerializer(_ComponentTemplateSerializer):
         write_only=True, required=False, allow_null=True,
     )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_power_port_template(self, obj):
         t = obj.power_port_template
         return {"id": str(t.id), "name": t.name} if t else None
@@ -2678,6 +2718,7 @@ class FrontPortTemplateSerializer(_ComponentTemplateSerializer):
         write_only=True,
     )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_rear_port_template(self, obj):
         t = obj.rear_port_template
         return {"id": str(t.id), "name": t.name}
@@ -2744,9 +2785,11 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
         "aux_port": AuxPort,
     }
 
+    @extend_schema_field(serializers.ListField())
     def get_a_terminations(self, obj):
         return [_termination_repr(t) for t in obj.terminations.all() if t.end == "A"]
 
+    @extend_schema_field(serializers.ListField())
     def get_b_terminations(self, obj):
         return [_termination_repr(t) for t in obj.terminations.all() if t.end == "B"]
 
@@ -3148,11 +3191,13 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
         write_only=True, required=False, many=True,
     )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_role(self, obj):
         r = obj.role
         return {"id": str(r.id), "name": r.name, "slug": r.slug,
                 "color": r.color} if r else None
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_platform(self, obj):
         p = obj.platform
         return {"id": str(p.id), "name": p.name, "slug": p.slug} if p else None
@@ -3198,6 +3243,7 @@ class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     )
     ip_addresses = serializers.SerializerMethodField()
 
+    @extend_schema_field(serializers.ListField())
     def get_ip_addresses(self, obj):
         return [
             {"id": str(ip.id), "ip_address": ip.ip_address}
@@ -3267,6 +3313,7 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
     device_count = serializers.SerializerMethodField()
     used_units = serializers.SerializerMethodField()
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_location(self, obj):
         l = obj.location
         return {"id": str(l.id), "name": l.name} if l else None
@@ -3301,7 +3348,7 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
     total_weight_kg = serializers.SerializerMethodField()
     max_weight_kg = serializers.SerializerMethodField()
 
-    def get_total_weight_kg(self, obj):
+    def get_total_weight_kg(self, obj) -> float:
         # Sum of the racked devices' type weights, normalised to kg. Devices
         # whose type has no weight contribute 0 — the UI notes the count.
         total = 0.0
@@ -3312,11 +3359,12 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
                 total += kg
         return round(total, 2)
 
-    def get_max_weight_kg(self, obj):
+    def get_max_weight_kg(self, obj) -> float | None:
         return weight_kg(obj.max_weight, obj.max_weight_unit)
 
     power = serializers.SerializerMethodField()
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_power(self, obj):
         """Rack power rollup. Supply = primary feeds delivered to the rack
         (V × A × max-utilisation%, three-phase × √3, NetBox semantics).
@@ -3378,6 +3426,7 @@ class DeviceRoleSerializer(TaggableSerializerMixin, CustomFieldsSerializerMixin,
         write_only=True, required=False, many=True,
     )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_config_template(self, obj):
         t = obj.config_template
         return {"id": str(t.id), "name": t.name} if t else None
@@ -3473,6 +3522,7 @@ class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         write_only=True, required=False, many=True,
     )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_config_template(self, obj):
         t = obj.config_template
         return {"id": str(t.id), "name": t.name} if t else None
@@ -3530,14 +3580,17 @@ class ServiceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
                 raise serializers.ValidationError("Ports must be 1–65535.")
         return value
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_device(self, obj):
         d = obj.device
         return {"id": str(d.id), "name": d.name} if d else None
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_virtual_machine(self, obj):
         v = obj.virtual_machine
         return {"id": str(v.id), "name": v.name} if v else None
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_ip_address(self, obj):
         ip = obj.ip_address
         return {"id": str(ip.id), "ip_address": ip.ip_address} if ip else None
@@ -3814,6 +3867,7 @@ class VLANGroupSerializer(NumIdModelSerializer):
         write_only=True, required=False, allow_null=True,
     )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cluster(self, obj):
         c = obj.cluster
         return {"id": str(c.id), "name": c.name} if c else None
@@ -3857,6 +3911,7 @@ class FHRPGroupAssignmentSerializer(NumIdModelSerializer):
         source="fhrp_group", queryset=FHRPGroup.objects.all(), write_only=True,
     )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_vm_interface(self, obj):
         vi = obj.vm_interface
         if not vi:
@@ -4427,6 +4482,7 @@ class TunnelTerminationSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_null=True,
     )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_interface(self, obj):
         i = obj.interface
         if i is None:
@@ -4434,6 +4490,7 @@ class TunnelTerminationSerializer(serializers.ModelSerializer):
         return {"id": str(i.id), "name": i.name,
                 "device": {"id": str(i.device_id), "name": i.device.name}}
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_vm_interface(self, obj):
         i = obj.vm_interface
         if i is None:
@@ -4441,6 +4498,7 @@ class TunnelTerminationSerializer(serializers.ModelSerializer):
         return {"id": str(i.id), "name": i.name,
                 "vm": {"id": str(i.vm_id), "name": i.vm.name}}
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_outside_ip(self, obj):
         ip = obj.outside_ip
         return {"id": str(ip.id), "ip_address": ip.ip_address} if ip else None
@@ -4607,9 +4665,11 @@ class ConfigContextSerializer(NumIdModelSerializer):
         many=True, write_only=True, required=False,
     )
 
+    @extend_schema_field(serializers.ListField())
     def get_device_roles(self, obj):
         return [{"id": str(r.id), "name": r.name} for r in obj.device_roles.all()]
 
+    @extend_schema_field(serializers.ListField())
     def get_platforms(self, obj):
         return [{"id": str(p.id), "name": p.name} for p in obj.platforms.all()]
 
@@ -4696,12 +4756,15 @@ class VirtualChassisSerializer(
             {"id": str(ip.id), "ip_address": ip.ip_address} if ip else None
         )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_primary_ip(self, obj):
         return self._ip_mini(obj.master.primary_ip if obj.master_id else None)
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_oob_ip(self, obj):
         return self._ip_mini(obj.master.oob_ip if obj.master_id else None)
 
+    @extend_schema_field(serializers.ListField())
     def get_members(self, obj):
         return [
             {
@@ -4774,6 +4837,7 @@ class L2VPNTerminationSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_null=True,
     )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_vlan(self, obj):
         v = obj.vlan
         return (
@@ -4781,6 +4845,7 @@ class L2VPNTerminationSerializer(serializers.ModelSerializer):
             if v else None
         )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_interface(self, obj):
         i = obj.interface
         if i is None:
@@ -4788,6 +4853,7 @@ class L2VPNTerminationSerializer(serializers.ModelSerializer):
         return {"id": str(i.id), "name": i.name,
                 "device": {"id": str(i.device_id), "name": i.device.name}}
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_vm_interface(self, obj):
         i = obj.vm_interface
         if i is None:
@@ -4897,10 +4963,12 @@ class SiteMarkerSerializer(serializers.ModelSerializer):
     device = serializers.SerializerMethodField()
     type = serializers.SerializerMethodField()
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_device(self, obj):
         d = obj.device
         return {"id": str(d.id), "name": d.name} if d else None
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_type(self, obj):
         t = obj.type_obj
         if t is None:
@@ -4973,12 +5041,13 @@ class FloorPlanSerializer(
         write_only=True, required=False, many=True,
     )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_site(self, obj):
         if obj.location_id is None:
             return None
         return SiteMiniSerializer(obj.location.site).data
 
-    def get_background_image(self, obj):
+    def get_background_image(self, obj) -> str | None:
         return _img_url(self, obj.background_image)
 
     def get_tile_count(self, obj) -> int:
@@ -5059,6 +5128,7 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
     )
     linked = serializers.SerializerMethodField()
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_linked(self, obj):
         field = FloorPlanTile.LINK_FIELDS.get(obj.link_kind)
         target = getattr(obj, field) if field else None
@@ -5153,6 +5223,7 @@ class FloorPlanTraySerializer(NumIdModelSerializer):
         write_only=True, required=False, many=True,
     )
 
+    @extend_schema_field(serializers.ListField())
     def get_cables(self, obj):
         return [
             {
@@ -5204,6 +5275,7 @@ class CableRouteSerializer(NumIdModelSerializer):
         write_only=True, required=False, many=True,
     )
 
+    @extend_schema_field(serializers.ListField())
     def get_cables(self, obj):
         return [
             {

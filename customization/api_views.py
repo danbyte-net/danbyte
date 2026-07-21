@@ -10,6 +10,12 @@ id → {label, route} resolution for displaying stored object-field values.
 """
 from __future__ import annotations
 
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+)
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -22,6 +28,18 @@ from .object_registry import (
 )
 
 
+@extend_schema(
+    summary="Custom-field registry: customizable models and reference targets",
+    tags=["customization"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "The models a field can attach to and the reference_models an "
+            "object-reference field can point at (with endpoint/labelling info)."
+        ),
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def customization_meta(request):
@@ -46,6 +64,29 @@ def customization_meta(request):
     })
 
 
+@extend_schema(
+    summary="Bulk id → {label, route} resolution for object-field values",
+    tags=["customization"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="model",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="The reference model slug (e.g. 'device').",
+        ),
+        OpenApiParameter(
+            name="ids",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Comma-separated object ids (capped at 200).",
+        ),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="A results map of id → {label, route}.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def object_labels(request):

@@ -1,6 +1,12 @@
 """Compliance rule CRUD + on-demand evaluation for the SPA."""
 from __future__ import annotations
 
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+)
 from rest_framework import serializers
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -139,6 +145,47 @@ class ComplianceRuleViewSet(TenantScopedViewSet):
         })
 
 
+@extend_schema(
+    summary="Evaluate enabled compliance rules against current data",
+    tags=["compliance"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="severity",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Comma-separated severities (critical,warning,info).",
+        ),
+        OpenApiParameter(
+            name="object_type",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Comma-separated object types (device,prefix,…).",
+        ),
+        OpenApiParameter(
+            name="rule",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="A rule id (or 'config-drift').",
+        ),
+        OpenApiParameter(
+            name="object",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="An object id (e.g. one device).",
+        ),
+        OpenApiParameter(
+            name="q",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Case-insensitive substring over object repr + rule name.",
+        ),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Per-rule summary, flat violations list, and total_violations.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def compliance_evaluate(request):
@@ -193,6 +240,18 @@ def _filter_violations(violations: list[dict], request) -> list[dict]:
     return [v for v in violations if keep(v)]
 
 
+@extend_schema(
+    summary="One device's compliance status (failing rules or all-clear)",
+    tags=["compliance"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "The device, an all_clear flag, total, and the failed rules with "
+            "their remediation guides."
+        ),
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def compliance_device_status(request, device_id):
@@ -318,6 +377,15 @@ def _append_config_drift(result: dict, tenant) -> None:
     result["total_violations"] = result.get("total_violations", 0) + len(rows)
 
 
+@extend_schema(
+    summary="Object types and their simple fields, for the rule form",
+    tags=["compliance"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="An object_types list of {value, label} entries.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def compliance_object_types(request):

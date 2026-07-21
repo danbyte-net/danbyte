@@ -24,6 +24,14 @@ from __future__ import annotations
 from collections import deque
 
 from django.db.models import Count, Q
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
+from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -422,6 +430,72 @@ def _filter_q(params):
     return q
 
 
+@extend_schema(
+    summary="Network topology graph (devices as nodes, cables as edges)",
+    tags=["topology"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="collapse_panels",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "Walk patch panels through end-to-end (default '1'); '0' shows "
+                "raw physical hops with panels as nodes."
+            ),
+        ),
+        OpenApiParameter(
+            name="device",
+            type=OpenApiTypes.UUID,
+            location=OpenApiParameter.QUERY,
+            description="Focus the graph on one device's neighbourhood (by id).",
+        ),
+        OpenApiParameter(
+            name="depth",
+            type=OpenApiTypes.INT,
+            location=OpenApiParameter.QUERY,
+            description=f"BFS depth around the focus device (1–{MAX_DEPTH}, default 1).",
+        ),
+        OpenApiParameter(
+            name="site",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Filter devices by site id.",
+        ),
+        OpenApiParameter(
+            name="location",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Filter devices by location id.",
+        ),
+        OpenApiParameter(
+            name="role",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Filter devices by role id.",
+        ),
+        OpenApiParameter(
+            name="status",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Filter devices by status id.",
+        ),
+        OpenApiParameter(
+            name="tag",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Filter devices by tag slug.",
+        ),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "`{nodes, edges}` for the React Flow map — device stencil-card nodes "
+            "with cabled ports and cable edges (port-to-port pairs, via panels), "
+            "scoped to the caller's device.view grant."
+        ),
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def topology_view(request):

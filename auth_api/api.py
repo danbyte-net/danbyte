@@ -9,6 +9,12 @@ from __future__ import annotations
 
 from django.contrib.auth.models import Group, User
 from django.db import transaction
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
 from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -434,6 +440,17 @@ class ObjectPermissionViewSet(viewsets.ModelViewSet):
 
 
 # ─── Registry (for the permission form pickers) ──────────────────────────────
+@extend_schema(
+    summary="RBAC registry for the permission form pickers: object types and "
+    "available actions",
+    tags=["rbac"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="{object_types: [...], actions: [...]} used to populate the "
+        "permission-builder pickers.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def rbac_object_types(request):
@@ -541,6 +558,34 @@ def assemble_site_role(tenant, role, sites, *, user_ids=None, group_ids=None,
     return created
 
 
+@extend_schema(
+    summary="One-click site role — assemble the ObjectPermission combo for a "
+    "site editor or viewer and attach it to users/groups",
+    tags=["rbac"],
+    request=inline_serializer(
+        name="CreateSiteRoleRequest",
+        fields={
+            "role": serializers.ChoiceField(choices=["editor", "viewer"]),
+            "site_ids": serializers.ListField(child=serializers.UUIDField()),
+            "name": serializers.CharField(required=False, allow_blank=True),
+            "user_ids": serializers.ListField(
+                child=serializers.IntegerField(), required=False
+            ),
+            "group_ids": serializers.ListField(
+                child=serializers.IntegerField(), required=False
+            ),
+            "silo": serializers.BooleanField(required=False),
+        },
+    ),
+    responses={
+        201: inline_serializer(
+            name="CreateSiteRoleResponse",
+            fields={
+                "created": ObjectPermissionSerializer(many=True),
+            },
+        )
+    },
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def create_site_role(request):
@@ -630,6 +675,31 @@ def create_site_role(request):
     )
 
 
+@extend_schema(
+    summary="Plain-language summary of what a user can do in the active tenant "
+    "(admin-only)",
+    tags=["rbac"],
+    request=None,
+    responses=OpenApiResponse(
+        response=inline_serializer(
+            name="UserAccessSummary",
+            fields={
+                "is_admin": serializers.BooleanField(),
+                "edit_scope": serializers.ChoiceField(choices=["all", "sites", "none"]),
+                "read_scope": serializers.ChoiceField(choices=["all", "sites", "none"]),
+                "editable_sites": inline_serializer(
+                    name="UserAccessSummarySite",
+                    many=True,
+                    fields={
+                        "id": serializers.CharField(),
+                        "name": serializers.CharField(),
+                    },
+                ),
+            },
+        ),
+        description="Decoded access scopes for the target user in the active tenant.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def user_access_summary(request, user_id):

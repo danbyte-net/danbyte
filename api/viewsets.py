@@ -8,6 +8,7 @@ from __future__ import annotations
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils.text import slugify
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import permissions, status as drf_status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -2744,6 +2745,19 @@ class _DevicePortViewSet(ComponentBulkMixin, TenantScopedViewSet):
         serializer.save()
 
 
+@extend_schema_view(
+    list=extend_schema(
+        summary="Read the tenant's fibre colour palette (singleton)",
+        responses=FiberSettingsSerializer,
+        tags=["fiber"],
+    ),
+    create=extend_schema(
+        summary="Save an edited fibre colour palette",
+        request=FiberSettingsSerializer,
+        responses=FiberSettingsSerializer,
+        tags=["fiber"],
+    ),
+)
 class FiberSettingsViewSet(viewsets.ViewSet):
     """The tenant's fibre colour palette — a singleton. GET reads it (creating
     the TIA-598-C default on first access); POST saves an edited palette."""

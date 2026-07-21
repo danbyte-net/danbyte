@@ -5,6 +5,13 @@ now this is a read-only inventory of what the deployment has installed.
 """
 from __future__ import annotations
 
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
+from rest_framework import serializers
 from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
@@ -13,6 +20,19 @@ from rest_framework.response import Response
 from .registry import loaded_configs, plugin_report
 
 
+@extend_schema(
+    summary="List installed plugins and their load/apply state",
+    tags=["plugins"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "Installed-plugin inventory: each plugin's load state and unapplied "
+            "migrations, plus deployment-wide has_pending_migrations, "
+            "pending_restart, and needs_apply signals."
+        ),
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def plugins_list(request):
@@ -75,6 +95,18 @@ def plugins_list(request):
     )
 
 
+@extend_schema(
+    summary="Install a plugin from an uploaded archive (superuser only)",
+    tags=["plugins"],
+    request=inline_serializer(
+        name="PluginUploadRequest",
+        fields={"archive": serializers.FileField()},
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The installed plugin name and an apply-to-activate message.",
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
@@ -106,6 +138,15 @@ def plugin_upload(request):
     )
 
 
+@extend_schema(
+    summary="Uninstall an uploaded plugin by module name (superuser only)",
+    tags=["plugins"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The removed module name and an apply-to-finish message.",
+    ),
+)
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
 def plugin_uninstall(request, slug: str):
@@ -122,6 +163,37 @@ def plugin_uninstall(request, slug: str):
     return Response({"removed": slug, "detail": "Removed. Apply changes to finish."})
 
 
+@extend_schema(
+    methods=["GET"],
+    summary="Read a plugin's effective enablement for the active tenant",
+    tags=["plugins"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "The plugin's effective enabled state plus the raw tenant/deployment "
+            "rows and the plugin's default_enabled."
+        ),
+    ),
+)
+@extend_schema(
+    methods=["PATCH"],
+    summary="Enable or disable a plugin at tenant or deployment scope",
+    tags=["plugins"],
+    request=inline_serializer(
+        name="PluginConfigPatchRequest",
+        fields={
+            "enabled": serializers.BooleanField(),
+            "scope": serializers.ChoiceField(
+                choices=["tenant", "deployment"], required=False, default="tenant"
+            ),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The plugin slug and its new effective enabled state.",
+    ),
+)
 @api_view(["GET", "PATCH"])
 @permission_classes([IsAuthenticated])
 def plugin_config(request, slug: str):
@@ -184,6 +256,15 @@ def plugin_config(request, slug: str):
     return Response({"slug": slug, "enabled": plugin_enabled(slug, tenant)})
 
 
+@extend_schema(
+    summary="Apply plugin changes: run migrations then restart Danbyte (superuser)",
+    tags=["plugins"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The apply result, including an `ok` flag and any details.",
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def plugins_apply(request):

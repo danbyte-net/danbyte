@@ -8,6 +8,13 @@ The bind password is write-only and stored Fernet-encrypted in
 from __future__ import annotations
 
 from django.contrib.auth.models import Group
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
 from rest_framework import serializers, viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -65,6 +72,20 @@ class LDAPSettingsSerializer(serializers.ModelSerializer):
         return instance
 
 
+@extend_schema(
+    methods=["GET"],
+    summary="Get the deployment LDAP/AD connection settings",
+    tags=["ldap"],
+    request=None,
+    responses=LDAPSettingsSerializer,
+)
+@extend_schema(
+    methods=["PUT"],
+    summary="Update the deployment LDAP/AD connection settings",
+    tags=["ldap"],
+    request=LDAPSettingsSerializer,
+    responses=LDAPSettingsSerializer,
+)
 @api_view(["GET", "PUT"])
 @permission_classes([IsAuthenticated])
 def ldap_settings(request):
@@ -101,6 +122,15 @@ def _bind_connection(dep):
     return conn
 
 
+@extend_schema(
+    summary="Test the deployment LDAP service-account bind",
+    tags=["ldap"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Bind result: {ok: bool, error?: str}.",
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def ldap_test(request):
@@ -124,6 +154,23 @@ def ldap_test(request):
     return Response({"ok": True})
 
 
+@extend_schema(
+    summary="Dry-run a deployment directory login and report the outcome/trace",
+    tags=["ldap"],
+    request=inline_serializer(
+        name="LDAPTestLoginRequest",
+        fields={
+            "username": serializers.CharField(),
+            "password": serializers.CharField(),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "Login outcome: {ok, error?, username?, email?, groups?, trace?}."
+        ),
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def ldap_test_login(request):
@@ -205,6 +252,23 @@ def ldap_test_login(request):
 
 
 # ─── Browse directory groups ─────────────────────────────────────────────────
+@extend_schema(
+    summary="Browse groups under the deployment directory group-search base",
+    tags=["ldap"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="q",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Optional case-insensitive CN substring filter.",
+        ),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="{groups: [{dn, cn}]} sorted by CN.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def ldap_groups(request):
@@ -339,6 +403,20 @@ class TenantLDAPSettingsSerializer(serializers.ModelSerializer):
         return instance
 
 
+@extend_schema(
+    methods=["GET"],
+    summary="Get the active tenant's LDAP/AD directory override settings",
+    tags=["ldap"],
+    request=None,
+    responses=TenantLDAPSettingsSerializer,
+)
+@extend_schema(
+    methods=["PUT"],
+    summary="Update the active tenant's LDAP/AD directory override settings",
+    tags=["ldap"],
+    request=TenantLDAPSettingsSerializer,
+    responses=TenantLDAPSettingsSerializer,
+)
 @api_view(["GET", "PUT"])
 @permission_classes([IsAuthenticated])
 def tenant_ldap_settings(request):
@@ -357,6 +435,15 @@ def tenant_ldap_settings(request):
     return Response(TenantLDAPSettingsSerializer(obj).data)
 
 
+@extend_schema(
+    summary="Test the tenant directory LDAP service-account bind",
+    tags=["ldap"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Bind result: {ok: bool, error?: str}.",
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def tenant_ldap_test(request):
@@ -384,6 +471,23 @@ def tenant_ldap_test(request):
     return Response({"ok": True})
 
 
+@extend_schema(
+    summary="Dry-run a login against the tenant directory and report outcome/trace",
+    tags=["ldap"],
+    request=inline_serializer(
+        name="TenantLDAPTestLoginRequest",
+        fields={
+            "username": serializers.CharField(),
+            "password": serializers.CharField(),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "Login outcome: {ok, error?, username?, email?, groups?, trace?}."
+        ),
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def tenant_ldap_test_login(request):
@@ -463,6 +567,23 @@ def tenant_ldap_test_login(request):
     })
 
 
+@extend_schema(
+    summary="Browse groups under the tenant directory group-search base",
+    tags=["ldap"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="q",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Optional case-insensitive CN substring filter.",
+        ),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="{groups: [{dn, cn}]} sorted by CN.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def tenant_ldap_groups(request):

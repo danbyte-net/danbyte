@@ -18,6 +18,13 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from django.conf import settings
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
+from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -709,6 +716,36 @@ def _store_uploaded_bundle(upload) -> None:
             out.write(chunk)
 
 
+@extend_schema(
+    summary="Start an upgrade to a release tag (users.manage only)",
+    tags=["system"],
+    request=inline_serializer(
+        name="SystemUpgradeRequest",
+        fields={"version": serializers.CharField(help_text="Release tag to upgrade to.")},
+    ),
+    responses={
+        200: inline_serializer(
+            name="SystemUpgradeResponse",
+            fields={
+                "launched": serializers.BooleanField(),
+                "version": serializers.CharField(),
+                "via": serializers.CharField(),
+            },
+        ),
+        400: OpenApiResponse(
+            response=OpenApiTypes.OBJECT, description="Missing or invalid version."
+        ),
+        403: OpenApiResponse(
+            response=OpenApiTypes.OBJECT, description="users.manage permission required."
+        ),
+        409: OpenApiResponse(
+            response=OpenApiTypes.OBJECT, description="An upgrade is already running."
+        ),
+        502: OpenApiResponse(
+            response=OpenApiTypes.OBJECT, description="Launch failed or is uncertain."
+        ),
+    },
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def system_upgrade(request):
@@ -739,6 +776,41 @@ def system_upgrade(request):
     return Response({"launched": True, "version": version, "via": how})
 
 
+@extend_schema(
+    summary="Upgrade from an uploaded offline bundle tarball (users.manage only)",
+    tags=["system"],
+    request=inline_serializer(
+        name="SystemUpgradeUploadRequest",
+        fields={
+            "bundle": serializers.FileField(
+                help_text="Offline bundle produced by the release build (.tar.gz/.tgz)."
+            )
+        },
+    ),
+    responses={
+        200: inline_serializer(
+            name="SystemUpgradeUploadResponse",
+            fields={
+                "launched": serializers.BooleanField(),
+                "via": serializers.CharField(),
+                "file": serializers.CharField(),
+            },
+        ),
+        400: OpenApiResponse(
+            response=OpenApiTypes.OBJECT, description="Missing or invalid bundle file."
+        ),
+        403: OpenApiResponse(
+            response=OpenApiTypes.OBJECT, description="users.manage permission required."
+        ),
+        409: OpenApiResponse(
+            response=OpenApiTypes.OBJECT, description="An upgrade is already running."
+        ),
+        500: OpenApiResponse(response=OpenApiTypes.OBJECT, description="Launch failed."),
+        502: OpenApiResponse(
+            response=OpenApiTypes.OBJECT, description="Launch is uncertain."
+        ),
+    },
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def system_upgrade_upload(request):
@@ -772,6 +844,20 @@ def system_upgrade_upload(request):
     return Response({"launched": True, "via": how, "file": f.name})
 
 
+@extend_schema(
+    summary="Read the current upgrade progress status (users.manage only)",
+    tags=["system"],
+    request=None,
+    responses={
+        200: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Upgrade status document (state, step, pct, version, error).",
+        ),
+        403: OpenApiResponse(
+            response=OpenApiTypes.OBJECT, description="users.manage permission required."
+        ),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def system_upgrade_status(request):
@@ -815,6 +901,27 @@ def _force_clear_upgrade_lock() -> None:
                 pass
 
 
+@extend_schema(
+    summary="Clear a stuck upgrade lock so a new upgrade can start (users.manage only)",
+    tags=["system"],
+    request=None,
+    responses={
+        200: inline_serializer(
+            name="SystemUpgradeCancelResponse",
+            fields={
+                "cleared": serializers.BooleanField(),
+                "had_lock": serializers.BooleanField(),
+            },
+        ),
+        403: OpenApiResponse(
+            response=OpenApiTypes.OBJECT, description="users.manage permission required."
+        ),
+        409: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="An upgrade process is genuinely still running.",
+        ),
+    },
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def system_upgrade_cancel(request):

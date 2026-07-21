@@ -6,6 +6,12 @@ supplies it), and the API token is never echoed back.
 """
 from __future__ import annotations
 
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -53,6 +59,32 @@ def _tenant_or_403(request):
     return tenant, None
 
 
+@extend_schema(
+    summary="Probe a NetBox instance for version and object counts",
+    tags=["integrations"],
+    request=inline_serializer(
+        name="NetBoxTestRequest",
+        fields={
+            "url": serializers.URLField(),
+            "token": serializers.CharField(),
+            "insecure": serializers.BooleanField(required=False, default=False),
+        },
+    ),
+    responses={
+        200: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Connection ok: NetBox version and per-type object counts.",
+        ),
+        400: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Missing URL/token or SSRF-refused URL.",
+        ),
+        502: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Connection to the NetBox instance failed.",
+        ),
+    },
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def netbox_test(request):
@@ -92,6 +124,35 @@ def netbox_test(request):
     })
 
 
+@extend_schema(
+    methods=["GET"],
+    summary="List recent NetBox import runs for the active tenant",
+    tags=["integrations"],
+    request=None,
+    responses={200: NetBoxImportRunSerializer(many=True)},
+)
+@extend_schema(
+    methods=["POST"],
+    summary="Launch a new NetBox import run",
+    tags=["integrations"],
+    request=inline_serializer(
+        name="NetBoxImportRequest",
+        fields={
+            "url": serializers.URLField(),
+            "token": serializers.CharField(),
+            "dry_run": serializers.BooleanField(required=False, default=True),
+            "update_existing": serializers.BooleanField(required=False, default=False),
+            "insecure": serializers.BooleanField(required=False, default=False),
+            "only": serializers.ListField(
+                child=serializers.CharField(), required=False
+            ),
+            "skip": serializers.ListField(
+                child=serializers.CharField(), required=False
+            ),
+        },
+    ),
+    responses={201: NetBoxImportRunSerializer},
+)
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def netbox_imports(request):
@@ -132,6 +193,17 @@ def netbox_imports(request):
     return Response(NetBoxImportRunSerializer(run).data, status=201)
 
 
+@extend_schema(
+    summary="Poll one NetBox import run's status, progress, and report",
+    tags=["integrations"],
+    request=None,
+    responses={
+        200: NetBoxImportRunSerializer,
+        404: OpenApiResponse(
+            response=OpenApiTypes.OBJECT, description="Run not found for this tenant."
+        ),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def netbox_import_detail(request, run_id):

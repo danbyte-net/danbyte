@@ -9,6 +9,8 @@ the map.
 """
 from __future__ import annotations
 
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -62,6 +64,20 @@ def effective_tiles() -> dict:
             "osm_default": True, "satellite": satellite}
 
 
+@extend_schema(
+    summary="Site map payload — tile config, placed sites, devices, and markers",
+    tags=["site-map"],
+    request=None,
+    responses={
+        200: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description=(
+                "Map bundle: effective tile-layer config plus RBAC-scoped "
+                "sites, devices, and free markers with coordinates and health."
+            ),
+        )
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def site_map(request):
@@ -233,6 +249,20 @@ def site_map(request):
     })
 
 
+@extend_schema(
+    summary="Derived site-to-site connection edges (circuits, tunnels, cables)",
+    tags=["site-map"],
+    request=None,
+    responses={
+        200: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description=(
+                "Connection edges between placed sites, derived from circuits, "
+                "tunnels, and cross-site cables; each independently RBAC-scoped."
+            ),
+        )
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def site_map_connections(request):
@@ -412,6 +442,21 @@ def _routes_by_cable(tenant) -> dict:
     return out
 
 
+@extend_schema(
+    summary="Cables drawable on the map, each resolved to two map points",
+    tags=["site-map"],
+    request=None,
+    responses={
+        200: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description=(
+                "Every cable with both endpoints resolvable to a coordinate "
+                "(device coords, else site coords), as a drawable segment; "
+                "RBAC: cable/view and both endpoint devices viewable."
+            ),
+        )
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def site_map_cables(request):

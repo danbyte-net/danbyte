@@ -58,6 +58,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Third-party
     "rest_framework",
+    "drf_spectacular",
+    "drf_spectacular_sidecar",  # local Swagger UI / ReDoc assets (airgapped-safe)
     "django_filters",
     "corsheaders",
     "django_rq",
@@ -247,6 +249,55 @@ REST_FRAMEWORK = {
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.SearchFilter",
     ],
+    # OpenAPI 3 schema generation (drf-spectacular) — powers /api/schema/ and the
+    # interactive reference at /api/docs/.
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+# ── OpenAPI / API reference (drf-spectacular) ────────────────────────────────
+# Assets are served from drf-spectacular-sidecar (bundled locally), so the
+# interactive docs work on airgapped installs with no CDN access.
+from danbyte import __version__  # noqa: E402 — version string for the schema
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Danbyte API",
+    "DESCRIPTION": (
+        "REST API for Danbyte — IPAM / DCIM and network operations. "
+        "Authenticate with a scoped **API token** (`Authorization: Token <key>`) "
+        "or, from a browser session, the logged-in session cookie. Every request "
+        "is scoped to your active tenant and enforced by RBAC."
+    ),
+    "VERSION": __version__,
+    "SERVE_INCLUDE_SCHEMA": False,  # don't advertise the raw schema endpoint in itself
+    # Default-closed, like the rest of the API: you must be logged in (or hold a
+    # token) to read the schema / open the docs.
+    "SERVE_PERMISSIONS": ["rest_framework.permissions.IsAuthenticated"],
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
+    # Group operations by domain object; endpoints are auto-tagged by their first
+    # path segment, and this orders/labels the common top-level groups.
+    "TAGS": [
+        {"name": "prefixes", "description": "IP prefixes and the subnet tree."},
+        {"name": "ips", "description": "Individual IP addresses and assignments."},
+        {"name": "ip-ranges", "description": "Contiguous IP ranges."},
+        {"name": "aggregates", "description": "RIR aggregates."},
+        {"name": "vrfs", "description": "VRFs and route targets."},
+        {"name": "vlans", "description": "VLANs and VLAN groups."},
+        {"name": "devices", "description": "Devices, roles, and types."},
+        {"name": "interfaces", "description": "Device interfaces and cabling."},
+        {"name": "racks", "description": "Racks and rack roles."},
+        {"name": "sites", "description": "Sites, regions, and locations."},
+        {"name": "circuits", "description": "Circuits, providers, and terminations."},
+        {"name": "tunnels", "description": "Tunnels, IPSec, and L2VPNs."},
+        {"name": "virtual-machines", "description": "VMs, clusters, and VM interfaces."},
+        {"name": "power-panels", "description": "Power panels and feeds."},
+        {"name": "monitoring", "description": "Checks, status, alerts, and SNMP."},
+        {"name": "tenants", "description": "Tenants and tenant groups."},
+    ],
+    # Keep operationIds and component names stable/readable.
+    "COMPONENT_SPLIT_REQUEST": True,
+    "SORT_OPERATIONS": True,
 }
 
 CORS_ALLOWED_ORIGINS = os.getenv(

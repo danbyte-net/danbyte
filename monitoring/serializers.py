@@ -8,6 +8,7 @@ is a clean 400, not a runtime ``unknown``.
 from __future__ import annotations
 
 from django.utils.text import slugify
+from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
 from api.models import IPAddress, Status, Prefix
@@ -35,6 +36,7 @@ from .models import (
 )
 
 
+@extend_schema_serializer(component_name="MonitoringIPMini")
 class IPMiniSerializer(serializers.ModelSerializer):
     class Meta:
         model = IPAddress

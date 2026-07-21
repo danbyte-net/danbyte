@@ -1,5 +1,7 @@
 Django>=5.2,<5.3
 djangorestframework>=3.15.2,<3.17
+drf-spectacular>=0.28            # OpenAPI 3 schema generation for the REST API
+drf-spectacular-sidecar         # bundles Swagger UI / ReDoc assets (offline / airgapped)
 django-filter>=24.3
 django-cors-headers>=4.4
 django-redis>=5.4

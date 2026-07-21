@@ -13,7 +13,14 @@ once the schema migrations are unblocked — drop in
 from __future__ import annotations
 
 from django.db.models import Q
-from rest_framework import permissions
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
+from rest_framework import permissions, serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
@@ -29,6 +36,36 @@ DEFAULT_LIMIT = 25
 MAX_LIMIT = 100
 
 
+@extend_schema(
+    summary="Global tenant-scoped search across entities, grouped by type",
+    tags=["search"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="q",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Search query (substring match across each entity's fields).",
+        ),
+        OpenApiParameter(
+            name="limit",
+            type=OpenApiTypes.INT,
+            location=OpenApiParameter.QUERY,
+            description=(
+                f"Max rows per entity group (default {DEFAULT_LIMIT}, "
+                f"capped at {MAX_LIMIT})."
+            ),
+        ),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "Results as `{q, total, groups}` where `groups` holds pre-shaped "
+            "rows (id, label, sublabel, extras, url) for prefixes, ips, vlans, "
+            "vrfs, route_targets, sites, tenants, devices, and tags."
+        ),
+    ),
+)
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def search(request):

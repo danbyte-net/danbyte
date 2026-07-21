@@ -8,6 +8,15 @@ from __future__ import annotations
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework import serializers
+
+from drf_spectacular.utils import (
+    extend_schema,
+    inline_serializer,
+    OpenApiParameter,
+    OpenApiResponse,
+)
+from drf_spectacular.types import OpenApiTypes
 
 import ipaddress as _ip
 
@@ -208,6 +217,15 @@ def _require(request, slug, action):
     return None
 
 
+@extend_schema(
+    summary="Run every effective check for one IP immediately",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="IP identity plus the freshly-run check outcomes.",
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def check_now_view(request, ip_id):
@@ -232,6 +250,16 @@ def check_now_view(request, ip_id):
     )
 
 
+@extend_schema(
+    summary="Effective checks for an IP with current state and sparkline",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Resolved checks for the IP, each joined with its CheckState "
+        "and a short latency/status sparkline.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def ip_checks_view(request, ip_id):
@@ -304,6 +332,35 @@ def ip_checks_view(request, ip_id):
     return Response({"ip_id": str(ip.id), "ip_address": ip.ip_address, "checks": checks})
 
 
+@extend_schema(
+    summary="Recent CheckResult rows for an IP",
+    tags=["monitoring"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="template",
+            type=OpenApiTypes.UUID,
+            location=OpenApiParameter.QUERY,
+            description="Filter to a single check template.",
+        ),
+        OpenApiParameter(
+            name="status",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Filter to a single result status.",
+        ),
+        OpenApiParameter(
+            name="limit",
+            type=OpenApiTypes.INT,
+            location=OpenApiParameter.QUERY,
+            description="Max rows to return (default 100, capped at 1000).",
+        ),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="A count and a list of serialized CheckResult rows.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def ip_history_view(request, ip_id):
@@ -333,6 +390,23 @@ def ip_history_view(request, ip_id):
     )
 
 
+@extend_schema(
+    summary="Time-weighted uptime / SLA for an IP over a window",
+    tags=["monitoring"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="days",
+            type=OpenApiTypes.INT,
+            location=OpenApiParameter.QUERY,
+            description="Window length in days (default 30, clamped 1-365).",
+        ),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Uptime / SLA summary for the IP over the window.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def ip_uptime_view(request, ip_id):
@@ -354,6 +428,16 @@ def ip_uptime_view(request, ip_id):
     return Response(ip_uptime(ip, days=days))
 
 
+@extend_schema(
+    summary="Prefix monitoring: assignments, child roll-up, and per-IP grid",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Prefix-level assignments, engine, a status roll-up across "
+        "child IPs, and a per-IP status grid.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def prefix_checks_view(request, prefix_id):
@@ -462,6 +546,16 @@ def prefix_checks_view(request, prefix_id):
     )
 
 
+@extend_schema(
+    summary="Device monitoring: roll-up and per-IP grid across its IPs",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="A status roll-up and per-IP status grid aggregated across "
+        "every IP assigned to the device.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def device_checks_view(request, device_id):
@@ -536,6 +630,16 @@ def device_checks_view(request, device_id):
     )
 
 
+@extend_schema(
+    summary="Discover responders on one prefix now",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="A synchronous sweep summary, a skip reason, or a queued/"
+        "queued-on-outpost acknowledgement with a run id.",
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def prefix_discover_view(request, prefix_id):
@@ -630,6 +734,22 @@ def prefix_discover_view(request, prefix_id):
     return Response(discover_prefix(prefix, msettings))
 
 
+@extend_schema(
+    summary="Discover responders across many selected prefixes at once",
+    tags=["monitoring"],
+    request=inline_serializer(
+        name="BulkDiscoverRequest",
+        fields={
+            "prefix_ids": serializers.ListField(
+                child=serializers.UUIDField(), required=False
+            ),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Queued acknowledgement with scan/shard counts and a run id.",
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def bulk_discover_view(request):
@@ -670,6 +790,15 @@ def bulk_discover_view(request):
     )
 
 
+@extend_schema(
+    summary="Live progress for a fanned-out discovery run",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Progress counters plus found/done/percent flags.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def discover_run_view(request, run_id):
@@ -701,6 +830,20 @@ def discover_run_view(request, run_id):
     return Response(prog)
 
 
+@extend_schema(
+    methods=["GET"],
+    summary="Get the active tenant's monitoring settings",
+    tags=["monitoring"],
+    request=None,
+    responses=MonitoringSettingsSerializer,
+)
+@extend_schema(
+    methods=["PUT", "PATCH"],
+    summary="Update the active tenant's monitoring settings",
+    tags=["monitoring"],
+    request=MonitoringSettingsSerializer,
+    responses=MonitoringSettingsSerializer,
+)
 @api_view(["GET", "PUT", "PATCH"])
 @permission_classes([IsAuthenticated])
 def settings_view(request):
@@ -738,6 +881,16 @@ def settings_view(request):
     return Response(ser.data)
 
 
+@extend_schema(
+    summary="Stale monitoring engines for the active tenant",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="A list of stale remote engines with last-seen and stalled-"
+        "check counts.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def engine_health_view(request):
@@ -774,6 +927,33 @@ def engine_health_view(request):
     return Response({"stale_engines": stale})
 
 
+@extend_schema(
+    methods=["GET"],
+    summary="Read the monitoring engine bound to a site/location/prefix",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The bound engine id (null means inherit).",
+    ),
+)
+@extend_schema(
+    methods=["PUT"],
+    summary="Set the monitoring engine bound to a site/location/prefix",
+    tags=["monitoring"],
+    request=inline_serializer(
+        name="EngineBindingRequest",
+        fields={
+            "engine_id": serializers.UUIDField(
+                required=False, allow_null=True
+            ),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The engine id now bound (null if cleared).",
+    ),
+)
 @api_view(["GET", "PUT"])
 @permission_classes([IsAuthenticated])
 def engine_binding_view(request, scope, object_id):
@@ -836,6 +1016,16 @@ def engine_binding_view(request, scope, object_id):
     return Response({"engine_id": str(engine.id) if engine else None})
 
 
+@extend_schema(
+    summary="Overall monitoring stats for the active tenant",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Status/kind breakdowns, totals, a result series, and recent "
+        "state transitions for the monitoring dashboard.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def stats_view(request):
@@ -912,6 +1102,25 @@ def _result_series(request, tenant, hours: int = 24) -> list[dict]:
     return sorted(buckets.values(), key=lambda x: x["t"])
 
 
+@extend_schema(
+    summary="Force an immediate check of many IPs and/or prefixes",
+    tags=["monitoring"],
+    request=inline_serializer(
+        name="BulkCheckNowRequest",
+        fields={
+            "ip_ids": serializers.ListField(
+                child=serializers.UUIDField(), required=False
+            ),
+            "prefix_ids": serializers.ListField(
+                child=serializers.UUIDField(), required=False
+            ),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Counts of targets/checks armed, jobs dispatched, and a run id.",
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def bulk_check_now_view(request):
@@ -1003,6 +1212,15 @@ def _seed_check_run(ids: list[str], tenant, owner):
     return run_id
 
 
+@extend_schema(
+    summary="Live progress for a bulk Check-now run",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Pending/done counts and a percent for the polled run.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def check_run_view(request, run_id):
@@ -1049,6 +1267,47 @@ def check_run_view(request, run_id):
     )
 
 
+@extend_schema(
+    summary="Alerts for the active tenant with severity/status counts",
+    tags=["monitoring"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="status",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="firing (default) or resolved.",
+        ),
+        OpenApiParameter(
+            name="severity",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Filter by severity (critical/warning/info).",
+        ),
+        OpenApiParameter(
+            name="ack",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="acknowledged or unacknowledged.",
+        ),
+        OpenApiParameter(
+            name="q",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Free-text search over IP, description, or rule name.",
+        ),
+        OpenApiParameter(
+            name="site",
+            type=OpenApiTypes.UUID,
+            location=OpenApiParameter.QUERY,
+            description="Filter to alerts on IPs at this site.",
+        ),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Severity/status counts plus the filtered, serialized alerts.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def alerts_view(request):
@@ -1139,6 +1398,15 @@ def _annotate_silenced(tenant, alerts):
             break
 
 
+@extend_schema(
+    summary="IPs flapping a lot for the active tenant",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="A list of the tenant's most-flapping IPs.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def flapping_view(request):
@@ -1156,6 +1424,25 @@ def flapping_view(request):
     return Response({"results": flapping_ips(tenant, viewable_ips=viewable)})
 
 
+@extend_schema(
+    summary="Acknowledge or unacknowledge a firing alert",
+    tags=["monitoring"],
+    request=inline_serializer(
+        name="AlertAckRequest",
+        fields={
+            "note": serializers.CharField(required=False, allow_blank=True),
+        },
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="action",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Pass 'unack' to clear the acknowledgement.",
+        ),
+    ],
+    responses=AlertSerializer,
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def alert_ack_view(request, alert_id):
@@ -1188,6 +1475,53 @@ def alert_ack_view(request, alert_id):
     return Response(AlertSerializer(alert).data)
 
 
+@extend_schema(
+    summary="Global paged list of every monitored check (CheckState)",
+    tags=["monitoring"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="status",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Filter by status ('all' or omit for no filter).",
+        ),
+        OpenApiParameter(
+            name="kind",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Filter by check kind.",
+        ),
+        OpenApiParameter(
+            name="search",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Search over IP address or template name.",
+        ),
+        OpenApiParameter(
+            name="ordering",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Sort key (e.g. -last_checked, ip, status, latency).",
+        ),
+        OpenApiParameter(
+            name="page",
+            type=OpenApiTypes.INT,
+            location=OpenApiParameter.QUERY,
+            description="1-based page number.",
+        ),
+        OpenApiParameter(
+            name="page_size",
+            type=OpenApiTypes.INT,
+            location=OpenApiParameter.QUERY,
+            description="Rows per page (default 50, capped at 200).",
+        ),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Paged check rows plus per-status counts for filter tabs.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def checks_list_view(request):
@@ -1277,6 +1611,59 @@ def checks_list_view(request):
     )
 
 
+@extend_schema(
+    methods=["GET"],
+    summary="Roll-up status for many IPs/prefixes/devices (query-param form)",
+    tags=["monitoring"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="ips",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Comma-separated IP ids to roll up.",
+        ),
+        OpenApiParameter(
+            name="prefixes",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Comma-separated prefix ids to roll up (max 500).",
+        ),
+        OpenApiParameter(
+            name="devices",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Comma-separated device ids to roll up.",
+        ),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Per-target roll-up status keyed by object id.",
+    ),
+)
+@extend_schema(
+    methods=["POST"],
+    summary="Roll-up status for many IPs/prefixes/devices (body form)",
+    tags=["monitoring"],
+    request=inline_serializer(
+        name="BulkStatusRequest",
+        fields={
+            "ips": serializers.ListField(
+                child=serializers.UUIDField(), required=False
+            ),
+            "prefixes": serializers.ListField(
+                child=serializers.UUIDField(), required=False
+            ),
+            "devices": serializers.ListField(
+                child=serializers.UUIDField(), required=False
+            ),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Per-target roll-up status keyed by object id.",
+    ),
+)
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def bulk_status_view(request):
@@ -1429,6 +1816,12 @@ def _empty_snmp(device):
     }
 
 
+@extend_schema(
+    summary="The device's last observed SNMP facts (read-only)",
+    tags=["monitoring"],
+    request=None,
+    responses=DeviceSnmpSerializer,
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def device_snmp_view(request, device_id):
@@ -1448,6 +1841,17 @@ def device_snmp_view(request, device_id):
     return Response(DeviceSnmpSerializer(state).data)
 
 
+@extend_schema(
+    summary="On-demand SNMP poll of a device's system facts",
+    tags=["monitoring"],
+    request=inline_serializer(
+        name="DeviceSnmpPollRequest",
+        fields={
+            "profile_id": serializers.UUIDField(required=False, allow_null=True),
+        },
+    ),
+    responses=DeviceSnmpSerializer,
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def device_snmp_poll_view(request, device_id):
@@ -1481,6 +1885,15 @@ def device_snmp_poll_view(request, device_id):
     return Response(DeviceSnmpSerializer(state).data)
 
 
+@extend_schema(
+    summary="Per-interface utilisation series from stored counter samples",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Per-interface utilisation series for the device.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def device_snmp_utilization_view(request, device_id):
@@ -1492,6 +1905,15 @@ def device_snmp_utilization_view(request, device_id):
     return Response({"interfaces": compute_device_utilization(device)})
 
 
+@extend_schema(
+    summary="Read-only drift: observed SNMP state vs source of truth",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="A list of drift items for the device.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def device_snmp_drift_view(request, device_id):
@@ -1507,6 +1929,23 @@ def device_snmp_drift_view(request, device_id):
 _DRIFT_KINDS = ("device_field", "interface_missing", "interface_mismatch", "interface_stale")
 
 
+@extend_schema(
+    summary="Tenant-wide SNMP drift summary, one row per polled device",
+    tags=["monitoring"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="status",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Filter rows by drift|in_sync|unreachable.",
+        ),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="A count and per-device drift summary rows.",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def snmp_drift_list_view(request):
@@ -1612,6 +2051,29 @@ def snmp_drift_list_view(request):
     return Response({"count": len(rows), "results": rows})
 
 
+@extend_schema(
+    summary="LLDP-derived ghost edges (adjacencies with no cable)",
+    tags=["monitoring"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="device",
+            type=OpenApiTypes.UUID,
+            location=OpenApiParameter.QUERY,
+            description="Return a full mini-graph for one device.",
+        ),
+        OpenApiParameter(
+            name="site",
+            type=OpenApiTypes.UUID,
+            location=OpenApiParameter.QUERY,
+            description="Narrow the tenant-wide device set to one site.",
+        ),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Ghost edges (and nodes for the device-scoped form).",
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def snmp_topology_ghosts_view(request):
@@ -1650,6 +2112,24 @@ def snmp_topology_ghosts_view(request):
     return Response({"edges": ghost_edges(tenant, list(devices))})
 
 
+@extend_schema(
+    summary="Turn an LLDP ghost link into a real Cable",
+    tags=["monitoring"],
+    request=inline_serializer(
+        name="MaterializeCableRequest",
+        fields={
+            "source_device": serializers.UUIDField(),
+            "local_port": serializers.CharField(),
+            "remote_device": serializers.UUIDField(),
+            "remote_port": serializers.CharField(),
+            "type": serializers.CharField(required=False, allow_blank=True),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The id of the newly created cable.",
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def materialize_cable_view(request):
@@ -1720,6 +2200,20 @@ def materialize_cable_view(request):
     return Response({"cable_id": str(cable.id)}, status=201)
 
 
+@extend_schema(
+    summary="Accept one drift item, writing the observed value into intent",
+    tags=["monitoring"],
+    request=inline_serializer(
+        name="DeviceSnmpReconcileRequest",
+        fields={
+            "action": serializers.DictField(required=False),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The remaining drift after applying the change.",
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def device_snmp_reconcile_view(request, device_id):
@@ -1742,6 +2236,15 @@ def device_snmp_reconcile_view(request, device_id):
     return Response({"drift": compute_device_drift(device, tenant)})
 
 
+@extend_schema(
+    summary="Sync a device from SNMP: create interfaces, fix drift, assign IPs",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="A summary of the sync plus the remaining drift.",
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def device_snmp_sync_view(request, device_id):
@@ -1830,6 +2333,42 @@ def _can_access_binding_target(user, tenant, scope, target, action) -> bool:
     return _device_grant_covers_site(user, tenant, action, None)
 
 
+@extend_schema(
+    methods=["GET"],
+    summary="Get the SNMP profile bound at one hierarchy level",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The bound profile plus, for devices, the resolved effective "
+        "profile.",
+    ),
+)
+@extend_schema(
+    methods=["PUT"],
+    summary="Set the SNMP profile bound at one hierarchy level",
+    tags=["monitoring"],
+    request=inline_serializer(
+        name="SnmpBindingRequest",
+        fields={
+            "profile_id": serializers.UUIDField(required=False, allow_null=True),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The binding payload after the update.",
+    ),
+)
+@extend_schema(
+    methods=["DELETE"],
+    summary="Clear the SNMP profile bound at one hierarchy level",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The binding payload after clearing.",
+    ),
+)
 @api_view(["GET", "PUT", "DELETE"])
 @permission_classes([IsAuthenticated])
 def snmp_binding_view(request, scope, object_id):

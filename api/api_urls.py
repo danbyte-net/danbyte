@@ -7,6 +7,12 @@ just register a viewset on the router.
 from __future__ import annotations
 
 from django.urls import include, path
+from django.views.generic import RedirectView
+from drf_spectacular.views import (
+    SpectacularAPIView,
+    SpectacularRedocView,
+    SpectacularSwaggerView,
+)
 from rest_framework.routers import DefaultRouter
 
 from auth_api import column_prefs
@@ -295,6 +301,13 @@ router.register(r"ldap-group-mappings", LDAPGroupMappingViewSet, basename="ldap-
 router.register(r"tenant-ldap-group-mappings", TenantLDAPGroupMappingViewSet, basename="tenant-ldap-group-mapping")
 
 urlpatterns = [
+    # OpenAPI schema + interactive reference. /api/ lands on the docs so hitting
+    # the API root gives the object-grouped reference, not the raw router index.
+    path("schema/", SpectacularAPIView.as_view(), name="schema"),
+    path("docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
+    path("docs/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
+    path("", RedirectView.as_view(pattern_name="docs", permanent=False), name="api-root"),
+
     path("dashboard/", dashboard_view, name="dashboard"),
     path("site-map/", site_map, name="site-map"),
     path("site-map/connections/", site_map_connections, name="site-map-connections"),

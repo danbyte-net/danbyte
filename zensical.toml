@@ -116,6 +116,7 @@ nav = [
     ] },
   ] },
   { "Reference" = [
+    { "REST API & OpenAPI" = "reference/api.md" },
     { "URL routes"        = "reference/url-routes.md" },
     { "Settings"          = "reference/settings.md" },
     { "Makefile"          = "reference/makefile.md" },
