@@ -100,6 +100,7 @@ nav = [
     { "Data model"        = "architecture/data-model.md" },
     { "Isolation: Tenant + VRF" = "architecture/tenant-vrf.md" },
     { "Tenant settings & overrides" = "architecture/tenant-settings.md" },
+    { "Plugins" = "architecture/plugins.md" },
     { "shadcn / design tokens" = "architecture/shadcn-tokens.md" },
   ] },
   { "Data models" = [

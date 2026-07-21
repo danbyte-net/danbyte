@@ -64,6 +64,19 @@ active content lands on the media origin. `me_json` returns `favicon_url`
 (`__root.tsx`), the same pattern that brands the tab title from
 `deployment_name`.
 
+## Plugins & service control
+
+Plugins follow the same tiering. A plugin is **installed** deployment-wide (a
+package in `PLUGINS`, applied on restart), then **enabled/disabled** per scope:
+`plugins.PluginConfig` holds a row per `(tenant, plugin)` — a NULL-tenant row is
+the deployment default — and `plugins.resolve.plugin_enabled()` resolves the
+cascade (tenant row → deployment default → the plugin's `default_enabled`).
+Tenant admins toggle their tenant (`PATCH /api/plugins/<slug>/config/` scope
+`tenant`, `can_manage_admin`); the deployment default is `can_manage_deployment`.
+**Service control** (restart units, apply plugin migrations) is stricter still —
+**superuser only**, since it restarts production processes. See
+[Plugins](plugins.md).
+
 ## Two admin tiers
 
 | Tier | Gate | Surfaces |
