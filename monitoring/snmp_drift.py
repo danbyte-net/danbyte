@@ -182,6 +182,57 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
                 "kind": "interface_stale", "interface_id": str(i.id), "name": i.name,
             })
 
+    # 4. Switch-link suggestions — join this device's ARP (IP↔MAC) with its FDB
+    #    (MAC↔switch port) to propose which access port each already-known IP
+    #    sits behind. Only fires on bridging devices (empty fdb → nothing) and
+    #    only for IPs Danbyte already tracks (SoT: suggest, never invent).
+    arp = state.arp or []
+    fdb = state.fdb or []
+    if arp and fdb:
+        mac_to_ip: dict[str, str] = {}
+        for a in arp:
+            m = _norm_mac(a.get("mac", ""))
+            if m and a.get("ip"):
+                mac_to_ip.setdefault(m, a["ip"])
+        ifindex_to_name = {
+            str(o.get("if_index")): o.get("name")
+            for o in observed if o.get("if_index")
+        }
+        ip_to_ifindex: dict[str, str] = {}
+        for f in fdb:
+            m = _norm_mac(f.get("mac", ""))
+            idx = str(f.get("if_index") or "")
+            ip = mac_to_ip.get(m)
+            if ip and idx:
+                ip_to_ifindex.setdefault(ip, idx)
+        if ip_to_ifindex:
+            rows = {
+                r.ip_address: r
+                for r in IPAddress.objects.filter(
+                    tenant=tenant, ip_address__in=list(ip_to_ifindex)
+                ).select_related("switch", "switch_interface")
+            }
+            for ip, idx in ip_to_ifindex.items():
+                row = rows.get(ip)
+                if row is None:
+                    continue
+                iface = int_by_name.get(_norm(ifindex_to_name.get(idx) or ""))
+                if iface is None:
+                    continue
+                if row.switch_id == device.id and row.switch_interface_id == iface.id:
+                    continue  # already linked to this exact port
+                cur = (
+                    f"{row.switch.name} · {row.switch_interface.name}"
+                    if row.switch_id and row.switch_interface_id else "—"
+                )
+                items.append({
+                    "kind": "switch_link_suggested",
+                    "ip_id": str(row.id), "ip": ip,
+                    "interface_id": str(iface.id), "name": iface.name,
+                    "intended": cur,
+                    "observed": f"{device.name} · {iface.name}",
+                })
+
     return items
 
 
@@ -249,6 +300,18 @@ def apply_drift_action(device, tenant, action: dict) -> bool:
         # (add the prefix first). assigned/created both succeed.
         return _attach_observed_ip(tenant, iface, ip) != "skipped"
 
+    if kind == "switch_link_suggested":
+        row = IPAddress.objects.filter(tenant=tenant, pk=action.get("ip_id")).first()
+        iface = Interface.objects.filter(
+            pk=action.get("interface_id"), device=device
+        ).first()
+        if row is None or iface is None:
+            return False
+        row.switch = device
+        row.switch_interface = iface
+        row.save(update_fields=["switch", "switch_interface", "updated_at"])
+        return True
+
     return False
 
 
@@ -258,7 +321,8 @@ def sync_device_from_snmp(device, tenant) -> dict:
     a containing prefix exists). Leaves the device name alone. Returns a summary.
     """
     summary = {"interfaces_created": 0, "interfaces_updated": 0,
-               "ips_assigned": 0, "ips_skipped": 0, "vlans_assigned": 0}
+               "ips_assigned": 0, "ips_skipped": 0, "vlans_assigned": 0,
+               "switch_links": 0}
     state = DeviceSnmp.objects.filter(device=device, tenant=tenant).first()
     if state is None or not state.polled_at:
         return summary
@@ -326,6 +390,13 @@ def sync_device_from_snmp(device, tenant) -> dict:
             else:
                 summary["ips_assigned"] += 1
                 device_ips.add(ip)
+
+    # Accept all switch-link suggestions (IP ↔ this switch's port).
+    for item in compute_device_drift(device, tenant, state=state):
+        if item.get("kind") == "switch_link_suggested" and apply_drift_action(
+            device, tenant, item
+        ):
+            summary["switch_links"] += 1
     return summary
 
 

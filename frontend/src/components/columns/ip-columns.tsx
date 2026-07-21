@@ -33,6 +33,8 @@ export type IpColumnId =
   | "role"
   | "dns"
   | "assigned"
+  | "switch"
+  | "switch_interface"
   | "description"
   | "tags"
   | "updated"
@@ -43,6 +45,8 @@ const CANONICAL_ORDER: IpColumnId[] = [
   "role",
   "dns",
   "assigned",
+  "switch",
+  "switch_interface",
   "description",
   "tags",
   "updated",
@@ -220,6 +224,40 @@ export function buildIpColumns<T = IPAddress>(
         if (ip?.assigned_vm)
           return <span className="text-xs">{ip.assigned_vm.name}</span>
         return dash
+      },
+    }),
+    switch: () => ({
+      id: "switch",
+      accessorFn: (r) => getIp(r)?.switch?.name ?? "",
+      header: "Switch",
+      cell: ({ row }) => {
+        const sw = getIp(row.original)?.switch
+        return sw ? <DeviceCell device={sw} className="text-xs" /> : dash
+      },
+    }),
+    switch_interface: () => ({
+      id: "switch_interface",
+      accessorFn: (r) => getIp(r)?.switch_interface?.name ?? "",
+      header: "Switch port",
+      cell: ({ row }) => {
+        const si = getIp(row.original)?.switch_interface
+        if (!si) return dash
+        return (
+          <span className="flex items-center gap-1.5 text-xs">
+            <Link
+              to="/interfaces/$id"
+              params={{ id: si.id }}
+              className="font-mono hover:underline"
+            >
+              {si.name}
+            </Link>
+            {si.virtual_chassis && (
+              <span className="text-muted-foreground">
+                · {si.virtual_chassis.name}
+              </span>
+            )}
+          </span>
+        )
       },
     }),
     description: () => ({

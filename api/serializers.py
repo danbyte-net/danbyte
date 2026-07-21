@@ -965,6 +965,8 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
     role = IPRoleMiniSerializer(read_only=True)
     assigned_device = DeviceMiniSerializer(read_only=True)
     assigned_interface = serializers.SerializerMethodField()
+    switch = DeviceMiniSerializer(read_only=True)
+    switch_interface = serializers.SerializerMethodField()
     prefix = PrefixMiniSerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)
     is_primary_for_device = serializers.SerializerMethodField()
@@ -986,6 +988,14 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
     )
     assigned_interface_id = TenantScopedPrimaryKeyRelatedField(
         source="assigned_interface", queryset=Interface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    switch_id = TenantScopedPrimaryKeyRelatedField(
+        source="switch", queryset=Device.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    switch_interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="switch_interface", queryset=Interface.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
     assigned_vm = serializers.SerializerMethodField()
@@ -1053,6 +1063,21 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
             "device": {"id": str(i.device_id), "name": i.device.name},
         }
 
+    def get_switch_interface(self, obj):
+        i = obj.switch_interface
+        if i is None:
+            return None
+        dev = i.device
+        vc = getattr(dev, "virtual_chassis", None)
+        return {
+            "id": str(i.id),
+            "name": i.name,
+            "device": {"id": str(i.device_id), "name": dev.name},
+            "virtual_chassis": (
+                {"id": str(vc.id), "name": vc.name} if vc else None
+            ),
+        }
+
     def get_assigned_vm(self, obj):
         vm = obj.assigned_vm
         if vm is None:
@@ -1084,6 +1109,8 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
             "role", "role_id",
             "assigned_device", "assigned_device_id",
             "assigned_interface", "assigned_interface_id",
+            "switch", "switch_id",
+            "switch_interface", "switch_interface_id",
             "assigned_vm", "assigned_vm_id",
             "assigned_vm_interface", "assigned_vm_interface_id",
             "mac_address",

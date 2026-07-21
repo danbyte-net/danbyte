@@ -1421,6 +1421,11 @@ class DeviceSnmp(TimestampedModel):
         default=list, blank=True,
         help_text="ARP table: [{ip, mac, if_index}] from ipNetToMediaTable.",
     )
+    fdb = models.JSONField(
+        default=list, blank=True,
+        help_text="MAC-address table: [{mac, if_index}] from the bridge "
+        "forwarding table (dot1dTpFdbPort + dot1dBasePortIfIndex).",
+    )
     reachable = models.BooleanField(null=True, blank=True)
     error = models.TextField(blank=True, default="")
     polled_at = models.DateTimeField(null=True, blank=True)

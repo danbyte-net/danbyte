@@ -50,3 +50,25 @@ page has a dedicated **IP addresses** section with the same two buttons.
 !!! tip "The other direction still works"
     You can also start from the IP itself: open or create an IP, and set its
     **device** and **interface** on the IP form. All roads lead to the same place.
+
+## Switch / switch-port link (L2 edge)
+
+Separately from the interface an IP is *configured on* (above), you can record
+which **access switch** and **physical port** a host is reached *through* — the
+L2 edge. Two columns, **Switch** and **Switch port**, appear on the IP table,
+and the IP form has a **Switch** device picker with a dependent **Switch port**
+dropdown (pick the switch — or a stack member — then its port). Setting the port
+keeps the switch in sync with the port's device; a virtual chassis is shown
+alongside the port when the device is a stack member. Set it manually, or via the
+API (`switch_id` / `switch_interface_id` on `/api/ips/`).
+
+### Discovering it from SNMP (accept manually)
+
+Danbyte can *suggest* the switch/port from a switch's SNMP data — it never writes
+it automatically (Danbyte is your source of truth). Polling a switch collects
+its **ARP table** (IP → MAC) and its **MAC-address / bridge-forwarding table**
+(MAC → port); joining them yields *"IP 10.0.0.5 is behind SW1 · Gi0/1"*. These
+appear as **switch link** suggestions in the switch device's **SNMP drift**
+inbox (Device → SNMP), where you **Accept** each one (or **Sync all**) exactly
+like other discovered facts. Accepting sets the IP's Switch + Switch port. This
+runs through the normal SNMP path, so it works both locally and via Outposts.

@@ -320,6 +320,9 @@ _LLDP_REM_PORT_DESC = "1.0.8802.1.1.2.1.4.1.1.8"
 _LLDP_REM_PORT_ID = "1.0.8802.1.1.2.1.4.1.1.7"
 # ipNetToMediaPhysAddress, indexed by ifIndex.a.b.c.d
 _ARP_PHYS = "1.3.6.1.2.1.4.22.1.2"
+# BRIDGE-MIB forwarding table: dot1dTpFdbPort (index = the 6 MAC octets) →
+# bridge port number; dot1dBasePortIfIndex maps that bridge port → ifIndex.
+_DOT1D_TP_FDB_PORT = "1.3.6.1.2.1.17.4.3.1.2"
 
 
 def parse_lldp(loc_ports: dict, rem_sysname: dict, rem_port_desc: dict,
@@ -352,6 +355,27 @@ def parse_arp(phys: dict) -> list[dict]:
                 "ip": ".".join(parts[1:5]),
                 "mac": _fmt_mac(mac),
             })
+    return out
+
+
+def parse_fdb(fdb_port: dict, base_port_ifindex: dict) -> list[dict]:
+    """Pure MAC-address-table parse: dot1dTpFdbPort (index = the 6 decimal MAC
+    octets → bridge port) joined with dot1dBasePortIfIndex (bridge port →
+    ifIndex) → ``[{mac, if_index}]``. The bridge port is resolved to an ifIndex
+    so it joins to interfaces exactly like ARP/ifTable entries."""
+    out = []
+    for index, port in fdb_port.items():
+        octets = index.split(".")
+        if len(octets) != 6:
+            continue
+        try:
+            mac = ":".join(f"{int(o):02x}" for o in octets)
+        except ValueError:
+            continue
+        if_index = base_port_ifindex.get(str(port).strip(), "")
+        if not if_index:
+            continue  # a bridge port with no ifIndex isn't a usable switch port
+        out.append({"mac": mac, "if_index": if_index})
     return out
 
 
@@ -401,9 +425,12 @@ async def fetch_topology(
     pdesc = await _walk_column(mod, engine, auth, transport, _LLDP_REM_PORT_DESC)
     pid = await _walk_column(mod, engine, auth, transport, _LLDP_REM_PORT_ID)
     phys = await _walk_column(mod, engine, auth, transport, _ARP_PHYS)
+    fdb_port = await _walk_column(mod, engine, auth, transport, _DOT1D_TP_FDB_PORT)
+    base_port = await _walk_column(mod, engine, auth, transport, _DOT1D_BASE_PORT_IFINDEX)
     return {
         "neighbors": parse_lldp(loc, sysn, pdesc, pid),
         "arp": parse_arp(phys),
+        "fdb": parse_fdb(fdb_port, base_port),
     }
 
 
@@ -424,7 +451,7 @@ def fetch_snmp(target, version, params, secret_params, timeout_ms) -> dict:
     """
     args = (target, version, params or {}, secret_params or {}, timeout_ms)
     out = {
-        "data": {}, "interfaces": [], "neighbors": [], "arp": [],
+        "data": {}, "interfaces": [], "neighbors": [], "arp": [], "fdb": [],
         "reachable": False, "error": "",
     }
     try:
@@ -438,6 +465,7 @@ def fetch_snmp(target, version, params, secret_params, timeout_ms) -> dict:
             topo = fetch_topology_sync(*args)
             out["neighbors"] = topo.get("neighbors", [])
             out["arp"] = topo.get("arp", [])
+            out["fdb"] = topo.get("fdb", [])
         except SnmpFactsError:
             pass
     except SnmpFactsError as exc:

@@ -81,6 +81,13 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   const [interfaceId, setInterfaceId] = useState<string | null>(
     ip?.assigned_interface?.id ?? initial?.interfaceId ?? null
   )
+  // L2 edge: the access switch + port this IP is reached through.
+  const [switchId, setSwitchId] = useState<string | null>(
+    ip?.switch?.id ?? null
+  )
+  const [switchInterfaceId, setSwitchInterfaceId] = useState<string | null>(
+    ip?.switch_interface?.id ?? null
+  )
   // Every IP must live in a prefix (non-null FK), and the prefix is what carries
   // VRF + site — so on create the user picks a subnet, optionally narrowed by
   // site/VRF. Seeded from a prefix-page launch (`initial.prefixId`) or a clone.
@@ -195,6 +202,13 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
     enabled: !!deviceId,
     staleTime: 60_000,
   })
+  const switchInterfaces = useQuery({
+    queryKey: ["interfaces-picker", switchId],
+    queryFn: () =>
+      api<Paginated<InterfaceOption>>(`/api/interfaces/?device=${switchId}`),
+    enabled: !!switchId,
+    staleTime: 60_000,
+  })
   const tags = useQuery({
     queryKey: ["tags-picker"],
     queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
@@ -216,6 +230,8 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
         role_id: roleId,
         assigned_device_id: deviceId,
         assigned_interface_id: deviceId ? interfaceId : null,
+        switch_id: switchId,
+        switch_interface_id: switchId ? switchInterfaceId : null,
         mac_address: mac.trim(),
         dns_name: dnsName.trim(),
         description: description.trim(),
@@ -441,6 +457,40 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
             <SelectContent>
               <SelectItem value={NONE}>— none —</SelectItem>
               {interfaces.data?.results.map((i) => (
+                <SelectItem key={i.id} value={i.id}>
+                  {i.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <DevicePicker
+          label="Switch"
+          value={switchId}
+          onChange={(next) => {
+            setSwitchId(next)
+            setSwitchInterfaceId(null)
+          }}
+          noneLabel="No switch"
+          placeholder="No switch"
+        />
+        <Field label="Switch port">
+          <Select
+            value={switchInterfaceId ?? NONE}
+            onValueChange={(v) => setSwitchInterfaceId(v === NONE ? null : v)}
+            disabled={!switchId}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue
+                placeholder={switchId ? "Pick port" : "Pick switch first"}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>— none —</SelectItem>
+              {switchInterfaces.data?.results.map((i) => (
                 <SelectItem key={i.id} value={i.id}>
                   {i.name}
                 </SelectItem>

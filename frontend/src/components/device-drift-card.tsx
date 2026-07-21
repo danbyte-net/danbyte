@@ -223,6 +223,8 @@ function driftKey(item: SnmpDriftItem): string {
       return `interface_stale:${item.interface_id}`
     case "ip_missing":
       return `ip_missing:${item.interface_id}:${item.ip}`
+    case "switch_link_suggested":
+      return `switch_link:${item.ip_id}:${item.interface_id}`
   }
 }
 
@@ -277,6 +279,19 @@ function DriftDescription({ item }: { item: SnmpDriftItem }) {
         <span className="font-mono">{item.ip}</span>
         <span className="text-muted-foreground">on</span>
         <span className="font-mono">{item.name}</span>
+      </span>
+    )
+  }
+  if (item.kind === "switch_link_suggested") {
+    return (
+      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <Badge variant="secondary">switch link</Badge>
+        <span className="font-mono">{item.ip}</span>
+        <span className="font-mono line-through opacity-60">
+          {item.intended}
+        </span>
+        <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+        <span className="font-mono">{item.observed}</span>
       </span>
     )
   }

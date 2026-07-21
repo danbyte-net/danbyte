@@ -1623,6 +1623,27 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         null=True, blank=True,
         help_text="Specific VM interface this IP is bound to.",
     )
+    # ─── L2 edge (access switch/port this IP is reached THROUGH) ──────────
+    # Distinct from assigned_device/interface (the IP's own L3 host port). This
+    # records which access switch + physical port the host sits behind — set
+    # manually, via API, or accepted from an SNMP ARP+MAC-table suggestion.
+    switch = models.ForeignKey(
+        "Device",
+        on_delete=models.SET_NULL,
+        related_name="+",
+        null=True, blank=True,
+        help_text=("Access switch this IP is reached through (the device that "
+                   "owns the switch port). Its virtual chassis, if any, is "
+                   "derived from the device."),
+    )
+    switch_interface = models.ForeignKey(
+        "Interface",
+        on_delete=models.SET_NULL,
+        related_name="+",
+        null=True, blank=True,
+        help_text=("Physical switch port this IP is behind. Setting it keeps "
+                   "`switch` in sync with the port's device."),
+    )
     mac_address = models.CharField(
         max_length=17, blank=True,
         help_text=("Hardware address paired with this IP — e.g. a DHCP "
@@ -1671,6 +1692,9 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         # Binding to an interface implies its device.
         if self.assigned_interface_id:
             self.assigned_device_id = self.assigned_interface.device_id
+        # A switch port implies the switch (the port's device).
+        if self.switch_interface_id:
+            self.switch_id = self.switch_interface.device_id
         # Auto-assign site from the prefix when the prefix opts in and the IP
         # doesn't already carry an explicit site.
         if (

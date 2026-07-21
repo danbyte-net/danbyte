@@ -35,6 +35,7 @@ def persist_snmp_result(device, tenant, profile, result) -> DeviceSnmp:
     state.interfaces = result.get("interfaces") or []
     state.neighbors = result.get("neighbors") or []
     state.arp = result.get("arp") or []
+    state.fdb = result.get("fdb") or []
     state.reachable = bool(result.get("reachable"))
     state.error = (result.get("error") or "")[:500]
     state.polled_at = timezone.now()

@@ -691,6 +691,15 @@ export interface IPAddress {
     name: string
     vm: { id: string; name: string }
   } | null
+  /** L2 edge: the access switch + physical port this IP is reached through
+   * (distinct from assigned_interface, which is the IP's own L3 port). */
+  switch?: DeviceMini | null
+  switch_interface?: {
+    id: string
+    name: string
+    device: { id: string; name: string }
+    virtual_chassis: { id: string; name: string } | null
+  } | null
   mac_address: string
   dns_name: string
   last_seen: string | null
@@ -1997,6 +2006,8 @@ export interface IPWritePayload {
   role_id?: string | null
   assigned_device_id?: string | null
   assigned_interface_id?: string | null
+  switch_id?: string | null
+  switch_interface_id?: string | null
   mac_address?: string
   dns_name?: string
   description?: string
@@ -3883,6 +3894,15 @@ export type SnmpDriftItem =
       observed: string
       has_prefix: boolean
       suggested_prefix: string
+    }
+  | {
+      kind: "switch_link_suggested"
+      ip_id: string
+      ip: string
+      interface_id: string
+      name: string
+      intended: string
+      observed: string
     }
 
 export interface SnmpNeighbor {
