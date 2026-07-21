@@ -335,6 +335,8 @@ urlpatterns = [
     path("outpost/", include("monitoring.outpost_urls")),
     # Background job queue admin (RQ introspection) — gated on jobs.manage.
     path("jobs/", include("jobs.api_urls")),
+    # Plugin framework: installed-plugin inventory + each plugin's own API.
+    path("plugins/", include("plugins.api_urls")),
     # Identity + per-table column preferences for the React frontend. The
     # auth_api HTML urlconf isn't mounted (archived), so these JSON views are
     # surfaced here under /api/ where the SPA can reach them.

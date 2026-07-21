@@ -74,6 +74,31 @@ INSTALLED_APPS = [
     "monitoring.apps.MonitoringConfig",
 ]
 
+# ─── Plugins ─────────────────────────────────────────────────────────────────
+# NetBox-style trusted plugins: a comma-separated list of importable plugin
+# packages, applied on restart. Each is discovered + version-gated at import
+# time here (before Django builds the app registry) and appended to
+# INSTALLED_APPS; a broken/incompatible one is skipped and reported via
+# /api/plugins/ rather than aborting boot. PLUGINS_CONFIG holds per-plugin
+# settings overrides (keyed by plugin slug), NetBox-style.
+PLUGINS = [p for p in os.getenv("PLUGINS", "").split(",") if p.strip()]
+PLUGINS_CONFIG: dict = {}
+
+if PLUGINS:
+    from danbyte import __version__ as _danbyte_version
+    from danbyte.plugin_loader import discover as _discover_plugins
+
+    _plugin_load = _discover_plugins(PLUGINS, _danbyte_version)
+    INSTALLED_APPS += _plugin_load.enabled
+    # Read back by plugins.registry / the /api/plugins/ endpoint.
+    _PLUGIN_LOAD_REPORT = _plugin_load.report
+else:
+    _PLUGIN_LOAD_REPORT = []
+
+# The framework app is appended LAST so its ready() (which autodiscovers each
+# plugin's danbyte_plugin module) runs after every plugin app has loaded.
+INSTALLED_APPS.append("plugins.apps.PluginsConfig")
+
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     # GZip sits high so it compresses responses after every other middleware
