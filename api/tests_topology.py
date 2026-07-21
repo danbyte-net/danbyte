@@ -307,6 +307,26 @@ class PassThroughAndCrashTests(_Base):
         names = {n["data"]["name"] for n in r.json()["nodes"]}
         self.assertTrue({"console", "ge0"} <= names)
 
+    def test_device_paths_with_power_feed_termination_is_200(self):
+        # Regression: a cable terminating on a PowerFeed (which lives on a
+        # PowerPanel, not a device) 500'd /paths/ — the topology cable prefetch
+        # asked for the non-existent power_feed.device. Must be 200 now.
+        from .models import PowerFeed, PowerPanel, PowerPort, Site
+
+        dev = Device.objects.create(tenant=self.tenant, name="host")
+        pp = PowerPort.objects.create(device=dev, name="psu0")
+        site = Site.objects.create(tenant=self.tenant, name="DC1")
+        panel = PowerPanel.objects.create(tenant=self.tenant, site=site, name="PP-1")
+        feed = PowerFeed.objects.create(
+            tenant=self.tenant, power_panel=panel, name="FEED-A"
+        )
+        cab = Cable.objects.create(tenant=self.tenant)
+        CableTermination.objects.create(cable=cab, end="A", power_port=pp)
+        CableTermination.objects.create(cable=cab, end="B", power_feed=feed)
+
+        r = self.client.get(f"/api/devices/{dev.id}/paths/")
+        self.assertEqual(r.status_code, 200, r.content)
+
     def test_interface_trace_to_power_is_200(self):
         from .models import PowerPort
 

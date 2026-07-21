@@ -85,12 +85,21 @@ from .cable_points import (  # noqa: E402
 )
 
 
+# A power feed terminates on a PowerPanel, not a device — it has no `device`
+# relation to prefetch and no place in device↔device topology. Prefetch the
+# device chain only for the device-bearing points; pull the power feed itself
+# without a device lookup (an invalid `power_feed__device` prefetch 500s the
+# paths endpoint for any cable that terminates on a power feed).
+_DEVICE_POINT_ATTRS = tuple(a for a in _POINT_ATTRS if a != "power_feed")
+
+
 def _cables_qs(tenant):
     return (
         Cable.objects.filter(tenant=tenant)
         .select_related("status")
         .prefetch_related(
-            *[f"terminations__{a}__device" for a in _POINT_ATTRS],
+            *[f"terminations__{a}__device" for a in _DEVICE_POINT_ATTRS],
+            "terminations__power_feed",
             "terminations__front_port__rear_port",
         )
     )
@@ -106,7 +115,9 @@ def _physical_links(tenant):
         a_ends, b_ends = [], []
         for t in cab.terminations.all():
             kind, obj = _term_point(t)
-            if obj is None:
+            # Only device-bearing endpoints form device↔device links; skip a
+            # power feed (it terminates on a PowerPanel, which has no device_id).
+            if obj is None or getattr(obj, "device_id", None) is None:
                 continue
             (a_ends if t.end == "A" else b_ends).append((kind, obj))
         for ka, pa in a_ends:
