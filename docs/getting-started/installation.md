@@ -64,6 +64,70 @@ The other tabs cover building from source and a local dev checkout.
         your distro; on an airgapped host, point `apt` at a local mirror or
         pre-install them.
 
+    ??? info "All installer options — flags, environment variables & what it does"
+
+        The one-liner and the manual bundle run the **same** installer
+        (`install.sh` inside the bundle). Everything after `--` in the one-liner
+        is passed straight to it:
+
+        ```bash
+        curl -fsSL https://danbyte.net/install.sh | bash -s -- --host db.example.com --no-nginx -y
+        #                                                 │  │  └──────────── passed to install.sh ─────────────┘
+        #                                                 │  └─ end of bash options; the rest are the script's args
+        #                                                 └─ run the piped script from stdin
+        ```
+
+        **Installer flags** (`install.sh`)
+
+        | Flag | What it does | Default |
+        |---|---|---|
+        | `--host <name>` | Hostname/IP the server answers on. Sets `ALLOWED_HOSTS` (`<host>,127.0.0.1,localhost`), the nginx `server_name`, the TLS cert name, and the admin email (`admin@<host>`). | — (set it) |
+        | `--host=<name>` | Same, `=` form. | — |
+        | `--service-home <path>` | Install location (app lands in `<path>/danbyte`). On a re-run it **auto-detects** the existing install, so you rarely set this. | `/opt/danbyte` |
+        | `--no-nginx` | Don't install/configure nginx or TLS — for running your own reverse proxy. Also sets `DANBYTE_HTTPS=False` so Secure cookies/HSTS don't break login without a TLS terminator. | nginx **on** |
+        | `--unattended`, `-y` | Skip interactive confirmation prompts (scripted / CI installs). | prompts on |
+
+        **Environment variables** (set before the command; alternative to flags)
+
+        | Variable | Same as / purpose | Default |
+        |---|---|---|
+        | `DANBYTE_HOST` | `--host` | — |
+        | `SERVICE_USER` | OS account the app runs as | `danbyte` |
+        | `SERVICE_HOME` | `--service-home` | `/opt/danbyte` |
+        | `DANBYTE_LOG_DIR` | log directory | `/var/log/danbyte` |
+        | `DANBYTE_VERSION` | **bootstrap only** — pin a specific release instead of the latest (put `DANBYTE_VERSION=0.9.10` right before `bash` in the one-liner) | latest |
+
+        **What the installer does**, in order:
+
+        1. Installs OS services from your distro — `postgresql`, `redis-server`, and (unless `--no-nginx`) `nginx`.
+        2. Creates the dedicated **`danbyte`** service user (rootless), home = the install path.
+        3. Deploys the app to `<service-home>/danbyte` and builds the venv from the bundle's vendored CPython 3.13 + wheelhouse (no internet needed).
+        4. **Generates secrets** with Python's CSPRNG and writes a `chmod 600`, service-user-owned `.env` — `DJANGO_SECRET_KEY` + `MONITORING_SECRET_KEY` (~400-bit), a 24-char DB password, and a 20-char admin password.
+        5. Creates the PostgreSQL role + database, runs migrations, and bootstraps the `admin` superuser.
+        6. Installs the systemd units (web, workers, websocket, timers), writes logs to `/var/log/danbyte`, and — unless `--no-nginx` — puts nginx + TLS in front.
+        7. Prints the generated **admin password** at the end.
+
+        **Where things land**
+
+        | Path | Contents |
+        |---|---|
+        | `<service-home>/danbyte` | the application + `.env` (`600`, owned by `danbyte`) |
+        | `/var/log/danbyte` | service logs (`make logs` / `make logs-file`) |
+        | systemd `--user`/system units | `danbyte-web`, `danbyte-workers`, `danbyte-ws`, timers |
+
+        **Re-running = upgrade.** Running the installer again (same or newer
+        bundle) finds the existing install by the service user's home, **reuses
+        the existing `.env`** (secrets and DB password are preserved), and just
+        redeploys + migrates + restarts. It never regenerates secrets on an
+        upgrade. (The in-app updater under **Settings → Deployment** does the same
+        thing from the UI.)
+
+        **After first login:** change the admin password (User → Preferences) and
+        remove `DJANGO_SUPERUSER_PASSWORD` from `.env`. The long machine keys
+        (`DJANGO_SECRET_KEY`, `MONITORING_SECRET_KEY`, `DB_PASSWORD`) stay in
+        `.env` permanently — don't change `MONITORING_SECRET_KEY` once credentials
+        are stored or existing ciphertext becomes unreadable.
+
 === "From source"
 
     A start-to-finish install on a fresh Ubuntu/Debian box.
