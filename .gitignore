@@ -44,7 +44,7 @@ staticfiles/
 *.log
 # In-app upgrade runtime artifacts (see core/upgrade.py).
 .upgrade-status.json
-.upgrade.lock
+.upgrade.lock*
 .upgrade-bundle.tar.gz
 
 # ── Environment ──────────────────────────────────────────────────────────

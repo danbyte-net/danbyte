@@ -43,6 +43,33 @@ You can also narrow by **queue** (`default`, `high`, `low`). Each row shows the
 job's function, queue, the worker handling it, when it was enqueued, and how long
 it ran. Click any row to open its detail.
 
+## Scheduled tasks (the periodic beat)
+
+Not all background work goes through the queue. Much of Danbyte's routine
+activity runs on a **timer** as a self-contained oneshot — the check engine
+dispatch, config-drift dispatch, the Outpost driver, subnet discovery, interface
+utilisation, alert maintenance, the daily **email digest**, and the various
+cleanup/prune jobs. These never appear in the RQ queue, so the **Scheduled
+tasks** section surfaces them directly.
+
+Each task shows its **cadence** (e.g. *every minute*, *daily 07:00*), the
+outcome of its **last run** (OK / failed / skipped, or *never run*), a one-line
+**summary** of what that run did (e.g. "sent 2 digest(s)", "created 5 IP(s)
+across 2 prefix(es)"), and **when** it ran plus how long it took. Failed tasks
+sort to the top. This is where you confirm a scheduled job actually fired —
+"did last night's digest go out?" is now a glance, not a log dig.
+
+Every task writes a line whether or not it did anything, so a task that runs but
+has nothing to do reads as **skipped** rather than silently leaving no trace.
+
+## Engines & Outposts
+
+The **Engines & Outposts** section lists where checks actually run — the
+built-in **local** engine plus any **Outposts** — with each one's last
+**heartbeat**. An Outpost that has gone quiet shows **stale**; one checking in
+normally shows **online**. It's the fastest way to confirm a remote site's agent
+is alive and reporting.
+
 ## Job detail
 
 The detail page shows everything recorded for one job: its ID, function,

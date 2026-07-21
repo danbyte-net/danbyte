@@ -4984,6 +4984,40 @@ export interface JobsResponse {
   system?: SystemJobStatus
 }
 
+export interface ScheduledRunBrief {
+  id: string
+  status: "running" | "ok" | "failed" | "skipped"
+  summary: string
+  detail: Record<string, unknown>
+  started_at: string
+  finished_at: string | null
+  duration_seconds: number | null
+}
+
+export interface ScheduledTask {
+  name: string
+  label: string
+  cadence: string
+  last_run: ScheduledRunBrief | null
+  recent: ScheduledRunBrief[]
+}
+
+export interface EngineHeartbeat {
+  id: string
+  name: string
+  kind: "local" | "remote"
+  transport: string
+  enabled: boolean
+  last_seen_at: string | null
+  stale_since: string | null
+  poll_interval_seconds: number
+}
+
+export interface ScheduledResponse {
+  tasks: ScheduledTask[]
+  engines: EngineHeartbeat[]
+}
+
 export interface SystemJobStatus {
   upgrade: {
     state: string

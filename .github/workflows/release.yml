@@ -68,6 +68,10 @@ jobs:
           python manage.py migrate --noinput
           python manage.py makemigrations --check --dry-run
           ruff check --select F821 .
+      - name: OpenAPI schema generates cleanly
+        # The committed openapi.yaml (repo root) is the source of truth the API
+        # reference site tracks; prove the schema still builds with no errors.
+        run: python manage.py spectacular --file /tmp/openapi.yaml --validate
       - name: Backend test suite
         run: python manage.py test --noinput
       - name: Frontend build + typecheck + unit tests

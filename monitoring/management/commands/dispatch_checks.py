@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from django.core.management.base import BaseCommand
 
+from core.scheduled_runs import record_run
 from monitoring.scheduler import dispatch
 
 
@@ -22,9 +23,15 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **opts):
-        result = dispatch(sync=opts["sync"])
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"dispatched {result['due']} due check(s) in {result['jobs']} job(s)"
+        with record_run("dispatch", "Check engine (dispatch)") as run:
+            result = dispatch(sync=opts["sync"])
+            run.note(
+                f"dispatched {result['due']} due check(s) in {result['jobs']} job(s)",
+                due=result["due"],
+                jobs=result["jobs"],
             )
-        )
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"dispatched {result['due']} due check(s) in {result['jobs']} job(s)"
+                )
+            )

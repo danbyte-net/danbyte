@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from django.core.management.base import BaseCommand
 
+from core.scheduled_runs import record_run
 from monitoring.outpost_ssh import drive_ssh_outposts
 
 
@@ -15,8 +16,17 @@ class Command(BaseCommand):
     help = "Drive SSH-transport Outposts: claim due checks, run them over SSH, ingest."
 
     def handle(self, *args, **opts):
-        result = drive_ssh_outposts()
-        self.stdout.write(
-            f"SSH Outposts: {result['engines']} engine(s), ran {result['ran']}, "
-            f"ingested {result['ingested']}, errors {result['errors']}."
-        )
+        with record_run("outposts", "Drive Outposts") as run:
+            result = drive_ssh_outposts()
+            self.stdout.write(
+                f"SSH Outposts: {result['engines']} engine(s), ran {result['ran']}, "
+                f"ingested {result['ingested']}, errors {result['errors']}."
+            )
+            run.note(
+                f"{result['engines']} engine(s), ran {result['ran']}, "
+                f"ingested {result['ingested']}, errors {result['errors']}",
+                engines=result["engines"],
+                ran=result["ran"],
+                ingested=result["ingested"],
+                errors=result["errors"],
+            )

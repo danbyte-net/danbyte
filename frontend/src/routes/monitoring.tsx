@@ -412,20 +412,8 @@ function MonitoringPage() {
               </Card>
             </div>
 
-            {/* Settings + recent */}
+            {/* Recent changes + flapping share a row */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Settings &amp; defaults</CardTitle>
-                  <CardDescription>
-                    Stale thresholds, the skip policy, and the global schedule
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <MonitoringSettingsForm />
-                </CardContent>
-              </Card>
-
               <Card>
                 <CardHeader>
                   <CardTitle>Recent status changes</CardTitle>
@@ -473,9 +461,8 @@ function MonitoringPage() {
                   )}
                 </CardContent>
               </Card>
-            </div>
 
-            {flaps.length > 0 && (
+              {flaps.length > 0 && (
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -520,7 +507,21 @@ function MonitoringPage() {
                   </ul>
                 </CardContent>
               </Card>
-            )}
+              )}
+            </div>
+
+            {/* Settings — full width so its two-column form isn't cramped */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Settings &amp; defaults</CardTitle>
+                <CardDescription>
+                  Stale thresholds, the skip policy, and the global schedule
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <MonitoringSettingsForm />
+              </CardContent>
+            </Card>
 
             <p className="text-[11px] text-muted-foreground">
               Configure individual checks from an{" "}

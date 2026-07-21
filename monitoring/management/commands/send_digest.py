@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from django.core.management.base import BaseCommand, CommandError
 
+from core.scheduled_runs import record_run
+
 
 class Command(BaseCommand):
     help = "Send scheduled monitoring email digests to tenants that are due."
@@ -28,25 +30,36 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **opts):
-        from core.models import Tenant
-        from monitoring.digest import run_scheduled_digests, send_tenant_digest
+        with record_run("digest", "Email digest") as run:
+            from core.models import Tenant
+            from monitoring.digest import run_scheduled_digests, send_tenant_digest
 
-        slug = opts.get("tenant")
-        if slug:
-            tenant = (
-                Tenant.objects.filter(slug=slug).first()
-                or Tenant.objects.filter(id=slug).first()
-            )
-            if tenant is None:
-                raise CommandError(f"No tenant matching {slug!r}")
-            ok = send_tenant_digest(tenant, force=opts.get("force", False))
-            if ok:
-                self.stdout.write(self.style.SUCCESS(f"digest sent for {tenant.name}"))
-            else:
-                self.stdout.write(
-                    "not sent (disabled, or no recipients configured)"
+            slug = opts.get("tenant")
+            if slug:
+                tenant = (
+                    Tenant.objects.filter(slug=slug).first()
+                    or Tenant.objects.filter(id=slug).first()
                 )
-            return
+                if tenant is None:
+                    raise CommandError(f"No tenant matching {slug!r}")
+                ok = send_tenant_digest(tenant, force=opts.get("force", False))
+                if ok:
+                    self.stdout.write(self.style.SUCCESS(f"digest sent for {tenant.name}"))
+                    run.note(f"one-off digest sent for {tenant.name}", count=1)
+                else:
+                    self.stdout.write(
+                        "not sent (disabled, or no recipients configured)"
+                    )
+                    run.note(
+                        f"one-off digest not sent for {tenant.name} "
+                        "(disabled or no recipients)",
+                        count=0,
+                    )
+                return
 
-        count = run_scheduled_digests()
-        self.stdout.write(self.style.SUCCESS(f"sent {count} digest(s)"))
+            count = run_scheduled_digests()
+            self.stdout.write(self.style.SUCCESS(f"sent {count} digest(s)"))
+            if count:
+                run.note(f"sent {count} scheduled digest(s)", count=count)
+            else:
+                run.skip("no tenants due this cycle")

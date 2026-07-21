@@ -18,7 +18,7 @@ PY             := $(PROJECT_DIR)/.venv/bin/python
 .PHONY: help install-services uninstall-services reload \
         up down restart status logs logs-file \
         mockups-up mockups-down mockups-restart mockups-logs \
-        docs-up docs-down docs-restart docs-logs docs-build \
+        docs-up docs-down docs-restart docs-logs docs-build schema \
         infra-up infra-down infra-restart infra-logs \
         backend-up backend-down backend-restart backend-logs \
         workers-up workers-down workers-restart workers-logs \
@@ -133,6 +133,13 @@ docs-down:        ; systemctl --user stop danbyte-docs
 docs-restart:     ; systemctl --user restart danbyte-docs
 docs-logs:        ; journalctl --user -fu danbyte-docs
 docs-build:       ; .venv/bin/zensical build
+
+# ---- OpenAPI schema ----------------------------------------------------------
+# Generate the OpenAPI 3 schema to repo-root openapi.yaml — the committed source
+# of truth the API reference site (api.danbyte.net) tracks, the same "repo is
+# the source of truth" pattern as the docs. Regenerated + committed on each
+# release (see .github/workflows/release.yml). Works airgapped; no live endpoint.
+schema:           ; .venv/bin/python manage.py spectacular --file openapi.yaml --validate
 
 # ---- tailwind ----------------------------------------------------------------
 # Static Tailwind v3 build → design/tailwind.css, served from /static/.

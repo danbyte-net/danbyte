@@ -5,9 +5,17 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { ListChecks, AlertTriangle, Cpu, Clock, RefreshCw } from "lucide-react"
 
 import { api } from "@/lib/api"
-import type { JobsResponse, JobBrief, SystemJobStatus } from "@/lib/api"
+import type {
+  JobsResponse,
+  JobBrief,
+  SystemJobStatus,
+  ScheduledResponse,
+  ScheduledTask,
+  EngineHeartbeat,
+} from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { FilterRail } from "@/components/filter-rail"
+import { SegmentedTabs } from "@/components/segmented-tabs"
 import { DataTable } from "@/components/data-table"
 import { TimeCell } from "@/components/cells/time-ago"
 import { QueryError } from "@/components/query-error"
@@ -45,6 +53,113 @@ export function StateBadge({ state }: { state: string }) {
     variant: "secondary" as const,
   }
   return <Badge variant={meta.variant}>{meta.label}</Badge>
+}
+
+// Run-log status → badge tint (Scheduled tasks section).
+const RUN_VARIANT: Record<string, Variant> = {
+  ok: "success",
+  failed: "destructive",
+  running: "info",
+  skipped: "secondary",
+}
+
+function RunStatusBadge({ status }: { status: string }) {
+  return <Badge variant={RUN_VARIANT[status] ?? "secondary"}>{status}</Badge>
+}
+
+// The periodic beat — systemd-timer oneshots that never touch RQ. Surfaced so
+// admins can see each one ran and when (digest, discovery, Outpost driver, …).
+function ScheduledTasksCard({ tasks }: { tasks: ScheduledTask[] }) {
+  return (
+    <section className="rounded-lg border border-border">
+      <header className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+        <h2 className="text-sm font-semibold">Scheduled tasks</h2>
+        <span className="text-xs text-muted-foreground">
+          the periodic beat — runs on a timer, outside the queue
+        </span>
+      </header>
+      <div className="divide-y divide-border">
+        {tasks.map((t) => (
+          <div
+            key={t.name}
+            className="flex items-center gap-3 px-3 py-2 text-[13px]"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">{t.label}</span>
+                {t.cadence && (
+                  <span className="text-[11px] text-muted-foreground">
+                    {t.cadence}
+                  </span>
+                )}
+                {t.last_run ? (
+                  <RunStatusBadge status={t.last_run.status} />
+                ) : (
+                  <Badge variant="secondary">never run</Badge>
+                )}
+              </div>
+              {t.last_run?.summary && (
+                <div className="truncate text-xs text-muted-foreground">
+                  {t.last_run.summary}
+                </div>
+              )}
+            </div>
+            <div className="shrink-0 text-right text-xs whitespace-nowrap text-muted-foreground">
+              {t.last_run ? <TimeCell iso={t.last_run.started_at} /> : "—"}
+              {t.last_run?.duration_seconds != null && (
+                <div className="text-[11px]">
+                  {fmtDuration(t.last_run.duration_seconds)}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+// Where checks actually run — the local engine + any Outposts — with heartbeats.
+function EnginesCard({ engines }: { engines: EngineHeartbeat[] }) {
+  if (engines.length === 0) return null
+  return (
+    <section className="rounded-lg border border-border">
+      <header className="flex items-center gap-2 border-b border-border px-3 py-2">
+        <Cpu className="h-3.5 w-3.5 text-muted-foreground" />
+        <h2 className="text-sm font-semibold">Engines &amp; Outposts</h2>
+        <span className="text-xs text-muted-foreground">
+          check-run locations and their last heartbeat
+        </span>
+      </header>
+      <div className="divide-y divide-border">
+        {engines.map((e) => (
+          <div key={e.id} className="flex items-center gap-2 px-3 py-2 text-[13px]">
+            <span className="font-medium">{e.name}</span>
+            <Badge variant={e.kind === "local" ? "secondary" : "info"}>
+              {e.kind === "local" ? "Local" : "Outpost"}
+            </Badge>
+            {!e.enabled ? (
+              <Badge variant="secondary">disabled</Badge>
+            ) : e.stale_since ? (
+              <Badge variant="destructive">stale</Badge>
+            ) : e.last_seen_at ? (
+              <Badge variant="success">online</Badge>
+            ) : null}
+            <span className="ml-auto text-xs whitespace-nowrap text-muted-foreground">
+              {e.last_seen_at ? (
+                <>
+                  last seen <TimeCell iso={e.last_seen_at} />
+                </>
+              ) : (
+                "never seen"
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
 }
 
 // Seconds → compact human duration.
@@ -217,6 +332,7 @@ const columns: ColumnDef<JobBrief>[] = [
 
 function JobsPage() {
   const { can } = useMe()
+  const [tab, setTab] = useState<"scheduled" | "engines" | "queue">("scheduled")
   const [state, setState] = useState("all")
   const [queue, setQueue] = useState("all")
   const [offset, setOffset] = useState(0)
@@ -234,6 +350,14 @@ function JobsPage() {
     placeholderData: keepPreviousData,
     // Live view: poll while the page is open so running/queued counts move.
     refetchInterval: 2500,
+    enabled: can("jobs.manage"),
+  })
+
+  // The periodic beat (scheduled tasks) + engine/Outpost heartbeats.
+  const sched = useQuery({
+    queryKey: ["jobs", "scheduled"],
+    queryFn: () => api<ScheduledResponse>("/api/jobs/scheduled/"),
+    refetchInterval: 5000,
     enabled: can("jobs.manage"),
   })
 
@@ -284,9 +408,24 @@ function JobsPage() {
           <ListChecks className="h-4 w-4 text-muted-foreground" />
           Jobs
         </h1>
-        <Badge variant="secondary" className="ml-1">
-          {total.toLocaleString()}
-        </Badge>
+        <SegmentedTabs
+          className="ml-2"
+          value={tab}
+          onValueChange={setTab}
+          items={[
+            {
+              value: "scheduled",
+              label: "Scheduled",
+              count: sched.data?.tasks.length ?? null,
+            },
+            {
+              value: "engines",
+              label: "Engines & Outposts",
+              count: sched.data?.engines.length ?? null,
+            },
+            { value: "queue", label: "Queue", count: total || null },
+          ]}
+        />
         <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
           <Cpu className="h-3.5 w-3.5" />
           <span>
@@ -305,6 +444,35 @@ function JobsPage() {
         </div>
       </header>
 
+      {tab === "scheduled" && (
+        <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
+          {sched.isError ? (
+            <QueryError error={sched.error} />
+          ) : sched.data ? (
+            <ScheduledTasksCard tasks={sched.data.tasks} />
+          ) : (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          )}
+        </div>
+      )}
+
+      {tab === "engines" && (
+        <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
+          {sched.isError ? (
+            <QueryError error={sched.error} />
+          ) : !sched.data ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : sched.data.engines.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No monitoring engines configured for this tenant yet.
+            </p>
+          ) : (
+            <EnginesCard engines={sched.data.engines} />
+          )}
+        </div>
+      )}
+
+      {tab === "queue" && (
       <div className="flex min-h-0 flex-1">
         {/* Filter rail — state + queue are single-select and *server-side*
             (query params → paginated API; facet counts come from server
@@ -451,6 +619,7 @@ function JobsPage() {
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }

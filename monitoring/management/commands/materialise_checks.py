@@ -11,6 +11,7 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand
 
 from core.models import Tenant
+from core.scheduled_runs import record_run
 from monitoring.scheduler import materialise_states
 
 
@@ -21,13 +22,21 @@ class Command(BaseCommand):
         parser.add_argument("--tenant", help="Limit to a single tenant id.")
 
     def handle(self, *args, **opts):
-        tenant = None
-        if opts.get("tenant"):
-            tenant = Tenant.objects.get(id=opts["tenant"])
-        result = materialise_states(tenant=tenant)
-        self.stdout.write(
-            self.style.SUCCESS(
+        with record_run("materialise", "Materialise checks") as run:
+            tenant = None
+            if opts.get("tenant"):
+                tenant = Tenant.objects.get(id=opts["tenant"])
+            result = materialise_states(tenant=tenant)
+            run.note(
                 f"materialised {result['effective_checks']} effective check(s) "
-                f"across {result['ips']} IP(s) in {result['tenants']} tenant(s)"
+                f"across {result['ips']} IP(s) in {result['tenants']} tenant(s)",
+                effective_checks=result["effective_checks"],
+                ips=result["ips"],
+                tenants=result["tenants"],
             )
-        )
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"materialised {result['effective_checks']} effective check(s) "
+                    f"across {result['ips']} IP(s) in {result['tenants']} tenant(s)"
+                )
+            )

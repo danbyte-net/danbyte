@@ -143,6 +143,51 @@ class TaggableMixin(models.Model):
         abstract = True
 
 
+class ScheduledRun(models.Model):
+    """One execution of a periodic/background task — the run-log behind the Jobs
+    page's "Scheduled tasks" section.
+
+    Most of Danbyte's background work runs as systemd-timer oneshots that never
+    touch RQ (the digest, discovery, drift dispatch, Outpost driver, cleanup,
+    …). Each wraps its work in ``core.scheduled_runs.record_run`` so admins can
+    see *that it ran, when, and how it went* — even for tasks that produce no
+    other visible artifact. Append-only; old rows are pruned per task.
+    """
+
+    RUNNING = "running"
+    OK = "ok"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    STATUS_CHOICES = [
+        (RUNNING, "Running"),
+        (OK, "OK"),
+        (FAILED, "Failed"),
+        (SKIPPED, "Skipped"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.SlugField(max_length=64, help_text="Task key, e.g. 'digest'.")
+    label = models.CharField(max_length=120, help_text="Human task name.")
+    status = models.CharField(max_length=8, choices=STATUS_CHOICES, default=RUNNING)
+    summary = models.CharField(max_length=500, blank=True, default="")
+    detail = models.JSONField(default=dict, blank=True)
+    started_at = models.DateTimeField(db_index=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-started_at"]
+        indexes = [models.Index(fields=["name", "-started_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.name} {self.status} @ {self.started_at:%Y-%m-%d %H:%M}"
+
+    @property
+    def duration_seconds(self) -> float | None:
+        if self.started_at and self.finished_at:
+            return (self.finished_at - self.started_at).total_seconds()
+        return None
+
+
 class Organization(TimestampedModel):
     """SaaS-level account (the Danbyte install owner). One per deployment for
     self-hosted installs; many for an MSP. Tenants live under an Organization.
