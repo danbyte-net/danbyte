@@ -222,6 +222,9 @@ function FloorPlanPage() {
   // View prefs — seeded from plan.state, persisted back for editors.
   const [labelFitLocal, setLabelFitLocal] = useState<boolean | null>(null)
   const [showFovLocal, setShowFovLocal] = useState<boolean | null>(null)
+  const [showZoneLabelsLocal, setShowZoneLabelsLocal] = useState<boolean | null>(
+    null
+  )
   const [showTraysLocal, setShowTraysLocal] = useState<boolean | null>(null)
   const [showLinksLocal, setShowLinksLocal] = useState<boolean | null>(null)
   const [showObjectsLocal, setShowObjectsLocal] = useState<boolean | null>(null)
@@ -367,6 +370,10 @@ function FloorPlanPage() {
   const labelFit = labelFitLocal ?? Boolean(plan?.state.label_fit)
   const showFov =
     showFovLocal ?? (plan?.state.show_fov as boolean | undefined) ?? true
+  const showZoneLabels =
+    showZoneLabelsLocal ??
+    (plan?.state.show_zone_labels as boolean | undefined) ??
+    true
   const showTrays =
     showTraysLocal ?? (plan?.state.show_trays as boolean | undefined) ?? true
   const showCableLinks =
@@ -397,6 +404,7 @@ function FloorPlanPage() {
     key:
       | "label_fit"
       | "show_fov"
+      | "show_zone_labels"
       | "show_trays"
       | "show_cable_links"
       | "show_objects",
@@ -404,6 +412,7 @@ function FloorPlanPage() {
   ) => {
     if (key === "label_fit") setLabelFitLocal(value)
     else if (key === "show_fov") setShowFovLocal(value)
+    else if (key === "show_zone_labels") setShowZoneLabelsLocal(value)
     else if (key === "show_trays") setShowTraysLocal(value)
     else if (key === "show_objects") setShowObjectsLocal(value)
     else setShowLinksLocal(value)
@@ -898,6 +907,17 @@ function FloorPlanPage() {
                 />
                 <span>Camera FOV cones</span>
               </label>
+              <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
+                <input
+                  type="checkbox"
+                  className="ck"
+                  checked={showZoneLabels}
+                  onChange={(e) =>
+                    setViewPref("show_zone_labels", e.target.checked)
+                  }
+                />
+                <span>Zone labels</span>
+              </label>
               <div className="my-1 h-px bg-border" />
               <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
                 <input
@@ -1145,6 +1165,7 @@ function FloorPlanPage() {
             liveState={liveState.data ?? null}
             labelFit={labelFit}
             showFov={showFov}
+            showZoneLabels={showZoneLabels}
             mode={mode}
             trays={trays}
             showTrays={showTrays}

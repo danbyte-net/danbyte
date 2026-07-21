@@ -480,7 +480,14 @@ class ComponentBulkMixin:
     bulk_int_fields: tuple = ()          # nullable ints
     bulk_fk_fields: dict = {}            # "vlan_id" → tenant-scoped model
     bulk_tags = False                    # add_tag_ids / remove_tag_ids
-    rbac_action_map = {"bulk_update": "change", "bulk_delete": "delete"}
+    # The FK column that scopes name-uniqueness for rename/clone, e.g.
+    # "device_type_id" (templates) or "device_id" (device components). None
+    # skips the pre-check and relies on the DB constraint.
+    bulk_name_scope_field: str | None = None
+    rbac_action_map = {
+        "bulk_update": "change", "bulk_delete": "delete",
+        "bulk_rename": "change", "bulk_clone": "add",
+    }
 
     def _bulk_ids(self, request):
         ids = request.data.get("ids") or []
@@ -577,6 +584,141 @@ class ComponentBulkMixin:
             deleted, _ = _qs.delete()
             log_bulk_delete(_rows)
         return Response({"deleted": deleted}, status=drf_status.HTTP_200_OK)
+
+    def _rename_fn(self, request):
+        """Build a name→name transform from {find, replace, use_regex}."""
+        import re
+
+        find = request.data.get("find") or ""
+        replace = request.data.get("replace")
+        replace = "" if replace is None else str(replace)
+        use_regex = bool(request.data.get("use_regex"))
+        if not find:
+            return None, replace, use_regex
+        if use_regex:
+            try:
+                pat = re.compile(find)
+            except re.error as e:
+                raise ValidationError({"find": f"Invalid regex: {e}"})
+            return (lambda s: pat.sub(replace, s)), replace, use_regex
+        return (lambda s: s.replace(find, replace)), replace, use_regex
+
+    @action(detail=False, methods=["post"], url_path="bulk-rename")
+    def bulk_rename(self, request):
+        """POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
+        """
+        ids = self._bulk_ids(request)
+        fn, _replace, _rx = self._rename_fn(request)
+        if fn is None:
+            raise ValidationError({"find": "Provide text (or a pattern) to find."})
+        model = self.get_queryset().model
+        scope = self.bulk_name_scope_field
+        maxlen = model._meta.get_field("name").max_length or 255
+        rows = list(self.get_queryset().filter(pk__in=ids))
+
+        plan = []  # (row, new_name) — only rows whose name actually changes
+        for r in rows:
+            new = fn(r.name)
+            if not new:
+                raise ValidationError({"name": f"Renaming '{r.name}' leaves an empty name."})
+            if len(new) > maxlen:
+                raise ValidationError({"name": f"'{new}' exceeds {maxlen} characters."})
+            if new != r.name:
+                plan.append((r, new))
+        if not plan:
+            return Response({"renamed": 0}, status=drf_status.HTTP_200_OK)
+
+        # Two clones/renames can't land on the same (scope, name).
+        seen: set = set()
+        for r, new in plan:
+            key = (getattr(r, scope) if scope else None, new)
+            if key in seen:
+                raise ValidationError({"name": f"Two rows would both be named '{new}'."})
+            seen.add(key)
+        # …nor collide with a row that ISN'T being renamed.
+        plan_ids = {r.pk for r, _ in plan}
+        for r, new in plan:
+            filt = {"name": new}
+            if scope:
+                filt[scope] = getattr(r, scope)
+            if model.objects.filter(**filt).exclude(pk__in=plan_ids).exists():
+                raise ValidationError({"name": f"'{new}' already exists here."})
+
+        with transaction.atomic():
+            for r, _new in plan:
+                model.objects.filter(pk=r.pk).update(name=f"__rn_{r.pk}")
+            for r, new in plan:
+                model.objects.filter(pk=r.pk).update(name=new)
+                r.name = new
+            log_bulk_update([r for r, _ in plan], {"name": "renamed"})
+            self._assert_bulk_write_in_site_scope(list(plan_ids), action="change")
+        return Response({"renamed": len(plan)}, status=drf_status.HTTP_200_OK)
+
+    @action(detail=False, methods=["post"], url_path="bulk-clone")
+    def bulk_clone(self, request):
+        """POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+        """
+        ids = self._bulk_ids(request)
+        fn, _replace, _rx = self._rename_fn(request)
+        model = self.get_queryset().model
+        scope = self.bulk_name_scope_field
+        maxlen = model._meta.get_field("name").max_length or 255
+        rows = list(self.get_queryset().filter(pk__in=ids))
+
+        def clone_name(name: str) -> str:
+            return fn(name) if fn else f"{name} copy"
+
+        plan = []  # (row, new_name)
+        for r in rows:
+            nn = clone_name(r.name)
+            if not nn or len(nn) > maxlen:
+                raise ValidationError({"name": f"Invalid clone name '{nn}'."})
+            plan.append((r, nn))
+
+        seen = set()
+        for r, nn in plan:
+            key = (getattr(r, scope) if scope else None, nn)
+            if key in seen:
+                raise ValidationError(
+                    {"name": f"Two clones would both be named '{nn}' — "
+                             "add a find/replace so they differ."}
+                )
+            seen.add(key)
+            filt = {"name": nn}
+            if scope:
+                filt[scope] = getattr(r, scope)
+            if model.objects.filter(**filt).exists():
+                raise ValidationError(
+                    {"name": f"'{nn}' already exists — use find/replace to give "
+                             "the clones new names."}
+                )
+
+        # Copy every concrete field except the PK and audit/number columns.
+        skip = {"created_at", "updated_at", "numid"}
+        copy_fields = [
+            f.name for f in model._meta.concrete_fields
+            if not f.primary_key and f.name not in skip
+        ]
+        created = []
+        with transaction.atomic():
+            for r, nn in plan:
+                data = {f: getattr(r, f) for f in copy_fields}
+                data["name"] = nn
+                obj = model(**data)
+                obj.save()  # per-object save → audit CREATE signal fires
+                created.append(obj)
+            self._assert_bulk_write_in_site_scope(
+                [o.pk for o in created], action="add"
+            )
+        return Response({"created": len(created)}, status=drf_status.HTTP_201_CREATED)
 
 
 class CloneableMixin:
@@ -2435,6 +2577,7 @@ class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
     bulk_bool_fields = ("enabled", "mgmt_only")
     bulk_int_fields = ("mtu",)
     bulk_fk_fields = {"vlan_id": VLAN, "vrf_id": VRF}
+    bulk_name_scope_field = "device_id"
     bulk_tags = True
 
     queryset = (
@@ -2774,6 +2917,7 @@ class _DevicePortViewSet(ComponentBulkMixin, TenantScopedViewSet):
     tenant_field = None
     bulk_str_fields = ("type", "description")
     bulk_tags = True
+    bulk_name_scope_field = "device_id"
 
     def get_queryset(self):
         tenant = _get_active_tenant(self.request)
@@ -2937,6 +3081,7 @@ class _ComponentTemplateViewSet(ComponentBulkMixin, TenantScopedViewSet):
     pagination_class = StandardPagination
     tenant_field = None
     bulk_str_fields = ("description",)
+    bulk_name_scope_field = "device_type_id"
 
     def get_queryset(self):
         tenant = _get_active_tenant(self.request)

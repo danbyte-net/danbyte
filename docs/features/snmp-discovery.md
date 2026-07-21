@@ -119,6 +119,13 @@ MAC comparison is **separator-insensitive** — `00:11:22:33:44:55` and the Cisc
 dotted form `0011.2233.4455` are recognised as the same address, so reformatting
 alone never shows as drift.
 
+Interfaces that have drift are also flagged **in place**: the device's
+**Components → Interfaces** table shows an amber **drift** badge on each affected
+row, so you can spot which ports differ at a glance. It's a read-only signal —
+reviewing and accepting drift stays in the drift inbox, so the source of truth
+only changes when you choose (Danbyte stays drift-*aware*, never
+drift-*driven*).
+
 Click **Accept** on an item to write that observed value into intent. This is the
 **only** action that mutates the source of truth, and it requires the same
 **`device.change`** permission the device form does (see

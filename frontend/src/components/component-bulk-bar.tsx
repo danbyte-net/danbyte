@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Pencil, Trash2, X } from "lucide-react"
+import { Copy, Pencil, Replace, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -98,6 +98,8 @@ export function ComponentBulkBar({
   canDelete = true,
 }: ComponentBulkBarProps) {
   const [editOpen, setEditOpen] = useState(false)
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [cloneOpen, setCloneOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   if (selected.length === 0) return null
   const ids = selected.map((r) => r.id)
@@ -118,6 +120,22 @@ export function ComponentBulkBar({
             onClick={() => setEditOpen(true)}
           >
             <Pencil className="mr-1 h-3 w-3" /> Edit
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2"
+            onClick={() => setRenameOpen(true)}
+          >
+            <Replace className="mr-1 h-3 w-3" /> Rename
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2"
+            onClick={() => setCloneOpen(true)}
+          >
+            <Copy className="mr-1 h-3 w-3" /> Clone
           </Button>
           {canDelete && (
             <Button
@@ -152,6 +170,36 @@ export function ComponentBulkBar({
           onClose={() => setEditOpen(false)}
           onDone={() => {
             setEditOpen(false)
+            onCleared()
+          }}
+        />
+      )}
+
+      {renameOpen && (
+        <RenameCloneDialog
+          mode="rename"
+          endpoint={endpoint}
+          kindLabel={kindLabel}
+          selected={selected}
+          invalidate={invalidate}
+          onClose={() => setRenameOpen(false)}
+          onDone={() => {
+            setRenameOpen(false)
+            onCleared()
+          }}
+        />
+      )}
+
+      {cloneOpen && (
+        <RenameCloneDialog
+          mode="clone"
+          endpoint={endpoint}
+          kindLabel={kindLabel}
+          selected={selected}
+          invalidate={invalidate}
+          onClose={() => setCloneOpen(false)}
+          onDone={() => {
+            setCloneOpen(false)
             onCleared()
           }}
         />
@@ -471,6 +519,188 @@ function BulkEditDialog({
             disabled={!dirty || save.isPending}
           >
             {save.isPending ? "Applying…" : `Apply to ${ids.length}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Bulk rename (find/replace, optional regex) or bulk clone (duplicate with a
+// renamed copy) — one dialog, mirroring NetBox's bulk-rename. Shows a live
+// before→after preview; the backend re-validates name collisions.
+function RenameCloneDialog({
+  mode,
+  endpoint,
+  kindLabel,
+  selected,
+  invalidate,
+  onClose,
+  onDone,
+}: {
+  mode: "rename" | "clone"
+  endpoint: string
+  kindLabel: string
+  selected: { id: string; name: string }[]
+  invalidate: unknown[][]
+  onClose: () => void
+  onDone: () => void
+}) {
+  const qc = useQueryClient()
+  const [find, setFind] = useState("")
+  const [replace, setReplace] = useState("")
+  const [useRegex, setUseRegex] = useState(false)
+
+  // Live preview — same literal/regex substitution the backend applies.
+  let regexError: string | null = null
+  const preview = selected.map((r) => {
+    let next = r.name
+    if (find) {
+      if (useRegex) {
+        try {
+          next = r.name.replace(new RegExp(find, "g"), replace)
+        } catch (e) {
+          regexError = (e as Error).message
+        }
+      } else {
+        next = r.name.split(find).join(replace)
+      }
+    } else if (mode === "clone") {
+      next = `${r.name} copy`
+    }
+    return { id: r.id, old: r.name, next }
+  })
+  const changed = preview.filter((p) => p.next !== p.old).length
+  // Clones must all differ; a rename with no find does nothing.
+  const dupClone =
+    mode === "clone" &&
+    new Set(preview.map((p) => p.next)).size !== preview.length
+
+  const run = useMutation({
+    mutationFn: () =>
+      api<{ renamed?: number; created?: number }>(
+        `${endpoint}bulk-${mode}/`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            ids: selected.map((r) => r.id),
+            find,
+            replace,
+            use_regex: useRegex,
+          }),
+        }
+      ),
+    onSuccess: (r) => {
+      invalidate.forEach((k) => qc.invalidateQueries({ queryKey: k }))
+      const n = r.renamed ?? r.created ?? 0
+      toast.success(
+        mode === "rename"
+          ? `Renamed ${n} ${kindLabel}${n === 1 ? "" : "s"}`
+          : `Cloned ${n} ${kindLabel}${n === 1 ? "" : "s"}`
+      )
+      onDone()
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  const canRun =
+    !regexError &&
+    !dupClone &&
+    (mode === "clone" || (!!find && changed > 0))
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {mode === "rename" ? "Rename" : "Clone"} {selected.length}{" "}
+            {kindLabel}
+            {selected.length === 1 ? "" : "s"}
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-[12px] text-muted-foreground">
+          {mode === "rename"
+            ? "Find text in each name and replace it. Leave replace empty to strip the found text."
+            : "Duplicate each selected row. Use find/replace to give the copies new names (e.g. 1/0/ → 2/0/); otherwise they get a “ copy” suffix."}
+        </p>
+        <div className="grid gap-3">
+          <Field label="Find" hint={useRegex ? "Regular expression" : undefined}>
+            <Input
+              value={find}
+              onChange={(e) => setFind(e.target.value)}
+              placeholder={mode === "clone" ? "(optional)" : "text to find"}
+              autoFocus
+              className="font-mono text-[13px]"
+            />
+          </Field>
+          <Field label="Replace with">
+            <Input
+              value={replace}
+              onChange={(e) => setReplace(e.target.value)}
+              placeholder="(empty)"
+              className="font-mono text-[13px]"
+            />
+          </Field>
+          <label className="flex items-center gap-2 text-[13px]">
+            <input
+              type="checkbox"
+              className="ck"
+              checked={useRegex}
+              onChange={(e) => setUseRegex(e.target.checked)}
+            />
+            Use a regular expression
+          </label>
+          {regexError && (
+            <p className="text-[12px] text-destructive">Invalid regex: {regexError}</p>
+          )}
+          {dupClone && (
+            <p className="text-[12px] text-destructive">
+              Clones would share a name — add a find/replace so they differ.
+            </p>
+          )}
+        </div>
+
+        <div className="mt-1 rounded-md border border-border">
+          <div className="border-b border-border px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
+            Preview {mode === "rename" ? `(${changed} will change)` : ""}
+          </div>
+          <ul className="max-h-52 divide-y divide-border overflow-auto">
+            {preview.slice(0, 40).map((p) => (
+              <li
+                key={p.id}
+                className="flex items-center gap-2 px-3 py-1 font-mono text-[12px]"
+              >
+                <span className="truncate text-muted-foreground">{p.old}</span>
+                <span className="text-muted-foreground">→</span>
+                <span
+                  className={
+                    p.next !== p.old ? "truncate text-foreground" : "truncate text-muted-foreground/60"
+                  }
+                >
+                  {p.next}
+                </span>
+              </li>
+            ))}
+            {preview.length > 40 && (
+              <li className="px-3 py-1 text-[11px] text-muted-foreground">
+                …and {preview.length - 40} more
+              </li>
+            )}
+          </ul>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={() => run.mutate()} disabled={!canRun || run.isPending}>
+            {run.isPending
+              ? mode === "rename"
+                ? "Renaming…"
+                : "Cloning…"
+              : mode === "rename"
+                ? `Rename ${changed}`
+                : `Clone ${selected.length}`}
           </Button>
         </DialogFooter>
       </DialogContent>

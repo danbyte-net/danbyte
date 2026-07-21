@@ -150,6 +150,8 @@ export interface FloorCanvasProps {
   labelFit?: boolean
   /** Draw camera FOV cones for tiles whose type/role has them. */
   showFov?: boolean
+  /** Draw the name label on background zone tiles (Cold aisle, Hot aisle…). */
+  showZoneLabels?: boolean
   // ── Cable trays ────────────────────────────────────────────────────────
   /** "layout" edits tiles; "cable" draws/selects trays. */
   mode?: "layout" | "cable"
@@ -222,6 +224,7 @@ export function FloorCanvas({
   liveState,
   labelFit = false,
   showFov = true,
+  showZoneLabels = true,
   mode = "layout",
   trays = [],
   showTrays = true,
@@ -740,6 +743,7 @@ export function FloorCanvas({
               selected={tile.id === selectedId}
               editable={editable}
               labelFit={labelFit}
+              showZoneLabels={showZoneLabels}
               live={liveState?.tiles[tile.id]}
               onPointerDown={(e) => handleTileDown(tile, e)}
               onResizeDown={(e) => handleResizeDown(tile, e)}
@@ -1236,6 +1240,7 @@ function TileShape({
   selected,
   editable,
   labelFit,
+  showZoneLabels = true,
   live,
   onPointerDown,
   onResizeDown,
@@ -1247,6 +1252,7 @@ function TileShape({
   selected: boolean
   editable: boolean
   labelFit: boolean
+  showZoneLabels?: boolean
   live?: FloorPlanLiveState["tiles"][string]
   onPointerDown: (e: React.PointerEvent) => void
   onResizeDown: (e: React.PointerEvent) => void
@@ -1296,7 +1302,7 @@ function TileShape({
           strokeWidth={selected ? 2 : 1}
           strokeDasharray="4 4"
         />
-        {showLabel && (
+        {showLabel && showZoneLabels && (
           <text
             x={6}
             y={14}

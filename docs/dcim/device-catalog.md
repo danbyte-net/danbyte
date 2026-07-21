@@ -122,6 +122,18 @@ two shorthands: a **`[1-24]` range** creates one template per port in a single
 add, and a **`{position}` token** resolves to the device's stack member number
 when components are stamped (and renames ports when a device changes stack
 position) — see [virtual chassis](virtual-chassis.md#position-aware-interface-names).
+Tick rows to reveal a bulk bar with **Edit**, **Rename**, **Clone**, and
+**Delete**:
+
+- **Rename** — find/replace across the selected templates' names (optional
+  regex), with a live before→after preview. Ideal for renumbering a bank of
+  ports (`Gi` → `GigabitEthernet`, `1/0/` → `2/0/`). It refuses names that would
+  collide.
+- **Clone** — duplicate the selected templates, applying a find/replace so the
+  copies get new names (e.g. clone `1/0/*` to `2/0/*` for a second line card);
+  with no find/replace the copies get a “ copy” suffix. The same bulk bar (and
+  actions) works on a real device's Interfaces too.
+
 Notes:
 
 - Materialisation happens on **device create** (and skips any name the device

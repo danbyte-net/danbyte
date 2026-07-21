@@ -75,7 +75,15 @@ export function RecentDevices({ rows }: { rows: DashRecentDevice[] }) {
       <tbody className="divide-y divide-border/60">
         {rows.map((x) => (
           <tr key={x.id} className="hover:bg-muted/40">
-            <td className={`${TD} font-medium`}>{x.name}</td>
+            <td className={`${TD} font-medium`}>
+              <Link
+                to="/devices/$id"
+                params={{ id: x.id }}
+                className="text-primary hover:underline"
+              >
+                {x.name}
+              </Link>
+            </td>
             <td className={`${TD} text-muted-foreground`}>{x.status}</td>
             <td className={`${TD} truncate text-muted-foreground`}>
               {x.type ?? "—"}

@@ -1291,6 +1291,21 @@ function DeviceInterfacesPane({
   })
   const rows = useMemo(() => nestInterfaces(q.data?.results ?? []), [q.data])
   const [selIfaces, setSelIfaces] = useState<NestedInterface[]>([])
+  // SNMP drift → badge the affected interface rows so drift is easy to spot
+  // (review/accept stays manual in the Drift panel — source of truth wins).
+  const driftQ = useQuery({
+    queryKey: ["device-snmp-drift", deviceId],
+    queryFn: () =>
+      api<{ drift: { interface_id?: string | null }[] }>(
+        `/api/monitoring/devices/${deviceId}/snmp/drift/`
+      ),
+  })
+  const driftIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const it of driftQ.data?.drift ?? [])
+      if (it.interface_id) s.add(it.interface_id)
+    return s
+  }, [driftQ.data])
   const columns = useMemo<ColumnDef<NestedInterface>[]>(() => {
     // Same columns + same row actions as the whole-stack table (shared builders)
     // — the two views must never drift apart.
@@ -1306,10 +1321,18 @@ function DeviceInterfacesPane({
     })
     return [
       ...(canEdit ? [selectionColumn<NestedInterface>()] : []),
-      ...buildInterfaceColumns(),
+      ...buildInterfaceColumns({ driftIds }),
       ...(actions ? [actions] : []),
     ]
-  }, [deviceId, canAddIp, canAssignIp, canEdit, canChangeCable, canConnect])
+  }, [
+    deviceId,
+    canAddIp,
+    canAssignIp,
+    canEdit,
+    canChangeCable,
+    canConnect,
+    driftIds,
+  ])
   if (q.isLoading)
     return <p className="text-sm text-muted-foreground">Loading…</p>
   if (q.isError) return <QueryError error={q.error} />

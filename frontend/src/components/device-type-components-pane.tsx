@@ -361,8 +361,8 @@ export function DeviceTypeComponentsPane({
 
   return (
     <AddActionsContext.Provider value={registerAdd}>
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex h-10 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--border)] lg:px-6">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex h-10 min-w-0 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--border)] lg:px-6">
           <SegmentedTabs items={items} value={kind} onValueChange={setKind} />
           <div className="ml-auto flex items-center gap-2">
             {barAdds.length === 1 ? (

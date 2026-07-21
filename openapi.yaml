@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Danbyte API
-  version: 0.9.12
+  version: 0.9.13
   description: 'REST API for Danbyte — IPAM / DCIM and network operations. Authenticate
     with a scoped **API token** (`Authorization: Token <key>`) or, from a browser
     session, the logged-in session cookie. Every request is scoped to your active
@@ -1071,12 +1071,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/aux-port-templates/bulk-clone/:
+    post:
+      operationId: aux_port_templates_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - aux-port-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuxPortTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AuxPortTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AuxPortTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuxPortTemplate'
+          description: ''
   /api/aux-port-templates/bulk-delete/:
     post:
       operationId: aux_port_templates_bulk_delete_create
       description: |-
         Shared base for the per-device-type component templates — no direct
         tenant FK; scope via device_type.tenant. Filter with ?device_type=.
+      tags:
+      - aux-port-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuxPortTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AuxPortTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AuxPortTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuxPortTemplate'
+          description: ''
+  /api/aux-port-templates/bulk-rename/:
+    post:
+      operationId: aux_port_templates_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - aux-port-templates
       requestBody:
@@ -1317,12 +1383,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/aux-ports/bulk-clone/:
+    post:
+      operationId: aux_ports_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - aux-ports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuxPortRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AuxPortRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AuxPortRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuxPort'
+          description: ''
   /api/aux-ports/bulk-delete/:
     post:
       operationId: aux_ports_bulk_delete_create
       description: |-
         Shared base for FrontPort / RearPort — no direct tenant FK; scope via
         device.tenant, like interfaces.
+      tags:
+      - aux-ports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuxPortRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AuxPortRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AuxPortRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuxPort'
+          description: ''
+  /api/aux-ports/bulk-rename/:
+    post:
+      operationId: aux_ports_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - aux-ports
       requestBody:
@@ -4392,12 +4524,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/console-port-templates/bulk-clone/:
+    post:
+      operationId: console_port_templates_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - console-port-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsolePortTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ConsolePortTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ConsolePortTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsolePortTemplate'
+          description: ''
   /api/console-port-templates/bulk-delete/:
     post:
       operationId: console_port_templates_bulk_delete_create
       description: |-
         Shared base for the per-device-type component templates — no direct
         tenant FK; scope via device_type.tenant. Filter with ?device_type=.
+      tags:
+      - console-port-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsolePortTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ConsolePortTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ConsolePortTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsolePortTemplate'
+          description: ''
+  /api/console-port-templates/bulk-rename/:
+    post:
+      operationId: console_port_templates_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - console-port-templates
       requestBody:
@@ -4638,12 +4836,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/console-ports/bulk-clone/:
+    post:
+      operationId: console_ports_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - console-ports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsolePortRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ConsolePortRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ConsolePortRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsolePort'
+          description: ''
   /api/console-ports/bulk-delete/:
     post:
       operationId: console_ports_bulk_delete_create
       description: |-
         Shared base for FrontPort / RearPort — no direct tenant FK; scope via
         device.tenant, like interfaces.
+      tags:
+      - console-ports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsolePortRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ConsolePortRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ConsolePortRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsolePort'
+          description: ''
+  /api/console-ports/bulk-rename/:
+    post:
+      operationId: console_ports_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - console-ports
       requestBody:
@@ -4884,12 +5148,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/console-server-port-templates/bulk-clone/:
+    post:
+      operationId: console_server_port_templates_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - console-server-port-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsoleServerPortTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ConsoleServerPortTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ConsoleServerPortTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsoleServerPortTemplate'
+          description: ''
   /api/console-server-port-templates/bulk-delete/:
     post:
       operationId: console_server_port_templates_bulk_delete_create
       description: |-
         Shared base for the per-device-type component templates — no direct
         tenant FK; scope via device_type.tenant. Filter with ?device_type=.
+      tags:
+      - console-server-port-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsoleServerPortTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ConsoleServerPortTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ConsoleServerPortTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsoleServerPortTemplate'
+          description: ''
+  /api/console-server-port-templates/bulk-rename/:
+    post:
+      operationId: console_server_port_templates_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - console-server-port-templates
       requestBody:
@@ -5130,12 +5460,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/console-server-ports/bulk-clone/:
+    post:
+      operationId: console_server_ports_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - console-server-ports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsoleServerPortRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ConsoleServerPortRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ConsoleServerPortRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsoleServerPort'
+          description: ''
   /api/console-server-ports/bulk-delete/:
     post:
       operationId: console_server_ports_bulk_delete_create
       description: |-
         Shared base for FrontPort / RearPort — no direct tenant FK; scope via
         device.tenant, like interfaces.
+      tags:
+      - console-server-ports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsoleServerPortRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ConsoleServerPortRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ConsoleServerPortRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsoleServerPort'
+          description: ''
+  /api/console-server-ports/bulk-rename/:
+    post:
+      operationId: console_server_ports_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - console-server-ports
       requestBody:
@@ -7220,12 +7616,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/device-bay-templates/bulk-clone/:
+    post:
+      operationId: device_bay_templates_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - device-bay-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceBayTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeviceBayTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeviceBayTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceBayTemplate'
+          description: ''
   /api/device-bay-templates/bulk-delete/:
     post:
       operationId: device_bay_templates_bulk_delete_create
       description: |-
         Shared base for the per-device-type component templates — no direct
         tenant FK; scope via device_type.tenant. Filter with ?device_type=.
+      tags:
+      - device-bay-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceBayTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeviceBayTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeviceBayTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceBayTemplate'
+          description: ''
+  /api/device-bay-templates/bulk-rename/:
+    post:
+      operationId: device_bay_templates_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - device-bay-templates
       requestBody:
@@ -7466,12 +7928,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/device-bays/bulk-clone/:
+    post:
+      operationId: device_bays_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - device-bays
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceBayRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeviceBayRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeviceBayRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceBay'
+          description: ''
   /api/device-bays/bulk-delete/:
     post:
       operationId: device_bays_bulk_delete_create
       description: |-
         Shared base for FrontPort / RearPort — no direct tenant FK; scope via
         device.tenant, like interfaces.
+      tags:
+      - device-bays
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceBayRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeviceBayRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeviceBayRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceBay'
+          description: ''
+  /api/device-bays/bulk-rename/:
+    post:
+      operationId: device_bays_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - device-bays
       requestBody:
@@ -7968,12 +8496,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/device-type-services/bulk-clone/:
+    post:
+      operationId: device_type_services_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - device-type-services
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceTypeServiceRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeviceTypeServiceRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeviceTypeServiceRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceTypeService'
+          description: ''
   /api/device-type-services/bulk-delete/:
     post:
       operationId: device_type_services_bulk_delete_create
       description: |-
         Service templates on a device type — materialise onto new devices as
         Services (see ``materialize_device_components``).
+      tags:
+      - device-type-services
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceTypeServiceRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeviceTypeServiceRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeviceTypeServiceRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceTypeService'
+          description: ''
+  /api/device-type-services/bulk-rename/:
+    post:
+      operationId: device_type_services_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - device-type-services
       requestBody:
@@ -11196,12 +11790,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/front-port-templates/bulk-clone/:
+    post:
+      operationId: front_port_templates_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - front-port-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FrontPortTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FrontPortTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FrontPortTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrontPortTemplate'
+          description: ''
   /api/front-port-templates/bulk-delete/:
     post:
       operationId: front_port_templates_bulk_delete_create
       description: |-
         Shared base for the per-device-type component templates — no direct
         tenant FK; scope via device_type.tenant. Filter with ?device_type=.
+      tags:
+      - front-port-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FrontPortTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FrontPortTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FrontPortTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrontPortTemplate'
+          description: ''
+  /api/front-port-templates/bulk-rename/:
+    post:
+      operationId: front_port_templates_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - front-port-templates
       requestBody:
@@ -11442,12 +12102,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/front-ports/bulk-clone/:
+    post:
+      operationId: front_ports_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - front-ports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FrontPortRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FrontPortRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FrontPortRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrontPort'
+          description: ''
   /api/front-ports/bulk-delete/:
     post:
       operationId: front_ports_bulk_delete_create
       description: |-
         Shared base for FrontPort / RearPort — no direct tenant FK; scope via
         device.tenant, like interfaces.
+      tags:
+      - front-ports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FrontPortRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FrontPortRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FrontPortRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrontPort'
+          description: ''
+  /api/front-ports/bulk-rename/:
+    post:
+      operationId: front_ports_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - front-ports
       requestBody:
@@ -11873,12 +12599,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/interface-templates/bulk-clone/:
+    post:
+      operationId: interface_templates_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - interface-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InterfaceTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InterfaceTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InterfaceTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterfaceTemplate'
+          description: ''
   /api/interface-templates/bulk-delete/:
     post:
       operationId: interface_templates_bulk_delete_create
       description: |-
         Shared base for the per-device-type component templates — no direct
         tenant FK; scope via device_type.tenant. Filter with ?device_type=.
+      tags:
+      - interface-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InterfaceTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InterfaceTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InterfaceTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterfaceTemplate'
+          description: ''
+  /api/interface-templates/bulk-rename/:
+    post:
+      operationId: interface_templates_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - interface-templates
       requestBody:
@@ -12157,6 +12949,39 @@ paths:
               schema:
                 $ref: '#/components/schemas/Interface'
           description: ''
+  /api/interfaces/bulk-clone/:
+    post:
+      operationId: interfaces_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - interfaces
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InterfaceRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InterfaceRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InterfaceRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Interface'
+          description: ''
   /api/interfaces/bulk-create/:
     post:
       operationId: interfaces_bulk_create_create
@@ -12194,6 +13019,39 @@ paths:
     post:
       operationId: interfaces_bulk_delete_create
       description: Interfaces have no direct tenant FK — scope via device.tenant.
+      tags:
+      - interfaces
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InterfaceRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InterfaceRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InterfaceRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Interface'
+          description: ''
+  /api/interfaces/bulk-rename/:
+    post:
+      operationId: interfaces_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - interfaces
       requestBody:
@@ -12432,12 +13290,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/inventory-item-templates/bulk-clone/:
+    post:
+      operationId: inventory_item_templates_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - inventory-item-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryItemTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InventoryItemTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InventoryItemTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryItemTemplate'
+          description: ''
   /api/inventory-item-templates/bulk-delete/:
     post:
       operationId: inventory_item_templates_bulk_delete_create
       description: |-
         Shared base for the per-device-type component templates — no direct
         tenant FK; scope via device_type.tenant. Filter with ?device_type=.
+      tags:
+      - inventory-item-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryItemTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InventoryItemTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InventoryItemTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryItemTemplate'
+          description: ''
+  /api/inventory-item-templates/bulk-rename/:
+    post:
+      operationId: inventory_item_templates_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - inventory-item-templates
       requestBody:
@@ -12678,12 +13602,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/inventory-items/bulk-clone/:
+    post:
+      operationId: inventory_items_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - inventory-items
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryItemRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InventoryItemRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InventoryItemRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryItem'
+          description: ''
   /api/inventory-items/bulk-delete/:
     post:
       operationId: inventory_items_bulk_delete_create
       description: |-
         Shared base for FrontPort / RearPort — no direct tenant FK; scope via
         device.tenant, like interfaces.
+      tags:
+      - inventory-items
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryItemRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InventoryItemRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InventoryItemRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryItem'
+          description: ''
+  /api/inventory-items/bulk-rename/:
+    post:
+      operationId: inventory_items_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - inventory-items
       requestBody:
@@ -16350,12 +17340,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/module-bay-templates/bulk-clone/:
+    post:
+      operationId: module_bay_templates_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - module-bay-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModuleBayTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ModuleBayTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ModuleBayTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModuleBayTemplate'
+          description: ''
   /api/module-bay-templates/bulk-delete/:
     post:
       operationId: module_bay_templates_bulk_delete_create
       description: |-
         Shared base for the per-device-type component templates — no direct
         tenant FK; scope via device_type.tenant. Filter with ?device_type=.
+      tags:
+      - module-bay-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModuleBayTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ModuleBayTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ModuleBayTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModuleBayTemplate'
+          description: ''
+  /api/module-bay-templates/bulk-rename/:
+    post:
+      operationId: module_bay_templates_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - module-bay-templates
       requestBody:
@@ -16596,12 +17652,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/module-bays/bulk-clone/:
+    post:
+      operationId: module_bays_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - module-bays
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModuleBayRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ModuleBayRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ModuleBayRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModuleBay'
+          description: ''
   /api/module-bays/bulk-delete/:
     post:
       operationId: module_bays_bulk_delete_create
       description: |-
         Shared base for FrontPort / RearPort — no direct tenant FK; scope via
         device.tenant, like interfaces.
+      tags:
+      - module-bays
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModuleBayRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ModuleBayRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ModuleBayRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModuleBay'
+          description: ''
+  /api/module-bays/bulk-rename/:
+    post:
+      operationId: module_bays_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - module-bays
       requestBody:
@@ -22546,12 +23668,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/power-outlet-templates/bulk-clone/:
+    post:
+      operationId: power_outlet_templates_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - power-outlet-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PowerOutletTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PowerOutletTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PowerOutletTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PowerOutletTemplate'
+          description: ''
   /api/power-outlet-templates/bulk-delete/:
     post:
       operationId: power_outlet_templates_bulk_delete_create
       description: |-
         Shared base for the per-device-type component templates — no direct
         tenant FK; scope via device_type.tenant. Filter with ?device_type=.
+      tags:
+      - power-outlet-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PowerOutletTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PowerOutletTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PowerOutletTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PowerOutletTemplate'
+          description: ''
+  /api/power-outlet-templates/bulk-rename/:
+    post:
+      operationId: power_outlet_templates_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - power-outlet-templates
       requestBody:
@@ -22792,12 +23980,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/power-outlets/bulk-clone/:
+    post:
+      operationId: power_outlets_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - power-outlets
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PowerOutletRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PowerOutletRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PowerOutletRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PowerOutlet'
+          description: ''
   /api/power-outlets/bulk-delete/:
     post:
       operationId: power_outlets_bulk_delete_create
       description: |-
         Shared base for FrontPort / RearPort — no direct tenant FK; scope via
         device.tenant, like interfaces.
+      tags:
+      - power-outlets
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PowerOutletRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PowerOutletRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PowerOutletRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PowerOutlet'
+          description: ''
+  /api/power-outlets/bulk-rename/:
+    post:
+      operationId: power_outlets_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - power-outlets
       requestBody:
@@ -23272,12 +24526,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/power-port-templates/bulk-clone/:
+    post:
+      operationId: power_port_templates_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - power-port-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PowerPortTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PowerPortTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PowerPortTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PowerPortTemplate'
+          description: ''
   /api/power-port-templates/bulk-delete/:
     post:
       operationId: power_port_templates_bulk_delete_create
       description: |-
         Shared base for the per-device-type component templates — no direct
         tenant FK; scope via device_type.tenant. Filter with ?device_type=.
+      tags:
+      - power-port-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PowerPortTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PowerPortTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PowerPortTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PowerPortTemplate'
+          description: ''
+  /api/power-port-templates/bulk-rename/:
+    post:
+      operationId: power_port_templates_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - power-port-templates
       requestBody:
@@ -23518,12 +24838,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/power-ports/bulk-clone/:
+    post:
+      operationId: power_ports_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - power-ports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PowerPortRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PowerPortRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PowerPortRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PowerPort'
+          description: ''
   /api/power-ports/bulk-delete/:
     post:
       operationId: power_ports_bulk_delete_create
       description: |-
         Shared base for FrontPort / RearPort — no direct tenant FK; scope via
         device.tenant, like interfaces.
+      tags:
+      - power-ports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PowerPortRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PowerPortRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PowerPortRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PowerPort'
+          description: ''
+  /api/power-ports/bulk-rename/:
+    post:
+      operationId: power_ports_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - power-ports
       requestBody:
@@ -25436,12 +26822,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/rear-port-templates/bulk-clone/:
+    post:
+      operationId: rear_port_templates_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - rear-port-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RearPortTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RearPortTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RearPortTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RearPortTemplate'
+          description: ''
   /api/rear-port-templates/bulk-delete/:
     post:
       operationId: rear_port_templates_bulk_delete_create
       description: |-
         Shared base for the per-device-type component templates — no direct
         tenant FK; scope via device_type.tenant. Filter with ?device_type=.
+      tags:
+      - rear-port-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RearPortTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RearPortTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RearPortTemplateRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RearPortTemplate'
+          description: ''
+  /api/rear-port-templates/bulk-rename/:
+    post:
+      operationId: rear_port_templates_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - rear-port-templates
       requestBody:
@@ -25682,12 +27134,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/rear-ports/bulk-clone/:
+    post:
+      operationId: rear_ports_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - rear-ports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RearPortRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RearPortRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RearPortRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RearPort'
+          description: ''
   /api/rear-ports/bulk-delete/:
     post:
       operationId: rear_ports_bulk_delete_create
       description: |-
         Shared base for FrontPort / RearPort — no direct tenant FK; scope via
         device.tenant, like interfaces.
+      tags:
+      - rear-ports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RearPortRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RearPortRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RearPortRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RearPort'
+          description: ''
+  /api/rear-ports/bulk-rename/:
+    post:
+      operationId: rear_ports_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - rear-ports
       requestBody:
@@ -32536,6 +34054,39 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/vm-interfaces/bulk-clone/:
+    post:
+      operationId: vm_interfaces_bulk_clone_create
+      description: |-
+        POST {ids, find?, replace?, use_regex?} → duplicate each selected row.
+
+        A find/replace (optional) renames the clones so they don't collide; with
+        no find, clones get a ' copy' suffix. Every clone name must be unique in
+        its scope — otherwise 400 with guidance to add a find/replace.
+      tags:
+      - vm-interfaces
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMInterfaceRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/VMInterfaceRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VMInterfaceRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMInterface'
+          description: ''
   /api/vm-interfaces/bulk-delete/:
     post:
       operationId: vm_interfaces_bulk_delete_create
@@ -32551,6 +34102,39 @@ paths:
         (tenant + RBAC rows), so foreign ids silently fall out.
 
         POST ``bulk-delete`` {ids: [...]} — same scoping; audited.
+      tags:
+      - vm-interfaces
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMInterfaceRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/VMInterfaceRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VMInterfaceRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMInterface'
+          description: ''
+  /api/vm-interfaces/bulk-rename/:
+    post:
+      operationId: vm_interfaces_bulk_rename_create
+      description: |-
+        POST {ids, find, replace, use_regex?} → find/replace rename in place.
+
+        Two-pass (temp names first) so a shift/swap can't hit a transient unique
+        collision mid-batch. Rejects names that would collide with a row outside
+        the batch, exceed the length limit, or go empty.
       tags:
       - vm-interfaces
       requestBody:

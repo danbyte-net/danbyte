@@ -33,7 +33,9 @@ Two ticks on a tile type change how its tiles behave:
 - **Background zone** — the tile paints the grid background instead of
   occupying it: red for a hot aisle, blue for cold, an amber security zone…
   Zones render *under* normal tiles, and normal tiles may sit on top of them
-  (they're the one exception to the no-stacking rule).
+  (they're the one exception to the no-stacking rule). Their name labels
+  (*Cold aisle*, *Hot aisle*…) can be hidden with the **Zone labels** toggle
+  under **View** when they clutter a busy plan.
 - **Camera field of view** — tiles of this type get a **FOV cone**
   (direction / angle / reach in cells) drawn on the canvas. The same tick
   exists on **device roles** (e.g. a CCTV role), so camera devices get cones

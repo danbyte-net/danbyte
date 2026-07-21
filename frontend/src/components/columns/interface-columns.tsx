@@ -1,6 +1,12 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
-import { Cable as CableIcon, Pencil, Waypoints, Workflow } from "lucide-react"
+import {
+  Cable as CableIcon,
+  Pencil,
+  TriangleAlert,
+  Waypoints,
+  Workflow,
+} from "lucide-react"
 
 import type { Interface } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
@@ -49,7 +55,13 @@ export function nestInterfaces(rows: Interface[]): NestedInterface[] {
  * and the "Whole stack" (virtual chassis) table render identically; each caller
  * prepends/appends its own columns (a Member column, or the row actions).
  */
-export function buildInterfaceColumns(): ColumnDef<NestedInterface>[] {
+export function buildInterfaceColumns(opts?: {
+  /** Interface ids that have SNMP config drift — badged so drift is easy to
+   * spot without leaving source-of-truth (review/accept stays in the Drift
+   * panel). */
+  driftIds?: Set<string>
+}): ColumnDef<NestedInterface>[] {
+  const driftIds = opts?.driftIds
   return [
     {
       id: "name",
@@ -82,6 +94,16 @@ export function buildInterfaceColumns(): ColumnDef<NestedInterface>[] {
             {row.original.mgmt_only && (
               <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
                 mgmt
+              </Badge>
+            )}
+            {driftIds?.has(row.original.id) && (
+              <Badge
+                variant="warning"
+                className="h-4 gap-1 px-1.5 text-[10px]"
+                title="Config drift — what SNMP observed differs from the source of truth. Review it in the Drift panel."
+              >
+                <TriangleAlert className="h-2.5 w-2.5" />
+                drift
               </Badge>
             )}
             {row.original.tunnel_terminations.map((tt) => (
