@@ -15,7 +15,9 @@ extra_css = ["stylesheets/extra.css"]
 # placeholders with crypto-random values in the reader's browser.
 extra_javascript = ["javascripts/gen-secrets.js"]
 
-# Explicit navigation.
+# Explicit navigation. Kept to a handful of top-level areas so the menu is easy
+# to scan: Getting started · Features (every product area, nested) · Architecture
+# (incl. data models) · Reference. Sub-sections are collapsible.
 nav = [
   { "Home" = "index.md" },
   { "Getting started" = [
@@ -23,76 +25,76 @@ nav = [
     { "Upgrading"         = "getting-started/upgrading.md" },
     { "Dev workflow"      = "getting-started/dev-workflow.md" },
   ] },
-  { "IPAM" = [
-    "ipam/index.md",
-    { "Prefixes"          = "features/prefix-crud.md" },
-    { "The prefix tree"   = "features/tree-and-sections.md" },
-    { "Space map"         = "features/space-map.md" },
-    { "Gateway autospawn" = "features/gateway-autospawn.md" },
-    { "VLANs, VRFs & route targets" = "features/ipam-objects.md" },
-    { "Zones"             = "models/zone.md" },
-    { "IP statuses & roles" = "features/catalogs-and-settings.md" },
-    { "Search & MAC tracking" = "features/search-and-macs.md" },
-  ] },
-  { "DCIM" = [
-    "dcim/index.md",
-    { "Devices"           = "dcim/devices.md" },
-    { "Virtual chassis"   = "dcim/virtual-chassis.md" },
-    { "Device catalog"    = "dcim/device-catalog.md" },
-    { "Racks"             = "dcim/racks.md" },
-    { "Floor plans"       = "features/floor-plans.md" },
-    { "Interfaces"        = "dcim/interfaces.md" },
-    { "Virtual & aggregate interfaces" = "dcim/virtual-interfaces.md" },
-    { "Assigning IP addresses" = "dcim/ip-assignment.md" },
-    { "Cabling & connections" = "dcim/cabling.md" },
-    { "Fibre strands" = "dcim/fiber.md" },
-    { "Interface & cable types" = "dcim/type-taxonomy.md" },
-  ] },
-  { "Organization" = [
-    "organization/index.md",
-    { "Contacts"          = "features/contacts.md" },
-    { "Regions & locations" = "features/regions-locations.md" },
-  ] },
-  { "Circuits & links" = [
-    "connectivity/index.md",
-    { "Circuits"          = "features/circuits.md" },
-    { "Power"             = "features/power.md" },
-    { "Wireless"          = "features/wireless.md" },
-    { "VPN tunnels"       = "features/vpn.md" },
-  ] },
-  { "Monitoring & compliance" = [
-    "monitoring/index.md",
-    { "Monitoring"        = "features/monitoring.md" },
-    { "Outposts (remote engines)" = "monitoring/outposts.md" },
-    { "SNMP discovery"    = "features/snmp-discovery.md" },
-    { "Compliance"        = "features/compliance.md" },
-  ] },
-  { "Automation & integrations" = [
-    "automation/index.md",
-    { "Config contexts"   = "features/config-contexts.md" },
-    { "Export templates"  = "features/export-templates.md" },
-    { "Config drift (Ansible/Terraform)" = "features/iac-runner.md" },
-    { "Advanced: custom-field-driven playbook" = "features/cf-driven-playbook.md" },
-    { "Webhooks"          = "features/webhooks.md" },
-    { "Import & export"   = "features/import-export.md" },
-    { "Import from NetBox" = "features/netbox-import.md" },
-  ] },
-  { "Access & history" = [
-    "access/index.md",
-    { "Permissions & access" = "features/permissions.md" },
-    { "Site separation"   = "access/site-separation.md" },
-    { "Change log"        = "features/change-log.md" },
-    { "Journals"          = "features/journals.md" },
-  ] },
-  { "Customize" = [
-    { "Tags & custom fields" = "features/tags-and-custom-fields.md" },
-  ] },
-  { "Working with data" = [
-    "working-with-data/index.md",
-    { "Dashboard"         = "features/dashboard.md" },
-    { "Object numbers (IDs)" = "features/object-numbers.md" },
-    { "Table columns"     = "features/table-preferences.md" },
-    { "Exporting tables"  = "features/exporting-tables.md" },
+  { "Features" = [
+    { "IPAM" = [
+      "ipam/index.md",
+      { "Prefixes"          = "features/prefix-crud.md" },
+      { "The prefix tree"   = "features/tree-and-sections.md" },
+      { "Space map"         = "features/space-map.md" },
+      { "Gateway autospawn" = "features/gateway-autospawn.md" },
+      { "VLANs, VRFs & route targets" = "features/ipam-objects.md" },
+      { "Zones"             = "models/zone.md" },
+      { "IP statuses & roles" = "features/catalogs-and-settings.md" },
+      { "Search & MAC tracking" = "features/search-and-macs.md" },
+    ] },
+    { "DCIM" = [
+      "dcim/index.md",
+      { "Devices"           = "dcim/devices.md" },
+      { "Virtual chassis"   = "dcim/virtual-chassis.md" },
+      { "Device catalog"    = "dcim/device-catalog.md" },
+      { "Racks"             = "dcim/racks.md" },
+      { "Floor plans"       = "features/floor-plans.md" },
+      { "Interfaces"        = "dcim/interfaces.md" },
+      { "Virtual & aggregate interfaces" = "dcim/virtual-interfaces.md" },
+      { "Assigning IP addresses" = "dcim/ip-assignment.md" },
+      { "Cabling & connections" = "dcim/cabling.md" },
+      { "Fibre strands"     = "dcim/fiber.md" },
+      { "Interface & cable types" = "dcim/type-taxonomy.md" },
+    ] },
+    { "Organization" = [
+      "organization/index.md",
+      { "Contacts"          = "features/contacts.md" },
+      { "Regions & locations" = "features/regions-locations.md" },
+    ] },
+    { "Circuits & links" = [
+      "connectivity/index.md",
+      { "Circuits"          = "features/circuits.md" },
+      { "Power"             = "features/power.md" },
+      { "Wireless"          = "features/wireless.md" },
+      { "VPN tunnels"       = "features/vpn.md" },
+    ] },
+    { "Monitoring & compliance" = [
+      "monitoring/index.md",
+      { "Monitoring"        = "features/monitoring.md" },
+      { "Outposts (remote engines)" = "monitoring/outposts.md" },
+      { "SNMP discovery"    = "features/snmp-discovery.md" },
+      { "Compliance"        = "features/compliance.md" },
+    ] },
+    { "Automation & integrations" = [
+      "automation/index.md",
+      { "Config contexts"   = "features/config-contexts.md" },
+      { "Export templates"  = "features/export-templates.md" },
+      { "Config drift (Ansible/Terraform)" = "features/iac-runner.md" },
+      { "Advanced: custom-field-driven playbook" = "features/cf-driven-playbook.md" },
+      { "Webhooks"          = "features/webhooks.md" },
+      { "Import & export"   = "features/import-export.md" },
+      { "Import from NetBox" = "features/netbox-import.md" },
+    ] },
+    { "Access & history" = [
+      "access/index.md",
+      { "Permissions & access" = "features/permissions.md" },
+      { "Site separation"   = "access/site-separation.md" },
+      { "Change log"        = "features/change-log.md" },
+      { "Journals"          = "features/journals.md" },
+    ] },
+    { "Working with data" = [
+      "working-with-data/index.md",
+      { "Dashboard"         = "features/dashboard.md" },
+      { "Tags & custom fields" = "features/tags-and-custom-fields.md" },
+      { "Object numbers (IDs)" = "features/object-numbers.md" },
+      { "Table columns"     = "features/table-preferences.md" },
+      { "Exporting tables"  = "features/exporting-tables.md" },
+    ] },
   ] },
   { "Architecture" = [
     { "Overview"          = "architecture/overview.md" },
@@ -100,17 +102,18 @@ nav = [
     { "Data model"        = "architecture/data-model.md" },
     { "Isolation: Tenant + VRF" = "architecture/tenant-vrf.md" },
     { "Tenant settings & overrides" = "architecture/tenant-settings.md" },
-    { "Plugins" = "architecture/plugins.md" },
-    { "shadcn / design tokens" = "architecture/shadcn-tokens.md" },
-  ] },
-  { "Data models" = [
-    { "Tenant"            = "models/tenant.md" },
-    { "VRF"               = "models/vrf.md" },
-    { "Site"              = "models/site.md" },
-    { "VLAN"              = "models/vlan.md" },
-    { "Prefix"            = "models/prefix.md" },
-    { "IP address"        = "models/ip-address.md" },
-    { "Tag"               = "models/tag.md" },
+    { "Plugins"           = "architecture/plugins.md" },
+    { "Design tokens"     = "architecture/shadcn-tokens.md" },
+    { "Visual language"   = "design/visual-language.md" },
+    { "Data models" = [
+      { "Tenant"            = "models/tenant.md" },
+      { "VRF"               = "models/vrf.md" },
+      { "Site"              = "models/site.md" },
+      { "VLAN"              = "models/vlan.md" },
+      { "Prefix"            = "models/prefix.md" },
+      { "IP address"        = "models/ip-address.md" },
+      { "Tag"               = "models/tag.md" },
+    ] },
   ] },
   { "Reference" = [
     { "URL routes"        = "reference/url-routes.md" },
@@ -119,9 +122,6 @@ nav = [
     { "Reverse proxy (nginx/443)" = "reference/nginx-proxy.md" },
     { "Icons"             = "reference/icons.md" },
   ] },
-  { "Design" = [
-    { "Visual language"   = "design/visual-language.md" },
-  ] },
 ]
 
 [project.theme]
@@ -129,9 +129,10 @@ language = "en"
 features = [
   "navigation.instant",
   "navigation.tracking",
-  # Top-level menu lives in the LEFT SIDEBAR (no top tabs). Categories are
-  # collapsible — we deliberately omit `navigation.sections` (which would force
-  # every category open) and `navigation.expand` (which would expand all).
+  # Top-level areas are sticky TABS across the top (only a handful now), and the
+  # left sidebar shows the active area's collapsible sub-sections + index pages.
+  "navigation.tabs",
+  "navigation.tabs.sticky",
   "navigation.indexes",
   "navigation.top",
   "navigation.footer",

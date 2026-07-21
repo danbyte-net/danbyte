@@ -2,118 +2,70 @@
 icon: lucide/palette
 ---
 
-# Theme tokens (shadcn-style)
+# Design tokens (shadcn / Tailwind 4)
 
-**Adopted: 2026-06-15.** Tweakcn preset `b5JOExNUO` (sky-blue brand).
+How the frontend's colours and theming work: a shadcn-style **CSS-variable token
+system** on **Tailwind 4**, in the React/TanStack SPA. This page is the record of
+where the tokens live, how to use them, and how to swap the palette.
 
-This page is the canonical record of why we adopted shadcn's CSS variable
-system + how to use it + how to swap presets later.
+!!! note "This is the React SPA"
+    The active UI is the React 19 + TanStack + Tailwind 4 + shadcn/Radix app in
+    `frontend/` (built with Vite). The earlier htmx/Django-template UI — and its
+    `tailwind.config.js` / `design/tokens.css` — are gone; ignore any older notes
+    that mention them.
 
-## What we did NOT do
-
-We did **not** rewrite to React + shadcn-the-component-library. That was
-on the table — the user even asked about
-`npx shadcn@latest init --template start`. We considered it and chose not
-to. The short version is:
-
-- IPAM users live in tables. Server-rendered tables are *faster* than SPA
-  tables (no spinner-purgatory, no client/server state sync bugs).
-- Plugin ecosystem story: a Django app drops in; a React plugin system is
-  double the surface area.
-- Self-hosters install one Python venv, not Node + npm + bundle pipeline.
-- We had just finished bulk-edit, filters, settings, picker, space map,
-  import re-parent — none of that survives a rewrite without weeks of
-  re-implementation.
-
-## What we DID do
-
-Adopted the *theme system* from shadcn — CSS variables + token discipline
-— layered onto the existing Django + htmx + Tailwind stack.
-
-### Files
+## Where the tokens live
 
 | File | Role |
 |---|---|
-| `design/tokens.css` | Owns the `:root { … }` and `.dark { … }` blocks. Paste any tweakcn / shadcn preset here verbatim. |
-| `tailwind.config.js` | Extends `theme.colors` with `primary`, `secondary`, `muted`, `accent`, `destructive`, `card`, `popover`, `sidebar`, `chart-1..5`. Has a `color-mix()` helper so `bg-primary/90` (opacity modifiers) work against raw `oklch()` literals. |
-| `components.json` | shadcn's manifest. Present so that *if* we ever add a React island, `npx shadcn add <component>` knows the project layout. |
+| `frontend/src/styles.css` | The single source of truth. `@import "tailwindcss"` (Tailwind 4 — configured in CSS, **no `tailwind.config.js`**). A `@theme inline { … }` block maps semantic tokens to Tailwind colour utilities (`--color-primary: var(--primary)` → `bg-primary`). `:root { … }` and the dark variant hold the actual `oklch()` values — paste a tweakcn/shadcn preset here verbatim. |
+| `frontend/components.json` | The shadcn manifest (`style: radix-vega`, `baseColor: zinc`, `css: src/styles.css`, Lucide icons). Lets `npx shadcn add <component>` drop new primitives into `components/ui/` with the right paths. |
 
-### Usage
+Dark mode is a `.dark` class on `<html>` (via `@custom-variant dark (&:is(.dark *))`),
+toggled by the theme provider; a small inline script in `routes/__root.tsx` sets
+it **before first paint** so there's no flash. There is no `tailwind.config.js`
+and no separate PostCSS colour config — it's all in `styles.css`.
 
-```html
-{# OLD — hard-coded zinc, theme swap is a global find-and-replace #}
-<button class="bg-zinc-900 text-white hover:bg-zinc-800
-               dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white">
-  Save
-</button>
+## Using tokens
 
-{# NEW — semantic token, theme swap is one variable #}
-<button class="bg-primary text-primary-foreground hover:bg-primary/90">
-  Save
-</button>
-```
+Style with the **semantic** utilities the `@theme` block generates — never
+hard-coded colours:
 
-| Surface | Token |
-|---|---|
-| Primary action (Save, Add, Create) | `bg-primary text-primary-foreground hover:bg-primary/90` |
-| Secondary action | `bg-secondary text-secondary-foreground hover:bg-secondary/80` |
-| Destructive armed state | `bg-destructive text-destructive-foreground hover:bg-destructive/90` |
-| Card surface | `bg-card text-card-foreground border-border` |
-| Popover / dropdown | `bg-popover text-popover-foreground` |
-| Sidebar surface | `bg-sidebar text-sidebar-foreground` |
-| Active sidebar item | `bg-sidebar-accent text-sidebar-accent-foreground` |
-| Chart colour 1–5 | `bg-chart-1` … `bg-chart-5` |
-| Muted / subtle text | `text-muted-foreground` |
-| Page border | `border-border` |
-| Focus ring | `ring-ring` |
+- Surfaces: `bg-background`, `bg-card`, `bg-popover`, `bg-muted`, `bg-sidebar`
+- Text: `text-foreground`, `text-muted-foreground`, `text-primary`
+- Lines/controls: `border-border`, `ring-ring`, `bg-input`
+- Intent: `bg-primary` / `text-primary-foreground`, `bg-destructive`, `bg-accent`
 
-### Status colours stay separate
+Opacity modifiers work against the raw `oklch()` values (`bg-primary/90`,
+`border-border/50`) because Tailwind 4 applies them via `color-mix()`
+automatically. The neutral palette is **zinc**; reach for a semantic token, not
+a `zinc-500`, so a preset swap re-themes everything at once.
 
-Success / warning / danger / neutral (`emerald` / `amber` / `red` /
-`zinc`) are **semantic** colours that always mean the same thing. They
-have their own variables (`--success`, `--warning`, `--danger`) and a
-tenant theme swap never touches them. The
-status-badge component is the canonical render site for these.
+## Status colours stay separate
 
-## Swapping presets
+Status, role, and monitoring-check colours are **data**, not part of the theme
+palette — they come from each object's own colour (a `Status`/`Role` row's
+`color`, or a fixed check-status palette). Render them with `StatusBadge`,
+`ColorBadge`, `RoleChip`, or `CheckStatusBadge`; never derive a status colour
+from the token palette or hard-code one by name. See
+[Visual language](../design/visual-language.md) for the full component rules.
 
-Pick a preset on <https://tweakcn.com> or <https://ui.shadcn.com/themes>.
-Each one exposes a `:root { … }` block of CSS variables.
+## Swapping the palette
 
-1. Copy the entire `:root { … }` block (and `.dark { … }`).
-2. Paste it into `design/tokens.css`, replacing the existing two blocks.
-3. Run `make css`.
-4. Done. No template changes, no rebuild of any Django code.
+1. Pick/generate a preset (e.g. [tweakcn](https://tweakcn.com/) or the shadcn
+   theme editor) and copy its `:root { … }` and dark-mode `oklch()` blocks.
+2. Paste them over the corresponding blocks in `frontend/src/styles.css`.
+3. `npm run build` (or the dev server) — every semantic utility repaints; no
+   component changes needed.
 
-If a preset adds new variables (newer shadcn revisions add tokens like
-`--sidebar-foreground` etc.), the existing CSS just drops back to the
-inherited token until you wire it into `tailwind.config.js`.
+Keep the token **names** identical (`--primary`, `--muted`, `--sidebar`,
+`--chart-1..5`, …); only the values change.
 
-## Why `color-mix()` and not `hsl()`
+## Why `oklch()`
 
-Older shadcn presets emit HSL components (`240 5.9% 10%`) which Tailwind
-3 can extract opacity from via `hsl(var(--primary) / <alpha-value>)`.
-The newer tweakcn / shadcn presets emit `oklch()` literals
-(`oklch(0.5 0.134 242.749)`). Tailwind 3 can't extract an alpha channel
-from an opaque function literal, so `bg-primary/90` silently produces no
-hover effect.
-
-The fix in `tailwind.config.js` is a small color-token factory: it
-returns plain `var(--primary)` when no opacity modifier is present, and
-emits `color-mix(in srgb, var(--primary) 90%, transparent)` when one is.
-This works in every browser since 2023 (Chrome 111+, Firefox 113+,
-Safari 16.4+) — which is also the minimum baseline for `oklch()` itself,
-so we're not introducing a new compat floor.
-
-## What's still pure-Tailwind (and that's fine)
-
-Most of the codebase still uses stock Tailwind classes (`bg-zinc-50`,
-`text-zinc-700`, `border-zinc-200`). That's intentional — these are
-**design-system** rules baked into CLAUDE.md, not brand-themable. A
-re-skin should change the *brand* (primary, sidebar accent), not the
-*surface palette* (zinc).
-
-The migration we did was narrow on purpose: the primary action button,
-the sidebar active state, the logo badge, utilization bar fills, the
-no-script Apply button. That's ~31 sites. Hard-coded zinc surfaces stay
-zinc until and unless we genuinely want surface re-themes (we don't).
+The tokens are authored in `oklch(L C H)` (perceptual lightness/chroma/hue), the
+shadcn default. It gives even lightness steps and predictable
+`color-mix()`/opacity behaviour across the palette, and modern browsers support
+it natively — so the brand blue, its `/90` hover, and the chart ramp all stay
+perceptually consistent. Swapping to another preset's `oklch()` values keeps that
+property for free.
