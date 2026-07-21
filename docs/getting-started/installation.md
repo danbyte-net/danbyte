@@ -20,13 +20,20 @@ The other tabs cover building from source and a local dev checkout.
 
     Every release ships a **self-contained bundle** — Python, Node, all
     dependencies and the prebuilt frontend baked in. On a fresh Ubuntu/Debian
-    box, one command does everything:
+    box, **one line** does everything:
 
     ```bash
-    curl -fsSLO https://github.com/danbyte-net/danbyte/releases/latest/download/danbyte-<version>-linux-x86_64.tar.gz
-    tar xzf danbyte-<version>-linux-x86_64.tar.gz
-    cd danbyte-<version>-linux-x86_64
-    sudo ./install.sh --host danbyte.example.com
+    curl -fsSL https://danbyte.net/install.sh | bash -s -- --host danbyte.example.com
+    ```
+
+    The bootstrap script resolves the **latest** release automatically (so
+    there's no version to fill in), downloads the offline bundle, **verifies its
+    published SHA-256**, unpacks it, and runs the bundled installer — everything
+    after `--` is passed straight through to it. Pin a specific version with
+    `DANBYTE_VERSION`:
+
+    ```bash
+    curl -fsSL https://danbyte.net/install.sh | DANBYTE_VERSION=0.9.10 bash -s -- --host danbyte.example.com
     ```
 
     It creates the `danbyte` service user, installs to `/opt/danbyte`, generates
@@ -37,7 +44,21 @@ The other tabs cover building from source and a local dev checkout.
     `https://danbyte.example.com/`, sign in as `admin`, and change it under
     **User → Preferences**.
 
-    ??? note "Airgapped / offline"
+    ??? note "Manual bundle download (airgapped / offline)"
+        Prefer to fetch the bundle yourself — e.g. to carry it onto an airgapped
+        host? Download the release asset, verify it, and run its bundled
+        installer. Replace `<version>` with the latest release number:
+
+        ```bash
+        base=https://github.com/danbyte-net/danbyte/releases/latest/download
+        curl -fsSLO $base/danbyte-<version>-linux-x86_64.tar.gz
+        curl -fsSLO $base/danbyte-<version>-linux-x86_64.tar.gz.sha256
+        sha256sum -c danbyte-<version>-linux-x86_64.tar.gz.sha256
+        tar xzf danbyte-<version>-linux-x86_64.tar.gz
+        cd danbyte-<version>-linux-x86_64
+        sudo ./install.sh --host danbyte.example.com
+        ```
+
         The bundle needs **no** PyPI / npm / python.org access. Only the OS
         packages it builds on — `postgresql`, `redis-server`, `nginx` — come from
         your distro; on an airgapped host, point `apt` at a local mirror or

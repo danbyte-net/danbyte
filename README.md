@@ -64,14 +64,16 @@ your network instead of a template.
 
 Every release ships a **self-contained bundle** — Python, Node, all
 dependencies, and the prebuilt frontend baked in. On a fresh Ubuntu/Debian box,
-one command installs everything (service user, database, secrets, nginx + TLS):
+**one line** installs everything (service user, database, secrets, nginx + TLS):
 
 ```bash
-curl -fsSLO https://github.com/danbyte-net/danbyte/releases/latest/download/danbyte-<version>-linux-x86_64.tar.gz
-tar xzf danbyte-<version>-linux-x86_64.tar.gz
-cd danbyte-<version>-linux-x86_64
-sudo ./install.sh --host danbyte.example.com
+curl -fsSL https://danbyte.net/install.sh | bash -s -- --host danbyte.example.com
 ```
+
+It resolves the latest release, verifies the bundle's SHA-256, and runs the
+installer (flags after `--` pass through). Pin a version with
+`DANBYTE_VERSION=<x.y.z>`, or download the bundle manually — see the
+[installation guide](https://docs.danbyte.net/getting-started/installation/).
 
 It prints the generated admin password when it finishes — open
 `https://danbyte.example.com/`, sign in as `admin`, and change it under
