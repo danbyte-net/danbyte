@@ -155,6 +155,18 @@ const EXTRA_COLUMNS: Record<TemplateKind, ColumnDef<AnyTemplate>[]> = {
           dash
         ),
     },
+    {
+      id: "default_module",
+      header: "Default module",
+      cell: ({ row }) =>
+        row.original.default_module_type ? (
+          <span className="text-xs">
+            {row.original.default_module_type.name}
+          </span>
+        ) : (
+          dash
+        ),
+    },
   ],
   "power-port": [
     typeCol,

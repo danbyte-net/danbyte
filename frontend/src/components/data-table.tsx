@@ -17,16 +17,9 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import {
-  ArrowUpDown,
-  ChevronDown,
-  ChevronRight,
-  ChevronUp,
-  Download,
-  Lock,
-  RotateCcw,
-} from "lucide-react"
+import { ArrowUpDown, ChevronDown, ChevronRight, Download } from "lucide-react"
 
+import { ColumnsMenu } from "@/components/column-menu"
 import { useTablePreference } from "@/lib/use-table-preference"
 import { useUserPrefs } from "@/lib/use-user-prefs"
 import { exportTable, type ExportFormat } from "@/lib/table-export"
@@ -219,16 +212,26 @@ export function DataTable<T>({
       return next
     })
   }
-  // Move a manageable column one slot up/down within the manageable sequence.
-  const moveColumn = (id: string, dir: -1 | 1) => {
+  // Commit a full layout from the Columns menu in ONE atomic write — order +
+  // hidden together. (The old per-toggle auto-save could race itself and drop
+  // changes / re-check boxes; staging a draft and saving once fixes that.)
+  const applyLayout = (order: string[], hidden: string[]) => {
     if (pref.isForced) return
-    const seq = manageableSeq(columnOrder, allIds, manageableIds)
-    const i = seq.indexOf(id)
-    const j = i + dir
-    if (i < 0 || j < 0 || j >= seq.length) return
-    ;[seq[i], seq[j]] = [seq[j], seq[i]]
-    setColumnOrder(applyManageableOrder(allIds, manageableIds, seq))
-    if (tableId) pref.setLayout({ order: seq }) // forced already guarded above
+    setColumnOrder(applyManageableOrder(allIds, manageableIds, order))
+    // Raw visibility set (bypasses the per-toggle persist wrapper) — the single
+    // pref.setLayout below is the one and only write.
+    setColumnVisibility(() => {
+      const vis: VisibilityState = {}
+      for (const id of hidden) if (manageableIds.includes(id)) vis[id] = false
+      return vis
+    })
+    if (tableId) pref.setLayout({ order, hidden })
+  }
+  const resetLayout = () => {
+    setColumnOrder([])
+    setColumnVisibility(initialColumnVisibility ?? {})
+    appliedRef.current = false
+    pref.reset()
   }
   // Default to every group expanded so the child rows show on first
   // render — collapsing is interactive but a fresh page should reveal
@@ -357,92 +360,36 @@ export function DataTable<T>({
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                  >
-                    {pref.isForced && <Lock className="mr-1 h-3 w-3" />}
-                    {columnsLabel}
-                    <ChevronDown className="ml-1 h-3 w-3" />
-                  </Button>
-                </DropdownMenuTrigger>
-                {tableId ? (
-                  // Preference-aware menu: per-column show/hide + reorder, with a
-                  // Reset to fall back to the tenant default, all disabled when an
-                  // admin has forced the layout. Rows are plain divs (not menu
-                  // items) so toggling/reordering doesn't close the menu.
-                  <DropdownMenuContent align="end" className="w-60">
-                    {pref.isForced && (
-                      <div className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground">
-                        <Lock className="h-3 w-3" /> Layout locked by an
-                        administrator
-                      </div>
-                    )}
-                    {(() => {
-                      const seq = manageableSeq(
-                        columnOrder,
-                        allIds,
-                        manageableIds
-                      )
-                      return seq.map((id, i) => {
-                        const col = table.getColumn(id)
-                        const visible = col?.getIsVisible() ?? true
-                        const label = resolveColumnLabel(id, col?.columnDef)
-                        return (
-                          <div
-                            key={id}
-                            className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs hover:bg-muted/50"
-                          >
-                            <Checkbox
-                              checked={visible}
-                              disabled={pref.isForced}
-                              onCheckedChange={(v) =>
-                                col?.toggleVisibility(!!v)
-                              }
-                              aria-label={`Toggle ${id}`}
-                            />
-                            <span className="flex-1 truncate">{label}</span>
-                            <button
-                              type="button"
-                              disabled={pref.isForced || i === 0}
-                              onClick={() => moveColumn(id, -1)}
-                              className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-                              aria-label={`Move ${id} up`}
-                            >
-                              <ChevronUp className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              disabled={pref.isForced || i === seq.length - 1}
-                              onClick={() => moveColumn(id, 1)}
-                              className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-                              aria-label={`Move ${id} down`}
-                            >
-                              <ChevronDown className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        )
-                      })
-                    })()}
-                    {pref.hasUserRow && !pref.isForced && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setColumnOrder([])
-                          setColumnVisibility(initialColumnVisibility ?? {})
-                          appliedRef.current = false
-                          pref.reset()
-                        }}
-                        className="mt-1 flex w-full items-center gap-1.5 border-t px-2 pt-1.5 text-[11px] text-muted-foreground hover:text-foreground"
-                      >
-                        <RotateCcw className="h-3 w-3" /> Reset to default
-                      </button>
-                    )}
-                  </DropdownMenuContent>
-                ) : (
+              {tableId ? (
+                // Preference-aware: drag to reorder + tick to show, saved as one
+                // atomic layout. Reset falls back to the tenant default; the
+                // whole thing is read-only when an admin has forced the layout.
+                <ColumnsMenu
+                  label={columnsLabel}
+                  isForced={pref.isForced}
+                  hasUserRow={pref.hasUserRow}
+                  seq={manageableSeq(columnOrder, allIds, manageableIds)}
+                  labelFor={(id) =>
+                    resolveColumnLabel(id, table.getColumn(id)?.columnDef)
+                  }
+                  isHidden={(id) =>
+                    !(table.getColumn(id)?.getIsVisible() ?? true)
+                  }
+                  onApply={applyLayout}
+                  onReset={resetLayout}
+                />
+              ) : (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                    >
+                      {columnsLabel}
+                      <ChevronDown className="ml-1 h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
                     {table
                       .getAllColumns()
@@ -458,8 +405,8 @@ export function DataTable<T>({
                         </DropdownMenuCheckboxItem>
                       ))}
                   </DropdownMenuContent>
-                )}
-              </DropdownMenu>
+                </DropdownMenu>
+              )}
             </div>
           )}
         </div>

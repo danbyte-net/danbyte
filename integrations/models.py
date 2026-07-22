@@ -296,6 +296,10 @@ class NetBoxImportRun(TimestampedModel):
     # executes on a worker, and "test connection worked but the run failed on
     # the cert" was exactly the bug when it wasn't.
     insecure = models.BooleanField(default=False)
+    # Download device-type front/rear + floor-plan images from NetBox media.
+    # Off by default: it fetches binary files over the same session and adds
+    # time, so it's opt-in per run.
+    with_images = models.BooleanField(default=False)
     only = models.JSONField(default=list, blank=True)
     skip = models.JSONField(default=list, blank=True)
     # Live progress written by the importer's on_progress hook:

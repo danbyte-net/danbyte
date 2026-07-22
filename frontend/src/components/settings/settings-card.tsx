@@ -24,15 +24,15 @@ export function SettingsGrid({
 }) {
   return (
     // Masonry: cards pack against the one above rather than aligning to a row,
-    // so a short card never leaves a hole beside a tall one.
+    // so a short card never leaves a hole beside a tall one. `[&>*]:mb-4` is the
+    // gap between stacked cards within a column (CSS columns have no row-gap).
     //
-    // `-mb-4` cancels the trailing margin of whichever card ends each column, so
-    // the container's bottom edge sits exactly on the last card. Without it the
-    // gap to whatever follows depends on which column happened to be taller.
+    // No negative bottom margin here: on every settings page a full-width card
+    // follows this grid, and a `-mb-4` collapsed the `space-y-6` gap before it
+    // down to a few pixels, jamming that card against the grid.
     <div
       className={cn(
         "columns-1 gap-4 xl:columns-2 [&>*]:mb-4 [&>*]:break-inside-avoid",
-        "-mb-4",
         className
       )}
     >

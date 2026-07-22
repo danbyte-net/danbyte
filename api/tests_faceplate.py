@@ -94,6 +94,30 @@ class FaceplateFieldTests(APITestCase):
         }
         self.assertEqual(self._patch(doc).status_code, 400)
 
+    def test_accepts_module_bay_placeholder(self):
+        # A group may carry a `bay` marker (placed in the builder) — the device
+        # render composes an installed module's faceplate there.
+        doc = {
+            "v": 1, "rear": [],
+            "front": [
+                {"id": "b", "bay": "Network Module", "label": "Network Module",
+                 "rows": 1, "bank": 0, "slots": [{"t": "blank"}]}
+            ],
+        }
+        resp = self._patch(doc)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()["faceplate"]["front"][0]["bay"],
+                         "Network Module")
+
+    def test_rejects_non_string_bay(self):
+        doc = {
+            "v": 1, "rear": [],
+            "front": [
+                {"id": "b", "bay": 42, "rows": 1, "bank": 0, "slots": []}
+            ],
+        }
+        self.assertEqual(self._patch(doc).status_code, 400)
+
     def test_rejects_duplicate_kind_name(self):
         doc = {
             "v": 1, "rear": [],

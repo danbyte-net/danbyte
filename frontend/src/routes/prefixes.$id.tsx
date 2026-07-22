@@ -14,6 +14,7 @@ import {
   type SpaceMap as SpaceMapData,
   type SubnetDetailRow,
 } from "@/lib/api"
+import { useCurrentHref } from "@/lib/return-to"
 import { CopyButton, KvCard, dash, type KvRow } from "@/components/kv-card"
 import {
   annotateNesting,
@@ -149,9 +150,17 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
     [nav, p.id]
   )
 
+  // Edit from a prefix's IPs tab should return here (this exact tab), not the
+  // IP detail page — pass the current href as ?from.
+  const currentHref = useCurrentHref()
   const handleEditIp = useCallback(
-    (ip: IPAddress) => nav({ to: "/ips/$id/edit", params: { id: ip.id } }),
-    [nav]
+    (ip: IPAddress) =>
+      nav({
+        to: "/ips/$id/edit",
+        params: { id: ip.id },
+        search: { from: currentHref },
+      }),
+    [nav, currentHref]
   )
   const handleDeleteIp = useCallback((ip: IPAddress) => setDeletingIp(ip), [])
   const handleEditChild = useCallback(

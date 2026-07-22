@@ -3184,7 +3184,9 @@ class DeviceBayViewSet(_DevicePortViewSet):
 
 
 class ModuleBayTemplateViewSet(_ComponentTemplateViewSet):
-    queryset = ModuleBayTemplate.objects.select_related("device_type").order_by("name")
+    queryset = ModuleBayTemplate.objects.select_related(
+        "device_type", "default_module_type"
+    ).order_by("name")
     serializer_class = ModuleBayTemplateSerializer
 
 

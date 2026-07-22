@@ -166,7 +166,8 @@ def site_map(request):
             request.user, tenant, "device", "view",
         )
         .filter(latitude__isnull=False, longitude__isnull=False)
-        .select_related("role", "site", "status", "device_type")
+        .select_related("role", "site", "status", "device_type", "primary_ip")
+        .prefetch_related("tags")
     )
     dev_filt = rbac.row_filter(request.user, tenant, "device", "change")
     if dev_filt is None:
@@ -178,12 +179,13 @@ def site_map(request):
             Device.objects.filter(tenant=tenant).filter(dev_filt)
             .values_list("id", flat=True)
         )
-    devices = [
-        {
+    def device_info(d):
+        """The display fields a device contributes to the map — shared by a
+        placed device pin and a marker's linked device, so both popovers show
+        the same detail set (driven by the shared floor-plan popover config)."""
+        return {
             "id": str(d.id),
             "name": d.name,
-            "latitude": float(d.latitude),
-            "longitude": float(d.longitude),
             "site": {"id": str(d.site_id), "name": d.site.name}
             if d.site_id else None,
             "role": {"name": d.role.name, "color": d.role.color}
@@ -191,11 +193,35 @@ def site_map(request):
             "status": {"name": d.status.name, "color": d.status.color}
             if d.status_id else None,
             "device_type": d.device_type.name if d.device_type_id else None,
+            "numid": d.numid,
+            "description": d.description or "",
+            "serial_number": d.serial_number or "",
+            "asset_tag": d.asset_tag or "",
+            "primary_ip": {
+                "id": str(d.primary_ip_id),
+                "ip_address": d.primary_ip.ip_address,
+                "dns_name": d.primary_ip.dns_name,
+            }
+            if d.primary_ip_id else None,
+            "tags": [
+                {"id": t.id, "name": t.name, "slug": t.slug,
+                 "color": t.color, "text_color": t.text_color}
+                for t in d.tags.all()
+            ],
+            "custom_fields": d.custom_fields or {},
             "front_image": (
                 request.build_absolute_uri(d.device_type.front_image.url)
                 if d.device_type_id and d.device_type.front_image
                 else None
             ),
+            "check": worst_status(device_checks.get(d.id, [])),
+        }
+
+    devices = [
+        {
+            **device_info(d),
+            "latitude": float(d.latitude),
+            "longitude": float(d.longitude),
             "fov": {
                 "direction": d.fov_direction,
                 "deg": d.fov_deg,
@@ -204,7 +230,6 @@ def site_map(request):
             }
             if (d.fov_distance_m and (d.fov_ptz or d.fov_deg)) else None,
             "has_fov": bool(d.role_id and d.role.has_fov),
-            "check": worst_status(device_checks.get(d.id, [])),
             "can_edit": d.id in dev_editable,
         }
         for d in devices_qs
@@ -220,8 +245,7 @@ def site_map(request):
             "longitude": float(m.longitude),
             "label": m.label,
             "description": m.description,
-            "device": {"id": str(m.device_id), "name": m.device.name}
-            if m.device_id else None,
+            "device": device_info(m.device) if m.device_id else None,
             "type": {
                 "id": str(m.type_obj.id),
                 "name": m.type_obj.name,
@@ -238,7 +262,12 @@ def site_map(request):
             if (m.fov_distance_m and (m.fov_ptz or m.fov_deg)) else None,
         }
         for m in SiteMarker.objects.filter(tenant=tenant)
-        .select_related("tile_type", "role_type", "device")
+        .select_related(
+            "tile_type", "role_type", "device",
+            "device__role", "device__site", "device__status",
+            "device__device_type", "device__primary_ip",
+        )
+        .prefetch_related("device__tags")
     ]
 
     return Response({

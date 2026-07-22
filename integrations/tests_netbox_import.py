@@ -355,6 +355,35 @@ class InsecureFlagTests(ImporterBase):
             run_netbox_import(str(run.id))
         self.assertFalse(captured["verify"])  # insecure flowed to the client
 
+    def test_with_images_flows_to_importer(self):
+        # The web-UI run used to hardcode with_images=False, so images never
+        # downloaded no matter the request. It must reach the importer opts.
+        from unittest import mock
+
+        from integrations.models import NetBoxImportRun
+        from integrations.netbox_tasks import run_netbox_import
+
+        run = NetBoxImportRun.objects.create(
+            tenant=self.tenant, url="https://nb.example.com", status="queued",
+            dry_run=True, with_images=True, secrets={"token": "t"},
+        )
+        captured = {}
+
+        class FakeImp:
+            def __init__(self, cmd, client, tenant, opts, on_progress=None):
+                captured["with_images"] = opts.get("with_images")
+                raise RuntimeError("stop here")
+
+        with mock.patch(
+            "integrations.management.commands.import_netbox.NetBoxClient",
+            lambda *a, **k: object(),
+        ), mock.patch(
+            "integrations.management.commands.import_netbox._Importer",
+            FakeImp,
+        ):
+            run_netbox_import(str(run.id))
+        self.assertTrue(captured["with_images"])
+
     def test_all_fetches_failed_is_a_failed_run(self):
         # A client whose every list() raises → 0 fetched + fetch-failure notes
         # → the run must report FAILED, not a green "0 fetched" success.

@@ -104,7 +104,6 @@ function AdminPage() {
           table's default columns is a long list that would leave a hole beside
           it in one column. */}
       <SettingsCard
-        className="mt-4"
         title="Tenant table defaults"
         description={
           <>

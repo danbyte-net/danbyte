@@ -83,7 +83,7 @@ def run_netbox_import(run_id: str) -> None:
         opts = {
             "only": set(run.only or []),
             "skip": set(run.skip or []),
-            "with_images": False,
+            "with_images": run.with_images,
             "dry_run": run.dry_run,
             "update_existing": run.update_existing,
         }
@@ -125,7 +125,8 @@ def run_netbox_import(run_id: str) -> None:
 
 
 def enqueue_netbox_import(tenant, url, token, *, dry_run, update_existing,
-                          only, skip, insecure=False, user=None):
+                          only, skip, insecure=False, with_images=False,
+                          user=None):
     """Create a NetBoxImportRun and enqueue it on the low queue. Returns the
     run. Falls back to inline execution if Redis is unavailable. Never raises."""
     from integrations.models import NetBoxImportRun
@@ -133,6 +134,7 @@ def enqueue_netbox_import(tenant, url, token, *, dry_run, update_existing,
     run = NetBoxImportRun.objects.create(
         tenant=tenant, url=url, status="queued",
         dry_run=dry_run, update_existing=update_existing, insecure=insecure,
+        with_images=with_images,
         only=list(only or []), skip=list(skip or []),
         created_by=user, secrets={"token": token},
     )

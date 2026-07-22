@@ -876,22 +876,35 @@ export interface SiteMapSite {
   can_edit: boolean
 }
 
-export interface SiteMapDevice {
+/** The display fields a device contributes to the map — shared by a placed
+ * device pin ({@link SiteMapDevice}) and a marker's linked device, so both
+ * popovers render the same detail set. */
+export interface SiteMapDeviceInfo {
   id: string
   name: string
-  latitude: number
-  longitude: number
   site: { id: string; name: string } | null
   role: { name: string; color: string } | null
   status: { name: string; color: string } | null
   device_type: string | null
+  numid: number | null
+  description: string
+  serial_number: string
+  asset_tag: string
+  primary_ip: { id: string; ip_address: string; dns_name: string } | null
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
   /** Front rack-face image of the device type, if uploaded. */
   front_image: string | null
+  /** Worst monitoring status across the device's IPs, or null. */
+  check: string | null
+}
+
+export interface SiteMapDevice extends SiteMapDeviceInfo {
+  latitude: number
+  longitude: number
   fov: SiteMapFov | null
   /** Role allows a field-of-view cone (cameras). */
   has_fov: boolean
-  /** Worst monitoring status across the device's IPs, or null. */
-  check: string | null
   can_edit: boolean
 }
 
@@ -909,7 +922,7 @@ export interface SiteMapMarker {
   longitude: number
   label: string
   description: string
-  device: { id: string; name: string } | null
+  device: SiteMapDeviceInfo | null
   type: {
     id: string
     name: string
@@ -4907,6 +4920,7 @@ export interface NetBoxImportRun {
   status: "queued" | "running" | "success" | "failed"
   dry_run: boolean
   update_existing: boolean
+  with_images?: boolean
   only: string[]
   skip: string[]
   progress: {

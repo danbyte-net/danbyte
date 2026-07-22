@@ -125,6 +125,7 @@ function NetBoxImportPage() {
   // ── options ──
   const [dryRun, setDryRun] = useState(true)
   const [updateExisting, setUpdateExisting] = useState(false)
+  const [withImages, setWithImages] = useState(false)
 
   // ── active run (polled) ──
   const [runId, setRunId] = useState<string | null>(null)
@@ -153,6 +154,7 @@ function NetBoxImportPage() {
           insecure,
           dry_run: dryRun,
           update_existing: updateExisting,
+          with_images: withImages,
         }),
       }),
     onSuccess: (r) => {
@@ -307,6 +309,20 @@ function NetBoxImportPage() {
                 Re-apply NetBox values to objects already in Danbyte.{" "}
                 <b>Overwrites local edits.</b> Off = existing rows are left
                 untouched.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-[13px]">
+            <Checkbox
+              className="mt-0.5"
+              checked={withImages}
+              onCheckedChange={(v) => setWithImages(!!v)}
+            />
+            <span>
+              Download images
+              <span className="block text-[11px] text-muted-foreground">
+                Pull device-type front/rear and floor-plan images from NetBox
+                media. Slower — fetches binary files over the same connection.
               </span>
             </span>
           </label>

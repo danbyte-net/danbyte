@@ -40,6 +40,7 @@ from .models import (
     WirelessLAN, WirelessLANGroup,
     Tunnel, TunnelGroup, TunnelTermination, IPSecProfile,
     L2VPN, L2VPNTermination, VirtualChassis,
+    render_component_name, render_module_name,
 )
 
 
@@ -1432,6 +1433,10 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
             u = g.get("u", 1)
             if not isinstance(u, int) or not (1 <= u <= 48):
                 raise serializers.ValidationError("Group u must be 1–48.")
+            bay = g.get("bay")
+            if bay is not None and (not isinstance(bay, str) or len(bay) > 64):
+                raise serializers.ValidationError(
+                    "Group bay must be a name (≤64 chars).")
             slots = g.get("slots")
             if not isinstance(slots, list):
                 raise serializers.ValidationError("Each group needs a slots list.")
@@ -2319,6 +2324,12 @@ class PowerOutletSerializer(_DevicePortSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
+class ModuleTypeMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = ModuleType
+        fields = ["id", "name", "part_number"]
+
+
 # ─── Device-type component templates ────────────────────────────────────────
 # Same lenient-`type` treatment as the concrete components. All are scoped by
 # ?device_type= and materialise onto new devices of the type.
@@ -2373,10 +2384,17 @@ class InventoryItemTemplateSerializer(_ComponentTemplateSerializer):
 
 class ModuleBayTemplateSerializer(_ComponentTemplateSerializer):
     position = serializers.CharField(required=False, allow_blank=True)
+    default_module_type = ModuleTypeMiniSerializer(read_only=True)
+    default_module_type_id = TenantScopedPrimaryKeyRelatedField(
+        source="default_module_type", queryset=ModuleType.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
 
     class Meta(_ComponentTemplateSerializer.Meta):
         model = ModuleBayTemplate
-        fields = _ComponentTemplateSerializer.Meta.fields + ["position"]
+        fields = _ComponentTemplateSerializer.Meta.fields + [
+            "position", "default_module_type", "default_module_type_id",
+        ]
 
 
 # ─── Modules (pluggable line cards) ──────────────────────────────────────────
@@ -2396,12 +2414,6 @@ class TopologyViewSerializer(NumIdModelSerializer):
         model = TopologyView
         fields = ["id", "numid", "name", "state", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "created_at", "updated_at"]
-
-
-class ModuleTypeMiniSerializer(NumIdModelSerializer):
-    class Meta:
-        model = ModuleType
-        fields = ["id", "name", "part_number"]
 
 
 class ModuleTypeSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
@@ -2617,6 +2629,26 @@ class ModuleSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     def get_module_type_faceplate(self, obj):
         return obj.module_type.faceplate
 
+    module_interfaces = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_module_interfaces(self, obj):
+        # The concrete interfaces this module contributes to the host device
+        # ({module} → bay position, {position} → stack member), with their type
+        # for cage sizing. Lets the device faceplate auto-lay a module into its
+        # bay placeholder even when the module type has no saved faceplate.
+        pos = obj.device.vc_position
+        bay_pos = obj.module_bay.position
+        return [
+            {
+                "name": render_component_name(
+                    render_module_name(t.name, bay_pos), pos
+                ),
+                "type": t.type,
+            }
+            for t in obj.module_type.interface_templates.all()
+        ]
+
     def validate(self, attrs):
         bay = attrs.get("module_bay") or (
             self.instance.module_bay if self.instance else None
@@ -2639,7 +2671,7 @@ class ModuleSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         model = Module
         fields = ["id", "device", "device_id", "module_bay", "module_bay_id",
                   "module_type", "module_type_id", "module_type_faceplate",
-                  "serial_number",
+                  "module_interfaces", "serial_number",
                   "asset_tag", "description", "tags", "tag_ids",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]

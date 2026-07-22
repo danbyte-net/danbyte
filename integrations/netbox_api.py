@@ -42,7 +42,7 @@ class NetBoxImportRunSerializer(serializers.ModelSerializer):
         model = NetBoxImportRun
         fields = [
             "id", "url", "status", "dry_run", "update_existing", "insecure",
-            "only", "skip", "progress", "report", "error",
+            "with_images", "only", "skip", "progress", "report", "error",
             "started_at", "finished_at", "created_at",
         ]
         read_only_fields = fields  # everything is server-managed
@@ -143,6 +143,7 @@ def netbox_test(request):
             "dry_run": serializers.BooleanField(required=False, default=True),
             "update_existing": serializers.BooleanField(required=False, default=False),
             "insecure": serializers.BooleanField(required=False, default=False),
+            "with_images": serializers.BooleanField(required=False, default=False),
             "only": serializers.ListField(
                 child=serializers.CharField(), required=False
             ),
@@ -186,6 +187,7 @@ def netbox_imports(request):
         dry_run=bool(data.get("dry_run", True)),
         update_existing=bool(data.get("update_existing")),
         insecure=bool(data.get("insecure")),
+        with_images=bool(data.get("with_images")),
         only=data.get("only") or [],
         skip=data.get("skip") or [],
         user=request.user,

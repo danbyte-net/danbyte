@@ -97,7 +97,10 @@ export type AnyTemplate = ComponentTemplateBase &
   Partial<
     Pick<FrontPortTemplate, "rear_port_template" | "rear_port_position">
   > &
-  Partial<{ position: string }> & // module-bay
+  Partial<{
+    position: string
+    default_module_type: { id: string; name: string } | null
+  }> & // module-bay
   Partial<{
     manufacturer: { id: string; name: string } | null
     part_id: string
@@ -177,8 +180,12 @@ export function ComponentTemplateDialog({
     null
   )
   const [rearPortPosition, setRearPortPosition] = useState("1")
-  // Module-bay extras — what {module} resolves to in installed port names.
+  // Module-bay extras — what {module} resolves to in installed port names, and
+  // an optional module type pre-seated into the bay on device create / sync.
   const [bayPosition, setBayPosition] = useState("")
+  const [defaultModuleTypeId, setDefaultModuleTypeId] = useState<string | null>(
+    null
+  )
   // Inventory-item extras
   const [manufacturerId, setManufacturerId] = useState<string | null>(null)
   const [partId, setPartId] = useState("")
@@ -212,6 +219,7 @@ export function ComponentTemplateDialog({
         : "1"
     )
     setBayPosition(template?.position ?? "")
+    setDefaultModuleTypeId(template?.default_module_type?.id ?? null)
     setManufacturerId(template?.manufacturer?.id ?? null)
     setPartId(template?.part_id ?? "")
     reset()
@@ -242,6 +250,16 @@ export function ComponentTemplateDialog({
         `/api/rear-port-templates/?device_type=${deviceTypeId}`
       ),
     enabled: open && kind === "front-port",
+  })
+  // Module types to offer as a bay's pre-seated default.
+  const moduleTypes = useQuery({
+    queryKey: ["module-types-picker"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>(
+        "/api/module-types/?picker=1"
+      ),
+    enabled: open && kind === "module-bay",
+    staleTime: 10 * 60_000,
   })
 
   const editing = !!template
@@ -280,6 +298,7 @@ export function ComponentTemplateDialog({
         payload.is_splitter = isSplitter
       } else if (kind === "module-bay") {
         payload.position = bayPosition.trim()
+        payload.default_module_type_id = defaultModuleTypeId
       } else if (kind === "inventory-item") {
         payload.manufacturer_id = manufacturerId
         payload.part_id = partId.trim()
@@ -399,15 +418,32 @@ export function ComponentTemplateDialog({
               />
             </div>
           ) : kind === "device-bay" ? null : kind === "module-bay" ? (
-            <FormText
-              label="Position"
-              value={bayPosition}
-              onChange={setBayPosition}
-              mono
-              placeholder="1"
-              hint="What {module} resolves to in installed port names"
-              error={fieldErrors.position}
-            />
+            <div className="grid gap-4">
+              <FormText
+                label="Position"
+                value={bayPosition}
+                onChange={setBayPosition}
+                mono
+                placeholder="1"
+                hint="What {module} resolves to in installed port names"
+                error={fieldErrors.position}
+              />
+              <FormCombobox
+                label="Default module"
+                value={defaultModuleTypeId}
+                onChange={setDefaultModuleTypeId}
+                noneLabel="Empty bay"
+                placeholder="Empty bay"
+                searchPlaceholder="Search module types…"
+                emptyText="No module types yet."
+                options={(moduleTypes.data?.results ?? []).map((m) => ({
+                  value: m.id,
+                  label: m.name,
+                }))}
+                hint="Pre-installed on new devices and on sync into an empty bay — replaceable per device"
+                error={fieldErrors.default_module_type_id}
+              />
+            </div>
           ) : kind === "rear-port" || kind === "front-port" ? (
             <FormText
               label="Type"

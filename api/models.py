@@ -666,6 +666,13 @@ class ModuleBayTemplate(_ComponentTemplate):
         max_length=32, blank=True, default="",
         help_text="Value {module} resolves to in installed port names (e.g. 1).",
     )
+    default_module_type = models.ForeignKey(
+        "ModuleType", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="default_in_bay_templates",
+        help_text="Pre-install a module of this type when the bay is stamped "
+        "onto a new device, and into an empty matching bay on sync-from-type. "
+        "Fully replaceable afterwards — this only decides what's pre-seated.",
+    )
 
     class Meta:
         unique_together = ("device_type", "name")
@@ -994,6 +1001,13 @@ def materialize_device_components(device) -> dict[str, int]:
     ModuleBay.objects.bulk_create(made)
     created["module_bays"] = len(made)
 
+    # Seat each bay template's default module into a matching *empty* bay — the
+    # ones just stamped, and any pre-existing empty ones (so sync-from-type fills
+    # them on existing devices too). Idempotent: occupied bays are left alone.
+    seated = _seat_default_modules(device, pos)
+    if seated:
+        created["modules"] = seated
+
     # Services aren't positional — plain name, carries protocol/ports/monitored.
     have = _names(device.services)
     made = [
@@ -1124,6 +1138,35 @@ def uninstall_module(module) -> int:
     names = _module_interface_names(module)
     deleted, _ = module.device.interfaces.filter(name__in=names).delete()
     return deleted
+
+
+def _seat_default_modules(device, pos) -> int:
+    """Install each module bay template's ``default_module_type`` into the
+    device's matching bay, but only where that bay is currently empty. Runs from
+    ``materialize_device_components`` — i.e. on device creation and on
+    sync-from-type — so the default is pre-seated on new devices and fills empty
+    bays on existing ones, while never overwriting a module an operator placed or
+    deliberately left out until the next sync. Returns the count installed."""
+    dt = device.device_type
+    wanted = {  # rendered bay name → module type to seat
+        n: t.default_module_type_id
+        for t in dt.module_bay_templates.all()
+        if t.default_module_type_id
+        and (n := render_component_name(t.name, pos))
+    }
+    if not wanted:
+        return 0
+    count = 0
+    bays = device.module_bays.filter(name__in=wanted).select_related("module")
+    for bay in bays:
+        if hasattr(bay, "module"):  # occupied — leave it be
+            continue
+        module = Module.objects.create(
+            device=device, module_bay=bay, module_type_id=wanted[bay.name],
+        )
+        install_module(module)
+        count += 1
+    return count
 
 
 class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):

@@ -1,7 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { renderToStaticMarkup } from "react-dom/server"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import { toast } from "sonner"
@@ -21,6 +28,7 @@ import {
   type Paginated,
   type SiteMapConnection,
   type SiteMapDevice,
+  type SiteMapDeviceInfo,
   type SiteMapFov,
   type SiteMapMarker,
   type SiteMapCable,
@@ -28,6 +36,8 @@ import {
   type SiteMapSite,
   type CableRoute,
   type CableRouteWritePayload,
+  type CheckStatus,
+  type CustomField,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -45,6 +55,12 @@ import {
 } from "@/components/ui/dialog"
 import { Field } from "@/components/forms"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { CheckStatusBadge } from "@/components/monitoring/status-badge"
+import { TagList } from "@/components/cells/tag-list"
+import {
+  formatCustomValue,
+  useCustomFieldDefs,
+} from "@/components/custom-field-display"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
@@ -1297,7 +1313,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           {/* rich popover, anchored to the selected object */}
           {popPos && (selSite || selDevice || selMarker || selConn) && (
             <div
-              className="absolute z-[900] w-64 -translate-x-1/2 rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+              className="absolute z-[900] w-max min-w-[15rem] max-w-[22rem] -translate-x-1/2 rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg"
               style={{ left: popPos.x, top: popPos.y + 14 }}
             >
               {selSite && (
@@ -1318,6 +1334,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
               {!selectedRoute && selMarker && (
                 <MarkerPopover
                   marker={selMarker}
+                  fields={popoverFields}
                   onClose={() => setSelected(null)}
                 />
               )}
@@ -1704,6 +1721,177 @@ function SitePopover({
   )
 }
 
+// One configured popover field → its device row (or null to skip). The site map
+// honors the SAME keys the floor-plan popover config sets, mapped to the device;
+// tile-only keys (position, size, utilization, colour, …) have no device
+// equivalent and fall through to null. `name` is the header and `linked` is the
+// Open-device action, both handled in DevicePopover.
+function deviceFieldRow(
+  key: string,
+  d: SiteMapDeviceInfo,
+  cfDefs?: CustomField[]
+): { label: string; node: ReactNode } | null {
+  switch (key) {
+    case "type":
+      return d.device_type
+        ? {
+            label: "Type",
+            node: <Badge variant="outline">{d.device_type}</Badge>,
+          }
+        : null
+    case "status":
+    case "linked_status":
+      return d.status
+        ? {
+            label: "Status",
+            node: (
+              <ColorBadge
+                name={d.status.name}
+                color={d.status.color || undefined}
+              />
+            ),
+          }
+        : null
+    case "linked_role":
+      return d.role
+        ? {
+            label: "Role",
+            node: (
+              <ColorBadge
+                name={d.role.name}
+                color={d.role.color || undefined}
+              />
+            ),
+          }
+        : null
+    case "check":
+      return d.check
+        ? {
+            label: "Monitoring",
+            node: <CheckStatusBadge status={d.check as CheckStatus} />,
+          }
+        : null
+    case "site":
+    case "linked_site":
+      return d.site
+        ? {
+            label: "Site",
+            node: (
+              <Link
+                to="/sites/$id"
+                params={{ id: d.site.id }}
+                className="text-primary hover:underline"
+              >
+                {d.site.name}
+              </Link>
+            ),
+          }
+        : null
+    case "linked_description":
+      return d.description
+        ? { label: "Description", node: <span>{d.description}</span> }
+        : null
+    case "linked_primary_ip":
+      return d.primary_ip
+        ? {
+            label: "Primary IP",
+            node: (
+              <Link
+                to="/ips/$id"
+                params={{ id: d.primary_ip.id }}
+                className="font-mono text-primary hover:underline"
+              >
+                {d.primary_ip.ip_address}
+              </Link>
+            ),
+          }
+        : null
+    case "linked_serial":
+      return d.serial_number
+        ? {
+            label: "Serial",
+            node: <span className="font-mono">{d.serial_number}</span>,
+          }
+        : null
+    case "linked_asset_tag":
+      return d.asset_tag
+        ? {
+            label: "Asset tag",
+            node: <span className="font-mono">{d.asset_tag}</span>,
+          }
+        : null
+    case "linked_numid":
+      return d.numid != null
+        ? { label: "ID", node: <span className="num">#{d.numid}</span> }
+        : null
+    case "tags":
+    case "linked_tags":
+      return d.tags?.length
+        ? { label: "Tags", node: <TagList tags={d.tags} /> }
+        : null
+    default:
+      if (key.startsWith("cf_")) {
+        const cfKey = key.slice(3)
+        const v = d.custom_fields?.[cfKey]
+        if (v === null || v === undefined || v === "") return null
+        const def = cfDefs?.find((x) => x.key === cfKey)
+        return { label: def?.label ?? cfKey, node: formatCustomValue(def, v) }
+      }
+      return null
+  }
+}
+
+// The device detail block (front image + the configured field rows), shared by
+// a placed device pin and a marker linked to a device — so both show the same
+// details the floor-plan popover config sets.
+function DeviceDetails({
+  device: d,
+  fields,
+}: {
+  device: SiteMapDeviceInfo
+  fields?: string[]
+}) {
+  const cfDefs = useCustomFieldDefs("device").data?.results
+  const keys = fields ?? [
+    "type",
+    "linked_status",
+    "linked_primary_ip",
+    "linked_site",
+  ]
+  const rows = keys
+    .map((key) => ({ key, row: deviceFieldRow(key, d, cfDefs) }))
+    .filter(
+      (r): r is { key: string; row: { label: string; node: ReactNode } } =>
+        !!r.row
+    )
+  return (
+    <>
+      {d.front_image && (
+        <img
+          src={d.front_image}
+          alt={d.device_type ?? "device"}
+          className="max-h-14 w-full rounded-md border border-border object-contain"
+        />
+      )}
+      {rows.length > 0 && (
+        <div className="grid gap-1">
+          {rows.map(({ key, row }) => (
+            <div
+              key={key}
+              className="flex items-baseline justify-between gap-3 text-[12px]"
+            >
+              <span className="shrink-0 text-muted-foreground">
+                {row.label}
+              </span>
+              <span className="min-w-0 text-right break-words">{row.node}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
 function DevicePopover({
   device: d,
   fields,
@@ -1713,48 +1901,17 @@ function DevicePopover({
 }: {
   device: SiteMapDevice
   /** Effective floorplan-popover fields (shared with the floor plan). Undefined
-   * while loading → show the defaults; once loaded, honour the admin's config. */
+   * while loading → a sensible default; once loaded, honour the admin's config
+   * exactly, so the map shows the same details a floor-plan tile would. */
   fields?: string[]
   cableIds: string[]
   onTrace: (ids: string[]) => void
   onClose: () => void
 }) {
-  // Map the site-map device fields to the shared floorplan-popover vocabulary
-  // (linked_* = the linked device's attributes). Name + type stay as identity.
-  const show = (key: string) => !fields || fields.includes(key)
   return (
     <div className="grid gap-2">
       <PopHeader title={d.name} mono onClose={onClose} />
-      <div className="flex flex-wrap items-center gap-1.5">
-        {show("linked_status") && d.status && (
-          <ColorBadge
-            name={d.status.name}
-            color={d.status.color || undefined}
-          />
-        )}
-        {show("linked_role") && d.role && (
-          <ColorBadge name={d.role.name} color={d.role.color || undefined} />
-        )}
-        {d.device_type && <Badge variant="outline">{d.device_type}</Badge>}
-      </div>
-      {d.front_image && (
-        <img
-          src={d.front_image}
-          alt={d.device_type ?? "device"}
-          className="max-h-14 w-full rounded-md border border-border object-contain"
-        />
-      )}
-      {show("linked_site") && d.site && (
-        <div className="text-[12px] text-muted-foreground">
-          <Link
-            to="/sites/$id"
-            params={{ id: d.site.id }}
-            className="hover:underline"
-          >
-            {d.site.name}
-          </Link>
-        </div>
-      )}
+      <DeviceDetails device={d} fields={fields} />
       <div className="flex items-center justify-between text-[12px]">
         <span className="text-muted-foreground">
           <span className="num">{cableIds.length}</span> cable
@@ -1780,9 +1937,13 @@ function DevicePopover({
 
 function MarkerPopover({
   marker: m,
+  fields,
   onClose,
 }: {
   marker: SiteMapMarker
+  /** Shared floor-plan popover config — a marker linked to a device shows the
+   * same device details a device pin does. */
+  fields?: string[]
   onClose: () => void
 }) {
   return (
@@ -1799,6 +1960,7 @@ function MarkerPopover({
       {m.description && (
         <p className="text-[12px] text-muted-foreground">{m.description}</p>
       )}
+      {m.device && <DeviceDetails device={m.device} fields={fields} />}
       {m.device && (
         <Button size="sm" variant="outline" asChild className="h-7">
           <Link to="/devices/$id" params={{ id: m.device.id }}>

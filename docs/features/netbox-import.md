@@ -25,6 +25,10 @@ the job queue, so you can watch it progress and leave the page.
    in a transaction that's rolled back at the end: real counts, nothing saved.
    **Update existing objects** re-applies NetBox values to objects already in
    Danbyte — it **overwrites local edits**, so it's off by default.
+   **Download images** pulls device-type front/rear and floor-plan images from
+   NetBox media over the same connection; it's off by default because fetching
+   binary files makes the run slower. (Images always save on a real run only —
+   file writes can't roll back inside a dry run.)
 3. **Run** — a progress bar tracks the current step (e.g. *devices · 12/58*), and
    a live table fills in per type: fetched / new / existing / updated / failed /
    skipped. While a large type is being pulled you'll see a live *fetching N

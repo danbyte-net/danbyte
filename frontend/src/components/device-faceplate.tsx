@@ -11,9 +11,9 @@ import {
   PX_PER_MM,
   renderTemplateName,
 } from "@/lib/faceplate-geometry"
-import { renderModuleName } from "@/lib/faceplate-geometry"
 import {
   autoLayout,
+  composeModuleFaceplates,
   resolveLayout,
   type FaceplateDoc,
   type FaceplateSide,
@@ -476,6 +476,7 @@ type InstalledModule = {
   id: string
   module_bay: { id: string; name: string; position: string }
   module_type_faceplate: FaceplateDoc | null
+  module_interfaces?: { name: string; type?: string }[]
 }
 
 export function DeviceFaceplate({
@@ -531,35 +532,14 @@ export function DeviceFaceplate({
     enabled: !!deviceId,
     staleTime: 60_000,
   })
-  const moduleGroups = useMemo(() => {
-    const out: FaceplateDoc["front"] = []
-    for (const m of modulesQ.data?.results ?? []) {
-      const fp = m.module_type_faceplate
-      if (!fp) continue
-      const pos = m.module_bay.position
-      for (const g of [...fp.front, ...fp.rear]) {
-        out.push({
-          ...g,
-          id: `mod:${m.id}:${g.id}`,
-          label: g.label
-            ? `${m.module_bay.name} · ${g.label}`
-            : m.module_bay.name,
-          slots: g.slots.map((sl) =>
-            sl.t === "port"
-              ? { ...sl, name: renderModuleName(sl.name, pos) }
-              : sl
-          ),
-        })
-      }
-    }
-    return out
-  }, [modulesQ.data])
-
-  const doc = useMemo<FaceplateDoc>(() => {
-    const base = savedDoc ?? autoLayout(physical)
-    if (!moduleGroups.length) return base
-    return { ...base, front: [...base.front, ...moduleGroups] }
-  }, [savedDoc, physical, moduleGroups])
+  const doc = useMemo<FaceplateDoc>(
+    () =>
+      composeModuleFaceplates(
+        savedDoc ?? autoLayout(physical),
+        modulesQ.data?.results ?? []
+      ),
+    [savedDoc, physical, modulesQ.data]
+  )
 
   // Lazily fetch the non-interface component lists the doc references.
   const kindsNeeded = useMemo(

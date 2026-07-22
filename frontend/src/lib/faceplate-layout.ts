@@ -4,6 +4,7 @@ import {
   PANEL_MM,
   SINGLE_ROW_FAMILIES,
   familyForType,
+  renderModuleName,
   renderTemplateName,
   type ConnectorFamily,
 } from "@/lib/faceplate-geometry"
@@ -46,6 +47,11 @@ export interface FaceplateGroup {
   /** Which rack unit of the panel this group sits in (1-based lane, top
    * lane = 1). Multi-U devices place groups per U; default 1. */
   u?: number
+  /** Module-bay placeholder: the name of the module bay this group stands in
+   * for. On a device render, an installed module's faceplate is composed *in
+   * place of* this group; an empty bay draws its blank cage(s). Set on the
+   * device type's layout via the builder; absent on ordinary port groups. */
+  bay?: string
   slots: FaceplateSlot[]
 }
 
@@ -207,6 +213,102 @@ function makeAutoGroup(
     bank: twoRow && run.length >= 24 ? 12 : 0,
     slots: run.map((p) => ({ t: "port", name: p.name })),
   }
+}
+
+// ─── module composition ─────────────────────────────────────────────────────
+
+/** An installed module, as the device render needs it to compose faceplates. */
+export interface InstalledModuleFaceplate {
+  id: string
+  module_bay: { name: string; position: string }
+  module_type_faceplate: FaceplateDoc | null
+  /** The module's concrete contributed interfaces (name + type), used to
+   * auto-lay the bay when the module type has no hand-built faceplate. */
+  module_interfaces?: { name: string; type?: string }[]
+}
+
+/**
+ * Compose installed modules into a device's base layout.
+ *
+ * A group carrying a `bay` marker (a placeholder dropped in the device-type
+ * builder) is replaced *in place* by the faceplate of the module installed in
+ * that bay, with `{module}` resolved to the bay position. An empty bay — or one
+ * whose module has no saved faceplate — keeps its placeholder so the slot stays
+ * visible. Modules in bays the layout doesn't place are appended to the front,
+ * preserving the behaviour from before bays were placeable.
+ */
+export function composeModuleFaceplates(
+  base: FaceplateDoc,
+  modules: InstalledModuleFaceplate[]
+): FaceplateDoc {
+  if (!modules.length) return base
+  const byBay = new Map(modules.map((m) => [m.module_bay.name, m]))
+  const placedBays = new Set<string>()
+  // `placeholder` is the bay group the module drops into (undefined for a bay
+  // the layout doesn't place, which just appends). A hand-built module
+  // faceplate is authoritative; without one we auto-lay the module's own
+  // interfaces, honoring the placeholder's rows/bank so the operator controls
+  // the layout from the bay.
+  const expand = (
+    m: InstalledModuleFaceplate,
+    placeholder?: FaceplateGroup
+  ): FaceplateGroup[] => {
+    const fp = m.module_type_faceplate
+    if (fp) {
+      const pos = m.module_bay.position
+      return [...fp.front, ...fp.rear].map((g) => ({
+        ...g,
+        id: `mod:${m.id}:${g.id}`,
+        bay: undefined,
+        label: g.label ? `${m.module_bay.name} · ${g.label}` : m.module_bay.name,
+        slots: g.slots.map((sl) =>
+          sl.t === "port" ? { ...sl, name: renderModuleName(sl.name, pos) } : sl
+        ),
+      }))
+    }
+    // Module's concrete interfaces (already {module}/{position}-resolved).
+    const ifaces = (m.module_interfaces ?? []).map((p, i) => ({
+      id: `${m.id}:${i}`,
+      name: p.name,
+      type: p.type,
+    }))
+    if (!ifaces.length) return []
+    if (placeholder) {
+      // One group in the bay's slot, honoring its rows/bank — the operator's
+      // layout choice for a module type that ships no faceplate of its own.
+      return [
+        {
+          id: `mod:${m.id}:auto`,
+          label: m.module_bay.name,
+          rows: placeholder.rows,
+          bank: placeholder.bank,
+          u: placeholder.u,
+          slots: ifaces.map((p) => ({ t: "port", name: p.name })),
+        },
+      ]
+    }
+    // Appended (no placeholder) → best-guess auto layout.
+    return autoLayout(ifaces).front.map((g, i) => ({
+      ...g,
+      id: `mod:${m.id}:auto${i}`,
+      bay: undefined,
+      label: g.label ? `${m.module_bay.name} · ${g.label}` : m.module_bay.name,
+    }))
+  }
+  const compose = (groups: FaceplateGroup[]): FaceplateGroup[] =>
+    groups.flatMap((g) => {
+      if (!g.bay) return [g]
+      placedBays.add(g.bay)
+      const m = byBay.get(g.bay)
+      const expanded = m ? expand(m, g) : []
+      return expanded.length ? expanded : [g]
+    })
+  const front = compose(base.front)
+  const rear = compose(base.rear)
+  const leftover = modules
+    .filter((m) => !placedBays.has(m.module_bay.name))
+    .flatMap((m) => expand(m))
+  return { ...base, front: [...front, ...leftover], rear }
 }
 
 // ─── resolve (doc + components → renderable) ────────────────────────────────

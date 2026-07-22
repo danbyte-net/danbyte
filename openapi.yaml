@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Danbyte API
-  version: 0.9.14
+  version: 0.9.15
   description: 'REST API for Danbyte — IPAM / DCIM and network operations. Authenticate
     with a scoped **API token** (`Authorization: Token <key>`) or, from a browser
     session, the logged-in session cookie. Every request is scoped to your active
@@ -45152,6 +45152,10 @@ components:
           type: object
           additionalProperties: {}
           readOnly: true
+        module_interfaces:
+          type: object
+          additionalProperties: {}
+          readOnly: true
         serial_number:
           type: string
           maxLength: 255
@@ -45179,6 +45183,7 @@ components:
       - device
       - id
       - module_bay
+      - module_interfaces
       - module_type
       - module_type_faceplate
       - tags
@@ -45309,8 +45314,13 @@ components:
           readOnly: true
         position:
           type: string
+        default_module_type:
+          allOf:
+          - $ref: '#/components/schemas/ModuleTypeMini'
+          readOnly: true
       required:
       - created_at
+      - default_module_type
       - id
       - name
       - updated_at
@@ -45332,6 +45342,11 @@ components:
           maxLength: 255
         position:
           type: string
+        default_module_type_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
       required:
       - device_type_id
       - name
@@ -46322,6 +46337,9 @@ components:
         insecure:
           type: boolean
           default: false
+        with_images:
+          type: boolean
+          default: false
         only:
           type: array
           items:
@@ -46356,6 +46374,9 @@ components:
           type: boolean
           readOnly: true
         insecure:
+          type: boolean
+          readOnly: true
+        with_images:
           type: boolean
           readOnly: true
         only:
@@ -46398,6 +46419,7 @@ components:
       - status
       - update_existing
       - url
+      - with_images
     NetBoxImportRunStatusEnum:
       enum:
       - queued
@@ -52090,6 +52112,11 @@ components:
           maxLength: 255
         position:
           type: string
+        default_module_type_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
     PatchedModuleInterfaceTemplateRequest:
       type: object
       properties:

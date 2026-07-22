@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react"
-import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query"
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
 import {
   DndContext,
   DragOverlay,
@@ -19,7 +24,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { Plus, Trash2 } from "lucide-react"
+import { Boxes, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -243,6 +248,29 @@ export function DeviceTypeFaceplatePane({
     return n
   }, [draft, templateIndex])
 
+  // Module bays are placeable as *placeholders*: drop one and an installed
+  // module's faceplate renders there on a device (empty until then). Modules
+  // themselves have no sub-bays, so this is device-type mode only.
+  const bayTemplatesQ = useQuery({
+    queryKey: [TEMPLATE_QUERY_KEY["module-bay"], deviceType.id],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>(
+        `/api/module-bay-templates/?device_type=${deviceType.id}`
+      ),
+    enabled: !moduleMode,
+  })
+  const placedBays = useMemo(() => {
+    const set = new Set<string>()
+    for (const s of ["front", "rear"] as const)
+      for (const g of draft[s] ?? []) if (g.bay) set.add(g.bay)
+    return set
+  }, [draft])
+  const unplacedBays = useMemo(
+    () =>
+      (bayTemplatesQ.data?.results ?? []).filter((b) => !placedBays.has(b.name)),
+    [bayTemplatesQ.data, placedBays]
+  )
+
   const save = useMutation({
     mutationFn: (doc: FaceplateDoc | null) =>
       api<DeviceType>(
@@ -261,6 +289,12 @@ export function DeviceTypeFaceplatePane({
       qc.invalidateQueries({
         queryKey: [moduleMode ? "module-types" : "device-types"],
       })
+      // A module type's faceplate is composed into every device that has one
+      // of its modules installed — refresh those device renders too. (Device
+      // types are read live off the key invalidated above, so they need no
+      // extra nudge.)
+      if (moduleMode)
+        qc.invalidateQueries({ queryKey: ["device-modules-faceplate"] })
       setDirty(false)
       if (doc === null) {
         setDraft(autoLayout(templatesByKind.interface ?? []))
@@ -310,6 +344,10 @@ export function DeviceTypeFaceplatePane({
       })
       return
     }
+    if (parts[0] === "bay") {
+      setDragCage({ family: "generic", num: null })
+      return
+    }
     const from = findSlot(id)
     const slot = from ? sideGroups[from.gi].slots[from.si] : null
     if (!slot || slot.t === "label") {
@@ -335,6 +373,36 @@ export function DeviceTypeFaceplatePane({
     if (!over) return
     const a = String(active.id)
     const o = String(over.id)
+
+    // Dropping a module bay drops a *placeholder* group — an installed module's
+    // faceplate composes into it on a device (blank cage until then). Bays are
+    // their own group; a lane target sets which U it lands in.
+    if (a.startsWith(`bay${SEP}`)) {
+      const bayName = a.split(SEP)[1]
+      if (!bayName || placedBays.has(bayName)) return
+      const lane = o.startsWith("newgroup:")
+        ? Math.max(1, Number(o.slice("newgroup:".length)) || 1)
+        : 1
+      const id = newGroupId()
+      update({
+        ...draft,
+        [side]: [
+          ...sideGroups,
+          {
+            id,
+            bay: bayName,
+            label: bayName,
+            rows: 1,
+            bank: 0,
+            u: lane,
+            slots: [{ t: "blank" }],
+          },
+        ],
+      })
+      setSelectedGroup(id)
+      return
+    }
+
     const groups = sideGroups.map((g) => ({ ...g, slots: [...g.slots] }))
 
     let slot: FaceplateSlot | null = null
@@ -446,8 +514,10 @@ export function DeviceTypeFaceplatePane({
           Full width
         </label>
         <p className="text-[12px] text-muted-foreground">
-          Drag ports from the palette onto the panel — it draws at true scale,
-          exactly as devices of this type will render. Click a group to edit it.
+          Drag ports — or a module bay — from the palette onto the panel. It
+          draws at true scale, exactly as devices of this type will render; a
+          placed bay fills with its installed module’s faceplate. Click a group
+          to edit it.
         </p>
       </div>
 
@@ -463,29 +533,48 @@ export function DeviceTypeFaceplatePane({
             <h3 className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
               Unplaced templates
             </h3>
-            {unplaced.length === 0 ? (
+            {unplaced.length === 0 && unplacedBays.length === 0 ? (
               <p className="text-[11px] text-muted-foreground">
                 Everything is placed.
               </p>
             ) : (
-              unplaced.map((sec) => (
-                <details key={sec.kind} open className="space-y-1">
-                  <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">
-                    {KIND_TITLE[sec.kind]}{" "}
-                    <span className="num">({sec.items.length})</span>
-                  </summary>
-                  <div className="flex flex-wrap gap-1 pt-1">
-                    {sec.items.map((t) => (
-                      <PaletteCage
-                        key={t.id}
-                        kind={sec.kind}
-                        template={t}
-                        disabled={!canWrite}
-                      />
-                    ))}
-                  </div>
-                </details>
-              ))
+              <>
+                {unplaced.map((sec) => (
+                  <details key={sec.kind} open className="space-y-1">
+                    <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">
+                      {KIND_TITLE[sec.kind]}{" "}
+                      <span className="num">({sec.items.length})</span>
+                    </summary>
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {sec.items.map((t) => (
+                        <PaletteCage
+                          key={t.id}
+                          kind={sec.kind}
+                          template={t}
+                          disabled={!canWrite}
+                        />
+                      ))}
+                    </div>
+                  </details>
+                ))}
+                {!moduleMode && unplacedBays.length > 0 && (
+                  <details open className="space-y-1">
+                    <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">
+                      Module bays{" "}
+                      <span className="num">({unplacedBays.length})</span>
+                    </summary>
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {unplacedBays.map((b) => (
+                        <PaletteBay
+                          key={b.id}
+                          name={b.name}
+                          disabled={!canWrite}
+                        />
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </>
             )}
           </div>
 
@@ -598,30 +687,37 @@ export function DeviceTypeFaceplatePane({
                   )}
                   {canWrite && (
                     <>
-                      <Button
-                        variant="outline"
-                        size="xs"
-                        onClick={() =>
-                          patchGroup(selected.id, {
-                            slots: [...selected.slots, { t: "blank" }],
-                          })
-                        }
-                      >
-                        <Plus className="h-3 w-3" /> Blank
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="xs"
-                        onClick={() => {
-                          const text = window.prompt("Label text")?.trim()
-                          if (text)
-                            patchGroup(selected.id, {
-                              slots: [...selected.slots, { t: "label", text }],
-                            })
-                        }}
-                      >
-                        <Plus className="h-3 w-3" /> Label
-                      </Button>
+                      {!selected.bay && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            onClick={() =>
+                              patchGroup(selected.id, {
+                                slots: [...selected.slots, { t: "blank" }],
+                              })
+                            }
+                          >
+                            <Plus className="h-3 w-3" /> Blank
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            onClick={() => {
+                              const text = window.prompt("Label text")?.trim()
+                              if (text)
+                                patchGroup(selected.id, {
+                                  slots: [
+                                    ...selected.slots,
+                                    { t: "label", text },
+                                  ],
+                                })
+                            }}
+                          >
+                            <Plus className="h-3 w-3" /> Label
+                          </Button>
+                        </>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon-xs"
@@ -851,6 +947,31 @@ function PaletteCage({
   )
 }
 
+/** Draggable module-bay chip — drops a placeholder group onto the panel that a
+ * device fills with the installed module's faceplate. */
+function PaletteBay({ name, disabled }: { name: string; disabled?: boolean }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `bay${SEP}${name}`,
+    disabled,
+  })
+  return (
+    <span
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      title={`Module bay: ${name} — drop onto the panel to place it`}
+      className={cn(
+        "flex cursor-grab items-center gap-1 rounded-[4px] border border-dashed border-primary/40 bg-primary/5 px-1.5 py-1 text-[9px] font-medium text-foreground hover:border-primary",
+        isDragging && "opacity-40",
+        disabled && "cursor-default opacity-60"
+      )}
+    >
+      <Boxes className="h-3 w-3 text-primary/70" />
+      {name}
+    </span>
+  )
+}
+
 function BuilderCage({
   id,
   slot,
@@ -966,6 +1087,34 @@ function BuilderGroup({
   onRemoveSlot: (index: number) => void
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `group${SEP}${g.id}` })
+
+  // A module-bay placeholder draws as a labelled slot, not a port grid — a
+  // device composes an installed module's faceplate here (see DeviceFaceplate).
+  // No droppable ref: ports can't be dropped *into* a bay.
+  if (g.bay) {
+    return (
+      <div
+        onClick={onSelect}
+        title={`Module bay: ${g.bay} — an installed module's faceplate renders here`}
+        className={cn(
+          "flex cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md border border-dashed px-3",
+          selected
+            ? "border-primary ring-1 ring-primary/60"
+            : "border-primary/40 bg-primary/5"
+        )}
+        style={{ minHeight: Math.round(PANEL_MM.face * BUILDER_SCALE * 0.85) }}
+      >
+        <Boxes className="h-4 w-4 text-primary/70" />
+        <span className="num max-w-[140px] truncate font-mono text-[9px] font-medium text-foreground">
+          {g.bay}
+        </span>
+        <span className="text-[8px] tracking-wide text-muted-foreground uppercase">
+          module bay
+        </span>
+      </div>
+    )
+  }
+
   const ids = g.slots.map(
     (s, i) => `slot${SEP}${g.id}${SEP}${slotKey(s, gi, i)}`
   )

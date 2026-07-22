@@ -193,6 +193,11 @@ the same true-scale drawing devices render, with every cage draggable:
   console, power, aux, panel ports) onto the panel; reorder by dragging,
   drop onto the dashed **+** zone to start a new group, double-click a cage to
   remove it.
+- **Drag a module bay** from the palette to drop a **placeholder** where the
+  bay physically sits. On a device, the installed module's faceplate composes
+  **into that spot** (`{module}` resolves to the bay position); an empty bay
+  shows a labelled placeholder cage. A bay you don't place still appends its
+  module at the end, as before — so old layouts keep working.
 - **Click a group** to edit its **label**, **1 or 2 rows**, and **banking**
   (visual gaps every N ports) in the toolbar, or add **blank** cages and
   silk-screen **label** text.
@@ -210,7 +215,7 @@ layout doesn't place are appended automatically — nothing silently disappears.
 A **parent** chassis (blade enclosure, FEX parent) declares **device bays**
 on its type (Components → Device bays) and sets **Subdevice role: parent**;
 blade/child models set **child** (usually 0U). Devices of the parent type get
-concrete bays stamped, and the device page's Ports tab shows a **Device
+concrete bays stamped, and the device page's **Hardware** tab shows a **Device
 bays** table — *Install…* puts a whole child device in a bay (it keeps its
 own ports, IPs and lifecycle; the bay records where it physically lives).
 Unlike [modules](#module-types), a bay's occupant is an independent device.
@@ -242,18 +247,29 @@ token](virtual-chassis.md#position-aware-interface-names) still applies after.
 The workflow:
 
 1. Give a device type **module bay** templates (Components → Module bays) —
-   each bay names the slot and sets its position.
-2. Devices of the type get concrete bays stamped at creation.
-3. On the device page's Ports tab, **Install…** a module type into an empty
-   bay — its interfaces appear on the device (and its faceplate) instantly.
-   **Remove** takes exactly those interfaces away again.
+   each bay names the slot and sets its position. Optionally pick a **Default
+   module** on a bay template: a module of that type is pre-installed when the
+   bay is stamped onto a new device, and seated into an empty matching bay when
+   you **sync from type** on an existing device (see below).
+2. Devices of the type get concrete bays stamped at creation, with any default
+   modules already seated.
+3. On the device page's **Hardware** tab, **Install…** a module type into an
+   empty bay — its interfaces appear on the device (and its faceplate)
+   instantly. **Remove** takes exactly those interfaces away again.
+
+A **default module** only decides what's *pre-seated* — it never locks a bay.
+Sync-from-type fills empty matching bays with the default but **never
+overwrites** a module you installed (or deliberately left out until the next
+sync), so hand-placed hardware is safe.
 
 Module types have their own **Faceplate** tab — the same drag-and-drop
 builder device types get, with the module's interface templates as the
 palette. When a module with a saved faceplate is installed in a device, its
-layout is **composed into the device's front-panel render** at the bay it
-occupies (`{module}` in slot names resolves to the bay position, so the
-cages light up with the real interfaces' state).
+layout is **composed into the device's render** — at the bay's placeholder if
+the device type's layout places that bay, otherwise appended (`{module}` in
+slot names resolves to the bay position, so the cages light up with the real
+interfaces' state). Editing a module type's faceplate refreshes every device
+that has one of its modules installed.
 
 Module-type YAMLs from the devicetype-library import through the same
 **Import** dialog — they're auto-detected (no `u_height`), so you can paste

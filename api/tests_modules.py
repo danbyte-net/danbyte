@@ -10,8 +10,8 @@ from rest_framework.test import APITestCase
 from core.models import Organization, Tenant
 from .devicetype_import import import_yaml_auto
 from .models import (
-    Device, DeviceType, ModuleBayTemplate, ModuleType,
-    ModuleInterfaceTemplate, render_module_name,
+    Device, DeviceType, Module, ModuleBayTemplate, ModuleType,
+    ModuleInterfaceTemplate, render_module_name, sync_device_components,
 )
 
 User = get_user_model()
@@ -393,3 +393,111 @@ class InventoryItemTests(_Base):
         )
         self.assertEqual(bad.status_code, 400)
         self.assertIn("same device", str(bad.content))
+
+
+class DefaultModuleTests(_Base):
+    """A bay template can name a default module type, pre-seated when a device
+    is created and into an *empty* matching bay on sync-from-type — never
+    overwriting a module the operator installed by hand."""
+
+    def setUp(self):
+        super().setUp()
+        import_yaml_auto(self.tenant, DEVICE_TYPE_YAML)
+        import_yaml_auto(self.tenant, MODULE_TYPE_YAML)
+        self.dt = DeviceType.objects.get(tenant=self.tenant, name="Catalyst 9300-24T")
+        self.mt = ModuleType.objects.get(tenant=self.tenant, name="C9300-NM-8X")
+        self.bay_tmpl = self.dt.module_bay_templates.get()
+
+    def _make_device(self, name="sw1"):
+        resp = self.client.post(
+            "/api/devices/",
+            {"name": name, "device_type_id": str(self.dt.id)},
+            format="json",
+        )
+        assert resp.status_code == 201, resp.content
+        return Device.objects.get(tenant=self.tenant, name=name)
+
+    def test_default_seated_on_device_create(self):
+        self.bay_tmpl.default_module_type = self.mt
+        self.bay_tmpl.save()
+        device = self._make_device()
+        bay = device.module_bays.get()
+        self.assertTrue(hasattr(bay, "module"))
+        self.assertEqual(bay.module.module_type_id, self.mt.id)
+        # {module} → bay position "1" — the module's interfaces materialise.
+        names = set(device.interfaces.values_list("name", flat=True))
+        self.assertIn("TenGigabitEthernet1/1/1", names)
+        self.assertIn("TenGigabitEthernet1/1/2", names)
+
+    def test_no_default_leaves_bay_empty(self):
+        device = self._make_device()
+        self.assertFalse(hasattr(device.module_bays.get(), "module"))
+
+    def test_sync_seats_into_empty_bay(self):
+        # Device created before a default existed → bay empty.
+        device = self._make_device()
+        self.assertFalse(hasattr(device.module_bays.get(), "module"))
+        # Operator adds a default and syncs the device from its type.
+        self.bay_tmpl.default_module_type = self.mt
+        self.bay_tmpl.save()
+        sync_device_components(device)
+        bay = device.module_bays.get()
+        self.assertTrue(hasattr(bay, "module"))
+        self.assertEqual(bay.module.module_type_id, self.mt.id)
+
+    def test_sync_does_not_overwrite_manual_module(self):
+        other = ModuleType.objects.create(tenant=self.tenant, name="C9300-NM-2Q")
+        device = self._make_device()
+        bay = device.module_bays.get()
+        resp = self.client.post(
+            "/api/modules/",
+            {
+                "device_id": str(device.id),
+                "module_bay_id": str(bay.id),
+                "module_type_id": str(other.id),
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        # Set a *different* default and sync — the hand-installed module stays.
+        self.bay_tmpl.default_module_type = self.mt
+        self.bay_tmpl.save()
+        sync_device_components(device)
+        modules = Module.objects.filter(module_bay=bay)
+        self.assertEqual(modules.count(), 1)
+        self.assertEqual(modules.get().module_type_id, other.id)
+
+    def test_default_module_type_roundtrips_via_api(self):
+        resp = self.client.patch(
+            f"/api/module-bay-templates/{self.bay_tmpl.id}/",
+            {"default_module_type_id": str(self.mt.id)},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()["default_module_type"]["id"], str(self.mt.id))
+        self.bay_tmpl.refresh_from_db()
+        self.assertEqual(self.bay_tmpl.default_module_type_id, self.mt.id)
+        # Clear it back to an empty bay.
+        resp = self.client.patch(
+            f"/api/module-bay-templates/{self.bay_tmpl.id}/",
+            {"default_module_type_id": None},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.bay_tmpl.refresh_from_db()
+        self.assertIsNone(self.bay_tmpl.default_module_type_id)
+
+    def test_cross_tenant_default_rejected(self):
+        other_org = Organization.objects.create(name="Beta", slug="beta")
+        other_tenant = Tenant.objects.create(
+            org=other_org, name="Beta", slug="beta"
+        )
+        foreign = ModuleType.objects.create(tenant=other_tenant, name="Foreign")
+        resp = self.client.patch(
+            f"/api/module-bay-templates/{self.bay_tmpl.id}/",
+            {"default_module_type_id": str(foreign.id)},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.bay_tmpl.refresh_from_db()
+        self.assertIsNone(self.bay_tmpl.default_module_type_id)
