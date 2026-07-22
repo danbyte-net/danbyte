@@ -169,32 +169,63 @@ function RackHud({
   )
 }
 
-/** Overlay card for a selected device — where it sits + jump-off. */
+/** Overlay card for a selected device — identity, status, where it sits. */
 function DeviceHud({ tile, dev }: { tile: SceneTile; dev: SceneDevice }) {
   const rack = tile.rack!
+  const row = (label: string, value: React.ReactNode) => (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className="min-w-0 truncate text-right">{value}</span>
+    </div>
+  )
   return (
-    <div className="absolute top-3 left-3 w-60 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur">
+    <div className="absolute top-3 left-3 w-64 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur">
       <div className="flex items-start justify-between gap-2">
         <span className="min-w-0 truncate font-mono text-[13px] font-semibold">
           {dev.name}
         </span>
-        {dev.role_color && (
+        {dev.status && (
           <span
-            className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full"
-            style={{ backgroundColor: dev.role_color }}
-          />
+            className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
+            style={{
+              backgroundColor: `${dev.status.color || "#71717a"}26`,
+              color: dev.status.color || undefined,
+            }}
+          >
+            {dev.status.name}
+          </span>
         )}
       </div>
-      <div className="mt-1 grid gap-0.5 text-[12px] text-muted-foreground">
-        <span>
-          {rack.name} · U{dev.position}
-          {dev.u_height > 1 ? `–${dev.position + dev.u_height - 1}` : ""}
-        </span>
-        <span>
-          {dev.u_height}U
-          {dev.rack_width === "half" ? ` · half-width (${dev.rack_side})` : ""}
-          {dev.face === "rear" ? " · rear-mounted" : ""}
-        </span>
+      <div className="mt-1.5 grid gap-1 text-[12px]">
+        {dev.device_type && row("Type", dev.device_type)}
+        {dev.role_name &&
+          row(
+            "Role",
+            <span className="inline-flex items-center gap-1.5">
+              {dev.role_color && (
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: dev.role_color }}
+                />
+              )}
+              {dev.role_name}
+            </span>
+          )}
+        {row(
+          "Position",
+          `${rack.name} · U${dev.position}` +
+            (dev.u_height > 1 ? `–${dev.position + dev.u_height - 1}` : "")
+        )}
+        {row(
+          "Size",
+          `${dev.u_height}U` +
+            (dev.rack_width === "half" ? ` · half (${dev.rack_side})` : "") +
+            (dev.face === "rear" ? " · rear" : "")
+        )}
+        {dev.primary_ip &&
+          row("Primary IP", <span className="font-mono">{dev.primary_ip}</span>)}
+        {dev.serial_number &&
+          row("Serial", <span className="font-mono">{dev.serial_number}</span>)}
       </div>
       <Button size="sm" variant="outline" asChild className="mt-2 h-7 w-full">
         <Link to="/devices/$id" params={{ id: dev.id }}>

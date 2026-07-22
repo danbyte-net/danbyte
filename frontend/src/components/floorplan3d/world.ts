@@ -21,6 +21,11 @@ export interface SceneDevice {
   rack_width: "full" | "half"
   is_full_depth: boolean
   role_color: string
+  role_name: string
+  device_type: string
+  status: { name: string; color: string } | null
+  primary_ip: string | null
+  serial_number: string
   front_image: string | null
   rear_image: string | null
   has_faceplate: boolean

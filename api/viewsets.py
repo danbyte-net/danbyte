@@ -5247,7 +5247,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
         racks = {
             r.id: r
             for r in Rack.objects.filter(id__in=rack_ids).prefetch_related(
-                "devices__device_type", "devices__role"
+                "devices__device_type", "devices__role",
+                "devices__status", "devices__primary_ip",
             )
         }
 
@@ -5266,6 +5267,13 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "rack_width": (dt.rack_width if dt else "full") or "full",
                 "is_full_depth": dt.is_full_depth if dt else True,
                 "role_color": d.role.color if d.role_id else "",
+                "role_name": d.role.name if d.role_id else "",
+                "device_type": dt.name if dt else "",
+                "status": {"name": d.status.name, "color": d.status.color}
+                if d.status_id else None,
+                "primary_ip": d.primary_ip.ip_address
+                if d.primary_ip_id else None,
+                "serial_number": d.serial_number or "",
                 "front_image": img(dt.front_image if dt else None),
                 "rear_image": img(dt.rear_image if dt else None),
                 "has_faceplate": bool(dt and dt.faceplate),
