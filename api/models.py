@@ -4925,8 +4925,9 @@ class FloorPlanTray(TimestampedModel):
     grid points that physical cables are assigned to follow. This is the
     buildable wiring layer — the thing you print and hand to contractors.
 
-    Routing is manual in v1 (a cable belongs to the trays it runs through);
-    auto-routing along the tray graph is a later phase."""
+    Cables are assigned manually or by the auto-router (``api/pathfinding.py``
+    via ``POST /api/cables/{id}/auto-route/``), which picks the best path
+    along the tray graph and estimates the physical length."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     floor_plan = models.ForeignKey(

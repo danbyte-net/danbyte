@@ -167,6 +167,15 @@ through each one. Hand the PNG to whoever's pulling cable.
 - **Assign cables**: select a tray → its inspector lists the cables in it,
   with **Add cable** (searches all cables) and a × to remove. The tray shows
   its cable count on the canvas and in the rail.
+- **Auto-route**: on a cable's page, the **Auto-route** button computes the
+  best path through this plan's tray network (Dijkstra over segments,
+  junctions and crossings), assigns those trays to the cable, and estimates
+  its physical length — horizontal run × cell size, plus the vertical drops
+  between each end rack and its tray, plus 10 % slack. A recorded length is
+  never overwritten (the API accepts `overwrite: true`). Ends farther than
+  ~6 cells from any tray come back *unreachable* rather than pretending a
+  20 m unsupported hop is a route. `POST /api/floor-plans/{id}/route/`
+  previews the same computation without saving.
 - **Level & elevation**: each tray records where it physically lives —
   **Overhead** (the default), **Underfloor**, or **Floor level** — plus an
   optional exact **elevation in mm**. Leave elevation blank and it derives

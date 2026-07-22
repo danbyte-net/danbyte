@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import {
+  AutoRouteButton,
   TraceOnMapButton,
   TraceOnSiteMapButton,
 } from "@/components/trace-on-map-button"
@@ -106,6 +107,7 @@ function Body({ cable: c }: { cable: Cable }) {
       presence={{ type: "cable", id: c.id }}
       actions={
         <>
+          <AutoRouteButton cableId={c.id} />
           <TraceOnMapButton cableId={c.id} />
           <TraceOnSiteMapButton cableId={c.id} />
           {canDo("cable", "change") && (

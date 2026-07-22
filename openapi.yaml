@@ -2235,6 +2235,46 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/cables/{id}/auto-route/:
+    post:
+      operationId: cables_auto_route_create
+      description: |-
+        Compute the best tray route for this cable on a floor plan and
+        persist it: the plan's trays on the winning path replace the cable's
+        current trays *on that plan* (other plans' assignments are kept), and
+        the estimated length fills ``length`` when blank (``overwrite: true``
+        replaces a recorded one). Body: ``{"floor_plan": id, "overwrite"?}``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this cable.
+        required: true
+      tags:
+      - cables
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CableRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CableRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CableRequest'
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cable'
+          description: ''
   /api/cables/{id}/floor-plan/:
     get:
       operationId: cables_floor_plan_retrieve
@@ -11330,6 +11370,49 @@ paths:
         required: true
       tags:
       - floor-plans
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloorPlan'
+          description: ''
+  /api/floor-plans/{id}/route/:
+    post:
+      operationId: floor_plans_route_create
+      description: |-
+        Preview the best tray route between two placed endpoints.
+
+        Body: ``{"from": {"kind": "device"|"rack", "id": …}, "to": {…}}``.
+        Pure computation — nothing is persisted; the cable ``auto-route``
+        action is the writing twin. Returns the polyline (cell units), the
+        trays it rides, and the estimated physical length (run + vertical
+        drops + slack).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this floor plan.
+        required: true
+      tags:
+      - floor-plans
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FloorPlanRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FloorPlanRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FloorPlanRequest'
+        required: true
       security:
       - apiToken: []
       - cookieAuth: []

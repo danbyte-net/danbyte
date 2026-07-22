@@ -2872,6 +2872,83 @@ class CableViewSet(TenantScopedViewSet):
             return Response({"detail": "strand out of range"}, status=400)
         return Response(cable_strand_path(cable, n))
 
+    @action(detail=True, methods=["post"], url_path="auto-route")
+    def auto_route(self, request, pk=None):
+        """Compute the best tray route for this cable on a floor plan and
+        persist it: the plan's trays on the winning path replace the cable's
+        current trays *on that plan* (other plans' assignments are kept), and
+        the estimated length fills ``length`` when blank (``overwrite: true``
+        replaces a recorded one). Body: ``{"floor_plan": id, "overwrite"?}``."""
+        from .models import FloorPlan
+        from .pathfinding import (
+            estimate_length_m, route_through_trays, tray_elevation_mm,
+        )
+
+        cable = self.get_object()
+        tenant = _get_active_tenant(self.request)
+        plan = FloorPlan.objects.filter(
+            id=(request.data or {}).get("floor_plan"), tenant=tenant
+        ).first()
+        if plan is None:
+            return Response({"detail": "Unknown floor plan."}, status=400)
+
+        # A/B endpoint devices from the cable's own terminations.
+        ends: dict = {"A": None, "B": None}
+        for term in cable.terminations.select_related():
+            dev_id = getattr(term.point, "device_id", None)
+            if dev_id and ends.get(term.end) is None:
+                ends[term.end] = dev_id
+        if not ends["A"] or not ends["B"]:
+            return Response(
+                {"detail": "Both cable ends must terminate on a device."},
+                status=400,
+            )
+        resolved, err = _resolve_route_endpoints(plan, {
+            "from": {"kind": "device", "id": str(ends["A"])},
+            "to": {"kind": "device", "id": str(ends["B"])},
+        })
+        if err:
+            return Response({"detail": err}, status=400)
+        a, b, rack_a, rack_b = resolved
+
+        trays = list(plan.trays.all())
+        result = route_through_trays(a, b, [t.points for t in trays])
+        if not result.reachable:
+            return Response({
+                "reachable": False,
+                "detail": "No tray path connects the two ends on this plan.",
+            })
+        used = [trays[i] for i in result.tray_indexes]
+
+        def drop_mm(rack, tray):
+            top = (rack.u_height * 44.45 + 100) if rack is not None else 0.0
+            elev = tray_elevation_mm(tray.level, tray.elevation_mm, plan.ceiling_mm)
+            return abs(elev - top)
+
+        drop_a = drop_mm(rack_a, used[0]) if used else 0.0
+        drop_b = drop_mm(rack_b, used[-1]) if used else 0.0
+        length_m = estimate_length_m(result.run_cells, plan.cell_mm, drop_a, drop_b)
+
+        overwrite = bool((request.data or {}).get("overwrite"))
+        with transaction.atomic():
+            # Replace only THIS plan's tray assignments.
+            cable.trays.remove(*cable.trays.filter(floor_plan=plan))
+            cable.trays.add(*used)
+            length_set = False
+            if cable.length is None or overwrite:
+                cable.length = length_m
+                cable.length_unit = "m"
+                cable.save(update_fields=["length", "length_unit"])
+                length_set = True
+        return Response({
+            "reachable": True,
+            "points": [[round(x, 3), round(y, 3)] for x, y in result.points],
+            "tray_ids": [str(t.id) for t in used],
+            "tray_names": [t.name for t in used],
+            "length_m": length_m,
+            "length_set": length_set,
+        })
+
     @action(detail=True, methods=["get"], url_path="floor-plan")
     def floor_plan(self, request, pk=None):
         """The floor plan where this cable can be traced — a plan whose trays
@@ -5125,6 +5202,49 @@ class FloorTileTypeViewSet(TenantScopedViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
+def _resolve_route_endpoints(plan, body):
+    """Resolve a route request's two endpoints to tile-centre coordinates.
+
+    Each endpoint is ``{"kind": "device"|"rack", "id": …}``; a device resolves
+    to its own tile, else its rack's tile — the same fallback ``cable_paths``
+    uses. Returns ``((a, b, rack_a, rack_b), None)`` on success — the racks (or
+    None) feed the vertical-drop estimate — or ``(None, error_message)``."""
+    from .models import Device
+
+    tiles = list(plan.tiles.select_related("rack"))
+
+    def centre(t):
+        return (t.x + t.width / 2, t.y + t.height / 2)
+
+    def resolve(spec):
+        if not isinstance(spec, dict) or spec.get("kind") not in ("device", "rack"):
+            return None, None, "Each endpoint needs kind device|rack and id."
+        oid = str(spec.get("id") or "")
+        if spec["kind"] == "rack":
+            t = next((t for t in tiles if str(t.rack_id) == oid), None)
+            return (centre(t), t.rack, None) if t else (
+                None, None, "That rack isn't placed on this plan.")
+        t = next((t for t in tiles if str(t.device_id) == oid), None)
+        if t:
+            return centre(t), None, None
+        dev = Device.objects.filter(
+            id=oid, tenant=plan.tenant
+        ).only("rack_id").first()
+        if dev is None:
+            return None, None, "Unknown device."
+        t = next((t for t in tiles if t.rack_id == dev.rack_id), None)
+        return (centre(t), t.rack, None) if t else (
+            None, None, "That device (or its rack) isn't placed on this plan.")
+
+    a, rack_a, err_a = resolve(body.get("from"))
+    if err_a:
+        return None, err_a
+    b, rack_b, err_b = resolve(body.get("to"))
+    if err_b:
+        return None, err_b
+    return (a, b, rack_a, rack_b), None
+
+
 class FloorPlanViewSet(TenantScopedViewSet):
     queryset = (
         FloorPlan.objects.select_related("location", "location__site")
@@ -5228,6 +5348,57 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     "check": device_check(t.device_id),
                 }
         return Response({"as_of": timezone.now().isoformat(), "tiles": out})
+
+    # `route` is a POST (it carries a body) but computes only — view, not change.
+    rbac_action_map = {"route": "view"}
+
+    @action(detail=True, methods=["post"], url_path="route")
+    def route(self, request, pk=None):
+        """Preview the best tray route between two placed endpoints.
+
+        Body: ``{"from": {"kind": "device"|"rack", "id": …}, "to": {…}}``.
+        Pure computation — nothing is persisted; the cable ``auto-route``
+        action is the writing twin. Returns the polyline (cell units), the
+        trays it rides, and the estimated physical length (run + vertical
+        drops + slack)."""
+        from .pathfinding import (
+            estimate_length_m, route_through_trays, tray_elevation_mm,
+        )
+
+        plan = self.get_object()
+        ends, err = _resolve_route_endpoints(plan, request.data or {})
+        if err:
+            return Response({"detail": err}, status=400)
+        a, b, rack_a, rack_b = ends
+
+        trays = list(plan.trays.all())
+        result = route_through_trays(a, b, [t.points for t in trays])
+        used = [trays[i] for i in result.tray_indexes]
+
+        def drop_mm(rack, tray):
+            if tray is None:
+                return 0.0
+            top = (
+                rack.u_height * 44.45 + 100 if rack is not None
+                else 0.0
+            ) or 0.0
+            elev = tray_elevation_mm(tray.level, tray.elevation_mm, plan.ceiling_mm)
+            return abs(elev - top)
+
+        drop_a = drop_mm(rack_a, used[0] if used else None)
+        drop_b = drop_mm(rack_b, used[-1] if used else None)
+        length_m = estimate_length_m(
+            result.run_cells, plan.cell_mm, drop_a, drop_b
+        )
+        return Response({
+            "reachable": result.reachable,
+            "points": [[round(x, 3), round(y, 3)] for x, y in result.points],
+            "tray_ids": [str(t.id) for t in used],
+            "tray_names": [t.name for t in used],
+            "length_m": length_m,
+            "run_m": round(result.run_cells * plan.cell_mm / 1000, 1),
+            "drops_mm": [round(drop_a), round(drop_b)],
+        })
 
     @action(detail=True, methods=["get"], url_path="scene")
     def scene(self, request, pk=None):
