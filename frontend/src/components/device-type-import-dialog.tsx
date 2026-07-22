@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CheckCircle2, XCircle } from "lucide-react"
 import { toast } from "sonner"
 
@@ -25,6 +25,22 @@ interface ImportResult {
   error: string | null
 }
 
+interface ImportRun {
+  id: string
+  status: "queued" | "running" | "success" | "failed"
+  progress: { done?: number; total?: number; created?: number; failed?: number }
+  failures: { name: string; error: string }[]
+  error: string
+}
+
+/** A lone github.com /tree/ folder URL — routed to the background importer. */
+const FOLDER_RE =
+  /^https:\/\/github\.com\/[^/]+\/[^/]+\/tree\/[^/]+(\/.*)?$/
+const folderUrlOf = (items: string[]): string | null =>
+  items.length === 1 && FOLDER_RE.test(items[0].trim())
+    ? items[0].trim()
+    : null
+
 /**
  * Import device types from NetBox's community devicetype-library
  * (github.com/netbox-community/devicetype-library — public domain). Accepts
@@ -45,14 +61,60 @@ export function DeviceTypeImportDialog({
   const [files, setFiles] = useState<{ name: string; content: string }[]>([])
   const [stack, setStack] = useState(false)
   const [results, setResults] = useState<ImportResult[] | null>(null)
+  const [runId, setRunId] = useState<string | null>(null)
+  const bgDone = useRef(false)
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   const reset = () => {
     setText("")
     setFiles([])
     setResults(null)
+    setRunId(null)
+    bgDone.current = false
     if (fileRef.current) fileRef.current.value = ""
   }
+
+  // Background run polling — for a whole-folder import that's too big to fetch
+  // synchronously. Stops when the run reaches a terminal state.
+  const runQ = useQuery({
+    queryKey: ["dt-import-run", runId],
+    queryFn: () =>
+      api<ImportRun>(`/api/device-types/import-runs/${runId}/`),
+    enabled: !!runId,
+    refetchInterval: (q) => {
+      const s = q.state.data?.status
+      return s === "success" || s === "failed" ? false : 1500
+    },
+  })
+  const bg = runQ.data
+  if (bg && !bgDone.current && (bg.status === "success" || bg.status === "failed")) {
+    bgDone.current = true
+    if (bg.status === "success") {
+      qc.invalidateQueries({ queryKey: ["device-types"] })
+      qc.invalidateQueries({ queryKey: ["device-types-picker"] })
+      qc.invalidateQueries({ queryKey: ["manufacturers"] })
+      const p = bg.progress
+      toast.success(
+        `Imported ${p.created ?? 0} device type${p.created === 1 ? "" : "s"}` +
+          (p.failed ? ` · ${p.failed} failed` : "")
+      )
+    } else {
+      toast.error(bg.error || "Import failed.")
+    }
+  }
+
+  const startBg = useMutation({
+    mutationFn: (url: string) =>
+      api<ImportRun>("/api/device-types/import-folder/", {
+        method: "POST",
+        body: JSON.stringify({ url, stack_positions: stack }),
+      }),
+    onSuccess: (run) => {
+      bgDone.current = false
+      setRunId(run.id)
+    },
+    onError: (err) => apiErrorToast(err),
+  })
 
   const buildItems = (): string[] => {
     const items = files.map((f) => f.content)
@@ -106,7 +168,12 @@ export function DeviceTypeImportDialog({
     setFiles(read)
   }
 
-  const canRun = buildItems().length > 0 && !run.isPending
+  const items = buildItems()
+  const folderUrl = folderUrlOf(items)
+  const bgActive =
+    !!runId && bg?.status !== "success" && bg?.status !== "failed"
+  const canRun =
+    items.length > 0 && !run.isPending && !startBg.isPending && !bgActive
 
   return (
     <Dialog
@@ -172,6 +239,57 @@ export function DeviceTypeImportDialog({
             <code className="font-mono">{"{position}"}</code>
           </label>
 
+          {runId && bg && (
+            <div className="rounded-md border border-border p-3">
+              <div className="flex items-center justify-between text-[12px]">
+                <span className="font-medium">
+                  {bg.status === "success"
+                    ? "Import complete"
+                    : bg.status === "failed"
+                      ? "Import failed"
+                      : "Importing folder…"}
+                </span>
+                <span className="num text-muted-foreground">
+                  {bg.progress.done ?? 0}/{bg.progress.total ?? "…"}
+                </span>
+              </div>
+              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{
+                    width: bg.progress.total
+                      ? `${Math.round(((bg.progress.done ?? 0) / bg.progress.total) * 100)}%`
+                      : "8%",
+                  }}
+                />
+              </div>
+              <div className="mt-1.5 flex gap-3 text-[11px] text-muted-foreground">
+                <span className="text-emerald-600 dark:text-emerald-400">
+                  {bg.progress.created ?? 0} created
+                </span>
+                {(bg.progress.failed ?? 0) > 0 && (
+                  <span className="text-red-600 dark:text-red-400">
+                    {bg.progress.failed} failed
+                  </span>
+                )}
+              </div>
+              {bg.status === "failed" && bg.error && (
+                <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">
+                  {bg.error}
+                </p>
+              )}
+              {bg.failures?.length > 0 && (
+                <ul className="mt-2 max-h-32 space-y-0.5 overflow-auto text-[11px] text-muted-foreground">
+                  {bg.failures.slice(0, 20).map((f, i) => (
+                    <li key={i} className="truncate">
+                      <span className="font-mono">{f.name}</span> — {f.error}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
           {results && (
             <div className="max-h-56 space-y-2 overflow-auto rounded-md border border-border p-2">
               {results.map((r, i) => (
@@ -221,8 +339,17 @@ export function DeviceTypeImportDialog({
             <Button variant="ghost" onClick={() => onOpenChange(false)}>
               Close
             </Button>
-            <Button onClick={() => run.mutate()} disabled={!canRun}>
-              {run.isPending ? "Importing…" : "Import"}
+            <Button
+              onClick={() =>
+                folderUrl ? startBg.mutate(folderUrl) : run.mutate()
+              }
+              disabled={!canRun}
+            >
+              {run.isPending || startBg.isPending || bgActive
+                ? "Importing…"
+                : folderUrl
+                  ? "Import folder"
+                  : "Import"}
             </Button>
           </div>
         </div>

@@ -2091,6 +2091,86 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         "end_of_support", "lifecycle_url",
     )
 
+    def _import_owning_site(self, request, tenant):
+        """Under enhanced site separation, a site-scoped importer's new device
+        types (and any manufacturers minted along the way) are LOCAL to their
+        site — the raw import path skips the post-save guard, so resolve the
+        one editable site here (or fail if their scope spans several)."""
+        from core.effective_settings import separation_enabled
+
+        if request.user.is_superuser or not separation_enabled(tenant):
+            return None
+        from auth_api import rbac
+
+        editable = rbac.editable_sites(request.user, tenant)
+        if not isinstance(editable, set):
+            return None
+        if len(editable) != 1:
+            raise PermissionDenied(
+                "Site-scoped import needs exactly one editable site — yours "
+                "spans several, so imported types have no home."
+            )
+        return Site.objects.filter(
+            tenant=tenant, pk=next(iter(editable))
+        ).first()
+
+    def _run_dict(self, run):
+        return {
+            "id": str(run.id),
+            "source_url": run.source_url,
+            "status": run.status,
+            "progress": run.progress or {},
+            "failures": run.failures or [],
+            "error": run.error,
+            "created_at": run.created_at.isoformat(),
+            "finished_at": run.finished_at.isoformat()
+            if run.finished_at else None,
+        }
+
+    @action(detail=False, methods=["post"], url_path="import-folder")
+    def import_folder(self, request):
+        """Start a BACKGROUND import of a whole devicetype-library folder — a
+        manufacturer, or the entire device-types dir (thousands of files).
+
+        Body: {"url": "<github /tree/ folder url>", "stack_positions": bool}.
+        Returns the run so the client can poll ``import-runs/<id>/``. The
+        synchronous ``import-yaml`` handles small pastes; this handles bulk."""
+        from .devicetype_import import is_github_dir
+        from .devicetype_import_tasks import enqueue_devicetype_import
+
+        tenant = self._tenant_or_403()
+        url = str((request.data or {}).get("url") or "").strip()
+        if not is_github_dir(url):
+            return Response(
+                {"detail": "Provide a GitHub folder (/tree/) URL."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+        owning_site = self._import_owning_site(request, tenant)
+        run = enqueue_devicetype_import(
+            tenant, url,
+            stack=bool((request.data or {}).get("stack_positions")),
+            owning_site=owning_site, user=request.user,
+        )
+        return Response(
+            self._run_dict(run), status=drf_status.HTTP_201_CREATED
+        )
+
+    @action(
+        detail=False, methods=["get"],
+        url_path=r"import-runs/(?P<run_id>[0-9a-f-]+)",
+    )
+    def import_run(self, request, run_id=None):
+        """Poll one background import run (tenant-scoped)."""
+        from .models import DeviceTypeImportRun
+
+        tenant = self._tenant_or_403()
+        run = DeviceTypeImportRun.objects.filter(
+            id=run_id, tenant=tenant
+        ).first()
+        if run is None:
+            return Response(status=drf_status.HTTP_404_NOT_FOUND)
+        return Response(self._run_dict(run))
+
     @action(detail=False, methods=["post"], url_path="import-yaml")
     def import_yaml(self, request):
         """Import device types from NetBox devicetype-library YAML.
@@ -2161,25 +2241,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
             )
         items = expanded
 
-        # Enhanced site separation: a site-scoped importer's new device types
-        # (and any manufacturers minted along the way) are LOCAL to their
-        # site — this raw path skips the post-save guard, so force it here.
-        from core.effective_settings import separation_enabled
-
-        owning_site = None
-        if not request.user.is_superuser and separation_enabled(tenant):
-            from auth_api import rbac
-
-            editable = rbac.editable_sites(request.user, tenant)
-            if isinstance(editable, set):
-                if len(editable) != 1:
-                    raise PermissionDenied(
-                        "Site-scoped import needs exactly one editable site — "
-                        "yours spans several, so imported types have no home."
-                    )
-                owning_site = Site.objects.filter(
-                    tenant=tenant, pk=next(iter(editable))
-                ).first()
+        owning_site = self._import_owning_site(request, tenant)
 
         results = []
         for item in items:

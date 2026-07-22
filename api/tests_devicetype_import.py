@@ -158,6 +158,25 @@ class ImportEndpointTests(APITestCase):
             format="json",
         )
 
+    def test_import_yaml_rejects_html_response(self):
+        # A github folder (tree) URL fetched raw would return HTML; guard it.
+        from unittest import mock
+
+        class HtmlResp:
+            text = "<!DOCTYPE html><html>oops</html>"
+
+            def raise_for_status(self):
+                pass
+
+        with mock.patch("core.ssrf.safe_get", return_value=HtmlResp()):
+            resp = self._import(["https://example.com/page"])
+        self.assertEqual(resp.status_code, 200, resp.content)
+        r = resp.json()["results"][0]
+        self.assertFalse(r["ok"])
+        self.assertIn("HTML page", r["error"])
+
+
+
     def test_imports_full_type(self):
         resp = self._import([SAMPLE_YAML])
         self.assertEqual(resp.status_code, 200, resp.content)
@@ -237,3 +256,117 @@ class ImportEndpointTests(APITestCase):
 
     def test_empty_items_rejected(self):
         self.assertEqual(self._import([]).status_code, 400)
+
+
+
+class BackgroundImportTests(APITestCase):
+    DIR = ("https://github.com/netbox-community/devicetype-library/"
+           "tree/master/device-types/Cisco")
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=self.org, name="Acme", slug="acme")
+        self.other = Tenant.objects.create(org=self.org, name="Other", slug="oth")
+        admin = User.objects.create_superuser("admin", "admin@example.com", "x")
+        self.client.force_login(admin)
+        session = self.client.session
+        session["current_tenant_id"] = str(self.tenant.id)
+        session.save()
+
+    def test_start_enqueues_and_returns_run(self):
+        from unittest import mock
+
+        with mock.patch("django_rq.get_queue") as gq:
+            resp = self.client.post(
+                "/api/device-types/import-folder/",
+                {"url": self.DIR}, format="json",
+            )
+            gq.return_value.enqueue.assert_called_once()
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual(body["status"], "queued")
+        self.assertTrue(body["id"])
+
+    def test_start_rejects_non_folder_url(self):
+        resp = self.client.post(
+            "/api/device-types/import-folder/",
+            {"url": "https://github.com/x/y/blob/master/a.yaml"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_poll_and_tenant_isolation(self):
+        from .models import DeviceTypeImportRun
+
+        run = DeviceTypeImportRun.objects.create(
+            tenant=self.tenant, source_url=self.DIR, status="running",
+            progress={"done": 3, "total": 10, "created": 3, "failed": 0},
+        )
+        resp = self.client.get(f"/api/device-types/import-runs/{run.id}/")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()["progress"]["total"], 10)
+        # A run in another tenant is invisible.
+        hidden = DeviceTypeImportRun.objects.create(
+            tenant=self.other, source_url=self.DIR, status="queued"
+        )
+        self.assertEqual(
+            self.client.get(
+                f"/api/device-types/import-runs/{hidden.id}/"
+            ).status_code,
+            404,
+        )
+
+    def test_task_imports_each_file_and_records_progress(self):
+        from unittest import mock
+
+        from .devicetype_import_tasks import run_devicetype_import
+        from .models import DeviceTypeImportRun
+
+        run = DeviceTypeImportRun.objects.create(
+            tenant=self.tenant, source_url=self.DIR, status="queued"
+        )
+
+        class Resp:
+            text = "manufacturer: Cisco\nmodel: X\nu_height: 1\n"
+
+            def raise_for_status(self):
+                pass
+
+        with mock.patch(
+            "api.devicetype_import.expand_github_dir",
+            return_value=["u1", "u2", "u3"],
+        ), mock.patch("core.ssrf.safe_get", return_value=Resp()), mock.patch(
+            "api.devicetype_import.import_yaml_auto",
+            side_effect=[
+                {"ok": True, "name": "a"},
+                {"ok": False, "name": "b", "error": "duplicate"},
+                {"ok": True, "name": "c"},
+            ],
+        ):
+            run_devicetype_import(str(run.id))
+
+        run.refresh_from_db()
+        self.assertEqual(run.status, "success")
+        self.assertEqual(run.progress["total"], 3)
+        self.assertEqual(run.progress["created"], 2)
+        self.assertEqual(run.progress["failed"], 1)
+        self.assertEqual(run.failures[0]["error"], "duplicate")
+        self.assertIsNotNone(run.finished_at)
+
+    def test_task_records_failure_when_listing_blows_up(self):
+        from unittest import mock
+
+        from .devicetype_import_tasks import run_devicetype_import
+        from .models import DeviceTypeImportRun
+
+        run = DeviceTypeImportRun.objects.create(
+            tenant=self.tenant, source_url=self.DIR, status="queued"
+        )
+        with mock.patch(
+            "api.devicetype_import.expand_github_dir",
+            side_effect=ValueError("truncated tree"),
+        ):
+            run_devicetype_import(str(run.id))
+        run.refresh_from_db()
+        self.assertEqual(run.status, "failed")
+        self.assertIn("truncated", run.error)
