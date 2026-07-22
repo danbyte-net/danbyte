@@ -1,23 +1,30 @@
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { Canvas } from "@react-three/fiber"
-import { OrbitControls } from "@react-three/drei"
 import { Link } from "@tanstack/react-router"
 
 import type { FloorPlanLiveState } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
 
+import { CableTrace3D } from "./cable-trace-3d"
+import { CameraRig, type FlyToRequest } from "./camera-rig"
 import { Room } from "./room"
-import { RackMesh } from "./rack-mesh"
+import { RackMesh, type Sel } from "./rack-mesh"
 import { TrayMesh } from "./tray-mesh"
 import { useScene } from "./use-scene"
-import { cellToWorld, webglSupported, type SceneTile } from "./world"
+import {
+  cellToWorld,
+  webglSupported,
+  type SceneDevice,
+  type SceneTile,
+} from "./world"
 
 /**
  * The 3D room view — the floor plan extruded into a navigable scene: racks as
- * cabinets at their tile positions (devices at true U positions up close),
- * trays at their recorded elevations, monitoring beacons from the same
- * `/state/` poll the 2D canvas uses.
+ * cabinets at their tile positions (clickable devices at true U positions up
+ * close), trays at their recorded elevations, monitoring beacons from the same
+ * `/state/` poll the 2D canvas uses. Double-click a rack to fly the camera to
+ * its front; `traceCableId` draws that cable's run as a marching line.
  *
  * This module (and everything under `floorplan3d/`) is the ONLY place three.js
  * may be imported; the route loads it via `React.lazy` so the 3D stack stays
@@ -26,12 +33,15 @@ import { cellToWorld, webglSupported, type SceneTile } from "./world"
 export default function FloorScene3D({
   planId,
   liveState,
+  traceCableId,
 }: {
   planId: string
   liveState: FloorPlanLiveState | null
+  traceCableId?: string | null
 }) {
   const scene = useScene(planId)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selection, setSelection] = useState<Sel | null>(null)
+  const flyToRef = useRef<FlyToRequest | null>(null)
 
   const supported = useMemo(webglSupported, [])
   if (!supported)
@@ -58,8 +68,15 @@ export default function FloorScene3D({
   const { plan } = data
   const [w, d] = cellToWorld(plan, plan.grid_width, plan.grid_height)
   const rackTiles = data.tiles.filter((t) => t.kind === "rack" && t.rack)
-  const selected = rackTiles.find((t) => t.id === selectedId) ?? null
   const diag = Math.max(w, d)
+
+  const selTile = selection
+    ? (rackTiles.find((t) => t.id === selection.tileId) ?? null)
+    : null
+  const selDevice =
+    selection?.kind === "device" && selTile
+      ? (selTile.rack!.devices.find((x) => x.id === selection.deviceId) ?? null)
+      : null
 
   return (
     <div className="relative h-full min-h-0 w-full">
@@ -72,7 +89,7 @@ export default function FloorScene3D({
           near: 0.1,
           far: diag * 10 + 50,
         }}
-        onPointerMissed={() => setSelectedId(null)}
+        onPointerMissed={() => setSelection(null)}
       >
         <ambientLight intensity={0.7} />
         <directionalLight position={[w * 0.3, 12, d * 0.2]} intensity={1.1} />
@@ -84,28 +101,35 @@ export default function FloorScene3D({
             plan={plan}
             tile={t}
             check={liveState?.tiles[t.id]?.check ?? null}
-            selected={t.id === selectedId}
-            onSelect={setSelectedId}
+            selection={selection}
+            onSelect={setSelection}
+            onFlyTo={(target, position) => {
+              flyToRef.current = { target, position }
+            }}
           />
         ))}
         {data.trays.map((tr) => (
           <TrayMesh key={tr.id} plan={plan} tray={tr} />
         ))}
-        <OrbitControls
-          makeDefault
+        {traceCableId && (
+          <CableTrace3D planId={planId} scene={data} cableId={traceCableId} />
+        )}
+        <CameraRig
           target={[w / 2, 0.8, d / 2]}
-          maxPolarAngle={Math.PI / 2 - 0.02}
-          minDistance={0.5}
           maxDistance={diag * 4 + 20}
+          requestRef={flyToRef}
         />
       </Canvas>
-      {selected && <SelectionHud tile={selected} liveState={liveState} />}
+      {selTile && selection?.kind === "rack" && (
+        <RackHud tile={selTile} liveState={liveState} />
+      )}
+      {selTile && selDevice && <DeviceHud tile={selTile} dev={selDevice} />}
     </div>
   )
 }
 
-/** Small overlay panel for the selected rack — name, live rollup, jump-off. */
-function SelectionHud({
+/** Overlay card for the selected rack — name, live rollup, jump-off. */
+function RackHud({
   tile,
   liveState,
 }: {
@@ -134,6 +158,7 @@ function SelectionHud({
             {live.check ? ` · ${live.check}` : ""}
           </span>
         )}
+        <span className="text-[11px]">double-click to zoom in</span>
       </div>
       <Button size="sm" variant="outline" asChild className="mt-2 h-7 w-full">
         <Link to="/racks/$id" params={{ id: rack.id }}>
@@ -144,3 +169,38 @@ function SelectionHud({
   )
 }
 
+/** Overlay card for a selected device — where it sits + jump-off. */
+function DeviceHud({ tile, dev }: { tile: SceneTile; dev: SceneDevice }) {
+  const rack = tile.rack!
+  return (
+    <div className="absolute top-3 left-3 w-60 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur">
+      <div className="flex items-start justify-between gap-2">
+        <span className="min-w-0 truncate font-mono text-[13px] font-semibold">
+          {dev.name}
+        </span>
+        {dev.role_color && (
+          <span
+            className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{ backgroundColor: dev.role_color }}
+          />
+        )}
+      </div>
+      <div className="mt-1 grid gap-0.5 text-[12px] text-muted-foreground">
+        <span>
+          {rack.name} · U{dev.position}
+          {dev.u_height > 1 ? `–${dev.position + dev.u_height - 1}` : ""}
+        </span>
+        <span>
+          {dev.u_height}U
+          {dev.rack_width === "half" ? ` · half-width (${dev.rack_side})` : ""}
+          {dev.face === "rear" ? " · rear-mounted" : ""}
+        </span>
+      </div>
+      <Button size="sm" variant="outline" asChild className="mt-2 h-7 w-full">
+        <Link to="/devices/$id" params={{ id: dev.id }}>
+          Open device →
+        </Link>
+      </Button>
+    </div>
+  )
+}

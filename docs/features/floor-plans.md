@@ -71,9 +71,16 @@ ceiling, underfloor runs sit beneath the slab), zones tint the floor, and the
 uploaded blueprint textures it.
 
 - **Navigate**: drag to orbit, scroll to zoom, right-drag to pan.
+  **Double-click a rack** to fly the camera to its front.
 - **Click a rack** for a summary card (space used, monitoring rollup) and a
-  jump to the rack page. Monitoring state lights a beacon on top of each
-  cabinet — the same worst-status rollup the 2D overlays use.
+  jump to the rack page; **click a device** inside an open cabinet for its
+  own card (U position, size, face) and a jump to the device page. Up close,
+  devices wear their device-type **front/rear images**. Monitoring state
+  lights a beacon on top of each cabinet — the same worst-status rollup the
+  2D overlays use.
+- Arriving with a **cable trace** (`?trace=<cable>` — e.g. "Show on floor
+  plan" from a cable) draws the run as an animated line riding its assigned
+  trays and dropping into both end racks.
 - The view is **read-only** in v1 — layout editing stays in 2D.
 - Everything is drawn from the same millimetre constants as the 2D elevation
   and faceplates, so proportions match reality (EIA-310 rack opening, 44.45 mm

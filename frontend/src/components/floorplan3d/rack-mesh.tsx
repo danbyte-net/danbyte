@@ -1,12 +1,13 @@
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { Detailed } from "@react-three/drei"
+import * as THREE from "three"
 
 import type { FloorTileCheck } from "@/lib/api"
 
+import { DeviceMesh } from "./device-mesh"
 import { TextSprite } from "./text-sprite"
 import {
   cellToWorld,
-  deviceYM,
   rackFootprintM,
   type ScenePayload,
   type SceneTile,
@@ -22,27 +23,36 @@ const CHECK_COLOR: Record<string, string> = {
 
 const FRAME_COLOR = "#18181b"
 const FRAME_SELECTED = "#0ea5e9"
-const DEVICE_FALLBACK = "#52525b"
+
+export interface Sel {
+  kind: "rack" | "device"
+  tileId: string
+  deviceId?: string
+}
 
 /**
  * One rack cabinet at its tile position. Two LOD tiers:
  *  - far: a single frame box + name plate (cheap — scales to large rooms)
- *  - near: frame + one box per racked device at true U position/size
+ *  - near: open shell + one clickable box per racked device at true U
+ *    position/size, wearing its device-type face image
  * The `check` beacon bar on top wears the rack's worst monitoring status,
- * fed from the same /state/ poll the 2D canvas uses.
+ * fed from the same /state/ poll the 2D canvas uses. Double-click flies the
+ * camera to frame the cabinet's front.
  */
 export function RackMesh({
   plan,
   tile,
   check,
-  selected,
+  selection,
   onSelect,
+  onFlyTo,
 }: {
   plan: ScenePayload["plan"]
   tile: SceneTile
   check?: FloorTileCheck | null
-  selected: boolean
-  onSelect: (tileId: string) => void
+  selection: Sel | null
+  onSelect: (sel: Sel) => void
+  onFlyTo: (target: THREE.Vector3, position: THREE.Vector3) => void
 }) {
   const rack = tile.rack!
   const { width, depth, height } = rackFootprintM(rack)
@@ -50,30 +60,24 @@ export function RackMesh({
   const rotY = (-tile.orientation * Math.PI) / 180
   const [hovered, setHovered] = useState(false)
 
-  const frameColor = selected
+  const rackSelected = selection?.tileId === tile.id && selection.kind === "rack"
+  const frameColor = rackSelected
     ? FRAME_SELECTED
     : hovered
       ? "#3f3f46"
       : FRAME_COLOR
   const beacon = check ? (CHECK_COLOR[check] ?? null) : null
 
-  const devices = useMemo(
-    () =>
-      rack.devices.map((d) => {
-        const { y, h } = deviceYM(rack, d)
-        const dw = d.rack_width === "half" ? width * 0.44 : width * 0.92
-        const dx =
-          d.rack_side === "left"
-            ? -width * 0.23
-            : d.rack_side === "right"
-              ? width * 0.23
-              : 0
-        const dd = d.is_full_depth ? depth * 0.9 : depth * 0.45
-        const dz = d.face === "rear" ? depth * 0.45 - dd / 2 : dd / 2 - depth * 0.45
-        return { d, y, h, dw, dx, dd, dz }
-      }),
-    [rack, width, depth]
-  )
+  const flyTo = () => {
+    // Frame the front face: out along the rack's local −Z (front), eye at a
+    // comfortable ~60% of cabinet height.
+    const front = new THREE.Vector3(0, 0, -1)
+      .applyEuler(new THREE.Euler(0, rotY, 0))
+      .multiplyScalar(Math.max(height * 1.3, 2.2))
+    const target = new THREE.Vector3(cx, height * 0.55, cz)
+    const position = target.clone().add(front).setY(height * 0.62)
+    onFlyTo(target, position)
+  }
 
   return (
     <group
@@ -81,7 +85,11 @@ export function RackMesh({
       rotation={[0, rotY, 0]}
       onClick={(e) => {
         e.stopPropagation()
-        onSelect(tile.id)
+        onSelect({ kind: "rack", tileId: tile.id })
+      }}
+      onDoubleClick={(e) => {
+        e.stopPropagation()
+        flyTo()
       }}
       onPointerOver={(e) => {
         e.stopPropagation()
@@ -97,14 +105,21 @@ export function RackMesh({
       <Detailed distances={[0, 14]}>
         <group>
           <Frame w={width} h={height} d={depth} color={frameColor} shell />
-          {devices.map(({ d, y, h, dw, dx, dd, dz }) => (
-            <mesh key={d.id} position={[dx, y + h / 2, dz]}>
-              <boxGeometry args={[dw, h * 0.94, dd]} />
-              <meshStandardMaterial
-                color={d.role_color || DEVICE_FALLBACK}
-                roughness={0.7}
-              />
-            </mesh>
+          {rack.devices.map((d) => (
+            <DeviceMesh
+              key={d.id}
+              rack={rack}
+              dev={d}
+              rackWidthM={width}
+              rackDepthM={depth}
+              selected={
+                selection?.kind === "device" && selection.deviceId === d.id
+              }
+              showTexture
+              onSelect={(deviceId) =>
+                onSelect({ kind: "device", tileId: tile.id, deviceId })
+              }
+            />
           ))}
         </group>
         <Frame w={width} h={height} d={depth} color={frameColor} />

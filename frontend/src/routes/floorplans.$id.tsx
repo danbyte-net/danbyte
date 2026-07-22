@@ -1200,6 +1200,7 @@ function FloorPlanPage() {
                 <FloorScene3D
                   planId={plan.id}
                   liveState={liveState.data ?? null}
+                  traceCableId={traceParam ?? null}
                 />
               </Suspense>
               {show3dHint && (
