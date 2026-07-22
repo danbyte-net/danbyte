@@ -77,6 +77,57 @@ _GITHUB_BLOB_RE = re.compile(
     r"^https://github\.com/([^/]+)/([^/]+)/blob/(.+)$"
 )
 
+# github.com *directory* (tree) URLs — a whole folder of YAML to expand.
+#   https://github.com/<owner>/<repo>/tree/<ref>/<path…>
+# The repo-root device-types dir → the entire library; a vendor subdir → that
+# vendor. `<path>` may be empty (repo root).
+_GITHUB_TREE_RE = re.compile(
+    r"^https://github\.com/([^/]+)/([^/]+)/tree/([^/]+)(?:/(.*))?$"
+)
+
+
+def is_github_dir(url: str) -> bool:
+    return bool(_GITHUB_TREE_RE.match(url.strip()))
+
+
+def expand_github_dir(url: str, get, *, exts=(".yaml", ".yml")) -> list[str]:
+    """Expand a github.com ``/tree/`` directory URL into raw URLs for every
+    YAML file under it (recursively).
+
+    Uses the Git *trees* API (one request lists the whole repo tree), then
+    keeps blobs whose path sits under the requested sub-path. ``get`` is an
+    SSRF-guarded fetcher (``core.ssrf.safe_get``) so the API host is validated
+    like any other outbound call. Raises ``ValueError`` with a readable message
+    on an unusable response."""
+    m = _GITHUB_TREE_RE.match(url.strip())
+    if not m:
+        raise ValueError("Not a GitHub directory URL.")
+    owner, repo, ref, path = m.group(1), m.group(2), m.group(3), (m.group(4) or "")
+    prefix = path.rstrip("/")
+    api = (
+        f"https://api.github.com/repos/{owner}/{repo}/git/trees/"
+        f"{ref}?recursive=1"
+    )
+    resp = get(api, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    if data.get("truncated"):
+        # The tree API caps at ~100k entries; the library is well under, but be
+        # explicit rather than silently import a partial set.
+        raise ValueError(
+            "GitHub returned a truncated tree — narrow to a sub-folder."
+        )
+    raw_base = f"https://raw.githubusercontent.com/{owner}/{repo}/{ref}/"
+    out = []
+    for node in data.get("tree", []):
+        p = node.get("path", "")
+        if node.get("type") != "blob" or not p.lower().endswith(exts):
+            continue
+        if prefix and not (p == prefix or p.startswith(prefix + "/")):
+            continue
+        out.append(raw_base + p)
+    return out
+
 # Leading slot digit of a slash-numbered component name. Only 0 or 1 qualify —
 # they're what standalone hardware ships as (Cisco counts from 1, Juniper 0).
 _SLOT_RE = re.compile(r"^([A-Za-z\-]*)([01])(/)")

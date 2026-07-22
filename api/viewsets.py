@@ -2096,13 +2096,23 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         """Import device types from NetBox devicetype-library YAML.
 
         Body: {"items": ["<yaml or github url>", …], "stack_positions": bool}.
-        Each item is either a raw YAML document or a URL to one (github.com
-        blob links are converted to raw automatically). Returns one report
-        per item; content problems never abort the batch.
+        Each item is a raw YAML document, a URL to one (github.com blob links
+        convert to raw automatically), or a github.com ``/tree/`` **folder**
+        URL — expanded to every .yaml under it (one manufacturer, or the whole
+        device-types dir, capped for this synchronous path). Returns one report
+        per file; content problems never abort the batch.
         """
         from core.ssrf import SSRFError, safe_get
 
-        from .devicetype_import import import_yaml_auto, to_raw_url
+        from .devicetype_import import (
+            expand_github_dir, import_yaml_auto, is_github_dir, to_raw_url,
+        )
+
+        # A GitHub /tree/ directory URL fetched as-is returns HTML, not YAML.
+        # This is a synchronous request, so it can only fetch so many files
+        # before the proxy times out — a whole-library import (thousands) needs
+        # the background path, not this one.
+        SYNC_FILE_CAP = 200
 
         tenant = self._tenant_or_403()
         body = request.data or {}
@@ -2113,6 +2123,43 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
                 status=drf_status.HTTP_400_BAD_REQUEST,
             )
         stack = bool(body.get("stack_positions"))
+
+        # Expand any directory (tree) URLs into their individual YAML files
+        # up front, so "paste a folder link" and "a whole vendor" just work.
+        expanded: list[str] = []
+        for item in items:
+            text = str(item or "").strip()
+            if is_github_dir(text):
+                try:
+                    files = expand_github_dir(text, safe_get)
+                except SSRFError as exc:
+                    return Response(
+                        {"detail": f"Refused: {exc}"},
+                        status=drf_status.HTTP_400_BAD_REQUEST,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    return Response(
+                        {"detail": f"Couldn't list that folder: {exc}"},
+                        status=drf_status.HTTP_400_BAD_REQUEST,
+                    )
+                if not files:
+                    return Response(
+                        {"detail": "That folder has no .yaml device types."},
+                        status=drf_status.HTTP_400_BAD_REQUEST,
+                    )
+                expanded.extend(files)
+            else:
+                expanded.append(text)
+        if len(expanded) > SYNC_FILE_CAP:
+            return Response(
+                {"detail": (
+                    f"That expands to {len(expanded)} files — over the "
+                    f"{SYNC_FILE_CAP} this import handles at once. Pick a "
+                    "narrower folder (e.g. one manufacturer)."
+                )},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+        items = expanded
 
         # Enhanced site separation: a site-scoped importer's new device types
         # (and any manufacturers minted along the way) are LOCAL to their
@@ -2147,6 +2194,16 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
                     resp = safe_get(url, timeout=10)
                     resp.raise_for_status()
                     text = resp.text
+                    stripped = text.lstrip()
+                    if stripped[:1] == "<" or stripped[:9].lower() == "<!doctype":
+                        results.append({
+                            "ok": False, "name": url, "id": None,
+                            "created": {}, "skipped": [],
+                            "error": "Got an HTML page, not YAML — link to a "
+                            "raw .yaml file or a folder (tree) URL.",
+                            "kind": "device-type",
+                        })
+                        continue
                 except SSRFError as exc:
                     results.append({
                         "ok": False, "name": url, "id": None, "created": {},

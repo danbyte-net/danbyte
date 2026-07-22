@@ -129,8 +129,11 @@ export function DeviceTypeImportDialog({
             >
               NetBox devicetype-library
             </a>{" "}
-            (or GitHub links to files in it, one per line), or upload the .yaml
-            files. Manufacturers are created as needed.
+            (or GitHub links, one per line), or upload the .yaml files. A link
+            to a <span className="font-medium">folder</span> (a{" "}
+            <span className="font-mono">/tree/</span> URL, e.g. one
+            manufacturer) imports every device type in it. Manufacturers are
+            created as needed.
           </DialogDescription>
         </DialogHeader>
 
@@ -139,7 +142,7 @@ export function DeviceTypeImportDialog({
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder={
-              "https://github.com/netbox-community/devicetype-library/blob/master/device-types/Cisco/C9300-48P.yaml\n— or paste the YAML itself —"
+              "https://github.com/netbox-community/devicetype-library/tree/master/device-types/Cisco\n— a single file, or the YAML itself —"
             }
             className="min-h-28 font-mono text-[12px]"
           />

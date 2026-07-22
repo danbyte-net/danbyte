@@ -65,8 +65,15 @@ component templates use the same taxonomy — so they import 1:1. Click
 
 - paste **GitHub links** to `.yaml` files in the library (one per line —
   regular `blob` links work, they're converted automatically),
+- paste a **folder link** — a `/tree/` URL such as
+  `…/device-types/Cisco` — to import every device type in it (one
+  manufacturer at a time; the importer lists the folder over the GitHub API
+  and pulls each file),
 - paste the **YAML itself**, or
 - **upload** the `.yaml` files.
+
+The whole `device-types` folder is thousands of files — too many for one
+synchronous import, so pull it a manufacturer (or a few) at a time.
 
 Manufacturers are created as needed. Everything Danbyte models — interfaces,
 console/console-server ports, power ports/outlets, front/rear ports,
