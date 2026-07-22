@@ -2912,6 +2912,54 @@ class RackRole(NumIdMixin, TimestampedModel):
         return self.name
 
 
+class DeviceTypeImportRun(TimestampedModel):
+    """A background bulk import from the NetBox devicetype-library — one folder
+    (e.g. a whole manufacturer, or the entire device-types dir) pulled off the
+    RQ ``low`` queue so the UI can poll its progress. The synchronous
+    import-yaml endpoint handles small pastes; this handles the thousands."""
+
+    STATUS_CHOICES = [
+        ("queued", "Queued"),
+        ("running", "Running"),
+        ("success", "Success"),
+        ("failed", "Failed"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="devicetype_imports"
+    )
+    #: The github.com /tree/ folder URL being imported.
+    source_url = models.CharField(max_length=512)
+    stack_positions = models.BooleanField(default=False)
+    status = models.CharField(
+        max_length=16, choices=STATUS_CHOICES, default="queued"
+    )
+    #: Live progress: {"done": n, "total": n, "created": n, "failed": n}.
+    progress = models.JSONField(default=dict, blank=True)
+    #: Per-file failures once finished: [{"name": …, "error": …}, …] (capped).
+    failures = models.JSONField(default=list, blank=True)
+    error = models.TextField(blank=True, default="")
+    #: The site imported types are scoped to under enhanced site separation.
+    owning_site = models.ForeignKey(
+        "Site", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    created_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True,
+        blank=True, related_name="+",
+    )
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["tenant", "-created_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.source_url} ({self.status})"
+
+
 class TopologyView(NumIdMixin, TimestampedModel):
     """A saved topology-map view: the filter set plus hand-tuned node
     positions, so a curated diagram survives reloads and re-layouts."""

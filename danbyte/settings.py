@@ -203,23 +203,27 @@ CHANNEL_LAYERS = {
     }
 }
 
+# RQ queue DB — separate from 0 lets a second instance on the same Redis run
+# its own worker pool without stealing the primary's jobs (a dev clone sets
+# RQ_REDIS_DB to a spare index).
+_RQ_DB = int(os.getenv("RQ_REDIS_DB", "0"))
 RQ_QUEUES = {
     "default": {
         "HOST": os.getenv("REDIS_HOST", "localhost"),
         "PORT": int(os.getenv("REDIS_PORT", "6379")),
-        "DB": 0,
+        "DB": _RQ_DB,
         "DEFAULT_TIMEOUT": "1h",
     },
     "high": {
         "HOST": os.getenv("REDIS_HOST", "localhost"),
         "PORT": int(os.getenv("REDIS_PORT", "6379")),
-        "DB": 0,
+        "DB": _RQ_DB,
         "DEFAULT_TIMEOUT": "1h",
     },
     "low": {
         "HOST": os.getenv("REDIS_HOST", "localhost"),
         "PORT": int(os.getenv("REDIS_PORT", "6379")),
-        "DB": 0,
+        "DB": _RQ_DB,
         "DEFAULT_TIMEOUT": "24h",
     },
 }
