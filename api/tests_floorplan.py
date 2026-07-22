@@ -144,6 +144,32 @@ class FloorPlanTests(_Base):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["state"]["overlay"], "power")
 
+    def test_physical_scale_defaults_and_roundtrip(self):
+        # Defaults give existing plans plausible real-world scale for free.
+        resp = self.client.post(
+            "/api/floor-plans/",
+            {"name": "Hall B", "location_id": str(self.loc.id)},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual(body["cell_mm"], 600)
+        self.assertEqual(body["ceiling_mm"], 3000)
+        # And they're editable within their validator bounds.
+        resp = self.client.patch(
+            f"/api/floor-plans/{body['id']}/",
+            {"cell_mm": 500, "ceiling_mm": 2700},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()["cell_mm"], 500)
+        self.assertEqual(resp.json()["ceiling_mm"], 2700)
+        # Out-of-range values are rejected, not clamped silently.
+        resp = self.client.patch(
+            f"/api/floor-plans/{body['id']}/", {"cell_mm": 10}, format="json"
+        )
+        self.assertEqual(resp.status_code, 400)
+
 
 class TileTests(_Base):
     def setUp(self):
@@ -453,6 +479,36 @@ class TrayTests(_Base):
         )
         got = self.client.get("/api/floor-plan-trays/").json()
         self.assertEqual(got["count"], 0)
+
+    def test_tray_level_and_elevation_roundtrip(self):
+        resp = self.client.post(
+            "/api/floor-plan-trays/",
+            {"floor_plan_id": str(self.plan.id), "name": "OH-1",
+             "points": [[0, 0], [4, 0]]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        # Defaults: overhead run, elevation derived (null) until set.
+        self.assertEqual(body["level"], "overhead")
+        self.assertIsNone(body["elevation_mm"])
+
+        resp = self.client.patch(
+            f"/api/floor-plan-trays/{body['id']}/",
+            {"level": "underfloor", "elevation_mm": -300},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()["level"], "underfloor")
+        self.assertEqual(resp.json()["elevation_mm"], -300)
+
+        # Unknown level value rejected by the choices validator.
+        resp = self.client.patch(
+            f"/api/floor-plan-trays/{body['id']}/",
+            {"level": "orbit"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
 
     def test_tile_rack_filter(self):
         tt = FloorTileType.objects.create(

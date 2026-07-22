@@ -13,6 +13,10 @@ familiar front/rear diagram showing what's mounted in each rack unit.
 2. Name it and set its **height** in rack units (e.g. 42U) and **starting unit**
    (usually 1).
 3. Optionally assign a **site**, a **rack role**, and tags.
+4. Optionally record the cabinet's **outer width / depth (mm)** — the physical
+   footprint including the frame. These drive the 3D room view and scaled
+   drawings; left blank, plausible defaults are used (depth 1000 mm, width
+   derived from the rail width plus a 150 mm frame).
 
 ### Rack roles
 

@@ -18,7 +18,7 @@ import { toast } from "sonner"
 
 import { api, type Device, type Paginated, type Rack } from "@/lib/api"
 import { readableText } from "@/components/cells/color-badge"
-import { PANEL_MM } from "@/lib/faceplate-geometry"
+import { OPENING_MM, PANEL_MM } from "@/lib/faceplate-geometry"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -41,14 +41,6 @@ import { apiErrorToast } from "@/lib/api-toast"
 const BASE_PX_PER_MM = 0.95
 const RENDER_PX_PER_MM = 1.35
 
-// Usable opening (mm) per rack width — 19″ is EIA-310's 450mm; the rest scale
-// with the rail spacing (10″ half-racks, 21/23″ telco).
-const OPENING_MM: Record<number, number> = {
-  10: 222,
-  19: 450,
-  21: 500,
-  23: 551,
-}
 
 export type RackFace = "front" | "rear"
 export type RackDisplayMode = "names" | "images" | "render"

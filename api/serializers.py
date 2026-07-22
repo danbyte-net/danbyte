@@ -3426,6 +3426,7 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
         fields = ["id", "numid", "name", "facility_id", "site", "site_id", "role",
                   "role_id", "status", "status_id", "location", "location_id",
                   "width", "u_height",
+                  "outer_width_mm", "outer_depth_mm",
                   "max_weight", "max_weight_unit",
                   "total_weight_kg", "max_weight_kg", "power",
                   "starting_unit", "desc_units", "description",
@@ -5109,7 +5110,8 @@ class FloorPlanSerializer(
     class Meta:
         model = FloorPlan
         fields = ["id", "numid", "name", "location", "location_id", "site",
-                  "grid_width", "grid_height", "background_image",
+                  "grid_width", "grid_height", "cell_mm", "ceiling_mm",
+                  "background_image",
                   "background_opacity", "state", "description", "tile_count",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
@@ -5291,6 +5293,7 @@ class FloorPlanTraySerializer(NumIdModelSerializer):
     class Meta:
         model = FloorPlanTray
         fields = ["id", "floor_plan_id", "name", "kind", "color", "points",
+                  "level", "elevation_mm",
                   "description", "cables", "cable_ids",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "cables", "created_at", "updated_at"]

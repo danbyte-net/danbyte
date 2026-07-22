@@ -55,6 +55,11 @@ page). A plan belongs to a location, has a grid (default 24×16 cells, up to
 512×512), and can carry an uploaded **background image** — a blueprint or
 photo scaled under the grid with adjustable opacity.
 
+The grid also carries a **real-world scale**: a **cell size** in millimetres
+(default 600 — one standard raised-floor tile) and a **ceiling height**
+(default 3000). Existing plans keep working untouched; the scale powers the
+3D view, route-length estimation, and the scale bar on printed drawings.
+
 ## Floors
 
 A location can hold **several plans — its floors**. Name them "Basement",
@@ -136,6 +141,12 @@ through each one. Hand the PNG to whoever's pulling cable.
 - **Assign cables**: select a tray → its inspector lists the cables in it,
   with **Add cable** (searches all cables) and a × to remove. The tray shows
   its cable count on the canvas and in the rail.
+- **Level & elevation**: each tray records where it physically lives —
+  **Overhead** (the default), **Underfloor**, or **Floor level** — plus an
+  optional exact **elevation in mm**. Leave elevation blank and it derives
+  from the level (overhead → ceiling − 300, underfloor → −300, floor → 0).
+  This drives the tray's height in the 3D view and the vertical-drop term in
+  route-length estimation.
 - Trays render **above tiles** so the run is legible on the print, and they
   export with the PNG.
 - Cables mode is edit-gated; viewers still see the trays.

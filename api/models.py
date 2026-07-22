@@ -2994,6 +2994,19 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     desc_units = models.BooleanField(
         default=False, help_text="Number units top-to-bottom instead of bottom-up.",
     )
+    # Cabinet outer dimensions — the physical footprint (frame included), used
+    # by the 3D room view and scaled drawings. Blank = plausible render
+    # defaults (depth 1000 mm; width = rail width + 150 mm frame).
+    outer_width_mm = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(100), MaxValueValidator(2000)],
+        help_text="Cabinet outer width in millimetres (blank = derived).",
+    )
+    outer_depth_mm = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(100), MaxValueValidator(3000)],
+        help_text="Cabinet outer depth in millimetres (blank = 1000).",
+    )
     description = models.TextField(blank=True)
 
     class Meta:
@@ -4616,6 +4629,19 @@ class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     background_opacity = models.PositiveSmallIntegerField(
         default=60, validators=[MaxValueValidator(100)], help_text="Percent."
     )
+    # Real-world scale. The grid itself is abstract; these give it physical
+    # meaning for the 3D room view, route-length estimation, and drawing scale
+    # bars. Defaults are deliberately plausible (600 mm = a standard raised
+    # floor tile) so existing plans render sensibly with zero data entry.
+    cell_mm = models.PositiveSmallIntegerField(
+        default=600, validators=[MinValueValidator(50), MaxValueValidator(5000)],
+        help_text="Physical size of one grid cell, in millimetres.",
+    )
+    ceiling_mm = models.PositiveSmallIntegerField(
+        default=3000,
+        validators=[MinValueValidator(1000), MaxValueValidator(20000)],
+        help_text="Room ceiling height, in millimetres.",
+    )
     # View prefs (default zoom/pan, overlay mode, grid on/off) — free schema,
     # same trick as TopologyView.state, so it evolves without migrations.
     state = models.JSONField(default=dict, blank=True)
@@ -4911,6 +4937,23 @@ class FloorPlanTray(TimestampedModel):
     # "ladder", "underfloor"… whatever the shop calls it.
     kind = models.CharField(max_length=32, blank=True, default="")
     color = models.CharField(max_length=7, blank=True, default="")
+    # Vertical placement — where the run physically lives. Drives the 3D
+    # render height and the vertical-drop term in route-length estimation.
+    LEVEL_CHOICES = [
+        ("overhead", "Overhead"),
+        ("underfloor", "Underfloor"),
+        ("floor", "Floor level"),
+    ]
+    level = models.CharField(
+        max_length=16, choices=LEVEL_CHOICES, default="overhead"
+    )
+    elevation_mm = models.IntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(-2000), MaxValueValidator(20000)],
+        help_text="Height above finished floor in millimetres (negative = "
+        "below the raised floor). Blank derives from the level: overhead → "
+        "ceiling − 300, underfloor → −300, floor → 0.",
+    )
     # [[x, y], …] in cell-corner coordinates (integers along grid lines).
     points = models.JSONField(default=list)
     description = models.TextField(blank=True, default="")

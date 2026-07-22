@@ -610,3 +610,22 @@ class RackPlacementTests(APITestCase):
         self._post("sw2", self.dt_half, 10, side="right")
         r = self.client.get(f"/api/racks/{self.rack.id}/")
         self.assertEqual(r.json()["used_units"], 1)
+
+    def test_outer_dimensions_roundtrip(self):
+        # Blank by default (renderers derive plausible values).
+        r = self.client.get(f"/api/racks/{self.rack.id}/")
+        self.assertIsNone(r.json()["outer_width_mm"])
+        self.assertIsNone(r.json()["outer_depth_mm"])
+        r = self.client.patch(
+            f"/api/racks/{self.rack.id}/",
+            {"outer_width_mm": 600, "outer_depth_mm": 1200},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["outer_width_mm"], 600)
+        self.assertEqual(r.json()["outer_depth_mm"], 1200)
+        # Validator bounds enforced.
+        r = self.client.patch(
+            f"/api/racks/{self.rack.id}/", {"outer_depth_mm": 9}, format="json"
+        )
+        self.assertEqual(r.status_code, 400)

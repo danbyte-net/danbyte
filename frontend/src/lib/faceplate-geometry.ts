@@ -23,6 +23,17 @@ export const PANEL_MM = {
   groupGap: 6,
 } as const
 
+/** Usable rack opening (mm) per nominal rail width in inches — 19″ is
+ * EIA-310's 450mm; the rest scale with the rail spacing (10″ half-racks,
+ * 21/23″ telco). Shared by the 2D elevation, the 3D room view, and (as a
+ * snapshot) the PDF drawings. */
+export const OPENING_MM: Record<number, number> = {
+  10: 222,
+  19: 450,
+  21: 500,
+  23: 551,
+}
+
 export type ConnectorFamily =
   | "rj45"
   | "sfp"

@@ -60,6 +60,12 @@ export function RackForm({ rack, onSaved, onCancel }: RackFormProps) {
     rack ? String(rack.starting_unit) : "1"
   )
   const [descUnits, setDescUnits] = useState(rack?.desc_units ?? false)
+  const [outerWidth, setOuterWidth] = useState(
+    rack?.outer_width_mm != null ? String(rack.outer_width_mm) : ""
+  )
+  const [outerDepth, setOuterDepth] = useState(
+    rack?.outer_depth_mm != null ? String(rack.outer_depth_mm) : ""
+  )
   const [maxWeight, setMaxWeight] = useState(rack?.max_weight ?? "")
   const [maxWeightUnit, setMaxWeightUnit] = useState(
     rack?.max_weight_unit || "kg"
@@ -84,6 +90,8 @@ export function RackForm({ rack, onSaved, onCancel }: RackFormProps) {
     setUHeight(String(rack.u_height))
     setStartingUnit(String(rack.starting_unit))
     setDescUnits(rack.desc_units)
+    setOuterWidth(rack.outer_width_mm != null ? String(rack.outer_width_mm) : "")
+    setOuterDepth(rack.outer_depth_mm != null ? String(rack.outer_depth_mm) : "")
     setMaxWeight(rack.max_weight ?? "")
     setMaxWeightUnit(rack.max_weight_unit || "kg")
     setDescription(rack.description)
@@ -132,6 +140,8 @@ export function RackForm({ rack, onSaved, onCancel }: RackFormProps) {
         u_height: uHeight.trim() === "" ? 42 : Number(uHeight),
         starting_unit: startingUnit.trim() === "" ? 1 : Number(startingUnit),
         desc_units: descUnits,
+        outer_width_mm: outerWidth.trim() === "" ? null : Number(outerWidth),
+        outer_depth_mm: outerDepth.trim() === "" ? null : Number(outerDepth),
         max_weight: maxWeight.trim() === "" ? null : maxWeight.trim(),
         max_weight_unit: maxWeight.trim() === "" ? "" : maxWeightUnit,
         description: description.trim(),
@@ -305,6 +315,26 @@ export function RackForm({ rack, onSaved, onCancel }: RackFormProps) {
           value={startingUnit}
           onChange={setStartingUnit}
           error={fieldErrors.starting_unit}
+        />
+        <FormText
+          label="Outer width (mm)"
+          hint="optional — cabinet footprint, for 3D & drawings"
+          type="number"
+          min={100}
+          max={2000}
+          value={outerWidth}
+          onChange={setOuterWidth}
+          error={fieldErrors.outer_width_mm}
+        />
+        <FormText
+          label="Outer depth (mm)"
+          hint="optional — blank = 1000"
+          type="number"
+          min={100}
+          max={3000}
+          value={outerDepth}
+          onChange={setOuterDepth}
+          error={fieldErrors.outer_depth_mm}
         />
         <FormText
           label="Weight budget"

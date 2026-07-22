@@ -41665,6 +41665,16 @@ components:
           type: integer
           maximum: 512
           minimum: 1
+        cell_mm:
+          type: integer
+          maximum: 5000
+          minimum: 50
+          description: Physical size of one grid cell, in millimetres.
+        ceiling_mm:
+          type: integer
+          maximum: 20000
+          minimum: 1000
+          description: Room ceiling height, in millimetres.
         background_image:
           type: string
           nullable: true
@@ -41794,6 +41804,16 @@ components:
           type: integer
           maximum: 512
           minimum: 1
+        cell_mm:
+          type: integer
+          maximum: 5000
+          minimum: 50
+          description: Physical size of one grid cell, in millimetres.
+        ceiling_mm:
+          type: integer
+          maximum: 20000
+          minimum: 1000
+          description: Room ceiling height, in millimetres.
         background_opacity:
           type: integer
           maximum: 100
@@ -42048,6 +42068,16 @@ components:
           type: string
           maxLength: 7
         points: {}
+        level:
+          $ref: '#/components/schemas/LevelEnum'
+        elevation_mm:
+          type: integer
+          maximum: 20000
+          minimum: -2000
+          nullable: true
+          description: 'Height above finished floor in millimetres (negative = below
+            the raised floor). Blank derives from the level: overhead → ceiling −
+            300, underfloor → −300, floor → 0.'
         description:
           type: string
         cables:
@@ -42089,6 +42119,16 @@ components:
           type: string
           maxLength: 7
         points: {}
+        level:
+          $ref: '#/components/schemas/LevelEnum'
+        elevation_mm:
+          type: integer
+          maximum: 20000
+          minimum: -2000
+          nullable: true
+          description: 'Height above finished floor in millimetres (negative = below
+            the raised floor). Blank derives from the level: overhead → ceiling −
+            300, underfloor → −300, floor → 0.'
         description:
           type: string
         cable_ids:
@@ -44653,6 +44693,16 @@ components:
         * `cm` - Centimeters
         * `ft` - Feet
         * `in` - Inches
+    LevelEnum:
+      enum:
+      - overhead
+      - underfloor
+      - floor
+      type: string
+      description: |-
+        * `overhead` - Overhead
+        * `underfloor` - Underfloor
+        * `floor` - Floor level
     Location:
       type: object
       description: |-
@@ -51120,6 +51170,16 @@ components:
           type: integer
           maximum: 512
           minimum: 1
+        cell_mm:
+          type: integer
+          maximum: 5000
+          minimum: 50
+          description: Physical size of one grid cell, in millimetres.
+        ceiling_mm:
+          type: integer
+          maximum: 20000
+          minimum: 1000
+          description: Room ceiling height, in millimetres.
         background_opacity:
           type: integer
           maximum: 100
@@ -51247,6 +51307,16 @@ components:
           type: string
           maxLength: 7
         points: {}
+        level:
+          $ref: '#/components/schemas/LevelEnum'
+        elevation_mm:
+          type: integer
+          maximum: 20000
+          minimum: -2000
+          nullable: true
+          description: 'Height above finished floor in millimetres (negative = below
+            the raised floor). Blank derives from the level: overhead → ceiling −
+            300, underfloor → −300, floor → 0.'
         description:
           type: string
         cable_ids:
@@ -53136,6 +53206,18 @@ components:
           maximum: 32767
           minimum: 0
           description: Height in rack units (U).
+        outer_width_mm:
+          type: integer
+          maximum: 2000
+          minimum: 100
+          nullable: true
+          description: Cabinet outer width in millimetres (blank = derived).
+        outer_depth_mm:
+          type: integer
+          maximum: 3000
+          minimum: 100
+          nullable: true
+          description: Cabinet outer depth in millimetres (blank = 1000).
         max_weight:
           type: string
           format: decimal
@@ -56231,6 +56313,18 @@ components:
           maximum: 32767
           minimum: 0
           description: Height in rack units (U).
+        outer_width_mm:
+          type: integer
+          maximum: 2000
+          minimum: 100
+          nullable: true
+          description: Cabinet outer width in millimetres (blank = derived).
+        outer_depth_mm:
+          type: integer
+          maximum: 3000
+          minimum: 100
+          nullable: true
+          description: Cabinet outer depth in millimetres (blank = 1000).
         max_weight:
           type: string
           format: decimal
@@ -56431,6 +56525,18 @@ components:
           maximum: 32767
           minimum: 0
           description: Height in rack units (U).
+        outer_width_mm:
+          type: integer
+          maximum: 2000
+          minimum: 100
+          nullable: true
+          description: Cabinet outer width in millimetres (blank = derived).
+        outer_depth_mm:
+          type: integer
+          maximum: 3000
+          minimum: 100
+          nullable: true
+          description: Cabinet outer depth in millimetres (blank = 1000).
         max_weight:
           type: string
           format: decimal

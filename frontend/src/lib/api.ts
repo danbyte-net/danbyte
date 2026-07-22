@@ -1371,6 +1371,10 @@ export interface Rack {
   u_height: number
   starting_unit: number
   desc_units: boolean
+  /** Cabinet outer width (mm); null = derived from rail width + frame. */
+  outer_width_mm: number | null
+  /** Cabinet outer depth (mm); null = render default 1000. */
+  outer_depth_mm: number | null
   description: string
   device_count: number
   used_units: number
@@ -1393,6 +1397,8 @@ export interface RackWritePayload {
   u_height?: number
   starting_unit?: number
   desc_units?: boolean
+  outer_width_mm?: number | null
+  outer_depth_mm?: number | null
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -5307,6 +5313,10 @@ export interface FloorPlan {
   site: SiteOption
   grid_width: number
   grid_height: number
+  /** Physical size of one grid cell (mm) — default 600, a raised-floor tile. */
+  cell_mm: number
+  /** Room ceiling height (mm). */
+  ceiling_mm: number
   /** Relative /media/… URL for the blueprint under the grid, or null. */
   background_image: string | null
   background_opacity: number
@@ -5331,6 +5341,8 @@ export interface TrayCableMini {
 
 /** A cable tray / conduit run: a named polyline on the plan's half-cell
  * lattice, with the physical cables routed through it. */
+export type TrayLevel = "overhead" | "underfloor" | "floor"
+
 export interface FloorPlanTray {
   id: string
   name: string
@@ -5339,6 +5351,11 @@ export interface FloorPlanTray {
   color: string
   /** [[x, y], …] in cell units, snapped to 0.5 steps. */
   points: [number, number][]
+  /** Vertical placement — drives 3D height + route-length drops. */
+  level: TrayLevel
+  /** Height above finished floor (mm, negative = underfloor). Null derives
+   * from level: overhead → ceiling−300, underfloor → −300, floor → 0. */
+  elevation_mm: number | null
   description: string
   cables: TrayCableMini[]
   created_at: string
@@ -5351,6 +5368,8 @@ export interface FloorPlanTrayWritePayload {
   kind?: string
   color?: string
   points?: [number, number][]
+  level?: TrayLevel
+  elevation_mm?: number | null
   description?: string
   cable_ids?: string[]
 }
@@ -5417,6 +5436,8 @@ export interface FloorPlanWritePayload {
   location_id?: string
   grid_width?: number
   grid_height?: number
+  cell_mm?: number
+  ceiling_mm?: number
   background_opacity?: number
   state?: Record<string, unknown>
   description?: string

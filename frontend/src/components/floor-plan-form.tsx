@@ -44,6 +44,8 @@ export function FloorPlanForm({
   )
   const [gridWidth, setGridWidth] = useState(String(plan?.grid_width ?? 24))
   const [gridHeight, setGridHeight] = useState(String(plan?.grid_height ?? 16))
+  const [cellMm, setCellMm] = useState(String(plan?.cell_mm ?? 600))
+  const [ceilingMm, setCeilingMm] = useState(String(plan?.ceiling_mm ?? 3000))
   const [description, setDescription] = useState(plan?.description ?? "")
 
   const sites = useSiteOptions()
@@ -67,6 +69,11 @@ export function FloorPlanForm({
         location_id: locationId ?? undefined,
         grid_width: Math.min(512, Math.max(1, parseInt(gridWidth, 10) || 24)),
         grid_height: Math.min(512, Math.max(1, parseInt(gridHeight, 10) || 16)),
+        cell_mm: Math.min(5000, Math.max(50, parseInt(cellMm, 10) || 600)),
+        ceiling_mm: Math.min(
+          20000,
+          Math.max(1000, parseInt(ceilingMm, 10) || 3000)
+        ),
         description,
       }
       if (isEdit)
@@ -160,6 +167,28 @@ export function FloorPlanForm({
           value={gridHeight}
           onChange={setGridHeight}
           error={fieldErrors.grid_height}
+        />
+      </FormRow>
+      <FormRow>
+        <FormText
+          label="Cell size (mm)"
+          hint="Physical size of one grid cell — 600 = a raised-floor tile"
+          type="number"
+          min={50}
+          max={5000}
+          value={cellMm}
+          onChange={setCellMm}
+          error={fieldErrors.cell_mm}
+        />
+        <FormText
+          label="Ceiling height (mm)"
+          hint="Used by the 3D view and overhead tray defaults"
+          type="number"
+          min={1000}
+          max={20000}
+          value={ceilingMm}
+          onChange={setCeilingMm}
+          error={fieldErrors.ceiling_mm}
         />
       </FormRow>
       <FormTextarea

@@ -43,10 +43,18 @@ import type {
   Paginated,
   PowerPanelOption,
   Rack,
+  TrayLevel,
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ColorPicker } from "@/components/ui/color-picker"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -2217,6 +2225,9 @@ function TrayInspector({
 }) {
   const [name, setName] = useState(tray.name)
   const [kind, setKind] = useState(tray.kind)
+  const [elevation, setElevation] = useState(
+    tray.elevation_mm != null ? String(tray.elevation_mm) : ""
+  )
 
   return (
     <aside className="flex w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l border-border p-4">
@@ -2260,6 +2271,37 @@ function TrayInspector({
         <ColorPicker
           value={tray.color}
           onChange={(color) => onPatch({ color })}
+        />
+      </Field>
+      <Field label="Level" hint="Where the run physically lives">
+        <Select
+          value={tray.level}
+          onValueChange={(v) => onPatch({ level: v as TrayLevel })}
+        >
+          <SelectTrigger size="sm" className="h-8 w-full text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="overhead">Overhead</SelectItem>
+            <SelectItem value="underfloor">Underfloor</SelectItem>
+            <SelectItem value="floor">Floor level</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>
+      <Field
+        label="Elevation (mm)"
+        hint="Height above floor — blank derives from the level"
+      >
+        <Input
+          type="number"
+          value={elevation}
+          onChange={(e) => setElevation(e.target.value)}
+          onBlur={() => {
+            const v = elevation.trim() === "" ? null : Number(elevation)
+            if (v !== tray.elevation_mm) onPatch({ elevation_mm: v })
+          }}
+          placeholder="Auto"
+          className="h-8 text-sm"
         />
       </Field>
 
