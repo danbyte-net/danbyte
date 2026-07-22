@@ -5229,6 +5229,115 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 }
         return Response({"as_of": timezone.now().isoformat(), "tiles": out})
 
+    @action(detail=True, methods=["get"], url_path="scene")
+    def scene(self, request, pk=None):
+        """Everything the 3D room view needs, in one fetch: the plan's physical
+        dimensions, every tile (racks carrying their racked devices' geometry +
+        face images), and the trays at their elevations. Static structure only —
+        live status keeps coming from the sibling ``state`` action, so the 3D
+        view polls exactly what the 2D canvas polls."""
+        from django.utils import timezone
+
+        plan = self.get_object()
+        tiles_qs = plan.tiles.select_related(
+            "tile_type", "role_type", "rack", "device__role",
+            "device__device_type",
+        )
+        rack_ids = {t.rack_id for t in tiles_qs if t.rack_id}
+        racks = {
+            r.id: r
+            for r in Rack.objects.filter(id__in=rack_ids).prefetch_related(
+                "devices__device_type", "devices__role"
+            )
+        }
+
+        def img(f):
+            return request.build_absolute_uri(f.url) if f else None
+
+        def device_geo(d):
+            dt = d.device_type
+            return {
+                "id": str(d.id),
+                "name": d.name,
+                "position": d.position,
+                "face": d.face or "",
+                "rack_side": d.rack_side or "",
+                "u_height": dt.u_height if dt else 1,
+                "rack_width": (dt.rack_width if dt else "full") or "full",
+                "is_full_depth": dt.is_full_depth if dt else True,
+                "role_color": d.role.color if d.role_id else "",
+                "front_image": img(dt.front_image if dt else None),
+                "rear_image": img(dt.rear_image if dt else None),
+                "has_faceplate": bool(dt and dt.faceplate),
+            }
+
+        def rack_geo(r):
+            return {
+                "id": str(r.id),
+                "name": r.name,
+                "u_height": r.u_height,
+                "starting_unit": r.starting_unit,
+                "desc_units": r.desc_units,
+                "width": r.width,
+                "outer_width_mm": r.outer_width_mm,
+                "outer_depth_mm": r.outer_depth_mm,
+                "devices": [
+                    device_geo(d)
+                    for d in r.devices.all()
+                    if d.position is not None
+                ],
+            }
+
+        tiles = [
+            {
+                "id": str(t.id),
+                "x": t.x, "y": t.y,
+                "w": t.width, "h": t.height,
+                "orientation": t.orientation,
+                "status": t.status,
+                "label": t.label or "",
+                "kind": "rack" if t.rack_id else
+                        "device" if t.device_id else "other",
+                "color": (
+                    (t.tile_type.color if t.tile_type_id else "")
+                    or (t.role_type.color if t.role_type_id else "")
+                    or t.color or ""
+                ),
+                "is_zone": bool(t.tile_type_id and t.tile_type.is_zone),
+                "rack": rack_geo(racks[t.rack_id])
+                if t.rack_id and t.rack_id in racks else None,
+            }
+            for t in tiles_qs
+        ]
+        trays = [
+            {
+                "id": str(tr.id),
+                "name": tr.name,
+                "kind": tr.kind,
+                "color": tr.color,
+                "level": tr.level,
+                "elevation_mm": tr.elevation_mm,
+                "points": tr.points,
+                "cable_count": tr.cables.count(),
+            }
+            for tr in plan.trays.prefetch_related("cables")
+        ]
+        return Response({
+            "plan": {
+                "id": str(plan.id),
+                "name": plan.name,
+                "grid_width": plan.grid_width,
+                "grid_height": plan.grid_height,
+                "cell_mm": plan.cell_mm,
+                "ceiling_mm": plan.ceiling_mm,
+                "background_image": img(plan.background_image),
+                "background_opacity": plan.background_opacity,
+            },
+            "tiles": tiles,
+            "trays": trays,
+            "as_of": timezone.now().isoformat(),
+        })
+
     @action(detail=True, methods=["get"], url_path="cable-paths")
     def cable_paths(self, request, pk=None):
         """Resolve each cable on this plan to its two endpoint tiles — a

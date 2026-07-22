@@ -524,6 +524,68 @@ class TrayTests(_Base):
         self.assertEqual(got["count"], 1)
 
 
+class SceneTests(_Base):
+    """GET /api/floor-plans/{id}/scene/ — the 3D room view's one-fetch payload."""
+
+    def setUp(self):
+        super().setUp()
+        self.plan = FloorPlan.objects.create(
+            tenant=self.tenant, location=self.loc, name="Hall A",
+            cell_mm=500, ceiling_mm=2800,
+        )
+        self.tt = FloorTileType.objects.create(
+            tenant=self.tenant, name="Rack", slug="rack"
+        )
+
+    def test_scene_payload_shape(self):
+        from .models import DeviceType
+
+        dt = DeviceType.objects.create(
+            tenant=self.tenant, name="1U Switch", u_height=1
+        )
+        Device.objects.create(
+            tenant=self.tenant, name="sw1", device_type=dt,
+            rack=self.rack, position=10, face="front",
+        )
+        # A racked device with no position must not appear in the scene.
+        Device.objects.create(
+            tenant=self.tenant, name="loose", device_type=dt, rack=self.rack
+        )
+        FloorPlanTile.objects.create(
+            floor_plan=self.plan, tile_type=self.tt, x=2, y=3,
+            rack=self.rack, link_kind="rack",
+        )
+        FloorPlanTray.objects.create(
+            floor_plan=self.plan, name="OH-1", level="overhead",
+            points=[[0, 0], [4, 0]],
+        )
+
+        body = self.client.get(f"/api/floor-plans/{self.plan.id}/scene/").json()
+        self.assertEqual(body["plan"]["cell_mm"], 500)
+        self.assertEqual(body["plan"]["ceiling_mm"], 2800)
+        self.assertEqual(len(body["tiles"]), 1)
+        tile = body["tiles"][0]
+        self.assertEqual(tile["kind"], "rack")
+        self.assertEqual(tile["x"], 2)
+        self.assertEqual(tile["rack"]["name"], "R01")
+        self.assertEqual(tile["rack"]["u_height"], 42)
+        devs = tile["rack"]["devices"]
+        self.assertEqual([d["name"] for d in devs], ["sw1"])
+        self.assertEqual(devs[0]["position"], 10)
+        self.assertEqual(devs[0]["u_height"], 1)
+        self.assertEqual(devs[0]["rack_width"], "full")
+        self.assertEqual(len(body["trays"]), 1)
+        self.assertEqual(body["trays"][0]["level"], "overhead")
+        self.assertIsNone(body["trays"][0]["elevation_mm"])
+
+    def test_scene_tenant_isolation(self):
+        hidden = FloorPlan.objects.create(
+            tenant=self.other, location=self.other_loc, name="Hidden"
+        )
+        resp = self.client.get(f"/api/floor-plans/{hidden.id}/scene/")
+        self.assertEqual(resp.status_code, 404)
+
+
 class CablePathTests(_Base):
     def test_cable_paths_resolve_to_rack_tiles(self):
         plan = FloorPlan.objects.create(

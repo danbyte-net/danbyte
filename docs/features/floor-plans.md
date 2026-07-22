@@ -60,6 +60,25 @@ The grid also carries a **real-world scale**: a **cell size** in millimetres
 (default 3000). Existing plans keep working untouched; the scale powers the
 3D view, route-length estimation, and the scale bar on printed drawings.
 
+## The 3D room view
+
+The **2D / 3D** toggle in the plan header (or `?viz=3d` in the URL) turns the
+plan into a navigable room: rack tiles become cabinets at their grid
+positions — sized from the rack's rail width, outer dimensions and U height —
+with their racked devices drawn at true U positions when you move close.
+Trays render at their recorded level/elevation (overhead runs hang below the
+ceiling, underfloor runs sit beneath the slab), zones tint the floor, and the
+uploaded blueprint textures it.
+
+- **Navigate**: drag to orbit, scroll to zoom, right-drag to pan.
+- **Click a rack** for a summary card (space used, monitoring rollup) and a
+  jump to the rack page. Monitoring state lights a beacon on top of each
+  cabinet — the same worst-status rollup the 2D overlays use.
+- The view is **read-only** in v1 — layout editing stays in 2D.
+- Everything is drawn from the same millimetre constants as the 2D elevation
+  and faceplates, so proportions match reality (EIA-310 rack opening, 44.45 mm
+  U pitch). Browsers without WebGL fall back to a notice; 2D is unaffected.
+
 ## Floors
 
 A location can hold **several plans — its floors**. Name them "Basement",

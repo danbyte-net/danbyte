@@ -20,7 +20,15 @@ import {
   Waypoints,
   X,
 } from "lucide-react"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -114,11 +122,20 @@ import { apiErrorToast } from "@/lib/api-toast"
 export const Route = createFileRoute("/floorplans/$id")({
   component: FloorPlanPage,
   // ?trace=<cableId> — arrive with a cable's route highlighted + fitted,
-  // without entering Cables mode.
-  validateSearch: (s: Record<string, unknown>): { trace?: string } => ({
+  // without entering Cables mode. ?viz=3d — open straight into the 3D room.
+  // (Named `viz`, not `view` — the monitoring route owns `view` in the
+  // router-wide search union and a second meaning breaks its reducer types.)
+  validateSearch: (
+    s: Record<string, unknown>
+  ): { trace?: string; viz?: "3d" } => ({
     ...(typeof s.trace === "string" ? { trace: s.trace } : {}),
+    ...(s.viz === "3d" ? { viz: "3d" as const } : {}),
   }),
 })
+
+// The 3D room view — the only consumer of the three.js stack, lazy-loaded so
+// it lives in its own chunk and costs nothing until someone opens it.
+const FloorScene3D = lazy(() => import("@/components/floorplan3d/scene"))
 
 /** Local editing shape — server tiles plus unsaved ones (temp ids). */
 type EditTile = FloorPlanTile
@@ -214,7 +231,9 @@ function FloorPlanPage() {
       ),
   })
   const cablePaths = cablePathsQuery.data?.cables ?? []
-  const { trace: traceParam } = Route.useSearch()
+  const { trace: traceParam, viz: vizParam } = Route.useSearch()
+  const view3d = vizParam === "3d"
+  const [show3dHint, setShow3dHint] = useState(true)
 
   // ── Local editing state ────────────────────────────────────────────────
   const [tiles, setTiles] = useState<EditTile[]>([])
@@ -835,7 +854,25 @@ function FloorPlanPage() {
           </div>
         )}
         <div className="ml-auto flex items-center gap-2">
-          {canEdit && (
+          <SegmentedTabs<"2d" | "3d">
+            value={view3d ? "3d" : "2d"}
+            onValueChange={(v) =>
+              nav({
+                to: "/floorplans/$id",
+                params: { id: plan.id },
+                search: (prev) => ({
+                  ...prev,
+                  viz: v === "3d" ? ("3d" as const) : undefined,
+                }),
+                replace: true,
+              })
+            }
+            items={[
+              { value: "2d", label: "2D" },
+              { value: "3d", label: "3D" },
+            ]}
+          />
+          {canEdit && !view3d && (
             <SegmentedTabs<"layout" | "cable">
               value={mode}
               onValueChange={(m) => {
@@ -1151,6 +1188,37 @@ function FloorPlanPage() {
               <QueryError error={tilesQuery.error} />
             </div>
           )}
+          {view3d && (
+            <>
+              <Suspense
+                fallback={
+                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                    Loading 3D view…
+                  </div>
+                }
+              >
+                <FloorScene3D
+                  planId={plan.id}
+                  liveState={liveState.data ?? null}
+                />
+              </Suspense>
+              {show3dHint && (
+                <div className="absolute right-3 bottom-3 flex items-center gap-2 rounded-md border border-border bg-popover/90 px-2.5 py-1.5 text-[11px] text-muted-foreground shadow backdrop-blur">
+                  Drag to orbit · scroll to zoom · right-drag to pan · click a
+                  rack
+                  <button
+                    onClick={() => setShow3dHint(false)}
+                    aria-label="Dismiss"
+                    className="hover:text-foreground"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+          {!view3d && (
+            <>
           <FloorCanvas
             plan={plan}
             tiles={tiles}
@@ -1255,6 +1323,8 @@ function FloorPlanPage() {
               ) : null
             }
           />
+          </>
+          )}
         </div>
 
         {canEdit && mode === "layout" && selected && (

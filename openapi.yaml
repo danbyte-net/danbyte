@@ -11340,6 +11340,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/FloorPlan'
           description: ''
+  /api/floor-plans/{id}/scene/:
+    get:
+      operationId: floor_plans_scene_retrieve
+      description: |-
+        Everything the 3D room view needs, in one fetch: the plan's physical
+        dimensions, every tile (racks carrying their racked devices' geometry +
+        face images), and the trays at their elevations. Static structure only —
+        live status keeps coming from the sibling ``state`` action, so the 3D
+        view polls exactly what the 2D canvas polls.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this floor plan.
+        required: true
+      tags:
+      - floor-plans
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloorPlan'
+          description: ''
   /api/floor-plans/{id}/state/:
     get:
       operationId: floor_plans_state_retrieve
