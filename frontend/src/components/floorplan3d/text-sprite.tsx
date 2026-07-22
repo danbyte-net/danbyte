@@ -49,8 +49,16 @@ export function TextSprite({
   }, [text, color, background])
 
   return (
-    <sprite position={position} scale={[heightM * aspect, heightM, 1]}>
-      <spriteMaterial map={texture} depthTest={false} transparent />
+    // raycast disabled: the label floats above the cabinet and would otherwise
+    // swallow clicks meant for the rack/devices behind it (the raycaster hits
+    // sprites even when they draw on top). depthTest stays ON so labels are
+    // occluded naturally instead of bleeding through nearer cabinets.
+    <sprite
+      position={position}
+      scale={[heightM * aspect, heightM, 1]}
+      raycast={() => null}
+    >
+      <spriteMaterial map={texture} transparent />
     </sprite>
   )
 }

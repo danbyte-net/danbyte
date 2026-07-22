@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useThree } from "@react-three/fiber"
 import * as THREE from "three"
 
@@ -10,8 +10,10 @@ const DEVICE_SELECTED = "#0ea5e9"
 // ─── Face-texture cache ──────────────────────────────────────────────────────
 // One texture per device-type image URL, shared across every device box that
 // wears it (a rack of 20 identical switches loads one image). LRU-capped so a
-// huge catalog can't hold the GPU hostage.
-const MAX_TEXTURES = 64
+// huge catalog can't hold the GPU hostage — but generously: a tight cap made
+// rooms with many distinct device types thrash (evict → reload → planes
+// flickering in and out while moving).
+const MAX_TEXTURES = 256
 const cache = new Map<string, THREE.Texture>()
 
 function getTexture(url: string, onLoad: () => void): THREE.Texture | null {
@@ -104,6 +106,14 @@ export function DeviceMesh({
       : dev.role_color || DEVICE_FALLBACK
   const boxH = h * 0.94
 
+  // Memoized (and disposed) — an inline `new BoxGeometry` re-allocated on
+  // every hover/selection render.
+  const edges = useMemo(
+    () => (selected ? new THREE.BoxGeometry(dw, boxH, dd) : null),
+    [selected, dw, boxH, dd]
+  )
+  useEffect(() => () => edges?.dispose(), [edges])
+
   return (
     <group
       position={[dx, y + h / 2, dz]}
@@ -137,9 +147,9 @@ export function DeviceMesh({
           <meshBasicMaterial map={texture} toneMapped={false} />
         </mesh>
       )}
-      {selected && (
-        <lineSegments>
-          <edgesGeometry args={[new THREE.BoxGeometry(dw, boxH, dd)]} />
+      {selected && edges && (
+        <lineSegments raycast={() => null}>
+          <edgesGeometry args={[edges]} />
           <lineBasicMaterial color={DEVICE_SELECTED} />
         </lineSegments>
       )}

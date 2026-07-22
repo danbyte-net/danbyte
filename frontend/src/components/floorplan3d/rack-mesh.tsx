@@ -63,17 +63,27 @@ export function RackMesh({
   // Manual LOD (NOT drei <Detailed>/THREE.LOD): the raycaster ignores
   // `visible`, so an invisible far-tier solid box would sit in front of the
   // devices and eat their clicks. Mount exactly one tier instead — unmounted
-  // meshes can't be raycast. Hysteresis stops threshold flicker; with the
-  // demand frameloop this runs only on frames the controls already trigger.
+  // meshes can't be raycast.
+  //
+  // Distance is measured to the cabinet's SURFACE (centre minus half its
+  // diagonal), not its centre — centre-distance made big/edge-of-room racks
+  // flip tiers later than they looked, reading as "devices missing up close".
+  // Wide hysteresis (18 in / 24 out) kills popping while orbiting at the
+  // threshold; with the demand frameloop this runs only on frames the
+  // controls already trigger.
   const [near, setNear] = useState(false)
   const nearRef = useRef(false)
   const centre = useMemo(
     () => new THREE.Vector3(cx, height / 2, cz),
     [cx, cz, height]
   )
+  const halfDiag = useMemo(
+    () => Math.hypot(width, height, depth) / 2,
+    [width, height, depth]
+  )
   useFrame(({ camera }) => {
-    const dist = camera.position.distanceTo(centre)
-    const next = dist < (nearRef.current ? 16 : 14)
+    const dist = camera.position.distanceTo(centre) - halfDiag
+    const next = dist < (nearRef.current ? 24 : 18)
     if (next !== nearRef.current) {
       nearRef.current = next
       setNear(next)
@@ -147,7 +157,8 @@ export function RackMesh({
         <Frame w={width} h={height} d={depth} color={frameColor} />
       )}
       {beacon && (
-        <mesh position={[0, height + 0.03, 0]}>
+        // raycast disabled — decoration must never steal the rack's clicks.
+        <mesh position={[0, height + 0.03, 0]} raycast={() => null}>
           <boxGeometry args={[width * 0.6, 0.05, 0.06]} />
           <meshStandardMaterial
             color={beacon}
