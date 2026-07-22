@@ -5,9 +5,11 @@ import * as THREE from "three"
 import type { FloorTileCheck } from "@/lib/api"
 
 import { DeviceMesh } from "./device-mesh"
+import { RackRuler } from "./rack-ruler"
 import { TextSprite } from "./text-sprite"
 import {
   cellToWorld,
+  deviceYM,
   rackFootprintM,
   type ScenePayload,
   type SceneTile,
@@ -44,6 +46,8 @@ export function RackMesh({
   tile,
   check,
   selection,
+  showUNumbers,
+  showNames,
   onSelect,
   onFlyTo,
 }: {
@@ -51,6 +55,8 @@ export function RackMesh({
   tile: SceneTile
   check?: FloorTileCheck | null
   selection: Sel | null
+  showUNumbers: boolean
+  showNames: boolean
   onSelect: (sel: Sel) => void
   onFlyTo: (target: THREE.Vector3, position: THREE.Vector3) => void
 }) {
@@ -156,6 +162,23 @@ export function RackMesh({
       ) : (
         <Frame w={width} h={height} d={depth} color={frameColor} />
       )}
+      {/* Overlays — near tier only (labels are pointless on a far block). */}
+      {near && showUNumbers && (
+        <RackRuler rack={rack} width={width} depth={depth} />
+      )}
+      {near &&
+        showNames &&
+        rack.devices.map((dev) => {
+          const { y, h } = deviceYM(rack, dev)
+          return (
+            <TextSprite
+              key={`name-${dev.id}`}
+              text={dev.name}
+              heightM={0.06}
+              position={[-width / 2 - 0.28, y + h / 2, -depth * 0.4]}
+            />
+          )
+        })}
       {beacon && (
         // raycast disabled — decoration must never steal the rack's clicks.
         <mesh position={[0, height + 0.03, 0]} raycast={() => null}>
