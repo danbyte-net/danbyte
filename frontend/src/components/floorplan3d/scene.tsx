@@ -41,6 +41,8 @@ export default function FloorScene3D({
 }) {
   const scene = useScene(planId)
   const [selection, setSelection] = useState<Sel | null>(null)
+  const [showUNumbers, setShowUNumbers] = useState(false)
+  const [showNames, setShowNames] = useState(false)
   const flyToRef = useRef<FlyToRequest | null>(null)
 
   const supported = useMemo(webglSupported, [])
@@ -102,6 +104,8 @@ export default function FloorScene3D({
             tile={t}
             check={liveState?.tiles[t.id]?.check ?? null}
             selection={selection}
+            showUNumbers={showUNumbers}
+            showNames={showNames}
             onSelect={setSelection}
             onFlyTo={(target, position) => {
               flyToRef.current = { target, position }
@@ -124,6 +128,27 @@ export default function FloorScene3D({
         <RackHud tile={selTile} liveState={liveState} />
       )}
       {selTile && selDevice && <DeviceHud tile={selTile} dev={selDevice} />}
+      <div className="absolute top-3 right-3 flex flex-col gap-1.5 rounded-lg border border-border bg-popover/90 p-2 text-[12px] text-popover-foreground shadow backdrop-blur">
+        <label className="flex cursor-pointer items-center gap-1.5">
+          <input
+            type="checkbox"
+            className="ck"
+            checked={showUNumbers}
+            onChange={(e) => setShowUNumbers(e.target.checked)}
+          />
+          U numbers
+        </label>
+        <label className="flex cursor-pointer items-center gap-1.5">
+          <input
+            type="checkbox"
+            className="ck"
+            checked={showNames}
+            onChange={(e) => setShowNames(e.target.checked)}
+          />
+          Device names
+        </label>
+        <span className="text-[10px] text-muted-foreground">shown up close</span>
+      </div>
     </div>
   )
 }
