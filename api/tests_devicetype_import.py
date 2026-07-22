@@ -100,7 +100,14 @@ class HelperTests(APITestCase):
         self.assertTrue(is_github_dir(f"{base}/tree/master/device-types"))
         self.assertTrue(is_github_dir(f"{base}/tree/master/device-types/Cisco"))
         self.assertTrue(is_github_dir(f"{base}/tree/master"))
+        # /blob/ pointing at a folder (no extension) is still a folder — people
+        # paste either form from the address bar.
+        self.assertTrue(is_github_dir(f"{base}/blob/master/device-types/Cisco"))
+        # /blob/ pointing at a file is NOT a folder.
         self.assertFalse(is_github_dir(f"{base}/blob/master/x.yaml"))
+        self.assertFalse(
+            is_github_dir(f"{base}/tree/master/device-types/Cisco/C9300.yaml")
+        )
         self.assertFalse(is_github_dir("https://example.com/dir/"))
 
     def test_expand_github_dir(self):
