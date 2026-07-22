@@ -9038,9 +9038,11 @@ paths:
         Import device types from NetBox devicetype-library YAML.
 
         Body: {"items": ["<yaml or github url>", …], "stack_positions": bool}.
-        Each item is either a raw YAML document or a URL to one (github.com
-        blob links are converted to raw automatically). Returns one report
-        per item; content problems never abort the batch.
+        Each item is a raw YAML document, a URL to one (github.com blob links
+        convert to raw automatically), or a github.com ``/tree/`` **folder**
+        URL — expanded to every .yaml under it (one manufacturer, or the whole
+        device-types dir, capped for this synchronous path). Returns one report
+        per file; content problems never abort the batch.
       tags:
       - device-types
       requestBody:

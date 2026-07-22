@@ -5,7 +5,12 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
 from core.models import Organization, Tenant
-from .devicetype_import import positionize, to_raw_url
+from .devicetype_import import (
+    expand_github_dir,
+    is_github_dir,
+    positionize,
+    to_raw_url,
+)
 from .models import DeviceType
 
 User = get_user_model()
@@ -89,6 +94,51 @@ class HelperTests(APITestCase):
         # Raw / non-github URLs pass through.
         self.assertEqual(to_raw_url("https://example.com/x.yaml"),
                          "https://example.com/x.yaml")
+
+    def test_is_github_dir(self):
+        base = "https://github.com/netbox-community/devicetype-library"
+        self.assertTrue(is_github_dir(f"{base}/tree/master/device-types"))
+        self.assertTrue(is_github_dir(f"{base}/tree/master/device-types/Cisco"))
+        self.assertTrue(is_github_dir(f"{base}/tree/master"))
+        self.assertFalse(is_github_dir(f"{base}/blob/master/x.yaml"))
+        self.assertFalse(is_github_dir("https://example.com/dir/"))
+
+    def test_expand_github_dir(self):
+        # A fake SSRF-guarded fetcher returning the trees API payload.
+        class FakeResp:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {
+                    "truncated": False,
+                    "tree": [
+                        {"type": "tree", "path": "device-types"},
+                        {"type": "blob", "path": "device-types/Cisco/A.yaml"},
+                        {"type": "blob", "path": "device-types/Cisco/B.yml"},
+                        {"type": "blob", "path": "device-types/Cisco/logo.png"},
+                        {"type": "blob", "path": "device-types/Arista/C.yaml"},
+                        {"type": "blob", "path": "README.md"},
+                    ],
+                }
+
+        calls = {}
+
+        def fake_get(url, timeout=30):
+            calls["url"] = url
+            return FakeResp()
+
+        base = "https://github.com/netbox-community/devicetype-library"
+        raw = "https://raw.githubusercontent.com/netbox-community/devicetype-library/master/"
+        # A vendor sub-folder → only that vendor's YAML (png filtered out).
+        got = expand_github_dir(f"{base}/tree/master/device-types/Cisco", fake_get)
+        self.assertEqual(got, [raw + "device-types/Cisco/A.yaml",
+                               raw + "device-types/Cisco/B.yml"])
+        self.assertIn("git/trees/master?recursive=1", calls["url"])
+        # The whole device-types dir → every vendor's YAML.
+        allf = expand_github_dir(f"{base}/tree/master/device-types", fake_get)
+        self.assertEqual(len(allf), 3)
+        self.assertNotIn(raw + "README.md", allf)
 
 
 class ImportEndpointTests(APITestCase):
