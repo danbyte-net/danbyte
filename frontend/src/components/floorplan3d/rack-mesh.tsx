@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { Detailed } from "@react-three/drei"
+import { useMemo, useRef, useState } from "react"
+import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
 
 import type { FloorTileCheck } from "@/lib/api"
@@ -60,6 +60,26 @@ export function RackMesh({
   const rotY = (-tile.orientation * Math.PI) / 180
   const [hovered, setHovered] = useState(false)
 
+  // Manual LOD (NOT drei <Detailed>/THREE.LOD): the raycaster ignores
+  // `visible`, so an invisible far-tier solid box would sit in front of the
+  // devices and eat their clicks. Mount exactly one tier instead — unmounted
+  // meshes can't be raycast. Hysteresis stops threshold flicker; with the
+  // demand frameloop this runs only on frames the controls already trigger.
+  const [near, setNear] = useState(false)
+  const nearRef = useRef(false)
+  const centre = useMemo(
+    () => new THREE.Vector3(cx, height / 2, cz),
+    [cx, cz, height]
+  )
+  useFrame(({ camera }) => {
+    const dist = camera.position.distanceTo(centre)
+    const next = dist < (nearRef.current ? 16 : 14)
+    if (next !== nearRef.current) {
+      nearRef.current = next
+      setNear(next)
+    }
+  })
+
   const rackSelected = selection?.tileId === tile.id && selection.kind === "rack"
   const frameColor = rackSelected
     ? FRAME_SELECTED
@@ -101,8 +121,9 @@ export function RackMesh({
         document.body.style.cursor = ""
       }}
     >
-      {/* LOD: index 0 shown when closer than 14 m, index 1 beyond. */}
-      <Detailed distances={[0, 14]}>
+      {/* LOD: open shell + clickable devices when the camera is close,
+          one solid box beyond — only ever ONE tier mounted (see above). */}
+      {near ? (
         <group>
           <Frame w={width} h={height} d={depth} color={frameColor} shell />
           {rack.devices.map((d) => (
@@ -122,8 +143,9 @@ export function RackMesh({
             />
           ))}
         </group>
+      ) : (
         <Frame w={width} h={height} d={depth} color={frameColor} />
-      </Detailed>
+      )}
       {beacon && (
         <mesh position={[0, height + 0.03, 0]}>
           <boxGeometry args={[width * 0.6, 0.05, 0.06]} />
