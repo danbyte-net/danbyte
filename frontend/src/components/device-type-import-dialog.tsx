@@ -33,13 +33,18 @@ interface ImportRun {
   error: string
 }
 
-/** A lone github.com /tree/ folder URL — routed to the background importer. */
+/** A lone github.com folder URL — /tree/ or an extension-less /blob/ path
+ * (people paste either) — routed to the background importer. */
 const FOLDER_RE =
-  /^https:\/\/github\.com\/[^/]+\/[^/]+\/tree\/[^/]+(\/.*)?$/
-const folderUrlOf = (items: string[]): string | null =>
-  items.length === 1 && FOLDER_RE.test(items[0].trim())
-    ? items[0].trim()
-    : null
+  /^https:\/\/github\.com\/[^/]+\/[^/]+\/(?:tree|blob)\/[^/]+(?:\/(.*))?$/
+function folderUrlOf(items: string[]): string | null {
+  if (items.length !== 1) return null
+  const url = items[0].trim()
+  const m = FOLDER_RE.exec(url)
+  if (!m) return null
+  const last = (m[1] ?? "").replace(/\/$/, "").split("/").pop() ?? ""
+  return last.includes(".") ? null : url // has an extension → a file, not a folder
+}
 
 /**
  * Import device types from NetBox's community devicetype-library

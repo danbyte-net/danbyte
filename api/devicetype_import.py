@@ -77,17 +77,22 @@ _GITHUB_BLOB_RE = re.compile(
     r"^https://github\.com/([^/]+)/([^/]+)/blob/(.+)$"
 )
 
-# github.com *directory* (tree) URLs — a whole folder of YAML to expand.
-#   https://github.com/<owner>/<repo>/tree/<ref>/<path…>
-# The repo-root device-types dir → the entire library; a vendor subdir → that
-# vendor. `<path>` may be empty (repo root).
-_GITHUB_TREE_RE = re.compile(
-    r"^https://github\.com/([^/]+)/([^/]+)/tree/([^/]+)(?:/(.*))?$"
+# github.com *directory* URLs — a whole folder of YAML to expand.
+#   https://github.com/<owner>/<repo>/(tree|blob)/<ref>/<path…>
+# GitHub uses /tree/ for folders and /blob/ for files, but people paste either
+# from the address bar, so accept both and decide by the path: a trailing
+# segment with a file extension is a file, anything else is a folder.
+_GITHUB_DIR_RE = re.compile(
+    r"^https://github\.com/([^/]+)/([^/]+)/(?:tree|blob)/([^/]+)(?:/(.*))?$"
 )
 
 
 def is_github_dir(url: str) -> bool:
-    return bool(_GITHUB_TREE_RE.match(url.strip()))
+    m = _GITHUB_DIR_RE.match(url.strip())
+    if not m:
+        return False
+    last = (m.group(4) or "").rstrip("/").rsplit("/", 1)[-1]
+    return "." not in last  # no extension → a folder, not a file
 
 
 def expand_github_dir(url: str, get, *, exts=(".yaml", ".yml")) -> list[str]:
@@ -99,7 +104,7 @@ def expand_github_dir(url: str, get, *, exts=(".yaml", ".yml")) -> list[str]:
     SSRF-guarded fetcher (``core.ssrf.safe_get``) so the API host is validated
     like any other outbound call. Raises ``ValueError`` with a readable message
     on an unusable response."""
-    m = _GITHUB_TREE_RE.match(url.strip())
+    m = _GITHUB_DIR_RE.match(url.strip())
     if not m:
         raise ValueError("Not a GitHub directory URL.")
     owner, repo, ref, path = m.group(1), m.group(2), m.group(3), (m.group(4) or "")
