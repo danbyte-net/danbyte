@@ -395,6 +395,114 @@ class InventoryItemTests(_Base):
         self.assertIn("same device", str(bad.content))
 
 
+class InventoryHardwareTests(_Base):
+    """P-H0: hardware kind/media/capacity/speed + lifecycle status on
+    inventory items, stamped from templates and settable via the API."""
+
+    def setUp(self):
+        super().setUp()
+        from api.status_registry import seed_builtin_statuses
+
+        seed_builtin_statuses(self.tenant)
+        self.dt = DeviceType.objects.create(tenant=self.tenant, name="R750")
+        self.device = Device.objects.create(
+            tenant=self.tenant, name="srv1", device_type=self.dt
+        )
+
+    def test_hardware_fields_round_trip_with_status(self):
+        from api.models import Status
+
+        failed = Status.objects.get(tenant=self.tenant, slug="failed")
+        self.assertIn("inventoryitem", failed.available_to)
+        resp = self.client.post(
+            "/api/inventory-items/",
+            {"device_id": str(self.device.id), "name": "Disk 1",
+             "kind": "disk", "media": "nvme", "capacity_bytes": 1_920_000_000_000,
+             "speed": "PCIe 4.0 x4", "status_id": str(failed.id)},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        data = resp.json()
+        self.assertEqual(data["kind"], "disk")
+        self.assertEqual(data["media"], "nvme")
+        self.assertEqual(data["capacity_bytes"], 1_920_000_000_000)
+        self.assertEqual(data["speed"], "PCIe 4.0 x4")
+        self.assertEqual(data["status"]["name"], "Failed")
+
+    def test_rejects_unknown_kind(self):
+        resp = self.client.post(
+            "/api/inventory-items/",
+            {"device_id": str(self.device.id), "name": "X",
+             "kind": "flux-capacitor"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_template_stamps_hardware_fields(self):
+        from api.models import InventoryItemTemplate, materialize_device_components
+
+        InventoryItemTemplate.objects.create(
+            device_type=self.dt, name="Bay {position}", kind="disk",
+            media="ssd", capacity_bytes=960_000_000_000, speed="6Gb/s",
+        )
+        made = materialize_device_components(self.device)
+        self.assertEqual(made["inventory_items"], 1)
+        item = self.device.inventory_items.get(name="Bay 1")
+        self.assertEqual(item.kind, "disk")
+        self.assertEqual(item.media, "ssd")
+        self.assertEqual(item.capacity_bytes, 960_000_000_000)
+        self.assertEqual(item.speed, "6Gb/s")
+
+    def test_bulk_update_status_and_hardware(self):
+        from api.models import InventoryItem, Status
+
+        failed = Status.objects.get(tenant=self.tenant, slug="failed")
+        items = [
+            InventoryItem.objects.create(
+                device=self.device, name=f"disk{i}", kind="disk"
+            )
+            for i in range(1, 4)
+        ]
+        resp = self.client.post(
+            "/api/inventory-items/bulk-update/",
+            {"ids": [str(i.id) for i in items],
+             "fields": {"status_id": str(failed.id), "media": "nvme",
+                        "capacity_bytes": 1_920_000_000_000}},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()["updated"], 3)
+        for i in items:
+            i.refresh_from_db()
+            self.assertEqual(i.status_id, failed.id)
+            self.assertEqual(i.media, "nvme")
+            self.assertEqual(i.capacity_bytes, 1_920_000_000_000)
+        # Choice-backed fields reject typos.
+        bad = self.client.post(
+            "/api/inventory-items/bulk-update/",
+            {"ids": [str(items[0].id)], "fields": {"media": "floppy"}},
+            format="json",
+        )
+        self.assertEqual(bad.status_code, 400)
+
+    def test_natural_name_ordering(self):
+        from api.models import InventoryItem
+
+        for n in ("disk10", "disk2", "disk1"):
+            InventoryItem.objects.create(device=self.device, name=n)
+        resp = self.client.get(
+            f"/api/inventory-items/?device={self.device.id}&page_size=100"
+        )
+        names = [r["name"] for r in resp.json()["results"]]
+        self.assertEqual(names, ["disk1", "disk2", "disk10"])
+
+    def test_seeded_inventory_statuses(self):
+        resp = self.client.get("/api/statuses/?available_to=inventoryitem")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        slugs = {s["slug"] for s in resp.json()["results"]}
+        self.assertTrue({"active", "planned", "failed", "spare"} <= slugs)
+
+
 class DefaultModuleTests(_Base):
     """A bay template can name a default module type, pre-seated when a device
     is created and into an *empty* matching bay on sync-from-type — never

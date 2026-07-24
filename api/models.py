@@ -701,9 +701,34 @@ class DeviceBayTemplate(_ComponentTemplate):
         ordering = ["name"]
 
 
+# Hardware kind of an inventory item/template — what the part IS. "other"
+# keeps pre-existing rows meaningful; new kinds may be added here (kept as
+# hardcoded protocol constants, like connector types).
+INVENTORY_ITEM_KINDS = [
+    ("other", "Other"),
+    ("disk", "Disk"),
+    ("cpu", "CPU"),
+    ("ram", "RAM"),
+    ("psu", "PSU"),
+    ("fan", "Fan"),
+    ("gpu", "GPU"),
+    ("controller", "Controller"),
+    ("transceiver", "Transceiver"),
+]
+
+# Storage media/protocol for kind=disk ("" for non-disks).
+INVENTORY_MEDIA_TYPES = [
+    ("", "—"),
+    ("nvme", "NVMe"),
+    ("ssd", "SSD (SATA/SAS)"),
+    ("hdd", "HDD"),
+    ("tape", "Tape"),
+]
+
+
 class InventoryItemTemplate(_ComponentTemplate):
     """A physical part the hardware ships with that isn't a connectable
-    component — PSU, fan tray, CPU, factory-fitted transceiver."""
+    component — PSU, fan tray, CPU, disk bay, factory-fitted transceiver."""
 
     device_type = models.ForeignKey(
         DeviceType, on_delete=models.CASCADE,
@@ -714,6 +739,21 @@ class InventoryItemTemplate(_ComponentTemplate):
         related_name="inventory_item_templates",
     )
     part_id = models.CharField(max_length=128, blank=True, default="")
+    kind = models.CharField(
+        max_length=16, choices=INVENTORY_ITEM_KINDS, default="other"
+    )
+    media = models.CharField(
+        max_length=16, choices=INVENTORY_MEDIA_TYPES, blank=True, default=""
+    )
+    capacity_bytes = models.PositiveBigIntegerField(
+        null=True, blank=True,
+        help_text="Capacity in BYTES (unit-agnostic: KB floppies to PB "
+                  "arrays; the UI converts).",
+    )
+    speed = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text='Free-form: "7.2K RPM", "PCIe 4.0 x4", "3200 MT/s".',
+    )
 
     class Meta:
         unique_together = ("device_type", "name")
@@ -982,6 +1022,8 @@ def materialize_device_components(device) -> dict[str, int]:
         InventoryItem(
             device=device, name=n, manufacturer=t.manufacturer,
             part_id=t.part_id, description=t.description,
+            kind=t.kind, media=t.media, capacity_bytes=t.capacity_bytes,
+            speed=t.speed,
         )
         for t in dt.inventory_item_templates.select_related("manufacturer")
         if (n := render_component_name(t.name, pos)) not in have
@@ -2236,9 +2278,13 @@ class ConsoleServerPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 
 class InventoryItem(TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """A serial-tracked physical part on a device — PSU, fan, CPU, discrete
-    SFP. Self-nesting (a card can contain sub-parts). Roles are tags, per the
-    zero-pre-filled-data rule. Tenant scope inherited via device."""
+    """A serial-tracked physical part on a device — disk, CPU, RAM, PSU, fan,
+    discrete SFP. Self-nesting (a card can contain sub-parts). Roles are tags,
+    per the zero-pre-filled-data rule. Tenant scope inherited via device.
+
+    ``kind``/``media``/``capacity_bytes``/``speed`` describe the hardware;
+    ``status`` carries its lifecycle/health (active / planned / failed /
+    spare — user-extensible via the Status catalog)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     device = models.ForeignKey(
@@ -2257,6 +2303,25 @@ class InventoryItem(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     serial_number = models.CharField(max_length=255, blank=True, default="")
     asset_tag = models.CharField(max_length=128, blank=True, default="")
     description = models.CharField(max_length=255, blank=True, default="")
+    kind = models.CharField(
+        max_length=16, choices=INVENTORY_ITEM_KINDS, default="other"
+    )
+    media = models.CharField(
+        max_length=16, choices=INVENTORY_MEDIA_TYPES, blank=True, default=""
+    )
+    capacity_bytes = models.PositiveBigIntegerField(
+        null=True, blank=True,
+        help_text="Capacity in BYTES (unit-agnostic: KB floppies to PB "
+                  "arrays; the UI converts).",
+    )
+    speed = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text='Free-form: "7.2K RPM", "PCIe 4.0 x4", "3200 MT/s".',
+    )
+    status = models.ForeignKey(
+        "Status", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="inventory_items",
+    )
 
     class Meta:
         unique_together = ("device", "name")

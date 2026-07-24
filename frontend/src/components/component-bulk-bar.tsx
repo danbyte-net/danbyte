@@ -5,9 +5,11 @@ import { toast } from "sonner"
 
 import {
   api,
+  STORAGE_UNITS,
   type DcimChoice,
   type DcimChoices,
   type Paginated,
+  type StorageUnit,
   type TagOption,
 } from "@/lib/api"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
@@ -68,6 +70,31 @@ export type BulkFieldSpec =
       kind: "choice"
       /** Which `/api/dcim/choices/` list populates the dropdown. */
       choices: DcimChoiceListKey
+      hint?: string
+    }
+  | {
+      key: string
+      label: string
+      /** A caller-supplied static option list (model choices without a
+       * /api/dcim/choices/ entry — inventory kind/media etc.). */
+      kind: "options"
+      options: { value: string; label: string }[]
+      hint?: string
+    }
+  | {
+      key: string
+      label: string
+      /** The tenant Status catalog, filtered to one object type. Sends the
+       * status id (or null to clear). */
+      kind: "status"
+      statusModel: string
+      hint?: string
+    }
+  | {
+      key: string
+      label: string
+      /** A byte quantity entered as value + KB…PB unit (stored as bytes). */
+      kind: "bytes"
       hint?: string
     }
 
@@ -325,6 +352,20 @@ function BulkEditDialog({
     enabled: fields.some((f) => f.kind === "vrf"),
     staleTime: 5 * 60_000,
   })
+  const statusModel = fields.find(
+    (f): f is Extract<BulkFieldSpec, { kind: "status" }> => f.kind === "status"
+  )?.statusModel
+  const statusOptions = useQuery({
+    queryKey: ["statuses", statusModel],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>(
+        `/api/statuses/?available_to=${statusModel}&picker=1`
+      ),
+    enabled: !!statusModel,
+    staleTime: 5 * 60_000,
+  })
+  // Byte fields are entered as value + unit; the unit rides beside the value.
+  const [byteUnits, setByteUnits] = useState<Record<string, StorageUnit>>({})
 
   const save = useMutation({
     mutationFn: () => {
@@ -419,6 +460,100 @@ function BulkEditDialog({
                   searchPlaceholder={`Search ${f.label.toLowerCase()}…`}
                   emptyText="No matches."
                 />
+              )
+            }
+            if (f.kind === "options" || f.kind === "status") {
+              const opts =
+                f.kind === "options"
+                  ? f.options
+                  : (statusOptions.data?.results ?? []).map((s) => ({
+                      value: s.id,
+                      label: s.name,
+                    }))
+              return (
+                <FormSelect
+                  key={f.key}
+                  label={f.label}
+                  hint={f.hint}
+                  value={
+                    active ? ((values[f.key] as string | null) ?? NONE) : KEEP
+                  }
+                  onChange={(v) =>
+                    v === KEEP || v === null
+                      ? unset(f.key)
+                      : set(f.key, v === NONE ? null : v)
+                  }
+                  options={[
+                    { value: KEEP, label: "Keep current" },
+                    ...(f.kind === "status"
+                      ? [{ value: NONE, label: "Clear status" }]
+                      : []),
+                    ...opts,
+                  ]}
+                />
+              )
+            }
+            if (f.kind === "bytes") {
+              const unit = byteUnits[f.key] ?? "GB"
+              const factor =
+                STORAGE_UNITS.find((u) => u.value === unit)?.factor ?? 1e9
+              const raw = values[f.key]
+              return (
+                <Field key={f.key} label={f.label} hint={f.hint}>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="ck"
+                      checked={active}
+                      onChange={(e) =>
+                        e.target.checked ? set(f.key, null) : unset(f.key)
+                      }
+                      title={active ? "Will be set" : "Keep current"}
+                    />
+                    <Input
+                      type="number"
+                      value={
+                        active && typeof raw === "number"
+                          ? String(Number((raw / factor).toFixed(3)))
+                          : ""
+                      }
+                      onChange={(e) =>
+                        set(
+                          f.key,
+                          e.target.value === ""
+                            ? null
+                            : Math.round(Number(e.target.value) * factor)
+                        )
+                      }
+                      placeholder={active ? "" : "Keep current"}
+                      disabled={!active}
+                    />
+                    <select
+                      className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+                      value={unit}
+                      disabled={!active}
+                      onChange={(e) => {
+                        const next = e.target.value as StorageUnit
+                        // Re-interpret the shown number in the new unit.
+                        const shown =
+                          typeof raw === "number" ? raw / factor : null
+                        setByteUnits((cur) => ({ ...cur, [f.key]: next }))
+                        if (shown != null) {
+                          const nf =
+                            STORAGE_UNITS.find((u) => u.value === next)
+                              ?.factor ?? 1e9
+                          set(f.key, Math.round(shown * nf))
+                        }
+                      }}
+                    >
+                      {STORAGE_UNITS.map((u) => (
+                        <option key={u.value} value={u.value}>
+                          {u.value}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </Field>
               )
             }
             if (f.kind === "vlan" || f.kind === "vrf") {

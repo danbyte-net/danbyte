@@ -1494,7 +1494,10 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                     raise serializers.ValidationError(
                         "Each marker must be an object.")
                 kind = m.get("kind", "interface")
-                if kind not in self._FACEPLATE_SLOT_KINDS:
+                # Photo markers also place HARDWARE (disk bays etc.) — the
+                # schematic faceplate stays port-only.
+                if (kind not in self._FACEPLATE_SLOT_KINDS
+                        and kind != "inventory-item"):
                     raise serializers.ValidationError(
                         f"Unknown marker kind {kind!r}.")
                 name = m.get("name")
@@ -2416,6 +2419,7 @@ class InventoryItemTemplateSerializer(_ComponentTemplateSerializer):
         model = InventoryItemTemplate
         fields = _ComponentTemplateSerializer.Meta.fields + [
             "manufacturer", "manufacturer_id", "part_id",
+            "kind", "media", "capacity_bytes", "speed",
         ]
 
 
@@ -2503,7 +2507,9 @@ class ModuleInterfaceTemplateSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class InventoryItemSerializer(TaggableSerializerMixin, NumIdModelSerializer):
+class InventoryItemSerializer(
+    StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer
+):
     device = DeviceMiniSerializer(read_only=True)
     device_id = TenantScopedPrimaryKeyRelatedField(
         source="device", queryset=Device.objects.all(), write_only=True,
@@ -2553,6 +2559,8 @@ class InventoryItemSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         fields = ["id", "device", "device_id", "parent", "parent_id", "name",
                   "manufacturer", "manufacturer_id", "part_id",
                   "serial_number", "asset_tag", "description",
+                  "kind", "media", "capacity_bytes", "speed",
+                  "status", "status_id",
                   "tags", "tag_ids", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 

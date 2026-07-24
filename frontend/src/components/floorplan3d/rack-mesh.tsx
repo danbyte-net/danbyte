@@ -6,7 +6,7 @@ import type { FloorTileCheck } from "@/lib/api"
 
 import { DeviceMesh } from "./device-mesh"
 import { RackRuler } from "./rack-ruler"
-import { TextSprite } from "./text-sprite"
+import { FaceLabel } from "./text-sprite"
 import {
   cellToWorld,
   deviceYM,
@@ -27,9 +27,13 @@ const FRAME_COLOR = "#18181b"
 const FRAME_SELECTED = "#0ea5e9"
 
 export interface Sel {
-  kind: "rack" | "device"
+  kind: "rack" | "device" | "port"
   tileId: string
   deviceId?: string
+  /** Set when kind === "port": the clicked photo-port marker. */
+  portName?: string
+  portKind?: string
+  portSide?: "front" | "rear"
 }
 
 /**
@@ -150,11 +154,27 @@ export function RackMesh({
               rackWidthM={width}
               rackDepthM={depth}
               selected={
-                selection?.kind === "device" && selection.deviceId === d.id
+                (selection?.kind === "device" || selection?.kind === "port") &&
+                selection.deviceId === d.id
+              }
+              selectedPort={
+                selection?.kind === "port" && selection.deviceId === d.id
+                  ? selection.portName
+                  : null
               }
               showTexture
               onSelect={(deviceId) =>
                 onSelect({ kind: "device", tileId: tile.id, deviceId })
+              }
+              onSelectPort={(deviceId, marker, side) =>
+                onSelect({
+                  kind: "port",
+                  tileId: tile.id,
+                  deviceId,
+                  portName: marker.name,
+                  portKind: marker.kind,
+                  portSide: side,
+                })
               }
             />
           ))}
@@ -162,7 +182,8 @@ export function RackMesh({
       ) : (
         <Frame w={width} h={height} d={depth} color={frameColor} />
       )}
-      {/* Overlays — near tier only (labels are pointless on a far block). */}
+      {/* Overlays — near tier only, and drawn FLAT on the front face so they
+          stay anchored (billboards piled up in the aisle). */}
       {near && showUNumbers && (
         <RackRuler rack={rack} width={width} depth={depth} />
       )}
@@ -171,11 +192,18 @@ export function RackMesh({
         rack.devices.map((dev) => {
           const { y, h } = deviceYM(rack, dev)
           return (
-            <TextSprite
+            <FaceLabel
               key={`name-${dev.id}`}
               text={dev.name}
-              heightM={0.06}
-              position={[-width / 2 - 0.28, y + h / 2, -depth * 0.4]}
+              // On the face, just right of the U-ruler rail, at the device's
+              // slot; a hair in front of the photo. Height ≈ ⅔U so it fits.
+              heightM={Math.min(0.03, h * 0.7)}
+              align="left"
+              position={[
+                -width / 2 + (showUNumbers ? 0.09 : 0.03),
+                y + h / 2,
+                -depth / 2 - 0.01,
+              ]}
             />
           )
         })}
@@ -190,9 +218,13 @@ export function RackMesh({
           />
         </mesh>
       )}
-      <TextSprite
+      {/* Rack name plate — flat on the front, above the top U, facing the
+          aisle. Flat (not billboard) so neighbours don't overlap. */}
+      <FaceLabel
         text={tile.label || rack.name}
-        position={[0, height + 0.22, 0]}
+        heightM={0.11}
+        align="center"
+        position={[0, height + 0.09, -depth / 2 - 0.01]}
       />
     </group>
   )

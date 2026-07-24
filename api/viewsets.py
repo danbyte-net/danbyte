@@ -6,6 +6,7 @@ the old Django UI used) so a user can never see another tenant's data.
 from __future__ import annotations
 
 from django.db import transaction
+from django.db.models.functions import Collate
 from django.db.models import Count, Q
 from django.utils.text import slugify
 from drf_spectacular.utils import extend_schema, extend_schema_view
@@ -227,6 +228,12 @@ def _apply_custom_field_scope(request, qs, model_slug: str):
     return apply_scope_to_queryset(qs, model_slug, field.scope_rules or {})
 from .views import _build_space_map, _get_active_tenant, _next_available_ips, _subnet_details
 
+
+
+# Human/natural name ordering ("disk2" before "disk10") — backed by the
+# `natural_sort` ICU collation (migration 0099). Used wherever a list orders
+# by a user-visible name.
+NATURAL_NAME = Collate("name", "natural_sort")
 
 class StandardPagination(PageNumberPagination):
     # The SPA loads the full result set and paginates/filters client-side (the
@@ -1273,7 +1280,7 @@ class VRFViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
         VRF.objects
         .prefetch_related("import_targets", "export_targets", "tags")
         .all()
-        .order_by("name")
+        .order_by(NATURAL_NAME)
     )
     serializer_class = VRFSerializer
     pagination_class = StandardPagination
@@ -1324,7 +1331,7 @@ class RouteTargetViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         RouteTarget.objects
         .prefetch_related("importing_vrfs", "exporting_vrfs", "tags")
         .all()
-        .order_by("name")
+        .order_by(NATURAL_NAME)
     )
     serializer_class = RouteTargetSerializer
     pagination_class = StandardPagination
@@ -1358,7 +1365,7 @@ class RouteTargetViewSet(CatalogLocalityMixin, TenantScopedViewSet):
 
 
 class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
-    queryset = Site.objects.prefetch_related("tags", "vrfs").all().order_by("name")
+    queryset = Site.objects.prefetch_related("tags", "vrfs").all().order_by(NATURAL_NAME)
     serializer_class = SiteSerializer
     pagination_class = StandardPagination
     rbac_action_map = {"bulk_delete": "delete"}
@@ -1519,7 +1526,7 @@ class TagViewSet(CatalogLocalityMixin, TenantScopedViewSet):
 
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = _PickerPagination
-    queryset = Tag.objects.all().order_by("name")
+    queryset = Tag.objects.all().order_by(NATURAL_NAME)
     serializer_class = TagManageSerializer
 
     def get_serializer_class(self):
@@ -1533,7 +1540,7 @@ class TagViewSet(CatalogLocalityMixin, TenantScopedViewSet):
             return Tag.objects.none()
         qs = (
             Tag.objects.filter(Q(tenant=tenant) | Q(tenant__isnull=True))
-            .order_by("name")
+            .order_by(NATURAL_NAME)
         )
         if self.request:
             search = self.request.query_params.get("search", "").strip()
@@ -1726,7 +1733,7 @@ class TenantGroupViewSet(viewsets.ModelViewSet):
 
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
-    queryset = TenantGroup.objects.select_related("parent").order_by("name")
+    queryset = TenantGroup.objects.select_related("parent").order_by(NATURAL_NAME)
     serializer_class = TenantGroupSerializer
 
     def get_queryset(self):
@@ -1764,7 +1771,7 @@ class TenantViewSet(viewsets.ModelViewSet):
 
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
-    queryset = Tenant.objects.all().order_by("name")
+    queryset = Tenant.objects.all().order_by(NATURAL_NAME)
     serializer_class = TenantSerializer
     rbac_action_map = {"bulk_delete": "delete", "bulk_update": "change"}
 
@@ -2015,7 +2022,7 @@ class ZoneViewSet(_IpCatalogViewSet):
 
 
 class ManufacturerViewSet(CatalogLocalityMixin, TenantScopedViewSet):
-    queryset = Manufacturer.objects.all().order_by("name")
+    queryset = Manufacturer.objects.all().order_by(NATURAL_NAME)
     serializer_class = ManufacturerSerializer
     pagination_class = StandardPagination
 
@@ -2077,7 +2084,7 @@ def _check_unique_name(model, serializer, tenant, noun):
 
 class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
     queryset = (
-        DeviceType.objects.select_related("manufacturer", "platform").prefetch_related("tags").all().order_by("name")
+        DeviceType.objects.select_related("manufacturer", "platform").prefetch_related("tags").all().order_by(NATURAL_NAME)
     )
     serializer_class = DeviceTypeSerializer
     pagination_class = StandardPagination
@@ -2367,7 +2374,7 @@ def _region_and_descendant_ids(region_id):
 class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
     queryset = (
         Device.objects.select_related("device_type", "device_type__platform", "site", "primary_ip")
-        .prefetch_related("tags").all().order_by("name")
+        .prefetch_related("tags").all().order_by(NATURAL_NAME)
     )
     serializer_class = DeviceSerializer
     pagination_class = StandardPagination
@@ -2383,6 +2390,102 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
         from .config_context import render_config_context
 
         return Response(render_config_context(self.get_object()))
+
+    # Photo-port marker kind (hyphenated, as saved in DeviceType.image_ports) →
+    # (device component relation, CableTermination kind). Drives face-ports.
+    # Inventory items are placeable hardware (disk bays…) — resolvable but not
+    # cable-able, hence the None termination kind.
+    _FACE_PORT_KINDS = {
+        "interface": ("interfaces", "interface"),
+        "console-port": ("console_ports", "console_port"),
+        "console-server-port": ("console_server_ports", "console_server_port"),
+        "power-port": ("power_ports", "power_port"),
+        "power-outlet": ("power_outlets", "power_outlet"),
+        "front-port": ("front_ports", "front_port"),
+        "rear-port": ("rear_ports", "rear_port"),
+        "aux-port": ("aux_ports", "aux_port"),
+        "inventory-item": ("inventory_items", None),
+    }
+
+    @action(detail=True, methods=["get"], url_path="face-ports")
+    def face_ports(self, request, pk=None):
+        """Resolve this device's photo-port markers (from its device type's
+        ``image_ports``) to the device's REAL components: the port id, its
+        cable-termination kind, and whether it's already cabled. The 3D room
+        view needs this to turn a clicked marker into a termination it can
+        cable — the marker itself only carries a template name."""
+        from .models import render_component_name
+
+        device = self.get_object()
+        dt = device.device_type
+        image_ports = (dt.image_ports if dt else None) or {}
+        pos = device.vc_position
+
+        # Load each component relation we actually need exactly once, keyed by
+        # rendered name, with terminations prefetched for the cabled check.
+        name_maps: dict[str, dict[str, object]] = {}
+
+        def name_map(relation, cabled: bool):
+            if relation not in name_maps:
+                comps = getattr(device, relation)
+                # Only cable-able kinds have terminations; inventory items
+                # carry a status instead.
+                comps = (
+                    comps.prefetch_related("terminations")
+                    if cabled else comps.select_related("status")
+                )
+                name_maps[relation] = {c.name: c for c in comps}
+            return name_maps[relation]
+
+        def resolve(markers):
+            out = []
+            for m in markers if isinstance(markers, list) else []:
+                raw = m.get("name", "") if isinstance(m, dict) else ""
+                kind = m.get("kind", "interface") if isinstance(m, dict) else ""
+                name = render_component_name(raw, pos)
+                entry = {
+                    "marker": raw, "name": name, "kind": None, "id": None,
+                    "connected": False, "cable_id": None,
+                    # Enough for the shared port-state colouring (portState):
+                    # interfaces carry enabled/speed/type; others default on.
+                    "enabled": True, "speed": "", "type": "",
+                    # Hardware markers (inventory items): lifecycle status.
+                    "status": None,
+                }
+                mapping = self._FACE_PORT_KINDS.get(kind)
+                if mapping:
+                    relation, term_kind = mapping
+                    comp = name_map(relation, cabled=term_kind is not None).get(name)
+                    if comp is not None and term_kind is None:
+                        # Inventory item — status-coloured, never cable-able.
+                        s = comp.status
+                        entry.update({
+                            "id": str(comp.id),
+                            "status": {"name": s.name, "color": s.color}
+                            if s else None,
+                        })
+                    elif comp is not None:
+                        term = next(iter(comp.terminations.all()), None)
+                        # Only interfaces carry a network-speed string; other
+                        # kinds may have an int `speed` (power draw) — ignore it.
+                        speed = getattr(comp, "speed", "")
+                        ctype = getattr(comp, "type", "")
+                        entry.update({
+                            "kind": term_kind,
+                            "id": str(comp.id),
+                            "connected": term is not None,
+                            "cable_id": str(term.cable_id) if term else None,
+                            "enabled": bool(getattr(comp, "enabled", True)),
+                            "speed": speed if isinstance(speed, str) else "",
+                            "type": ctype if isinstance(ctype, str) else "",
+                        })
+                out.append(entry)
+            return out
+
+        return Response({
+            "front": resolve(image_ports.get("front")),
+            "rear": resolve(image_ports.get("rear")),
+        })
 
     @action(detail=True, methods=["get"])
     def render(self, request, pk=None):
@@ -2657,7 +2760,7 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
                 "tags", "ip_addresses", "children", "lag_members",
                 "tunnel_terminations__tunnel",
             )
-            .order_by("name")
+            .order_by(NATURAL_NAME)
         )
         qs = rbac.restrict_queryset(
             qs, request.user, device.tenant, "interface", "view"
@@ -2708,7 +2811,7 @@ class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
             "lag_members", "tagged_vlans", "mac_addresses",
             "tunnel_terminations__tunnel",
         )
-        .order_by("device__name", "name")
+        .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = InterfaceSerializer
     pagination_class = StandardPagination
@@ -3193,7 +3296,7 @@ class RearPortViewSet(_DevicePortViewSet):
     queryset = (
         RearPort.objects.select_related("device")
         .prefetch_related("tags", "terminations__cable", "front_ports")
-        .order_by("device__name", "name")
+        .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = RearPortSerializer
     bulk_int_fields = ("positions",)
@@ -3203,7 +3306,7 @@ class FrontPortViewSet(_DevicePortViewSet):
     queryset = (
         FrontPort.objects.select_related("device", "rear_port")
         .prefetch_related("tags", "terminations__cable")
-        .order_by("device__name", "name")
+        .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = FrontPortSerializer
 
@@ -3212,7 +3315,7 @@ class ConsolePortViewSet(_DevicePortViewSet):
     queryset = (
         ConsolePort.objects.select_related("device")
         .prefetch_related("tags", "terminations__cable")
-        .order_by("device__name", "name")
+        .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = ConsolePortSerializer
 
@@ -3221,7 +3324,7 @@ class AuxPortViewSet(_DevicePortViewSet):
     queryset = (
         AuxPort.objects.select_related("device")
         .prefetch_related("tags")  # not cable-terminable — no terminations
-        .order_by("device__name", "name")
+        .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = AuxPortSerializer
 
@@ -3230,7 +3333,7 @@ class ConsoleServerPortViewSet(_DevicePortViewSet):
     queryset = (
         ConsoleServerPort.objects.select_related("device")
         .prefetch_related("tags", "terminations__cable")
-        .order_by("device__name", "name")
+        .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = ConsoleServerPortSerializer
     bulk_int_fields = ("speed",)
@@ -3240,7 +3343,7 @@ class PowerPortViewSet(_DevicePortViewSet):
     queryset = (
         PowerPort.objects.select_related("device")
         .prefetch_related("tags", "terminations__cable", "outlets")
-        .order_by("device__name", "name")
+        .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = PowerPortSerializer
 
@@ -3249,7 +3352,7 @@ class PowerOutletViewSet(_DevicePortViewSet):
     queryset = (
         PowerOutlet.objects.select_related("device", "power_port")
         .prefetch_related("tags", "terminations__cable")
-        .order_by("device__name", "name")
+        .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = PowerOutletSerializer
     bulk_str_fields = ("type", "description", "feed_leg")
@@ -3321,7 +3424,7 @@ class _ComponentTemplateViewSet(ComponentBulkMixin, TenantScopedViewSet):
 
 
 class InterfaceTemplateViewSet(_ComponentTemplateViewSet):
-    queryset = InterfaceTemplate.objects.select_related("device_type").order_by("name")
+    queryset = InterfaceTemplate.objects.select_related("device_type").order_by(NATURAL_NAME)
     serializer_class = InterfaceTemplateSerializer
     bulk_str_fields = ("type", "description")
     bulk_bool_fields = ("enabled", "mgmt_only")
@@ -3331,24 +3434,24 @@ class DeviceTypeServiceViewSet(_ComponentTemplateViewSet):
     """Service templates on a device type — materialise onto new devices as
     Services (see ``materialize_device_components``)."""
 
-    queryset = DeviceTypeService.objects.select_related("device_type").order_by("name")
+    queryset = DeviceTypeService.objects.select_related("device_type").order_by(NATURAL_NAME)
     serializer_class = DeviceTypeServiceSerializer
 
 
 class ConsolePortTemplateViewSet(_ComponentTemplateViewSet):
-    queryset = ConsolePortTemplate.objects.select_related("device_type").order_by("name")
+    queryset = ConsolePortTemplate.objects.select_related("device_type").order_by(NATURAL_NAME)
     serializer_class = ConsolePortTemplateSerializer
 
 
 class AuxPortTemplateViewSet(_ComponentTemplateViewSet):
-    queryset = AuxPortTemplate.objects.select_related("device_type").order_by("name")
+    queryset = AuxPortTemplate.objects.select_related("device_type").order_by(NATURAL_NAME)
     serializer_class = AuxPortTemplateSerializer
 
 
 class InventoryItemTemplateViewSet(_ComponentTemplateViewSet):
     queryset = (
         InventoryItemTemplate.objects
-        .select_related("device_type", "manufacturer").order_by("name")
+        .select_related("device_type", "manufacturer").order_by(NATURAL_NAME)
     )
     serializer_class = InventoryItemTemplateSerializer
 
@@ -3358,15 +3461,22 @@ class InventoryItemViewSet(_DevicePortViewSet):
         InventoryItem.objects
         .select_related("device", "manufacturer", "parent")
         .prefetch_related("tags")
-        .order_by("device__name", "name")
+        .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = InventoryItemSerializer
-    # InventoryItem has no `type` column — its own allowlist.
-    bulk_str_fields = ("description", "part_id", "serial_number", "asset_tag")
+    # InventoryItem has no `type` column — its own allowlist. kind/media are
+    # choice-backed CharFields (validated against the model choices); status
+    # is the tenant's Status catalog; capacity is raw bytes.
+    bulk_str_fields = (
+        "description", "part_id", "serial_number", "asset_tag",
+        "kind", "media", "speed",
+    )
+    bulk_int_fields = ("capacity_bytes",)
+    bulk_fk_fields = {"status_id": Status}
 
 
 class DeviceBayTemplateViewSet(_ComponentTemplateViewSet):
-    queryset = DeviceBayTemplate.objects.select_related("device_type").order_by("name")
+    queryset = DeviceBayTemplate.objects.select_related("device_type").order_by(NATURAL_NAME)
     serializer_class = DeviceBayTemplateSerializer
 
 
@@ -3374,7 +3484,7 @@ class DeviceBayViewSet(_DevicePortViewSet):
     queryset = (
         DeviceBay.objects.select_related("device", "installed_device")
         .prefetch_related("tags")
-        .order_by("device__name", "name")
+        .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = DeviceBaySerializer
 
@@ -3382,12 +3492,12 @@ class DeviceBayViewSet(_DevicePortViewSet):
 class ModuleBayTemplateViewSet(_ComponentTemplateViewSet):
     queryset = ModuleBayTemplate.objects.select_related(
         "device_type", "default_module_type"
-    ).order_by("name")
+    ).order_by(NATURAL_NAME)
     serializer_class = ModuleBayTemplateSerializer
 
 
 class TopologyViewViewSet(TenantScopedViewSet):
-    queryset = TopologyView.objects.all().order_by("name")
+    queryset = TopologyView.objects.all().order_by(NATURAL_NAME)
     serializer_class = TopologyViewSerializer
     pagination_class = StandardPagination
 
@@ -3398,7 +3508,7 @@ class TopologyViewViewSet(TenantScopedViewSet):
 class ModuleTypeViewSet(TenantScopedViewSet):
     queryset = (
         ModuleType.objects.select_related("manufacturer")
-        .prefetch_related("tags").order_by("name")
+        .prefetch_related("tags").order_by(NATURAL_NAME)
     )
     serializer_class = ModuleTypeSerializer
     pagination_class = StandardPagination
@@ -3429,7 +3539,7 @@ class ModuleInterfaceTemplateViewSet(TenantScopedViewSet):
     """Interface templates on a MODULE type — scope via module_type.tenant;
     filter with ?module_type=."""
 
-    queryset = ModuleInterfaceTemplate.objects.select_related("module_type").order_by("name")
+    queryset = ModuleInterfaceTemplate.objects.select_related("module_type").order_by(NATURAL_NAME)
     serializer_class = ModuleInterfaceTemplateSerializer
     pagination_class = StandardPagination
     tenant_field = None
@@ -3468,7 +3578,7 @@ class ModuleBayViewSet(_DevicePortViewSet):
     queryset = (
         ModuleBay.objects.select_related("device")
         .prefetch_related("tags", "module__module_type")
-        .order_by("device__name", "name")
+        .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = ModuleBaySerializer
 
@@ -3522,32 +3632,32 @@ class ModuleViewSet(TenantScopedViewSet):
 
 
 class ConsoleServerPortTemplateViewSet(_ComponentTemplateViewSet):
-    queryset = ConsoleServerPortTemplate.objects.select_related("device_type").order_by("name")
+    queryset = ConsoleServerPortTemplate.objects.select_related("device_type").order_by(NATURAL_NAME)
     serializer_class = ConsoleServerPortTemplateSerializer
 
 
 class PowerPortTemplateViewSet(_ComponentTemplateViewSet):
-    queryset = PowerPortTemplate.objects.select_related("device_type").order_by("name")
+    queryset = PowerPortTemplate.objects.select_related("device_type").order_by(NATURAL_NAME)
     serializer_class = PowerPortTemplateSerializer
 
 
 class PowerOutletTemplateViewSet(_ComponentTemplateViewSet):
     queryset = (
         PowerOutletTemplate.objects
-        .select_related("device_type", "power_port_template").order_by("name")
+        .select_related("device_type", "power_port_template").order_by(NATURAL_NAME)
     )
     serializer_class = PowerOutletTemplateSerializer
 
 
 class RearPortTemplateViewSet(_ComponentTemplateViewSet):
-    queryset = RearPortTemplate.objects.select_related("device_type").order_by("name")
+    queryset = RearPortTemplate.objects.select_related("device_type").order_by(NATURAL_NAME)
     serializer_class = RearPortTemplateSerializer
 
 
 class FrontPortTemplateViewSet(_ComponentTemplateViewSet):
     queryset = (
         FrontPortTemplate.objects
-        .select_related("device_type", "rear_port_template").order_by("name")
+        .select_related("device_type", "rear_port_template").order_by(NATURAL_NAME)
     )
     serializer_class = FrontPortTemplateSerializer
 
@@ -3570,7 +3680,7 @@ class _SlugCatalogViewSet(TenantScopedViewSet):
                 )
         return qs.annotate(
             cluster_count_annotated=Count(self.count_rel)
-        ).order_by("name")
+        ).order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
         data = serializer.validated_data
@@ -3607,7 +3717,7 @@ class _SlugCatalogViewSet(TenantScopedViewSet):
 
 
 class ClusterTypeViewSet(_SlugCatalogViewSet):
-    queryset = ClusterType.objects.all().order_by("name")
+    queryset = ClusterType.objects.all().order_by(NATURAL_NAME)
     serializer_class = ClusterTypeSerializer
     model = ClusterType
     count_rel = "clusters"
@@ -3620,7 +3730,7 @@ class ClusterTypeViewSet(_SlugCatalogViewSet):
 
 
 class ClusterGroupViewSet(_SlugCatalogViewSet):
-    queryset = ClusterGroup.objects.all().order_by("name")
+    queryset = ClusterGroup.objects.all().order_by(NATURAL_NAME)
     serializer_class = ClusterGroupSerializer
     model = ClusterGroup
     count_rel = "clusters"
@@ -3633,7 +3743,7 @@ class ClusterGroupViewSet(_SlugCatalogViewSet):
 
 
 class ClusterViewSet(TenantScopedViewSet):
-    queryset = Cluster.objects.all().order_by("name")
+    queryset = Cluster.objects.all().order_by(NATURAL_NAME)
     serializer_class = ClusterSerializer
     pagination_class = StandardPagination
 
@@ -3680,7 +3790,7 @@ class ClusterViewSet(TenantScopedViewSet):
 
 
 class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
-    queryset = VirtualMachine.objects.all().order_by("name")
+    queryset = VirtualMachine.objects.all().order_by(NATURAL_NAME)
     serializer_class = VirtualMachineSerializer
     pagination_class = StandardPagination
     # Name + primary IP are identity; carry placement + sizing.
@@ -3725,7 +3835,7 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
 
 
 class VMInterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
-    queryset = VMInterface.objects.all().order_by("name")
+    queryset = VMInterface.objects.all().order_by(NATURAL_NAME)
     serializer_class = VMInterfaceSerializer
     pagination_class = StandardPagination
     # Tenant is reached through the VM (VMInterface has no direct tenant FK).
@@ -3756,7 +3866,7 @@ class VMInterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
 
 # ─── Racks ───────────────────────────────────────────────────────────────────
 class RackRoleViewSet(_SlugCatalogViewSet):
-    queryset = RackRole.objects.all().order_by("name")
+    queryset = RackRole.objects.all().order_by(NATURAL_NAME)
     serializer_class = RackRoleSerializer
     model = RackRole
     count_rel = "racks"
@@ -3768,7 +3878,7 @@ class RackRoleViewSet(_SlugCatalogViewSet):
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
         from django.db.models import Count as _C
-        return qs.annotate(rack_count_annotated=_C("racks")).order_by("name")
+        return qs.annotate(rack_count_annotated=_C("racks")).order_by(NATURAL_NAME)
 
     def get_serializer_class(self):
         if self.action == "list" and self.request and \
@@ -3837,7 +3947,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 
 # ─── Device roles + platforms ────────────────────────────────────────────────
 class DeviceRoleViewSet(TenantScopedViewSet):
-    queryset = DeviceRole.objects.all().order_by("name")
+    queryset = DeviceRole.objects.all().order_by(NATURAL_NAME)
     serializer_class = DeviceRoleSerializer
     pagination_class = StandardPagination
 
@@ -3890,7 +4000,7 @@ class DeviceRoleViewSet(TenantScopedViewSet):
 class PlatformGroupViewSet(TenantScopedViewSet):
     """Groupings of platforms (Windows, Linux, network NOS, …) — self-nesting."""
 
-    queryset = PlatformGroup.objects.all().order_by("name")
+    queryset = PlatformGroup.objects.all().order_by(NATURAL_NAME)
     serializer_class = PlatformGroupSerializer
     pagination_class = StandardPagination
 
@@ -3908,7 +4018,7 @@ class PlatformGroupViewSet(TenantScopedViewSet):
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
         return qs.annotate(
             platform_count_annotated=Count("platforms")
-        ).order_by("name")
+        ).order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
         data = serializer.validated_data
@@ -3943,7 +4053,7 @@ class PlatformGroupViewSet(TenantScopedViewSet):
 
 
 class PlatformViewSet(DeviceRoleViewSet):
-    queryset = Platform.objects.all().order_by("name")
+    queryset = Platform.objects.all().order_by(NATURAL_NAME)
     serializer_class = PlatformSerializer
 
     def get_serializer_class(self):
@@ -3967,7 +4077,7 @@ class PlatformViewSet(DeviceRoleViewSet):
             lc = self.request.query_params.get("lifecycle")
             if lc:
                 qs = _apply_lifecycle_filter(qs, lc)
-        return qs.order_by("name")
+        return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
         data = serializer.validated_data
@@ -3993,7 +4103,7 @@ class PlatformViewSet(DeviceRoleViewSet):
 
 # ─── Services ────────────────────────────────────────────────────────────────
 class ServiceViewSet(TenantScopedViewSet):
-    queryset = Service.objects.all().order_by("name")
+    queryset = Service.objects.all().order_by(NATURAL_NAME)
     serializer_class = ServiceSerializer
     pagination_class = StandardPagination
 
@@ -4051,7 +4161,7 @@ class ServiceViewSet(TenantScopedViewSet):
 
 # ─── Service templates (reusable service definitions) ────────────────────────
 class ServiceTemplateViewSet(TenantScopedViewSet):
-    queryset = ServiceTemplate.objects.all().order_by("name")
+    queryset = ServiceTemplate.objects.all().order_by(NATURAL_NAME)
     serializer_class = ServiceTemplateSerializer
     pagination_class = StandardPagination
 
@@ -4174,7 +4284,7 @@ class IPRangeViewSet(TenantScopedViewSet):
 
 # ─── RIRs + Aggregates ───────────────────────────────────────────────────────
 class RIRViewSet(TenantScopedViewSet):
-    queryset = RIR.objects.all().order_by("name")
+    queryset = RIR.objects.all().order_by(NATURAL_NAME)
     serializer_class = RIRSerializer
     pagination_class = StandardPagination
 
@@ -4192,7 +4302,7 @@ class RIRViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
-        return qs.order_by("name")
+        return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
         data = serializer.validated_data
@@ -4284,7 +4394,7 @@ class ASNViewSet(TenantScopedViewSet):
 
 # ─── VLAN groups ─────────────────────────────────────────────────────────────
 class VLANGroupViewSet(TenantScopedViewSet):
-    queryset = VLANGroup.objects.all().order_by("name")
+    queryset = VLANGroup.objects.all().order_by(NATURAL_NAME)
     serializer_class = VLANGroupSerializer
     pagination_class = StandardPagination
 
@@ -4308,7 +4418,7 @@ class VLANGroupViewSet(TenantScopedViewSet):
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
-        return qs.order_by("name")
+        return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
         data = serializer.validated_data
@@ -4417,7 +4527,7 @@ class _ContactCatalogViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
-        return qs.order_by("name")
+        return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
         data = serializer.validated_data
@@ -4441,7 +4551,7 @@ class _ContactCatalogViewSet(TenantScopedViewSet):
 
 
 class ContactGroupViewSet(_ContactCatalogViewSet):
-    queryset = ContactGroup.objects.all().order_by("name")
+    queryset = ContactGroup.objects.all().order_by(NATURAL_NAME)
     serializer_class = ContactGroupSerializer
     picker_serializer = ContactGroupMiniSerializer
     model = ContactGroup
@@ -4464,7 +4574,7 @@ class ContactGroupViewSet(_ContactCatalogViewSet):
 
 
 class ContactRoleViewSet(_ContactCatalogViewSet):
-    queryset = ContactRole.objects.all().order_by("name")
+    queryset = ContactRole.objects.all().order_by(NATURAL_NAME)
     serializer_class = ContactRoleSerializer
     picker_serializer = ContactRoleMiniSerializer
     model = ContactRole
@@ -4482,7 +4592,7 @@ class ContactRoleViewSet(_ContactCatalogViewSet):
 
 
 class ContactViewSet(TenantScopedViewSet):
-    queryset = Contact.objects.all().order_by("name")
+    queryset = Contact.objects.all().order_by(NATURAL_NAME)
     serializer_class = ContactSerializer
     pagination_class = StandardPagination
 
@@ -4576,7 +4686,7 @@ class ContactAssignmentViewSet(TenantScopedViewSet):
 
 # ─── Circuits ────────────────────────────────────────────────────────────────
 class ProviderViewSet(TenantScopedViewSet):
-    queryset = Provider.objects.all().order_by("name")
+    queryset = Provider.objects.all().order_by(NATURAL_NAME)
     serializer_class = ProviderSerializer
     pagination_class = StandardPagination
 
@@ -4598,7 +4708,7 @@ class ProviderViewSet(TenantScopedViewSet):
                     | qs.filter(account__icontains=s)
                     | qs.filter(noc_email__icontains=s)
                 )
-        return qs.order_by("name")
+        return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
@@ -4613,7 +4723,7 @@ class ProviderViewSet(TenantScopedViewSet):
 
 
 class CircuitTypeViewSet(TenantScopedViewSet):
-    queryset = CircuitType.objects.all().order_by("name")
+    queryset = CircuitType.objects.all().order_by(NATURAL_NAME)
     serializer_class = CircuitTypeSerializer
     pagination_class = StandardPagination
 
@@ -4631,7 +4741,7 @@ class CircuitTypeViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
-        return qs.order_by("name")
+        return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
@@ -4677,7 +4787,7 @@ class CircuitViewSet(TenantScopedViewSet):
 class ProviderNetworkViewSet(TenantScopedViewSet):
     queryset = (
         ProviderNetwork.objects.select_related("provider")
-        .prefetch_related("tags").order_by("name")
+        .prefetch_related("tags").order_by(NATURAL_NAME)
     )
     serializer_class = ProviderNetworkSerializer
     pagination_class = StandardPagination
@@ -4749,7 +4859,7 @@ class CircuitTerminationViewSet(TenantScopedViewSet):
 
 # ─── Power ───────────────────────────────────────────────────────────────────
 class PowerPanelViewSet(TenantScopedViewSet):
-    queryset = PowerPanel.objects.all().order_by("name")
+    queryset = PowerPanel.objects.all().order_by(NATURAL_NAME)
     serializer_class = PowerPanelSerializer
     pagination_class = StandardPagination
 
@@ -4770,7 +4880,7 @@ class PowerPanelViewSet(TenantScopedViewSet):
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
-        return qs.order_by("name")
+        return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
@@ -4785,7 +4895,7 @@ class PowerPanelViewSet(TenantScopedViewSet):
 
 
 class PowerFeedViewSet(TenantScopedViewSet):
-    queryset = PowerFeed.objects.all().order_by("name")
+    queryset = PowerFeed.objects.all().order_by(NATURAL_NAME)
     serializer_class = PowerFeedSerializer
     pagination_class = StandardPagination
 
@@ -4813,7 +4923,7 @@ class PowerFeedViewSet(TenantScopedViewSet):
 
 # ─── Wireless ────────────────────────────────────────────────────────────────
 class WirelessLANGroupViewSet(TenantScopedViewSet):
-    queryset = WirelessLANGroup.objects.all().order_by("name")
+    queryset = WirelessLANGroup.objects.all().order_by(NATURAL_NAME)
     serializer_class = WirelessLANGroupSerializer
     pagination_class = StandardPagination
 
@@ -4831,7 +4941,7 @@ class WirelessLANGroupViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
-        return qs.order_by("name")
+        return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
@@ -4874,7 +4984,7 @@ class WirelessLANViewSet(TenantScopedViewSet):
 
 # ─── VPN ─────────────────────────────────────────────────────────────────────
 class TunnelGroupViewSet(TenantScopedViewSet):
-    queryset = TunnelGroup.objects.all().order_by("name")
+    queryset = TunnelGroup.objects.all().order_by(NATURAL_NAME)
     serializer_class = TunnelGroupSerializer
     pagination_class = StandardPagination
 
@@ -4892,7 +5002,7 @@ class TunnelGroupViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
-        return qs.order_by("name")
+        return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
@@ -4907,7 +5017,7 @@ class TunnelGroupViewSet(TenantScopedViewSet):
 
 
 class IPSecProfileViewSet(TenantScopedViewSet):
-    queryset = IPSecProfile.objects.all().order_by("name")
+    queryset = IPSecProfile.objects.all().order_by(NATURAL_NAME)
     serializer_class = IPSecProfileSerializer
     pagination_class = StandardPagination
 
@@ -4925,7 +5035,7 @@ class IPSecProfileViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
-        return qs.order_by("name")
+        return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
@@ -4940,7 +5050,7 @@ class IPSecProfileViewSet(TenantScopedViewSet):
 
 
 class TunnelViewSet(TenantScopedViewSet):
-    queryset = Tunnel.objects.all().order_by("name")
+    queryset = Tunnel.objects.all().order_by(NATURAL_NAME)
     serializer_class = TunnelSerializer
     pagination_class = StandardPagination
 
@@ -5032,7 +5142,7 @@ class L2VPNViewSet(TenantScopedViewSet):
             "terminations__vlan", "terminations__interface__device",
             "terminations__vm_interface__vm",
         )
-        .order_by("name")
+        .order_by(NATURAL_NAME)
     )
     serializer_class = L2VPNSerializer
     pagination_class = StandardPagination
@@ -5105,7 +5215,7 @@ class VirtualChassisViewSet(TenantScopedViewSet):
         VirtualChassis.objects
         .select_related("master", "master__primary_ip", "master__oob_ip")
         .prefetch_related("members__status", "tags")
-        .order_by("name")
+        .order_by(NATURAL_NAME)
     )
     serializer_class = VirtualChassisSerializer
     pagination_class = StandardPagination
@@ -5129,7 +5239,7 @@ class VirtualChassisViewSet(TenantScopedViewSet):
 
 # ─── Regions & Locations ─────────────────────────────────────────────────────
 class RegionViewSet(TenantScopedViewSet):
-    queryset = Region.objects.all().order_by("name")
+    queryset = Region.objects.all().order_by(NATURAL_NAME)
     serializer_class = RegionSerializer
     pagination_class = StandardPagination
 
@@ -5148,7 +5258,7 @@ class RegionViewSet(TenantScopedViewSet):
             parent = self.request.query_params.get("parent")
             if parent:
                 qs = qs.filter(parent_id=parent)
-        return qs.order_by("name")
+        return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
@@ -5215,7 +5325,7 @@ class ConfigContextViewSet(TenantScopedViewSet):
 
 # ─── Export templates ────────────────────────────────────────────────────────
 class ExportTemplateViewSet(TenantScopedViewSet):
-    queryset = ExportTemplate.objects.all().order_by("name")
+    queryset = ExportTemplate.objects.all().order_by(NATURAL_NAME)
     serializer_class = ExportTemplateSerializer
     pagination_class = StandardPagination
 
@@ -5272,7 +5382,7 @@ class ExportTemplateViewSet(TenantScopedViewSet):
 class FloorTileTypeViewSet(TenantScopedViewSet):
     """The user-created floor-tile palette. Ships empty — zero built-ins."""
 
-    queryset = FloorTileType.objects.all().order_by("name")
+    queryset = FloorTileType.objects.all().order_by(NATURAL_NAME)
     serializer_class = FloorTileTypeSerializer
     pagination_class = StandardPagination
 
@@ -5368,7 +5478,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
     queryset = (
         FloorPlan.objects.select_related("location", "location__site")
         .prefetch_related("tags")
-        .order_by("name")
+        .order_by(NATURAL_NAME)
     )
     serializer_class = FloorPlanSerializer
     pagination_class = StandardPagination
@@ -5688,7 +5798,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 dev_id = getattr(point, "device_id", None)
                 if dev_id is not None:
                     wanted_devices.add(dev_id)
-                terms.append((term.end, dev_id))
+                # Port name rides along so the 3D room can anchor the run to
+                # the exact photo-port quad on the device face.
+                terms.append((term.end, dev_id, getattr(point, "name", "")))
             term_cache[cable.id] = terms
         device_rack = dict(
             Device.objects.filter(id__in=wanted_devices).values_list(
@@ -5707,11 +5819,15 @@ class FloorPlanViewSet(TenantScopedViewSet):
         result = []
         for cable in cables:
             a_tiles, b_tiles = [], []
-            for end, dev_id in term_cache[cable.id]:
+            a_points, b_points = [], []
+            for end, dev_id, port in term_cache[cable.id]:
                 tile_id = tile_for(dev_id)
                 if tile_id is None:
                     continue
                 (a_tiles if end == "A" else b_tiles).append(tile_id)
+                (a_points if end == "A" else b_points).append(
+                    {"device": str(dev_id), "port": port}
+                )
             result.append(
                 {
                     "id": str(cable.id),
@@ -5720,6 +5836,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     "type": cable.type,
                     "a_tiles": list(dict.fromkeys(a_tiles)),
                     "b_tiles": list(dict.fromkeys(b_tiles)),
+                    "a_points": a_points,
+                    "b_points": b_points,
                     "tray_ids": [
                         str(tr.id)
                         for tr in cable.trays.all()
@@ -5840,7 +5958,7 @@ class FloorPlanTileViewSet(TenantScopedViewSet):
 class CableRouteViewSet(TenantScopedViewSet):
     """Geographic duct/aerial/trench runs on the site map."""
 
-    queryset = CableRoute.objects.prefetch_related("cables").order_by("name")
+    queryset = CableRoute.objects.prefetch_related("cables").order_by(NATURAL_NAME)
     serializer_class = CableRouteSerializer
     pagination_class = StandardPagination
 
@@ -5858,7 +5976,7 @@ class FloorPlanTrayViewSet(TenantScopedViewSet):
 
     queryset = FloorPlanTray.objects.select_related("floor_plan").prefetch_related(
         "cables"
-    ).order_by("name")
+    ).order_by(NATURAL_NAME)
     serializer_class = FloorPlanTraySerializer
     pagination_class = StandardPagination
     tenant_field = None
@@ -5883,7 +6001,7 @@ class FloorPlanTrayViewSet(TenantScopedViewSet):
 class CableRouteViewSet(TenantScopedViewSet):
     """Geographic duct/aerial/trench runs on the site map."""
 
-    queryset = CableRoute.objects.prefetch_related("cables").order_by("name")
+    queryset = CableRoute.objects.prefetch_related("cables").order_by(NATURAL_NAME)
     serializer_class = CableRouteSerializer
     pagination_class = StandardPagination
 

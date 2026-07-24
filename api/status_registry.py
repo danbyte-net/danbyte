@@ -24,6 +24,7 @@ STATUSABLE_MODELS = [
     ("wirelesslan", "Wireless LANs"),
     ("tunnel", "Tunnels"),
     ("location", "Locations"),
+    ("inventoryitem", "Inventory items"),
 ]
 STATUSABLE_MODEL_VALUES = {m[0] for m in STATUSABLE_MODELS}
 
@@ -46,6 +47,7 @@ BUILTIN_STATUS_COLORS = {
     "inventory": "#a1a1aa",
     "container": "#a1a1aa",
     "disabled": "#a1a1aa",
+    "spare": "#a1a1aa",
     "not_connected": "#71717a",
     "decommissioned": "#71717a",
     "retired": "#71717a",
@@ -67,6 +69,7 @@ STATUS_MODEL_SEEDS = [
     ("wirelesslan", "WirelessLAN", "active"),
     ("tunnel", "Tunnel", "active"),
     ("location", "Location", "active"),
+    ("inventoryitem", "InventoryItem", "active"),
 ]
 
 # Built-in status values per object type, mirroring the historical per-model
@@ -88,6 +91,8 @@ STATUS_MODEL_VALUES = {
     "wirelesslan": ["active", "reserved", "disabled", "deprecated"],
     "tunnel": ["planned", "active", "disabled"],
     "location": ["active", "planned", "decommissioning", "retired"],
+    # Hardware parts: health/lifecycle — "failed" lights the faceplate red.
+    "inventoryitem": ["active", "planned", "failed", "spare"],
 }
 
 # model slug → default status value (None for ipaddress → fall back to "active").

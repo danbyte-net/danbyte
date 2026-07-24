@@ -759,6 +759,7 @@ export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "wirelesslan", label: "Wireless LANs" },
   { value: "tunnel", label: "Tunnels" },
   { value: "location", label: "Locations" },
+  { value: "inventoryitem", label: "Inventory items" },
 ]
 
 export interface Status {
@@ -1460,6 +1461,36 @@ export interface CableMini {
   status: StatusMini | null
 }
 
+/**
+ * A photo-port marker resolved to the device's real component
+ * (GET /api/devices/{id}/face-ports/) — lets the 3D room view turn a clicked
+ * marker into a cable termination. `id`/`kind` are null when the marker's
+ * template name doesn't match any component on the device.
+ */
+export interface FacePort {
+  /** The raw template name saved on the marker ("Ethernet{position}/1"). */
+  marker: string
+  /** The rendered component name ("Ethernet1/1"). */
+  name: string
+  kind: TerminationKind | null
+  id: string | null
+  connected: boolean
+  cable_id: string | null
+  /** Interface admin state — feeds the shared portState colouring. */
+  enabled: boolean
+  /** Interface speed string ("25G"); "" for non-interface kinds. */
+  speed: string
+  /** Media type slug ("qsfp28"/"100gbase-x-qsfp28") — speed-tier fallback. */
+  type: string
+  /** Hardware markers (inventory items): lifecycle status; null for ports. */
+  status: StatusMini | null
+}
+
+export interface FacePorts {
+  front: FacePort[]
+  rear: FacePort[]
+}
+
 /** Choice option for the interface/cable type dropdowns (GET /api/dcim/choices/). */
 export interface DcimChoice {
   value: string
@@ -1741,6 +1772,94 @@ export interface ModuleInterfaceTemplate {
   updated_at: string
 }
 
+/** Hardware kind of an inventory item — what the part IS. */
+export type InventoryItemKind =
+  | "other"
+  | "disk"
+  | "cpu"
+  | "ram"
+  | "psu"
+  | "fan"
+  | "gpu"
+  | "controller"
+  | "transceiver"
+
+/** Storage media/protocol for kind=disk ("" for non-disks). */
+export type InventoryMedia = "" | "nvme" | "ssd" | "hdd" | "tape"
+
+// Mirror api/models.py INVENTORY_ITEM_KINDS / INVENTORY_MEDIA_TYPES — one
+// list for the device pane and the device-type template dialog.
+export const INVENTORY_KIND_OPTIONS: {
+  value: InventoryItemKind
+  label: string
+}[] = [
+  { value: "other", label: "Other" },
+  { value: "disk", label: "Disk" },
+  { value: "cpu", label: "CPU" },
+  { value: "ram", label: "RAM" },
+  { value: "psu", label: "PSU" },
+  { value: "fan", label: "Fan" },
+  { value: "gpu", label: "GPU" },
+  { value: "controller", label: "Controller" },
+  { value: "transceiver", label: "Transceiver" },
+]
+
+export const INVENTORY_MEDIA_OPTIONS: {
+  value: InventoryMedia
+  label: string
+}[] = [
+  { value: "nvme", label: "NVMe" },
+  { value: "ssd", label: "SSD (SATA/SAS)" },
+  { value: "hdd", label: "HDD" },
+  { value: "tape", label: "Tape" },
+]
+
+/** Storage units (decimal, per the storage industry: 1 TB = 10¹² B).
+ * Capacity is STORED in bytes — unit-agnostic from KB floppies to PB
+ * arrays; these drive the UI pickers + display. */
+export const STORAGE_UNITS = [
+  { value: "KB", factor: 1e3 },
+  { value: "MB", factor: 1e6 },
+  { value: "GB", factor: 1e9 },
+  { value: "TB", factor: 1e12 },
+  { value: "PB", factor: 1e15 },
+] as const
+
+export type StorageUnit = (typeof STORAGE_UNITS)[number]["value"]
+
+/** Bytes → "1.92 TB" (largest unit ≥ 1, trailing zeros trimmed). */
+export function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null || bytes <= 0) return ""
+  let best: (typeof STORAGE_UNITS)[number] = STORAGE_UNITS[0]
+  for (const u of STORAGE_UNITS) if (bytes >= u.factor) best = u
+  const v = bytes / best.factor
+  const s = v >= 100 ? v.toFixed(0) : v.toFixed(2).replace(/\.?0+$/, "")
+  return `${s} ${best.value}`
+}
+
+/** Bytes → the {value, unit} pair that shows it most naturally in a form. */
+export function bytesToUnit(bytes: number | null): {
+  value: string
+  unit: StorageUnit
+} {
+  if (bytes == null || bytes <= 0) return { value: "", unit: "GB" }
+  let best: (typeof STORAGE_UNITS)[number] = STORAGE_UNITS[0]
+  for (const u of STORAGE_UNITS) if (bytes >= u.factor) best = u
+  const v = bytes / best.factor
+  return {
+    value: String(Number(v.toFixed(3))),
+    unit: best.value,
+  }
+}
+
+/** {value, unit} → bytes (null when blank/invalid). */
+export function unitToBytes(value: string, unit: StorageUnit): number | null {
+  const n = Number(value)
+  if (value.trim() === "" || !Number.isFinite(n) || n < 0) return null
+  const factor = STORAGE_UNITS.find((u) => u.value === unit)?.factor ?? 1e9
+  return Math.round(n * factor)
+}
+
 export interface InventoryItemRow {
   id: string
   device: { id: string; name: string }
@@ -1751,6 +1870,11 @@ export interface InventoryItemRow {
   serial_number: string
   asset_tag: string
   description: string
+  kind: InventoryItemKind
+  media: InventoryMedia
+  capacity_bytes: number | null
+  speed: string
+  status: StatusMini | null
   tags: Tag[]
 }
 
@@ -5446,6 +5570,10 @@ export interface FloorPlanCablePath {
   /** Tile ids at each end (device tile, else the device's rack tile). */
   a_tiles: string[]
   b_tiles: string[]
+  /** Endpoint device + port name per termination — lets the 3D room anchor
+   * the run to the exact photo-port quad. */
+  a_points: { device: string; port: string }[]
+  b_points: { device: string; port: string }[]
   tray_ids: string[]
 }
 

@@ -2,8 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useQueries, useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 
-import { api } from "@/lib/api"
-import type { DeviceSnmp, DeviceType, Interface, Paginated } from "@/lib/api"
+import { api, formatBytes } from "@/lib/api"
+import type {
+  DeviceSnmp,
+  DeviceType,
+  Interface,
+  InventoryItemRow,
+  Paginated,
+} from "@/lib/api"
 import {
   CONNECTOR_MM,
   MIN_LABEL_PX,
@@ -11,6 +17,15 @@ import {
   PX_PER_MM,
   renderTemplateName,
 } from "@/lib/faceplate-geometry"
+import {
+  portCapabilityHex,
+  portHex,
+  portOverlayStyle,
+  portState,
+  portTintStyle,
+  type PortState,
+} from "@/lib/faceplate-colors"
+import { HardwareStatusKey, SpeedScale } from "@/components/speed-scale"
 import {
   autoLayout,
   composeModuleFaceplates,
@@ -82,28 +97,9 @@ export function useObservedPorts(
   }, [q.data])
 }
 
-type PortState = "fast" | "gig" | "slow" | "cabled" | "free" | "disabled"
-
-/** Parse Danbyte's short speed strings ("100M", "1G", "25G", "1.6T") → Mbps. */
-function speedMbps(speed: string): number | null {
-  const m = speed.trim().match(/^([\d.]+)\s*([MGT])/i)
-  if (!m) return null
-  const n = Number(m[1])
-  const unit = m[2].toUpperCase()
-  return unit === "T" ? n * 1_000_000 : unit === "G" ? n * 1_000 : n
-}
-
-function portState(i: Interface): PortState {
-  if (!i.enabled) return "disabled"
-  if (!i.cable) return "free"
-  const mbps = speedMbps(i.speed)
-  if (mbps == null) return "cabled"
-  if (mbps >= 10_000) return "fast"
-  if (mbps >= 1_000) return "gig"
-  return "slow"
-}
-
 // UniFi-style speed tint on cabled ports: ≥10G sky, 1–5G emerald, <1G amber.
+// State logic + hex mirror live in `@/lib/faceplate-colors` (shared with 3D);
+// these are the 2D CSS classes for the same states.
 const PORT_STATE_CLASS: Record<PortState, string> = {
   fast: "border-sky-500/70 bg-sky-500/15 text-sky-700 dark:text-sky-300",
   gig: "border-emerald-500/70 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
@@ -232,16 +228,27 @@ function Cage({
   const state = portState(i)
   const trunk = i.mode === "tagged" || i.mode === "tagged-all"
   const hasVlan = trunk || !!i.vlan
+  // Cabled ports wear their speed TIER (shared ramp); free ports get a muted
+  // capability outline from their type's max speed; disabled stays neutral.
+  const tint = { ...i, type: i.type_display || i.type }
+  const cabled = state !== "free" && state !== "disabled"
+  const capability = portCapabilityHex(tint)
   return (
     <HoverCard openDelay={100} closeDelay={80}>
       <HoverCardTrigger asChild>
         <Link
           to="/interfaces/$id"
           params={{ id: i.id }}
-          style={style}
+          style={
+            cabled
+              ? { ...style, ...portTintStyle(portHex(tint)) }
+              : capability
+                ? { ...style, borderColor: `${capability}73` }
+                : style
+          }
           className={cn(
             "num relative flex items-center justify-center rounded-[3px] border text-[9px] leading-none font-medium transition-colors hover:border-primary hover:text-foreground",
-            PORT_STATE_CLASS[state]
+            !cabled && PORT_STATE_CLASS[state]
           )}
         >
           {showNum ? (r.num ?? "·") : ""}
@@ -780,6 +787,7 @@ export function useHasImagePorts(deviceTypeId?: string | null): boolean {
  */
 export function ImagePortsFaceplate({
   deviceTypeId,
+  deviceId,
   interfaces,
   vcPosition,
   side,
@@ -787,6 +795,9 @@ export function ImagePortsFaceplate({
   className,
 }: {
   deviceTypeId: string
+  /** Resolves hardware (inventory-item) markers to the device's real parts —
+   * status-coloured disk bays etc. Optional; without it they render ghosts. */
+  deviceId?: string
   interfaces: Interface[]
   vcPosition?: number | null
   side: FaceplateSide
@@ -807,6 +818,26 @@ export function ImagePortsFaceplate({
   const image =
     side === "front" ? dt.data?.front_image : dt.data?.rear_image
   const markers = dt.data?.image_ports?.[side] ?? []
+  const wantsInventory =
+    !!deviceId && markers.some((m) => m.kind === "inventory-item")
+  const inventory = useQuery({
+    queryKey: ["device-inventory", deviceId],
+    queryFn: () =>
+      api<Paginated<InventoryItemRow>>(
+        `/api/inventory-items/?device=${deviceId}&page_size=500`
+      ),
+    enabled: wantsInventory,
+  })
+  const itemByName = useMemo(
+    () =>
+      new Map(
+        (inventory.data?.results ?? []).map((i) => [
+          normalizePortName(i.name),
+          i,
+        ])
+      ),
+    [inventory.data]
+  )
   if (!image) return null
 
   return (
@@ -839,6 +870,61 @@ export function ImagePortsFaceplate({
           width: `${m.w * 100}%`,
           height: `${m.h * 100}%`,
         }
+        // Hardware markers (disk bays…) — coloured by the PART's lifecycle
+        // status (failed = red), not the port speed ramp.
+        if (kind === "inventory-item") {
+          const item = itemByName.get(normalizePortName(name))
+          const hex = item?.status?.color || "#64748b"
+          if (!item)
+            return (
+              <span
+                key={`${m.name}-${idx}`}
+                style={style}
+                title={`${name} (no matching part)`}
+                className="absolute rounded-[2px] border border-dashed border-border/70 bg-background/20"
+              />
+            )
+          return (
+            <HoverCard key={`${m.name}-${idx}`} openDelay={100} closeDelay={80}>
+              <HoverCardTrigger asChild>
+                <span
+                  style={{
+                    ...style,
+                    borderColor: hex,
+                    backgroundColor: `${hex}40`,
+                  }}
+                  className="absolute rounded-[2px] border-2 transition-opacity hover:opacity-100"
+                />
+              </HoverCardTrigger>
+              <HoverCardContent
+                side="top"
+                className="grid gap-0.5 font-mono text-[11px] whitespace-nowrap"
+              >
+                <div className="font-semibold">{item.name}</div>
+                <div className="text-muted-foreground">
+                  {[
+                    item.kind !== "other" ? item.kind : "",
+                    item.media,
+                    formatBytes(item.capacity_bytes),
+                    item.speed,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "hardware"}
+                </div>
+                {item.status && (
+                  <div style={{ color: item.status.color || undefined }}>
+                    {item.status.name}
+                  </div>
+                )}
+                {item.serial_number && (
+                  <div className="text-muted-foreground">
+                    SN {item.serial_number}
+                  </div>
+                )}
+              </HoverCardContent>
+            </HoverCard>
+          )
+        }
         if (!iface) {
           return (
             <span
@@ -850,16 +936,31 @@ export function ImagePortsFaceplate({
           )
         }
         const state = portState(iface)
+        const tint = { ...iface, type: iface.type_display || iface.type }
+        const tiered = state !== "free" && state !== "disabled"
+        const capability = portCapabilityHex(tint)
         return (
           <HoverCard key={iface.id} openDelay={100} closeDelay={80}>
             <HoverCardTrigger asChild>
               <Link
                 to="/interfaces/$id"
                 params={{ id: iface.id }}
-                style={style}
+                style={
+                  // On a photo: cabled markers get an OPAQUE tier border +
+                  // solid-enough fill; idle markers are a VERY faint outline
+                  // only (capability-tinted when the type tells us) — no fill,
+                  // so the artwork stays the star until a port lights up.
+                  tiered
+                    ? { ...style, ...portOverlayStyle(portHex(tint)) }
+                    : {
+                        ...style,
+                        borderColor: `${capability ?? "#a1a1aa"}59`, // ~35%
+                        backgroundColor: "transparent",
+                      }
+                }
                 className={cn(
-                  "absolute rounded-[2px] border-2 opacity-80 transition-opacity hover:opacity-100",
-                  PORT_STATE_CLASS[state]
+                  "absolute rounded-[2px] border-2 transition-opacity hover:opacity-100",
+                  state === "disabled" && "border-dashed"
                 )}
               >
                 {obs && (
@@ -928,55 +1029,48 @@ export function useSavedFaceplate(
   return dt.data?.faceplate ?? null
 }
 
-/** Dot-key for the port colors — render once per page, under a faceplate. */
+/** Speed-scale key for the port colors — render once per page, under a
+ * faceplate. The colorbar itself lives in `SpeedScale` (shared with the 3D
+ * room HUD); this adds the faceplate-only extras (trunk mark, live dot). */
 export function FaceplateLegend({
   className,
   observed,
+  hardware,
 }: {
   className?: string
   /** Also explain the live SNMP dot. */
   observed?: boolean
+  /** The faceplate carries hardware markers → add the status key. */
+  hardware?: boolean
 }) {
   return (
-    <p
-      className={cn(
-        "flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground",
-        className
-      )}
-    >
-      <span className="inline-flex items-center gap-1.5">
-        <span className="h-2.5 w-3 rounded-[2px] border border-sky-500/70 bg-sky-500/15" />
-        10G+
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="h-2.5 w-3 rounded-[2px] border border-emerald-500/70 bg-emerald-500/15" />
-        1G / cabled
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="h-2.5 w-3 rounded-[2px] border border-amber-500/70 bg-amber-500/15" />
-        &lt;1G
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="h-2.5 w-3 rounded-[2px] border border-border bg-muted/40" />
-        free
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="h-2.5 w-3 rounded-[2px] border border-dashed border-border/70" />
-        disabled
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="relative h-2.5 w-3 rounded-[2px] border border-border bg-muted/40">
-          <span className="absolute inset-x-0.5 top-0 h-[2px] rounded-b bg-foreground/60" />
-        </span>
-        trunk
-      </span>
-      {observed && (
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-          <span className="-ml-1 h-1.5 w-1.5 rounded-full bg-red-500" />
-          live (SNMP) up / down
-        </span>
-      )}
-    </p>
+    <div className={cn("grid gap-1.5", className)}>
+      <SpeedScale
+        live={observed}
+        extras={
+          <span className="inline-flex items-center gap-1">
+            <span className="relative h-2.5 w-3 rounded-[2px] border border-border bg-muted/40">
+              <span className="absolute inset-x-0.5 top-0 h-[2px] rounded-b bg-foreground/60" />
+            </span>
+            trunk
+          </span>
+        }
+      />
+      {hardware && <HardwareStatusKey />}
+    </div>
   )
+}
+
+/** True when the type's photo markers include hardware (inventory items) —
+ * drives the hardware status key. Shares the ["device-type", id] cache. */
+export function useHasHardwareMarkers(deviceTypeId?: string | null): boolean {
+  const dt = useQuery({
+    queryKey: ["device-type", deviceTypeId],
+    queryFn: () => api<DeviceType>(`/api/device-types/${deviceTypeId}/`),
+    enabled: !!deviceTypeId,
+    staleTime: 5 * 60_000,
+  })
+  const ip = dt.data?.image_ports
+  return !!ip &&
+    [...ip.front, ...ip.rear].some((m) => m.kind === "inventory-item")
 }

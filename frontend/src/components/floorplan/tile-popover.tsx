@@ -121,11 +121,24 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
     ),
   },
   orientation: {
-    label: "Orientation",
-    render: ({ tile }) =>
-      tile.orientation ? (
-        <span className="num">{tile.orientation}°</span>
-      ) : null,
+    label: "Facing",
+    render: ({ tile }) => {
+      // Racks always show which way the front points; other tiles only when
+      // rotated. Same compass the 3D room + facing edge use.
+      const word = { 0: "up", 90: "right", 180: "down", 270: "left" }[
+        tile.orientation
+      ]
+      if (tile.linked?.kind !== "rack" && !tile.orientation) return null
+      return (
+        <span>
+          {word}
+          <span className="num text-muted-foreground">
+            {" "}
+            · {tile.orientation}°
+          </span>
+        </span>
+      )
+    },
   },
   utilization: {
     label: "Utilization",

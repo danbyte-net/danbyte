@@ -163,6 +163,57 @@ export function deviceYM(
   }
 }
 
+/**
+ * A racked device's box geometry, local to its rack group — THE single source
+ * for the 3D device box (DeviceMesh renders from it; the cables layer anchors
+ * runs to it). All values in metres.
+ */
+export function deviceBoxM(
+  rack: SceneRack,
+  dev: SceneDevice,
+  rackWidthM: number,
+  rackDepthM: number
+): {
+  y: number
+  h: number
+  dx: number
+  dz: number
+  dw: number
+  dd: number
+  boxH: number
+  mountedRear: boolean
+} {
+  const { y, h } = deviceYM(rack, dev)
+  const dw = dev.rack_width === "half" ? rackWidthM * 0.44 : rackWidthM * 0.92
+  const dx =
+    dev.rack_side === "left"
+      ? -rackWidthM * 0.23
+      : dev.rack_side === "right"
+        ? rackWidthM * 0.23
+        : 0
+  const dd = dev.is_full_depth ? rackDepthM * 0.9 : rackDepthM * 0.45
+  const mountedRear = dev.face === "rear"
+  const dz = mountedRear ? rackDepthM * 0.45 - dd / 2 : dd / 2 - rackDepthM * 0.45
+  return { y, h, dx, dz, dw, dd, boxH: h * 0.94, mountedRear }
+}
+
+/**
+ * A photo-port marker's position local to the RACK group (metres) — the same
+ * spot DeviceMesh draws the quad: on the exposed face plane, a hair off the
+ * box. Feed through the rack's world transform for a scene position.
+ */
+export function portLocalM(
+  box: ReturnType<typeof deviceBoxM>,
+  m: { x: number; y: number }
+): [number, number, number] {
+  const mx = (m.x - 0.5) * box.dw
+  const my = (0.5 - m.y) * box.boxH
+  // Front faces −Z via a π turn about Y (mirrors X); rear faces +Z unturned.
+  return box.mountedRear
+    ? [box.dx + mx, box.y + box.h / 2 + my, box.dz + box.dd / 2 + 0.004]
+    : [box.dx - mx, box.y + box.h / 2 + my, box.dz - box.dd / 2 - 0.004]
+}
+
 /** True when this browser can do WebGL at all (feature gate for the view). */
 export function webglSupported(): boolean {
   try {
