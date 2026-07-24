@@ -2093,7 +2093,7 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     class Meta:
         model = Interface
-        fields = ["id", "device", "device_id", "name", "snmp_name", "type",
+        fields = ["id", "device", "device_id", "name", "snmp_name", "snmp_ignore", "type",
                   "type_display",
                   "speed", "mtu",
                   "enabled", "mgmt_only", "duplex", "poe_mode", "poe_type",

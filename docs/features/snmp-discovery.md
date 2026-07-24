@@ -127,9 +127,24 @@ intended configuration and lists the differences:
 
 - **Device name** vs `sysName`.
 - **Interface present on the device but not in Danbyte** (`interface_missing`).
-- **MAC or admin-status mismatch** on an interface you already have.
+- **MAC, admin-status, VLAN or speed mismatch** on an interface you already have.
 - **Stale** — Danbyte has an interface the device no longer reports (shown for
   awareness; discovery never deletes from the SoT).
+
+### Excluding a port from drift {#drift-exclude}
+
+Some ports can *never* be polled — the silkscreened host NICs a BMC agent
+doesn't see, an out-of-band jack, a port on gear behind the managed device.
+Left alone they flag as **Stale — not seen on device** after every poll,
+forever, and dismissing only hides them until the next one.
+
+Click **Exclude** on the stale row instead. It sets the interface's
+*Exclude from SNMP drift* flag: the port stops being compared in **both**
+directions — never reported stale, never mismatch-checked, never touched by
+**Sync from SNMP** — while everything else about it (cables, IPs, monitoring)
+behaves as normal. Excluded ports show a muted eye-off mark in the interfaces
+table, and the flag is a checkbox on the interface's edit form, which is also
+where you undo it.
 
 MAC comparison is **separator-insensitive** — `00:11:22:33:44:55` and the Cisco
 dotted form `0011.2233.4455` are recognised as the same address, so reformatting
@@ -151,7 +166,10 @@ Drift kinds:
 
 - **Device name** — `sysName` vs the device name.
 - **New interface** — observed on the device, missing in Danbyte.
-- **Interface mismatch** — MAC or admin-status differs.
+- **Interface mismatch** — MAC, admin-status, VLAN or **speed** differs. Speed
+  is compared as a number, so `1G`, `1 Gbps` and an observed 1000 Mbps are the
+  same value — reformatting never reads as drift, and an intended speed that
+  isn't parseable ("dual 10/25") is treated as deliberate and left alone.
 - **Discovered IP** — an IP SNMP sees on an interface that Danbyte doesn't record.
   Accepting it assigns the IP to that interface (binding an existing unassigned IP
   if one matches, otherwise creating it in the smallest containing prefix). It
