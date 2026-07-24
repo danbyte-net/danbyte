@@ -2,12 +2,18 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { toast } from "sonner"
-import { Check, Plus, RefreshCw, X } from "lucide-react"
+import { Check, Link2 as LinkIcon, Plus, RefreshCw, X } from "lucide-react"
 
 import { api } from "@/lib/api"
-import type { SnmpDriftItem } from "@/lib/api"
+import type { Paginated, SnmpDriftItem } from "@/lib/api"
 import { DriftDescription, driftKey } from "@/components/drift-detail"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
 import { Section } from "@/components/ui/section"
 import { SimpleTable } from "@/components/ui/simple-table"
@@ -123,6 +129,16 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
           canApply && item.kind !== "interface_stale" && !noPrefix
         return (
           <div className="flex items-center justify-end gap-1">
+            {/* A discovered interface is often a port you already labelled by
+                its silkscreen ("Ethernet 1" reporting as "eth0"). Linking the
+                pair collapses the phantom new/missing rows into one row. */}
+            {canApply && item.kind === "interface_missing" && item.name && (
+              <LinkInterfaceButton
+                deviceId={deviceId}
+                snmpName={item.name}
+                disabled={busy}
+              />
+            )}
             {noPrefix && (
               // No prefix contains this IP yet — offer to create one (pre-filled).
               <Button
@@ -212,3 +228,108 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
 }
 
 /** A stable identity for a drift item, so we can track dismissals and keys. */
+
+/**
+ * "Link to…" — record that a discovered SNMP name belongs to an interface the
+ * user already created. Lists the device's interfaces (unlinked first) and
+ * writes the link, so the pair stops drifting as both new and missing.
+ */
+function LinkInterfaceButton({
+  deviceId,
+  snmpName,
+  disabled,
+}: {
+  deviceId: string
+  snmpName: string
+  disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState("")
+  const qc = useQueryClient()
+
+  const ifaces = useQuery({
+    queryKey: ["interfaces", deviceId],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string; snmp_name: string }>>(
+        `/api/interfaces/?device=${deviceId}&page_size=500`
+      ),
+    enabled: open,
+  })
+
+  const link = useMutation({
+    mutationFn: (interfaceId: string) =>
+      api(`/api/monitoring/devices/${deviceId}/snmp/link-interface/`, {
+        method: "POST",
+        body: JSON.stringify({ interface_id: interfaceId, snmp_name: snmpName }),
+      }),
+    onSuccess: () => {
+      toast.success(`Linked ${snmpName}`)
+      qc.invalidateQueries({ queryKey: ["device-snmp-drift", deviceId] })
+      qc.invalidateQueries({ queryKey: ["interfaces", deviceId] })
+      qc.invalidateQueries({ queryKey: ["device-interfaces", deviceId] })
+      setOpen(false)
+      setQ("")
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  const rows = (ifaces.data?.results ?? [])
+    .filter((i) => !q || i.name.toLowerCase().includes(q.toLowerCase()))
+    // Unlinked first — those are the likely matches.
+    .sort((a, b) => Number(!!a.snmp_name) - Number(!!b.snmp_name))
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7"
+          disabled={disabled}
+          title={`Link "${snmpName}" to an interface you already created`}
+        >
+          <LinkIcon className="h-3.5 w-3.5" /> Link to…
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 p-2">
+        <p className="px-1 pb-1.5 text-[11px] text-muted-foreground">
+          <span className="font-mono text-foreground">{snmpName}</span> is
+          really…
+        </p>
+        <Input
+          autoFocus
+          placeholder="Search interfaces…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          className="mb-1 h-8 text-xs"
+        />
+        <div className="max-h-56 overflow-y-auto">
+          {ifaces.isLoading && (
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</p>
+          )}
+          {ifaces.data && rows.length === 0 && (
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">
+              No interfaces match.
+            </p>
+          )}
+          {rows.map((i) => (
+            <button
+              key={i.id}
+              type="button"
+              disabled={link.isPending}
+              onClick={() => link.mutate(i.id)}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] hover:bg-muted/60"
+            >
+              <span className="min-w-0 flex-1 truncate font-mono">{i.name}</span>
+              {i.snmp_name && (
+                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                  ↔ {i.snmp_name}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}

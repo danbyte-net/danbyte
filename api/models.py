@@ -1982,6 +1982,13 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         Device, on_delete=models.CASCADE, related_name="interfaces"
     )
     name = models.CharField(max_length=64)
+    snmp_name = models.CharField(
+        max_length=128, blank=True, default="",
+        help_text="What the agent calls this interface over SNMP (ifName / "
+        "ifDescr) when it differs from the label — e.g. the port silkscreened "
+        "'Ethernet 1' reporting as 'eth0'. Set it and discovery stops "
+        "reporting the pair as both new and missing.",
+    )
     type = models.CharField(
         max_length=64, blank=True, default="", choices=INTERFACE_TYPE_CHOICES,
         help_text="Physical/logical media type, e.g. 10gbase-x-sfpp.",

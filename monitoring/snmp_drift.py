@@ -102,7 +102,14 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
         list(intended_interfaces) if intended_interfaces is not None
         else list(Interface.objects.filter(device=device).select_related("vlan"))
     )
+    # Match on the label AND on any explicit SNMP link, so a port labelled
+    # "Ethernet 1" that the agent reports as "eth0" resolves to one interface
+    # instead of drifting as both "new" and "not seen". The link wins on
+    # collision (it's the operator's deliberate statement).
     int_by_name = {_norm(i.name): i for i in intended}
+    for i in intended:
+        if i.snmp_name:
+            int_by_name[_norm(i.snmp_name)] = i
     # IPs Danbyte already records on this device, to spot ones SNMP sees but we
     # don't have yet (the "accept discovered IP" loop).
     device_ips = set(

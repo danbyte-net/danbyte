@@ -680,8 +680,13 @@ class OutpostSnmpTests(_Base):
             kind="remote", transport="pull", token={"secret": "snmp-tok"},
         )
         set_binding(self.tenant, "site", self.site.id, self.engine)
+        from api.models import IPAddress as _IP, Prefix as _Pfx
+        _p = _Pfx.objects.create(tenant=self.tenant, cidr="10.8.1.0/24")
+        _ip = _IP.objects.create(
+            tenant=self.tenant, ip_address="10.8.1.1", prefix=_p
+        )
         self.device = Device.objects.create(
-            tenant=self.tenant, name="r1", site=self.site
+            tenant=self.tenant, name="r1", site=self.site, primary_ip=_ip
         )
         self.profile = SnmpProfile.objects.create(
             tenant=self.tenant, name="prod", slug="prod", version="v2c",
@@ -701,7 +706,8 @@ class OutpostSnmpTests(_Base):
         devices = r.json()["devices"]
         self.assertEqual(len(devices), 1)
         self.assertEqual(devices[0]["device_id"], str(self.device.id))
-        self.assertEqual(devices[0]["target"], "r1")  # no primary_ip → name
+        # Target resolution: management IP → primary IP → resolvable name.
+        self.assertEqual(devices[0]["target"], "10.8.1.1")
         self.assertEqual(devices[0]["secret_params"]["community"], "public")
 
     def test_snmp_results_persist_device_snmp(self):
