@@ -11,7 +11,7 @@ class ApiConfig(AppConfig):
         # by shipping an ``io.py`` that calls ``api.io.register_io``.
         from django.utils.module_loading import autodiscover_modules
 
-        from . import io
+        from . import io, signals  # noqa: F401  (signals register on import)
 
         io.register_builtins()
         autodiscover_modules("io")

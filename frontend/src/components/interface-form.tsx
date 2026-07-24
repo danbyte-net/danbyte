@@ -24,13 +24,17 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { DevicePicker } from "@/components/device-picker"
 import { VlanPicker } from "@/components/vlan-picker"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
+import { NameRangeHint } from "@/components/name-range-hint"
+import { createEach, expandNameRange } from "@/lib/name-range"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 
 export interface InterfaceFormProps {
   iface?: Interface
   /** Pre-select a device (e.g. when adding from a device page). */
   initialDeviceId?: string
-  onSaved: (i: Interface) => void
+  /** `i` is the last one saved; `count` > 1 when a [a-b] name range created
+   * several at once. */
+  onSaved: (i: Interface, count: number) => void
   onCancel: () => void
 }
 
@@ -160,17 +164,28 @@ export function InterfaceForm({
         return api<Interface>(`/api/interfaces/${iface!.id}/`, {
           method: "PATCH",
           body: JSON.stringify(payload),
+        }).then((saved) => ({ saved, count: 1 }))
+      // A [a-b] range in the name fans out — "eth[0-3]" adds four ports. For a
+      // whole switch face, /interfaces/bulk does it server-side.
+      return createEach(expandNameRange(payload.name), (n) =>
+        api<Interface>("/api/interfaces/", {
+          method: "POST",
+          body: JSON.stringify({ ...payload, name: n }),
         })
-      return api<Interface>("/api/interfaces/", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      })
+      ).then(({ last, count }) => ({ saved: last, count }))
     },
-    onSuccess: (saved) => {
+    onSuccess: ({ saved, count }) => {
       qc.invalidateQueries({ queryKey: ["interfaces"] })
       qc.invalidateQueries({ queryKey: ["interface", saved.id] })
-      toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
-      onSaved(saved)
+      qc.invalidateQueries({ queryKey: ["device-interfaces"] })
+      toast.success(
+        isEdit
+          ? `Updated ${saved.name}`
+          : count > 1
+            ? `Created ${count} interfaces`
+            : `Created ${saved.name}`
+      )
+      onSaved(saved, count)
     },
     onError: (err) => {
       const msg = handleApiError(err)
@@ -211,6 +226,7 @@ export function InterfaceForm({
           onChange={setName}
           mono
           placeholder="GigabitEthernet0/1"
+          hint={isEdit ? undefined : "a [0-3] range adds one port per number"}
           error={fieldErrors.name}
         />
         {isEdit && (
@@ -233,6 +249,7 @@ export function InterfaceForm({
           error={fieldErrors.speed}
         />
       </div>
+      <NameRangeHint name={name} editing={isEdit} noun="interfaces" />
       <div className="grid grid-cols-2 gap-3">
         <FormCombobox
           label="Type"

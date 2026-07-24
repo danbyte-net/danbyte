@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { Activity, Pencil, Plus, Trash2, X } from "lucide-react"
+import { Activity, Pencil, Plus, Search, Trash2, X } from "lucide-react"
 
 import {
   api,
@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Field, FormCheckbox, FormSelect } from "@/components/forms"
+import { OidExplorer } from "@/components/oid-explorer"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -48,6 +49,11 @@ export function DeviceSensorsCard({
   const qc = useQueryClient()
   const [editing, setEditing] = useState<SnmpSensor | null>(null)
   const [adding, setAdding] = useState(false)
+  const [exploring, setExploring] = useState(false)
+  // A column picked in the explorer opens the form already carrying its OID
+  // and the values it returned, so the value map is a few dropdowns rather
+  // than transcription.
+  const [prefill, setPrefill] = useState<SensorPrefill | null>(null)
 
   const sensors = useQuery({
     queryKey: ["snmp-sensors", deviceTypeId],
@@ -96,6 +102,13 @@ export function DeviceSensorsCard({
       actions={
         canWrite ? (
           <div className="flex gap-1.5">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setExploring(true)}
+            >
+              <Search className="h-3.5 w-3.5" /> Explore OIDs
+            </Button>
             <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
               <Plus className="h-3.5 w-3.5" /> Sensor
             </Button>
@@ -177,19 +190,33 @@ export function DeviceSensorsCard({
         )}
       </div>
 
+      <OidExplorer
+        deviceId={deviceId}
+        open={exploring}
+        onOpenChange={setExploring}
+        onPickColumn={(oid, values) => {
+          setPrefill({ oid, values })
+          setExploring(false)
+          setAdding(true)
+        }}
+      />
+
       <SensorDialog
         deviceTypeId={deviceTypeId}
         sensor={editing}
+        prefill={editing ? null : prefill}
         open={adding || !!editing}
         onOpenChange={(o) => {
           if (!o) {
             setAdding(false)
             setEditing(null)
+            setPrefill(null)
           }
         }}
         onSaved={() => {
           setAdding(false)
           setEditing(null)
+          setPrefill(null)
           qc.invalidateQueries({ queryKey: ["snmp-sensors"] })
         }}
       />
@@ -197,15 +224,25 @@ export function DeviceSensorsCard({
   )
 }
 
+/** A column chosen in the OID explorer: its OID, and the distinct values it
+ * actually returned — the raw side of the value map, already filled in. */
+export interface SensorPrefill {
+  oid: string
+  values: string[]
+}
+
 function SensorDialog({
   deviceTypeId,
   sensor,
+  prefill,
   open,
   onOpenChange,
   onSaved,
 }: {
   deviceTypeId?: string | null
   sensor: SnmpSensor | null
+  /** Seed a new sensor from an explored column (ignored when editing). */
+  prefill?: SensorPrefill | null
   open: boolean
   onOpenChange: (o: boolean) => void
   onSaved: () => void
@@ -224,15 +261,19 @@ function SensorDialog({
   useEffect(() => {
     if (!open) return
     setName(sensor?.name ?? "")
-    setOid(sensor?.oid ?? "")
+    setOid(sensor?.oid ?? prefill?.oid ?? "")
     setWalk(sensor?.walk ?? true)
     setKind(sensor?.item_kind ?? "disk")
     setNameTemplate(sensor?.name_template ?? "{kind} {index}")
     setScopeThisType(sensor ? !!sensor.device_type : true)
     const vm = sensor?.value_map ?? {}
     const entries = Object.entries(vm).map(([raw, slug]) => ({ raw, slug }))
-    setRows(entries.length ? entries : [{ raw: "", slug: "" }])
-  }, [open, sensor])
+    if (entries.length) setRows(entries)
+    else if (prefill?.values.length)
+      // Every value the column returned, awaiting a status each.
+      setRows(prefill.values.map((raw) => ({ raw, slug: "" })))
+    else setRows([{ raw: "", slug: "" }])
+  }, [open, sensor, prefill])
 
   const statuses = useQuery({
     queryKey: ["statuses", "inventoryitem"],

@@ -16,6 +16,8 @@ import {
   FormText,
   useFieldErrors,
 } from "@/components/forms"
+import { NameRangeHint } from "@/components/name-range-hint"
+import { createEach, expandNameRange } from "@/lib/name-range"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 
 export type ConsolePortKind = "port" | "server-port"
@@ -85,15 +87,24 @@ export function ConsolePortDialog({
         return api<ConsolePort>(`/api/${ENDPOINT[kind]}/${port!.id}/`, {
           method: "PATCH",
           body: JSON.stringify(payload),
+        }).then((saved) => ({ saved, count: 1 }))
+      // A [a-b] range in the name fans out — "console[0-3]" adds four ports.
+      return createEach(expandNameRange(payload.name), (n) =>
+        api<ConsolePort>(`/api/${ENDPOINT[kind]}/`, {
+          method: "POST",
+          body: JSON.stringify({ ...payload, name: n }),
         })
-      return api<ConsolePort>(`/api/${ENDPOINT[kind]}/`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      })
+      ).then(({ last, count }) => ({ saved: last, count }))
     },
-    onSuccess: (saved) => {
+    onSuccess: ({ saved, count }) => {
       qc.invalidateQueries({ queryKey: [QUERY_KEY[kind], deviceId] })
-      toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
+      toast.success(
+        isEdit
+          ? `Updated ${saved.name}`
+          : count > 1
+            ? `Created ${count} ${NOUN[kind]}s`
+            : `Created ${saved.name}`
+      )
       onOpenChange(false)
     },
     onError: (err) => {
@@ -126,6 +137,9 @@ export function ConsolePortDialog({
               onChange={setName}
               mono
               placeholder="console0"
+              hint={
+                isEdit ? undefined : "a [0-3] range adds one port per number"
+              }
               error={fieldErrors.name}
             />
             <FormText
@@ -137,6 +151,7 @@ export function ConsolePortDialog({
               error={fieldErrors.speed}
             />
           </div>
+          <NameRangeHint name={name} editing={isEdit} noun={`${NOUN[kind]}s`} />
           <FormCombobox
             label="Type"
             value={type || null}

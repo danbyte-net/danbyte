@@ -17,6 +17,8 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
+import { NameRangeHint } from "@/components/name-range-hint"
+import { createEach, expandNameRange } from "@/lib/name-range"
 
 export interface RearPortFormProps {
   port?: RearPort
@@ -76,16 +78,26 @@ export function RearPortForm({
         return api<RearPort>(`/api/rear-ports/${port!.id}/`, {
           method: "PATCH",
           body: JSON.stringify(payload),
+        }).then((saved) => ({ saved, count: 1 }))
+      // A [a-b] range in the name fans out — "Rear[1-12]" adds a whole panel
+      // row, each port with its own strands.
+      return createEach(expandNameRange(payload.name), (n) =>
+        api<RearPort>("/api/rear-ports/", {
+          method: "POST",
+          body: JSON.stringify({ ...payload, name: n }),
         })
-      return api<RearPort>("/api/rear-ports/", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      })
+      ).then(({ last, count }) => ({ saved: last, count }))
     },
-    onSuccess: (saved) => {
+    onSuccess: ({ saved, count }) => {
       qc.invalidateQueries({ queryKey: ["device-rear-ports", deviceId] })
       qc.invalidateQueries({ queryKey: ["rear-ports-picker", deviceId] })
-      toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
+      toast.success(
+        isEdit
+          ? `Updated ${saved.name}`
+          : count > 1
+            ? `Created ${count} rear ports`
+            : `Created ${saved.name}`
+      )
       onSaved(saved)
     },
     onError: (err) => {
@@ -111,6 +123,7 @@ export function RearPortForm({
           onChange={setName}
           mono
           placeholder="Rear1"
+          hint={isEdit ? undefined : "a [1-12] range adds one port per number"}
           error={fieldErrors.name}
         />
         <FormText
@@ -123,6 +136,7 @@ export function RearPortForm({
           error={fieldErrors.positions}
         />
       </div>
+      <NameRangeHint name={name} editing={isEdit} noun="rear ports" />
       <FormText
         label="Type"
         value={type}

@@ -22,6 +22,8 @@ import {
   FormText,
   useFieldErrors,
 } from "@/components/forms"
+import { NameRangeHint } from "@/components/name-range-hint"
+import { createEach, expandNameRange } from "@/lib/name-range"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 
 type FeedLeg = "" | "A" | "B" | "C"
@@ -91,17 +93,27 @@ export function PowerOutletDialog({
         return api<PowerOutlet>(`/api/power-outlets/${outlet!.id}/`, {
           method: "PATCH",
           body: JSON.stringify(payload),
+        }).then((saved) => ({ saved, count: 1 }))
+      // A [a-b] range in the name fans out — "Outlet[1-24]" wires a whole PDU
+      // bank to the same inlet and feed leg.
+      return createEach(expandNameRange(payload.name), (n) =>
+        api<PowerOutlet>("/api/power-outlets/", {
+          method: "POST",
+          body: JSON.stringify({ ...payload, name: n }),
         })
-      return api<PowerOutlet>("/api/power-outlets/", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      })
+      ).then(({ last, count }) => ({ saved: last, count }))
     },
-    onSuccess: (saved) => {
+    onSuccess: ({ saved, count }) => {
       qc.invalidateQueries({ queryKey: ["device-power-outlets", deviceId] })
       // Power ports carry an outlet_count — keep it fresh.
       qc.invalidateQueries({ queryKey: ["device-power-ports", deviceId] })
-      toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
+      toast.success(
+        isEdit
+          ? `Updated ${saved.name}`
+          : count > 1
+            ? `Created ${count} power outlets`
+            : `Created ${saved.name}`
+      )
       onOpenChange(false)
     },
     onError: (err) => {
@@ -133,8 +145,12 @@ export function PowerOutletDialog({
             onChange={setName}
             mono
             placeholder="Outlet1"
+            hint={
+              isEdit ? undefined : "a [1-24] range adds one outlet per number"
+            }
             error={fieldErrors.name}
           />
+          <NameRangeHint name={name} editing={isEdit} noun="power outlets" />
           <FormCombobox
             label="Type"
             value={type || null}

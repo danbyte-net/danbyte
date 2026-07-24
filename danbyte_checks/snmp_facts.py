@@ -379,9 +379,15 @@ def parse_fdb(fdb_port: dict, base_port_ifindex: dict) -> list[dict]:
     return out
 
 
-async def _walk_column(mod, engine, auth, transport, base: str) -> dict:
+async def _walk_column(
+    mod, engine, auth, transport, base: str, limit: int | None = None
+) -> dict:
     """Walk one column → ``{oid_tail_after_base: prettyValue}``. Tolerant: a
-    missing/blocked column yields ``{}`` rather than failing the whole fetch."""
+    missing/blocked column yields ``{}`` rather than failing the whole fetch.
+
+    ``limit`` stops after that many bindings — for exploring a whole table base
+    interactively, where the subtree can be far larger than any one column.
+    """
     result: dict = {}
     try:
         walk = mod.bulk_walk_cmd(
@@ -395,6 +401,8 @@ async def _walk_column(mod, engine, auth, transport, base: str) -> dict:
                 tail = str(oid)[len(base) + 1:]
                 if tail:
                     result[tail] = value.prettyPrint()
+            if limit is not None and len(result) >= limit:
+                break
     except Exception:  # noqa: BLE001
         return result
     return result
@@ -477,7 +485,7 @@ def fetch_snmp(target, version, params, secret_params, timeout_ms) -> dict:
 
 async def fetch_oid(
     target: str, version: str, params: dict, secret_params: dict,
-    oid: str, walk: bool, timeout_ms: int = 4000,
+    oid: str, walk: bool, timeout_ms: int = 4000, limit: int | None = None,
 ) -> dict:
     """Read one user-defined OID → ``{index: prettyValue, ...}``.
 
@@ -500,7 +508,9 @@ async def fetch_oid(
         )
         engine = mod.SnmpEngine()
         if walk:
-            return await _walk_column(mod, engine, auth, transport, oid.strip("."))
+            return await _walk_column(
+                mod, engine, auth, transport, oid.strip("."), limit
+            )
         error_indication, error_status, _, var_binds = await mod.get_cmd(
             engine, auth, transport, mod.ContextData(),
             mod.ObjectType(mod.ObjectIdentity(oid)),
@@ -515,9 +525,12 @@ async def fetch_oid(
 
 
 def fetch_oid_sync(
-    target, version, params, secret_params, oid, walk, timeout_ms=4000
+    target, version, params, secret_params, oid, walk, timeout_ms=4000,
+    limit: int | None = None,
 ) -> dict:
     """Synchronous wrapper for on-demand sensor polling from a DRF view."""
     return asyncio.run(
-        fetch_oid(target, version, params, secret_params, oid, walk, timeout_ms)
+        fetch_oid(
+            target, version, params, secret_params, oid, walk, timeout_ms, limit
+        )
     )
