@@ -4,6 +4,7 @@ import { toast } from "sonner"
 import { HardDrive } from "lucide-react"
 
 import { api } from "@/lib/api"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Section } from "@/components/ui/section"
 import { Input } from "@/components/ui/input"
@@ -162,20 +163,22 @@ export function DeviceRedfishCard({ deviceId }: { deviceId: string }) {
         {configured && (
           <div className="grid gap-1 text-[13px]">
             <div className="flex items-center gap-2">
-              <span
-                className="rounded px-1.5 py-0.5 text-[10px] font-medium"
-                style={{
-                  backgroundColor:
-                    s?.reachable === false ? "#ef444426" : "#10b98126",
-                  color: s?.reachable === false ? "#ef4444" : "#10b981",
-                }}
+              {/* Shared Badge — same reachability treatment as the SNMP card. */}
+              <Badge
+                variant={
+                  !s?.polled_at
+                    ? "secondary"
+                    : s?.reachable
+                      ? "success"
+                      : "destructive"
+                }
               >
                 {s?.polled_at
                   ? s?.reachable
                     ? "reachable"
                     : "unreachable"
                   : "never polled"}
-              </span>
+              </Badge>
               {s?.polled_at && (
                 <span className="text-muted-foreground">
                   last poll <TimeCell iso={s.polled_at} />
@@ -192,7 +195,7 @@ export function DeviceRedfishCard({ deviceId }: { deviceId: string }) {
               </p>
             )}
             {failing.length > 0 && (
-              <p className="text-[12px]" style={{ color: "#ef4444" }}>
+              <p className="text-[12px] text-destructive">
                 {failing.length} part{failing.length === 1 ? "" : "s"} not
                 healthy: {failing.map((p) => p.name).join(", ")}
               </p>
