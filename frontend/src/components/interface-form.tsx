@@ -233,23 +233,15 @@ export function InterfaceForm({
           error={fieldErrors.name}
         />
         {isEdit && (
-          <>
-            <FormText
-              label="SNMP name"
-              hint="what discovery calls this port — clear to unlink"
-              value={snmpName}
-              onChange={setSnmpName}
-              mono
-              placeholder="eth0"
-              error={fieldErrors.snmp_name}
-            />
-            <FormCheckbox
-              label="Exclude from SNMP drift"
-              hint="the polled agent can never report this port — don't flag it"
-              checked={snmpIgnore}
-              onChange={setSnmpIgnore}
-            />
-          </>
+          <FormText
+            label="SNMP name"
+            hint="what discovery calls this port — clear to unlink"
+            value={snmpName}
+            onChange={setSnmpName}
+            mono
+            placeholder="eth0"
+            error={fieldErrors.snmp_name}
+          />
         )}
         <FormText
           label="Speed"
@@ -444,6 +436,14 @@ export function InterfaceForm({
           checked={virtual}
           onChange={setVirtual}
         />
+        {isEdit && (
+          <FormCheckbox
+            label="Exclude from SNMP drift"
+            hint="the polled agent can never report this port"
+            checked={snmpIgnore}
+            onChange={setSnmpIgnore}
+          />
+        )}
       </div>
       <Field label="Tags" error={fieldErrors.tag_ids}>
         <TagMultiSelect

@@ -185,6 +185,115 @@ class SnmpNameLinkTests(_SnmpDriftTestBase):
         self.assertTrue(imm.enabled)
 
 
+class ObservedIpAttachTests(_SnmpDriftTestBase):
+    """An address on the device but on no port still needs its port.
+
+    A server's OOB address is recorded on the device with `assigned_interface`
+    empty. Drift used to skip any address already on the device, so SNMP naming
+    the port that bears it was discarded as redundant — the address never
+    reached the port, on drift or on sync.
+    """
+
+    def _ip(self, addr, **kw):
+        from api.models import IPAddress, Prefix
+
+        pfx, _ = Prefix.objects.get_or_create(
+            tenant=self.tenant, cidr="192.168.0.0/24",
+            defaults={"status": status_for(self.tenant)},
+        )
+        return IPAddress.objects.create(
+            tenant=self.tenant, prefix=pfx, ip_address=addr, **kw
+        )
+
+    def _ip_items(self):
+        return [d for d in self._drift() if d["kind"] == "ip_missing"]
+
+    def test_oob_address_on_the_device_drifts_onto_its_port(self):
+        imm = Interface.objects.create(device=self.device, name="IMM")
+        self._ip("192.168.0.150", assigned_device=self.device)
+        self._observe(rows=[{
+            "name": "IMM", "ip_addresses": ["192.168.0.150"],
+        }])
+
+        items = self._ip_items()
+
+        self.assertEqual(len(items), 1, items)
+        self.assertEqual(items[0]["interface_id"], str(imm.id))
+        # It already exists, so there is nothing to create and no prefix gate.
+        self.assertTrue(items[0]["has_prefix"])
+
+    def test_sync_attaches_it_to_the_port(self):
+        imm = Interface.objects.create(device=self.device, name="IMM")
+        row = self._ip("192.168.0.150", assigned_device=self.device)
+        self._observe(rows=[{
+            "name": "IMM", "ip_addresses": ["192.168.0.150"],
+        }])
+
+        resp = self.client.post(
+            f"/api/monitoring/devices/{self.device.id}/snmp/sync/"
+        )
+
+        self.assertEqual(resp.status_code, 200, resp.content)
+        row.refresh_from_db()
+        self.assertEqual(row.assigned_interface_id, imm.id)
+
+    def test_it_reaches_the_port_through_an_snmp_link(self):
+        """The reported case end to end: IMM ↔ eth1, IP observed on eth1."""
+        imm = Interface.objects.create(device=self.device, name="IMM")
+        self._link(imm, "eth1")
+        row = self._ip("192.168.0.150", assigned_device=self.device)
+        self._observe(rows=[{
+            "name": "eth1", "ip_addresses": ["192.168.0.150"],
+            "speed_mbps": 1000,
+        }])
+
+        self.client.post(f"/api/monitoring/devices/{self.device.id}/snmp/sync/")
+
+        row.refresh_from_db()
+        imm.refresh_from_db()
+        self.assertEqual(row.assigned_interface_id, imm.id)
+        self.assertEqual(imm.speed, "1 Gbps")
+
+    def test_an_address_already_on_the_port_is_not_drift(self):
+        imm = Interface.objects.create(device=self.device, name="IMM")
+        self._ip(
+            "192.168.0.150", assigned_device=self.device, assigned_interface=imm
+        )
+        self._observe(rows=[{"name": "IMM", "ip_addresses": ["192.168.0.150"]}])
+        self.assertEqual(self._ip_items(), [])
+
+    def test_an_address_on_another_port_is_never_moved(self):
+        """A conflict to resolve by hand, not something to reassign silently."""
+        other = Interface.objects.create(device=self.device, name="eth9")
+        Interface.objects.create(device=self.device, name="IMM")
+        row = self._ip(
+            "192.168.0.150", assigned_device=self.device, assigned_interface=other
+        )
+        self._observe(rows=[{"name": "IMM", "ip_addresses": ["192.168.0.150"]}])
+
+        self.assertEqual(self._ip_items(), [])
+        self.client.post(f"/api/monitoring/devices/{self.device.id}/snmp/sync/")
+        row.refresh_from_db()
+        self.assertEqual(row.assigned_interface_id, other.id)
+
+    def test_an_address_on_another_device_is_never_stolen(self):
+        from api.models import Device
+
+        theirs = Device.objects.create(
+            tenant=self.tenant, name="srv2", device_type=self.device.device_type,
+            site=self.device.site, role=self.device.role,
+            status=status_for(self.tenant),
+        )
+        Interface.objects.create(device=self.device, name="IMM")
+        row = self._ip("192.168.0.150", assigned_device=theirs)
+        self._observe(rows=[{"name": "IMM", "ip_addresses": ["192.168.0.150"]}])
+
+        self.assertEqual(self._ip_items(), [])
+        self.client.post(f"/api/monitoring/devices/{self.device.id}/snmp/sync/")
+        row.refresh_from_db()
+        self.assertEqual(row.assigned_device_id, theirs.id)
+
+
 class SpeedDriftTests(_SnmpDriftTestBase):
     """Speed drifts like MAC does — compared as a number, not a string."""
 

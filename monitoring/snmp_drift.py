@@ -86,6 +86,39 @@ def _speed_mbps(value) -> int | None:
     return int(n)
 
 
+def _observed_ip_rows(tenant, observed) -> dict:
+    """Existing IPAddress rows for every address this poll reported, by address."""
+    addrs = {
+        ip for o in observed for ip in (o.get("ip_addresses") or []) if _real_ip(ip)
+    }
+    if not addrs:
+        return {}
+    return {
+        r.ip_address: r
+        for r in IPAddress.objects.filter(tenant=tenant, ip_address__in=addrs)
+    }
+
+
+def _ip_attachable(ip_rows: dict, device, iface, ip: str) -> bool:
+    """Is attaching ``ip`` to ``iface`` new, safe information?
+
+    "Already on the device" is not the same as "already on the right port", and
+    conflating them hid the common case: a server's OOB address is recorded on
+    the device with no interface, so SNMP naming the port that bears it was
+    discarded as redundant and the address never reached the port.
+    """
+    row = ip_rows.get(ip)
+    if row is None:
+        return True  # not recorded at all → offer to create it
+    if row.assigned_interface_id == iface.id:
+        return False  # already right
+    if row.assigned_interface_id:
+        return False  # on another port — a conflict to resolve, not to move
+    # No port. Free, or already on THIS device: binding it to the port SNMP
+    # names is a refinement, not a theft.
+    return row.assigned_device_id in (None, device.id)
+
+
 def _intent_by_observed_name(intended) -> dict:
     """Map every name the agent may report → the interface it means.
 
@@ -156,12 +189,11 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
         else list(Interface.objects.filter(device=device).select_related("vlan"))
     )
     int_by_name = _intent_by_observed_name(intended)
-    # IPs Danbyte already records on this device, to spot ones SNMP sees but we
-    # don't have yet (the "accept discovered IP" loop).
-    device_ips = set(
-        IPAddress.objects.filter(tenant=tenant, assigned_device=device)
-        .values_list("ip_address", flat=True)
-    )
+    # Existing rows for the addresses SNMP just reported. Keyed by address so we
+    # can tell "already on this port" from "on the device but on no port" — the
+    # OOB address case, where the port SNMP names is new information — from
+    # "belongs to someone else".
+    ip_rows = _observed_ip_rows(tenant, observed)
     # The tenant's prefix networks (loaded once) so we can tell the UI whether a
     # discovered IP is acceptable yet, or needs a prefix created first.
     tenant_nets = []
@@ -234,17 +266,20 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
                     "name": existing.name, "field": "vlan",
                     "intended": intended_vid or "—", "observed": str(o["vlan"]),
                 })
-        # IPs observed on the interface that Danbyte doesn't record yet.
+        # IPs observed on the interface that aren't recorded on it yet.
         for ip in o.get("ip_addresses", []):
-            if _real_ip(ip) and ip not in device_ips:
-                has_pfx = _has_prefix(ip)
-                items.append({
-                    "kind": "ip_missing", "interface_id": str(existing.id),
-                    "name": existing.name, "ip": ip, "observed": ip,
-                    # The UI offers "Add prefix" when there's nowhere to put it.
-                    "has_prefix": has_pfx,
-                    "suggested_prefix": "" if has_pfx else _suggested_prefix(ip),
-                })
+            if not _real_ip(ip) or not _ip_attachable(ip_rows, device, existing, ip):
+                continue
+            # A prefix only has to exist when the address is new; binding a row
+            # that already exists needs nothing.
+            has_pfx = ip in ip_rows or _has_prefix(ip)
+            items.append({
+                "kind": "ip_missing", "interface_id": str(existing.id),
+                "name": existing.name, "ip": ip, "observed": ip,
+                # The UI offers "Add prefix" when there's nowhere to put it.
+                "has_prefix": has_pfx,
+                "suggested_prefix": "" if has_pfx else _suggested_prefix(ip),
+            })
 
     # 3. Stale: Danbyte has it, the device doesn't report it. Report only —
     #    discovery never deletes from the SoT.
@@ -410,10 +445,7 @@ def sync_device_from_snmp(device, tenant) -> dict:
     # sync created a duplicate interface under the discovered name, hanging
     # the speed/VLAN/IPs on the duplicate instead of the port it means.
     existing = _intent_by_observed_name(Interface.objects.filter(device=device))
-    device_ips = set(
-        IPAddress.objects.filter(tenant=tenant, assigned_device=device)
-        .values_list("ip_address", flat=True)
-    )
+    ip_rows = _observed_ip_rows(tenant, state.interfaces or [])
     for o in (state.interfaces or []):
         name = o.get("name")
         if not name:
@@ -468,14 +500,16 @@ def sync_device_from_snmp(device, tenant) -> dict:
             _ensure_mac_object(tenant, iface, iface.mac_address)
 
         for ip in o.get("ip_addresses", []):
-            if not _real_ip(ip) or ip in device_ips:
+            if not _real_ip(ip) or not _ip_attachable(ip_rows, device, iface, ip):
                 continue
             result = _attach_observed_ip(tenant, iface, ip)
             if result == "skipped":
                 summary["ips_skipped"] += 1
             else:
                 summary["ips_assigned"] += 1
-                device_ips.add(ip)
+                # Re-read so a second observed row for the same address sees it
+                # as settled rather than attaching it twice.
+                ip_rows[ip] = IPAddress.objects.get(tenant=tenant, ip_address=ip)
 
     # Accept all switch-link suggestions (IP ↔ this switch's port).
     for item in compute_device_drift(device, tenant, state=state):
@@ -522,8 +556,14 @@ def _attach_observed_ip(tenant, iface, ip: str) -> str:
     ``"skipped"`` (already assigned elsewhere, or no containing prefix exists)."""
     existing = IPAddress.objects.filter(tenant=tenant, ip_address=ip).first()
     if existing is not None:
-        if existing.assigned_interface_id or existing.assigned_device_id:
-            return "skipped"  # already belongs to a device — don't steal it
+        if existing.assigned_interface_id or (
+            existing.assigned_device_id
+            and existing.assigned_device_id != iface.device_id
+        ):
+            # Another port's, or another device's — don't steal it. An address
+            # already on THIS device with no port falls through: that's the OOB
+            # address, and the port SNMP names for it is the missing half.
+            return "skipped"
         existing.assigned_interface = iface
         # save() mirrors assigned_device from the interface; include it so the
         # scoped write actually persists the device link too.
