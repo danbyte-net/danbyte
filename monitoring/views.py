@@ -2275,6 +2275,7 @@ def _binding_payload(tenant, scope, object_id):
         "object_id": str(object_id),
         "profile_id": str(binding.profile_id) if binding else None,
         "profile_name": binding.profile.name if binding else None,
+        "target": binding.target if binding else "",
         "effective": None,
     }
     # For a device, also resolve the inherited effective profile (device → role
@@ -2395,6 +2396,8 @@ def snmp_binding_view(request, scope, object_id):
 
     if request.method == "PUT":
         pid = request.data.get("profile_id")
+        # Optional per-device poll-address override (blank = auto-resolve).
+        addr = (request.data.get("target") or "").strip()[:255]
         if pid in (None, ""):
             SnmpProfileBinding.objects.filter(
                 tenant=tenant, scope=scope, object_id=object_id
@@ -2405,7 +2408,7 @@ def snmp_binding_view(request, scope, object_id):
                 return Response({"detail": "SNMP profile not found."}, status=400)
             SnmpProfileBinding.objects.update_or_create(
                 tenant=tenant, scope=scope, object_id=object_id,
-                defaults={"profile": profile},
+                defaults={"profile": profile, "target": addr},
             )
     elif request.method == "DELETE":
         SnmpProfileBinding.objects.filter(

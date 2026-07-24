@@ -7,6 +7,8 @@ fields.
 """
 from __future__ import annotations
 
+import socket
+
 from django.utils import timezone
 
 from danbyte_checks.snmp_facts import fetch_snmp
@@ -17,9 +19,44 @@ from .snmp_util import record_samples
 
 
 def _device_target(device):
+    """The address to poll: the device's primary IP, else its name **if that
+    name actually resolves**.
+
+    Falling back to the name unconditionally sent unresolvable names into
+    pysnmp, which surfaced as "Bad IPv4/UDP transport address <name>@161 …
+    Temporary failure in name resolution" — technically true, useless to the
+    operator. Returning None instead yields the caller's plain "no primary IP
+    or resolvable name" message.
+    """
+    # An explicit per-device override wins over everything.
+    from .models import SnmpProfileBinding
+
+    override = (
+        SnmpProfileBinding.objects.filter(
+            tenant_id=device.tenant_id,
+            scope=SnmpProfileBinding.SCOPE_DEVICE,
+            object_id=device.id,
+        )
+        .values_list("target", flat=True)
+        .first()
+    )
+    if override:
+        return override
+    # Management (out-of-band) IP next — that's the address an operator points
+    # SNMP/BMC tooling at; the primary IP may be a data-plane address the
+    # agent doesn't even listen on.
+    if device.oob_ip_id and device.oob_ip.ip_address:
+        return device.oob_ip.ip_address
     if device.primary_ip_id and device.primary_ip.ip_address:
         return device.primary_ip.ip_address
-    return device.name or None
+    name = (device.name or "").strip()
+    if not name:
+        return None
+    try:
+        socket.getaddrinfo(name, None)
+    except OSError:
+        return None
+    return name
 
 
 def persist_snmp_result(device, tenant, profile, result) -> DeviceSnmp:
