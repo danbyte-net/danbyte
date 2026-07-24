@@ -1,6 +1,12 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
-import { Cable as CableIcon, Pencil, Waypoints, Workflow } from "lucide-react"
+import {
+  Cable as CableIcon,
+  EyeOff,
+  Pencil,
+  Waypoints,
+  Workflow,
+} from "lucide-react"
 
 import { DriftBadge } from "@/components/drift-detail"
 
@@ -93,8 +99,16 @@ export function buildInterfaceColumns(opts?: {
                 mgmt
               </Badge>
             )}
-            {row.original.snmp_name && (
-              <SnmpLinkBadge iface={row.original} />
+            {row.original.snmp_name && <SnmpLinkBadge iface={row.original} />}
+            {row.original.snmp_ignore && (
+              // Config that changes what drift reports must be visible where
+              // the port is listed, or its absence reads as a bug.
+              <EyeOff
+                className="h-3 w-3 shrink-0 text-muted-foreground"
+                aria-label="Excluded from SNMP drift"
+              >
+                <title>Excluded from SNMP drift</title>
+              </EyeOff>
             )}
             {driftByIface && (
               <DriftBadge items={driftByIface.get(row.original.id) ?? []} />

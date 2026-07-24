@@ -2,7 +2,14 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { toast } from "sonner"
-import { Check, Link2 as LinkIcon, Plus, RefreshCw, X } from "lucide-react"
+import {
+  Check,
+  EyeOff,
+  Link2 as LinkIcon,
+  Plus,
+  RefreshCw,
+  X,
+} from "lucide-react"
 
 import { api } from "@/lib/api"
 import type { Paginated, SnmpDriftItem } from "@/lib/api"
@@ -114,6 +121,25 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
     onError: (e) => apiErrorToast(e),
   })
 
+  // "This port can never be polled" — flag it once instead of dismissing the
+  // same stale row after every poll. Sets Interface.snmp_ignore.
+  const ignore = useMutation({
+    mutationFn: (it: { interface_id: string }) =>
+      api(`/api/interfaces/${it.interface_id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ snmp_ignore: true }),
+      }),
+    onSuccess: () => {
+      toast.success(
+        "Excluded from SNMP drift — undo on the interface's edit form."
+      )
+      qc.invalidateQueries({ queryKey: ["device-snmp-drift", deviceId] })
+      qc.invalidateQueries({ queryKey: ["device-interfaces", deviceId] })
+      qc.invalidateQueries({ queryKey: ["interfaces"] })
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
   const all = drift.data?.drift ?? []
   const items = all.filter((it) => !dismissed.has(driftKey(it)))
   if (all.length === 0) return null
@@ -145,6 +171,20 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
                 snmpName={item.name}
                 disabled={busy}
               />
+            )}
+            {/* A stale row for a port the agent can never report — exclude it
+                once, instead of dismissing the same row after every poll. */}
+            {canApply && item.kind === "interface_stale" && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7"
+                disabled={busy || ignore.isPending}
+                title="This port can't be polled — stop flagging it as drift"
+                onClick={() => ignore.mutate(item)}
+              >
+                <EyeOff className="h-3.5 w-3.5" /> Exclude
+              </Button>
             )}
             {noPrefix && (
               // No prefix contains this IP yet — offer to create one (pre-filled).
@@ -266,7 +306,10 @@ function LinkInterfaceButton({
     mutationFn: (interfaceId: string) =>
       api(`/api/monitoring/devices/${deviceId}/snmp/link-interface/`, {
         method: "POST",
-        body: JSON.stringify({ interface_id: interfaceId, snmp_name: snmpName }),
+        body: JSON.stringify({
+          interface_id: interfaceId,
+          snmp_name: snmpName,
+        }),
       }),
     onSuccess: () => {
       toast.success(`Linked ${snmpName}`)
@@ -301,7 +344,10 @@ function LinkInterfaceButton({
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 p-0">
         <Command>
-          <CommandInput placeholder={`${snmpName} is really…`} className="h-9" />
+          <CommandInput
+            placeholder={`${snmpName} is really…`}
+            className="h-9"
+          />
           <CommandList>
             <CommandEmpty>
               {ifaces.isLoading ? "Loading…" : "No interfaces match."}

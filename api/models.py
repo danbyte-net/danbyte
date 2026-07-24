@@ -1989,6 +1989,13 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "'Ethernet 1' reporting as 'eth0'. Set it and discovery stops "
         "reporting the pair as both new and missing.",
     )
+    snmp_ignore = models.BooleanField(
+        default=False,
+        help_text="Exclude this interface from SNMP drift. For ports the "
+        "polled agent can never report — silkscreened ports a BMC doesn't "
+        "see, out-of-band jacks — which would otherwise flag as 'not seen "
+        "on device' after every poll, forever.",
+    )
     type = models.CharField(
         max_length=64, blank=True, default="", choices=INTERFACE_TYPE_CHOICES,
         help_text="Physical/logical media type, e.g. 10gbase-x-sfpp.",

@@ -1588,6 +1588,8 @@ export interface Interface {
   name: string
   /** What the SNMP agent calls this port, when linked (see drift "Link to…"). */
   snmp_name: string
+  /** Excluded from SNMP drift — never compared, never flagged stale. */
+  snmp_ignore: boolean
   /** Media type slug (e.g. 10gbase-x-sfpp), or "" if unset. */
   type: string
   type_display: string
@@ -1641,6 +1643,7 @@ export interface Interface {
 export interface InterfaceWritePayload {
   /** Discovery link — the agent's name for this port ("" unlinks). */
   snmp_name?: string
+  snmp_ignore?: boolean
   mgmt_only?: boolean
   duplex?: string
   poe_mode?: string

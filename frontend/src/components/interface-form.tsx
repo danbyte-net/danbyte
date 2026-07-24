@@ -61,6 +61,7 @@ export function InterfaceForm({
   const [mgmtOnly, setMgmtOnly] = useState(iface?.mgmt_only ?? false)
   // The name SNMP reports for this port; clearing it unlinks discovery.
   const [snmpName, setSnmpName] = useState(iface?.snmp_name ?? "")
+  const [snmpIgnore, setSnmpIgnore] = useState(iface?.snmp_ignore ?? false)
   const [duplex, setDuplex] = useState(iface?.duplex ?? "")
   const [poeMode, setPoeMode] = useState(iface?.poe_mode ?? "")
   const [poeType, setPoeType] = useState(iface?.poe_type ?? "")
@@ -94,6 +95,7 @@ export function InterfaceForm({
     setMac(iface.mac_address)
     setMgmtOnly(iface.mgmt_only)
     setSnmpName(iface.snmp_name ?? "")
+    setSnmpIgnore(iface.snmp_ignore ?? false)
     setDuplex(iface.duplex)
     setPoeMode(iface.poe_mode)
     setPoeType(iface.poe_type)
@@ -146,6 +148,7 @@ export function InterfaceForm({
         mac_address: mac.trim(),
         mgmt_only: mgmtOnly,
         snmp_name: snmpName.trim(),
+        snmp_ignore: snmpIgnore,
         duplex,
         poe_mode: poeMode,
         poe_type: poeType,
@@ -230,15 +233,23 @@ export function InterfaceForm({
           error={fieldErrors.name}
         />
         {isEdit && (
-          <FormText
-            label="SNMP name"
-            hint="what discovery calls this port — clear to unlink"
-            value={snmpName}
-            onChange={setSnmpName}
-            mono
-            placeholder="eth0"
-            error={fieldErrors.snmp_name}
-          />
+          <>
+            <FormText
+              label="SNMP name"
+              hint="what discovery calls this port — clear to unlink"
+              value={snmpName}
+              onChange={setSnmpName}
+              mono
+              placeholder="eth0"
+              error={fieldErrors.snmp_name}
+            />
+            <FormCheckbox
+              label="Exclude from SNMP drift"
+              hint="the polled agent can never report this port — don't flag it"
+              checked={snmpIgnore}
+              onChange={setSnmpIgnore}
+            />
+          </>
         )}
         <FormText
           label="Speed"
