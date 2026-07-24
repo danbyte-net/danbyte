@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useId, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Copy, Pencil, Replace, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
@@ -62,6 +62,8 @@ export type BulkFieldSpec =
       key: string
       label: string
       kind: "text" | "int" | "bool" | "vlan" | "vrf"
+      /** Common values offered as a dropdown; the field stays free text. */
+      suggestions?: string[]
       hint?: string
     }
   | {
@@ -326,6 +328,7 @@ function BulkEditDialog({
   const qc = useQueryClient()
   const dcimChoices = useDcimChoices()
   // Which fields the user chose to SET, and their values. Untouched = KEEP.
+  const listId = useId()
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [addTags, setAddTags] = useState<number[]>([])
   const [removeTags, setRemoveTags] = useState<number[]>([])
@@ -621,7 +624,17 @@ function BulkEditDialog({
                     }
                     placeholder={active ? "" : "Keep current"}
                     disabled={!active}
+                    list={
+                      f.suggestions?.length ? `${listId}-${f.key}` : undefined
+                    }
                   />
+                  {f.suggestions && f.suggestions.length > 0 && (
+                    <datalist id={`${listId}-${f.key}`}>
+                      {f.suggestions.map((s) => (
+                        <option key={s} value={s} />
+                      ))}
+                    </datalist>
+                  )}
                 </div>
               </Field>
             )
@@ -713,18 +726,15 @@ function RenameCloneDialog({
 
   const run = useMutation({
     mutationFn: () =>
-      api<{ renamed?: number; created?: number }>(
-        `${endpoint}bulk-${mode}/`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            ids: selected.map((r) => r.id),
-            find,
-            replace,
-            use_regex: useRegex,
-          }),
-        }
-      ),
+      api<{ renamed?: number; created?: number }>(`${endpoint}bulk-${mode}/`, {
+        method: "POST",
+        body: JSON.stringify({
+          ids: selected.map((r) => r.id),
+          find,
+          replace,
+          use_regex: useRegex,
+        }),
+      }),
     onSuccess: (r) => {
       invalidate.forEach((k) => qc.invalidateQueries({ queryKey: k }))
       const n = r.renamed ?? r.created ?? 0
@@ -739,9 +749,7 @@ function RenameCloneDialog({
   })
 
   const canRun =
-    !regexError &&
-    !dupClone &&
-    (mode === "clone" || (!!find && changed > 0))
+    !regexError && !dupClone && (mode === "clone" || (!!find && changed > 0))
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -759,7 +767,10 @@ function RenameCloneDialog({
             : "Duplicate each selected row. Use find/replace to give the copies new names (e.g. 1/0/ → 2/0/); otherwise they get a “ copy” suffix."}
         </p>
         <div className="grid gap-3">
-          <Field label="Find" hint={useRegex ? "Regular expression" : undefined}>
+          <Field
+            label="Find"
+            hint={useRegex ? "Regular expression" : undefined}
+          >
             <Input
               value={find}
               onChange={(e) => setFind(e.target.value)}
@@ -786,7 +797,9 @@ function RenameCloneDialog({
             Use a regular expression
           </label>
           {regexError && (
-            <p className="text-[12px] text-destructive">Invalid regex: {regexError}</p>
+            <p className="text-[12px] text-destructive">
+              Invalid regex: {regexError}
+            </p>
           )}
           {dupClone && (
             <p className="text-[12px] text-destructive">
@@ -809,7 +822,9 @@ function RenameCloneDialog({
                 <span className="text-muted-foreground">→</span>
                 <span
                   className={
-                    p.next !== p.old ? "truncate text-foreground" : "truncate text-muted-foreground/60"
+                    p.next !== p.old
+                      ? "truncate text-foreground"
+                      : "truncate text-muted-foreground/60"
                   }
                 >
                   {p.next}
@@ -828,7 +843,10 @@ function RenameCloneDialog({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={() => run.mutate()} disabled={!canRun || run.isPending}>
+          <Button
+            onClick={() => run.mutate()}
+            disabled={!canRun || run.isPending}
+          >
             {run.isPending
               ? mode === "rename"
                 ? "Renaming…"

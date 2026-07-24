@@ -1592,6 +1592,8 @@ export interface Interface {
 }
 
 export interface InterfaceWritePayload {
+  /** Discovery link — the agent's name for this port ("" unlinks). */
+  snmp_name?: string
   mgmt_only?: boolean
   duplex?: string
   poe_mode?: string
@@ -1834,6 +1836,60 @@ export const INVENTORY_MEDIA_OPTIONS: {
   { value: "hdd", label: "HDD" },
   { value: "tape", label: "Tape" },
 ]
+
+/**
+ * What "speed" means for a part depends on what the part is: a spindle rate
+ * for an HDD, a bus width for an NVMe drive, a memory grade for a DIMM. These
+ * are the common industry values per kind, offered as a dropdown — the field
+ * stays free text so any vendor's wording still fits.
+ */
+const INVENTORY_SPEEDS_BY_KIND: Partial<Record<InventoryItemKind, string[]>> = {
+  cpu: ["1.8 GHz", "2.0 GHz", "2.2 GHz", "2.4 GHz", "2.6 GHz", "3.0 GHz"],
+  ram: [
+    "DDR3-1600",
+    "DDR4-2133",
+    "DDR4-2400",
+    "DDR4-2666",
+    "DDR4-2933",
+    "DDR4-3200",
+    "DDR5-4800",
+    "DDR5-5600",
+    "DDR5-6400",
+  ],
+  fan: ["3000 RPM", "6000 RPM", "9000 RPM", "12000 RPM"],
+  transceiver: ["1G", "10G", "25G", "40G", "100G", "200G", "400G"],
+  controller: ["PCIe 3.0 x8", "PCIe 4.0 x8", "PCIe 5.0 x8", "SAS 12Gb/s"],
+  gpu: ["PCIe 3.0 x16", "PCIe 4.0 x16", "PCIe 5.0 x16"],
+}
+
+/** Disks are split further: a spinning disk has RPM, a flash disk has a bus. */
+const INVENTORY_SPEEDS_BY_MEDIA: Record<
+  Exclude<InventoryMedia, "">,
+  string[]
+> = {
+  hdd: ["5400 RPM", "7200 RPM", "10K RPM", "15K RPM"],
+  ssd: ["SATA 6Gb/s", "SAS 12Gb/s", "SAS 24Gb/s"],
+  nvme: ["PCIe 3.0 x4", "PCIe 4.0 x4", "PCIe 5.0 x4", "PCIe 5.0 x8"],
+  tape: ["LTO-6", "LTO-7", "LTO-8", "LTO-9"],
+}
+
+/** Speed values to offer for a part. Falls back to every known value when the
+ * kind/media isn't pinned down yet — as in bulk edit across mixed rows. */
+export function inventorySpeedSuggestions(
+  kind?: InventoryItemKind | null,
+  media?: InventoryMedia | null
+): string[] {
+  if (kind === "disk") {
+    if (media) return INVENTORY_SPEEDS_BY_MEDIA[media]
+    return Object.values(INVENTORY_SPEEDS_BY_MEDIA).flat()
+  }
+  if (kind && INVENTORY_SPEEDS_BY_KIND[kind])
+    return INVENTORY_SPEEDS_BY_KIND[kind]!
+  return [
+    ...Object.values(INVENTORY_SPEEDS_BY_MEDIA).flat(),
+    ...Object.values(INVENTORY_SPEEDS_BY_KIND).flat(),
+  ]
+}
 
 /** Storage units (decimal, per the storage industry: 1 TB = 10¹² B).
  * Capacity is STORED in bytes — unit-agnostic from KB floppies to PB

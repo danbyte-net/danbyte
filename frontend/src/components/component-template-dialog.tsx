@@ -7,6 +7,7 @@ import {
   bytesToUnit,
   INVENTORY_KIND_OPTIONS,
   INVENTORY_MEDIA_OPTIONS,
+  inventorySpeedSuggestions,
   STORAGE_UNITS,
   unitToBytes,
   type StorageUnit,
@@ -17,6 +18,8 @@ import type {
   DcimChoice,
   FrontPortTemplate,
   InterfaceTemplate,
+  InventoryItemKind,
+  InventoryMedia,
   Paginated,
   PowerOutletTemplate,
   PowerPortTemplate,
@@ -464,7 +467,11 @@ export function ComponentTemplateDialog({
                   label="Speed"
                   value={invSpeed}
                   onChange={setInvSpeed}
-                  placeholder="7.2K RPM / PCIe 4.0"
+                  placeholder="7200 RPM / PCIe 4.0 x4"
+                  suggestions={inventorySpeedSuggestions(
+                    invKind as InventoryItemKind,
+                    invMedia as InventoryMedia
+                  )}
                   error={fieldErrors.speed}
                 />
               </div>
