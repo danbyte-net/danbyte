@@ -10,6 +10,7 @@ import {
   type TerminationKind,
 } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Field } from "@/components/forms/field"
 import { FormSelect } from "@/components/forms/select"
 import { DevicePicker } from "@/components/device-picker"
@@ -229,11 +230,9 @@ export function CableTerminationSide({
                       checked && "bg-muted/40"
                     )}
                   >
-                    <input
-                      type="checkbox"
-                      className="ck"
+                    <Checkbox
                       checked={checked}
-                      onChange={() => toggle(p)}
+                      onCheckedChange={() => toggle(p)}
                     />
                     <span className="font-mono">{p.name}</span>
                   </label>

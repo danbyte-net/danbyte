@@ -8,7 +8,14 @@ import { api } from "@/lib/api"
 import type { Paginated, SnmpDriftItem } from "@/lib/api"
 import { DriftDescription, driftKey } from "@/components/drift-detail"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
 import {
   Popover,
   PopoverContent,
@@ -244,7 +251,6 @@ function LinkInterfaceButton({
   disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
-  const [q, setQ] = useState("")
   const qc = useQueryClient()
 
   const ifaces = useQuery({
@@ -268,18 +274,20 @@ function LinkInterfaceButton({
       qc.invalidateQueries({ queryKey: ["interfaces", deviceId] })
       qc.invalidateQueries({ queryKey: ["device-interfaces", deviceId] })
       setOpen(false)
-      setQ("")
     },
     onError: (e) => apiErrorToast(e),
   })
 
-  const rows = (ifaces.data?.results ?? [])
-    .filter((i) => !q || i.name.toLowerCase().includes(q.toLowerCase()))
-    // Unlinked first — those are the likely matches.
-    .sort((a, b) => Number(!!a.snmp_name) - Number(!!b.snmp_name))
+  // Ports with no SNMP name yet are the likely match, so they lead; ports that
+  // already carry one are still listed (picking one moves the name over).
+  const rows = ifaces.data?.results ?? []
+  const sections = [
+    { heading: "Not linked", items: rows.filter((i) => !i.snmp_name) },
+    { heading: "Already linked", items: rows.filter((i) => i.snmp_name) },
+  ].filter((s) => s.items.length > 0)
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button
           size="sm"
@@ -291,44 +299,35 @@ function LinkInterfaceButton({
           <LinkIcon className="h-3.5 w-3.5" /> Link to…
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-64 p-2">
-        <p className="px-1 pb-1.5 text-[11px] text-muted-foreground">
-          <span className="font-mono text-foreground">{snmpName}</span> is
-          really…
-        </p>
-        <Input
-          autoFocus
-          placeholder="Search interfaces…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          className="mb-1 h-8 text-xs"
-        />
-        <div className="max-h-56 overflow-y-auto">
-          {ifaces.isLoading && (
-            <p className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</p>
-          )}
-          {ifaces.data && rows.length === 0 && (
-            <p className="px-2 py-1.5 text-xs text-muted-foreground">
-              No interfaces match.
-            </p>
-          )}
-          {rows.map((i) => (
-            <button
-              key={i.id}
-              type="button"
-              disabled={link.isPending}
-              onClick={() => link.mutate(i.id)}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] hover:bg-muted/60"
-            >
-              <span className="min-w-0 flex-1 truncate font-mono">{i.name}</span>
-              {i.snmp_name && (
-                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                  ↔ {i.snmp_name}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+      <PopoverContent align="end" className="w-72 p-0">
+        <Command>
+          <CommandInput placeholder={`${snmpName} is really…`} className="h-9" />
+          <CommandList>
+            <CommandEmpty>
+              {ifaces.isLoading ? "Loading…" : "No interfaces match."}
+            </CommandEmpty>
+            {sections.map((section) => (
+              <CommandGroup key={section.heading} heading={section.heading}>
+                {section.items.map((i) => (
+                  <CommandItem
+                    key={i.id}
+                    value={`${i.name} ${i.snmp_name}`}
+                    disabled={link.isPending}
+                    onSelect={() => link.mutate(i.id)}
+                    className="gap-2"
+                  >
+                    <span className="truncate font-mono">{i.name}</span>
+                    {i.snmp_name && (
+                      <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">
+                        ↔ {i.snmp_name}
+                      </span>
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ))}
+          </CommandList>
+        </Command>
       </PopoverContent>
     </Popover>
   )

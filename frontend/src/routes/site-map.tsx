@@ -53,7 +53,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Field } from "@/components/forms"
+import { Field, FormCheckbox } from "@/components/forms"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { TagList } from "@/components/cells/tag-list"
@@ -1170,60 +1170,37 @@ function MapBody({ data }: { data: SiteMapPayload }) {
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-56 gap-1 p-2">
-              <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
-                <input
-                  type="checkbox"
-                  className="ck"
-                  checked={layers.sites}
-                  onChange={(e) =>
-                    setLayers((l) => ({ ...l, sites: e.target.checked }))
-                  }
-                />
-                <span>Sites</span>
-              </label>
-              <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
-                <input
-                  type="checkbox"
-                  className="ck"
-                  checked={layers.devices}
-                  onChange={(e) =>
-                    setLayers((l) => ({ ...l, devices: e.target.checked }))
-                  }
-                />
-                <span>Devices</span>
-              </label>
-              <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
-                <input
-                  type="checkbox"
-                  className="ck"
-                  checked={layers.links}
-                  onChange={(e) =>
-                    setLayers((l) => ({ ...l, links: e.target.checked }))
-                  }
-                />
-                <span>Links (circuits · tunnels · cables)</span>
-              </label>
-              <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
-                <input
-                  type="checkbox"
-                  className="ck"
-                  checked={layers.routes}
-                  onChange={(e) =>
-                    setLayers((l) => ({ ...l, routes: e.target.checked }))
-                  }
-                />
-                <span>Cable routes</span>
-              </label>
+              <FormCheckbox
+                label="Sites"
+                checked={layers.sites}
+                onChange={(v) => setLayers((l) => ({ ...l, sites: v }))}
+                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+              />
+              <FormCheckbox
+                label="Devices"
+                checked={layers.devices}
+                onChange={(v) => setLayers((l) => ({ ...l, devices: v }))}
+                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+              />
+              <FormCheckbox
+                label="Links (circuits · tunnels · cables)"
+                checked={layers.links}
+                onChange={(v) => setLayers((l) => ({ ...l, links: v }))}
+                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+              />
+              <FormCheckbox
+                label="Cable routes"
+                checked={layers.routes}
+                onChange={(v) => setLayers((l) => ({ ...l, routes: v }))}
+                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+              />
               <div className="my-1 h-px bg-border" />
-              <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
-                <input
-                  type="checkbox"
-                  className="ck"
-                  checked={showFov}
-                  onChange={(e) => setShowFov(e.target.checked)}
-                />
-                <span>Camera FOV cones</span>
-              </label>
+              <FormCheckbox
+                label="Camera FOV cones"
+                checked={showFov}
+                onChange={setShowFov}
+                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+              />
             </PopoverContent>
           </Popover>
         </div>

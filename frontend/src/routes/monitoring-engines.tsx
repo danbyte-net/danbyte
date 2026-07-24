@@ -8,7 +8,15 @@ import { api } from "@/lib/api"
 import type { MonitoringEngine, MonitoringSettings, Paginated } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { timeAgo } from "@/components/cells/time-ago"
 import {
   Dialog,
@@ -25,6 +33,10 @@ import { apiErrorToast } from "@/lib/api-toast"
 export const Route = createFileRoute("/monitoring-engines")({
   component: MonitoringEnginesPage,
 })
+
+// Sentinel for "no engine pinned" — the Select primitive disallows an empty
+// SelectItem value, so it maps back to null on change.
+const LOCAL_ENGINE = "__local__"
 
 function seenLabel(e: MonitoringEngine): { text: string; ok: boolean } {
   if (e.is_local) return { text: "built-in", ok: true }
@@ -308,16 +320,22 @@ function MonitoringEnginesPage() {
                       placeholder="Outpost AMS-02"
                       className="h-9 text-sm"
                     />
-                    <select
-                      className="h-9 w-full rounded-md border border-border bg-background px-2 text-[13px]"
+                    <Select
                       value={transport}
-                      onChange={(e) =>
-                        setTransport(e.target.value as "pull" | "ssh")
-                      }
+                      onValueChange={(v) => setTransport(v as "pull" | "ssh")}
                     >
-                      <option value="pull">Outpost dials out (HTTPS)</option>
-                      <option value="ssh">Danbyte dials in (SSH)</option>
-                    </select>
+                      <SelectTrigger className="h-9 w-full text-[13px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pull">
+                          Outpost dials out (HTTPS)
+                        </SelectItem>
+                        <SelectItem value="ssh">
+                          Danbyte dials in (SSH)
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
                     <Button
                       type="submit"
                       size="sm"
@@ -339,23 +357,29 @@ function MonitoringEnginesPage() {
                         Runs everything not pinned to a site or location.
                       </p>
                     </div>
-                    <select
-                      className="h-9 w-full rounded-md border border-border bg-background px-2 text-[13px]"
-                      value={settings.data?.default_engine ?? ""}
-                      onChange={(e) =>
-                        setDefault.mutate(e.target.value || null)
+                    <Select
+                      value={settings.data?.default_engine || LOCAL_ENGINE}
+                      onValueChange={(v) =>
+                        setDefault.mutate(v === LOCAL_ENGINE ? null : v)
                       }
                       disabled={!settings.data}
                     >
-                      <option value="">Local (built-in)</option>
-                      {engines
-                        .filter((e) => !e.is_local && e.enabled)
-                        .map((e) => (
-                          <option key={e.id} value={e.id}>
-                            {e.name}
-                          </option>
-                        ))}
-                    </select>
+                      <SelectTrigger className="h-9 w-full text-[13px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={LOCAL_ENGINE}>
+                          Local (built-in)
+                        </SelectItem>
+                        {engines
+                          .filter((e) => !e.is_local && e.enabled)
+                          .map((e) => (
+                            <SelectItem key={e.id} value={e.id}>
+                              {e.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <form
@@ -466,11 +490,9 @@ function EnrollDialog({
                 Install (downloads the pinned build from Danbyte)
               </span>
               <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <input
-                  type="checkbox"
-                  className="ck ck-sm"
+                <Checkbox
                   checked={insecure}
-                  onChange={(e) => setInsecure(e.target.checked)}
+                  onCheckedChange={(v) => setInsecure(!!v)}
                 />
                 Self-signed cert (-k / --insecure)
               </label>

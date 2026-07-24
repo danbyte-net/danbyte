@@ -14,6 +14,7 @@ import {
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -451,15 +452,11 @@ function VMInterfaceForm({
                   key={v.id}
                   className="flex items-center gap-2 text-[13px]"
                 >
-                  <input
-                    type="checkbox"
-                    className="ck"
+                  <Checkbox
                     checked={taggedVlanIds.includes(v.id)}
-                    onChange={(e) =>
+                    onCheckedChange={(c) =>
                       setTaggedVlanIds((cur) =>
-                        e.target.checked
-                          ? [...cur, v.id]
-                          : cur.filter((id) => id !== v.id)
+                        c ? [...cur, v.id] : cur.filter((id) => id !== v.id)
                       )
                     }
                   />

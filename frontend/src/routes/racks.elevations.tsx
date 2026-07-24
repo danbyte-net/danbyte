@@ -12,6 +12,7 @@ import {
   type RackFace,
 } from "@/components/rack-elevation"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { FormCheckbox } from "@/components/forms"
 
 export const Route = createFileRoute("/racks/elevations")({
   component: RackElevationsPage,
@@ -81,15 +82,12 @@ function RackElevationsPage() {
             ]}
           />
           {mode !== "names" && (
-            <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <input
-                type="checkbox"
-                className="ck ck-sm"
-                checked={labels}
-                onChange={(e) => setLabels(e.target.checked)}
-              />
-              Text
-            </label>
+            <FormCheckbox
+              label="Text"
+              checked={labels}
+              onChange={setLabels}
+              className="items-center gap-1 text-[11px] text-muted-foreground"
+            />
           )}
         </div>
       </header>

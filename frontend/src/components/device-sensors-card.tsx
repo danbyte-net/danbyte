@@ -20,7 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Field, FormSelect } from "@/components/forms"
+import { Field, FormCheckbox, FormSelect } from "@/components/forms"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -96,11 +96,7 @@ export function DeviceSensorsCard({
       actions={
         canWrite ? (
           <div className="flex gap-1.5">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setAdding(true)}
-            >
+            <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
               <Plus className="h-3.5 w-3.5" /> Sensor
             </Button>
             {rows.length > 0 && (
@@ -171,7 +167,7 @@ export function DeviceSensorsCard({
                 <span className="font-mono">{r.name}</span>
                 <span className="text-muted-foreground">raw {r.raw}</span>
                 {r.status && (
-                  <span className="ml-auto capitalize text-muted-foreground">
+                  <span className="ml-auto text-muted-foreground capitalize">
                     → {r.status}
                   </span>
                 )}
@@ -269,7 +265,7 @@ function SensorDialog({
         item_kind: kind,
         name_template: nameTemplate.trim() || "{kind} {index}",
         value_map,
-        device_type: scopeThisType ? deviceTypeId ?? null : null,
+        device_type: scopeThisType ? (deviceTypeId ?? null) : null,
       }
       const base = "/api/monitoring/snmp-sensors/"
       return editing
@@ -303,7 +299,9 @@ function SensorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{editing ? "Edit sensor" : "Add SNMP sensor"}</DialogTitle>
+          <DialogTitle>
+            {editing ? "Edit sensor" : "Add SNMP sensor"}
+          </DialogTitle>
         </DialogHeader>
         <form
           onSubmit={(e) => {
@@ -425,21 +423,12 @@ function SensorDialog({
           </Field>
 
           {deviceTypeId && (
-            <label className="flex items-center gap-2 text-[13px]">
-              <input
-                type="checkbox"
-                className="ck"
-                checked={scopeThisType}
-                onChange={(e) => setScopeThisType(e.target.checked)}
-              />
-              <span>
-                Only this device type
-                <span className="text-muted-foreground">
-                  {" "}
-                  — uncheck to apply to all types
-                </span>
-              </span>
-            </label>
+            <FormCheckbox
+              label="Only this device type"
+              checked={scopeThisType}
+              onChange={setScopeThisType}
+              hint="uncheck to apply to all types"
+            />
           )}
 
           <div className="flex items-center justify-between">

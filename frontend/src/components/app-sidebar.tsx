@@ -96,6 +96,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import {
@@ -991,6 +998,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   )
 }
 
+// Sentinel for "no parent folder" — the Select primitive disallows an empty
+// SelectItem value, so it maps back to null on change.
+const ROOT = "__root__"
+
 function FavoritesSection() {
   const {
     bookmarks,
@@ -1164,25 +1175,29 @@ function FavoritesSection() {
                         <span className="min-w-0 flex-1 truncate text-sm">
                           {folder.name}
                         </span>
-                        <select
-                          className="h-8 rounded-md border border-border bg-background px-2 text-xs"
-                          value={folder.parent ?? ""}
-                          onChange={(e) =>
+                        <Select
+                          value={folder.parent ?? ROOT}
+                          onValueChange={(v) =>
                             updateFolder.mutate({
                               id: folder.id,
-                              parent: e.target.value || null,
+                              parent: v === ROOT ? null : v,
                             })
                           }
                         >
-                          <option value="">Root</option>
-                          {folders
-                            .filter((f) => f.id !== folder.id)
-                            .map((f) => (
-                              <option key={f.id} value={f.id}>
-                                {f.name}
-                              </option>
-                            ))}
-                        </select>
+                          <SelectTrigger className="h-8 w-32 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={ROOT}>Root</SelectItem>
+                            {folders
+                              .filter((f) => f.id !== folder.id)
+                              .map((f) => (
+                                <SelectItem key={f.id} value={f.id}>
+                                  {f.name}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
                         <Button
                           type="button"
                           variant="ghost"
@@ -1205,23 +1220,27 @@ function FavoritesSection() {
                         <span className="min-w-0 flex-1 truncate text-sm">
                           {bookmark.label}
                         </span>
-                        <select
-                          className="h-8 rounded-md border border-border bg-background px-2 text-xs"
-                          value={bookmark.folder ?? ""}
-                          onChange={(e) =>
+                        <Select
+                          value={bookmark.folder ?? ROOT}
+                          onValueChange={(v) =>
                             update.mutate({
                               id: bookmark.id,
-                              folder: e.target.value || null,
+                              folder: v === ROOT ? null : v,
                             })
                           }
                         >
-                          <option value="">Root</option>
-                          {folders.map((f) => (
-                            <option key={f.id} value={f.id}>
-                              {f.name}
-                            </option>
-                          ))}
-                        </select>
+                          <SelectTrigger className="h-8 w-32 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={ROOT}>Root</SelectItem>
+                            {folders.map((f) => (
+                              <SelectItem key={f.id} value={f.id}>
+                                {f.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <Button
                           type="button"
                           variant="ghost"

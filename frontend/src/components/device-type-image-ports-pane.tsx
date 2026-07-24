@@ -26,7 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Field } from "@/components/forms"
+import { Field, FormCheckbox } from "@/components/forms"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import { cn } from "@/lib/utils"
@@ -158,7 +158,8 @@ export function DeviceTypeImagePortsPane({
     if (!dirty) setPorts(deviceType.image_ports ?? { front: [], rear: [] })
   }, [deviceType.image_ports, dirty])
 
-  const image = side === "front" ? deviceType.front_image : deviceType.rear_image
+  const image =
+    side === "front" ? deviceType.front_image : deviceType.rear_image
   const markers = ports[side]
   const update = (next: ImagePorts) => {
     setPorts(next)
@@ -242,9 +243,7 @@ export function DeviceTypeImagePortsPane({
     if (pick && fill && box) {
       const x = clamp01((e.clientX - box.left) / box.width)
       const y = clamp01((e.clientY - box.top) / box.height)
-      setFill(
-        pick === "x1" ? { ...fill, x1: x, y1: y } : { ...fill, x2: x }
-      )
+      setFill(pick === "x1" ? { ...fill, x1: x, y1: y } : { ...fill, x2: x })
       setPick(null)
       return
     }
@@ -303,7 +302,8 @@ export function DeviceTypeImagePortsPane({
   // ── Auto-fill: lay a whole run of ports in one shot ──────────────────────
   const openFill = () => {
     // Seed from the first kind that has unplaced ports (interfaces first).
-    const kind = KINDS.find((k) => (unplacedByKind[k] ?? []).length) ?? "interface"
+    const kind =
+      KINDS.find((k) => (unplacedByKind[k] ?? []).length) ?? "interface"
     const names = unplacedByKind[kind] ?? []
     setSel(null)
     setSearch("")
@@ -440,15 +440,12 @@ export function DeviceTypeImagePortsPane({
             { value: "rear", label: "Rear", count: ports.rear.length || null },
           ]}
         />
-        <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-          <input
-            type="checkbox"
-            className="ck"
-            checked={snap}
-            onChange={(e) => setSnap(e.target.checked)}
-          />
-          Snap to fine grid
-        </label>
+        <FormCheckbox
+          className="text-[12px] text-muted-foreground"
+          label="Snap to fine grid"
+          checked={snap}
+          onChange={setSnap}
+        />
         {canWrite && (
           <Button variant="outline" size="sm" onClick={openFill}>
             <Wand2 className="h-3.5 w-3.5" /> Auto-fill a run
@@ -489,7 +486,8 @@ export function DeviceTypeImagePortsPane({
               return (
                 <details key={k} open className="space-y-1">
                   <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">
-                    {KIND_LABEL[k]} <span className="num">({items.length})</span>
+                    {KIND_LABEL[k]}{" "}
+                    <span className="num">({items.length})</span>
                   </summary>
                   <div className="flex flex-wrap gap-1 pt-1">
                     {items.map((t) => (
@@ -631,9 +629,7 @@ export function DeviceTypeImagePortsPane({
                 >
                   {i === sel && canWrite && (
                     <span
-                      onPointerDown={(e) =>
-                        onPointerDownMarker(e, i, "resize")
-                      }
+                      onPointerDown={(e) => onPointerDownMarker(e, i, "resize")}
                       className="absolute -right-1 -bottom-1 h-2.5 w-2.5 cursor-se-resize rounded-[1px] border border-background bg-primary"
                     />
                   )}
@@ -709,7 +705,12 @@ function FillPanel({
         step={0.5}
         value={Math.round(fill[key] * 1000) / 10}
         onChange={(e) =>
-          set({ [key]: Math.max(0, Math.min(1, (Number(e.target.value) || 0) / 100)) })
+          set({
+            [key]: Math.max(
+              0,
+              Math.min(1, (Number(e.target.value) || 0) / 100)
+            ),
+          })
         }
         className="h-7 text-[12px]"
       />

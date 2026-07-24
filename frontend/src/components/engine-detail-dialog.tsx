@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { FormCheckbox } from "@/components/forms"
 import { apiErrorToast } from "@/lib/api-toast"
 
 const STATUS_TONE: Record<string, string> = {
@@ -243,19 +244,20 @@ export function EngineDetailDialog({
             />
           </label>
 
-          <label className="flex items-center gap-2 text-[13px]">
-            <input
-              type="checkbox"
-              className="ck ck-sm"
-              checked={autoUpdate}
-              onChange={(e) => setAutoUpdate(e.target.checked)}
-            />
-            Auto-update to the golden release
-            <span className="text-[11px] text-muted-foreground">
-              — the agent self-updates to the default version in Outpost
-              versions
-            </span>
-          </label>
+          <FormCheckbox
+            label={
+              <>
+                Auto-update to the golden release{" "}
+                <span className="text-[11px] text-muted-foreground">
+                  — the agent self-updates to the default version in Outpost
+                  versions
+                </span>
+              </>
+            }
+            checked={autoUpdate}
+            onChange={setAutoUpdate}
+            className="text-[13px]"
+          />
 
           {isSsh && (
             <div className="space-y-2 rounded-md border border-border bg-muted/20 p-2">

@@ -4,8 +4,9 @@ icon: lucide/palette
 
 # Visual language
 
-The visual standard for Danbyte is defined in `/CLAUDE.md` at the project root
-and the static mockups in `design/` are its source of truth.
+The visual standard for Danbyte is defined in `/CLAUDE.md` at the project root.
+The running React SPA in `frontend/` is its source of truth — read the shared
+primitives before adding UI.
 
 ## In one breath
 
@@ -33,29 +34,41 @@ badge, tag, table, dropdown, etc).
 
 ## Where to look
 
-- `design/index.html` — token gallery + links to the four mockup pages
-- `design/prefixes.html` — canonical list-page mockup
-- `design/devices.html` — older list mockup (pending redesign)
-- `design/ip-detail.html` — detail page mockup
-- `design/device-detail.html` — detail page with tabs + rack visualisation
-- `design/tokens.css` — `.ck` checkbox, `.num`, table stripes, `<details>` resets
-- `design/theme.js` — persistent dark/light toggle (`localStorage['danbyte-theme']`)
+- `frontend/src/styles.css` — the active design tokens and global styling
+- `frontend/src/components/ui/` — the shadcn primitives (button, badge, input,
+  checkbox, select, command, popover, dialog, …)
+- `frontend/src/components/forms/` — the form-field layer built on those
+  primitives, re-exported from one barrel (`@/components/forms`)
+- `frontend/src/components/` — shared and domain components (`DataTable`,
+  `ListPageShell`, `DetailShell`, `KvCard`, `StatusBadge`, `ObjectPicker`, …)
+- `docs/architecture/shadcn-tokens.md` — the token/variable reference
 
-## Component patterns extracted so far
+## Never hand-roll a control
 
-| Pattern | In template |
-|---|---|
-| Sidebar shell | `api/templates/api/_shell.html` |
-| Prefix row | `api/templates/api/_prefix_row.html` |
-| Custom checkbox `.ck` | `design/tokens.css` |
-| Status dot + word | inline classes |
-| Tag chip (colored / colorless) | inline classes |
-| Stripes toggle | `data-stripes="on"` + JS + `tokens.css` |
-| Columns dropdown | `<details>` + `data-col-toggle` + `localStorage['danbyte-cols-prefixes']` |
+Every interactive control comes from the primitives above. A native
+`<input type="checkbox">`, `<select>`, or a `<div>` styled to look like one is
+wrong even when the classes approximate the design: it renders with the
+browser's own widget, ignores the theme, and drifts the moment tokens change.
 
-When React extraction lands, these become small classless-by-default
-components — `Button`, `Badge`, `Tag`, `Card`, `DataTable`, `DescriptionList`,
-`FilterChip`, `Tabs`, `Sidebar`, `Topbar`, etc.
+| Need | Use | Not |
+|---|---|---|
+| Checkbox with a label | `FormCheckbox` from `@/components/forms` | `<label><input type="checkbox">` |
+| Bare checkbox (table cell, list row) | `Checkbox` from `@/components/ui/checkbox` | `<input type="checkbox">` |
+| Dropdown of fixed options | `FormSelect`, or `Select` for an unlabelled one | `<select>` |
+| Long / searchable option list | `FormCombobox` / `Combobox` | `<select>` with many `<option>`s |
+| Searchable picker in a popover | `Popover` + `Command` (see `ui/combobox.tsx`) | a hand-built input + `<button>` list |
+| Free text with common values | `FormText` with `suggestions` (renders a `<datalist>`) | a hard-coded `<select>` |
+| Object reference | `ObjectPicker` or an existing domain picker preset | a bespoke fetch + list |
+
+Radix controls report changes differently from DOM ones — `Checkbox` uses
+`onCheckedChange(bool)` and `Select` uses `onValueChange(string)`, not
+`onChange(event)`. A Radix `SelectItem` also cannot carry `value=""`; give an
+"any" row a sentinel value and map it at both ends.
+
+> Historical note: an old `.ck` checkbox class from the archived htmx/Tailwind
+> pipeline was copied into SPA markup long after the stylesheet defining it was
+> removed. Those controls silently rendered as browser defaults. If you find a
+> class with no definition behind it, delete the markup and use a primitive.
 
 ## Detail-page tabs
 

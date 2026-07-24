@@ -6,6 +6,7 @@ export interface FormCheckboxProps {
   checked: boolean
   onChange: (v: boolean) => void
   hint?: string
+  disabled?: boolean
   className?: string
 }
 
@@ -16,15 +17,23 @@ export function FormCheckbox({
   checked,
   onChange,
   hint,
+  disabled,
   className,
 }: FormCheckboxProps) {
   return (
     <label
-      className={cn("flex cursor-pointer items-start gap-2 text-xs", className)}
+      className={cn(
+        "flex cursor-pointer items-start gap-2 text-xs",
+        // Dim the whole row, not just the box — the label has to read as
+        // unavailable too.
+        disabled && "cursor-not-allowed opacity-50",
+        className
+      )}
     >
       <Checkbox
         checked={checked}
         onCheckedChange={(v) => onChange(!!v)}
+        disabled={disabled}
         className="mt-0.5"
       />
       <span className="flex flex-col">

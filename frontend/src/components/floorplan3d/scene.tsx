@@ -14,6 +14,8 @@ import {
 import { renderTemplateName } from "@/lib/faceplate-geometry"
 import { SpeedScale } from "@/components/speed-scale"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import {
   Dialog,
   DialogContent,
@@ -335,38 +337,31 @@ export default function FloorScene3D({
                 <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
                   Routing
                 </span>
-                <label className="flex items-center gap-2 text-[13px]">
-                  <input
-                    type="radio"
-                    name="cable-routing"
-                    className="ck"
-                    checked={routing === "p2p"}
-                    onChange={() => setRouting("p2p")}
-                  />
-                  <span>
-                    Point-to-point
-                    <span className="text-muted-foreground">
-                      {" "}
-                      — patch inside the rack / straight run
-                    </span>
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 text-[13px]">
-                  <input
-                    type="radio"
-                    name="cable-routing"
-                    className="ck"
-                    checked={routing === "trays"}
-                    onChange={() => setRouting("trays")}
-                  />
-                  <span>
-                    Through ducts
-                    <span className="text-muted-foreground">
-                      {" "}
-                      — ride the plan's cable trays
-                    </span>
-                  </span>
-                </label>
+                <RadioGroup
+                  value={routing}
+                  onValueChange={(v) => setRouting(v as typeof routing)}
+                >
+                  <div className="flex items-center gap-2 text-[13px]">
+                    <RadioGroupItem value="p2p" id="cable-routing-p2p" />
+                    <label htmlFor="cable-routing-p2p">
+                      Point-to-point
+                      <span className="text-muted-foreground">
+                        {" "}
+                        — patch inside the rack / straight run
+                      </span>
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-2 text-[13px]">
+                    <RadioGroupItem value="trays" id="cable-routing-trays" />
+                    <label htmlFor="cable-routing-trays">
+                      Through ducts
+                      <span className="text-muted-foreground">
+                        {" "}
+                        — ride the plan's cable trays
+                      </span>
+                    </label>
+                  </div>
+                </RadioGroup>
                 {routing === "trays" &&
                   (scene.data && scene.data.trays.length > 0 ? (
                     <div className="grid max-h-28 gap-0.5 overflow-y-auto rounded border border-border p-1">
@@ -375,13 +370,11 @@ export default function FloorScene3D({
                           key={tr.id}
                           className="flex items-center gap-2 rounded px-1.5 py-1 text-[12px] hover:bg-muted/60"
                         >
-                          <input
-                            type="checkbox"
-                            className="ck"
+                          <Checkbox
                             checked={routeTrayIds.includes(tr.id)}
-                            onChange={(e) =>
+                            onCheckedChange={(v) =>
                               setRouteTrayIds((cur) =>
-                                e.target.checked
+                                v
                                   ? [...cur, tr.id]
                                   : cur.filter((x) => x !== tr.id)
                               )

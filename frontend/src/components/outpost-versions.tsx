@@ -8,6 +8,13 @@ import type { OutpostAvailable, OutpostRelease, Paginated } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { apiErrorToast } from "@/lib/api-toast"
 
 function humanSize(n: number): string {
@@ -167,20 +174,20 @@ export function OutpostVersions() {
       {available.data?.repo_url && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/20 p-3">
           <span className="text-[13px] font-medium">From your repo</span>
-          <select
-            value={pickedTag}
-            onChange={(e) => setPickedTag(e.target.value)}
-            className="h-8 min-w-48 rounded-md border border-border bg-background px-2 text-[13px]"
-          >
-            <option value="">Select a version…</option>
-            {available.data.versions.map((v) => (
-              <option key={v.tag} value={v.tag} disabled={v.imported}>
-                {v.tag}
-                {v.imported ? " — imported" : ""}
-                {!v.has_binary ? " — no binary" : ""}
-              </option>
-            ))}
-          </select>
+          <Select value={pickedTag} onValueChange={setPickedTag}>
+            <SelectTrigger size="sm" className="h-8 min-w-48 text-[13px]">
+              <SelectValue placeholder="Select a version…" />
+            </SelectTrigger>
+            <SelectContent>
+              {available.data.versions.map((v) => (
+                <SelectItem key={v.tag} value={v.tag} disabled={v.imported}>
+                  {v.tag}
+                  {v.imported ? " — imported" : ""}
+                  {!v.has_binary ? " — no binary" : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
             size="sm"
             className="h-8 text-xs"

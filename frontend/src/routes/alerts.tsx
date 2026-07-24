@@ -27,6 +27,13 @@ import {
 } from "@/lib/api"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
@@ -210,24 +217,29 @@ function AlertsPage() {
                     active={ack === v}
                     onClick={() => go({ ack: v })}
                     label={label}
-                    count={v === "acknowledged" ? counts.acknowledged : undefined}
+                    count={
+                      v === "acknowledged" ? counts.acknowledged : undefined
+                    }
                   />
                 ))}
               </div>
               <div className="ml-auto flex items-center gap-2">
-                <select
-                  value={site}
-                  onChange={(e) => go({ site: e.target.value })}
-                  className="h-8 rounded-md border border-border bg-background px-2 text-xs"
-                  aria-label="Filter by site"
-                >
-                  <option value="all">All sites</option>
-                  {(sites.data?.results ?? []).map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
+                <Select value={site} onValueChange={(v) => go({ site: v })}>
+                  <SelectTrigger
+                    className="h-8 w-40 text-xs"
+                    aria-label="Filter by site"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All sites</SelectItem>
+                    {(sites.data?.results ?? []).map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <div className="relative">
                   <Search className="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <Input

@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
+import { FormCheckbox } from "@/components/forms"
 import { apiErrorToast } from "@/lib/api-toast"
 
 interface ImportResult {
@@ -83,8 +84,7 @@ export function DeviceTypeImportDialog({
   // synchronously. Stops when the run reaches a terminal state.
   const runQ = useQuery({
     queryKey: ["dt-import-run", runId],
-    queryFn: () =>
-      api<ImportRun>(`/api/device-types/import-runs/${runId}/`),
+    queryFn: () => api<ImportRun>(`/api/device-types/import-runs/${runId}/`),
     enabled: !!runId,
     refetchInterval: (q) => {
       const s = q.state.data?.status
@@ -92,7 +92,11 @@ export function DeviceTypeImportDialog({
     },
   })
   const bg = runQ.data
-  if (bg && !bgDone.current && (bg.status === "success" || bg.status === "failed")) {
+  if (
+    bg &&
+    !bgDone.current &&
+    (bg.status === "success" || bg.status === "failed")
+  ) {
     bgDone.current = true
     if (bg.status === "success") {
       qc.invalidateQueries({ queryKey: ["device-types"] })
@@ -233,16 +237,17 @@ export function DeviceTypeImportDialog({
               </span>
             )}
           </div>
-          <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-            <input
-              type="checkbox"
-              className="ck"
-              checked={stack}
-              onChange={(e) => setStack(e.target.checked)}
-            />
-            Stackable — rewrite the leading slot digit to{" "}
-            <code className="font-mono">{"{position}"}</code>
-          </label>
+          <FormCheckbox
+            className="text-[12px] text-muted-foreground"
+            label={
+              <>
+                Stackable — rewrite the leading slot digit to{" "}
+                <code className="font-mono">{"{position}"}</code>
+              </>
+            }
+            checked={stack}
+            onChange={setStack}
+          />
 
           {runId && bg && (
             <div className="rounded-md border border-border p-3">

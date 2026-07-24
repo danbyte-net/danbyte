@@ -643,23 +643,21 @@ export function ComponentTemplateDialog({
                 hint="Strands on the rear side — each maps to one front port"
                 error={fieldErrors.positions}
               />
-              <label className="flex items-center gap-2 text-[13px]">
-                <input
-                  type="checkbox"
-                  className="ck"
-                  checked={isSplitter}
-                  onChange={(e) => {
-                    setIsSplitter(e.target.checked)
-                    if (e.target.checked) setPositions("1")
-                  }}
-                />
-                <span>
-                  Optical splitter (PON){" "}
-                  <span className="text-muted-foreground">
-                    — every front port carries the input signal
-                  </span>
-                </span>
-              </label>
+              <FormCheckbox
+                label={
+                  <>
+                    Optical splitter (PON){" "}
+                    <span className="text-muted-foreground">
+                      — every front port carries the input signal
+                    </span>
+                  </>
+                }
+                checked={isSplitter}
+                onChange={(v) => {
+                  setIsSplitter(v)
+                  if (v) setPositions("1")
+                }}
+              />
             </div>
           )}
 

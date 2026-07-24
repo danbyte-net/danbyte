@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dialog"
 import { DevicePicker } from "@/components/device-picker"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { FormCheckbox } from "@/components/forms"
 import { TypeFaceplate } from "@/components/device-faceplate"
 import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
@@ -238,15 +239,12 @@ export function RackElevation({
             />
           )}
           {controlledLabels === undefined && mode !== "names" && (
-            <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <input
-                type="checkbox"
-                className="ck ck-sm"
-                checked={labels}
-                onChange={(e) => setLabels(e.target.checked)}
-              />
-              Text
-            </label>
+            <FormCheckbox
+              label="Text"
+              checked={labels}
+              onChange={setLabels}
+              className="items-center gap-1 text-[11px] text-muted-foreground"
+            />
           )}
           <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">
             {rack.width}″ · {rack.used_units} / {rack.u_height} U
