@@ -541,7 +541,14 @@ class SceneTests(_Base):
         from .models import DeviceType
 
         dt = DeviceType.objects.create(
-            tenant=self.tenant, name="1U Switch", u_height=1
+            tenant=self.tenant, name="1U Switch", u_height=1,
+            image_ports={
+                "front": [
+                    {"kind": "interface", "name": "Gi1/0/1",
+                     "x": 0.1, "y": 0.5, "w": 0.03, "h": 0.4}
+                ],
+                "rear": [],
+            },
         )
         Device.objects.create(
             tenant=self.tenant, name="sw1", device_type=dt,
@@ -574,6 +581,8 @@ class SceneTests(_Base):
         self.assertEqual(devs[0]["position"], 10)
         self.assertEqual(devs[0]["u_height"], 1)
         self.assertEqual(devs[0]["rack_width"], "full")
+        # Photo-anchored port markers flow through for the 3D face overlay.
+        self.assertEqual(devs[0]["image_ports"]["front"][0]["name"], "Gi1/0/1")
         self.assertEqual(len(body["trays"]), 1)
         self.assertEqual(body["trays"][0]["level"], "overhead")
         self.assertIsNone(body["trays"][0]["elevation_mm"])
@@ -633,6 +642,13 @@ class CablePathTests(_Base):
         self.assertEqual(entry["a_tiles"], [str(tile_a.id)])
         self.assertEqual(entry["b_tiles"], [str(tile_b.id)])
         self.assertEqual(entry["tray_ids"], [str(tray.id)])
+        # Endpoint device + port ride along (3D anchors runs to port quads).
+        self.assertEqual(
+            entry["a_points"], [{"device": str(dev_a.id), "port": "eth0"}]
+        )
+        self.assertEqual(
+            entry["b_points"], [{"device": str(dev_b.id), "port": "eth0"}]
+        )
 
 
 class CableFloorPlanResolverTests(_Base):

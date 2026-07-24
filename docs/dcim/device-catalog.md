@@ -235,6 +235,14 @@ SNMP dot, hover card and link), and the markers also render **on the device's
 face in the [3D room view](../features/floor-plans.md#the-3d-room-view)**.
 Types without photo ports keep using the schematic faceplate builder above.
 
+The palette also offers the type's **[inventory-item](#inventory-items)
+templates** under *Hardware* — place disk bays, PSUs and other parts on the
+photo the same way. Hardware markers resolve to the device's real parts by
+name and are coloured by the **part's status** (a *Failed* disk reads red on
+the faceplate and in 3D); hovering shows the part's media, capacity, speed,
+status and serial. Hardware markers are informational — they never join the
+cable-connect flow.
+
 ## Device bays (chassis nesting)
 
 A **parent** chassis (blade enclosure, FEX parent) declares **device bays**
@@ -252,12 +260,47 @@ used-units number.
 ## Inventory items
 
 **Inventory items** are serial-tracked physical parts that aren't cabled
-components — PSUs, fans, CPUs, discrete SFPs. Templates on the device type
-(Components → Inventory) stamp onto new devices; on the device page's
-**Hardware** tab you can add/edit parts with manufacturer, part ID, serial
-and asset tag, and nest them one level (a fan tray containing fans). Roles
-are just [tags](../features/tags-and-custom-fields.md) — no pre-filled role
-catalog, per the zero-data rule.
+components — disks, CPUs, RAM, PSUs, fans, discrete SFPs. Templates on the
+device type (Components → Inventory) stamp onto new devices; on the device
+page's **Hardware** tab you can add/edit parts with manufacturer, part ID,
+serial and asset tag, and nest them one level (a fan tray containing fans).
+Roles are just [tags](../features/tags-and-custom-fields.md) — no pre-filled
+role catalog, per the zero-data rule.
+
+Each part also carries its **hardware identity and health**:
+
+- **Kind** — what the part is: Disk, CPU, RAM, PSU, Fan, GPU, Controller,
+  Transceiver, or Other (the default for pre-existing parts).
+- **Media** (disks) — NVMe, SSD (SATA/SAS), HDD, or Tape.
+- **Capacity** with a unit picker (KB → PB; stored in bytes, so it's
+  backwards- and future-proof) and free-form **speed** ("7.2K RPM",
+  "PCIe 4.0 x4", "3200 MT/s").
+- **Status** — the part's lifecycle/health from the shared
+  [status catalog](../features/catalogs-and-settings.md): every tenant gets
+  **Active / Planned / Failed / Spare** for inventory items (extensible like
+  any other status). Marking a disk *Failed* colours it red wherever the part
+  is shown.
+
+Templates carry kind/media/capacity/speed too, so a device type modelled with
+eight `Bay {position}` NVMe templates stamps ready-described disks onto every
+new device.
+
+### Bulk-editing parts
+
+On the device's **Hardware** tab, tick the checkbox on one or more parts (the
+header checkbox selects all) — a bulk bar floats up:
+
+- **Edit** opens a *keep/set* dialog: anything left on **Keep current** is
+  untouched; set **Status** (mark eight disks *Failed* in one go), **Kind**,
+  **Media**, **Capacity** (value + KB…PB unit), **Speed**, **Part ID**,
+  **Description**, or add/remove **tags** — applied to every selected part.
+- **Rename** does find/replace across the selected names (regex optional),
+  with a live preview.
+- **Clone** duplicates the selected parts under new names.
+- **Delete** removes them after a confirmation.
+
+The same bulk bar (and the same keyboard-free flow) is used on the interface
+and port tables, so one habit covers every component list.
 
 ## Module types
 

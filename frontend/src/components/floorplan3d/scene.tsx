@@ -1,12 +1,29 @@
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Canvas } from "@react-three/fiber"
 import { Link } from "@tanstack/react-router"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 
-import type { FloorPlanLiveState } from "@/lib/api"
+import {
+  api,
+  type Cable,
+  type FacePorts,
+  type FloorPlanLiveState,
+  type TerminationInput,
+} from "@/lib/api"
+import { renderTemplateName } from "@/lib/faceplate-geometry"
+import { SpeedScale } from "@/components/speed-scale"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { CableForm } from "@/components/cable-form"
 import { QueryError } from "@/components/query-error"
 
-import { CableTrace3D } from "./cable-trace-3d"
+import { CablesLayer, CableTrace3D } from "./cable-trace-3d"
 import { CameraRig, type FlyToRequest } from "./camera-rig"
 import { Room } from "./room"
 import { RackMesh, type Sel } from "./rack-mesh"
@@ -34,16 +51,144 @@ export default function FloorScene3D({
   planId,
   liveState,
   traceCableId,
+  showUNumbers = false,
+  showNames = false,
+  showCables = false,
 }: {
   planId: string
   liveState: FloorPlanLiveState | null
   traceCableId?: string | null
+  /** Overlay toggles — owned by the route's View popover, like the 2D prefs. */
+  showUNumbers?: boolean
+  showNames?: boolean
+  showCables?: boolean
 }) {
   const scene = useScene(planId)
+  const qc = useQueryClient()
   const [selection, setSelection] = useState<Sel | null>(null)
-  const [showUNumbers, setShowUNumbers] = useState(false)
-  const [showNames, setShowNames] = useState(false)
+  const [cableSel, setCableSel] = useState<string | null>(null)
   const flyToRef = useRef<FlyToRequest | null>(null)
+
+  // ── Cable building ─────────────────────────────────────────────────────────
+  // `connecting` holds the resolved A end while the user picks the far end in
+  // 3D; `modal` opens the cable creator (pre-seeded with A, and B for the
+  // pick-both flow). A port marker only carries a template name, so we resolve
+  // it to a real termination via /devices/{id}/face-ports/ before cabling.
+  const [connecting, setConnecting] = useState<{
+    portLabel: string
+    a: TerminationInput
+    tileId: string
+  } | null>(null)
+  const [modal, setModal] = useState<{
+    initialA: TerminationInput[]
+    initialB?: TerminationInput[]
+  } | null>(null)
+  // Routing choice for the new cable: a same-rack patch stays point-to-point;
+  // a cross-rack run can be assigned to ducts (trays) right here.
+  const [routing, setRouting] = useState<"p2p" | "trays">("p2p")
+  const [routeTrayIds, setRouteTrayIds] = useState<string[]>([])
+
+  const resolvePort = async (sel: Sel) => {
+    if (!sel.deviceId || !sel.portName) return null
+    const fp = await qc.fetchQuery({
+      queryKey: ["device-face-ports", sel.deviceId],
+      queryFn: () => api<FacePorts>(`/api/devices/${sel.deviceId}/face-ports/`),
+      staleTime: 30_000,
+    })
+    const list = sel.portSide ? fp[sel.portSide] : [...fp.front, ...fp.rear]
+    return list.find((p) => p.marker === sel.portName) ?? null
+  }
+
+  // From the port HUD: "maker" opens the creator seeded with A only; "3d" arms
+  // pick-the-far-end mode.
+  const startConnect = async (sel: Sel, path: "maker" | "3d") => {
+    const a = await resolvePort(sel)
+    if (!a?.id || !a.kind) {
+      toast.error("This port isn't defined on the device yet — can't cable it.")
+      return
+    }
+    if (a.connected) {
+      toast.error(`${a.name} is already cabled.`)
+      return
+    }
+    const aInput: TerminationInput = { kind: a.kind, id: a.id }
+    if (path === "maker") {
+      setSelection(null)
+      setRouting(scene.data?.trays.length ? "trays" : "p2p")
+      setRouteTrayIds([])
+      setModal({ initialA: [aInput] })
+      return
+    }
+    setConnecting({ portLabel: a.name, a: aInput, tileId: sel.tileId })
+  }
+
+  // The far end was clicked while arming — resolve it and open the creator with
+  // both ends seeded.
+  const pickFarEnd = async (sel: Sel) => {
+    if (!connecting) return
+    const b = await resolvePort(sel)
+    if (!b?.id || !b.kind) {
+      toast.error("This port isn't defined on the device yet — can't cable it.")
+      return
+    }
+    if (b.connected) {
+      toast.error(`${b.name} is already cabled.`)
+      return
+    }
+    if (b.id === connecting.a.id) {
+      toast.error("Pick a different port for the other end.")
+      return
+    }
+    // Same rack → a point-to-point patch; cross-rack defaults to ducts when
+    // the plan has any to route through.
+    const sameRack = connecting.tileId === sel.tileId
+    setRouting(!sameRack && scene.data?.trays.length ? "trays" : "p2p")
+    setRouteTrayIds([])
+    setModal({ initialA: [connecting.a], initialB: [{ kind: b.kind, id: b.id }] })
+    setConnecting(null)
+    setSelection(null)
+  }
+
+  // Assign the freshly created cable to the chosen ducts (tray M2M is set by
+  // ids, so read-modify-write each tray).
+  const assignTrays = async (cableId: string) => {
+    for (const trayId of routeTrayIds) {
+      try {
+        const tray = await api<{ cables: { id: string }[] }>(
+          `/api/floor-plan-trays/${trayId}/`
+        )
+        await api(`/api/floor-plan-trays/${trayId}/`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            cable_ids: [...new Set([...tray.cables.map((c) => c.id), cableId])],
+          }),
+        })
+      } catch {
+        toast.error("Couldn't assign the cable to a duct — set it on the 2D plan.")
+        return
+      }
+    }
+  }
+
+  // While arming, a port click is the far end; otherwise it selects normally.
+  const handleSelect = (sel: Sel) => {
+    if (connecting && sel.kind === "port") {
+      void pickFarEnd(sel)
+      return
+    }
+    setCableSel(null)
+    setSelection(sel)
+  }
+
+  // Esc cancels an in-flight connect.
+  useEffect(() => {
+    if (!connecting) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setConnecting(null)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [connecting])
 
   const supported = useMemo(webglSupported, [])
   if (!supported)
@@ -76,7 +221,7 @@ export default function FloorScene3D({
     ? (rackTiles.find((t) => t.id === selection.tileId) ?? null)
     : null
   const selDevice =
-    selection?.kind === "device" && selTile
+    (selection?.kind === "device" || selection?.kind === "port") && selTile
       ? (selTile.rack!.devices.find((x) => x.id === selection.deviceId) ?? null)
       : null
 
@@ -91,7 +236,11 @@ export default function FloorScene3D({
           near: 0.1,
           far: diag * 10 + 50,
         }}
-        onPointerMissed={() => setSelection(null)}
+        onPointerMissed={() => {
+          setSelection(null)
+          setConnecting(null)
+          setCableSel(null)
+        }}
       >
         <ambientLight intensity={0.7} />
         <directionalLight position={[w * 0.3, 12, d * 0.2]} intensity={1.1} />
@@ -106,7 +255,7 @@ export default function FloorScene3D({
             selection={selection}
             showUNumbers={showUNumbers}
             showNames={showNames}
-            onSelect={setSelection}
+            onSelect={handleSelect}
             onFlyTo={(target, position) => {
               flyToRef.current = { target, position }
             }}
@@ -115,7 +264,18 @@ export default function FloorScene3D({
         {data.trays.map((tr) => (
           <TrayMesh key={tr.id} plan={plan} tray={tr} />
         ))}
-        {traceCableId && (
+        {showCables && (
+          <CablesLayer
+            planId={planId}
+            scene={data}
+            selectedId={cableSel}
+            onSelect={(id) => {
+              setSelection(null)
+              setCableSel(id)
+            }}
+          />
+        )}
+        {traceCableId && traceCableId !== cableSel && (
           <CableTrace3D planId={planId} scene={data} cableId={traceCableId} />
         )}
         <CameraRig
@@ -127,27 +287,149 @@ export default function FloorScene3D({
       {selTile && selection?.kind === "rack" && (
         <RackHud tile={selTile} liveState={liveState} />
       )}
-      {selTile && selDevice && <DeviceHud tile={selTile} dev={selDevice} />}
-      <div className="absolute top-3 right-3 flex flex-col gap-1.5 rounded-lg border border-border bg-popover/90 p-2 text-[12px] text-popover-foreground shadow backdrop-blur">
-        <label className="flex cursor-pointer items-center gap-1.5">
-          <input
-            type="checkbox"
-            className="ck"
-            checked={showUNumbers}
-            onChange={(e) => setShowUNumbers(e.target.checked)}
-          />
-          U numbers
-        </label>
-        <label className="flex cursor-pointer items-center gap-1.5">
-          <input
-            type="checkbox"
-            className="ck"
-            checked={showNames}
-            onChange={(e) => setShowNames(e.target.checked)}
-          />
-          Device names
-        </label>
-        <span className="text-[10px] text-muted-foreground">shown up close</span>
+      {selTile && selDevice && selection?.kind === "device" && (
+        <DeviceHud tile={selTile} dev={selDevice} />
+      )}
+      {selTile && selDevice && selection?.kind === "port" && (
+        <PortHud
+          planId={planId}
+          tile={selTile}
+          dev={selDevice}
+          selection={selection}
+          onConnect={(path) => void startConnect(selection, path)}
+        />
+      )}
+      {cableSel && <CableHud planId={planId} cableId={cableSel} />}
+      {/* Arming banner while the user picks the far end in 3D. */}
+      {connecting && (
+        <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-500/40 bg-popover/95 px-3 py-2 text-[12px] text-popover-foreground shadow-lg backdrop-blur">
+          <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-sm bg-amber-400" />
+          <span>
+            Click the other port to connect from{" "}
+            <span className="font-mono font-semibold">
+              {connecting.portLabel}
+            </span>
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2"
+            onClick={() => setConnecting(null)}
+          >
+            Cancel
+          </Button>
+        </div>
+      )}
+      {/* Cable creator — seeded with the picked end(s); on save we just close
+          and stay in the room view (occupancy + paths re-fetch). */}
+      <Dialog open={!!modal} onOpenChange={(o) => !o && setModal(null)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Connect cable</DialogTitle>
+          </DialogHeader>
+          {modal && (
+            <>
+              {/* Routing — point-to-point (same-rack patch) or through the
+                  plan's ducts, chosen up-front like an installer would. */}
+              <div className="grid gap-1.5 rounded-md border border-border p-2.5">
+                <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+                  Routing
+                </span>
+                <label className="flex items-center gap-2 text-[13px]">
+                  <input
+                    type="radio"
+                    name="cable-routing"
+                    className="ck"
+                    checked={routing === "p2p"}
+                    onChange={() => setRouting("p2p")}
+                  />
+                  <span>
+                    Point-to-point
+                    <span className="text-muted-foreground">
+                      {" "}
+                      — patch inside the rack / straight run
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 text-[13px]">
+                  <input
+                    type="radio"
+                    name="cable-routing"
+                    className="ck"
+                    checked={routing === "trays"}
+                    onChange={() => setRouting("trays")}
+                  />
+                  <span>
+                    Through ducts
+                    <span className="text-muted-foreground">
+                      {" "}
+                      — ride the plan's cable trays
+                    </span>
+                  </span>
+                </label>
+                {routing === "trays" &&
+                  (scene.data && scene.data.trays.length > 0 ? (
+                    <div className="grid max-h-28 gap-0.5 overflow-y-auto rounded border border-border p-1">
+                      {scene.data.trays.map((tr) => (
+                        <label
+                          key={tr.id}
+                          className="flex items-center gap-2 rounded px-1.5 py-1 text-[12px] hover:bg-muted/60"
+                        >
+                          <input
+                            type="checkbox"
+                            className="ck"
+                            checked={routeTrayIds.includes(tr.id)}
+                            onChange={(e) =>
+                              setRouteTrayIds((cur) =>
+                                e.target.checked
+                                  ? [...cur, tr.id]
+                                  : cur.filter((x) => x !== tr.id)
+                              )
+                            }
+                          />
+                          <span className="min-w-0 flex-1 truncate">
+                            {tr.name}
+                          </span>
+                          <span className="shrink-0 text-[10px] text-muted-foreground">
+                            {tr.level}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      No ducts on this plan yet — draw trays in the 2D Cables
+                      mode first.
+                    </p>
+                  ))}
+              </div>
+              <CableForm
+                initialA={modal.initialA}
+                initialB={modal.initialB}
+                onSaved={(saved) => {
+                  setModal(null)
+                  const finish = () => {
+                    qc.invalidateQueries({
+                      queryKey: ["floor-plan-cable-paths", planId],
+                    })
+                    qc.invalidateQueries({ queryKey: ["device-face-ports"] })
+                  }
+                  if (routing === "trays" && routeTrayIds.length) {
+                    void assignTrays(saved.id).then(finish)
+                  } else {
+                    finish()
+                  }
+                }}
+                onCancel={() => setModal(null)}
+              />
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+      {/* Port speed scale — the SAME colorbar the 2D faceplate legend uses.
+          The overlay toggles live in the route's View popover. */}
+      <div className="absolute top-3 right-3 rounded-lg border border-border bg-popover/90 p-2 text-popover-foreground shadow backdrop-blur">
+        <SpeedScale live />
       </div>
     </div>
   )
@@ -200,13 +482,13 @@ function DeviceHud({ tile, dev }: { tile: SceneTile; dev: SceneDevice }) {
   const row = (label: string, value: React.ReactNode) => (
     <div className="flex items-baseline justify-between gap-3">
       <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="min-w-0 truncate text-right">{value}</span>
+      <span className="min-w-0 flex-1 break-words text-right">{value}</span>
     </div>
   )
   return (
     <div className="absolute top-3 left-3 w-64 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur">
       <div className="flex items-start justify-between gap-2">
-        <span className="min-w-0 truncate font-mono text-[13px] font-semibold">
+        <span className="min-w-0 flex-1 break-words font-mono text-[13px] font-semibold">
           {dev.name}
         </span>
         {dev.status && (
@@ -257,6 +539,357 @@ function DeviceHud({ tile, dev }: { tile: SceneTile; dev: SceneDevice }) {
           Open device →
         </Link>
       </Button>
+    </div>
+  )
+}
+
+/**
+ * Overlay card for a clicked photo port. Resolves the marker to the real
+ * component (same face-ports fetch the quads use), and:
+ *  - free port → the connect flow (pick in 3D / cable maker)
+ *  - cabled port → the cable (label/type/color) + the FAR END device:port,
+ *    with jump-offs to the cable and an in-room trace of its run.
+ */
+function PortHud({
+  planId,
+  tile,
+  dev,
+  selection,
+  onConnect,
+}: {
+  planId: string
+  tile: SceneTile
+  dev: SceneDevice
+  selection: Sel
+  onConnect: (path: "maker" | "3d") => void
+}) {
+  const [choosing, setChoosing] = useState(false)
+  const rack = tile.rack!
+  // The saved marker name is a template ("Ethernet{position}/1"); render it the
+  // same way the 2D faceplate does so the card shows the real port label.
+  const portLabel = renderTemplateName(selection.portName ?? "", null)
+
+  // Resolve this marker → real port (shared cache with the port quads).
+  const facePorts = useQuery({
+    queryKey: ["device-face-ports", dev.id],
+    queryFn: () => api<FacePorts>(`/api/devices/${dev.id}/face-ports/`),
+    staleTime: 30_000,
+  })
+  const fp = (
+    selection.portSide
+      ? (facePorts.data?.[selection.portSide] ?? [])
+      : [
+          ...(facePorts.data?.front ?? []),
+          ...(facePorts.data?.rear ?? []),
+        ]
+  ).find((p) => p.marker === selection.portName)
+
+  // Cabled → load the cable for its identity + far-end terminations.
+  const cable = useQuery({
+    queryKey: ["cable", fp?.cable_id],
+    queryFn: () => api<Cable>(`/api/cables/${fp!.cable_id}/`),
+    enabled: !!fp?.cable_id,
+    staleTime: 30_000,
+  })
+  const farEnds = (() => {
+    const c = cable.data
+    if (!c || !fp?.id) return []
+    const mine = (list: Cable["a_terminations"]) =>
+      list.some((t) => t.id === fp.id)
+    // The far side is whichever end does NOT carry this port.
+    return mine(c.a_terminations) ? c.b_terminations : c.a_terminations
+  })()
+
+  const row = (label: string, value: React.ReactNode) => (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="shrink-0">{label}</span>
+      <span className="min-w-0 flex-1 break-words text-right text-foreground">
+        {value}
+      </span>
+    </div>
+  )
+
+  // Hardware markers (inventory items) resolve with a status, never a
+  // termination kind — the card shows part health, not cabling.
+  const hardware = !!fp?.id && fp.kind === null
+  return (
+    <div className="absolute top-3 left-3 w-72 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur">
+      <div className="flex items-center gap-2">
+        <span
+          className="h-2.5 w-2.5 shrink-0 rounded-sm"
+          style={{
+            backgroundColor: hardware
+              ? fp?.status?.color || "#64748b"
+              : fp?.connected
+                ? "#10b981"
+                : "#fbbf24",
+          }}
+        />
+        <span className="min-w-0 flex-1 break-words font-mono text-[13px] font-semibold">
+          {fp?.name || portLabel}
+        </span>
+        {fp && (
+          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {hardware
+              ? fp.status?.name || "part"
+              : fp.connected
+                ? "cabled"
+                : fp.id
+                  ? "free"
+                  : "no port"}
+          </span>
+        )}
+      </div>
+      <div className="mt-1.5 grid gap-1 text-[12px] text-muted-foreground">
+        {row(
+          "Device",
+          <span className="font-mono">{dev.name}</span>
+        )}
+        {selection.portKind &&
+          row(
+            "Kind",
+            <span className="capitalize">
+              {selection.portKind.replace(/-/g, " ")}
+            </span>
+          )}
+        {row("Position", `${rack.name} · U${dev.position}`)}
+        {fp?.speed && row("Speed", <span className="num">{fp.speed}</span>)}
+      </div>
+
+      {/* ── Cabled: the run + its far end ─────────────────────────────── */}
+      {fp?.connected && (
+        <div className="mt-2 grid gap-1 rounded-md border border-border bg-muted/30 p-2 text-[12px] text-muted-foreground">
+          {cable.isLoading && <span>Loading cable…</span>}
+          {cable.data && (
+            <>
+              <div className="flex items-center gap-1.5">
+                {cable.data.color && (
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: cable.data.color }}
+                  />
+                )}
+                <span className="min-w-0 flex-1 break-words font-mono text-foreground">
+                  {cable.data.label || `Cable #${cable.data.numid ?? ""}`}
+                </span>
+                {cable.data.type_display && (
+                  <span className="shrink-0 text-[10px]">
+                    {cable.data.type_display}
+                  </span>
+                )}
+              </div>
+              {farEnds.length > 0 ? (
+                farEnds.map((t) => (
+                  <div key={t.id} className="flex items-baseline gap-1.5">
+                    <span className="shrink-0">→</span>
+                    <Link
+                      to="/devices/$id"
+                      params={{ id: t.device.id }}
+                      className="min-w-0 flex-1 break-words font-mono text-foreground hover:underline"
+                    >
+                      {t.device.name}
+                      <span className="text-muted-foreground">:</span>
+                      {t.name}
+                    </Link>
+                  </div>
+                ))
+              ) : (
+                <span>Far end unterminated.</span>
+              )}
+              {cable.data.length && (
+                <span className="num text-[11px]">
+                  {cable.data.length} {cable.data.length_unit}
+                </span>
+              )}
+            </>
+          )}
+          {cable.data && (
+            <div className="mt-1 flex gap-1.5">
+              <Button
+                size="sm"
+                variant="outline"
+                asChild
+                className="h-6 flex-1 px-2 text-[11px]"
+              >
+                <Link to="/cables/$id" params={{ id: cable.data.id }}>
+                  Open cable
+                </Link>
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                asChild
+                className="h-6 flex-1 px-2 text-[11px]"
+              >
+                {/* Same route, ?trace= — the room draws the run as a
+                    marching line (and 2D uses the identical param). */}
+                <Link
+                  to="/floorplans/$id"
+                  params={{ id: planId }}
+                  search={{ viz: "3d" as const, trace: cable.data.id }}
+                >
+                  Trace run
+                </Link>
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Free PORT: the connect flow (hardware parts can't cable) ───── */}
+      {fp && !fp.connected && fp.id && fp.kind && (
+        <>
+          {choosing ? (
+            <div className="mt-2 grid gap-1.5">
+              <p className="text-[11px] text-muted-foreground">
+                Connect this port…
+              </p>
+              <Button
+                size="sm"
+                className="h-7 w-full"
+                onClick={() => {
+                  setChoosing(false)
+                  onConnect("3d")
+                }}
+              >
+                Pick the other end in 3D
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 w-full"
+                onClick={() => {
+                  setChoosing(false)
+                  onConnect("maker")
+                }}
+              >
+                Use the cable maker
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 w-full"
+                onClick={() => setChoosing(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              className="mt-2 h-7 w-full"
+              onClick={() => setChoosing(true)}
+            >
+              Connect cable
+            </Button>
+          )}
+        </>
+      )}
+      {fp && !fp.id && (
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          No matching component on this device — add the interface (or fix the
+          marker name) to cable it.
+        </p>
+      )}
+
+      <Button size="sm" variant="outline" asChild className="mt-1.5 h-7 w-full">
+        <Link to="/devices/$id" params={{ id: dev.id }}>
+          Open device →
+        </Link>
+      </Button>
+    </div>
+  )
+}
+
+/**
+ * Overlay card for a cable clicked in the cables layer — identity, both ends
+ * (device:port, each a jump-off), length, and the run trace.
+ */
+function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
+  const cable = useQuery({
+    queryKey: ["cable", cableId],
+    queryFn: () => api<Cable>(`/api/cables/${cableId}/`),
+    staleTime: 30_000,
+  })
+  const c = cable.data
+  const side = (label: string, terms: Cable["a_terminations"]) => (
+    <div className="grid gap-0.5">
+      <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+        {label}
+      </span>
+      {terms.length === 0 && (
+        <span className="text-muted-foreground">unterminated</span>
+      )}
+      {terms.map((t) => (
+        <Link
+          key={t.id}
+          to="/devices/$id"
+          params={{ id: t.device.id }}
+          className="min-w-0 break-words font-mono text-foreground hover:underline"
+        >
+          {t.device.name}
+          <span className="text-muted-foreground">:</span>
+          {t.name}
+        </Link>
+      ))}
+    </div>
+  )
+  return (
+    <div className="absolute top-3 left-3 w-72 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur">
+      {!c ? (
+        <span className="text-[12px] text-muted-foreground">
+          Loading cable…
+        </span>
+      ) : (
+        <>
+          <div className="flex items-center gap-2">
+            {c.color && (
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ backgroundColor: c.color }}
+              />
+            )}
+            <span className="min-w-0 flex-1 break-words font-mono text-[13px] font-semibold">
+              {c.label || `Cable #${c.numid ?? ""}`}
+            </span>
+            {c.type_display && (
+              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                {c.type_display}
+              </span>
+            )}
+          </div>
+          <div className="mt-2 grid gap-2 text-[12px]">
+            {side("A side", c.a_terminations)}
+            {side("B side", c.b_terminations)}
+            {c.length && (
+              <span className="num text-[11px] text-muted-foreground">
+                {c.length} {c.length_unit}
+              </span>
+            )}
+          </div>
+          <div className="mt-2 flex gap-1.5">
+            <Button
+              size="sm"
+              variant="outline"
+              asChild
+              className="h-7 flex-1"
+            >
+              <Link to="/cables/$id" params={{ id: c.id }}>
+                Open cable →
+              </Link>
+            </Button>
+            <Button size="sm" variant="outline" asChild className="h-7 flex-1">
+              <Link
+                to="/floorplans/$id"
+                params={{ id: planId }}
+                search={{ viz: "3d" as const, trace: c.id }}
+              >
+                Trace run
+              </Link>
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   )
 }

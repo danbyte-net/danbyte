@@ -2,7 +2,10 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toPng } from "html-to-image"
 import {
+  ArrowDown,
   ArrowLeft,
+  ArrowRight,
+  ArrowUp,
   ChevronRight,
   Download,
   ExternalLink,
@@ -255,6 +258,12 @@ function FloorPlanPage() {
   const [showTraysLocal, setShowTraysLocal] = useState<boolean | null>(null)
   const [showLinksLocal, setShowLinksLocal] = useState<boolean | null>(null)
   const [showObjectsLocal, setShowObjectsLocal] = useState<boolean | null>(null)
+  // 3D overlay prefs — same persistence pattern as the 2D ones.
+  const [show3dULocal, setShow3dULocal] = useState<boolean | null>(null)
+  const [show3dNamesLocal, setShow3dNamesLocal] = useState<boolean | null>(null)
+  const [show3dCablesLocal, setShow3dCablesLocal] = useState<boolean | null>(
+    null
+  )
   const [highlightCableIds, setHighlightCableIds] = useState<string[]>([])
   // Tile popover: hover-preview (delayed) + click-to-pin.
   const popover = useTilePopover()
@@ -411,6 +420,16 @@ function FloorPlanPage() {
     showObjectsLocal ??
     (plan?.state.show_objects as boolean | undefined) ??
     false
+  const show3dU =
+    show3dULocal ?? (plan?.state.show_3d_u as boolean | undefined) ?? false
+  const show3dNames =
+    show3dNamesLocal ??
+    (plan?.state.show_3d_names as boolean | undefined) ??
+    false
+  const show3dCables =
+    show3dCablesLocal ??
+    (plan?.state.show_3d_cables as boolean | undefined) ??
+    false
 
   // ?trace=<cableId> → highlight that cable + fit the view to its route, so a
   // "trace on map" link from a cable/rack lands on the run without any clicks.
@@ -434,7 +453,10 @@ function FloorPlanPage() {
       | "show_zone_labels"
       | "show_trays"
       | "show_cable_links"
-      | "show_objects",
+      | "show_objects"
+      | "show_3d_u"
+      | "show_3d_names"
+      | "show_3d_cables",
     value: boolean
   ) => {
     if (key === "label_fit") setLabelFitLocal(value)
@@ -442,6 +464,9 @@ function FloorPlanPage() {
     else if (key === "show_zone_labels") setShowZoneLabelsLocal(value)
     else if (key === "show_trays") setShowTraysLocal(value)
     else if (key === "show_objects") setShowObjectsLocal(value)
+    else if (key === "show_3d_u") setShow3dULocal(value)
+    else if (key === "show_3d_names") setShow3dNamesLocal(value)
+    else if (key === "show_3d_cables") setShow3dCablesLocal(value)
     else setShowLinksLocal(value)
     if (canEdit && plan)
       patchPlan.mutate({ state: { ...plan.state, [key]: value } })
@@ -533,28 +558,40 @@ function FloorPlanPage() {
     setSelectedId((cur) => (cur === tileId ? null : cur))
   }, [])
 
-  const rotateTile = useCallback(
-    (tile: EditTile) => {
-      if (!plan) return
-      // Grid-honest rotate: swap the footprint, spin the icon.
-      const width = tile.height
-      const height = tile.width
+  // Set an absolute facing (orientation). A quarter-turn (90/270 delta) swaps
+  // the grid footprint — same invariant the relative rotate keeps.
+  const setTileFacing = useCallback(
+    (tile: EditTile, orientation: EditTile["orientation"]) => {
+      if (!plan || orientation === tile.orientation) return
+      const quarter = (orientation - tile.orientation + 360) % 180 !== 0
+      const width = quarter ? tile.height : tile.width
+      const height = quarter ? tile.width : tile.height
       const rect = {
         width,
         height,
         x: Math.min(tile.x, Math.max(0, plan.grid_width - width)),
         y: Math.min(tile.y, Math.max(0, plan.grid_height - height)),
       }
-      if (!tileIsZone(tile) && findCollision(tiles, rect, tile.id)) {
+      if (
+        quarter &&
+        !tileIsZone(tile) &&
+        findCollision(tiles, rect, tile.id)
+      ) {
         toast.error("No room to rotate — a neighbour is in the way.")
         return
       }
-      changeTile(tile.id, {
-        orientation: ((tile.orientation + 90) % 360) as EditTile["orientation"],
-        ...rect,
-      })
+      changeTile(tile.id, { orientation, ...rect })
     },
     [changeTile, plan, tiles]
+  )
+
+  const rotateTile = useCallback(
+    (tile: EditTile) =>
+      setTileFacing(
+        tile,
+        ((tile.orientation + 90) % 360) as EditTile["orientation"]
+      ),
+    [setTileFacing]
   )
 
   const addDrawPoint = useCallback((pt: [number, number]) => {
@@ -581,6 +618,17 @@ function FloorPlanPage() {
       const tag = (e.target as HTMLElement | null)?.tagName
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
       if (e.key === "Escape") {
+        // An active ?trace= wins: first Esc stops the trace (2D and 3D).
+        if (traceParam) {
+          void nav({
+            to: ".",
+            search: (s: Record<string, unknown>) => ({ ...s, trace: undefined }),
+            replace: true,
+          })
+          setHighlightCableIds([])
+          tracedRef.current = null
+          return
+        }
         // In tray edit mode? First Esc just leaves it.
         if (trayEditMode) {
           setTrayEditMode(false)
@@ -627,6 +675,8 @@ function FloorPlanPage() {
     drawPoints,
     finishDraw,
     trayEditMode,
+    traceParam,
+    nav,
   ])
 
   // ── Save (explicit, one bulk transaction) ──────────────────────────────
@@ -984,6 +1034,45 @@ function FloorPlanPage() {
                 />
                 <span>Cable links (A↔B)</span>
               </label>
+              {view3d && (
+                <>
+                  <div className="my-1 h-px bg-border" />
+                  <span className="px-2 text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+                    3D · shown up close
+                  </span>
+                  <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
+                    <input
+                      type="checkbox"
+                      className="ck"
+                      checked={show3dU}
+                      onChange={(e) => setViewPref("show_3d_u", e.target.checked)}
+                    />
+                    <span>U numbers</span>
+                  </label>
+                  <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
+                    <input
+                      type="checkbox"
+                      className="ck"
+                      checked={show3dNames}
+                      onChange={(e) =>
+                        setViewPref("show_3d_names", e.target.checked)
+                      }
+                    />
+                    <span>Device names</span>
+                  </label>
+                  <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
+                    <input
+                      type="checkbox"
+                      className="ck"
+                      checked={show3dCables}
+                      onChange={(e) =>
+                        setViewPref("show_3d_cables", e.target.checked)
+                      }
+                    />
+                    <span>Cables</span>
+                  </label>
+                </>
+              )}
             </PopoverContent>
           </Popover>
           {canEdit && (
@@ -1201,6 +1290,9 @@ function FloorPlanPage() {
                   planId={plan.id}
                   liveState={liveState.data ?? null}
                   traceCableId={traceParam ?? null}
+                  showUNumbers={show3dU}
+                  showNames={show3dNames}
+                  showCables={show3dCables}
                 />
               </Suspense>
               {show3dHint && (
@@ -1335,6 +1427,7 @@ function FloorPlanPage() {
             planId={plan.id}
             onChange={(patch) => changeTile(selected.id, patch)}
             onRotate={() => rotateTile(selected)}
+            onSetFacing={(o) => setTileFacing(selected, o)}
             onDelete={() => deleteTile(selected.id)}
             onOpenContents={
               selected.linked?.kind === "rack" ||
@@ -1506,6 +1599,7 @@ function TileInspector({
   planId,
   onChange,
   onRotate,
+  onSetFacing,
   onDelete,
   onOpenContents,
 }: {
@@ -1513,6 +1607,7 @@ function TileInspector({
   planId: string
   onChange: (patch: Partial<FloorPlanTile>) => void
   onRotate: () => void
+  onSetFacing: (o: 0 | 90 | 180 | 270) => void
   onDelete: () => void
   onOpenContents?: () => void
 }) {
@@ -1574,6 +1669,36 @@ function TileInspector({
           <RotateCw className="h-3.5 w-3.5" />
         </Button>
       </div>
+
+      {tile.linked?.kind === "rack" && (
+        <Field label="Front faces" hint="Marked on the tile's front edge">
+          <div className="grid grid-cols-4 gap-1">
+            {(
+              [
+                { o: 0 as const, icon: ArrowUp, label: "Up" },
+                { o: 90 as const, icon: ArrowRight, label: "Right" },
+                { o: 180 as const, icon: ArrowDown, label: "Down" },
+                { o: 270 as const, icon: ArrowLeft, label: "Left" },
+              ] as const
+            ).map(({ o, icon: Icon, label }) => (
+              <Button
+                key={o}
+                variant={tile.orientation === o ? "secondary" : "outline"}
+                size="sm"
+                className={cn(
+                  "h-8 px-0",
+                  tile.orientation === o && "border-primary/50"
+                )}
+                onClick={() => onSetFacing(o)}
+                title={`Front faces ${label.toLowerCase()}`}
+                aria-label={`Front faces ${label.toLowerCase()}`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+              </Button>
+            ))}
+          </div>
+        </Field>
+      )}
 
       <Field label="Label" hint="Overrides the linked object's name">
         <Input

@@ -5,10 +5,22 @@ import { toast } from "sonner"
 
 import {
   api,
+  bytesToUnit,
+  formatBytes,
+  INVENTORY_KIND_OPTIONS,
+  INVENTORY_MEDIA_OPTIONS,
+  STORAGE_UNITS,
+  unitToBytes,
+  type InventoryItemKind,
   type InventoryItemRow,
+  type InventoryMedia,
   type ManufacturerOption,
   type Paginated,
+  type Status,
+  type StorageUnit,
 } from "@/lib/api"
+import { StatusBadge } from "@/components/status-badge"
+import { ComponentBulkBar } from "@/components/component-bulk-bar"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -29,6 +41,7 @@ import { useRegisterAddActions } from "@/components/device-add-actions"
 import {
   FormCombobox,
   FormFooter,
+  FormSelect,
   FormText,
   useFieldErrors,
 } from "@/components/forms"
@@ -36,15 +49,35 @@ import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
-/** Serial-tracked physical parts on the device — PSUs, fans, CPUs, discrete
- * SFPs. Parts can nest one level visually (children indent under their
- * parent). */
+const KIND_LABEL = Object.fromEntries(
+  INVENTORY_KIND_OPTIONS.map((k) => [k.value, k.label])
+)
+const MEDIA_LABEL = Object.fromEntries(
+  INVENTORY_MEDIA_OPTIONS.map((m) => [m.value, m.label])
+)
+
+/** "NVMe · 1.92 TB · PCIe 4.0" — the composed hardware summary cell. */
+function hardwareSummary(it: InventoryItemRow): string {
+  return [
+    it.media ? MEDIA_LABEL[it.media] : "",
+    formatBytes(it.capacity_bytes),
+    it.speed,
+  ]
+    .filter(Boolean)
+    .join(" · ")
+}
+
+/** Serial-tracked physical parts on the device — disks, CPUs, RAM, PSUs,
+ * fans, discrete SFPs. Parts can nest one level visually (children indent
+ * under their parent). */
 export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
   const { canDo } = useMe()
   const canWrite = canDo("device", "change")
   const qc = useQueryClient()
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<InventoryItemRow | null>(null)
+  // Bulk selection — tick rows, the shared bulk bar floats up.
+  const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const q = useQuery({
     queryKey: ["device-inventory", deviceId],
@@ -90,7 +123,29 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
           <Table>
             <TableHeader>
               <TableRow>
+                {canWrite && (
+                  <TableHead className="w-8">
+                    <input
+                      type="checkbox"
+                      className="ck"
+                      checked={
+                        ordered.length > 0 && selected.size === ordered.length
+                      }
+                      onChange={(e) =>
+                        setSelected(
+                          e.target.checked
+                            ? new Set(ordered.map((i) => i.id))
+                            : new Set()
+                        )
+                      }
+                      aria-label="Select all parts"
+                    />
+                  </TableHead>
+                )}
                 <TableHead>Name</TableHead>
+                <TableHead>Kind</TableHead>
+                <TableHead>Hardware</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Manufacturer</TableHead>
                 <TableHead>Part ID</TableHead>
                 <TableHead>Serial</TableHead>
@@ -101,6 +156,24 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
             <TableBody>
               {ordered.map((it) => (
                 <TableRow key={it.id}>
+                  {canWrite && (
+                    <TableCell className="w-8">
+                      <input
+                        type="checkbox"
+                        className="ck"
+                        checked={selected.has(it.id)}
+                        onChange={(e) =>
+                          setSelected((cur) => {
+                            const next = new Set(cur)
+                            if (e.target.checked) next.add(it.id)
+                            else next.delete(it.id)
+                            return next
+                          })
+                        }
+                        aria-label={`Select ${it.name}`}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell
                     className={it.parent ? "pl-8 font-medium" : "font-medium"}
                   >
@@ -108,6 +181,17 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
                       <span className="mr-1 text-muted-foreground">└</span>
                     )}
                     {it.name}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {it.kind && it.kind !== "other"
+                      ? (KIND_LABEL[it.kind] ?? it.kind)
+                      : "—"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {hardwareSummary(it) || "—"}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={it.status} />
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {it.manufacturer?.name ?? "—"}
@@ -150,6 +234,42 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
         </div>
       )}
 
+      {canWrite && (
+        <ComponentBulkBar
+          endpoint="/api/inventory-items/"
+          kindLabel="part"
+          selected={items.filter((i) => selected.has(i.id))}
+          onCleared={() => setSelected(new Set())}
+          invalidate={[["device-inventory", deviceId]]}
+          fields={[
+            {
+              key: "status_id",
+              label: "Status",
+              kind: "status",
+              statusModel: "inventoryitem",
+            },
+            {
+              key: "kind",
+              label: "Kind",
+              kind: "options",
+              options: INVENTORY_KIND_OPTIONS,
+            },
+            {
+              key: "media",
+              label: "Media",
+              kind: "options",
+              options: INVENTORY_MEDIA_OPTIONS,
+              hint: "disks only",
+            },
+            { key: "capacity_bytes", label: "Capacity", kind: "bytes" },
+            { key: "speed", label: "Speed", kind: "text" },
+            { key: "part_id", label: "Part ID", kind: "text" },
+            { key: "description", label: "Description", kind: "text" },
+          ]}
+          tags
+        />
+      )}
+
       <InventoryItemDialog
         deviceId={deviceId}
         item={editing}
@@ -187,6 +307,12 @@ function InventoryItemDialog({
   const [partId, setPartId] = useState("")
   const [serial, setSerial] = useState("")
   const [assetTag, setAssetTag] = useState("")
+  const [kind, setKind] = useState<InventoryItemKind>("other")
+  const [media, setMedia] = useState<InventoryMedia>("")
+  const [capacity, setCapacity] = useState("")
+  const [capacityUnit, setCapacityUnit] = useState<StorageUnit>("GB")
+  const [speed, setSpeed] = useState("")
+  const [statusId, setStatusId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -196,6 +322,13 @@ function InventoryItemDialog({
     setPartId(item?.part_id ?? "")
     setSerial(item?.serial_number ?? "")
     setAssetTag(item?.asset_tag ?? "")
+    setKind(item?.kind ?? "other")
+    setMedia(item?.media ?? "")
+    const cap = bytesToUnit(item?.capacity_bytes ?? null)
+    setCapacity(cap.value)
+    setCapacityUnit(cap.unit)
+    setSpeed(item?.speed ?? "")
+    setStatusId(item?.status?.id ?? null)
     reset()
   }, [open, item, reset])
 
@@ -205,6 +338,15 @@ function InventoryItemDialog({
       api<Paginated<ManufacturerOption>>("/api/manufacturers/?picker=1"),
     enabled: open,
     staleTime: 10 * 60_000,
+  })
+  const statuses = useQuery({
+    queryKey: ["statuses", "inventoryitem"],
+    queryFn: () =>
+      api<Paginated<Status>>(
+        "/api/statuses/?available_to=inventoryitem&picker=1"
+      ),
+    enabled: open,
+    staleTime: 5 * 60_000,
   })
 
   const editing = !!item
@@ -218,6 +360,11 @@ function InventoryItemDialog({
         part_id: partId.trim(),
         serial_number: serial.trim(),
         asset_tag: assetTag.trim(),
+        kind,
+        media: kind === "disk" ? media : "",
+        capacity_bytes: unitToBytes(capacity, capacityUnit),
+        speed: speed.trim(),
+        status_id: statusId,
       }
       if (editing)
         return api<InventoryItemRow>(`/api/inventory-items/${item!.id}/`, {
@@ -263,9 +410,67 @@ function InventoryItemDialog({
             autoFocus
             value={name}
             onChange={setName}
-            placeholder="PSU 1"
+            placeholder="Disk 1"
             error={fieldErrors.name}
           />
+          <div className="grid grid-cols-2 gap-3">
+            <FormSelect
+              label="Kind"
+              value={kind}
+              onChange={(v) => v && setKind(v as InventoryItemKind)}
+              options={INVENTORY_KIND_OPTIONS}
+              error={fieldErrors.kind}
+            />
+            <FormCombobox
+              label="Status"
+              value={statusId}
+              onChange={setStatusId}
+              noneLabel="No status"
+              placeholder="Select a status…"
+              options={(statuses.data?.results ?? []).map((s) => ({
+                value: s.id,
+                label: s.name,
+              }))}
+              error={fieldErrors.status_id}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {kind === "disk" && (
+              <FormSelect
+                label="Media"
+                value={media || null}
+                onChange={(v) => setMedia((v ?? "") as InventoryMedia)}
+                options={INVENTORY_MEDIA_OPTIONS}
+                placeholder="—"
+                error={fieldErrors.media}
+              />
+            )}
+            <FormText
+              label="Speed"
+              value={speed}
+              onChange={setSpeed}
+              placeholder="7.2K RPM / PCIe 4.0"
+              error={fieldErrors.speed}
+            />
+          </div>
+          <div className="grid grid-cols-[1fr_100px] gap-3">
+            <FormText
+              label="Capacity"
+              type="number"
+              value={capacity}
+              onChange={setCapacity}
+              error={fieldErrors.capacity_bytes}
+            />
+            <FormSelect
+              label="Unit"
+              value={capacityUnit}
+              onChange={(v) => v && setCapacityUnit(v as StorageUnit)}
+              options={STORAGE_UNITS.map((u) => ({
+                value: u.value,
+                label: u.value,
+              }))}
+            />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <FormCombobox
               label="Parent part"

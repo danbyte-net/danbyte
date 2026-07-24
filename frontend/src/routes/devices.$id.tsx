@@ -72,6 +72,7 @@ import {
   DeviceFaceplate,
   FaceplateLegend,
   ImagePortsFaceplate,
+  useHasHardwareMarkers,
   useHasImagePorts,
   useObservedPorts,
   useSavedFaceplate,
@@ -895,6 +896,7 @@ function DeviceFrontPanel({ device }: { device: Device }) {
   // Photo faceplate wins when the type has an image + placed port markers;
   // else the schematic (mm-true) faceplate.
   const usePhoto = useHasImagePorts(device.device_type?.id)
+  const hasHardwareMarkers = useHasHardwareMarkers(device.device_type?.id)
   const hasRear = usePhoto
     ? !!device.device_type?.rear_image
     : (savedDoc?.rear?.length ?? 0) > 0
@@ -924,12 +926,17 @@ function DeviceFrontPanel({ device }: { device: Device }) {
           <>
             <ImagePortsFaceplate
               deviceTypeId={device.device_type.id}
+              deviceId={deviceId}
               interfaces={physical}
               vcPosition={device.vc_position}
               side={side}
               observed={observed}
             />
-            <FaceplateLegend className="mt-2" observed={!!observed} />
+            <FaceplateLegend
+              className="mt-2"
+              observed={!!observed}
+              hardware={hasHardwareMarkers}
+            />
           </>
         ) : (
           <>

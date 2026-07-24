@@ -1,11 +1,26 @@
 import { useEffect, useMemo, useState } from "react"
 import { useThree } from "@react-three/fiber"
+import { useQuery } from "@tanstack/react-query"
 import * as THREE from "three"
 
-import { deviceYM, type SceneDevice, type SceneRack } from "./world"
+import { api, type FacePort, type FacePorts, type ImagePortMarker } from "@/lib/api"
+import { liveHex, portCapabilityHex, portHex } from "@/lib/faceplate-colors"
+import {
+  normalizePortName,
+  useObservedPorts,
+} from "@/components/device-faceplate"
+
+import { deviceBoxM, type SceneDevice, type SceneRack } from "./world"
 
 const DEVICE_FALLBACK = "#52525b"
 const DEVICE_SELECTED = "#0ea5e9"
+
+// Photo-port quad tint: the SAME status colours the 2D faceplate uses (speed
+// tint via portState / PORT_STATE_HEX, live SNMP via liveHex), so a port lights
+// identically in 2D and 3D. A marker with no matching component on THIS device
+// is "undefined" (dim grey); a selected/armed port is amber.
+const PORT_UNDEFINED = "#3f3f46" // zinc-700 · marker with no real port here
+const PORT_SELECTED = "#fbbf24" // amber-400 · picked for cabling
 
 // ─── Face-texture cache ──────────────────────────────────────────────────────
 // One texture per device-type image URL, shared across every device box that
@@ -68,43 +83,76 @@ export function DeviceMesh({
   rackWidthM,
   rackDepthM,
   selected,
+  selectedPort,
   showTexture,
   onSelect,
+  onSelectPort,
 }: {
   rack: SceneRack
   dev: SceneDevice
   rackWidthM: number
   rackDepthM: number
   selected: boolean
+  /** Name of the photo port currently selected on THIS device, if any. */
+  selectedPort?: string | null
   /** Near tier only — keeps image fetches away from far cabinets. */
   showTexture: boolean
   onSelect: (deviceId: string) => void
+  /** A photo port was clicked — anchor for HUD + cable building. `side` is the
+   * face the marker lives on (the device's mounted face). */
+  onSelectPort: (
+    deviceId: string,
+    marker: ImagePortMarker,
+    side: "front" | "rear"
+  ) => void
 }) {
   const [hovered, setHovered] = useState(false)
-  const { y, h } = deviceYM(rack, dev)
-
-  const dw = dev.rack_width === "half" ? rackWidthM * 0.44 : rackWidthM * 0.92
-  const dx =
-    dev.rack_side === "left"
-      ? -rackWidthM * 0.23
-      : dev.rack_side === "right"
-        ? rackWidthM * 0.23
-        : 0
-  const dd = dev.is_full_depth ? rackDepthM * 0.9 : rackDepthM * 0.45
-  const mountedRear = dev.face === "rear"
-  const dz = mountedRear ? rackDepthM * 0.45 - dd / 2 : dd / 2 - rackDepthM * 0.45
+  const [hoveredPort, setHoveredPort] = useState<number | null>(null)
+  // Shared geometry — the cables layer anchors runs to these same numbers.
+  const { y, h, dx, dz, dw, dd, boxH, mountedRear } = deviceBoxM(
+    rack,
+    dev,
+    rackWidthM,
+    rackDepthM
+  )
 
   const imageUrl = mountedRear
     ? (dev.rear_image ?? dev.front_image)
     : (dev.front_image ?? dev.rear_image)
   const texture = useFaceTexture(showTexture ? imageUrl : null)
 
+  // Resolve this device's markers to real ports (id + cabled state) so the
+  // quads can be lit by connection status, not just drawn. Lazy: only near
+  // (showTexture) devices that actually carry markers on the shown face.
+  const side = mountedRear ? "rear" : "front"
+  const markers = dev.image_ports?.[side] ?? []
+  const wantPorts = showTexture && markers.length > 0
+  const facePorts = useQuery({
+    queryKey: ["device-face-ports", dev.id],
+    queryFn: () => api<FacePorts>(`/api/devices/${dev.id}/face-ports/`),
+    enabled: wantPorts,
+    staleTime: 30_000,
+  })
+  const resolved = useMemo(() => {
+    const m = new Map<string, FacePort>()
+    const d = facePorts.data
+    if (d) for (const p of [...d.front, ...d.rear]) m.set(p.marker, p)
+    return m
+  }, [facePorts.data])
+  // Live SNMP facts, same source (and cache) as the 2D faceplate — near
+  // devices with markers only, so the room doesn't poll every cabinet.
+  const observed = useObservedPorts(wantPorts ? dev.id : undefined)
+  // Demand frameloop: nudge a redraw when the resolved/live state (colours) land.
+  const invalidate = useThree((s) => s.invalidate)
+  useEffect(() => {
+    invalidate()
+  }, [resolved, observed, invalidate])
+
   const bodyColor = selected
     ? DEVICE_SELECTED
     : hovered
       ? "#71717a"
       : dev.role_color || DEVICE_FALLBACK
-  const boxH = h * 0.94
 
   // Memoized (and disposed) — an inline `new BoxGeometry` re-allocated on
   // every hover/selection render.
@@ -149,28 +197,84 @@ export function DeviceMesh({
             <meshBasicMaterial map={texture} toneMapped={false} />
           </mesh>
           {(dev.image_ports?.[mountedRear ? "rear" : "front"] ?? []).map(
-            (m, i) => (
-              <mesh
-                key={i}
-                // image (mx,my): x right, y DOWN from top-left → plane-local
-                // X right, Y up, so flip y.
-                position={[
-                  (m.x - 0.5) * dw,
-                  (0.5 - m.y) * boxH,
-                  0.0015,
-                ]}
-                raycast={() => null}
-              >
-                <planeGeometry args={[m.w * dw, m.h * boxH]} />
-                <meshBasicMaterial
-                  color="#38bdf8"
-                  transparent
-                  opacity={0.55}
-                  toneMapped={false}
-                  depthWrite={false}
-                />
-              </mesh>
-            )
+            (m, i) => {
+              // image (mx,my): x right, y DOWN from top-left → plane-local X
+              // right, Y up, so flip y. Each quad owns its pointer events and
+              // stops propagation, so a port is hoverable/clickable on its own
+              // rather than folding into the whole device's click.
+              const isSel = selectedPort != null && m.name === selectedPort
+              const isHot = hoveredPort === i
+              const fp = resolved.get(m.name)
+              const defined = !!fp?.id
+              // Same colouring as the 2D faceplate: live SNMP wins when present,
+              // else the speed/cable/enabled tint (with the type's max speed as
+              // fallback). Free ports show their capability tier, faded.
+              const obs = defined
+                ? observed?.get(normalizePortName(fp!.name))
+                : undefined
+              const tint = defined
+                ? {
+                    enabled: fp!.enabled,
+                    cable: fp!.connected,
+                    speed: fp!.speed,
+                    type: fp!.type,
+                  }
+                : null
+              const capability = tint ? portCapabilityHex(tint) : null
+              // Hardware markers (disk bays…): the PART's status colour
+              // (failed = red), same as the 2D photo faceplate.
+              const hardware = defined && fp!.kind === null
+              const color = isSel
+                ? PORT_SELECTED
+                : !defined
+                  ? PORT_UNDEFINED
+                  : hardware
+                    ? fp!.status?.color || "#64748b"
+                    : obs
+                      ? liveHex(obs)
+                      : (capability ?? portHex(tint!))
+              // Undefined markers sit dim in the back; idle ports faint (the
+              // photo stays the star — mirrors the 2D ~35% outline); lit
+              // ports and hardware solid.
+              const opacity =
+                isSel || isHot
+                  ? 0.9
+                  : !defined
+                    ? 0.2
+                    : !hardware && capability
+                      ? 0.32
+                      : 0.66
+              return (
+                <mesh
+                  key={i}
+                  name={m.name}
+                  position={[(m.x - 0.5) * dw, (0.5 - m.y) * boxH, 0.0015]}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSelectPort(dev.id, m, mountedRear ? "rear" : "front")
+                  }}
+                  onPointerOver={(e) => {
+                    e.stopPropagation()
+                    setHoveredPort(i)
+                    document.body.style.cursor = "pointer"
+                  }}
+                  onPointerOut={(e) => {
+                    e.stopPropagation()
+                    setHoveredPort((cur) => (cur === i ? null : cur))
+                    document.body.style.cursor = ""
+                  }}
+                >
+                  <planeGeometry args={[m.w * dw, m.h * boxH]} />
+                  <meshBasicMaterial
+                    color={color}
+                    transparent
+                    opacity={opacity}
+                    toneMapped={false}
+                    depthWrite={false}
+                  />
+                </mesh>
+              )
+            }
           )}
         </group>
       )}

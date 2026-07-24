@@ -1356,6 +1356,9 @@ function TileShape({
         strokeWidth={selected ? 2.5 : checkColor ? 2 : 1.25}
         strokeDasharray={dashed ? "6 3" : undefined}
       />
+      {tile.linked?.kind === "rack" && (
+        <FacingEdge w={w} h={h} orientation={tile.orientation} color={fill} />
+      )}
       {/* Icons live in the palette rail only — tiles stay clean: color,
           label, and live state. */}
       {label && (
@@ -1427,6 +1430,40 @@ function TileShape({
         />
       )}
     </g>
+  )
+}
+
+/**
+ * A rack tile's facing indicator: a thin threshold line floating just OUTSIDE
+ * the edge the cabinet's FRONT (door) points at — like a door mark on an
+ * architectural plan. Outside the rect so it never collides with the
+ * utilization bar, label, or link dot inside the tile. Orientation matches
+ * the 3D room: 0 = up (north), 90 = right, 180 = down, 270 = left.
+ */
+function FacingEdge({
+  w,
+  h,
+  orientation,
+  color,
+}: {
+  w: number
+  h: number
+  orientation: number
+  color: string
+}) {
+  const t = 3 // line thickness
+  const gap = 3 // distance outside the tile edge
+  const inset = 7 // corner clearance (keeps the rounded corners clean)
+  const bar =
+    orientation === 90
+      ? { x: w + gap, y: inset, width: t, height: h - inset * 2 }
+      : orientation === 180
+        ? { x: inset, y: h + gap, width: w - inset * 2, height: t }
+        : orientation === 270
+          ? { x: -gap - t, y: inset, width: t, height: h - inset * 2 }
+          : { x: inset, y: -gap - t, width: w - inset * 2, height: t }
+  return (
+    <rect {...bar} rx={t / 2} fill={color} opacity={0.9} pointerEvents="none" />
   )
 }
 

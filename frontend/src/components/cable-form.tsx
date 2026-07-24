@@ -38,6 +38,9 @@ export interface CableFormProps {
   /** Pre-seeded A-side terminations (create only) — e.g. "Connect cable"
    * from an interface arrives with that port already on the A end. */
   initialA?: TerminationInput[]
+  /** Pre-seeded B-side terminations (create only) — the 3D room's
+   * pick-both-ends flow arrives with both ports already chosen. */
+  initialB?: TerminationInput[]
   onSaved: (c: Cable) => void
   onCancel: () => void
 }
@@ -48,6 +51,7 @@ const toInputs = (terms: Cable["a_terminations"]): TerminationInput[] =>
 export function CableForm({
   cable,
   initialA,
+  initialB,
   onSaved,
   onCancel,
 }: CableFormProps) {
@@ -60,7 +64,7 @@ export function CableForm({
     cable ? toInputs(cable.a_terminations) : (initialA ?? [])
   )
   const [b, setB] = useState<TerminationInput[]>(
-    cable ? toInputs(cable.b_terminations) : []
+    cable ? toInputs(cable.b_terminations) : (initialB ?? [])
   )
   const [label, setLabel] = useState(cable?.label ?? "")
   const [type, setType] = useState(cable?.type ?? "")

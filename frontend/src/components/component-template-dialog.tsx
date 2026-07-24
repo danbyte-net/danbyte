@@ -2,7 +2,15 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
+import {
+  api,
+  bytesToUnit,
+  INVENTORY_KIND_OPTIONS,
+  INVENTORY_MEDIA_OPTIONS,
+  STORAGE_UNITS,
+  unitToBytes,
+  type StorageUnit,
+} from "@/lib/api"
 import type {
   ComponentTemplateBase,
   ComponentTemplateWritePayload,
@@ -189,6 +197,11 @@ export function ComponentTemplateDialog({
   // Inventory-item extras
   const [manufacturerId, setManufacturerId] = useState<string | null>(null)
   const [partId, setPartId] = useState("")
+  const [invKind, setInvKind] = useState("other")
+  const [invMedia, setInvMedia] = useState("")
+  const [invCapacity, setInvCapacity] = useState("")
+  const [invCapacityUnit, setInvCapacityUnit] = useState<StorageUnit>("GB")
+  const [invSpeed, setInvSpeed] = useState("")
 
   // Seed from the template being edited (or blank) every time the dialog opens.
   useEffect(() => {
@@ -222,6 +235,20 @@ export function ComponentTemplateDialog({
     setDefaultModuleTypeId(template?.default_module_type?.id ?? null)
     setManufacturerId(template?.manufacturer?.id ?? null)
     setPartId(template?.part_id ?? "")
+    const inv = template as
+      | Partial<{
+          kind: string
+          media: string
+          capacity_bytes: number | null
+          speed: string
+        }>
+      | undefined
+    setInvKind(inv?.kind ?? "other")
+    setInvMedia(inv?.media ?? "")
+    const cap = bytesToUnit(inv?.capacity_bytes ?? null)
+    setInvCapacity(cap.value)
+    setInvCapacityUnit(cap.unit)
+    setInvSpeed(inv?.speed ?? "")
     reset()
   }, [open, template, reset])
 
@@ -302,6 +329,10 @@ export function ComponentTemplateDialog({
       } else if (kind === "inventory-item") {
         payload.manufacturer_id = manufacturerId
         payload.part_id = partId.trim()
+        payload.kind = invKind
+        payload.media = invKind === "disk" ? invMedia : ""
+        payload.capacity_bytes = unitToBytes(invCapacity, invCapacityUnit)
+        payload.speed = invSpeed.trim()
       } else {
         payload.type = type.trim()
         payload.rear_port_template_id = rearPortTemplateId
@@ -394,21 +425,67 @@ export function ComponentTemplateDialog({
           {/* Type — grouped combobox where the backend serves a choice list,
               free text for the panel-port kinds. */}
           {kind === "inventory-item" ? (
-            <div className="grid grid-cols-2 gap-3">
-              <FormCombobox
-                label="Manufacturer"
-                value={manufacturerId}
-                onChange={setManufacturerId}
-                noneLabel="No manufacturer"
-                placeholder="No manufacturer"
-                searchPlaceholder="Search…"
-                emptyText="No manufacturers."
-                options={(manufacturers.data?.results ?? []).map((m) => ({
-                  value: m.id,
-                  label: m.name,
-                }))}
-                error={fieldErrors.manufacturer_id}
-              />
+            <div className="grid gap-3">
+              <div className="grid grid-cols-2 gap-3">
+                <FormSelect
+                  label="Kind"
+                  value={invKind}
+                  onChange={(v) => v && setInvKind(v)}
+                  options={INVENTORY_KIND_OPTIONS}
+                  error={fieldErrors.kind}
+                />
+                <FormCombobox
+                  label="Manufacturer"
+                  value={manufacturerId}
+                  onChange={setManufacturerId}
+                  noneLabel="No manufacturer"
+                  placeholder="No manufacturer"
+                  searchPlaceholder="Search…"
+                  emptyText="No manufacturers."
+                  options={(manufacturers.data?.results ?? []).map((m) => ({
+                    value: m.id,
+                    label: m.name,
+                  }))}
+                  error={fieldErrors.manufacturer_id}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {invKind === "disk" && (
+                  <FormSelect
+                    label="Media"
+                    value={invMedia || null}
+                    onChange={(v) => setInvMedia(v ?? "")}
+                    options={INVENTORY_MEDIA_OPTIONS}
+                    placeholder="—"
+                    error={fieldErrors.media}
+                  />
+                )}
+                <FormText
+                  label="Speed"
+                  value={invSpeed}
+                  onChange={setInvSpeed}
+                  placeholder="7.2K RPM / PCIe 4.0"
+                  error={fieldErrors.speed}
+                />
+              </div>
+              <div className="grid grid-cols-[1fr_100px] gap-3">
+                <FormText
+                  label="Capacity"
+                  type="number"
+                  value={invCapacity}
+                  onChange={setInvCapacity}
+                  error={fieldErrors.capacity_bytes}
+                />
+                <FormSelect
+                  label="Unit"
+                  value={invCapacityUnit}
+                  onChange={(v) => v && setInvCapacityUnit(v as StorageUnit)}
+                  options={STORAGE_UNITS.map((u) => ({
+                    value: u.value,
+                    label: u.value,
+                  }))}
+                />
+              </div>
               <FormText
                 label="Part ID"
                 value={partId}

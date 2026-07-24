@@ -10,7 +10,14 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
 from core.models import Organization, Tenant
-from .models import AuxPortTemplate, Device, DeviceType
+from .models import (
+    AuxPortTemplate,
+    Cable,
+    CableTermination,
+    Device,
+    DeviceType,
+    Interface,
+)
 
 User = get_user_model()
 
@@ -253,3 +260,89 @@ class AuxPortTests(APITestCase):
         names = set(device.aux_ports.values_list("name", flat=True))
         # Standalone device: {position} resolves to its default (1).
         self.assertEqual(names, {"USB1", "HDMI"})
+
+
+class FacePortsResolveTests(APITestCase):
+    """GET /api/devices/{id}/face-ports/ turns a device type's photo-port
+    markers into the device's real components (id, kind, cabled?), which the 3D
+    room view needs to cable a clicked port."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=self.org, name="Acme", slug="acme")
+        admin = User.objects.create_superuser("admin", "admin@example.com", "x")
+        self.client.force_login(admin)
+        session = self.client.session
+        session["current_tenant_id"] = str(self.tenant.id)
+        session.save()
+        self.dt = DeviceType.objects.create(
+            tenant=self.tenant, name="C9300", u_height=1,
+            image_ports={
+                "front": [
+                    {"kind": "interface", "name": "Gi1/0/1",
+                     "x": 0.1, "y": 0.5, "w": 0.03, "h": 0.4},
+                    {"kind": "interface", "name": "Gi1/0/99",
+                     "x": 0.2, "y": 0.5, "w": 0.03, "h": 0.4},
+                ],
+                "rear": [],
+            },
+        )
+        self.dev = Device.objects.create(
+            tenant=self.tenant, name="sw1", device_type=self.dt
+        )
+        self.eth = Interface.objects.create(
+            device=self.dev, name="Gi1/0/1", speed="25G", enabled=True
+        )
+
+    def _get(self):
+        return self.client.get(f"/api/devices/{self.dev.id}/face-ports/")
+
+    def test_resolves_marker_to_interface(self):
+        resp = self._get()
+        self.assertEqual(resp.status_code, 200, resp.content)
+        front = resp.json()["front"]
+        self.assertEqual(front[0]["name"], "Gi1/0/1")
+        self.assertEqual(front[0]["kind"], "interface")
+        self.assertEqual(front[0]["id"], str(self.eth.id))
+        self.assertFalse(front[0]["connected"])
+        # Speed/enabled ride along so 3D can reuse the 2D port-state colouring.
+        self.assertEqual(front[0]["speed"], "25G")
+        self.assertTrue(front[0]["enabled"])
+        # A marker with no matching component resolves to a null id, not a 500.
+        self.assertIsNone(front[1]["id"])
+        self.assertIsNone(front[1]["kind"])
+
+    def test_resolves_inventory_marker_with_status(self):
+        from api.models import InventoryItem
+        from api.status_registry import seed_builtin_statuses
+        from api.models import Status
+
+        seed_builtin_statuses(self.tenant)
+        failed = Status.objects.get(tenant=self.tenant, slug="failed")
+        self.dt.image_ports = {
+            "front": [{"kind": "inventory-item", "name": "Bay 1",
+                       "x": 0.3, "y": 0.5, "w": 0.02, "h": 0.6}],
+            "rear": [],
+        }
+        self.dt.save(update_fields=["image_ports"])
+        InventoryItem.objects.create(
+            device=self.dev, name="Bay 1", kind="disk", media="nvme",
+            status=failed,
+        )
+        front = self._get().json()["front"]
+        self.assertEqual(front[0]["name"], "Bay 1")
+        self.assertIsNotNone(front[0]["id"])
+        self.assertIsNone(front[0]["kind"])  # not cable-able
+        self.assertEqual(front[0]["status"]["name"], "Failed")
+
+    def test_connected_flag_and_cable_id(self):
+        peer = Device.objects.create(
+            tenant=self.tenant, name="sw2", device_type=self.dt
+        )
+        p_eth = Interface.objects.create(device=peer, name="Gi1/0/1")
+        cable = Cable.objects.create(tenant=self.tenant, type="cat6")
+        CableTermination.objects.create(cable=cable, end="A", interface=self.eth)
+        CableTermination.objects.create(cable=cable, end="B", interface=p_eth)
+        front = self._get().json()["front"]
+        self.assertTrue(front[0]["connected"])
+        self.assertEqual(front[0]["cable_id"], str(cable.id))
