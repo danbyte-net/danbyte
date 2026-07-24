@@ -1473,6 +1473,43 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
             raise serializers.ValidationError("Too many slots (max 1024).")
         return value
 
+    # Port markers anchored on the front/rear photo. Shape-checked like the
+    # faceplate; names are NOT cross-checked against templates (renamed later →
+    # the renderer just drops the marker).
+    def validate_image_ports(self, value):
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise serializers.ValidationError(
+                'image_ports must be {"front": [...], "rear": [...]}.')
+        total = 0
+        for side in ("front", "rear"):
+            markers = value.get(side, [])
+            if not isinstance(markers, list):
+                raise serializers.ValidationError(
+                    f"{side} must be a list of markers.")
+            total += len(markers)
+            for m in markers:
+                if not isinstance(m, dict):
+                    raise serializers.ValidationError(
+                        "Each marker must be an object.")
+                kind = m.get("kind", "interface")
+                if kind not in self._FACEPLATE_SLOT_KINDS:
+                    raise serializers.ValidationError(
+                        f"Unknown marker kind {kind!r}.")
+                name = m.get("name")
+                if not isinstance(name, str) or not name or len(name) > 64:
+                    raise serializers.ValidationError(
+                        "Markers need a name (≤64 chars).")
+                for k in ("x", "y", "w", "h"):
+                    v = m.get(k)
+                    if not isinstance(v, (int, float)) or not (0 <= v <= 1):
+                        raise serializers.ValidationError(
+                            f"Marker {k} must be a number in 0..1.")
+        if total > 512:
+            raise serializers.ValidationError("Too many markers (max 512).")
+        return value
+
     lifecycle_state = serializers.ReadOnlyField()
 
     class Meta:
@@ -1481,7 +1518,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
             "owning_site", "owning_site_id", "permissions", "id", "name", "manufacturer", "manufacturer_id", "model",
                   "part_number", "platform", "platform_id",
                   "u_height", "rack_width", "description",
-                  "front_image", "rear_image", "faceplate",
+                  "front_image", "rear_image", "faceplate", "image_ports",
                   "is_full_depth", "airflow", "weight", "weight_unit",
                   "subdevice_role", "exclude_from_utilization",
                   "custom_fields",

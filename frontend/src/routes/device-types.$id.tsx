@@ -12,6 +12,7 @@ import { DeviceTypeDeleteDialog } from "@/components/device-type-delete-dialog"
 import { DeviceTypeImages } from "@/components/device-type-images"
 import { DeviceTypeComponentsPane } from "@/components/device-type-components-pane"
 import { DeviceTypeFaceplatePane } from "@/components/device-type-faceplate-pane"
+import { DeviceTypeImagePortsPane } from "@/components/device-type-image-ports-pane"
 import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
 import {
   LocalityBadge,
@@ -51,7 +52,13 @@ function DeviceTypeDetail() {
 
 function Body({ deviceType: d }: { deviceType: DeviceType }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "components" | "faceplate" | "devices" | "journal" | "history"
+    | "overview"
+    | "components"
+    | "faceplate"
+    | "photo-ports"
+    | "devices"
+    | "journal"
+    | "history"
   >("overview")
   const { canDo, editableSites } = useMe()
   const nav = useNavigate()
@@ -168,6 +175,9 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
         { value: "overview", label: "Overview" },
         { value: "components", label: "Components" },
         { value: "faceplate", label: "Faceplate" },
+        ...(d.front_image || d.rear_image
+          ? [{ value: "photo-ports", label: "Photo ports" }]
+          : []),
         { value: "devices", label: "Devices", count: d.device_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
@@ -194,6 +204,9 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
       </DetailTab>
       <DetailTab value="faceplate">
         <DeviceTypeFaceplatePane deviceType={d} />
+      </DetailTab>
+      <DetailTab value="photo-ports">
+        <DeviceTypeImagePortsPane deviceType={d} />
       </DetailTab>
       <DetailTab value="devices">
         <EmbeddedDeviceTable

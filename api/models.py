@@ -430,6 +430,13 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
                    "referencing component-template names). Null = automatic "
                    "layout computed from the device's interfaces."),
     )
+    image_ports = models.JSONField(
+        null=True, blank=True, default=None,
+        help_text=("Port markers anchored on the front/rear photo: "
+                   "{front:[{kind,name,x,y,w,h}], rear:[...]} with x/y/w/h "
+                   "normalized 0..1 (center-anchored). Rendered over the image "
+                   "in 2D and on the device face in 3D. Null = none placed."),
+    )
     is_full_depth = models.BooleanField(
         default=True,
         help_text=("Occupies both the front and rear rack faces. Full-depth "

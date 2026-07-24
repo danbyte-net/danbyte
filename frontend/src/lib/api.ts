@@ -973,6 +973,21 @@ export interface LifecycleInfo {
   lifecycle_state: LifecycleState
 }
 
+/** A port marker anchored on a device-type photo. x/y/w/h are normalized
+ * 0..1 (x,y = the marker's CENTER) so they scale to any render + to 3D. */
+export interface ImagePortMarker {
+  kind: string
+  name: string
+  x: number
+  y: number
+  w: number
+  h: number
+}
+export interface ImagePorts {
+  front: ImagePortMarker[]
+  rear: ImagePortMarker[]
+}
+
 export interface DeviceType extends LifecycleInfo {
   id: string
   numid: number | null
@@ -992,6 +1007,8 @@ export interface DeviceType extends LifecycleInfo {
   rear_image: string | null
   /** Saved front-panel layout (drag-and-drop builder); null = auto layout. */
   faceplate: FaceplateDoc | null
+  /** Port markers anchored on the front/rear photo; null = none placed. */
+  image_ports: ImagePorts | null
   /** Occupies both rack faces (hatched on the opposite face in elevations). */
   is_full_depth: boolean
   airflow: string
@@ -1022,6 +1039,7 @@ export interface DeviceTypeWritePayload {
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
   faceplate?: FaceplateDoc | null
+  image_ports?: ImagePorts | null
   is_full_depth?: boolean
   airflow?: string
   weight?: string | null
