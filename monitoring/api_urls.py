@@ -19,6 +19,7 @@ from .viewsets import (
     OutpostReleaseViewSet,
     SilenceViewSet,
     SnmpProfileViewSet,
+    SnmpSensorViewSet,
 )
 from .views import (
     alert_ack_view,
@@ -37,6 +38,7 @@ from .views import (
     snmp_topology_ghosts_view,
     materialize_cable_view,
     device_snmp_poll_view,
+    device_sensor_poll_view,
     device_redfish_view,
     device_redfish_poll_view,
     device_snmp_reconcile_view,
@@ -65,6 +67,7 @@ router.register(r"channels", NotificationChannelViewSet, basename="notification-
 router.register(r"alert-rules", AlertRuleViewSet, basename="alert-rule")
 router.register(r"silences", SilenceViewSet, basename="silence")
 router.register(r"snmp-profiles", SnmpProfileViewSet, basename="snmp-profile")
+router.register(r"snmp-sensors", SnmpSensorViewSet, basename="snmp-sensor")
 router.register(r"engines", MonitoringEngineViewSet, basename="monitoring-engine")
 router.register(r"outpost-releases", OutpostReleaseViewSet, basename="outpost-release")
 
@@ -83,6 +86,7 @@ urlpatterns = [
     path("devices/<uuid:device_id>/snmp/reconcile/", device_snmp_reconcile_view, name="monitoring-device-snmp-reconcile"),
     path("devices/<uuid:device_id>/snmp/sync/", device_snmp_sync_view, name="monitoring-device-snmp-sync"),
     path("devices/<uuid:device_id>/snmp-poll/", device_snmp_poll_view, name="monitoring-device-snmp-poll"),
+    path("devices/<uuid:device_id>/sensor-poll/", device_sensor_poll_view, name="monitoring-device-sensor-poll"),
     path("devices/<uuid:device_id>/redfish/", device_redfish_view, name="monitoring-device-redfish"),
     path("devices/<uuid:device_id>/redfish-poll/", device_redfish_poll_view, name="monitoring-device-redfish-poll"),
     path("snmp-drift/", snmp_drift_list_view, name="monitoring-snmp-drift-list"),

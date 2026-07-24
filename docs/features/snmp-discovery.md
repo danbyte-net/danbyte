@@ -242,6 +242,36 @@ addresses are still refused. TLS verification is off by default (BMC
 certificates are usually self-signed) — enable it when yours chain to a
 trusted CA.
 
+## Custom SNMP sensors (vendor health OIDs) {#sensors}
+
+Not every BMC speaks [Redfish](#redfish) — plenty are SNMP-only (Supermicro,
+older iDRAC/iLO, Synology, storage shelves). SNMP has no *standard* hardware-
+health MIB, so each vendor exposes disk/PSU/fan status under its own OIDs.
+**Custom sensors** let you teach Danbyte those OIDs.
+
+On the device's **SNMP tab → Custom SNMP sensors** card, **Add sensor**:
+
+- **OID** — the numeric OID. A **walk** reads a table column (one value per
+  component, e.g. per drive); a **scalar** reads one value.
+- **Reading is** — which hardware kind these readings describe (disk, PSU…).
+- **Item name template** — how each reading names/matches its
+  [inventory item](../dcim/device-catalog.md#inventory-items): `{index}` is
+  the walk row, `{kind}` the kind (e.g. `Disk {index}` → `Disk 1`, `Disk 2`).
+- **Value → status** — map each raw SNMP value to a status slug, e.g.
+  `3 → active`, `4 → failed`. Unmapped values leave the item untouched.
+- **Scope** — limit the sensor to this device type, or apply it to all types
+  (define once, reuse across every server of that model).
+
+**Poll sensors** runs every applicable sensor with the device's SNMP profile,
+then reconciles: matching items are created if missing and their **status is
+flipped** — so a failing disk turns red on the Hardware tab, the photo
+faceplate and the 3D rack, exactly like the Redfish path. Flips are journaled;
+the last raw readings show on the card.
+
+To find your vendor's OIDs, walk the BMC's enterprise tree
+(`snmpwalk -v2c -c <community> <bmc> 1.3.6.1.4.1`) and consult its MIB — the
+disk-status column is what you point the sensor at.
+
 ## Permissions {#permissions}
 
 - **Read** (poll, view observed facts, view drift, view topology) — any

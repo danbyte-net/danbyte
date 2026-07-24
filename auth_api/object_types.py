@@ -124,6 +124,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # SNMP profiles are credentials — unregistered they'd fall back to "any
     # tenant member may write", which is exactly wrong for secrets.
     ("monitoring.SnmpProfile", "SNMP profiles", "Monitoring"),
+    ("monitoring.SnmpSensor", "SNMP sensors", "Monitoring"),
+    ("monitoring.RedfishEndpoint", "BMC (Redfish) endpoints", "Monitoring"),
     ("monitoring.NotificationChannel", "Notification channels", "Monitoring"),
     ("monitoring.AlertRule", "Alert rules", "Monitoring"),
     ("monitoring.Silence", "Silences", "Monitoring"),

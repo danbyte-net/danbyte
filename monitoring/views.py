@@ -2539,3 +2539,33 @@ def device_redfish_poll_view(request, device_id):
     poll_endpoint(ep)
     ep.refresh_from_db()
     return Response(_redfish_payload(ep))
+
+
+@extend_schema(
+    summary="Poll the device's custom SNMP sensors now (→ inventory health)",
+    tags=["monitoring"],
+    request=inline_serializer(
+        name="DeviceSensorPollRequest",
+        fields={"profile_id": serializers.UUIDField(required=False, allow_null=True)},
+    ),
+    responses=OpenApiTypes.OBJECT,
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def device_sensor_poll_view(request, device_id):
+    """Run the device's applicable custom SNMP sensors and reconcile their
+    readings into inventory-item statuses. Uses the device's SNMP profile."""
+    from .snmp_sensors import poll_device_sensors
+
+    resolved, err = _resolve_device(request, device_id, "change")
+    if err is not None:
+        return err
+    device, tenant = resolved
+    profile = None
+    profile_id = request.data.get("profile_id")
+    if profile_id:
+        profile = SnmpProfile.objects.filter(pk=profile_id, tenant=tenant).first()
+        if profile is None:
+            return Response({"detail": "SNMP profile not found."}, status=400)
+    result = poll_device_sensors(device, tenant, profile)
+    return Response(result)

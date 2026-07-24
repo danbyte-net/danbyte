@@ -1491,6 +1491,25 @@ export interface FacePorts {
   rear: FacePort[]
 }
 
+/** A user-defined SNMP health sensor (GET/POST /api/monitoring/snmp-sensors/). */
+export interface SnmpSensor {
+  id: string
+  name: string
+  slug: string
+  description: string
+  device_type: string | null
+  device_type_name: string | null
+  oid: string
+  walk: boolean
+  item_kind: InventoryItemKind
+  name_template: string
+  /** Raw SNMP value → status slug, e.g. {"3":"active","4":"failed"}. */
+  value_map: Record<string, string>
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
 /** Choice option for the interface/cable type dropdowns (GET /api/dcim/choices/). */
 export interface DcimChoice {
   value: string

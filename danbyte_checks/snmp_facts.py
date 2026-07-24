@@ -471,3 +471,53 @@ def fetch_snmp(target, version, params, secret_params, timeout_ms) -> dict:
     except SnmpFactsError as exc:
         out["error"] = str(exc)[:500]
     return out
+
+
+# ─── Arbitrary OID fetch (user-defined sensors) ─────────────────────────────
+
+async def fetch_oid(
+    target: str, version: str, params: dict, secret_params: dict,
+    oid: str, walk: bool, timeout_ms: int = 4000,
+) -> dict:
+    """Read one user-defined OID → ``{index: prettyValue, ...}``.
+
+    WALK mode returns one entry per table row (key = the OID tail after
+    ``oid``); scalar (GET) mode returns ``{"0": value}``. Raises
+    ``SnmpFactsError`` on a config/engine failure so the caller records the
+    error; an empty dict means the agent simply had nothing there.
+    """
+    try:
+        import pysnmp.hlapi.v3arch.asyncio as mod
+    except Exception as e:  # noqa: BLE001
+        raise SnmpFactsError(f"pysnmp unavailable: {e}")
+
+    port = int(params.get("port", 161))
+    timeout_s = max(timeout_ms / 1000, 0.2)
+    try:
+        auth = _auth_data(version, params, secret_params, mod)
+        transport = await mod.UdpTransportTarget.create(
+            (target, port), timeout=timeout_s, retries=0
+        )
+        engine = mod.SnmpEngine()
+        if walk:
+            return await _walk_column(mod, engine, auth, transport, oid.strip("."))
+        error_indication, error_status, _, var_binds = await mod.get_cmd(
+            engine, auth, transport, mod.ContextData(),
+            mod.ObjectType(mod.ObjectIdentity(oid)),
+        )
+    except Exception as e:  # noqa: BLE001
+        raise SnmpFactsError(f"snmp error: {e}")
+    if error_indication:
+        raise SnmpFactsError(str(error_indication))
+    if error_status:
+        raise SnmpFactsError(error_status.prettyPrint())
+    return {"0": v.prettyPrint() for _, v in var_binds}
+
+
+def fetch_oid_sync(
+    target, version, params, secret_params, oid, walk, timeout_ms=4000
+) -> dict:
+    """Synchronous wrapper for on-demand sensor polling from a DRF view."""
+    return asyncio.run(
+        fetch_oid(target, version, params, secret_params, oid, walk, timeout_ms)
+    )

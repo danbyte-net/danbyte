@@ -105,6 +105,8 @@ AUDITED_MODELS = [
     "monitoring.MonitoringEngine",
     "monitoring.MonitoringEngineBinding",
     "monitoring.OutpostRelease",
+    "monitoring.SnmpSensor",
+    "monitoring.RedfishEndpoint",
     # Org-level objects.
     "core.Tenant",
     "core.TenantGroup",
