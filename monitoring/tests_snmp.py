@@ -30,7 +30,14 @@ class SnmpPhase1Tests(APITestCase):
     def setUp(self):
         org = Organization.objects.create(name="O", slug="o")
         self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
-        self.device = Device.objects.create(tenant=self.tenant, name="r1")
+        from api.models import IPAddress as _IP, Prefix as _Pfx
+        _p = _Pfx.objects.create(tenant=self.tenant, cidr="10.8.0.0/24")
+        _ip = _IP.objects.create(
+            tenant=self.tenant, ip_address="10.8.0.1", prefix=_p
+        )
+        self.device = Device.objects.create(
+            tenant=self.tenant, name="r1", primary_ip=_ip
+        )
         admin = User.objects.create_superuser("admin", "a@b.c", "x")
         self.client.force_login(admin)
         s = self.client.session

@@ -2572,3 +2572,53 @@ def device_sensor_poll_view(request, device_id):
             return Response({"detail": "SNMP profile not found."}, status=400)
     result = poll_device_sensors(device, tenant, profile)
     return Response(result)
+
+
+@extend_schema(
+    summary="Link an SNMP-discovered interface name to an existing interface",
+    tags=["monitoring"],
+    request=inline_serializer(
+        name="SnmpInterfaceLinkRequest",
+        fields={
+            "interface_id": serializers.UUIDField(),
+            "snmp_name": serializers.CharField(allow_blank=True),
+        },
+    ),
+    responses=OpenApiTypes.OBJECT,
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def snmp_interface_link_view(request, device_id):
+    """Record that a discovered interface name belongs to an interface the user
+    already created — the port silkscreened "Ethernet 1" reporting as "eth0".
+
+    Drift then matches the pair instead of listing it as both new and missing.
+    Send an empty ``snmp_name`` to unlink. Source-of-truth write, so it needs
+    device change permission like accepting drift does.
+    """
+    from api.models import Interface
+
+    resolved, err = _resolve_device(request, device_id, "change")
+    if err is not None:
+        return err
+    device, tenant = resolved
+
+    iface = Interface.objects.filter(
+        pk=request.data.get("interface_id"), device=device
+    ).first()
+    if iface is None:
+        return Response(
+            {"detail": "Interface not found on this device."}, status=400
+        )
+    name = (request.data.get("snmp_name") or "").strip()[:128]
+    # One discovered name maps to one interface — clear any other claim on it.
+    if name:
+        Interface.objects.filter(device=device, snmp_name__iexact=name).exclude(
+            pk=iface.pk
+        ).update(snmp_name="")
+    iface.snmp_name = name
+    iface.save(update_fields=["snmp_name", "updated_at"])
+    return Response({
+        "interface_id": str(iface.id), "name": iface.name,
+        "snmp_name": iface.snmp_name,
+    })
