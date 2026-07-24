@@ -349,7 +349,7 @@ function RackOverview({ rack: r }: { rack: Rack }) {
   )
 }
 
-/** NetBox-style paired elevations — front and rear side by side, one shared
+/** Paired elevations — front and rear side by side, one shared
  * display-mode toggle. Full-depth devices show hatched on the face they're
  * not mounted on. */
 // Zoom presets (px per mm). Names/Images default to a compact fit-on-screen

@@ -47,8 +47,8 @@ interface ListResp<T> {
  * card. Gated to users who can change the device.
  *
  * Every observed value that corresponds to an object Danbyte already records
- * (interface, VLAN, IP, MAC) links to that object's detail page — NetBox-style
- * — so the tab is a jumping-off point, not a dead end. The lookups resolve
+ * (interface, VLAN, IP, MAC) links to that object's detail page — so the tab
+ * is a jumping-off point, not a dead end. The lookups resolve
  * client-side from the device's own interfaces/IPs (shared query cache), so
  * there's no extra backend work: things SNMP sees but Danbyte lacks stay plain
  * text (import them from the Drift inbox or "Sync from SNMP").

@@ -28,7 +28,7 @@ export function cableTint(
   if (!status) return undefined
   // Prefer the status's own colour (append "2b" ≈ 17% alpha to the #RRGGBB).
   if (status.color) return { backgroundColor: `${status.color}2b` }
-  // Fallback for statuses with no colour set: NetBox-style by name, so cabled
+  // Fallback for statuses with no colour set: conventional colours by name, so cabled
   // rows still tint (connected/installed green, planned amber, decom red).
   const byName: Record<string, string> = {
     connected: "#10b981",

@@ -65,7 +65,7 @@ export interface CableTerminationSideProps {
 }
 
 /**
- * One end (A or B) of a cable, NetBox-style: pick a **type**, pick a **device**
+ * One end (A or B) of a cable: pick a **type**, pick a **device**
  * (via the shared DevicePicker + its advanced search), then tick one or more of
  * that device's **ports**. Selections accumulate as chips, so you can switch
  * device/type and keep adding — a side may span several devices (breakout).

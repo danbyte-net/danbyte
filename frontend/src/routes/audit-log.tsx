@@ -177,7 +177,7 @@ function buildColumns(): ColumnDef<ChangeLogEntry>[] {
       accessorFn: (r) => r.timestamp,
       header: ({ column }) => <SortHeader column={column} label="When" />,
       // The timestamp deep-links to the entry's detail page (full pre/post
-      // snapshot + diff) — same affordance as NetBox's changelog.
+      // snapshot + diff).
       cell: ({ row }) => (
         <Link
           to="/audit-log/$id"

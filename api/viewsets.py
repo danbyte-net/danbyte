@@ -770,7 +770,7 @@ class CloneableMixin:
 
 
 class ImageAttachmentMixin:
-    """Adds NetBox-style image attachments to any tenant-scoped detail viewset.
+    """Adds image attachments to any tenant-scoped detail viewset.
 
     Mix it into a viewset and its objects gain an ``images`` nested endpoint:
 
@@ -2662,9 +2662,9 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
         tenant = self._tenant_or_403()
         _check_unique_name(Device, serializer, tenant, "device")
         serializer.save(tenant=tenant)
-        # Stamp the device's components out of its type's templates (NetBox
-        # semantics: a C9300-48P type materialises its 48 interfaces + console
-        # + PSU inlets on every new device of the type).
+        # Stamp the device's components out of its type's templates (a
+        # C9300-48P type materialises its 48 interfaces + console + PSU
+        # inlets on every new device of the type).
         materialize_device_components(serializer.instance)
 
     def perform_update(self, serializer):

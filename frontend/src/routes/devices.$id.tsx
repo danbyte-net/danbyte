@@ -1255,7 +1255,7 @@ function DeviceInterfacesPane({
   const [traceTarget, setTraceTarget] = useState<TraceTarget | null>(null)
   // Every device — master included — defaults to its OWN interface table (the
   // normal per-device table with add/edit/sync actions). The combined
-  // whole-stack view (NetBox-style) stays one click away via the toggle.
+  // whole-stack view stays one click away via the toggle.
   const [scope, setScope] = useState<"member" | "stack">("member")
   const vcQuery = useQuery({
     queryKey: ["virtual-chassis", virtualChassis?.id],

@@ -662,7 +662,7 @@ function BulkEditDialog({
 }
 
 // Bulk rename (find/replace, optional regex) or bulk clone (duplicate with a
-// renamed copy) — one dialog, mirroring NetBox's bulk-rename. Shows a live
+// renamed copy) — one dialog for both. Shows a live
 // before→after preview; the backend re-validates name collisions.
 function RenameCloneDialog({
   mode,

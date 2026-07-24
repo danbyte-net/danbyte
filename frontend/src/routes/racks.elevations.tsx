@@ -23,7 +23,7 @@ export const Route = createFileRoute("/racks/elevations")({
   }),
 })
 
-/** NetBox-style elevations wall — every rack drawn side by side, so admins
+/** Elevations wall — every rack drawn side by side, so admins
  * see at a glance what lives where. Optionally scoped to one site via
  * ?site=<id> (the Sites / Locations pages link here). */
 function RackElevationsPage() {

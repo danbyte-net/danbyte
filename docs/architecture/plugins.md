@@ -5,7 +5,7 @@ icon: lucide/puzzle
 # Plugins
 
 Danbyte has a first-class plugin system: a **trusted, in-process** extension
-model in the NetBox tradition. A plugin is an ordinary Python package that an
+model. A plugin is an ordinary Python package that an
 operator installs and lists in the `PLUGINS` setting; on the next restart it is
 discovered, version-checked, and wired into RBAC, custom fields, tags,
 import/export, audit, monitoring, automation, and the UI — with **no core

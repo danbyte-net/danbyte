@@ -21,7 +21,7 @@ const ACTION_VARIANT: Record<
 > = { create: "success", update: "warning", delete: "destructive" }
 
 /**
- * One change-log entry in full (NetBox-style): the change's metadata, a
+ * One change-log entry in full: the change's metadata, a
  * red/green Difference summary of exactly what changed, and the complete
  * Pre-/Post-Change row snapshots with the changed lines highlighted.
  */
@@ -284,7 +284,7 @@ function DiffBlock({
 }
 
 /** A full row snapshot, one `key: value` line per field, with the fields that
- * changed in this entry tinted red (pre) / green (post) — NetBox-style. */
+ * changed in this entry tinted red (pre) / green (post). */
 function SnapshotCard({
   title,
   data,

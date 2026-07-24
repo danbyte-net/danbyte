@@ -86,7 +86,7 @@ def build_digest(tenant, since) -> dict:
         .order_by("-at")[:20]
     )
 
-    # Window activity counters (NetBox-Ping style) + the per-prefix transition
+    # Window activity counters + the per-prefix transition
     # "chains": every IP that changed state in the window, grouped by prefix,
     # each rendered as an ordered sequence of status badges.
     win = StateTransition.objects.filter(tenant=tenant, at__gte=since)

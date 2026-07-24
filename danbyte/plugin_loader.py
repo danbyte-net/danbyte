@@ -55,7 +55,7 @@ class LoadResult:
 def _find_config_class(module_name: str):
     """Locate a plugin's ``DanbytePluginConfig`` subclass.
 
-    Prefers ``<pkg>.config`` (NetBox-style), else scans ``<pkg>.apps`` for the
+    Prefers ``<pkg>.config``, else scans ``<pkg>.apps`` for the
     single ``DanbytePluginConfig`` subclass. Importing ``plugins.base`` here is
     safe — it only defines a class deriving from ``django.apps.AppConfig``.
     """

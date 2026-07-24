@@ -489,7 +489,7 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
 # ships with. Creating a Device of that type materialises every template into
 # a concrete component (Interface, ConsolePort, …) on the device, so a
 # "C9300-48P" stamps out its 48 interfaces + console + 2 PSU inlets each time.
-# Matches NetBox's *template semantics (and the community devicetype-library),
+# Matches the community devicetype-library's *template semantics,
 # so imported device types carry their components over. Templates hold no
 # per-device state — they're part of the type definition, and per the
 # zero-pre-filled-data rule none ship by default.
@@ -1381,7 +1381,7 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 class ImageAttachment(TimestampedModel):
     """A user-uploaded image pinned to any object that makes sense to
-    photograph — devices, racks, sites, locations (NetBox's ``ImageAttachment``).
+    photograph — devices, racks, sites, locations.
 
     Generic-FK so one model + one upload flow covers every object type. Scoped
     to the parent's tenant, so the same tenant isolation applies; managed
@@ -4660,8 +4660,8 @@ class ExportTemplate(NumIdMixin, TimestampedModel):
 
 def resolve_config_template(device):
     """The config template that renders this device's intended config —
-    device's own, else its role's, else its platform's (NetBox's resolution
-    order). None when nothing is bound anywhere."""
+    device's own, else its role's, else its platform's. None when nothing is
+    bound anywhere."""
     if device.config_template_id:
         return device.config_template
     if device.role_id and device.role.config_template_id:

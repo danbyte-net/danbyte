@@ -339,7 +339,8 @@ class TenantGroupMiniSerializer(serializers.ModelSerializer):
 
 
 class TenantGroupSerializer(serializers.ModelSerializer):
-    """Org-scoped, self-nesting tenant grouping (NetBox tenantgroup parity)."""
+    """Org-scoped, self-nesting tenant grouping; NetBox ``tenantgroup``
+    hierarchies import losslessly."""
 
     slug = serializers.SlugField(required=False, allow_blank=True)
     parent = TenantGroupMiniSerializer(read_only=True)
@@ -3444,7 +3445,7 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_power(self, obj):
         """Rack power rollup. Supply = primary feeds delivered to the rack
-        (V × A × max-utilisation%, three-phase × √3, NetBox semantics).
+        (V × A × max-utilisation%, three-phase × √3).
         Demand = the racked devices' power-port draws — allocated where
         recorded, with the nameplate (maximum) sum alongside."""
         available = 0.0

@@ -129,7 +129,7 @@ export function RackElevation({
       : rack.starting_unit + rack.u_height - 1 - unit + 1
 
   const devices = q.data?.results ?? []
-  // NetBox semantics: a device mounts on ONE face (face "" ≈ front); when its
+  // Mounting semantics: a device mounts on ONE face (face "" ≈ front); when its
   // type is full-depth it *occupies* the opposite face too — drawn hatched
   // there, so the rear view shows what's blocking the space.
   const visible = useMemo(
@@ -516,7 +516,7 @@ function DeviceBlock({
       : null
   const renderPanel = mode === "render" && !hatched && device.device_type
   const text = mode === "names" || hatched || showText
-  // NetBox-style: occupied units fill edge-to-edge (square corners) and take
+  // Occupied units fill edge-to-edge (square corners) and take
   // the DEVICE ROLE's color as the block background in names mode.
   const roleColor =
     !hatched && !image && !renderPanel ? device.role?.color || null : null
@@ -548,7 +548,7 @@ function DeviceBlock({
         color: roleFg,
         borderLeft:
           accent && !hatched && !roleColor ? `3px solid ${accent}` : undefined,
-        // NetBox-style diagonal stripes: this face is blocked by a full-depth
+        // Diagonal stripes: this face is blocked by a full-depth
         // device mounted on the other face.
         backgroundImage: hatched
           ? "repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, currentColor 18%, transparent) 5px, color-mix(in srgb, currentColor 18%, transparent) 7px)"
