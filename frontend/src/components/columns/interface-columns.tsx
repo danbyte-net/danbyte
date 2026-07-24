@@ -92,6 +92,17 @@ export function buildInterfaceColumns(opts?: {
                 mgmt
               </Badge>
             )}
+            {row.original.snmp_name && (
+              // Visible proof of an SNMP link — without this the mapping was
+              // invisible once made, and only re-linking could change it.
+              <Badge
+                variant="outline"
+                className="h-4 px-1.5 font-mono text-[10px]"
+                title={`Discovered over SNMP as "${row.original.snmp_name}"`}
+              >
+                ↔ {row.original.snmp_name}
+              </Badge>
+            )}
             {driftByIface && (
               <DriftBadge items={driftByIface.get(row.original.id) ?? []} />
             )}

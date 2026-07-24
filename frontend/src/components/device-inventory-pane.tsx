@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
@@ -102,7 +102,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
 
   // Shared column factory — same DataTable/selection/actions primitives every
   // other component pane uses, so Hardware reads and behaves identically.
-  const columns: ColumnDef<InventoryItemRow, unknown>[] = [
+  const columns = useMemo<ColumnDef<InventoryItemRow, unknown>[]>(() => [
     ...(canWrite ? [selectionColumn<InventoryItemRow>()] : []),
     {
       id: "name",
@@ -189,7 +189,9 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
           }),
         ]
       : []),
-  ]
+    // Memoised: an inline array is a new identity every render, which makes
+    // DataTable's selection effect loop and locks the pane up.
+  ], [canWrite, del])
 
   return (
     <Section title="Inventory" count={items.length}>
