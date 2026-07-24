@@ -57,7 +57,7 @@ browser's own widget, ignores the theme, and drifts the moment tokens change.
 | Dropdown of fixed options | `FormSelect`, or `Select` for an unlabelled one | `<select>` |
 | Long / searchable option list | `FormCombobox` / `Combobox` | `<select>` with many `<option>`s |
 | Searchable picker in a popover | `Popover` + `Command` (see `ui/combobox.tsx`) | a hand-built input + `<button>` list |
-| Free text with common values | `FormText` with `suggestions` (renders a `<datalist>`) | a hard-coded `<select>` |
+| Free text with common values | `FormText` with `suggestions` (or `SuggestInput` directly) | `<datalist>`, or a `<select>` that locks out other values |
 | Object reference | `ObjectPicker` or an existing domain picker preset | a bespoke fetch + list |
 
 Radix controls report changes differently from DOM ones — `Checkbox` uses

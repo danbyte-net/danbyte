@@ -1,4 +1,4 @@
-import { useId, useState } from "react"
+import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Copy, Pencil, Replace, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
@@ -39,6 +39,7 @@ import {
 } from "@/components/forms"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import { SuggestInput } from "@/components/ui/suggest-input"
 import {
   Select,
   SelectContent,
@@ -341,7 +342,6 @@ function BulkEditDialog({
   const qc = useQueryClient()
   const dcimChoices = useDcimChoices()
   // Which fields the user chose to SET, and their values. Untouched = KEEP.
-  const listId = useId()
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [addTags, setAddTags] = useState<number[]>([])
   const [removeTags, setRemoveTags] = useState<number[]>([])
@@ -618,35 +618,39 @@ function BulkEditDialog({
                     }
                     title={active ? "Will be set" : "Keep current"}
                   />
-                  <Input
-                    type={f.kind === "int" ? "number" : "text"}
-                    value={
-                      active && values[f.key] !== null
-                        ? String(values[f.key])
-                        : ""
-                    }
-                    onChange={(e) =>
-                      set(
-                        f.key,
-                        f.kind === "int"
-                          ? e.target.value === ""
-                            ? null
-                            : Number(e.target.value)
-                          : e.target.value
-                      )
-                    }
-                    placeholder={active ? "" : "Keep current"}
-                    disabled={!active}
-                    list={
-                      f.suggestions?.length ? `${listId}-${f.key}` : undefined
-                    }
-                  />
-                  {f.suggestions && f.suggestions.length > 0 && (
-                    <datalist id={`${listId}-${f.key}`}>
-                      {f.suggestions.map((s) => (
-                        <option key={s} value={s} />
-                      ))}
-                    </datalist>
+                  {f.suggestions && f.suggestions.length > 0 ? (
+                    <SuggestInput
+                      value={
+                        active && values[f.key] !== null
+                          ? String(values[f.key])
+                          : ""
+                      }
+                      onChange={(v) => set(f.key, v)}
+                      suggestions={f.suggestions}
+                      placeholder={active ? "" : "Keep current"}
+                      disabled={!active}
+                    />
+                  ) : (
+                    <Input
+                      type={f.kind === "int" ? "number" : "text"}
+                      value={
+                        active && values[f.key] !== null
+                          ? String(values[f.key])
+                          : ""
+                      }
+                      onChange={(e) =>
+                        set(
+                          f.key,
+                          f.kind === "int"
+                            ? e.target.value === ""
+                              ? null
+                              : Number(e.target.value)
+                            : e.target.value
+                        )
+                      }
+                      placeholder={active ? "" : "Keep current"}
+                      disabled={!active}
+                    />
                   )}
                 </div>
               </Field>

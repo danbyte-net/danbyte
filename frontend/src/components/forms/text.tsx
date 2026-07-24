@@ -1,6 +1,5 @@
-import { useId } from "react"
-
 import { Input } from "@/components/ui/input"
+import { SuggestInput } from "@/components/ui/suggest-input"
 import { Field, type FieldProps } from "./field"
 import { cn } from "@/lib/utils"
 
@@ -26,7 +25,7 @@ export interface FormTextProps extends Base {
     | "search"
   min?: number
   max?: number
-  /** Free-text suggestions — rendered as a <datalist> dropdown. */
+  /** Common values, offered in a dropdown. The field stays free text. */
   suggestions?: string[]
 }
 
@@ -46,29 +45,28 @@ export function FormText({
   suggestions,
   ...field
 }: FormTextProps) {
-  const listId = useId()
+  const shared = {
+    type,
+    value,
+    placeholder,
+    required,
+    autoFocus,
+    autoComplete,
+    inputMode,
+    min,
+    max,
+    className: cn(mono && "font-mono", inputClassName),
+  }
   return (
     <Field {...field}>
-      <Input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        required={required}
-        autoFocus={autoFocus}
-        autoComplete={autoComplete}
-        inputMode={inputMode}
-        min={min}
-        max={max}
-        list={suggestions && suggestions.length ? listId : undefined}
-        className={cn(mono && "font-mono", inputClassName)}
-      />
-      {suggestions && suggestions.length > 0 && (
-        <datalist id={listId}>
-          {suggestions.map((s) => (
-            <option key={s} value={s} />
-          ))}
-        </datalist>
+      {suggestions && suggestions.length > 0 ? (
+        <SuggestInput
+          {...shared}
+          onChange={onChange}
+          suggestions={suggestions}
+        />
+      ) : (
+        <Input {...shared} onChange={(e) => onChange(e.target.value)} />
       )}
     </Field>
   )
