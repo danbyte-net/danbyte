@@ -1539,6 +1539,8 @@ export interface Interface {
   id: string
   device: { id: string; name: string }
   name: string
+  /** What the SNMP agent calls this port, when linked (see drift "Link to…"). */
+  snmp_name: string
   /** Media type slug (e.g. 10gbase-x-sfpp), or "" if unset. */
   type: string
   type_display: string
