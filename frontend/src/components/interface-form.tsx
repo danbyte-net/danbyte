@@ -54,6 +54,8 @@ export function InterfaceForm({
   const [enabled, setEnabled] = useState(iface?.enabled ?? true)
   const [mac, setMac] = useState(iface?.mac_address ?? "")
   const [mgmtOnly, setMgmtOnly] = useState(iface?.mgmt_only ?? false)
+  // The name SNMP reports for this port; clearing it unlinks discovery.
+  const [snmpName, setSnmpName] = useState(iface?.snmp_name ?? "")
   const [duplex, setDuplex] = useState(iface?.duplex ?? "")
   const [poeMode, setPoeMode] = useState(iface?.poe_mode ?? "")
   const [poeType, setPoeType] = useState(iface?.poe_type ?? "")
@@ -86,6 +88,7 @@ export function InterfaceForm({
     setEnabled(iface.enabled)
     setMac(iface.mac_address)
     setMgmtOnly(iface.mgmt_only)
+    setSnmpName(iface.snmp_name ?? "")
     setDuplex(iface.duplex)
     setPoeMode(iface.poe_mode)
     setPoeType(iface.poe_type)
@@ -137,6 +140,7 @@ export function InterfaceForm({
         enabled,
         mac_address: mac.trim(),
         mgmt_only: mgmtOnly,
+        snmp_name: snmpName.trim(),
         duplex,
         poe_mode: poeMode,
         poe_type: poeType,
@@ -208,6 +212,17 @@ export function InterfaceForm({
           placeholder="GigabitEthernet0/1"
           error={fieldErrors.name}
         />
+        {isEdit && (
+          <FormText
+            label="SNMP name"
+            hint="what discovery calls this port — clear to unlink"
+            value={snmpName}
+            onChange={setSnmpName}
+            mono
+            placeholder="eth0"
+            error={fieldErrors.snmp_name}
+          />
+        )}
         <FormText
           label="Speed"
           value={speed}
