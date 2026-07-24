@@ -151,6 +151,26 @@ Drift kinds:
   then appears on the device's **IPs** tab — closing the discover→assign loop. If
   no prefix contains the address, accept fails: add the prefix first.
 
+### Linking a discovered name to a port you already made {#interface-linking}
+
+The names on the silkscreen and the names the agent reports rarely match: you
+labelled the port `Ethernet 1`, the switch reports it as `eth0`. Discovery sees
+two things where there is one, and the pair drifts forever as both *new* and
+*missing*.
+
+On any **New interface** row, **Link to…** lists the device's own interfaces
+(unlinked ones first, searchable) — pick the port that discovered name really
+is. Danbyte stores it as the interface's **SNMP name**, the matcher starts
+treating the two as one, and both drift rows disappear on the next poll.
+
+Linked ports carry an `↔ eth0` badge next to their name in the interfaces
+table, so a link is never invisible.
+
+**To change or remove a link**, edit the interface: the **SNMP name** field
+holds the linked name. Type a different one to re-point it, or clear the field
+to unlink entirely. Linking a name that's already claimed by another interface
+moves it — a discovered name belongs to exactly one port.
+
 ### Sync from SNMP
 
 The drift inbox accepts items one at a time. The **Sync from SNMP** button on the
