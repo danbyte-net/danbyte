@@ -322,6 +322,8 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
             rowStyle={(r) => cableTint(r.cable?.status)}
             onSelectedRowsChange={setSelRear}
             embedded
+          searchable
+          searchPlaceholder="Search ports…"
           />
         )}
       </section>
@@ -346,6 +348,8 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
             rowStyle={(r) => cableTint(r.cable?.status)}
             onSelectedRowsChange={setSelFront}
             embedded
+          searchable
+          searchPlaceholder="Search ports…"
           />
         )}
       </section>

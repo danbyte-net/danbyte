@@ -263,6 +263,8 @@ export function ServicesPane({
           columns={columns}
           flexColumn="description"
           embedded
+          searchable
+          searchPlaceholder="Search services…"
         />
       )}
 
