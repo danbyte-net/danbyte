@@ -273,8 +273,13 @@ Each part also carries its **hardware identity and health**:
   Transceiver, or Other (the default for pre-existing parts).
 - **Media** (disks) — NVMe, SSD (SATA/SAS), HDD, or Tape.
 - **Capacity** with a unit picker (KB → PB; stored in bytes, so it's
-  backwards- and future-proof) and free-form **speed** ("7.2K RPM",
-  "PCIe 4.0 x4", "3200 MT/s").
+  backwards- and future-proof).
+- **Speed** — a dropdown of the common industry values for the part in front of
+  you: spindle rates for an HDD (5400/7200/10K/15K RPM), the bus for flash
+  (SATA 6Gb/s, SAS 12/24Gb/s, PCIe 3.0–5.0 x4), memory grades for RAM
+  (DDR4-3200, DDR5-5600), LTO generations for tape. The field stays free text,
+  so any vendor's wording still fits — the list is there to keep eight disks
+  from being recorded eight different ways.
 - **Status** — the part's lifecycle/health from the shared
   [status catalog](../features/catalogs-and-settings.md): every tenant gets
   **Active / Planned / Failed / Spare** for inventory items (extensible like
