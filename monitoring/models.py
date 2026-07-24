@@ -1437,6 +1437,64 @@ class DeviceSnmp(TimestampedModel):
         return f"SNMP({self.device_id})"
 
 
+class RedfishEndpoint(TimestampedModel):
+    """A device's BMC, reachable over Redfish (DMTF's management REST API —
+    what iDRAC, iLO, XClarity, Supermicro and UCS all speak). Config + the
+    last observed inventory in one per-device row.
+
+    The collector reads Systems → Storage → Drives, Processors, Memory and
+    Chassis → Power/Thermal, then reconciles the parts into the device's
+    inventory items (create/update by serial, health → lifecycle status).
+    Observed facts never overwrite user intent beyond the documented
+    reconcile rules.
+
+    Security: BMCs live on management (RFC1918) networks, which the outbound
+    SSRF guard rightly blocks for user-supplied URLs. A Redfish endpoint is
+    ADMIN-CONFIGURED (device change permission), pinned to this one host, and
+    fetched with redirects disabled — that is the deliberate, scoped
+    private-IP allowance. Loopback/link-local stay blocked.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="redfish_endpoints"
+    )
+    device = models.OneToOneField(
+        "api.Device", on_delete=models.CASCADE, related_name="redfish"
+    )
+    host = models.CharField(
+        max_length=255, help_text="BMC address (IP or hostname)."
+    )
+    port = models.PositiveIntegerField(default=443)
+    verify_tls = models.BooleanField(
+        default=False,
+        help_text="BMCs almost always present self-signed certificates; "
+        "enable only when yours carry a trusted chain.",
+    )
+    secret_params = EncryptedJSONField(
+        help_text="BMC credentials: {username, password}. Encrypted at rest; "
+        "never returned by the API.",
+    )
+    enabled = models.BooleanField(default=True)
+    timeout_ms = models.PositiveIntegerField(default=8000)
+
+    # Last observed state (the collector writes these).
+    data = models.JSONField(
+        default=dict, blank=True,
+        help_text="Observed hardware: {drives: [...], processors: [...], "
+        "memory: [...], psus: [...], fans: [...], system: {...}}.",
+    )
+    reachable = models.BooleanField(null=True, blank=True)
+    error = models.TextField(blank=True, default="")
+    polled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["device__name"]
+
+    def __str__(self) -> str:
+        return f"Redfish({self.device_id} @ {self.host})"
+
+
 class SnmpProfileBinding(TimestampedModel):
     """Assigns an ``SnmpProfile`` at a level of the device hierarchy. When a
     device is polled the effective profile resolves most-specific first:

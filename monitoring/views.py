@@ -2413,3 +2413,129 @@ def snmp_binding_view(request, scope, object_id):
         ).delete()
 
     return Response(_binding_payload(tenant, scope, object_id))
+
+
+# ─── Redfish (BMC hardware inventory + health) ───────────────────────────────
+
+def _redfish_payload(ep):
+    """API shape for a Redfish endpoint — config + last observed state.
+    Secrets are write-only; only their PRESENCE is reported."""
+    return {
+        "device": str(ep.device_id),
+        "host": ep.host,
+        "port": ep.port,
+        "verify_tls": ep.verify_tls,
+        "enabled": ep.enabled,
+        "timeout_ms": ep.timeout_ms,
+        "has_credentials": bool(ep.secret_params),
+        "data": ep.data or {},
+        "reachable": ep.reachable,
+        "error": ep.error,
+        "polled_at": ep.polled_at,
+    }
+
+
+@extend_schema(
+    summary="The device's BMC (Redfish) endpoint — config + last observed hardware",
+    tags=["monitoring"],
+    responses=OpenApiTypes.OBJECT,
+    methods=["GET"],
+)
+@extend_schema(
+    summary="Create/update the device's BMC endpoint",
+    tags=["monitoring"],
+    request=inline_serializer(
+        name="RedfishEndpointWrite",
+        fields={
+            "host": serializers.CharField(),
+            "port": serializers.IntegerField(required=False),
+            "verify_tls": serializers.BooleanField(required=False),
+            "enabled": serializers.BooleanField(required=False),
+            "timeout_ms": serializers.IntegerField(required=False),
+            "username": serializers.CharField(required=False, allow_blank=True),
+            "password": serializers.CharField(required=False, allow_blank=True),
+        },
+    ),
+    responses=OpenApiTypes.OBJECT,
+    methods=["PUT"],
+)
+@extend_schema(summary="Remove the device's BMC endpoint", tags=["monitoring"],
+               methods=["DELETE"])
+@api_view(["GET", "PUT", "DELETE"])
+@permission_classes([IsAuthenticated])
+def device_redfish_view(request, device_id):
+    """Per-device BMC endpoint. GET returns config + the last observed
+    hardware (credentials are never returned — only whether they're set).
+    PUT upserts config; omitting username/password keeps the stored ones.
+    DELETE removes the endpoint (inventory items stay)."""
+    from .models import RedfishEndpoint
+
+    action = "view" if request.method == "GET" else "change"
+    resolved, err = _resolve_device(request, device_id, action)
+    if err is not None:
+        return err
+    device, tenant = resolved
+    ep = RedfishEndpoint.objects.filter(device=device, tenant=tenant).first()
+
+    if request.method == "GET":
+        if ep is None:
+            return Response({"device": str(device.id), "host": "",
+                             "has_credentials": False, "data": {},
+                             "reachable": None, "error": "",
+                             "polled_at": None})
+        return Response(_redfish_payload(ep))
+
+    if request.method == "DELETE":
+        if ep is not None:
+            ep.delete()
+        return Response(status=204)
+
+    host = (request.data.get("host") or "").strip()
+    if not host:
+        return Response({"host": "Provide the BMC address."}, status=400)
+    if ep is None:
+        ep = RedfishEndpoint(device=device, tenant=tenant, secret_params={})
+    ep.host = host
+    ep.port = int(request.data.get("port") or ep.port or 443)
+    if "verify_tls" in request.data:
+        ep.verify_tls = bool(request.data["verify_tls"])
+    if "enabled" in request.data:
+        ep.enabled = bool(request.data["enabled"])
+    if "timeout_ms" in request.data:
+        ep.timeout_ms = int(request.data["timeout_ms"])
+    # Credentials: sent → replace; omitted → keep.
+    if request.data.get("username") is not None or request.data.get("password") is not None:
+        ep.secret_params = {
+            "username": request.data.get("username") or "",
+            "password": request.data.get("password") or "",
+        }
+    ep.save()
+    return Response(_redfish_payload(ep))
+
+
+@extend_schema(
+    summary="Poll the device's BMC now (collect + reconcile hardware)",
+    tags=["monitoring"],
+    responses=OpenApiTypes.OBJECT,
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def device_redfish_poll_view(request, device_id):
+    """On-demand BMC poll: walk the Redfish tree and reconcile the observed
+    drives/CPUs/RAM/PSUs/fans into the device's inventory items (health →
+    lifecycle status). Synchronous — a BMC answers in a few seconds."""
+    from .models import RedfishEndpoint
+    from .redfish import poll_endpoint
+
+    resolved, err = _resolve_device(request, device_id, "change")
+    if err is not None:
+        return err
+    device, tenant = resolved
+    ep = RedfishEndpoint.objects.filter(device=device, tenant=tenant).first()
+    if ep is None:
+        return Response(
+            {"detail": "No BMC endpoint configured for this device."}, status=400
+        )
+    poll_endpoint(ep)
+    ep.refresh_from_db()
+    return Response(_redfish_payload(ep))

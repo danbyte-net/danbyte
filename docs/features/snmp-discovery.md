@@ -209,6 +209,39 @@ adjacent on more than one link, which port pair). Creating the cable needs
 accept its interface drift first. Once cabled, the ghost is replaced by a solid
 edge.
 
+## BMC hardware health (Redfish) {#redfish}
+
+Servers expose their hardware over their BMC's **Redfish** API — the DMTF
+management standard that iDRAC (Dell), iLO (HPE), XClarity (Lenovo),
+Supermicro and Cisco UCS controllers all speak. Danbyte can poll it and keep
+the device's **[inventory items](../dcim/device-catalog.md#inventory-items)**
+in sync — disks, CPUs, DIMMs, PSUs and fans, with real serials and live
+health.
+
+**Set it up** on the device's **SNMP tab → BMC (Redfish)** card: enter the
+BMC address, port and credentials (encrypted at rest, never returned by the
+API), then **Poll now**. The collector walks
+`Systems → Storage/Processors/Memory` and `Chassis → Power/Thermal`, and
+reconciles what it finds:
+
+- Parts are matched by **serial number** first, then by name — so renaming a
+  disk (e.g. to match a drawn `Bay 3` marker) sticks across polls.
+- Missing parts are **created** with kind, media (NVMe/SSD/HDD), capacity
+  and model; existing parts get their hardware **facts** updated. Nesting,
+  tags, descriptions and custom fields are never touched.
+- **Health → status**: `OK` → *Active*, `Critical`/`Warning` → *Failed* — so
+  a failing disk turns red on the Hardware tab, the photo faceplate and the
+  3D rack. Status flips are journaled on the device. Parts the BMC stops
+  reporting are left alone.
+
+BMCs live on management (RFC1918) networks, which Danbyte's outbound-request
+guard normally blocks. A Redfish endpoint is a deliberate, **scoped**
+exception: it's configured by someone with device-change permission, pinned
+to that one host, fetched with redirects disabled, and loopback/link-local
+addresses are still refused. TLS verification is off by default (BMC
+certificates are usually self-signed) — enable it when yours chain to a
+trusted CA.
+
 ## Permissions {#permissions}
 
 - **Read** (poll, view observed facts, view drift, view topology) — any

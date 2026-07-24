@@ -111,6 +111,7 @@ import {
   type TraceTarget,
 } from "@/components/interface-trace-dialog"
 import { DeviceSnmpCard } from "@/components/device-snmp-card"
+import { DeviceRedfishCard } from "@/components/device-redfish-card"
 import { DeviceDriftCard } from "@/components/device-drift-card"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -317,6 +318,7 @@ function Body({ device: d }: { device: Device }) {
         <div className="space-y-6">
           <DeviceDriftCard deviceId={d.id} />
           <DeviceSnmpCard deviceId={d.id} />
+          <DeviceRedfishCard deviceId={d.id} />
         </div>
       </DetailTab>
       <DetailTab value="config">
