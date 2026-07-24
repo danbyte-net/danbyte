@@ -5567,6 +5567,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "front_image": img(dt.front_image if dt else None),
                 "rear_image": img(dt.rear_image if dt else None),
                 "has_faceplate": bool(dt and dt.faceplate),
+                # Photo-anchored port markers (per device type; denormalized
+                # here like front_image so the 3D face can overlay them).
+                "image_ports": (dt.image_ports if dt else None) or None,
             }
 
         def rack_geo(r):

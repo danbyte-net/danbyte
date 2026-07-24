@@ -71,6 +71,8 @@ import { DeviceInventoryPanel } from "@/components/device-inventory-panel"
 import {
   DeviceFaceplate,
   FaceplateLegend,
+  ImagePortsFaceplate,
+  useHasImagePorts,
   useObservedPorts,
   useSavedFaceplate,
 } from "@/components/device-faceplate"
@@ -890,7 +892,12 @@ function DeviceFrontPanel({ device }: { device: Device }) {
   // Live SNMP overlay — read-only observed facts on top of the intent.
   const observed = useObservedPorts(deviceId)
   const savedDoc = useSavedFaceplate(device.device_type?.id)
-  const hasRear = (savedDoc?.rear?.length ?? 0) > 0
+  // Photo faceplate wins when the type has an image + placed port markers;
+  // else the schematic (mm-true) faceplate.
+  const usePhoto = useHasImagePorts(device.device_type?.id)
+  const hasRear = usePhoto
+    ? !!device.device_type?.rear_image
+    : (savedDoc?.rear?.length ?? 0) > 0
   const physical = (q.data?.results ?? []).filter((i) => !i.virtual)
   if (physical.length === 0) return null
   const showRear = side === "rear"
@@ -913,6 +920,17 @@ function DeviceFrontPanel({ device }: { device: Device }) {
           <p className="py-6 text-center text-sm text-muted-foreground">
             No rear panel defined for this device type.
           </p>
+        ) : usePhoto && device.device_type ? (
+          <>
+            <ImagePortsFaceplate
+              deviceTypeId={device.device_type.id}
+              interfaces={physical}
+              vcPosition={device.vc_position}
+              side={side}
+              observed={observed}
+            />
+            <FaceplateLegend className="mt-2" observed={!!observed} />
+          </>
         ) : (
           <>
             <DeviceFaceplate

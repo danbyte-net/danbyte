@@ -753,6 +753,166 @@ export function TypeFaceplate({
   )
 }
 
+// ─── image-anchored ports (photo faceplate) ─────────────────────────────────
+
+/** True when a device type has a photo + at least one placed port marker on
+ * either side — i.e. the image faceplate should render instead of the
+ * schematic one. Shares the ["device-type", id] cache. */
+export function useHasImagePorts(deviceTypeId?: string | null): boolean {
+  const dt = useQuery({
+    queryKey: ["device-type", deviceTypeId],
+    queryFn: () => api<DeviceType>(`/api/device-types/${deviceTypeId}/`),
+    enabled: !!deviceTypeId,
+    staleTime: 5 * 60_000,
+  })
+  const ip = dt.data?.image_ports
+  const hasImg = !!(dt.data?.front_image || dt.data?.rear_image)
+  return hasImg && !!ip && (ip.front.length > 0 || ip.rear.length > 0)
+}
+
+/**
+ * A device's front/rear PHOTO with its interface ports marked directly on the
+ * image — the "photo faceplate". Markers come from the device type's
+ * `image_ports` (normalized 0..1, center-anchored); each is matched to the
+ * device's real interface by name (`{position}`-rendered), so it carries the
+ * same state color, live SNMP dot, hover card and link as the schematic
+ * faceplate. Coexists with it — the caller picks which to show.
+ */
+export function ImagePortsFaceplate({
+  deviceTypeId,
+  interfaces,
+  vcPosition,
+  side,
+  observed,
+  className,
+}: {
+  deviceTypeId: string
+  interfaces: Interface[]
+  vcPosition?: number | null
+  side: FaceplateSide
+  observed?: Map<string, ObservedPort> | null
+  className?: string
+}) {
+  const dt = useQuery({
+    queryKey: ["device-type", deviceTypeId],
+    queryFn: () => api<DeviceType>(`/api/device-types/${deviceTypeId}/`),
+    enabled: !!deviceTypeId,
+    staleTime: 5 * 60_000,
+  })
+  const ifaceByName = useMemo(
+    () => new Map(interfaces.map((i) => [normalizePortName(i.name), i])),
+    [interfaces]
+  )
+
+  const image =
+    side === "front" ? dt.data?.front_image : dt.data?.rear_image
+  const markers = dt.data?.image_ports?.[side] ?? []
+  if (!image) return null
+
+  return (
+    <div
+      className={cn(
+        "relative w-full overflow-hidden rounded-md border border-border bg-muted/30",
+        className
+      )}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={image}
+        alt={`${side} panel`}
+        className="block w-full select-none"
+        draggable={false}
+      />
+      {markers.map((m, idx) => {
+        // Interface markers resolve to a real interface (state + link);
+        // other kinds render as a static marker with a name tooltip.
+        const kind = m.kind || "interface"
+        const name = renderTemplateName(m.name, vcPosition ?? null)
+        const iface =
+          kind === "interface"
+            ? (ifaceByName.get(normalizePortName(name)) ?? null)
+            : null
+        const obs = observed?.get(normalizePortName(name))
+        const style = {
+          left: `${(m.x - m.w / 2) * 100}%`,
+          top: `${(m.y - m.h / 2) * 100}%`,
+          width: `${m.w * 100}%`,
+          height: `${m.h * 100}%`,
+        }
+        if (!iface) {
+          return (
+            <span
+              key={`${m.name}-${idx}`}
+              style={style}
+              title={`${name} (not on this device)`}
+              className="absolute rounded-[2px] border border-dashed border-border/70 bg-background/20"
+            />
+          )
+        }
+        const state = portState(iface)
+        return (
+          <HoverCard key={iface.id} openDelay={100} closeDelay={80}>
+            <HoverCardTrigger asChild>
+              <Link
+                to="/interfaces/$id"
+                params={{ id: iface.id }}
+                style={style}
+                className={cn(
+                  "absolute rounded-[2px] border-2 opacity-80 transition-opacity hover:opacity-100",
+                  PORT_STATE_CLASS[state]
+                )}
+              >
+                {obs && (
+                  <span
+                    className={cn(
+                      "absolute -top-1 -right-1 h-2 w-2 rounded-full ring-1 ring-background",
+                      liveDotClass(obs)
+                    )}
+                    aria-hidden
+                  />
+                )}
+              </Link>
+            </HoverCardTrigger>
+            <HoverCardContent
+              side="top"
+              className="grid gap-0.5 font-mono text-[11px] whitespace-nowrap"
+            >
+              <Link
+                to="/interfaces/$id"
+                params={{ id: iface.id }}
+                className="font-semibold text-primary hover:underline"
+              >
+                {iface.name}
+              </Link>
+              {iface.type_display && <div>{iface.type_display}</div>}
+              <div>
+                {state === "disabled"
+                  ? "disabled"
+                  : state === "free"
+                    ? "enabled · no cable"
+                    : `up${iface.speed ? ` · ${iface.speed}` : ""}`}
+              </div>
+              {obs && (
+                <div className="text-muted-foreground">{liveLine(obs)}</div>
+              )}
+              {iface.ip_addresses.slice(0, 3).map((ip) => (
+                <Link
+                  key={ip.id}
+                  to="/ips/$id"
+                  params={{ id: ip.id }}
+                  className="text-primary hover:underline"
+                >
+                  {ip.ip_address}
+                </Link>
+              ))}
+            </HoverCardContent>
+          </HoverCard>
+        )
+      })}
+    </div>
+  )
+}
+
 /** The device type's saved faceplate doc (null = none / auto). Shares the
  * ["device-type", id] cache — parents use this to decide on a Front/Rear
  * toggle without a second fetch. */

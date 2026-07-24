@@ -1,3 +1,4 @@
+import type { ImagePorts } from "@/lib/api"
 import { OPENING_MM, PANEL_MM } from "@/lib/faceplate-geometry"
 
 /**
@@ -29,6 +30,8 @@ export interface SceneDevice {
   front_image: string | null
   rear_image: string | null
   has_faceplate: boolean
+  /** Photo-anchored port markers (per device type), or null. */
+  image_ports: ImagePorts | null
 }
 
 export interface SceneRack {

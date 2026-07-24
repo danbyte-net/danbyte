@@ -53,6 +53,7 @@ const dev = (position: number, u = 1, over = {}) => ({
   front_image: null,
   rear_image: null,
   has_faceplate: false,
+  image_ports: null,
   ...over,
 })
 

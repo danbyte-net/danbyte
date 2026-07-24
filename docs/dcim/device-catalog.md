@@ -217,6 +217,24 @@ Templates renamed or deleted after a layout was saved render as dashed
 **ghost** cages, and the tab counts them so you can tidy up. Interfaces the
 layout doesn't place are appended automatically — nothing silently disappears.
 
+### Photo ports (anchoring ports on a real image)
+
+When a device type has a front and/or rear **[image](#rack-face-images)**, a
+**Photo ports** tab appears. Instead of the schematic cage layout, you place
+port markers **directly on the photo** — drag an interface (or console / power
+/ panel port) template from the palette onto the image, then position it
+precisely: drag it, grab the corner handle to resize, nudge with the **arrow
+keys** (Shift = coarser), or type exact **X / Y / W / H** percentages. A
+**fine-grid snap** keeps rows aligned. Coordinates are stored normalized
+(0–1), so they scale to any render size.
+
+Once a type has an image **and** at least one placed marker, its devices show
+the **photo faceplate** in place of the schematic one — each marker matched to
+the device's real interface by name (so it carries the same state colour, live
+SNMP dot, hover card and link), and the markers also render **on the device's
+face in the [3D room view](../features/floor-plans.md#the-3d-room-view)**.
+Types without photo ports keep using the schematic faceplate builder above.
+
 ## Device bays (chassis nesting)
 
 A **parent** chassis (blade enclosure, FEX parent) declares **device bays**
