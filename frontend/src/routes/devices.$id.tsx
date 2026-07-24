@@ -68,6 +68,7 @@ import { DeviceConfigRender } from "@/components/device-config-render"
 import { DeviceDeployPanel } from "@/components/device-deploy-panel"
 import { DeviceDriftPanel } from "@/components/device-drift-panel"
 import { DeviceInventoryPanel } from "@/components/device-inventory-panel"
+import { DeviceHardwareHealth } from "@/components/device-hardware-health"
 import {
   DeviceFaceplate,
   FaceplateLegend,
@@ -602,6 +603,12 @@ function DeviceOverview({
       : []),
   ]
   const hardwareRows: KvRow[] = [
+    // Health of the serial-tracked parts, up front — a failed disk used to be
+    // invisible until you drilled into Components → Hardware.
+    {
+      label: "Parts",
+      value: <DeviceHardwareHealth deviceId={d.id} />,
+    },
     ...(humanIds && d.numid != null
       ? [
           {
