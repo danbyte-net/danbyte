@@ -248,50 +248,52 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
 
   return (
     <div className="space-y-6">
-      {/* Observed header: reachability + the credential binding + Poll now. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-[11px] font-semibold tracking-wide text-foreground uppercase">
-          Observed
-        </h2>
-        {state?.reachable === true && (
-          <Badge variant="success">reachable</Badge>
+      {/* Observed: reachability + the credential binding + Poll now. Uses the
+          shared Section so its actions line up with every other card's. */}
+      <Section
+        title="Observed"
+        badge={
+          state?.reachable === true ? (
+            <Badge variant="success">reachable</Badge>
+          ) : state?.reachable === false ? (
+            <Badge variant="destructive">unreachable</Badge>
+          ) : undefined
+        }
+        actions={
+          <>
+            <SnmpBindingControl
+              scope="device"
+              objectId={deviceId}
+              canEdit={canPoll}
+            />
+            {canPoll && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={poll.isPending}
+                onClick={() => poll.mutate()}
+              >
+                <RefreshCw
+                  className={
+                    "h-3.5 w-3.5 " + (poll.isPending ? "animate-spin" : "")
+                  }
+                />
+                Poll now
+              </Button>
+            )}
+          </>
+        }
+      >
+        {factRows.length === 0 ? (
+          <p className="text-[13px] text-muted-foreground">
+            {state?.error
+              ? state.error
+              : "Not polled yet — pick a profile and use “Poll now” to read the device's live system facts."}
+          </p>
+        ) : (
+          <KvCard title="System" rows={factRows} />
         )}
-        {state?.reachable === false && (
-          <Badge variant="destructive">unreachable</Badge>
-        )}
-        <div className="ml-auto flex items-center gap-3">
-          <SnmpBindingControl
-            scope="device"
-            objectId={deviceId}
-            canEdit={canPoll}
-          />
-          {canPoll && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={poll.isPending}
-              onClick={() => poll.mutate()}
-            >
-              <RefreshCw
-                className={
-                  "h-3.5 w-3.5 " + (poll.isPending ? "animate-spin" : "")
-                }
-              />
-              Poll now
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {factRows.length === 0 ? (
-        <p className="text-[13px] text-muted-foreground">
-          {state?.error
-            ? state.error
-            : "Not polled yet — pick a profile and use “Poll now” to read the device's live system facts."}
-        </p>
-      ) : (
-        <KvCard title="System" rows={factRows} />
-      )}
+      </Section>
 
       {state && state.interfaces.length > 0 && (
         <Section title="Interfaces" count={state.interfaces.length}>
