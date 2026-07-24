@@ -1,0 +1,13 @@
+# Triggered every 30 minutes by danbyte-hardware.timer.
+# Logs: journalctl --user -fu danbyte-hardware
+[Unit]
+Description=Poll Danbyte hardware inventory + health every 30 minutes
+
+[Timer]
+OnCalendar=*:0/30
+OnBootSec=120
+Persistent=true
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target
