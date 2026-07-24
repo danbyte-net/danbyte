@@ -1426,6 +1426,10 @@ class DeviceSnmp(TimestampedModel):
         help_text="MAC-address table: [{mac, if_index}] from the bridge "
         "forwarding table (dot1dTpFdbPort + dot1dBasePortIfIndex).",
     )
+    sensors = models.JSONField(
+        default=list, blank=True,
+        help_text="Last custom-sensor readings: [{sensor, name, raw, status}].",
+    )
     reachable = models.BooleanField(null=True, blank=True)
     error = models.TextField(blank=True, default="")
     polled_at = models.DateTimeField(null=True, blank=True)
@@ -1435,6 +1439,73 @@ class DeviceSnmp(TimestampedModel):
 
     def __str__(self) -> str:
         return f"SNMP({self.device_id})"
+
+
+class SnmpSensor(TimestampedModel):
+    """A reusable, user-defined SNMP reading that maps to hardware health.
+
+    SNMP has no standard disk/PSU/fan health MIB — every vendor uses its own
+    OIDs (Dell OpenManage, HPE, Supermicro, Synology…). This is the escape
+    hatch: define an ``oid``, whether to WALK it (a table column, one value
+    per component) or GET it (a single scalar), a ``value_map`` from the raw
+    SNMP value to a status slug, and which inventory ``item_kind`` /
+    ``name_template`` the readings describe. Bound to a ``device_type`` (or
+    all types), it flips the matching inventory items' statuses on every poll
+    — using the device's own SNMP profile, so no extra credentials.
+    """
+
+    KIND_CHOICES = [
+        ("disk", "Disk"), ("cpu", "CPU"), ("ram", "RAM"), ("psu", "PSU"),
+        ("fan", "Fan"), ("gpu", "GPU"), ("controller", "Controller"),
+        ("other", "Other"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="snmp_sensors"
+    )
+    name = models.CharField(max_length=120)
+    slug = models.SlugField(max_length=120)
+    description = models.CharField(max_length=255, blank=True, default="")
+    device_type = models.ForeignKey(
+        "api.DeviceType", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="snmp_sensors",
+        help_text="Limit to one device type; blank applies to all.",
+    )
+    oid = models.CharField(
+        max_length=255,
+        help_text="Numeric OID — a table column base to WALK, or a scalar to GET.",
+    )
+    walk = models.BooleanField(
+        default=True,
+        help_text="Walk a table column (one reading per component) vs GET a "
+        "single scalar.",
+    )
+    item_kind = models.CharField(
+        max_length=16, choices=KIND_CHOICES, default="disk"
+    )
+    name_template = models.CharField(
+        max_length=128, default="{kind} {index}",
+        help_text="How each reading names/matches its inventory item; "
+        "{index} = the walk index, {kind} = the item kind.",
+    )
+    value_map = models.JSONField(
+        default=dict, blank=True,
+        help_text='Raw SNMP value → status slug, e.g. {"3": "active", '
+        '"4": "failed"}. Unmapped values leave the status unchanged.',
+    )
+    enabled = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "slug"], name="uniq_snmpsensor_tenant_slug"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class RedfishEndpoint(TimestampedModel):

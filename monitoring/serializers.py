@@ -32,6 +32,7 @@ from .models import (
     OutpostRelease,
     Silence,
     SnmpProfile,
+    SnmpSensor,
     StateTransition,
 )
 
@@ -83,9 +84,37 @@ class DeviceSnmpSerializer(serializers.ModelSerializer):
         model = DeviceSnmp
         fields = [
             "id", "device", "profile", "profile_name", "data", "interfaces",
-            "neighbors", "arp", "reachable", "error", "polled_at",
+            "neighbors", "arp", "sensors", "reachable", "error", "polled_at",
         ]
         read_only_fields = fields
+
+
+class SnmpSensorSerializer(serializers.ModelSerializer):
+    """A user-defined SNMP health sensor (OID → inventory-item status)."""
+
+    device_type_name = serializers.CharField(
+        source="device_type.name", read_only=True, default=None
+    )
+
+    class Meta:
+        model = SnmpSensor
+        fields = [
+            "id", "name", "slug", "description", "device_type",
+            "device_type_name", "oid", "walk", "item_kind", "name_template",
+            "value_map", "enabled", "created_at", "updated_at",
+        ]
+        read_only_fields = ["created_at", "updated_at"]
+        extra_kwargs = {"slug": {"required": False}}
+
+    def validate(self, attrs):
+        if not attrs.get("slug") and attrs.get("name"):
+            attrs["slug"] = slugify(attrs["name"])[:120] or "sensor"
+        vm = attrs.get("value_map")
+        if vm is not None and not isinstance(vm, dict):
+            raise serializers.ValidationError(
+                {"value_map": "Must be an object mapping raw value → status slug."}
+            )
+        return attrs
 
 
 class CheckTemplateSerializer(serializers.ModelSerializer):

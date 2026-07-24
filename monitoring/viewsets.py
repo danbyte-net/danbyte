@@ -32,6 +32,7 @@ from .models import (
     OutpostRelease,
     Silence,
     SnmpProfile,
+    SnmpSensor,
 )
 from .serializers import (
     AlertRuleSerializer,
@@ -45,6 +46,7 @@ from .serializers import (
     OutpostReleaseSerializer,
     SilenceSerializer,
     SnmpProfileSerializer,
+    SnmpSensorSerializer,
 )
 
 
@@ -177,6 +179,21 @@ class MonitoringEngineViewSet(viewsets.ModelViewSet):
 class SnmpProfileViewSet(TenantScopedViewSet):
     queryset = SnmpProfile.objects.all().order_by("name")
     serializer_class = SnmpProfileSerializer
+
+
+class SnmpSensorViewSet(TenantScopedViewSet):
+    queryset = SnmpSensor.objects.select_related("device_type").order_by("name")
+    serializer_class = SnmpSensorSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        dt = self.request.query_params.get("device_type")
+        if dt:
+            # A device's applicable sensors: this type or all-types.
+            from django.db.models import Q
+
+            qs = qs.filter(Q(device_type__isnull=True) | Q(device_type_id=dt))
+        return qs
 
 
 class CheckTemplateViewSet(TenantScopedViewSet):
