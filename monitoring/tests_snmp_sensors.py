@@ -6,7 +6,7 @@ from unittest import mock
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
-from api.models import Device, DeviceType, InventoryItem
+from api.models import Device, DeviceType, InventoryItem, IPAddress, Prefix
 from api.status_registry import seed_builtin_statuses
 from core.models import Organization, Tenant
 
@@ -26,8 +26,15 @@ class _Base(APITestCase):
         session["current_tenant_id"] = str(self.tenant.id)
         session.save()
         self.dt = DeviceType.objects.create(tenant=self.tenant, name="R750")
+        # A real primary IP: the poller only falls back to the device NAME
+        # when that name resolves, so a fixture without an IP would be skipped.
+        pfx = Prefix.objects.create(tenant=self.tenant, cidr="10.9.9.0/24")
+        ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.9.9.9", prefix=pfx
+        )
         self.device = Device.objects.create(
-            tenant=self.tenant, name="srv1", device_type=self.dt
+            tenant=self.tenant, name="srv1", device_type=self.dt,
+            primary_ip=ip,
         )
         self.profile = SnmpProfile.objects.create(
             tenant=self.tenant, name="Lab", slug="lab", version="v2c",

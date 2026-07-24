@@ -1600,6 +1600,12 @@ class SnmpProfileBinding(TimestampedModel):
     )
     scope = models.CharField(max_length=16, choices=SCOPE_CHOICES)
     object_id = models.UUIDField(help_text="id of the device / role / type.")
+    target = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Poll this address instead of the device's own IPs (device "
+        "scope only) — e.g. a BMC or a management address the agent listens "
+        "on. Blank resolves management IP → primary IP → resolvable name.",
+    )
 
     class Meta:
         constraints = [

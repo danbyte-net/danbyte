@@ -56,7 +56,8 @@ def poll_device_sensors(device, tenant, profile=None) -> dict:
         return {"readings": [], "flipped": 0, "error": "no SNMP profile"}
     target = _device_target(device)
     if not target:
-        return {"readings": [], "flipped": 0, "error": "no target"}
+        return {"readings": [], "flipped": 0,
+                "error": "device has no primary IP (and its name does not resolve)"}
 
     sensors = list(applicable_sensors(device, tenant))
     items = list(device.inventory_items.select_related("status"))
