@@ -258,6 +258,8 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
             data={portRows}
             columns={portCols}
             embedded
+          searchable
+          searchPlaceholder="Search ports…"
             onSelectedRowsChange={setSelPorts}
           />
         )}
@@ -281,6 +283,8 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
             data={outletRows}
             columns={outletCols}
             embedded
+          searchable
+          searchPlaceholder="Search ports…"
             onSelectedRowsChange={setSelOutlets}
           />
         )}

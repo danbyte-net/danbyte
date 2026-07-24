@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -19,23 +18,17 @@ import {
   type Status,
   type StorageUnit,
 } from "@/lib/api"
+import type { ColumnDef } from "@tanstack/react-table"
 import { StatusBadge } from "@/components/status-badge"
+import { DataTable, selectionColumn } from "@/components/data-table"
+import { actionsColumn } from "@/components/columns/actions-column"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
-import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { Section } from "@/components/ui/section"
 import { useRegisterAddActions } from "@/components/device-add-actions"
 import {
@@ -77,7 +70,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<InventoryItemRow | null>(null)
   // Bulk selection — tick rows, the shared bulk bar floats up.
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [selected, setSelected] = useState<InventoryItemRow[]>([])
 
   const q = useQuery({
     queryKey: ["device-inventory", deviceId],
@@ -107,6 +100,97 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
       : []
   )
 
+  // Shared column factory — same DataTable/selection/actions primitives every
+  // other component pane uses, so Hardware reads and behaves identically.
+  const columns: ColumnDef<InventoryItemRow, unknown>[] = [
+    ...(canWrite ? [selectionColumn<InventoryItemRow>()] : []),
+    {
+      id: "name",
+      header: "Name",
+      accessorFn: (r) => r.name,
+      cell: ({ row }) => (
+        <span className={row.original.parent ? "pl-6 font-medium" : "font-medium"}>
+          {row.original.parent && (
+            <span className="mr-1 text-muted-foreground">└</span>
+          )}
+          {row.original.name}
+        </span>
+      ),
+    },
+    {
+      id: "kind",
+      header: "Kind",
+      accessorFn: (r) => (r.kind && r.kind !== "other" ? KIND_LABEL[r.kind] : ""),
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">
+          {row.original.kind && row.original.kind !== "other"
+            ? (KIND_LABEL[row.original.kind] ?? row.original.kind)
+            : "—"}
+        </span>
+      ),
+    },
+    {
+      id: "hardware",
+      header: "Hardware",
+      accessorFn: (r) => hardwareSummary(r),
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">
+          {hardwareSummary(row.original) || "—"}
+        </span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      accessorFn: (r) => r.status?.name ?? "",
+      cell: ({ row }) => <StatusBadge status={row.original.status} />,
+    },
+    {
+      id: "manufacturer",
+      header: "Manufacturer",
+      accessorFn: (r) => r.manufacturer?.name ?? "",
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">
+          {row.original.manufacturer?.name ?? "—"}
+        </span>
+      ),
+    },
+    {
+      id: "part_id",
+      header: "Part ID",
+      accessorFn: (r) => r.part_id,
+      cell: ({ row }) => (
+        <span className="font-mono text-xs">{row.original.part_id || "—"}</span>
+      ),
+    },
+    {
+      id: "serial_number",
+      header: "Serial",
+      accessorFn: (r) => r.serial_number,
+      cell: ({ row }) => (
+        <span className="font-mono text-xs">
+          {row.original.serial_number || "—"}
+        </span>
+      ),
+    },
+    {
+      id: "asset_tag",
+      header: "Asset tag",
+      accessorFn: (r) => r.asset_tag,
+      cell: ({ row }) => (
+        <span className="font-mono text-xs">{row.original.asset_tag || "—"}</span>
+      ),
+    },
+    ...(canWrite
+      ? [
+          actionsColumn<InventoryItemRow>({
+            onEdit: setEditing,
+            onDelete: (r) => del.mutate(r.id),
+          }),
+        ]
+      : []),
+  ]
+
   return (
     <Section title="Inventory" count={items.length}>
       {q.isError ? (
@@ -115,131 +199,26 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
         <p className="p-4 text-sm text-muted-foreground">Loading…</p>
       ) : items.length === 0 ? (
         <p className="p-4 text-sm text-muted-foreground">
-          No inventory items — serial-tracked parts (PSUs, fans, CPUs,
+          No inventory items — serial-tracked parts (disks, PSUs, fans, CPUs,
           transceivers) live here.
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {canWrite && (
-                  <TableHead className="w-8">
-                    <input
-                      type="checkbox"
-                      className="ck"
-                      checked={
-                        ordered.length > 0 && selected.size === ordered.length
-                      }
-                      onChange={(e) =>
-                        setSelected(
-                          e.target.checked
-                            ? new Set(ordered.map((i) => i.id))
-                            : new Set()
-                        )
-                      }
-                      aria-label="Select all parts"
-                    />
-                  </TableHead>
-                )}
-                <TableHead>Name</TableHead>
-                <TableHead>Kind</TableHead>
-                <TableHead>Hardware</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Manufacturer</TableHead>
-                <TableHead>Part ID</TableHead>
-                <TableHead>Serial</TableHead>
-                <TableHead>Asset tag</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {ordered.map((it) => (
-                <TableRow key={it.id}>
-                  {canWrite && (
-                    <TableCell className="w-8">
-                      <input
-                        type="checkbox"
-                        className="ck"
-                        checked={selected.has(it.id)}
-                        onChange={(e) =>
-                          setSelected((cur) => {
-                            const next = new Set(cur)
-                            if (e.target.checked) next.add(it.id)
-                            else next.delete(it.id)
-                            return next
-                          })
-                        }
-                        aria-label={`Select ${it.name}`}
-                      />
-                    </TableCell>
-                  )}
-                  <TableCell
-                    className={it.parent ? "pl-8 font-medium" : "font-medium"}
-                  >
-                    {it.parent && (
-                      <span className="mr-1 text-muted-foreground">└</span>
-                    )}
-                    {it.name}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {it.kind && it.kind !== "other"
-                      ? (KIND_LABEL[it.kind] ?? it.kind)
-                      : "—"}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {hardwareSummary(it) || "—"}
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={it.status} />
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {it.manufacturer?.name ?? "—"}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {it.part_id || "—"}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {it.serial_number || "—"}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {it.asset_tag || "—"}
-                  </TableCell>
-                  <TableCell>
-                    {canWrite && (
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7"
-                          onClick={() => setEditing(it)}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7 text-destructive hover:text-destructive"
-                          onClick={() => del.mutate(it.id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <DataTable
+          data={ordered}
+          columns={columns}
+          embedded
+          searchable
+          searchPlaceholder="Search parts…"
+          onSelectedRowsChange={setSelected}
+        />
       )}
 
       {canWrite && (
         <ComponentBulkBar
           endpoint="/api/inventory-items/"
           kindLabel="part"
-          selected={items.filter((i) => selected.has(i.id))}
-          onCleared={() => setSelected(new Set())}
+          selected={selected}
+          onCleared={() => setSelected([])}
           invalidate={[["device-inventory", deviceId]]}
           fields={[
             {

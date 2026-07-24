@@ -198,6 +198,8 @@ export function DeviceConsolePane({ deviceId }: { deviceId: string }) {
             data={portRows}
             columns={portCols}
             embedded
+            searchable
+            searchPlaceholder="Search ports…"
             onSelectedRowsChange={setSelPorts}
           />
         )}
@@ -240,6 +242,8 @@ export function DeviceConsolePane({ deviceId }: { deviceId: string }) {
             data={serverRows}
             columns={serverCols}
             embedded
+            searchable
+            searchPlaceholder="Search ports…"
             onSelectedRowsChange={setSelServers}
           />
         )}

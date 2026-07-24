@@ -24,6 +24,7 @@ import { useTablePreference } from "@/lib/use-table-preference"
 import { useUserPrefs } from "@/lib/use-user-prefs"
 import { exportTable, type ExportFormat } from "@/lib/table-export"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   DropdownMenu,
@@ -102,6 +103,12 @@ interface DataTableProps<T> {
    * post-expansion rows (group banners interleaved) when a grouped table can
    * hold hundreds of interactive rows — e.g. the monitoring policy tables. */
   pagedWhenGrouped?: boolean
+  /** Show a filter box above the table. Embedded panes (device components,
+   * detail tabs) suppress the Export/Columns toolbar but still want to find a
+   * row in a long list — this is that box, and it filters every column. */
+  searchable?: boolean
+  /** Placeholder for the filter box. */
+  searchPlaceholder?: string
 }
 
 // Headless data table for every list page in Danbyte. Hands the column
@@ -126,9 +133,12 @@ export function DataTable<T>({
   rowStyle,
   embedded,
   pagedWhenGrouped,
+  searchable,
+  searchPlaceholder,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
+  const [globalFilter, setGlobalFilter] = useState("")
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
     initialColumnVisibility ?? {}
   )
@@ -249,6 +259,7 @@ export function DataTable<T>({
     state: {
       sorting,
       columnFilters,
+      globalFilter,
       columnVisibility,
       columnOrder,
       rowSelection,
@@ -267,6 +278,7 @@ export function DataTable<T>({
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    onGlobalFilterChange: setGlobalFilter,
     getGroupedRowModel: getGroupedRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
@@ -298,6 +310,15 @@ export function DataTable<T>({
 
   return (
     <div className="flex flex-col gap-2">
+      {searchable && (
+        <Input
+          value={globalFilter}
+          onChange={(e) => setGlobalFilter(e.target.value)}
+          placeholder={searchPlaceholder ?? "Search…"}
+          className="h-8 max-w-xs text-[13px]"
+          aria-label="Filter rows"
+        />
+      )}
       {/* Compact bar above the table — only shows up at all if there's
           something to say. Selection count on the left when rows are
           ticked, Columns dropdown on the right. The full row of "36
