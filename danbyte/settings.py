@@ -77,12 +77,12 @@ INSTALLED_APPS = [
 ]
 
 # ─── Plugins ─────────────────────────────────────────────────────────────────
-# NetBox-style trusted plugins: a comma-separated list of importable plugin
-# packages, applied on restart. Each is discovered + version-gated at import
+# Trusted plugins (package + restart): a comma-separated list of importable
+# plugin packages, applied on restart. Each is discovered + version-gated at import
 # time here (before Django builds the app registry) and appended to
 # INSTALLED_APPS; a broken/incompatible one is skipped and reported via
 # /api/plugins/ rather than aborting boot. PLUGINS_CONFIG holds per-plugin
-# settings overrides (keyed by plugin slug), NetBox-style.
+# settings overrides (keyed by plugin slug).
 PLUGINS = [p for p in os.getenv("PLUGINS", "").split(",") if p.strip()]
 PLUGINS_CONFIG: dict = {}
 

@@ -139,7 +139,7 @@ export function PathStrip({
       {leading}
       {steps.map((s, i) =>
         s.t === "chip" ? (
-          // NetBox's termination boxes, rotated horizontal: device name on
+          // Termination boxes, rotated horizontal: device name on
           // top, then one divided cell per port the run touches — entry on
           // the left (where the line comes in), exit on the right.
           <div

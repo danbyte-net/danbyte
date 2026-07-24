@@ -1,4 +1,4 @@
-"""Tier-2 NetBox-parity tests: virtual chassis, L2VPN, VM-interface L2/L3,
+"""Tier-2 migration-parity tests: virtual chassis, L2VPN, VM-interface L2/L3,
 tenant/contact group nesting, and config-template resolution."""
 from __future__ import annotations
 

@@ -135,7 +135,7 @@ type NavItem = {
   anyOf?: string[]
   perm?: string
 }
-// A cluster is a labelled run of items inside a section (the NetBox-style
+// A cluster is a labelled run of items inside a section (rendered as a small
 // sub-heading). `label` is optional — a single unlabelled cluster renders as a
 // plain list, so short sections stay flat.
 type NavCluster = {
@@ -860,7 +860,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           >
             {section.clusters.map((cluster, i) => (
               <React.Fragment key={cluster.label ?? i}>
-                {/* NetBox-style sub-heading. Hidden in the icon-rail (where
+                {/* Cluster sub-heading. Hidden in the icon-rail (where
                     there's no room for text) and omitted for unlabelled
                     clusters so short sections stay flat. */}
                 {cluster.label && (

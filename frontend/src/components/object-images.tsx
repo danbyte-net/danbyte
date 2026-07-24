@@ -11,7 +11,7 @@ import { apiErrorToast } from "@/lib/api-toast"
 type ImageList = { count: number; results: ImageAttachment[] }
 
 /**
- * NetBox-style image attachments for any object with an `images` nested
+ * Image attachments for any object with an `images` nested
  * endpoint (devices, racks, sites, locations). A gallery of uploaded photos /
  * diagrams with captions. Uploaders (change permission on `objectType`) get an
  * upload button and per-image remove; everyone else sees the gallery

@@ -57,7 +57,7 @@ class ChangeLogEntry(models.Model):
 
     # {field: {"old": ..., "new": ...}} for updates; "{}" for create/delete.
     changes = models.JSONField(default=dict, blank=True)
-    # Full field snapshots (NetBox-style): the whole row before the write
+    # Full field snapshots: the whole row before the write
     # (update/delete) and after it (create/update). Null when not applicable —
     # a create has no pre state, a delete no post state.
     pre_change = models.JSONField(null=True, blank=True)

@@ -46,7 +46,7 @@ class CustomFieldGroup(TimestampedModel):
     """A named bucket that related custom fields can belong to, so forms and
     detail pages render them under a heading instead of one flat list.
 
-    Smarter than a free-text group name (NetBox's approach): a real object means
+    Smarter than a free-text group name: a real object means
     renaming/reordering happens in one place, typos can't split a group, and the
     group can carry a description + a collapse default. Tenant-scoped like every
     other customization object.

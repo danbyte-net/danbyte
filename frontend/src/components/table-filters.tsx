@@ -124,8 +124,8 @@ export function useTableFilters<TRow>(
   columns: ColumnDef<TRow, unknown>[],
   rows: TRow[],
   // Seed enum facets on first render, e.g. from a URL search param so a link
-  // like `/devices?type=<id>` lands on the pre-filtered table (NetBox-style
-  // cross-object linkage). Keyed by column.id → the values to preselect.
+  // like `/devices?type=<id>` lands on the pre-filtered table (cross-object
+  // linkage). Keyed by column.id → the values to preselect.
   initialEnums?: Record<string, string[]>
 ): UseTableFiltersResult<TRow> {
   // Memoize: a new facets array reference every render would cascade

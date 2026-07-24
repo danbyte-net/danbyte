@@ -1,4 +1,4 @@
-"""Tier-1 NetBox-parity tests: circuit/tunnel terminations, console + device
+"""Tier-1 migration-parity tests: circuit/tunnel terminations, console + device
 power components (incl. cable termination arms), and device-type component
 template materialization."""
 from __future__ import annotations

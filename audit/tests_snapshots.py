@@ -1,6 +1,6 @@
 """Change-log pre/post snapshots + the detail endpoint that serves them.
 
-The snapshots power the NetBox-style changelog detail page (Difference +
+The snapshots power the changelog detail page (Difference +
 Pre-/Post-Change Data panels): create stores the post state, update stores
 both, delete stores the pre state.
 """

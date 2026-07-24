@@ -1727,7 +1727,7 @@ export interface PowerOutletWritePayload {
 }
 
 // ─── Device-type component templates ────────────────────────────────────────
-// Materialised onto every new device of the type (NetBox semantics).
+// Materialised onto every new device of the type.
 // ─── Modules (pluggable line cards) ─────────────────────────────────────────
 
 export interface ModuleTypeOption {
