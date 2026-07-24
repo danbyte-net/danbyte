@@ -104,6 +104,15 @@ timer at whatever interval you want the sparklines sampled.
     as a 20-digit decimal so a large counter on a long-running, high-traffic
     interface can't overflow and crash the poll.
 
+**Hardware health runs itself.** The `danbyte-hardware` systemd timer polls
+every configured BMC ([Redfish](#redfish)) and [custom SNMP sensor](#sensors)
+**every 30 minutes**, reconciling inventory and flipping statuses — so a
+failing disk turns red on its own, no button press. Scheduled scope is bounded
+to devices with a Redfish endpoint or a **device-type-scoped** sensor (plus,
+when a tenant has an all-types sensor, every device with a primary IP);
+all-types sensors otherwise run on the device's on-demand **Poll sensors**
+button. Run it by hand with `python manage.py poll_hardware`.
+
 ## Drift & reconciliation {#drift-and-reconciliation}
 
 The **drift inbox** on the device page compares observed SNMP state to your

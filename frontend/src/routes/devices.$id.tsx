@@ -298,7 +298,7 @@ function Body({ device: d }: { device: Device }) {
               (d.power_count || 0) || undefined,
         },
         { value: "images", label: "Images" },
-        { value: "snmp", label: "SNMP" },
+        { value: "snmp", label: "Monitoring" },
         {
           value: "services",
           label: "Services",
@@ -317,8 +317,10 @@ function Body({ device: d }: { device: Device }) {
       </DetailTab>
       <DetailTab value="snmp">
         <div className="space-y-6">
-          <DeviceDriftCard deviceId={d.id} />
+          {/* Live/observed state, grouped: SNMP facts + drift first, then the
+              two hardware-health collectors (sensors, BMC) together. */}
           <DeviceSnmpCard deviceId={d.id} />
+          <DeviceDriftCard deviceId={d.id} />
           <DeviceSensorsCard deviceId={d.id} deviceTypeId={d.device_type?.id} />
           <DeviceRedfishCard deviceId={d.id} />
         </div>
