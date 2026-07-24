@@ -612,31 +612,32 @@ function PortHud({
   // Hardware markers (inventory items) resolve with a status, never a
   // termination kind — the card shows part health, not cabling.
   const hardware = !!fp?.id && fp.kind === null
+  // State chip, tinted like every other badge (bg = color at ~15%, text =
+  // color). Hardware wears its status colour; ports their cabling state.
+  const chip = fp
+    ? hardware
+      ? { label: fp.status?.name || "part", color: fp.status?.color || "#64748b" }
+      : fp.connected
+        ? { label: "cabled", color: "#10b981" }
+        : fp.id
+          ? { label: "free", color: "#71717a" }
+          : { label: "no port", color: "#71717a" }
+    : null
   return (
     <div className="absolute top-3 left-3 w-72 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur">
       <div className="flex items-center gap-2">
-        <span
-          className="h-2.5 w-2.5 shrink-0 rounded-sm"
-          style={{
-            backgroundColor: hardware
-              ? fp?.status?.color || "#64748b"
-              : fp?.connected
-                ? "#10b981"
-                : "#fbbf24",
-          }}
-        />
         <span className="min-w-0 flex-1 break-words font-mono text-[13px] font-semibold">
           {fp?.name || portLabel}
         </span>
-        {fp && (
-          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-            {hardware
-              ? fp.status?.name || "part"
-              : fp.connected
-                ? "cabled"
-                : fp.id
-                  ? "free"
-                  : "no port"}
+        {chip && (
+          <span
+            className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
+            style={{
+              backgroundColor: `${chip.color}26`,
+              color: chip.color,
+            }}
+          >
+            {chip.label}
           </span>
         )}
       </div>
