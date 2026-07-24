@@ -1530,11 +1530,25 @@ export interface OidWalkRow {
   values: Record<string, string>
 }
 
-/** A walk reshaped back into the table it came from: rows are components,
- * columns are attributes. */
+/** One direct child of a browsed OID — a branch to descend into, or a column
+ * when its parent turns out to be a table entry. */
+export interface OidWalkChild {
+  /** The sub-identifier, e.g. "51" under 1.3.6.1.4.1.2.3. */
+  sub: string
+  oid: string
+  /** First value found beneath it, as a hint at what lives there. */
+  sample: string
+  /** Levels between this child and its first value; 1 means table column. */
+  depth_below: number
+}
+
+/** A step of OID exploration. `is_table` decides how to read it: a table entry
+ * comes back transposed into rows/columns, a branch as `children` to browse. */
 export interface OidWalkResult {
   base: string
   walk: boolean
+  is_table: boolean
+  children: OidWalkChild[]
   columns: OidWalkColumn[]
   rows: OidWalkRow[]
   count: number

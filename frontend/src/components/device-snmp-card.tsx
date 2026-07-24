@@ -42,39 +42,23 @@ interface ListResp<T> {
 }
 
 /**
- * Read-only **observed** SNMP facts for a device (issue #84, Phase 1). Polling
- * never touches the device's source-of-truth fields — it only refreshes this
- * card. Gated to users who can change the device.
- *
- * Every observed value that corresponds to an object Danbyte already records
- * (interface, VLAN, IP, MAC) links to that object's detail page — so the tab
- * is a jumping-off point, not a dead end. The lookups resolve
- * client-side from the device's own interfaces/IPs (shared query cache), so
- * there's no extra backend work: things SNMP sees but Danbyte lacks stay plain
- * text (import them from the Drift inbox or "Sync from SNMP").
+ * The device's last observed SNMP state. One query key for the whole tab, so
+ * every card that reads it — facts/interfaces here, LLDP and ARP below —
+ * shares a single fetch and sees the result of a poll immediately.
  */
-export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
-  const qc = useQueryClient()
-  const { canDo } = useMe()
-  const canPoll = canDo("device", "change")
-
-  const snmp = useQuery({
+function useDeviceSnmp(deviceId: string) {
+  return useQuery({
     queryKey: ["device-snmp", deviceId],
     queryFn: () => api<DeviceSnmp>(`/api/monitoring/devices/${deviceId}/snmp/`),
   })
-  const util = useQuery({
-    queryKey: ["device-snmp-util", deviceId],
-    queryFn: () =>
-      api<{
-        interfaces: Record<
-          string,
-          { in_pct: number | null; out_pct: number | null }[]
-        >
-      }>(`/api/monitoring/devices/${deviceId}/snmp/utilization/`),
-  })
+}
 
-  // Danbyte's own view of this device — shared cache with the IPs/Interfaces
-  // tabs — so we can turn observed strings into links to real objects.
+/**
+ * Danbyte's own view of this device — shared cache with the IPs/Interfaces
+ * tabs — indexed by the strings SNMP reports, so an observed value can link to
+ * the real object. Things SNMP sees but Danbyte lacks stay plain text.
+ */
+function useObservedLinks(deviceId: string) {
   const ipsQ = useQuery({
     queryKey: ["device-ips", deviceId],
     queryFn: () => api<ListResp<IPAddress>>(`/api/devices/${deviceId}/ips/`),
@@ -100,6 +84,39 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
       if (i.vlan) m.set(String(i.vlan.vlan_id), i.vlan.id)
     return m
   }, [ifsQ.data])
+  return { ipIdByAddr, ifaceIdByName, vlanIdByVid }
+}
+
+/**
+ * Read-only **observed** SNMP facts for a device (issue #84, Phase 1). Polling
+ * never touches the device's source-of-truth fields — it only refreshes this
+ * card. Gated to users who can change the device.
+ *
+ * Every observed value that corresponds to an object Danbyte already records
+ * (interface, VLAN, IP, MAC) links to that object's detail page — so the tab
+ * is a jumping-off point, not a dead end. The lookups resolve
+ * client-side from the device's own interfaces/IPs (shared query cache), so
+ * there's no extra backend work: things SNMP sees but Danbyte lacks stay plain
+ * text (import them from the Drift inbox or "Sync from SNMP").
+ */
+export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
+  const qc = useQueryClient()
+  const { canDo } = useMe()
+  const canPoll = canDo("device", "change")
+
+  const snmp = useDeviceSnmp(deviceId)
+  const util = useQuery({
+    queryKey: ["device-snmp-util", deviceId],
+    queryFn: () =>
+      api<{
+        interfaces: Record<
+          string,
+          { in_pct: number | null; out_pct: number | null }[]
+        >
+      }>(`/api/monitoring/devices/${deviceId}/snmp/utilization/`),
+  })
+
+  const { ipIdByAddr, ifaceIdByName, vlanIdByVid } = useObservedLinks(deviceId)
 
   const poll = useMutation({
     // No profile_id — the backend resolves it along the hierarchy
@@ -197,55 +214,6 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
     },
   ]
 
-  const nbColumns: SimpleColumn<DeviceSnmp["neighbors"][number]>[] = [
-    {
-      id: "local",
-      header: "Local port",
-      cell: (n) => (
-        <IfaceLink
-          name={n.local_port}
-          id={ifaceIdByName.get(n.local_port.toLowerCase())}
-        />
-      ),
-    },
-    {
-      id: "neighbour",
-      header: "Neighbour",
-      cell: (n) => (
-        <span className="font-mono font-medium">{n.remote_device}</span>
-      ),
-    },
-    {
-      id: "remote",
-      header: "Remote port",
-      flex: true,
-      cell: (n) => (
-        <span className="font-mono text-muted-foreground">
-          {n.remote_port || "—"}
-        </span>
-      ),
-    },
-  ]
-
-  const arpColumns: SimpleColumn<DeviceSnmp["arp"][number]>[] = [
-    {
-      id: "ip",
-      header: "IP address",
-      cell: (a) => <IpLinks ips={[a.ip]} idByAddr={ipIdByAddr} />,
-    },
-    { id: "mac", header: "MAC", cell: (a) => <MacLink mac={a.mac} /> },
-    {
-      id: "if",
-      header: "Interface",
-      flex: true,
-      cell: (a) => (
-        <span className="font-mono text-muted-foreground">
-          {a.if_index || "—"}
-        </span>
-      ),
-    },
-  ]
-
   return (
     <div className="space-y-6">
       {/* Observed: reachability + the credential binding + Poll now. Uses the
@@ -305,26 +273,6 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
         </Section>
       )}
 
-      {state && state.neighbors.length > 0 && (
-        <Section title="LLDP neighbours" count={state.neighbors.length}>
-          <SimpleTable
-            columns={nbColumns}
-            data={state.neighbors}
-            getRowKey={(_n, i) => i}
-          />
-        </Section>
-      )}
-
-      {state && state.arp.length > 0 && (
-        <Section title="ARP table" count={state.arp.length}>
-          <SimpleTable
-            columns={arpColumns}
-            data={state.arp}
-            getRowKey={(_a, i) => i}
-          />
-        </Section>
-      )}
-
       {state?.polled_at && (
         <p className="text-[11px] text-muted-foreground">
           Last polled{" "}
@@ -335,6 +283,103 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
         </p>
       )}
     </div>
+  )
+}
+
+/**
+ * LLDP neighbours the device reports. Three narrow columns, so it's its own
+ * card rather than a full-width section under the interface table — the
+ * Monitoring tab pairs it with the ARP table. Reads the same observed-state
+ * query as {@link DeviceSnmpCard} (one fetch), and renders nothing when the
+ * device reports no neighbours.
+ */
+export function DeviceLldpCard({ deviceId }: { deviceId: string }) {
+  const snmp = useDeviceSnmp(deviceId)
+  const { ifaceIdByName } = useObservedLinks(deviceId)
+
+  const state = snmp.data
+  if (!state || state.neighbors.length === 0) return null
+
+  const columns: SimpleColumn<DeviceSnmp["neighbors"][number]>[] = [
+    {
+      id: "local",
+      header: "Local port",
+      cell: (n) => (
+        <IfaceLink
+          name={n.local_port}
+          id={ifaceIdByName.get(n.local_port.toLowerCase())}
+        />
+      ),
+    },
+    {
+      id: "neighbour",
+      header: "Neighbour",
+      cell: (n) => (
+        <span className="font-mono font-medium">{n.remote_device}</span>
+      ),
+    },
+    {
+      id: "remote",
+      header: "Remote port",
+      flex: true,
+      cell: (n) => (
+        <span className="font-mono text-muted-foreground">
+          {n.remote_port || "—"}
+        </span>
+      ),
+    },
+  ]
+
+  return (
+    <Section title="LLDP neighbours" count={state.neighbors.length}>
+      <SimpleTable
+        columns={columns}
+        data={state.neighbors}
+        getRowKey={(_n, i) => i}
+      />
+    </Section>
+  )
+}
+
+/**
+ * The device's ARP table — IP ↔ MAC ↔ ifIndex. Same deal as
+ * {@link DeviceLldpCard}: three narrow columns off the shared observed-state
+ * query, so it sits beside another card instead of spanning the page.
+ */
+export function DeviceArpCard({ deviceId }: { deviceId: string }) {
+  const snmp = useDeviceSnmp(deviceId)
+  const { ipIdByAddr } = useObservedLinks(deviceId)
+
+  const state = snmp.data
+  if (!state || state.arp.length === 0) return null
+
+  const columns: SimpleColumn<DeviceSnmp["arp"][number]>[] = [
+    {
+      id: "ip",
+      header: "IP address",
+      cell: (a) => <IpLinks ips={[a.ip]} idByAddr={ipIdByAddr} />,
+    },
+    { id: "mac", header: "MAC", cell: (a) => <MacLink mac={a.mac} /> },
+    {
+      id: "if",
+      header: "Interface",
+      flex: true,
+      cell: (a) => (
+        <span className="font-mono text-muted-foreground">
+          {a.if_index || "—"}
+        </span>
+      ),
+    },
+  ]
+
+  return (
+    <Section title="ARP table" count={state.arp.length}>
+      <SimpleTable
+        columns={columns}
+        data={state.arp}
+        getRowKey={(_a, i) => i}
+      />
+    </Section>
   )
 }
 

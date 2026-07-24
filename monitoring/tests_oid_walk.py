@@ -65,15 +65,33 @@ class OidWalkTests(APITestCase):
             return_value=(self.profile, None),
         )
 
-    def test_walk_is_reshaped_into_rows_and_columns(self):
-        with self._reachable(), self._profile(), patch(
-            "monitoring.oid_walk.fetch_oid_sync", return_value=PSU_TABLE
-        ):
+    @staticmethod
+    def _children(base, subs, depth=1):
+        """Fake a one-level listing: `depth` is how far below each child its
+        first value sits — 1 marks a table column, more marks a branch."""
+        return patch(
+            "monitoring.oid_walk.list_oid_children_sync",
+            return_value=[
+                {
+                    "sub": s,
+                    "oid": f"{base}.{s}",
+                    "first_oid": f"{base}.{s}" + ".1" * depth,
+                    "sample": "x",
+                }
+                for s in subs
+            ],
+        )
+
+    def test_table_entry_is_reshaped_into_rows_and_columns(self):
+        with self._reachable(), self._profile(), self._children(
+            "1.3.6.1.4.1.2.3.51.3.1.11.2.1", ["1", "2", "5", "6"]
+        ), patch("monitoring.oid_walk.fetch_oid_sync", return_value=PSU_TABLE):
             resp = self._walk({"oid": "1.3.6.1.4.1.2.3.51.3.1.11.2.1"})
 
         self.assertEqual(resp.status_code, 200, resp.content)
         body = resp.json()
         self.assertEqual(body["error"], "")
+        self.assertTrue(body["is_table"])
         self.assertEqual([c["column"] for c in body["columns"]], ["1", "2", "5", "6"])
         self.assertEqual([r["index"] for r in body["rows"]], ["0", "1", "2"])
         # The health column: one distinct value across every row.
@@ -87,12 +105,47 @@ class OidWalkTests(APITestCase):
         self.assertEqual(row1["values"]["6"], "Normal")
 
     def test_columns_sort_numerically_not_lexically(self):
-        with self._reachable(), self._profile(), patch(
+        with self._reachable(), self._profile(), self._children(
+            "1.2.3", ["1", "2", "10"]
+        ), patch(
             "monitoring.oid_walk.fetch_oid_sync",
             return_value={"2.1": "a", "10.1": "b", "1.1": "c"},
         ):
             body = self._walk({"oid": "1.2.3"}).json()
         self.assertEqual([c["column"] for c in body["columns"]], ["1", "2", "10"])
+
+    def test_branch_is_browsed_not_transposed(self):
+        """The bug this split fixes: reading `1.3.6.1.4.1` as a table treated
+        each vendor's enterprise number as a "column", collapsing every vendor
+        into one nonsense column of unrelated values."""
+        with self._reachable(), self._profile(), self._children(
+            "1.3.6.1.4.1", ["2", "2021", "8072"], depth=7
+        ), patch("monitoring.oid_walk.fetch_oid_sync") as fetch:
+            body = self._walk({"oid": "1.3.6.1.4.1"}).json()
+
+        self.assertFalse(body["is_table"])
+        self.assertEqual([c["sub"] for c in body["children"]], ["2", "2021", "8072"])
+        self.assertEqual(body["columns"], [])
+        # No subtree walk at all — browsing a branch is one GETNEXT per child,
+        # which is what makes a high base navigable instead of budget-capped.
+        fetch.assert_not_called()
+
+    def test_a_single_child_is_a_branch_not_a_one_column_table(self):
+        """1.3.6.1.4.1.2.3.51 has exactly one child — descend, don't transpose."""
+        with self._reachable(), self._profile(), self._children(
+            "1.3.6.1.4.1.2.3.51", ["3"], depth=1
+        ), patch("monitoring.oid_walk.fetch_oid_sync") as fetch:
+            body = self._walk({"oid": "1.3.6.1.4.1.2.3.51"}).json()
+        self.assertFalse(body["is_table"])
+        fetch.assert_not_called()
+
+    def test_empty_subtree_reports_nothing_found(self):
+        with self._reachable(), self._profile(), patch(
+            "monitoring.oid_walk.list_oid_children_sync", return_value=[]
+        ):
+            body = self._walk({"oid": "1.2.3"}).json()
+        self.assertEqual(body["children"], [])
+        self.assertEqual(body["rows"], [])
 
     def test_scalar_get_returns_one_cell(self):
         with self._reachable(), self._profile(), patch(
@@ -104,15 +157,15 @@ class OidWalkTests(APITestCase):
 
     def test_non_numeric_oid_is_refused_without_touching_the_network(self):
         with self._reachable(), self._profile(), patch(
-            "monitoring.oid_walk.fetch_oid_sync"
-        ) as fetch:
+            "monitoring.oid_walk.list_oid_children_sync"
+        ) as children:
             body = self._walk({"oid": "sysDescr.0"}).json()
-        fetch.assert_not_called()
+        children.assert_not_called()
         self.assertIn("numeric OIDs only", body["error"])
 
     def test_snmp_failure_comes_back_as_error_not_500(self):
         with self._reachable(), self._profile(), patch(
-            "monitoring.oid_walk.fetch_oid_sync",
+            "monitoring.oid_walk.list_oid_children_sync",
             side_effect=SnmpFactsError("snmp error: timed out"),
         ):
             resp = self._walk({"oid": "1.2.3"})

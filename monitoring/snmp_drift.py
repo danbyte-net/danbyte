@@ -102,14 +102,27 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
         list(intended_interfaces) if intended_interfaces is not None
         else list(Interface.objects.filter(device=device).select_related("vlan"))
     )
-    # Match on the label AND on any explicit SNMP link, so a port labelled
-    # "Ethernet 1" that the agent reports as "eth0" resolves to one interface
-    # instead of drifting as both "new" and "not seen". The link wins on
-    # collision (it's the operator's deliberate statement).
+    # Match on the label, so most ports resolve without any configuration.
     int_by_name = {_norm(i.name): i for i in intended}
+    # An explicit SNMP link REPLACES the label rather than adding to it. The
+    # link is the operator saying "the agent calls this port eth0" — which also
+    # says the agent never reports the label, so keeping the label as a second
+    # key invented a phantom "not seen on device" row for the very port that was
+    # just linked.
+    real_names = {_norm(i.name) for i in intended}
+    linked: dict[str, object] = {}
     for i in intended:
-        if i.snmp_name:
-            int_by_name[_norm(i.snmp_name)] = i
+        if not i.snmp_name:
+            continue
+        key = _norm(i.snmp_name)
+        # A link pointing at another port's own label can't be honoured: that
+        # port exists in its own right and would be evicted from the match map,
+        # hiding a real duplicate. Ignore the link and leave both visible.
+        if key != _norm(i.name) and key in real_names:
+            continue
+        linked[key] = i
+        int_by_name.pop(_norm(i.name), None)
+    int_by_name.update(linked)
     # IPs Danbyte already records on this device, to spot ones SNMP sees but we
     # don't have yet (the "accept discovered IP" loop).
     device_ips = set(

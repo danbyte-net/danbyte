@@ -73,15 +73,22 @@ credential came from.
 
 ## Poll a device {#poll-a-device}
 
-Open a device → the **Observed (SNMP)** card → **Poll now**. Danbyte does one
-synchronous SNMP read of the system group (`sysName`, `sysDescr`, `sysObjectID`,
-`sysUpTime`, `sysContact`, `sysLocation`) plus the interface tables
-(`ifTable`/`ifXTable`), and stores them as observed facts. The card shows a
-**reachable / unreachable** badge, the named facts (never raw OIDs), the
-interface list with oper-status and speed, and the last-polled timestamp.
+Open a device → its **Monitoring** tab → the **Observed** card → **Poll now**.
+Danbyte does one synchronous SNMP read of the system group (`sysName`,
+`sysDescr`, `sysObjectID`, `sysUpTime`, `sysContact`, `sysLocation`) plus the
+interface tables (`ifTable`/`ifXTable`), and stores them as observed facts. The
+card shows a **reachable / unreachable** badge, the named facts (never raw
+OIDs), the interface list with oper-status and speed, and the last-polled
+timestamp.
 
 A poll **never** touches the device's source-of-truth fields — it only refreshes
 this card.
+
+The tab is laid out by content width: the system facts, the interface table and
+the [drift inbox](#drift-and-reconciliation) run full width, and the narrow
+cards below them — [LLDP neighbours and the ARP table](#topology),
+[custom SNMP sensors](#sensors) and the [BMC](#redfish) — pair up two-across on
+a wide window and stack on a narrow one.
 
 ## Scheduled polling & utilisation {#scheduled-polling}
 
@@ -166,10 +173,23 @@ treating the two as one, and both drift rows disappear on the next poll.
 Linked ports carry an `↔ eth0` badge next to their name in the interfaces
 table, so a link is never invisible.
 
-**To change or remove a link**, edit the interface: the **SNMP name** field
-holds the linked name. Type a different one to re-point it, or clear the field
-to unlink entirely. Linking a name that's already claimed by another interface
-moves it — a discovered name belongs to exactly one port.
+**To remove a link**, click the `↔` badge on the port and choose **Unlink** —
+the undo sits on the thing it undoes. The interface form's **SNMP name** field
+does the same job if you're already editing the port. Linking a name that
+another port has already *linked* moves it; a discovered name belongs to exactly
+one port.
+
+A link **replaces** the port's label rather than adding an alias to it. Saying
+"the agent calls this port `eth0`" also says the agent never reports
+`Ethernet 1`, so Danbyte stops expecting the label — otherwise the port you just
+linked would keep drifting as *not seen on device* forever.
+
+!!! note "You can't link onto a name another port already has"
+    If `eth0` exists as an interface in its own right, `IMM` cannot be linked to
+    `eth0`: both would answer to that name, and only one can win the match. The
+    duplicate is the actual problem — delete or rename the port you don't want,
+    then link. Danbyte refuses the link and says so rather than accepting one
+    that can't work.
 
 ### Sync from SNMP
 
@@ -215,10 +235,14 @@ sources Danbyte has (your runner, and SNMP).
 ## Topology: LLDP & ARP {#topology}
 
 A poll also walks **LLDP-MIB** for directly-connected neighbours and reads the
-device's **ARP table**. The SNMP card renders:
+device's **ARP table**. The device's **Monitoring** tab renders both as their
+own cards, side by side below the interface table:
 
 - **LLDP neighbours** — `local-port ↔ remote-device : remote-port`.
 - **ARP table** — the IP ↔ MAC pairs the device has learned.
+
+Both are three narrow columns, so they pair up rather than stretch across the
+page; a device that reports neither simply doesn't show them.
 
 The join logic (`parse_lldp` / `parse_arp`) is pure and unit-tested, so it's
 correct independent of any one device's quirks.
@@ -281,11 +305,33 @@ health MIB, so each vendor exposes disk/PSU/fan status under its own OIDs.
 ### Find the OID by looking, not by reading a MIB {#oid-explorer}
 
 You normally need the vendor's MIB file to know which OID reports health.
-**Explore OIDs** on the *Custom SNMP sensors* card removes that step: give it a
-table base, and Danbyte walks it on the device and shows the result **as the
-table it came from** — one row per component, one column per attribute.
+**Explore OIDs** on the *Custom SNMP sensors* card removes that step: it walks
+down the device's own OID tree with you, one level at a time, and shows a table
+**as the table it came from** the moment you reach one.
 
-That makes the answer visible. Walking a Lenovo IMM's power-supply table at
+Start anywhere — `1.3.6.1.4.1` (the root of every vendor's private tree) is
+offered in the field. Each level lists its branches with the first value found
+underneath, as a hint at what's down there:
+
+```
+1.3.6.1.4.1
+  .2       18                    7 levels     ← IBM/Lenovo
+  .2021    0                     3 levels
+  .8072                          9 levels
+  .15601   3070372               3 levels
+```
+
+Open one to go deeper. Danbyte recognises a **table** when every branch holds
+its values exactly one level down, and switches to a grid automatically —
+no need to know in advance whether you're looking at a branch or a table.
+
+!!! note "Why browsing isn't just a walk"
+    A walk returns OIDs in lexicographic order, so walking `1.3.6.1.4.1`
+    directly spends its whole budget inside the *first* vendor it meets and
+    never reveals the others. Browsing costs one request per branch instead of
+    one per value, which is what makes the vendor tree reachable at all.
+
+Reaching a Lenovo IMM's power-supply table at
 `1.3.6.1.4.1.2.3.51.3.1.11.2.1`:
 
 | Row | .1 | .2 | .5 | .6 |
@@ -305,13 +351,15 @@ Notes:
 
 - **Numeric OIDs only.** A MIB *name* can't be resolved without its MIB file,
   so `sysDescr.0` is refused before anything touches the network.
-- Start from a **table base**, not a whole subtree. The walk is capped, and a
-  truncated result says so — narrow the OID rather than trusting a partial view.
+- Reading a table is capped, and a truncated result says so — go one level
+  deeper rather than trusting a partial view.
 - Unreachable device, wrong community, or no applicable profile come back as a
-  message in the dialog, not a failed request.
-- Good starting points are offered in the field: `hrDeviceTable`,
-  `hrStorageTable`, `entPhySensorTable`, `entPhysicalTable`, and
-  `1.3.6.1.4.1` — the root of every vendor's own tree.
+  message in the dialog, not a failed request. Small BMCs sometimes time out
+  when browsed several times in quick succession; that reads as an SNMP error,
+  never as "nothing there", so a retry is the obvious next move.
+- Standard tables are offered in the field too — `hrDeviceTable`,
+  `hrStorageTable`, `entPhySensorTable`, `entPhysicalTable` — and are worth
+  trying before the vendor tree, since they mean the same thing on every agent.
 
 Exploring reads from the device and writes nothing, but it does make the server
 query arbitrary operator-supplied OIDs on that host, so it takes the same

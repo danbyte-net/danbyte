@@ -2656,8 +2656,24 @@ def snmp_interface_link_view(request, device_id):
             {"detail": "Interface not found on this device."}, status=400
         )
     name = (request.data.get("snmp_name") or "").strip()[:128]
-    # One discovered name maps to one interface — clear any other claim on it.
     if name:
+        # Linking onto a name that another port already *is* can never be
+        # right: both would answer to it, the match map can only hold one, and
+        # the loser turns into a phantom drift row. The duplicate is the real
+        # problem, so say so instead of accepting an unusable link.
+        clash = (
+            Interface.objects.filter(device=device, name__iexact=name)
+            .exclude(pk=iface.pk)
+            .first()
+        )
+        if clash is not None:
+            return Response(
+                {"snmp_name": f'"{clash.name}" is already an interface on this '
+                              "device. Delete or rename that one first — a "
+                              "discovered name can only belong to one port."},
+                status=400,
+            )
+        # One discovered name maps to one interface — clear any other claim.
         Interface.objects.filter(device=device, snmp_name__iexact=name).exclude(
             pk=iface.pk
         ).update(snmp_name="")
