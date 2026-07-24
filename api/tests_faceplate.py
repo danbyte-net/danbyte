@@ -118,6 +118,43 @@ class FaceplateFieldTests(APITestCase):
         }
         self.assertEqual(self._patch(doc).status_code, 400)
 
+    def _patch_ports(self, ports):
+        return self.client.patch(
+            f"/api/device-types/{self.dt.id}/",
+            {"image_ports": ports}, format="json",
+        )
+
+    def test_image_ports_roundtrip(self):
+        ports = {
+            "front": [
+                {"kind": "interface", "name": "Gi1/0/1", "x": 0.1, "y": 0.5,
+                 "w": 0.03, "h": 0.4},
+            ],
+            "rear": [],
+        }
+        resp = self._patch_ports(ports)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(
+            resp.json()["image_ports"]["front"][0]["name"], "Gi1/0/1"
+        )
+        # Clearable back to null.
+        self.assertEqual(self._patch_ports(None).status_code, 200)
+        self.assertIsNone(
+            self.client.get(
+                f"/api/device-types/{self.dt.id}/"
+            ).json()["image_ports"]
+        )
+
+    def test_image_ports_reject_out_of_bounds_and_bad_kind(self):
+        for bad in (
+            {"front": [{"name": "x", "x": 1.5, "y": 0.5, "w": 0.1, "h": 0.1}]},
+            {"front": [{"kind": "flux", "name": "x", "x": 0.1, "y": 0.1,
+                        "w": 0.1, "h": 0.1}]},
+            {"front": [{"name": "", "x": 0.1, "y": 0.1, "w": 0.1, "h": 0.1}]},
+            {"front": "nope"},
+        ):
+            self.assertEqual(self._patch_ports(bad).status_code, 400, bad)
+
     def test_rejects_duplicate_kind_name(self):
         doc = {
             "v": 1, "rear": [],
