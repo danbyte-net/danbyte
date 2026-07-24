@@ -524,6 +524,91 @@ async def fetch_oid(
     return {"0": v.prettyPrint() for _, v in var_binds}
 
 
+async def list_oid_children(
+    target: str, version: str, params: dict, secret_params: dict,
+    base: str, timeout_ms: int = 4000, limit: int = 64,
+) -> list[dict]:
+    """List the direct children of ``base`` → ``[{sub, oid, sample}, ...]``.
+
+    One level, not a subtree. A plain walk can't browse the tree: OIDs come back
+    in lexicographic order, so walking a high base like ``1.3.6.1.4.1`` spends
+    its entire budget inside the first vendor it meets and never reveals that
+    the others exist.
+
+    So each child is found with a single GETNEXT, then its whole subtree is
+    skipped by probing ``base.child.4294967295`` — greater than anything within
+    that child (max sub-identifier), yet still less than the next sibling, so no
+    sibling is stepped over. That's one round trip per child instead of one per
+    value.
+    """
+    try:
+        import pysnmp.hlapi.v3arch.asyncio as mod
+    except Exception as e:  # noqa: BLE001
+        raise SnmpFactsError(f"pysnmp unavailable: {e}")
+
+    base = base.strip(".")
+    prefix = f"{base}."
+    port = int(params.get("port", 161))
+    timeout_s = max(timeout_ms / 1000, 0.2)
+    out: list[dict] = []
+    try:
+        auth = _auth_data(version, params, secret_params, mod)
+        transport = await mod.UdpTransportTarget.create(
+            (target, port), timeout=timeout_s, retries=0
+        )
+        engine = mod.SnmpEngine()
+        probe = base
+        while len(out) < limit:
+            error_indication, error_status, _, var_binds = await mod.next_cmd(
+                engine, auth, transport, mod.ContextData(),
+                mod.ObjectType(mod.ObjectIdentity(probe)),
+                lexicographicMode=True,
+            )
+            if error_indication or error_status:
+                # Nothing collected yet → the agent never answered, which is a
+                # very different thing from an empty subtree and must not be
+                # reported as "nothing there". Small BMCs do time out under
+                # consecutive browses. Once we have children, keep the partial
+                # listing: it's still navigable.
+                if not out:
+                    raise SnmpFactsError(
+                        str(error_indication or error_status.prettyPrint())
+                    )
+                break
+            if not var_binds:
+                break
+            oid, value = var_binds[0]
+            found = str(oid)
+            if not found.startswith(prefix):
+                break  # walked out of the subtree — done
+            sub = found[len(prefix):].split(".")[0]
+            out.append({
+                "sub": sub,
+                "oid": f"{base}.{sub}",
+                # Where the first value under this child actually lives, which
+                # is what tells a table entry (one level down) from a branch.
+                "first_oid": found,
+                "sample": value.prettyPrint(),
+            })
+            probe = f"{base}.{sub}.4294967295"
+    except SnmpFactsError:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise SnmpFactsError(f"snmp error: {e}")
+    return out
+
+
+def list_oid_children_sync(
+    target, version, params, secret_params, base, timeout_ms=4000, limit=64
+) -> list[dict]:
+    """Synchronous wrapper for browsing the tree from a DRF view."""
+    return asyncio.run(
+        list_oid_children(
+            target, version, params, secret_params, base, timeout_ms, limit
+        )
+    )
+
+
 def fetch_oid_sync(
     target, version, params, secret_params, oid, walk, timeout_ms=4000,
     limit: int | None = None,

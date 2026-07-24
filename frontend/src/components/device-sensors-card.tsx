@@ -101,7 +101,8 @@ export function DeviceSensorsCard({
       title="Custom SNMP sensors"
       actions={
         canWrite ? (
-          <div className="flex gap-1.5">
+          // Three buttons in a half-width card: wrap instead of overflowing.
+          <div className="flex flex-wrap justify-end gap-1.5">
             <Button
               size="sm"
               variant="outline"
@@ -138,7 +139,9 @@ export function DeviceSensorsCard({
             {rows.map((s) => (
               <div
                 key={s.id}
-                className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-[13px]"
+                // Wraps rather than overflows: a vendor OID is one unbreakable
+                // token, and this card sits half-width on the Monitoring tab.
+                className="flex flex-wrap items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-[13px]"
               >
                 <span className="font-medium">{s.name}</span>
                 <span className="font-mono text-[11px] text-muted-foreground">
@@ -175,7 +178,7 @@ export function DeviceSensorsCard({
             {readings.map((r, i) => (
               <div
                 key={`${r.name}-${i}`}
-                className="flex items-center gap-2 text-[12px]"
+                className="flex flex-wrap items-center gap-2 text-[12px]"
               >
                 <span className="font-mono">{r.name}</span>
                 <span className="text-muted-foreground">raw {r.raw}</span>

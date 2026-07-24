@@ -464,6 +464,14 @@ export function DataTable<T>({
                       (flexColumn && h.column.id === flexColumn
                         ? "w-full "
                         : "whitespace-nowrap ") +
+                      // The chrome columns hug their content. `w-px` + nowrap
+                      // is the shrink-to-fit idiom: without it an auto-layout
+                      // table pools its slack in the trailing column, which
+                      // left a wide empty band in front of the row actions on
+                      // every table that doesn't name a flexColumn.
+                      (h.column.id === "actions" || h.column.id === "select"
+                        ? "w-px "
+                        : "") +
                       // Pin the row-actions column to the right edge so Edit/
                       // Delete stay reachable on wide tables (many columns) that
                       // scroll horizontally, instead of vanishing off the edge.
@@ -547,6 +555,10 @@ export function DataTable<T>({
                           (flexColumn && cell.column.id === flexColumn
                             ? "w-full whitespace-nowrap "
                             : "whitespace-nowrap ") +
+                          // Chrome columns hug their content (see the header
+                          // note), and the actions sit at the row's right edge.
+                          (cell.column.id === "select" ? "w-px " : "") +
+                          (cell.column.id === "actions" ? "w-px text-right " : "") +
                           // Keep the row-actions column pinned to the right edge
                           // (see the header note) so it never scrolls out of reach.
                           (cell.column.id === "actions"

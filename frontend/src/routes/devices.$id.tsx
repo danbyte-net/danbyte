@@ -111,7 +111,11 @@ import {
   InterfaceTraceDialog,
   type TraceTarget,
 } from "@/components/interface-trace-dialog"
-import { DeviceSnmpCard } from "@/components/device-snmp-card"
+import {
+  DeviceArpCard,
+  DeviceLldpCard,
+  DeviceSnmpCard,
+} from "@/components/device-snmp-card"
 import { DeviceRedfishCard } from "@/components/device-redfish-card"
 import { DeviceSensorsCard } from "@/components/device-sensors-card"
 import { DeviceDriftCard } from "@/components/device-drift-card"
@@ -318,12 +322,25 @@ function Body({ device: d }: { device: Device }) {
       </DetailTab>
       <DetailTab value="snmp">
         <div className="space-y-6">
-          {/* Live/observed state, grouped: SNMP facts + drift first, then the
-              two hardware-health collectors (sensors, BMC) together. */}
+          {/* Full width, because the content genuinely is: the system facts,
+              the nine-column interface table, and drift rows that carry their
+              own per-row actions. */}
           <DeviceSnmpCard deviceId={d.id} />
           <DeviceDriftCard deviceId={d.id} />
-          <DeviceSensorsCard deviceId={d.id} deviceTypeId={d.device_type?.id} />
-          <DeviceRedfishCard deviceId={d.id} />
+          {/* Everything narrow pairs up two-across from lg — the two
+              three-column observed tables, then the hardware-health
+              collectors. Auto-placement closes the row when a device reports
+              no LLDP/ARP (those cards render nothing), so sensors and the BMC
+              still sit side by side. */}
+          <div className="grid items-start gap-6 lg:grid-cols-2">
+            <DeviceLldpCard deviceId={d.id} />
+            <DeviceArpCard deviceId={d.id} />
+            <DeviceSensorsCard
+              deviceId={d.id}
+              deviceTypeId={d.device_type?.id}
+            />
+            <DeviceRedfishCard deviceId={d.id} />
+          </div>
         </div>
       </DetailTab>
       <DetailTab value="config">
