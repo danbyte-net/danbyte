@@ -16,6 +16,8 @@ import {
   FormText,
   useFieldErrors,
 } from "@/components/forms"
+import { NameRangeHint } from "@/components/name-range-hint"
+import { createEach, expandNameRange } from "@/lib/name-range"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 
 export interface PowerPortDialogProps {
@@ -72,17 +74,26 @@ export function PowerPortDialog({
         return api<PowerPort>(`/api/power-ports/${port!.id}/`, {
           method: "PATCH",
           body: JSON.stringify(payload),
+        }).then((saved) => ({ saved, count: 1 }))
+      // A [a-b] range in the name fans out — "PSU[1-2]" adds both inlets.
+      return createEach(expandNameRange(payload.name), (n) =>
+        api<PowerPort>("/api/power-ports/", {
+          method: "POST",
+          body: JSON.stringify({ ...payload, name: n }),
         })
-      return api<PowerPort>("/api/power-ports/", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      })
+      ).then(({ last, count }) => ({ saved: last, count }))
     },
-    onSuccess: (saved) => {
+    onSuccess: ({ saved, count }) => {
       qc.invalidateQueries({ queryKey: ["device-power-ports", deviceId] })
       // Outlets label their feed with the port name — keep them fresh.
       qc.invalidateQueries({ queryKey: ["device-power-outlets", deviceId] })
-      toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
+      toast.success(
+        isEdit
+          ? `Updated ${saved.name}`
+          : count > 1
+            ? `Created ${count} power ports`
+            : `Created ${saved.name}`
+      )
       onOpenChange(false)
     },
     onError: (err) => {
@@ -114,8 +125,10 @@ export function PowerPortDialog({
             onChange={setName}
             mono
             placeholder="PSU1"
+            hint={isEdit ? undefined : "a [1-2] range adds one port per number"}
             error={fieldErrors.name}
           />
+          <NameRangeHint name={name} editing={isEdit} noun="power ports" />
           <FormCombobox
             label="Type"
             value={type || null}

@@ -81,3 +81,11 @@ the detail page offers to **create one** so you can annotate it.
     Removing a MAC object only deletes that annotation — it does **not** clear the
     hardware address stored on the interface or IP. Those keep their recorded
     value, so the MAC still appears in the derived list.
+
+!!! note "Deleting the interface a MAC sits on"
+    A MAC outlives its port: delete the interface and the MAC object stays,
+    unassigned, keeping its tags and history. The one exception is when that
+    address is *already* on file unassigned for the tenant — which happens once
+    discovery has seen it twice. Only one unassigned record per address is kept,
+    so the assignment record goes away with the interface instead of creating a
+    duplicate.

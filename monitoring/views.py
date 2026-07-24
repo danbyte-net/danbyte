@@ -2545,6 +2545,51 @@ def device_redfish_poll_view(request, device_id):
 
 
 @extend_schema(
+    summary="Walk an OID subtree on a device (sensor builder)",
+    tags=["monitoring"],
+    request=inline_serializer(
+        name="DeviceOidWalkRequest",
+        fields={
+            "oid": serializers.CharField(),
+            "walk": serializers.BooleanField(required=False),
+            "profile_id": serializers.UUIDField(required=False, allow_null=True),
+        },
+    ),
+    responses=OpenApiTypes.OBJECT,
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def device_oid_walk_view(request, device_id):
+    """Read an OID subtree live and return it shaped as a table, so a sensor
+    can be built by looking at real values instead of by reading a MIB.
+
+    Read-only against the device and it writes nothing here, but it does make
+    the server talk to arbitrary user-supplied OIDs on that host, so it takes
+    the same device ``change`` scope the rest of the SNMP tooling does.
+    """
+    from .oid_walk import walk_device_oid
+
+    resolved, err = _resolve_device(request, device_id, "change")
+    if err is not None:
+        return err
+    device, tenant = resolved
+    profile = None
+    profile_id = request.data.get("profile_id")
+    if profile_id:
+        profile = SnmpProfile.objects.filter(pk=profile_id, tenant=tenant).first()
+        if profile is None:
+            return Response({"detail": "SNMP profile not found."}, status=400)
+    return Response(
+        walk_device_oid(
+            device, tenant,
+            request.data.get("oid") or "",
+            walk=bool(request.data.get("walk", True)),
+            profile=profile,
+        )
+    )
+
+
+@extend_schema(
     summary="Poll the device's custom SNMP sensors now (→ inventory health)",
     tags=["monitoring"],
     request=inline_serializer(

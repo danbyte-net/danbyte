@@ -8,6 +8,7 @@ import type { Interface, SnmpDriftItem } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { CableStatusControl } from "@/components/cable-status-control"
+import { SnmpLinkBadge } from "@/components/snmp-link-badge"
 import { SortHeader } from "@/components/data-table"
 
 /** An interface row with its nesting depth (sub-interfaces indent under their
@@ -93,15 +94,7 @@ export function buildInterfaceColumns(opts?: {
               </Badge>
             )}
             {row.original.snmp_name && (
-              // Visible proof of an SNMP link — without this the mapping was
-              // invisible once made, and only re-linking could change it.
-              <Badge
-                variant="outline"
-                className="h-4 px-1.5 font-mono text-[10px]"
-                title={`Discovered over SNMP as "${row.original.snmp_name}"`}
-              >
-                ↔ {row.original.snmp_name}
-              </Badge>
+              <SnmpLinkBadge iface={row.original} />
             )}
             {driftByIface && (
               <DriftBadge items={driftByIface.get(row.original.id) ?? []} />

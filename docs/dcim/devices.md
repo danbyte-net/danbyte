@@ -207,6 +207,45 @@ speed. The overlay is read-only decoration from the monitoring collector:
 observed facts are drawn *over* your intent, never written into it, so the
 source of truth stays yours.
 
+## Adding many components at once
+
+Any component you add to a device takes a **`[a-b]` range in its name** and
+creates one component per number — the same shorthand as a device type's
+[component templates](device-catalog.md#component-templates). Type
+`Disk[1-5]` and you get Disk1 … Disk5; a live line under the Name field shows
+the count and the first/last name before you submit.
+
+It works on every add dialog on the device page:
+
+| Tab           | Components                                                       |
+| ------------- | ---------------------------------------------------------------- |
+| **Interfaces**| interfaces (**Add interface**)                                   |
+| **Console**   | console ports, console server ports                              |
+| **Power**     | power ports (inlets), power outlets                              |
+| **Hardware**  | inventory parts, patch-panel front and rear ports                |
+
+Everything else on the dialog — type, speed, description, an outlet's inlet and
+feed leg, tags — is applied to every component in the range, so a PDU's
+`Outlet[1-24]` all hang off the same inlet in one submit. Ranges apply to
+**creating** only: editing a component renames that one row.
+
+Notes:
+
+- The ports are created **one at a time, in order**. Names must be unique per
+  device, so if one collides the error names the port that clashed and the ones
+  created before it stay created.
+- A range spanning more than **128** components is left alone and treated as a
+  literal name — reach for **Bulk add** on the Interfaces tab instead, which
+  goes through a server-side endpoint, preserves zero-padding
+  (`Gi1/0/[01-48]`), and silently skips names the device already has. See
+  [Interfaces](interfaces.md#add-many-interfaces-at-once).
+- **Front ports** advance a second field as they go. A front port claims its own
+  strand range on the rear port, and two of them may not share a strand — so the
+  range steps the **Start strand** along with the name. `Front[1-24]` against a
+  24-strand rear port starting at strand 1 wires the whole trunk through in one
+  submit; with a 2-strand connector each port takes the next *pair*. Pick the
+  rear port and starting strand once and the rest follows.
+
 ## Bulk editing components
 
 Every component table — interfaces, console ports, power ports/outlets,

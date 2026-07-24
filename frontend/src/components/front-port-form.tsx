@@ -18,6 +18,8 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
+import { NameRangeHint } from "@/components/name-range-hint"
+import { createEach, expandNameRange } from "@/lib/name-range"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { useStrandModelling } from "@/components/fiber/use-fiber-palette"
 
@@ -124,17 +126,37 @@ export function FrontPortForm({
         return api<FrontPort>(`/api/front-ports/${port!.id}/`, {
           method: "PATCH",
           body: JSON.stringify(payload),
+        }).then((saved) => ({ saved, count: 1 }))
+      // A range fans out, and each port takes the NEXT rear strand — front
+      // ports are the one component where the range has to advance a second
+      // field, because two of them may not share a strand. "Front[1-24]" from
+      // strand 1 wires a 24-strand trunk straight through, which is how a
+      // patch panel is actually built.
+      const names = expandNameRange(payload.name)
+      const width = payload.positions ?? 1
+      const start = payload.rear_port_position ?? 1
+      return createEach(names, (n) =>
+        api<FrontPort>("/api/front-ports/", {
+          method: "POST",
+          body: JSON.stringify({
+            ...payload,
+            name: n,
+            rear_port_position: start + names.indexOf(n) * width,
+          }),
         })
-      return api<FrontPort>("/api/front-ports/", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      })
+      ).then(({ last, count }) => ({ saved: last, count }))
     },
-    onSuccess: (saved) => {
+    onSuccess: ({ saved, count }) => {
       qc.invalidateQueries({ queryKey: ["device-front-ports", deviceId] })
       // A front port consumes a rear strand — refresh rear views too.
       qc.invalidateQueries({ queryKey: ["device-rear-ports", deviceId] })
-      toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
+      toast.success(
+        isEdit
+          ? `Updated ${saved.name}`
+          : count > 1
+            ? `Created ${count} front ports`
+            : `Created ${saved.name}`
+      )
       onSaved(saved)
     },
     onError: (err) => {
@@ -165,9 +187,15 @@ export function FrontPortForm({
         value={name}
         onChange={setName}
         mono
-        placeholder="Front1"
+        placeholder="Front[1-24]"
+        hint={
+          isEdit
+            ? undefined
+            : "a [1-24] range adds one port per number, each on the next strand"
+        }
         error={fieldErrors.name}
       />
+      <NameRangeHint name={name} editing={isEdit} noun="front ports" />
       <div className="grid grid-cols-2 gap-3">
         <FormSelect
           label="Rear port"

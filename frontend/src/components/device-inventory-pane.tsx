@@ -39,7 +39,9 @@ import {
   FormText,
   useFieldErrors,
 } from "@/components/forms"
+import { NameRangeHint } from "@/components/name-range-hint"
 import { QueryError } from "@/components/query-error"
+import { createEach, expandNameRange } from "@/lib/name-range"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -376,15 +378,24 @@ function InventoryItemDialog({
         return api<InventoryItemRow>(`/api/inventory-items/${item!.id}/`, {
           method: "PATCH",
           body: JSON.stringify(payload),
+        }).then(() => ({ count: 1 }))
+      // A [a-b] range in the name fans out — "Disk[1-5]" adds five bays.
+      return createEach(expandNameRange(payload.name), (n) =>
+        api<InventoryItemRow>("/api/inventory-items/", {
+          method: "POST",
+          body: JSON.stringify({ ...payload, name: n }),
         })
-      return api<InventoryItemRow>("/api/inventory-items/", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      })
+      ).then(({ count }) => ({ count }))
     },
-    onSuccess: () => {
+    onSuccess: ({ count }) => {
       qc.invalidateQueries({ queryKey: ["device-inventory", deviceId] })
-      toast.success(editing ? "Part updated" : "Part added")
+      toast.success(
+        editing
+          ? "Part updated"
+          : count > 1
+            ? `${count} parts added`
+            : "Part added"
+      )
       onOpenChange(false)
     },
     onError: (err) => {
@@ -416,9 +427,13 @@ function InventoryItemDialog({
             autoFocus
             value={name}
             onChange={setName}
-            placeholder="Disk 1"
+            placeholder="Disk[1-5]"
+            hint={
+              editing ? undefined : "a [1-5] range adds one part per number"
+            }
             error={fieldErrors.name}
           />
+          <NameRangeHint name={name} editing={editing} noun="parts" />
           <div className="grid grid-cols-2 gap-3">
             <FormSelect
               label="Kind"

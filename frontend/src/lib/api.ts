@@ -1510,6 +1510,39 @@ export interface SnmpSensor {
   updated_at: string
 }
 
+/** One column of a walked OID subtree — an attribute of the table, held across
+ * every component in it. `distinct` is capped server-side, so a column of
+ * serial numbers reports a sample rather than hundreds of values. */
+export interface OidWalkColumn {
+  /** Sub-identifier after the base, e.g. "6" in 1.3.6…11.2.1.6. */
+  column: string
+  /** The full OID of this column — what a sensor would poll. */
+  oid: string
+  distinct: string[]
+  values_seen: number
+  /** How many rows actually carry a value here. */
+  filled: number
+}
+
+export interface OidWalkRow {
+  /** The row's index within the table — one physical component. */
+  index: string
+  values: Record<string, string>
+}
+
+/** A walk reshaped back into the table it came from: rows are components,
+ * columns are attributes. */
+export interface OidWalkResult {
+  base: string
+  walk: boolean
+  columns: OidWalkColumn[]
+  rows: OidWalkRow[]
+  count: number
+  /** Hit the server's varbind cap — the subtree is larger than shown. */
+  truncated: boolean
+  error: string
+}
+
 /** Choice option for the interface/cable type dropdowns (GET /api/dcim/choices/). */
 export interface DcimChoice {
   value: string

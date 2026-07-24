@@ -71,6 +71,13 @@ and watch the live preview:
 
 Names that already exist on the device are skipped, so re-running is safe.
 
+The single **Add interface** form takes a `[a-b]` range too (`eth[0-3]`), which
+is handier for a few ports since you get the full field set — type, MTU, PoE,
+VLANs, VRF, LAG — applied to all of them. Bulk add is the one to use for a whole
+switch face: it does the work server-side, keeps zero-padding, and skips
+existing names. See
+[Adding many components at once](devices.md#adding-many-components-at-once).
+
 ## Edit many at once
 
 Tick the rows you want and a bar floats up from the bottom — **Edit** opens a

@@ -39,6 +39,7 @@ import {
   FormText,
   useFieldErrors,
 } from "@/components/forms"
+import { expandNameRange } from "@/lib/name-range"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 
 /** The nine device-type component-template kinds, one dialog for all. */
@@ -133,29 +134,14 @@ export interface ComponentTemplateDialogProps {
 }
 
 // Create/edit dialog shared by all seven component-template tables — common
+// name/description plus the kind's extras. Templates are stamped onto every
+// new device of the type.
+//
 // A name may contain one [a-b] range — "GigabitEthernet{position}/0/[1-24]"
 // creates 24 templates in one go. Expansion happens client-side on create;
 // {position} stays in the stored name and resolves per stack member when
 // components are stamped (1 for standalone devices, {position:0} for
 // vendors that count from 0).
-const NAME_RANGE_RE = /\[(\d+)-(\d+)\]/
-const RANGE_CAP = 128
-
-function expandNameRange(name: string): string[] {
-  const m = name.match(NAME_RANGE_RE)
-  if (!m) return [name]
-  const lo = Number(m[1])
-  const hi = Number(m[2])
-  if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi < lo) return [name]
-  if (hi - lo + 1 > RANGE_CAP) return [name]
-  const out: string[] = []
-  for (let i = lo; i <= hi; i++)
-    out.push(name.replace(NAME_RANGE_RE, String(i)))
-  return out
-}
-
-// name/description plus the kind's extras. Templates are stamped onto every
-// new device of the type.
 export function ComponentTemplateDialog({
   kind,
   deviceTypeId,

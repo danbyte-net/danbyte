@@ -278,6 +278,47 @@ older iDRAC/iLO, Synology, storage shelves). SNMP has no *standard* hardware-
 health MIB, so each vendor exposes disk/PSU/fan status under its own OIDs.
 **Custom sensors** let you teach Danbyte those OIDs.
 
+### Find the OID by looking, not by reading a MIB {#oid-explorer}
+
+You normally need the vendor's MIB file to know which OID reports health.
+**Explore OIDs** on the *Custom SNMP sensors* card removes that step: give it a
+table base, and Danbyte walks it on the device and shows the result **as the
+table it came from** — one row per component, one column per attribute.
+
+That makes the answer visible. Walking a Lenovo IMM's power-supply table at
+`1.3.6.1.4.1.2.3.51.3.1.11.2.1`:
+
+| Row | .1 | .2 | .5 | .6 |
+|---|---|---|---|---|
+| 0 | 0 | Power System | Unknown | Normal |
+| 1 | 1 | Power Supply 1 | K135155D0K2 | Normal |
+| 2 | 2 | Power Supply 2 | K135155D0K5 | Normal |
+
+Column `.2` names the supplies, `.5` holds serials, and `.6` is health. Click
+`.6` → **Create sensor**, and the form opens with that column's OID filled in
+and every value it returned already listed, so writing the value map is a
+dropdown per value instead of transcription. Each column is annotated with what
+its own values suggest — *all "Normal"*, *unique per row*, *3 values* — which is
+usually enough to spot the health column at a glance.
+
+Notes:
+
+- **Numeric OIDs only.** A MIB *name* can't be resolved without its MIB file,
+  so `sysDescr.0` is refused before anything touches the network.
+- Start from a **table base**, not a whole subtree. The walk is capped, and a
+  truncated result says so — narrow the OID rather than trusting a partial view.
+- Unreachable device, wrong community, or no applicable profile come back as a
+  message in the dialog, not a failed request.
+- Good starting points are offered in the field: `hrDeviceTable`,
+  `hrStorageTable`, `entPhySensorTable`, `entPhysicalTable`, and
+  `1.3.6.1.4.1` — the root of every vendor's own tree.
+
+Exploring reads from the device and writes nothing, but it does make the server
+query arbitrary operator-supplied OIDs on that host, so it takes the same
+**device change** permission as the rest of the SNMP tooling.
+
+### Defining a sensor by hand
+
 On the device's **SNMP tab → Custom SNMP sensors** card, **Add sensor**:
 
 - **OID** — the numeric OID. A **walk** reads a table column (one value per

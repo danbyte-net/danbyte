@@ -20,7 +20,13 @@ function NewInterfacePage() {
     >
       <InterfaceForm
         initialDeviceId={device}
-        onSaved={(i) => nav({ to: "/interfaces/$id", params: { id: i.id } })}
+        onSaved={(i, count) =>
+          // A [a-b] name range creates several — show them together on the
+          // device rather than dropping onto the last one.
+          count > 1
+            ? nav({ to: "/devices/$id", params: { id: i.device.id } })
+            : nav({ to: "/interfaces/$id", params: { id: i.id } })
+        }
         onCancel={() => nav({ to: "/interfaces" })}
       />
     </EditPageShell>
