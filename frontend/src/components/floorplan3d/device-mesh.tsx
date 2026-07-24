@@ -136,16 +136,43 @@ export function DeviceMesh({
         <meshStandardMaterial color={bodyColor} roughness={0.7} />
       </mesh>
       {texture && (
-        // The exposed face, textured with the device-type photo. A hair off
-        // the box surface to dodge z-fighting; front faces −Z (the rack's
+        // The exposed face, textured with the device-type photo, plus any
+        // photo-anchored port markers on top of it. Both share one frame
+        // (a hair off the box to dodge z-fighting); front faces −Z (the rack's
         // front plane), rear faces +Z.
-        <mesh
+        <group
           position={[0, 0, (dd / 2 + 0.002) * (mountedRear ? 1 : -1)]}
           rotation={[0, mountedRear ? 0 : Math.PI, 0]}
         >
-          <planeGeometry args={[dw, boxH]} />
-          <meshBasicMaterial map={texture} toneMapped={false} />
-        </mesh>
+          <mesh>
+            <planeGeometry args={[dw, boxH]} />
+            <meshBasicMaterial map={texture} toneMapped={false} />
+          </mesh>
+          {(dev.image_ports?.[mountedRear ? "rear" : "front"] ?? []).map(
+            (m, i) => (
+              <mesh
+                key={i}
+                // image (mx,my): x right, y DOWN from top-left → plane-local
+                // X right, Y up, so flip y.
+                position={[
+                  (m.x - 0.5) * dw,
+                  (0.5 - m.y) * boxH,
+                  0.0015,
+                ]}
+                raycast={() => null}
+              >
+                <planeGeometry args={[m.w * dw, m.h * boxH]} />
+                <meshBasicMaterial
+                  color="#38bdf8"
+                  transparent
+                  opacity={0.55}
+                  toneMapped={false}
+                  depthWrite={false}
+                />
+              </mesh>
+            )
+          )}
+        </group>
       )}
       {selected && edges && (
         <lineSegments raycast={() => null}>
