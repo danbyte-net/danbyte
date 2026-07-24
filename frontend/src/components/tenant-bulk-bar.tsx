@@ -23,10 +23,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { apiErrorToast } from "@/lib/api-toast"
 
-const SELECT_CLS =
-  "h-9 w-full rounded-md border border-border bg-transparent px-3 text-sm"
+// The Select primitive disallows an empty SelectItem value, so "leave
+// unchanged" rides on a sentinel and maps back to "" in state.
+const KEEP = "__keep__"
 
 export interface TenantBulkBarProps {
   selected: Tenant[]
@@ -146,31 +154,39 @@ function BulkEditDialog({
         <div className="grid gap-4">
           <div className="grid gap-1.5">
             <Label className="text-xs">Tenant group</Label>
-            <select
-              className={SELECT_CLS}
-              value={group}
-              onChange={(e) => setGroup(e.target.value)}
+            <Select
+              value={group || KEEP}
+              onValueChange={(v) => setGroup(v === KEEP ? "" : v)}
             >
-              <option value="">Leave unchanged</option>
-              <option value="__none__">No group (clear)</option>
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={KEEP}>Leave unchanged</SelectItem>
+                <SelectItem value="__none__">No group (clear)</SelectItem>
+                {groups.map((g) => (
+                  <SelectItem key={g.id} value={g.id}>
+                    {g.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid gap-1.5">
             <Label className="text-xs">Status</Label>
-            <select
-              className={SELECT_CLS}
-              value={active}
-              onChange={(e) => setActive(e.target.value)}
+            <Select
+              value={active || KEEP}
+              onValueChange={(v) => setActive(v === KEEP ? "" : v)}
             >
-              <option value="">Leave unchanged</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={KEEP}>Leave unchanged</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
         <DialogFooter>

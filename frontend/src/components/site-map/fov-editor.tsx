@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 
 import type { SiteMapFov } from "@/lib/api"
 import { Slider } from "@/components/ui/slider"
+import { FormCheckbox } from "@/components/forms"
 
 // The map's FOV editor — a direct port of the floorplan TileInspector's
 // cone block (PTZ toggle + Direction / Angle / Reach sliders), with reach in
@@ -66,15 +67,12 @@ export function FovEditor({
           Remove
         </button>
       </div>
-      <label className="flex items-center gap-1.5 text-[12px]">
-        <input
-          type="checkbox"
-          className="ck"
-          checked={draft.ptz}
-          onChange={(e) => set({ ptz: e.target.checked }, true)}
-        />
-        PTZ (360° coverage ring)
-      </label>
+      <FormCheckbox
+        label="PTZ (360° coverage ring)"
+        checked={draft.ptz}
+        onChange={(v) => set({ ptz: v }, true)}
+        className="items-center gap-1.5 text-[12px]"
+      />
       {!draft.ptz && (
         <>
           <FovSlider

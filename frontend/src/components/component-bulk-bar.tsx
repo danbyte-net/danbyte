@@ -31,8 +31,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Field, FormCombobox, FormSelect } from "@/components/forms"
+import {
+  Field,
+  FormCheckbox,
+  FormCombobox,
+  FormSelect,
+} from "@/components/forms"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -504,12 +517,10 @@ function BulkEditDialog({
               return (
                 <Field key={f.key} label={f.label} hint={f.hint}>
                   <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      className="ck"
+                    <Checkbox
                       checked={active}
-                      onChange={(e) =>
-                        e.target.checked ? set(f.key, null) : unset(f.key)
+                      onCheckedChange={(v) =>
+                        v ? set(f.key, null) : unset(f.key)
                       }
                       title={active ? "Will be set" : "Keep current"}
                     />
@@ -531,12 +542,11 @@ function BulkEditDialog({
                       placeholder={active ? "" : "Keep current"}
                       disabled={!active}
                     />
-                    <select
-                      className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+                    <Select
                       value={unit}
                       disabled={!active}
-                      onChange={(e) => {
-                        const next = e.target.value as StorageUnit
+                      onValueChange={(v) => {
+                        const next = v as StorageUnit
                         // Re-interpret the shown number in the new unit.
                         const shown =
                           typeof raw === "number" ? raw / factor : null
@@ -549,12 +559,17 @@ function BulkEditDialog({
                         }
                       }}
                     >
-                      {STORAGE_UNITS.map((u) => (
-                        <option key={u.value} value={u.value}>
-                          {u.value}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="w-[88px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {STORAGE_UNITS.map((u) => (
+                          <SelectItem key={u.value} value={u.value}>
+                            {u.value}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </Field>
               )
@@ -594,12 +609,10 @@ function BulkEditDialog({
             return (
               <Field key={f.key} label={f.label} hint={f.hint}>
                 <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    className="ck"
+                  <Checkbox
                     checked={active}
-                    onChange={(e) =>
-                      e.target.checked
+                    onCheckedChange={(v) =>
+                      v
                         ? set(f.key, f.kind === "int" ? null : "")
                         : unset(f.key)
                     }
@@ -787,15 +800,11 @@ function RenameCloneDialog({
               className="font-mono text-[13px]"
             />
           </Field>
-          <label className="flex items-center gap-2 text-[13px]">
-            <input
-              type="checkbox"
-              className="ck"
-              checked={useRegex}
-              onChange={(e) => setUseRegex(e.target.checked)}
-            />
-            Use a regular expression
-          </label>
+          <FormCheckbox
+            label="Use a regular expression"
+            checked={useRegex}
+            onChange={setUseRegex}
+          />
           {regexError && (
             <p className="text-[12px] text-destructive">
               Invalid regex: {regexError}

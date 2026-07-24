@@ -69,6 +69,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { FormCheckbox } from "@/components/forms"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
   TEMPLATE_ENDPOINT,
@@ -267,7 +268,9 @@ export function DeviceTypeFaceplatePane({
   }, [draft])
   const unplacedBays = useMemo(
     () =>
-      (bayTemplatesQ.data?.results ?? []).filter((b) => !placedBays.has(b.name)),
+      (bayTemplatesQ.data?.results ?? []).filter(
+        (b) => !placedBays.has(b.name)
+      ),
     [bayTemplatesQ.data, placedBays]
   )
 
@@ -501,18 +504,13 @@ export function DeviceTypeFaceplatePane({
             { value: "rear", label: "Rear", count: draft.rear.length || null },
           ]}
         />
-        <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-          <input
-            type="checkbox"
-            className="ck"
-            checked={!!draft.full}
-            disabled={!canWrite}
-            onChange={(e) =>
-              update({ ...draft, full: e.target.checked || undefined })
-            }
-          />
-          Full width
-        </label>
+        <FormCheckbox
+          label="Full width"
+          checked={!!draft.full}
+          disabled={!canWrite}
+          onChange={(v) => update({ ...draft, full: v || undefined })}
+          className="items-center gap-1.5 text-[12px] text-muted-foreground"
+        />
         <p className="text-[12px] text-muted-foreground">
           Drag ports — or a module bay — from the palette onto the panel. It
           draws at true scale, exactly as devices of this type will render; a

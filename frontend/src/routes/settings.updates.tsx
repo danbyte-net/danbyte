@@ -14,7 +14,7 @@ import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Field } from "@/components/forms"
+import { Field, FormCheckbox, FormSelect } from "@/components/forms"
 import { QueryError } from "@/components/query-error"
 import {
   Dialog,
@@ -140,7 +140,7 @@ function UpdatesSettingsPage() {
     mutationFn: () =>
       api<{ cleared: boolean; had_lock: boolean }>(
         "/api/system/upgrade/cancel/",
-        { method: "POST" },
+        { method: "POST" }
       ),
     onSuccess: (r) => {
       setUpgrading(false)
@@ -148,7 +148,7 @@ function UpdatesSettingsPage() {
       toast.success(
         r.had_lock
           ? "Cleared the stuck upgrade — you can start a new one now."
-          : "No upgrade lock was set; nothing to clear.",
+          : "No upgrade lock was set; nothing to clear."
       )
     },
     onError: (e: unknown) => apiErrorToast(e, "Couldn’t clear the upgrade"),
@@ -188,8 +188,7 @@ function UpdatesSettingsPage() {
           )}
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          Running{" "}
-          <span className="font-mono">v{sys?.version ?? "…"}</span>
+          Running <span className="font-mono">v{sys?.version ?? "…"}</span>
           {sys?.commit && (
             <span className="font-mono text-xs"> ({sys.commit})</span>
           )}
@@ -265,15 +264,12 @@ function UpdatesSettingsPage() {
         </Field>
 
         <div className="space-y-3 border-t border-border pt-3">
-          <label className="flex items-center gap-2 text-[13px] font-medium">
-            <input
-              type="checkbox"
-              className="ck"
-              checked={airgapped}
-              onChange={(e) => setAirgapped(e.target.checked)}
-            />
-            Airgapped install (disable update check)
-          </label>
+          <FormCheckbox
+            className="text-[13px] font-medium"
+            label="Airgapped install (disable update check)"
+            checked={airgapped}
+            onChange={setAirgapped}
+          />
           <p className="text-[12px] text-muted-foreground">
             When on, Danbyte never contacts the release repo — no version check,
             no automatic updates. Upgrade only by uploading a bundle below. Turn
@@ -282,21 +278,13 @@ function UpdatesSettingsPage() {
         </div>
 
         <div className="space-y-3 border-t border-border pt-3">
-          <label
-            className={
-              "flex items-center gap-2 text-[13px] font-medium " +
-              (airgapped ? "opacity-50" : "")
-            }
-          >
-            <input
-              type="checkbox"
-              className="ck"
-              checked={auto}
-              disabled={airgapped}
-              onChange={(e) => setAuto(e.target.checked)}
-            />
-            Automatic updates
-          </label>
+          <FormCheckbox
+            label="Automatic updates"
+            checked={auto}
+            disabled={airgapped}
+            onChange={setAuto}
+            className="items-center gap-2 text-[13px] font-medium"
+          />
           <p className="text-[12px] text-muted-foreground">
             When on, Danbyte upgrades itself (and auto-updating Outposts) to the
             newest release. Leave the window blank for real-time — upgrade as
@@ -305,18 +293,15 @@ function UpdatesSettingsPage() {
           </p>
           {auto && !airgapped && (
             <div className="space-y-2 pl-6">
-              <Field label="Channel">
-                <select
-                  value={channel}
-                  onChange={(e) =>
-                    setChannel(e.target.value as "stable" | "any")
-                  }
-                  className="h-8 rounded-md border border-border bg-background px-2 text-[13px]"
-                >
-                  <option value="stable">Stable only</option>
-                  <option value="any">Any (incl. prereleases)</option>
-                </select>
-              </Field>
+              <FormSelect
+                label="Channel"
+                value={channel}
+                onChange={(v) => setChannel(v as "stable" | "any")}
+                options={[
+                  { value: "stable", label: "Stable only" },
+                  { value: "any", label: "Any (incl. prereleases)" },
+                ]}
+              />
               <div className="grid grid-cols-3 gap-2">
                 <Field label="Days (blank = any)">
                   <Input
@@ -493,17 +478,12 @@ function UpdatesSettingsPage() {
             <p className="text-muted-foreground">
               Post-migration rollback isn’t automatic — the backup is the net.
             </p>
-            <label className="flex items-center gap-2 rounded-md border border-border bg-muted/20 p-2.5">
-              <input
-                type="checkbox"
-                className="ck"
-                checked={confirmChecked}
-                onChange={(e) => setConfirmChecked(e.target.checked)}
-              />
-              <span>
-                I understand Danbyte will restart and this can’t be auto-undone.
-              </span>
-            </label>
+            <FormCheckbox
+              className="rounded-md border border-border bg-muted/20 p-2.5 text-[13px]"
+              label="I understand Danbyte will restart and this can’t be auto-undone."
+              checked={confirmChecked}
+              onChange={setConfirmChecked}
+            />
             <div className="flex justify-end gap-2 pt-1">
               <Button
                 variant="outline"

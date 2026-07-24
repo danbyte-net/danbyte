@@ -114,7 +114,12 @@ import { TileBadge } from "@/components/floorplan/tile-badge"
 import { RackElevation } from "@/components/rack-elevation"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { Slider } from "@/components/ui/slider"
-import { Field, FormCombobox, FormSelect } from "@/components/forms"
+import {
+  Field,
+  FormCheckbox,
+  FormCombobox,
+  FormSelect,
+} from "@/components/forms"
 import { QueryError } from "@/components/query-error"
 import { RackPicker } from "@/components/rack-picker"
 import { useTheme } from "@/components/theme-provider"
@@ -984,93 +989,61 @@ function FloorPlanPage() {
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-56 gap-1 p-2">
-              <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
-                <input
-                  type="checkbox"
-                  className="ck"
-                  checked={labelFit}
-                  onChange={(e) => setViewPref("label_fit", e.target.checked)}
-                />
-                <span>Fit labels to tiles</span>
-              </label>
-              <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
-                <input
-                  type="checkbox"
-                  className="ck"
-                  checked={showFov}
-                  onChange={(e) => setViewPref("show_fov", e.target.checked)}
-                />
-                <span>Camera FOV cones</span>
-              </label>
-              <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
-                <input
-                  type="checkbox"
-                  className="ck"
-                  checked={showZoneLabels}
-                  onChange={(e) =>
-                    setViewPref("show_zone_labels", e.target.checked)
-                  }
-                />
-                <span>Zone labels</span>
-              </label>
+              <FormCheckbox
+                label="Fit labels to tiles"
+                checked={labelFit}
+                onChange={(v) => setViewPref("label_fit", v)}
+                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+              />
+              <FormCheckbox
+                label="Camera FOV cones"
+                checked={showFov}
+                onChange={(v) => setViewPref("show_fov", v)}
+                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+              />
+              <FormCheckbox
+                label="Zone labels"
+                checked={showZoneLabels}
+                onChange={(v) => setViewPref("show_zone_labels", v)}
+                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+              />
               <div className="my-1 h-px bg-border" />
-              <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
-                <input
-                  type="checkbox"
-                  className="ck"
-                  checked={showTrays}
-                  onChange={(e) => setViewPref("show_trays", e.target.checked)}
-                />
-                <span>Cable trays</span>
-              </label>
-              <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
-                <input
-                  type="checkbox"
-                  className="ck"
-                  checked={showCableLinks}
-                  onChange={(e) =>
-                    setViewPref("show_cable_links", e.target.checked)
-                  }
-                />
-                <span>Cable links (A↔B)</span>
-              </label>
+              <FormCheckbox
+                label="Cable trays"
+                checked={showTrays}
+                onChange={(v) => setViewPref("show_trays", v)}
+                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+              />
+              <FormCheckbox
+                label="Cable links (A↔B)"
+                checked={showCableLinks}
+                onChange={(v) => setViewPref("show_cable_links", v)}
+                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+              />
               {view3d && (
                 <>
                   <div className="my-1 h-px bg-border" />
                   <span className="px-2 text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
                     3D · shown up close
                   </span>
-                  <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
-                    <input
-                      type="checkbox"
-                      className="ck"
-                      checked={show3dU}
-                      onChange={(e) => setViewPref("show_3d_u", e.target.checked)}
-                    />
-                    <span>U numbers</span>
-                  </label>
-                  <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
-                    <input
-                      type="checkbox"
-                      className="ck"
-                      checked={show3dNames}
-                      onChange={(e) =>
-                        setViewPref("show_3d_names", e.target.checked)
-                      }
-                    />
-                    <span>Device names</span>
-                  </label>
-                  <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted/60">
-                    <input
-                      type="checkbox"
-                      className="ck"
-                      checked={show3dCables}
-                      onChange={(e) =>
-                        setViewPref("show_3d_cables", e.target.checked)
-                      }
-                    />
-                    <span>Cables</span>
-                  </label>
+                  <FormCheckbox
+                    label="U numbers"
+                    checked={show3dU}
+                    onChange={(v) => setViewPref("show_3d_u", v)}
+                    className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+                  />
+                  <FormCheckbox
+                    label="Device names"
+                    checked={show3dNames}
+                    onChange={(v) => setViewPref("show_3d_names", v)}
+                    className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+                  />
+                  <FormCheckbox
+                    label="Cables"
+                    checked={show3dCables}
+                    onChange={(v) => setViewPref("show_3d_cables", v)}
+                    className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+                  />
                 </>
               )}
             </PopoverContent>
@@ -1730,17 +1703,16 @@ function TileInspector({
           <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
             Field of view
           </span>
-          <label className="flex items-center gap-2 text-[13px]">
-            <input
-              type="checkbox"
-              className="ck"
-              checked={tile.fov_ptz}
-              onChange={(e) => onChange({ fov_ptz: e.target.checked })}
-            />
-            <span>
-              PTZ <span className="text-muted-foreground">— 360° ring</span>
-            </span>
-          </label>
+          <FormCheckbox
+            label={
+              <>
+                PTZ <span className="text-muted-foreground">— 360° ring</span>
+              </>
+            }
+            checked={tile.fov_ptz}
+            onChange={(v) => onChange({ fov_ptz: v })}
+            className="items-center text-[13px]"
+          />
           {/* Sliders, not number boxes: these are all continuous physical
               quantities you tune against the cone drawn on the plan, so dragging
               with live feedback beats typing a number and re-reading the canvas. */}

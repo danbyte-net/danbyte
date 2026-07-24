@@ -27,6 +27,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
@@ -579,24 +586,32 @@ export function DataTable<T>({
             {table.getFilteredRowModel().rows.length} rows
           </span>
           <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1">
+            <span className="flex items-center gap-1">
               Rows
-              <select
-                value={prefPageSize}
-                onChange={(e) => {
-                  const n = Number(e.target.value)
+              <Select
+                value={String(prefPageSize)}
+                onValueChange={(v) => {
+                  const n = Number(v)
                   table.setPageSize(n)
                   setPref("page_size", n)
                 }}
-                className="h-6 rounded-md border border-border bg-background px-1 text-xs"
               >
-                {[25, 50, 100, 250, 1000].map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <SelectTrigger
+                  size="sm"
+                  className="h-6 w-20 text-xs"
+                  aria-label="Rows"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[25, 50, 100, 250, 1000].map((n) => (
+                    <SelectItem key={n} value={String(n)}>
+                      {n}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </span>
             <span className="num">
               Page {table.getState().pagination.pageIndex + 1} of{" "}
               {table.getPageCount()}

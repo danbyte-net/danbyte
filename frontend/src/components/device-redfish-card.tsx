@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Section } from "@/components/ui/section"
 import { Input } from "@/components/ui/input"
-import { Field } from "@/components/forms"
+import { Field, FormCheckbox } from "@/components/forms"
 import { TimeCell } from "@/components/cells/time-ago"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -85,10 +85,10 @@ export function DeviceRedfishCard({ deviceId }: { deviceId: string }) {
         payload.username = username
         payload.password = password
       }
-      return api<RedfishState>(
-        `/api/monitoring/devices/${deviceId}/redfish/`,
-        { method: "PUT", body: JSON.stringify(payload) }
-      )
+      return api<RedfishState>(`/api/monitoring/devices/${deviceId}/redfish/`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      })
     },
     onSuccess: () => {
       toast.success("BMC endpoint saved")
@@ -101,10 +101,9 @@ export function DeviceRedfishCard({ deviceId }: { deviceId: string }) {
 
   const poll = useMutation({
     mutationFn: () =>
-      api<RedfishState>(
-        `/api/monitoring/devices/${deviceId}/redfish-poll/`,
-        { method: "POST" }
-      ),
+      api<RedfishState>(`/api/monitoring/devices/${deviceId}/redfish-poll/`, {
+        method: "POST",
+      }),
     onSuccess: (r) => {
       if (r.reachable) toast.success("BMC polled — hardware reconciled")
       else toast.error(`BMC unreachable: ${r.error || "unknown error"}`)
@@ -133,12 +132,11 @@ export function DeviceRedfishCard({ deviceId }: { deviceId: string }) {
         .join(" · ")
     : ""
   const failing = s?.data
-    ? (
-        ["drives", "processors", "memory", "psus", "fans"] as const
-      ).flatMap((k) =>
-        ((s.data[k] ?? []) as RedfishPart[]).filter(
-          (p) => p.health && p.health !== "ok"
-        )
+    ? (["drives", "processors", "memory", "psus", "fans"] as const).flatMap(
+        (k) =>
+          ((s.data[k] ?? []) as RedfishPart[]).filter(
+            (p) => p.health && p.health !== "ok"
+          )
       )
     : []
 
@@ -248,21 +246,12 @@ export function DeviceRedfishCard({ deviceId }: { deviceId: string }) {
                 />
               </Field>
             </div>
-            <label className="flex items-center gap-2 text-[13px]">
-              <input
-                type="checkbox"
-                className="ck"
-                checked={verifyTls}
-                onChange={(e) => setVerifyTls(e.target.checked)}
-              />
-              <span>
-                Verify TLS
-                <span className="text-muted-foreground">
-                  {" "}
-                  — BMCs usually present self-signed certificates
-                </span>
-              </span>
-            </label>
+            <FormCheckbox
+              label="Verify TLS"
+              checked={verifyTls}
+              onChange={setVerifyTls}
+              hint="BMCs usually present self-signed certificates"
+            />
             <div>
               <Button
                 size="sm"

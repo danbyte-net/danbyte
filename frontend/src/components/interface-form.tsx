@@ -20,6 +20,7 @@ import {
   FormText,
   useFieldErrors,
 } from "@/components/forms"
+import { Checkbox } from "@/components/ui/checkbox"
 import { DevicePicker } from "@/components/device-picker"
 import { VlanPicker } from "@/components/vlan-picker"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
@@ -333,15 +334,11 @@ export function InterfaceForm({
                   key={v.id}
                   className="flex items-center gap-2 text-[13px]"
                 >
-                  <input
-                    type="checkbox"
-                    className="ck"
+                  <Checkbox
                     checked={taggedVlanIds.includes(v.id)}
-                    onChange={(e) =>
+                    onCheckedChange={(c) =>
                       setTaggedVlanIds((cur) =>
-                        e.target.checked
-                          ? [...cur, v.id]
-                          : cur.filter((id) => id !== v.id)
+                        c ? [...cur, v.id] : cur.filter((id) => id !== v.id)
                       )
                     }
                   />

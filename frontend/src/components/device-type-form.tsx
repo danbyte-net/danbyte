@@ -13,6 +13,7 @@ import {
 } from "@/lib/api"
 import {
   Field,
+  FormCheckbox,
   FormCombobox,
   FormFooter,
   FormSelect,
@@ -297,30 +298,18 @@ export function DeviceTypeForm({
         error={fieldErrors.subdevice_role}
       />
       <div className="flex flex-wrap gap-x-6 gap-y-2">
-        <label className="flex items-center gap-1.5 text-[13px]">
-          <input
-            type="checkbox"
-            className="ck"
-            checked={isFullDepth}
-            onChange={(e) => setIsFullDepth(e.target.checked)}
-          />
-          Full depth
-          <span className="text-[11px] text-muted-foreground">
-            occupies both rack faces
-          </span>
-        </label>
-        <label className="flex items-center gap-1.5 text-[13px]">
-          <input
-            type="checkbox"
-            className="ck"
-            checked={excludeUtil}
-            onChange={(e) => setExcludeUtil(e.target.checked)}
-          />
-          Exclude from utilisation
-          <span className="text-[11px] text-muted-foreground">
-            blanking panels, cable management
-          </span>
-        </label>
+        <FormCheckbox
+          label="Full depth"
+          hint="occupies both rack faces"
+          checked={isFullDepth}
+          onChange={setIsFullDepth}
+        />
+        <FormCheckbox
+          label="Exclude from utilisation"
+          hint="blanking panels, cable management"
+          checked={excludeUtil}
+          onChange={setExcludeUtil}
+        />
       </div>
       <FormTextarea
         label="Description"

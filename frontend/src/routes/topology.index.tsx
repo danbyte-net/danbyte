@@ -46,6 +46,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { FormCheckbox } from "@/components/forms"
 import { LevelOrganiser } from "@/components/topology/level-organiser"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { QueryError } from "@/components/query-error"
@@ -673,15 +674,12 @@ function TopologyPage() {
                   </SelectContent>
                 </Select>
               </PopoverField>
-              <label className="flex cursor-pointer items-center gap-2 pt-1 text-xs">
-                <input
-                  type="checkbox"
-                  className="ck ck-sm"
-                  checked={!filters.collapse}
-                  onChange={(e) => set({ collapse: !e.target.checked })}
-                />
-                Show patch panels
-              </label>
+              <FormCheckbox
+                label="Show patch panels"
+                checked={!filters.collapse}
+                onChange={(v) => set({ collapse: !v })}
+                className="items-center pt-1"
+              />
             </PopoverContent>
           </Popover>
         </div>

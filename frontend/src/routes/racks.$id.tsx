@@ -23,6 +23,7 @@ import { StatusBadge } from "@/components/status-badge"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
 import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { FormCheckbox } from "@/components/forms"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
@@ -411,15 +412,12 @@ function RackFaces({ rack }: { rack: Rack }) {
           ]}
         />
         {mode !== "names" && (
-          <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
-            <input
-              type="checkbox"
-              className="ck ck-sm"
-              checked={labels}
-              onChange={(e) => setLabels(e.target.checked)}
-            />
-            Text
-          </label>
+          <FormCheckbox
+            label="Text"
+            checked={labels}
+            onChange={setLabels}
+            className="items-center gap-1 text-[11px] text-muted-foreground"
+          />
         )}
         {/* Zoom — shrink to fit the whole rack on screen, or zoom in for detail. */}
         <div className="flex items-center gap-1">

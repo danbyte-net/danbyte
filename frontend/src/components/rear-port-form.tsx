@@ -9,7 +9,13 @@ import {
   type RearPortWritePayload,
   type TagOption,
 } from "@/lib/api"
-import { Field, FormFooter, FormText, useFieldErrors } from "@/components/forms"
+import {
+  Field,
+  FormCheckbox,
+  FormFooter,
+  FormText,
+  useFieldErrors,
+} from "@/components/forms"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 
 export interface RearPortFormProps {
@@ -125,23 +131,21 @@ export function RearPortForm({
         error={fieldErrors.type}
       />
       <Field label="Splitter" error={fieldErrors.is_splitter}>
-        <label className="flex items-center gap-2 text-[13px]">
-          <input
-            type="checkbox"
-            className="ck"
-            checked={isSplitter}
-            onChange={(e) => {
-              setIsSplitter(e.target.checked)
-              if (e.target.checked) setPositions("1")
-            }}
-          />
-          <span>
-            Optical splitter (PON){" "}
-            <span className="text-muted-foreground">
-              — every front port carries the input signal
-            </span>
-          </span>
-        </label>
+        <FormCheckbox
+          label={
+            <>
+              Optical splitter (PON){" "}
+              <span className="text-muted-foreground">
+                — every front port carries the input signal
+              </span>
+            </>
+          }
+          checked={isSplitter}
+          onChange={(v) => {
+            setIsSplitter(v)
+            if (v) setPositions("1")
+          }}
+        />
       </Field>
       <Field label="Tags" error={fieldErrors.tag_ids}>
         <TagMultiSelect
