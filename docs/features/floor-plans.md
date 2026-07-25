@@ -203,6 +203,15 @@ Rack and device tiles open the deep view; a tile linked to **another floor
 plan** navigates into it on click — use this to nest a cage or suite plan
 inside a hall plan.
 
+### Working many tiles at once
+
+**Ctrl/⌘-click** tiles to build a selection, or **Shift-drag** on empty grid
+to sweep one (plain drag still pans). A bulk bar appears with the count,
+**Facing** buttons that set the orientation of every selected tile in one
+click — placing a hundred racks no longer means a hundred rotate clicks —
+and **Delete**. The changes join the normal draft: nothing persists until
+**Save**, and Esc or a plain click clears the selection.
+
 ## Raised floors (Structure mode)
 
 The **Structure** tab models the room itself. Draw **raised-floor areas** —
