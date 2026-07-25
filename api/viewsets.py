@@ -2099,8 +2099,10 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
     )
 
     # Importing a bundle creates a device type, so it demands `add`; replacing
-    # one that already exists is a change and checked separately.
-    rbac_action_map = {"import_bundle": "add"}
+    # one that already exists is a change and checked separately. Bulk delete
+    # must demand `delete` — the @action default is `change`, which would let a
+    # read/write-but-not-delete editor empty the catalog.
+    rbac_action_map = {"import_bundle": "add", "bulk_delete": "delete"}
 
     @action(detail=True, methods=["get"], url_path="library-export")
     def library_export(self, request, pk=None):
@@ -2377,6 +2379,43 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         _check_unique_name(DeviceType, serializer, self._tenant_or_403(), "device type")
         serializer.save()
 
+    @action(detail=False, methods=["post"], url_path="bulk-delete")
+    def bulk_delete(self, request):
+        """POST {ids: [...]} → ``{"deleted": n}``.
+
+        The submitted ids are never trusted: the selection is re-derived from
+        ``get_queryset()``, which is tenant-filtered and then row-restricted for
+        the *delete* action (``rbac_action_map`` above). An id from another
+        tenant — or, with enhanced site separation on, a global entry or one
+        local to a site outside the caller's grant — simply falls out of the
+        set rather than being deleted.
+
+        ``n`` counts DEVICE TYPES, not the cascade. A type drags its component
+        templates (interfaces, ports, bays…) with it, so the total returned by
+        ``qs.delete()`` would report a single 48-port switch type as "49
+        deleted". Devices are NOT deleted — ``Device.device_type`` is
+        SET_NULL, so they keep running and lose their type reference; the UI
+        warns about that before it calls this.
+        """
+        ids = request.data.get("ids") or []
+        if not isinstance(ids, list) or not ids:
+            raise ValidationError(
+                {"ids": "Provide a non-empty list of device type IDs."}
+            )
+        if len(ids) > 1000:
+            raise ValidationError({"ids": "At most 1000 ids per call."})
+        with transaction.atomic():
+            rows = list(self.get_queryset().filter(pk__in=ids))
+            # No log_bulk_delete() here, deliberately: that helper exists for
+            # deletes Django can "fast delete" (no signals). DeviceType is in
+            # AUDITED_MODELS *and* cascades, so the collector always fires
+            # post_delete — one richer entry per row (it carries the
+            # pre_change field snapshot) plus entries for the templates that
+            # go with it. Adding the explicit call would log every deletion
+            # TWICE. Covered by tests_catalog_scope.
+            DeviceType.objects.filter(pk__in=[r.pk for r in rows]).delete()
+        return Response({"deleted": len(rows)}, status=drf_status.HTTP_200_OK)
+
     @action(detail=True, methods=["post"], url_path="images",
             parser_classes=[MultiPartParser, FormParser])
     def images(self, request, pk=None):
@@ -2447,8 +2486,9 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
 
     # Photo-port marker kind (hyphenated, as saved in DeviceType.image_ports) →
     # (device component relation, CableTermination kind). Drives face-ports.
-    # Inventory items are placeable hardware (disk bays…) — resolvable but not
-    # cable-able, hence the None termination kind.
+    # Inventory items (disk bays…) and module bays (line-card slots) are
+    # placeable but not cable-able, hence the None termination kind: a part
+    # answers "what health", a bay answers "occupied or free".
     _FACE_PORT_KINDS = {
         "interface": ("interfaces", "interface"),
         "console-port": ("console_ports", "console_port"),
@@ -2459,6 +2499,7 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
         "rear-port": ("rear_ports", "rear_port"),
         "aux-port": ("aux_ports", "aux_port"),
         "inventory-item": ("inventory_items", None),
+        "module-bay": ("module_bays", None),
     }
 
     # Observed-vs-intent difference → the one-line label a marker wears. Keeps
@@ -2518,11 +2559,14 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
             if relation not in name_maps:
                 comps = getattr(device, relation)
                 # Only cable-able kinds have terminations; inventory items
-                # carry a status instead.
-                comps = (
-                    comps.prefetch_related("terminations")
-                    if cabled else comps.select_related("status")
-                )
+                # carry a status instead, and a module bay's occupancy is the
+                # reverse Module relation (there is no field on the bay).
+                if cabled:
+                    comps = comps.prefetch_related("terminations")
+                elif relation == "module_bays":
+                    comps = comps.select_related("module__module_type")
+                else:
+                    comps = comps.select_related("status")
                 name_maps[relation] = {c.name: c for c in comps}
             return name_maps[relation]
 
@@ -2540,6 +2584,11 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
                     "enabled": True, "speed": "", "type": "",
                     # Hardware markers (inventory items): lifecycle status.
                     "status": None,
+                    # Module-bay markers: the installed module, or null for an
+                    # empty slot. Occupancy is the whole point of drawing a bay
+                    # on the photo, so it rides along rather than costing the
+                    # client a request per bay.
+                    "module": None,
                     # What SNMP saw differently, or null when they agree. The
                     # status/speed above stay the SOURCE OF TRUTH either way —
                     # drift is drawn beside intent, never over it.
@@ -2551,7 +2600,23 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
                     comp = name_map(relation, cabled=term_kind is not None).get(name)
                     if comp is not None:
                         entry["drift"] = drift.get(str(comp.id))
-                    if comp is not None and term_kind is None:
+                    if comp is not None and kind == "module-bay":
+                        # Module bay — reads occupied/empty, never cable-able.
+                        # The reverse OneToOne raises (an AttributeError
+                        # subclass) when the bay is free, so getattr → None.
+                        mod = getattr(comp, "module", None)
+                        entry.update({
+                            "id": str(comp.id),
+                            "module": {
+                                "id": str(mod.id),
+                                "module_type": {
+                                    "id": str(mod.module_type_id),
+                                    "name": mod.module_type.name,
+                                },
+                                "serial_number": mod.serial_number,
+                            } if mod else None,
+                        })
+                    elif comp is not None and term_kind is None:
                         # Inventory item — status-coloured, never cable-able.
                         s = comp.status
                         entry.update({

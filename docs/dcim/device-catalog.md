@@ -123,6 +123,31 @@ exactly the queue of types you have a photo for but haven't marked up yet. Hide
 either column from the **Columns** menu if you don't work with panels; the
 filters stay.
 
+### Deleting types in bulk {#bulk-delete}
+
+Tick the checkbox on any row and a bar appears at the bottom of the list with
+the selection count, **Export** (CSV / Excel / JSON of just those rows) and
+**Delete**. The selection is drawn from the rows the rail is currently showing,
+so the usual prune — **Cisco** + **Unused** + **End of life**, select all,
+delete — clears a vendor's dead models in one pass. The bar only appears if you
+hold `delete` on device types.
+
+The confirm names up to five of the types and, crucially, **sums the devices
+attached to the whole selection**: *"12 devices use these types — they'll keep
+working but lose their type reference."* Deleting a type never deletes its
+devices; `Device.device_type` is nulled, so those devices keep running,
+untyped, until you point them at another type. What *does* go with the type is
+its own [component templates](#component-templates), faceplate and photo-port
+markers.
+
+Deletion runs through `POST /api/device-types/bulk-delete/` (`{ids}`) and
+returns `{"deleted": n}` — a count of **types**, not of the templates that
+cascaded with them. The submitted ids are re-checked server-side against your
+tenant and, where the deployment scopes catalogs per site, your site scope: an
+id you can see but not write (a tenant-wide entry, or one local to another
+site) is skipped rather than deleted, so `n` can be smaller than the number you
+selected. Every removal lands in the change log.
+
 ### Rack-face images
 
 On a device type's detail page you can upload a **front image** and a **rear
@@ -318,6 +343,27 @@ name and are coloured by the **part's status** (a *Failed* disk reads red on
 the faceplate and in 3D); hovering shows the part's media, capacity, speed,
 status and serial. Hardware markers are informational — they never join the
 cable-connect flow.
+
+**[Module bay](#module-types) templates** are placeable too, under *Module bays
+(line cards)* — mark where a chassis's card slots physically are. Because a
+slot is a broad rectangle rather than a connector-sized sliver, a dropped bay
+marker starts at **20 % × 45 %** instead of the port default; resize it from
+there like any other marker.
+
+A bay marker answers one question — **is this slot free?** — so it is drawn as
+occupancy, not speed and not health: a bay with a module seated in it is
+**filled**, an empty one is the same faint outline an idle port wears. Hovering
+(2D) or clicking (3D) names the installed module type and its serial, or reads
+**Empty**. On a device *type* there is no device yet, so every bay draws as
+empty — that is the honest answer, not an error. The key under the panel lists
+only the occupancies actually on screen, and only when the panel carries bay
+markers at all. Bays are informational here too; install and remove modules on
+the device's **Hardware** tab.
+
+Note the split with the schematic [faceplate builder](#faceplate-builder),
+which stays port-only: there a bay is a **group placeholder** whose installed
+module's own faceplate gets composed in, while the photo builder marks the
+slot's real position on the artwork.
 
 ## Device bays (chassis nesting)
 

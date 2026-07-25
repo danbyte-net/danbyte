@@ -11,6 +11,7 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { ImportBundleDialog } from "@/components/device-bundle"
 import { buildDeviceTypeColumns } from "@/components/columns/device-type-columns"
 import { useTableFilters } from "@/components/table-filters"
+import { DeviceTypeBulkBar } from "@/components/device-type-bulk-bar"
 import { DeviceTypeDeleteDialog } from "@/components/device-type-delete-dialog"
 import { DeviceTypeImportDialog } from "@/components/device-type-import-dialog"
 import { useMe, objCan } from "@/lib/use-me"
@@ -26,6 +27,7 @@ function DeviceTypesPage() {
   const canDelete = canDo("devicetype", "delete")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<DeviceType | null>(null)
+  const [selectedRows, setSelectedRows] = useState<DeviceType[]>([])
   const [importing, setImporting] = useState(false)
   const [importingBundle, setImportingBundle] = useState(false)
 
@@ -118,6 +120,7 @@ function DeviceTypesPage() {
       <DataTable
         data={filteredRows}
         columns={columns}
+        onSelectedRowsChange={setSelectedRows}
         flexColumn="description"
         tableId="device-types"
       />
@@ -125,6 +128,15 @@ function DeviceTypesPage() {
         deviceType={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
       />
+      {/* Selection comes from the table's filtered rows, so the bar only ever
+          acts on what the rail is showing. Gated on the same `delete` grant
+          as the per-row action — the server re-checks it either way. */}
+      {canDelete && (
+        <DeviceTypeBulkBar
+          selected={selectedRows}
+          onCleared={() => setSelectedRows([])}
+        />
+      )}
       <DeviceTypeImportDialog open={importing} onOpenChange={setImporting} />
       <ImportBundleDialog
         open={importingBundle}
