@@ -126,6 +126,38 @@ that way.
 Pick by content, not by taste: `md` for 2–4 fields, `lg` for 5–7, `xl` for 8+ or
 any 2-column grid, `2xl`/`3xl` for tables, trees and traces.
 
+## List-page chrome
+
+Every list page is `ListPageShell` + `DataTable` — no exceptions, so header
+height, search placement, action order, and the loading/error/empty treatment
+can't drift page to page (source of truth:
+`frontend/src/components/list-page-shell.tsx`, reference implementation
+`routes/manufacturers.index.tsx`):
+
+- The shell owns the h-14 header (title · count chip · search · actions) and the
+  scrolling body. Header order is fixed: **search first, then the action
+  cluster** — `TableActions` (Import / Export) and then `Add X`.
+- `Add X` is the copy for a create button, with **no icon**. Not "New X".
+- Filters live in the rail (`FilterRail` + `FacetGroup`, usually via
+  `useTableFilters`), not in a second toolbar row under the header. A filter that
+  is genuinely either/or (no "any" state) is a `SegmentedTabs` switch in the
+  action cluster instead; a single-select filter over a long fixed list can be a
+  `Select` under a rail heading.
+- Empty is either the `DataTable` "No results." row (a filter matched nothing)
+  or an `EmptyState` carrying first-run guidance (nothing exists yet) — never a
+  bare paragraph. Loading and errors are the shell's, via its `query` prop.
+- A **tabbed** list (Prefixes, Drift, Alerts, Compliance, Jobs) puts one h-10
+  `SegmentedTabs` strip *above* the shell and renders a shell per tab, so each
+  tab supplies its own count, search, rail, and actions.
+- Tables are paged by `DataTable` alone. When the API pages server-side, hand it
+  `serverPagination={{ page, pageCount, totalRows, onPageChange }}` so that one
+  pager drives the server — don't add a second Prev/Next row.
+- A list that is a view *of* another list (e.g. `/racks/elevations`) gets the
+  shell's `backTo` / `backLabel` breadcrumb rather than its own nav.
+
+Row actions always go through `RowActions` / `actionsColumn()`, and every
+list-page table names a `tableId` so it gets the persistent column picker.
+
 ## Detail-page tabs
 
 Every object detail page follows one tab convention (source of truth:

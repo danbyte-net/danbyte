@@ -2,15 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import {
-  Pencil,
-  Plus,
-  RefreshCw,
-  Search,
-  ShieldCheck,
-  Trash2,
-  X,
-} from "lucide-react"
+import { RefreshCw, X } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -23,11 +15,12 @@ import {
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/empty-state"
-import { Input } from "@/components/ui/input"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
+import { actionsColumn } from "@/components/columns/actions-column"
 import { FacetGroup, FilterRail } from "@/components/filter-rail"
+import { ListPageShell } from "@/components/list-page-shell"
 import { useMe } from "@/lib/use-me"
 import {
   AlertDialog,
@@ -39,7 +32,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { QueryError } from "@/components/query-error"
 import { apiErrorToast } from "@/lib/api-toast"
 
 type Tab = "violations" | "rules"
@@ -117,14 +109,9 @@ function CompliancePage() {
   const total = evalQ.data?.total_violations ?? 0
 
   return (
-    <div className="flex h-full flex-1 flex-col">
-      <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-        <h1 className="flex items-center gap-2 text-base font-semibold">
-          <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-          Compliance
-        </h1>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex h-10 shrink-0 items-center border-b border-border px-4 lg:px-6">
         <SegmentedTabs
-          className="ml-2"
           value={tab}
           onValueChange={(v) => go(v as Tab)}
           items={[
@@ -132,21 +119,12 @@ function CompliancePage() {
             { value: "rules", label: "Rules" },
           ]}
         />
-        {tab === "violations" && total > 0 && (
-          <Badge variant="destructive" className="ml-auto">
-            {total} violation{total === 1 ? "" : "s"}
-          </Badge>
-        )}
-      </header>
+      </div>
 
       {tab === "rules" ? (
-        <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
-          <div className="mx-auto max-w-6xl">
-            <RulesTab evaluation={evalQ.data} />
-          </div>
-        </div>
+        <RulesTab evaluation={evalQ.data} />
       ) : (
-        <ViolationsTab q={evalQ} />
+        <ViolationsTab q={evalQ} total={total} />
       )}
     </div>
   )
@@ -155,8 +133,11 @@ function CompliancePage() {
 // ─── Violations ──────────────────────────────────────────────────────────────
 function ViolationsTab({
   q,
+  total,
 }: {
   q: ReturnType<typeof useQuery<ComplianceEvaluation>>
+  /** Server-side violation total, for the header badge. */
+  total: number
 }) {
   const data = q.data
   const urlSearch = Route.useSearch()
@@ -351,33 +332,33 @@ function ViolationsTab({
   )
 
   return (
-    <div className="flex min-h-0 flex-1">
-      <FilterRail>
-        <FacetGroup
-          label="Object type"
-          options={typeFacets}
-          selected={typeFilter}
-          onToggle={(v) => toggleFacet("type", typeFilter, v)}
-        />
-        <FacetGroup
-          label="Severity"
-          options={sevFacets}
-          selected={sevFilter}
-          onToggle={(v) => toggleFacet("severity", sevFilter, v)}
-        />
-      </FilterRail>
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4 lg:px-6">
-          <div className="relative">
-            <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search object or rule…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-8 w-64 pl-8 text-xs"
-            />
-          </div>
+    <ListPageShell
+      title="Compliance"
+      count={data ? rows.length : undefined}
+      rail={
+        <FilterRail>
+          <FacetGroup
+            label="Object type"
+            options={typeFacets}
+            selected={typeFilter}
+            onToggle={(v) => toggleFacet("type", typeFilter, v)}
+          />
+          <FacetGroup
+            label="Severity"
+            options={sevFacets}
+            selected={sevFilter}
+            onToggle={(v) => toggleFacet("severity", sevFilter, v)}
+          />
+        </FilterRail>
+      }
+      search={{
+        value: search,
+        onChange: setSearch,
+        placeholder: "Search object or rule…",
+      }}
+      actions={
+        <>
+          {/* Deep-link filters (?rule= / ?device=) stay visible + dismissible. */}
           {ruleChip && (
             <FilterChip
               label="Rule"
@@ -392,13 +373,14 @@ function ViolationsTab({
               onClear={() => patchSearch({ device: undefined })}
             />
           )}
-          <span className="text-xs text-muted-foreground">
-            {rows.length} of {all.length}
-          </span>
+          {total > 0 && (
+            <Badge variant="destructive">
+              {total} violation{total === 1 ? "" : "s"}
+            </Badge>
+          )}
           <Button
             size="sm"
             variant="outline"
-            className="ml-auto"
             onClick={() => q.refetch()}
             disabled={q.isFetching}
           >
@@ -407,37 +389,30 @@ function ViolationsTab({
             />
             Re-evaluate
           </Button>
-        </div>
-
-        <div className="flex-1 overflow-auto p-4 lg:p-6">
-          {q.isError && <QueryError error={q.error} />}
-
-          {data && data.rules.length === 0 && (
-            <EmptyState title="No enabled rules yet.">
-              Add one in <span className="font-medium">Rules</span> to start
-              checking.
-            </EmptyState>
-          )}
-
-          {data && data.total_violations === 0 && data.rules.length > 0 && (
-            <EmptyState title="All rules pass.">
-              Nothing out of compliance right now.
-            </EmptyState>
-          )}
-
-          {data && data.total_violations > 0 && (
-            <DataTable
-              data={rows}
-              columns={columns}
-              flexColumn="object"
-              tableId="compliance-violations"
-              exportName="compliance-violations"
-              exportTitle="Compliance violations"
-            />
-          )}
-        </div>
-      </div>
-    </div>
+        </>
+      }
+      query={q}
+    >
+      {data && data.rules.length === 0 ? (
+        <EmptyState title="No enabled rules yet.">
+          Add one in <span className="font-medium">Rules</span> to start
+          checking.
+        </EmptyState>
+      ) : data && data.total_violations === 0 ? (
+        <EmptyState title="All rules pass.">
+          Nothing out of compliance right now.
+        </EmptyState>
+      ) : (
+        <DataTable
+          data={rows}
+          columns={columns}
+          flexColumn="object"
+          tableId="compliance-violations"
+          exportName="compliance-violations"
+          exportTitle="Compliance violations"
+        />
+      )}
+    </ListPageShell>
   )
 }
 
@@ -487,139 +462,142 @@ function RulesTab({ evaluation }: { evaluation?: ComplianceEvaluation }) {
     return m
   }, [evaluation])
 
+  const columns = useMemo<ColumnDef<ComplianceRule>[]>(
+    () => [
+      {
+        id: "rule",
+        accessorKey: "name",
+        header: ({ column }) => <SortHeader column={column} label="Rule" />,
+        cell: ({ row }) => (
+          <>
+            <Link
+              to="/compliance-rules/$id"
+              params={{ id: row.original.id }}
+              className="font-medium hover:underline"
+            >
+              {row.original.name}
+            </Link>
+            {!row.original.enabled && (
+              <Badge variant="outline" className="ml-2 h-4 px-1.5 text-[10px]">
+                off
+              </Badge>
+            )}
+          </>
+        ),
+      },
+      {
+        id: "applies",
+        accessorKey: "object_type_label",
+        header: ({ column }) => (
+          <SortHeader column={column} label="Applies to" />
+        ),
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {row.original.object_type_label}
+          </span>
+        ),
+      },
+      {
+        id: "check",
+        accessorFn: (r) => ruleSummary(r),
+        header: "Check",
+        cell: ({ row }) => (
+          <span className="text-[12px] text-muted-foreground">
+            {ruleSummary(row.original)}
+          </span>
+        ),
+      },
+      {
+        id: "severity",
+        accessorKey: "severity",
+        header: ({ column }) => <SortHeader column={column} label="Severity" />,
+        cell: ({ row }) => (
+          <Badge
+            variant={SEV_VARIANT[row.original.severity]}
+            className="capitalize"
+          >
+            {row.original.severity}
+          </Badge>
+        ),
+      },
+      {
+        id: "violations",
+        accessorFn: (r) => counts.get(r.id) ?? 0,
+        header: () => <div className="text-right">Violations</div>,
+        cell: ({ row }) => {
+          const r = row.original
+          const n = counts.get(r.id)
+          return (
+            <div className="text-right">
+              {!r.enabled ? (
+                <span className="text-muted-foreground">—</span>
+              ) : n && n > 0 ? (
+                <Link
+                  to="/compliance-rules/$id"
+                  params={{ id: r.id }}
+                  className="num font-medium text-destructive hover:underline"
+                >
+                  {n}
+                </Link>
+              ) : (
+                <span className="num text-emerald-600 dark:text-emerald-400">
+                  0
+                </span>
+              )}
+            </div>
+          )
+        },
+      },
+      actionsColumn<ComplianceRule>({
+        editTo: "/compliance-rules/$id/edit",
+        editParams: (r) => ({ id: r.id }),
+        canEdit: () => canEdit,
+        onDelete: setDeleting,
+        canDelete: () => canDelete,
+      }),
+    ],
+    [counts, canEdit, canDelete]
+  )
+
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
+    <ListPageShell
+      title="Compliance"
+      count={q.data ? rows.length : undefined}
+      actions={
+        canAdd ? (
+          <Button size="sm" asChild>
+            <Link to="/compliance-rules/new">Add rule</Link>
+          </Button>
+        ) : undefined
+      }
+      query={q}
+    >
+      <div className="space-y-3">
         <p className="text-sm text-muted-foreground">
           Policies asserted over your data. Empty = nothing is enforced.
         </p>
-        {canAdd && (
-          <Button size="sm" className="ml-auto" asChild>
-            <Link to="/compliance-rules/new">
-              <Plus className="h-3.5 w-3.5" /> New rule
-            </Link>
-          </Button>
+
+        {rows.length === 0 ? (
+          <EmptyState title="No compliance rules yet.">
+            Add one and every matching object is checked against it.
+          </EmptyState>
+        ) : (
+          <DataTable
+            data={rows}
+            columns={columns}
+            flexColumn="check"
+            tableId="compliance-rules"
+            exportName="compliance-rules"
+            exportTitle="Compliance rules"
+          />
         )}
-      </div>
-
-      {q.isError && <QueryError error={q.error} />}
-
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
-        <table className="w-full text-left text-[13px]">
-          <thead className="bg-muted/40 text-[10px] tracking-[0.06em] text-muted-foreground uppercase">
-            <tr>
-              <th className="px-3 py-2 font-medium">Rule</th>
-              <th className="px-3 py-2 font-medium">Applies to</th>
-              <th className="px-3 py-2 font-medium">Check</th>
-              <th className="px-3 py-2 font-medium">Severity</th>
-              <th className="px-3 py-2 text-right font-medium">Violations</th>
-              <th className="w-20 px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {rows.map((r) => {
-              const n = counts.get(r.id)
-              return (
-                <tr key={r.id} className="hover:bg-muted/40">
-                  <td className="px-3 py-1.5">
-                    <Link
-                      to="/compliance-rules/$id"
-                      params={{ id: r.id }}
-                      className="font-medium hover:underline"
-                    >
-                      {r.name}
-                    </Link>
-                    {!r.enabled && (
-                      <Badge
-                        variant="outline"
-                        className="ml-2 h-4 px-1.5 text-[10px]"
-                      >
-                        off
-                      </Badge>
-                    )}
-                  </td>
-                  <td className="px-3 py-1.5 text-muted-foreground">
-                    {r.object_type_label}
-                  </td>
-                  <td className="px-3 py-1.5 text-[12px] text-muted-foreground">
-                    {ruleSummary(r)}
-                  </td>
-                  <td className="px-3 py-1.5">
-                    <Badge
-                      variant={SEV_VARIANT[r.severity]}
-                      className="capitalize"
-                    >
-                      {r.severity}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-1.5 text-right">
-                    {!r.enabled ? (
-                      <span className="text-muted-foreground">—</span>
-                    ) : n && n > 0 ? (
-                      <Link
-                        to="/compliance-rules/$id"
-                        params={{ id: r.id }}
-                        className="num font-medium text-destructive hover:underline"
-                      >
-                        {n}
-                      </Link>
-                    ) : (
-                      <span className="num text-emerald-600 dark:text-emerald-400">
-                        0
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-1.5">
-                    <div className="flex items-center justify-end gap-1">
-                      {canEdit && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground"
-                          asChild
-                        >
-                          <Link
-                            to="/compliance-rules/$id/edit"
-                            params={{ id: r.id }}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Link>
-                        </Button>
-                      )}
-                      {canDelete && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          onClick={() => setDeleting(r)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
-            {q.data && rows.length === 0 && (
-              <tr>
-                <td
-                  colSpan={6}
-                  className="px-3 py-10 text-center text-sm text-muted-foreground"
-                >
-                  No compliance rules yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
       </div>
 
       <DeleteRule
         rule={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
       />
-    </div>
+    </ListPageShell>
   )
 }
 

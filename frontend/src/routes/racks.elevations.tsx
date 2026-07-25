@@ -1,11 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { ChevronLeft, ChevronRight } from "lucide-react"
 import { useState } from "react"
 
 import { api, type Paginated, type Rack } from "@/lib/api"
-import { Button } from "@/components/ui/button"
-import { QueryError } from "@/components/query-error"
+import { EmptyState } from "@/components/empty-state"
+import { ListPageShell } from "@/components/list-page-shell"
 import {
   RackElevation,
   type RackDisplayMode,
@@ -50,20 +49,13 @@ function RackElevationsPage() {
       : null
 
   return (
-    <div className="flex h-full flex-1 flex-col">
-      <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-        <nav className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Button variant="ghost" size="sm" asChild className="h-6 px-1">
-            <Link to="/racks">
-              <ChevronLeft className="h-3 w-3" /> Racks
-            </Link>
-          </Button>
-          <ChevronRight className="h-3 w-3 opacity-60" />
-          <span className="font-semibold tracking-tight text-foreground">
-            Elevations{siteName ? ` · ${siteName}` : ""}
-          </span>
-        </nav>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+    <ListPageShell
+      backTo="/racks"
+      backLabel="Racks"
+      title={`Elevations${siteName ? ` · ${siteName}` : ""}`}
+      count={q.data ? racks.length : undefined}
+      actions={
+        <>
           <SegmentedTabs<RackFace>
             value={face}
             onValueChange={setFace}
@@ -89,20 +81,17 @@ function RackElevationsPage() {
               className="items-center gap-1 text-[11px] text-muted-foreground"
             />
           )}
-        </div>
-      </header>
-
-      <div className="flex-1 overflow-auto p-4 lg:p-6">
-        {q.isLoading && (
-          <p className="text-sm text-muted-foreground">Loading racks…</p>
-        )}
-        {q.isError && <QueryError error={q.error} />}
-        {!q.isLoading && racks.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            No racks{siteName ? ` at ${siteName}` : ""} yet.
-          </p>
-        )}
-        {/* One column per rack, aligned at the top like a datacenter row. */}
+        </>
+      }
+      query={q}
+    >
+      {racks.length === 0 ? (
+        <EmptyState title={`No racks${siteName ? ` at ${siteName}` : ""} yet.`}>
+          A rack gets an elevation as soon as it exists — add one from the Racks
+          page.
+        </EmptyState>
+      ) : (
+        /* One column per rack, aligned at the top like a datacenter row. */
         <div className="flex items-start gap-8 overflow-x-auto pb-4">
           {racks.map((r) => (
             <div key={r.id} className="shrink-0">
@@ -133,7 +122,7 @@ function RackElevationsPage() {
             </div>
           ))}
         </div>
-      </div>
-    </div>
+      )}
+    </ListPageShell>
   )
 }

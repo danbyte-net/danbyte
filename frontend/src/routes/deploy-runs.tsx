@@ -6,8 +6,9 @@ import { useMemo, useState } from "react"
 import { api, type DeployRun, type Paginated } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { DataTable } from "@/components/data-table"
+import { EmptyState } from "@/components/empty-state"
+import { ListPageShell } from "@/components/list-page-shell"
 import { TimeCell } from "@/components/cells/time-ago"
-import { QueryError } from "@/components/query-error"
 import { DeployRunStatus } from "@/components/deploy-run-status"
 import { AutomationExplainer } from "@/components/automation-explainer"
 import { DeployRetryButton } from "@/components/deploy-retry-button"
@@ -129,48 +130,43 @@ function DeployRunsPage() {
   )
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-        <h1 className="text-base font-semibold">Deploy runs</h1>
-        {query.data && <Badge variant="secondary">{rows.length}</Badge>}
-        <div className="ml-auto flex items-center gap-2">
-          <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="h-8 w-36 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              {STATUSES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </header>
-      <div className="flex-1 space-y-4 overflow-auto p-4 lg:p-6">
+    <ListPageShell
+      title="Deploy runs"
+      count={query.data ? rows.length : undefined}
+      actions={
+        <Select value={status} onValueChange={setStatus}>
+          <SelectTrigger className="h-8 w-36 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            {STATUSES.map((s) => (
+              <SelectItem key={s} value={s}>
+                {s}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      }
+      query={query}
+    >
+      <div className="space-y-4">
         <AutomationExplainer variant="note" />
-        {query.isLoading && (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+        {rows.length === 0 && status === "all" ? (
+          <EmptyState title="No deploy runs yet.">
+            Deploy a device from its Config tab, or enable{" "}
+            <span className="font-medium">Auto-deploy on change</span> on an
+            automation target.
+          </EmptyState>
+        ) : (
+          <DataTable
+            data={rows}
+            columns={columns}
+            flexColumn="detail"
+            tableId="deploy-runs"
+          />
         )}
-        {query.isError && <QueryError error={query.error} />}
-        {query.data &&
-          (rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No deploy runs yet. Deploy a device from its Config tab, or enable{" "}
-              <span className="font-medium">Auto-deploy on change</span> on an
-              automation target.
-            </p>
-          ) : (
-            <DataTable
-              data={rows}
-              columns={columns}
-              flexColumn="detail"
-              tableId="deploy-runs"
-            />
-          ))}
       </div>
-    </div>
+    </ListPageShell>
   )
 }

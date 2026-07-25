@@ -5,141 +5,134 @@ import type {
   DashRecentIp,
   DashRecentPrefix,
 } from "@/lib/api"
+import { SimpleTable } from "@/components/ui/simple-table"
+import type { SimpleColumn } from "@/components/ui/simple-table"
 import { ColorBadge } from "@/components/cells/color-badge"
 
-// Compact, border-defined tables matching the data-table look on list pages.
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="h-full overflow-auto">
-      <table className="w-full text-left text-[13px]">{children}</table>
-    </div>
-  )
-}
+// Compact, border-defined tables matching the data-table look on list pages —
+// the shared SimpleTable *is* that look, so the widgets use it directly.
 
-const TH =
-  "px-2 py-1.5 text-[10px] font-medium tracking-[0.06em] text-muted-foreground uppercase"
-const TD = "px-2 py-1.5"
+const PREFIX_COLUMNS: SimpleColumn<DashRecentPrefix>[] = [
+  {
+    id: "prefix",
+    header: "Prefix",
+    cell: (p) => (
+      <Link
+        to="/prefixes/$id"
+        params={{ id: p.id }}
+        className="font-mono font-medium hover:underline"
+      >
+        {p.cidr}
+      </Link>
+    ),
+  },
+  {
+    id: "status",
+    header: "Status",
+    cell: (p) => <span className="text-muted-foreground">{p.status}</span>,
+  },
+  {
+    id: "site",
+    header: "Site",
+    flex: true,
+    cell: (p) => <span className="text-muted-foreground">{p.site ?? "—"}</span>,
+  },
+  {
+    id: "ips",
+    header: "IPs",
+    align: "right",
+    cell: (p) => (
+      <span className="num text-muted-foreground">{p.ip_count}</span>
+    ),
+  },
+]
 
 export function RecentPrefixes({ rows }: { rows: DashRecentPrefix[] }) {
   if (!rows.length) return <Empty />
   return (
-    <Shell>
-      <thead className="sticky top-0 bg-card">
-        <tr>
-          <th className={TH}>Prefix</th>
-          <th className={TH}>Status</th>
-          <th className={TH}>Site</th>
-          <th className={`${TH} text-right`}>IPs</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-border/60">
-        {rows.map((p) => (
-          <tr key={p.id} className="hover:bg-muted/40">
-            <td className={TD}>
-              <Link
-                to="/prefixes/$id"
-                params={{ id: p.id }}
-                className="font-mono font-medium hover:underline"
-              >
-                {p.cidr}
-              </Link>
-            </td>
-            <td className={`${TD} text-muted-foreground`}>{p.status}</td>
-            <td className={`${TD} truncate text-muted-foreground`}>
-              {p.site ?? "—"}
-            </td>
-            <td
-              className={`${TD} num text-right text-muted-foreground tabular-nums`}
-            >
-              {p.ip_count}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </Shell>
+    <SimpleTable columns={PREFIX_COLUMNS} data={rows} getRowKey={(p) => p.id} />
   )
 }
+
+const DEVICE_COLUMNS: SimpleColumn<DashRecentDevice>[] = [
+  {
+    id: "device",
+    header: "Device",
+    cell: (x) => (
+      <Link
+        to="/devices/$id"
+        params={{ id: x.id }}
+        className="font-medium text-primary hover:underline"
+      >
+        {x.name}
+      </Link>
+    ),
+  },
+  {
+    id: "status",
+    header: "Status",
+    cell: (x) => <span className="text-muted-foreground">{x.status}</span>,
+  },
+  {
+    id: "type",
+    header: "Type",
+    cell: (x) => <span className="text-muted-foreground">{x.type ?? "—"}</span>,
+  },
+  {
+    id: "site",
+    header: "Site",
+    flex: true,
+    cell: (x) => <span className="text-muted-foreground">{x.site ?? "—"}</span>,
+  },
+]
 
 export function RecentDevices({ rows }: { rows: DashRecentDevice[] }) {
   if (!rows.length) return <Empty />
   return (
-    <Shell>
-      <thead className="sticky top-0 bg-card">
-        <tr>
-          <th className={TH}>Device</th>
-          <th className={TH}>Status</th>
-          <th className={TH}>Type</th>
-          <th className={TH}>Site</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-border/60">
-        {rows.map((x) => (
-          <tr key={x.id} className="hover:bg-muted/40">
-            <td className={`${TD} font-medium`}>
-              <Link
-                to="/devices/$id"
-                params={{ id: x.id }}
-                className="text-primary hover:underline"
-              >
-                {x.name}
-              </Link>
-            </td>
-            <td className={`${TD} text-muted-foreground`}>{x.status}</td>
-            <td className={`${TD} truncate text-muted-foreground`}>
-              {x.type ?? "—"}
-            </td>
-            <td className={`${TD} truncate text-muted-foreground`}>
-              {x.site ?? "—"}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </Shell>
+    <SimpleTable columns={DEVICE_COLUMNS} data={rows} getRowKey={(x) => x.id} />
   )
 }
+
+const IP_COLUMNS: SimpleColumn<DashRecentIp>[] = [
+  {
+    id: "address",
+    header: "Address",
+    cell: (x) => (
+      <Link
+        to="/ips/$id"
+        params={{ id: x.id }}
+        className="font-mono font-medium hover:underline"
+      >
+        {x.ip}
+      </Link>
+    ),
+  },
+  {
+    id: "status",
+    header: "Status",
+    cell: (x) =>
+      x.status ? (
+        <ColorBadge name={x.status} color={x.status_color || undefined} />
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
+  },
+  {
+    id: "dns",
+    header: "DNS name",
+    flex: true,
+    cell: (x) => (
+      <span className="font-mono text-xs text-muted-foreground">
+        {x.dns ?? "—"}
+      </span>
+    ),
+  },
+]
 
 export function RecentIps({ rows }: { rows: DashRecentIp[] }) {
   if (!rows.length) return <Empty />
   return (
-    <Shell>
-      <thead className="sticky top-0 bg-card">
-        <tr>
-          <th className={TH}>Address</th>
-          <th className={TH}>Status</th>
-          <th className={TH}>DNS name</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-border/60">
-        {rows.map((x) => (
-          <tr key={x.id} className="hover:bg-muted/40">
-            <td className={TD}>
-              <Link
-                to="/ips/$id"
-                params={{ id: x.id }}
-                className="font-mono font-medium hover:underline"
-              >
-                {x.ip}
-              </Link>
-            </td>
-            <td className={TD}>
-              {x.status ? (
-                <ColorBadge
-                  name={x.status}
-                  color={x.status_color || undefined}
-                />
-              ) : (
-                <span className="text-muted-foreground">—</span>
-              )}
-            </td>
-            <td
-              className={`${TD} truncate font-mono text-[12px] text-muted-foreground`}
-            >
-              {x.dns ?? "—"}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </Shell>
+    <SimpleTable columns={IP_COLUMNS} data={rows} getRowKey={(x) => x.id} />
   )
 }
 

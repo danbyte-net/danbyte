@@ -1,7 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
-import { Search } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
@@ -17,13 +16,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
+import { ListPageShell } from "@/components/list-page-shell"
+import { TableActions } from "@/components/table-actions"
 import { numidColumn } from "@/components/cells/numid"
 import { timeAgoColumn } from "@/components/cells/time-ago"
-import { QueryError } from "@/components/query-error"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -55,56 +53,33 @@ function FloorPlansPage() {
   )
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6">
-        <h1 className="text-base font-semibold">Floor plans</h1>
-        {query.data && <Badge variant="secondary">{rows.length}</Badge>}
-        <div className="ml-auto flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Filter by name…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              className="h-8 w-72 pl-8 text-xs"
-            />
-          </div>
+    <ListPageShell
+      title="Floor plans"
+      count={query.data ? rows.length : undefined}
+      search={{ value: q, onChange: setQ, placeholder: "Filter by name…" }}
+      actions={
+        <>
+          <TableActions ioType="floorplan" />
           {canAdd && (
             <Button size="sm" asChild>
               <Link to="/floorplans/new">Add floor plan</Link>
             </Button>
           )}
-        </div>
-      </header>
-
-      <div className="flex-1 overflow-auto p-4 lg:p-6">
-        {query.isLoading && (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        )}
-        {query.isError && <QueryError error={query.error} />}
-        {query.data && rows.length === 0 && !q && (
-          <p className="text-sm text-muted-foreground">
-            No floor plans yet. A floor plan lays out a location — a room, a
-            hall, a floor — as a grid of tiles linked to your racks and devices.
-            Define your tile palette under Customize → Floor tiles, then add a
-            plan here.
-          </p>
-        )}
-        {query.data && (rows.length > 0 || !!q) && (
-          <DataTable
-            data={rows}
-            columns={columns}
-            flexColumn="description"
-            tableId="floor-plans"
-          />
-        )}
-      </div>
-
+        </>
+      }
+      query={query}
+    >
+      <DataTable
+        data={rows}
+        columns={columns}
+        flexColumn="description"
+        tableId="floor-plans"
+      />
       <FloorPlanDeleteDialog
         plan={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
       />
-    </div>
+    </ListPageShell>
   )
 }
 

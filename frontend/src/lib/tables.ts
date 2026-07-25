@@ -91,7 +91,13 @@ export const TABLES: TableMeta[] = [
   { id: "tags", label: "Tags", area: "Customize" },
   { id: "custom-fields", label: "Custom fields", area: "Customize" },
   { id: "audit-log", label: "Audit log", area: "Governance" },
+  { id: "compliance-rules", label: "Compliance rules", area: "Governance" },
   { id: "alerts", label: "Alerts", area: "Monitoring" },
+  {
+    id: "monitoring-engines",
+    label: "Monitoring engines",
+    area: "Monitoring",
+  },
   {
     id: "alert-rules",
     label: "Alert rules",
@@ -105,6 +111,7 @@ export const TABLES: TableMeta[] = [
     ioType: "notificationchannel",
   },
   { id: "silences", label: "Silences", area: "Monitoring", ioType: "silence" },
+  { id: "check-templates", label: "Check templates", area: "Monitoring" },
   {
     id: "monitoring-config-prefixes",
     label: "Monitoring config · Prefixes",

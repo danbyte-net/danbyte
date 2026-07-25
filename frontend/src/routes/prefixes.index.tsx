@@ -2,7 +2,6 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Search } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import {
@@ -14,17 +13,15 @@ import {
 } from "@/lib/api"
 import { annotateNesting, type NestedPrefix } from "@/lib/prefix-tree"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { DataTable } from "@/components/data-table"
+import { ListPageShell } from "@/components/list-page-shell"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { useTableFilters } from "@/components/table-filters"
 import { useCustomFieldDefs } from "@/components/custom-field-display"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { PrefixSpaceOverview } from "@/components/prefix-space-overview"
-import { QueryError } from "@/components/query-error"
 import { PrefixDeleteDialog } from "@/components/prefix-delete-dialog"
 import { useViolationMap } from "@/components/compliance/violation-badge"
 import { PrefixBulkBar } from "@/components/prefix-bulk-bar"
@@ -173,29 +170,19 @@ function PrefixesPage() {
       </div>
 
       <TabsContent value="prefixes" className="m-0 flex min-h-0 flex-1">
-        {/* Filter rail — derived from the columns' facet metadata. */}
-        {rail}
-
-        {/* Main — independent scroll for the table area. */}
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-            <h1 className="text-base font-semibold">Prefixes</h1>
-            {query.data && (
-              <Badge variant="secondary" className="rounded-md">
-                {rows.length}
-              </Badge>
-            )}
-            <div className="ml-auto flex items-center gap-2">
+        <ListPageShell
+          title="Prefixes"
+          count={query.data ? rows.length : undefined}
+          /* Filter rail — derived from the columns' facet metadata. */
+          rail={rail}
+          search={{
+            value: q,
+            onChange: setQ,
+            placeholder: "Filter by CIDR, description…",
+          }}
+          actions={
+            <>
               <TableActions ioType="prefix" />
-              <div className="relative">
-                <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Filter by CIDR, description…"
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  className="h-8 w-72 pl-8 text-xs"
-                />
-              </div>
               {canAdd && (
                 <Button size="sm" asChild>
                   <Link
@@ -211,27 +198,20 @@ function PrefixesPage() {
                   </Link>
                 </Button>
               )}
-            </div>
-          </header>
-
-          <div className="flex-1 overflow-auto p-4 lg:p-6">
-            {query.isLoading && (
-              <p className="text-sm text-muted-foreground">Loading…</p>
-            )}
-            {query.isError && <QueryError error={query.error} />}
-            {query.data && (
-              <DataTable
-                data={rows}
-                columns={columns}
-                groupBy="vrfName"
-                renderGroupHeader={renderVrfGroupHeader}
-                onSelectedRowsChange={setSelectedRows}
-                initialColumnVisibility={{ vrfName: false }}
-                tableId="prefixes"
-              />
-            )}
-          </div>
-        </div>
+            </>
+          }
+          query={query}
+        >
+          <DataTable
+            data={rows}
+            columns={columns}
+            groupBy="vrfName"
+            renderGroupHeader={renderVrfGroupHeader}
+            onSelectedRowsChange={setSelectedRows}
+            initialColumnVisibility={{ vrfName: false }}
+            tableId="prefixes"
+          />
+        </ListPageShell>
       </TabsContent>
 
       <TabsContent value="ips" className="m-0 flex-1 overflow-auto p-4 lg:p-6">

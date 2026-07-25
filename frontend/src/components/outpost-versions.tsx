@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { GitBranch, Star, Trash2, Upload } from "lucide-react"
+import { GitBranch, Star, Upload } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
 
@@ -15,6 +15,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { SimpleTable } from "@/components/ui/simple-table"
+import type { SimpleColumn } from "@/components/ui/simple-table"
+import { RowActions } from "@/components/row-actions"
 import { apiErrorToast } from "@/lib/api-toast"
 
 function humanSize(n: number): string {
@@ -160,6 +163,68 @@ export function OutpostVersions() {
     onError: (e: unknown) => apiErrorToast(e, "Import failed"),
   })
 
+  const columns: SimpleColumn<OutpostRelease>[] = [
+    {
+      id: "version",
+      header: "Version",
+      cell: (r) => <span className="font-mono font-medium">{r.version}</span>,
+    },
+    {
+      id: "source",
+      header: "Source",
+      cell: (r) => (
+        <Badge variant="secondary" className="text-[10px]">
+          {r.source === "git" ? "git" : "file"}
+        </Badge>
+      ),
+    },
+    {
+      id: "detail",
+      header: "Detail",
+      flex: true,
+      cell: (r) => (
+        <span className="text-muted-foreground">
+          {r.source === "git"
+            ? `${r.git_url}@${r.git_ref}`
+            : humanSize(r.size_bytes)}
+        </span>
+      ),
+    },
+    {
+      id: "golden",
+      header: "Golden",
+      cell: (r) =>
+        r.is_default ? (
+          <span
+            className="inline-flex items-center gap-1 text-xs text-primary"
+            title="Golden image — auto-updating Outposts move to this version"
+          >
+            <Star className="h-3.5 w-3.5 fill-current" /> golden
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => setDefault.mutate(r)}
+            title="Make this the golden image (auto-update target)"
+          >
+            make golden
+          </button>
+        ),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      cell: (r) => (
+        <RowActions
+          deleteLabel="Remove version"
+          onDelete={() => remove.mutate(r)}
+        />
+      ),
+    },
+  ]
+
   return (
     <section className="space-y-3">
       <div>
@@ -205,59 +270,11 @@ export function OutpostVersions() {
       )}
 
       {releases.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-border">
-          <table className="w-full text-left text-[13px]">
-            <tbody className="divide-y divide-border">
-              {releases.map((r) => (
-                <tr key={r.id}>
-                  <td className="px-3 py-2 font-mono font-medium">
-                    {r.version}
-                  </td>
-                  <td className="px-3 py-2">
-                    <Badge variant="secondary" className="text-[10px]">
-                      {r.source === "git" ? "git" : "file"}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">
-                    {r.source === "git"
-                      ? `${r.git_url}@${r.git_ref}`
-                      : humanSize(r.size_bytes)}
-                  </td>
-                  <td className="px-3 py-2">
-                    {r.is_default ? (
-                      <span
-                        className="inline-flex items-center gap-1 text-[12px] text-primary"
-                        title="Golden image — auto-updating Outposts move to this version"
-                      >
-                        <Star className="h-3.5 w-3.5 fill-current" /> golden
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="text-[12px] text-muted-foreground hover:text-foreground"
-                        onClick={() => setDefault.mutate(r)}
-                        title="Make this the golden image (auto-update target)"
-                      >
-                        make golden
-                      </button>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7 text-destructive hover:text-destructive"
-                      onClick={() => remove.mutate(r)}
-                      title="Remove version"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <SimpleTable
+          columns={columns}
+          data={releases}
+          getRowKey={(r) => r.id}
+        />
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -281,7 +298,7 @@ export function OutpostVersions() {
           <input
             type="file"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="w-full text-[12px] file:mr-2 file:rounded file:border file:border-border file:bg-muted file:px-2 file:py-1 file:text-[12px]"
+            className="w-full text-xs file:mr-2 file:rounded file:border file:border-border file:bg-muted file:px-2 file:py-1 file:text-xs"
           />
           <Button
             type="submit"

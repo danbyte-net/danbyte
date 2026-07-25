@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { KeyRound, Plus, RotateCcw, Server, Trash2, Radio } from "lucide-react"
-import { useEffect, useState } from "react"
+import type { ColumnDef } from "@tanstack/react-table"
+import { KeyRound, RotateCcw, Server, Radio } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -17,6 +18,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { FormSelect, FormText, FormFooter } from "@/components/forms"
+import { DataTable, SortHeader } from "@/components/data-table"
+import { actionsColumn } from "@/components/columns/actions-column"
+import { ListPageShell } from "@/components/list-page-shell"
 import { timeAgo } from "@/components/cells/time-ago"
 import {
   Dialog,
@@ -25,7 +30,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { QueryError } from "@/components/query-error"
 import { EngineDetailDialog } from "@/components/engine-detail-dialog"
 import { OutpostVersions } from "@/components/outpost-versions"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -48,8 +52,8 @@ function seenLabel(e: MonitoringEngine): { text: string; ok: boolean } {
 
 function MonitoringEnginesPage() {
   const qc = useQueryClient()
-  const [name, setName] = useState("")
-  const [transport, setTransport] = useState<"pull" | "ssh">("pull")
+  const [search, setSearch] = useState("")
+  const [adding, setAdding] = useState(false)
   const [enrollFor, setEnrollFor] = useState<MonitoringEngine | null>(null)
   const [token, setToken] = useState<string | null>(null)
   const [detail, setDetail] = useState<MonitoringEngine | null>(null)
@@ -104,21 +108,6 @@ function MonitoringEnginesPage() {
     onError: (e: unknown) => apiErrorToast(e, "Save failed"),
   })
 
-  const create = useMutation({
-    mutationFn: () =>
-      api<MonitoringEngine>("/api/monitoring/engines/", {
-        method: "POST",
-        body: JSON.stringify({ name: name.trim(), transport }),
-      }),
-    onSuccess: (e) => {
-      setName("")
-      invalidate()
-      // Pull engines need an install token; SSH engines are driven by Danbyte.
-      if (e.transport === "pull") enroll.mutate(e)
-    },
-    onError: (e: unknown) => apiErrorToast(e, "Create failed"),
-  })
-
   const enroll = useMutation({
     mutationFn: (e: MonitoringEngine) =>
       api<{ token: string }>(`/api/monitoring/engines/${e.id}/enroll/`, {
@@ -151,292 +140,264 @@ function MonitoringEnginesPage() {
     onError: (e: unknown) => apiErrorToast(e, "Delete failed"),
   })
 
+  const rows = useMemo(() => {
+    const needle = search.trim().toLowerCase()
+    if (!needle) return engines
+    return engines.filter(
+      (e) =>
+        e.name.toLowerCase().includes(needle) ||
+        e.agent_version.toLowerCase().includes(needle)
+    )
+  }, [engines, search])
+
+  // Built inline (not memoized) so the row buttons always close over the live
+  // mutation handles — the table is small and has no facet rail to churn.
+  const columns: ColumnDef<MonitoringEngine>[] = [
+    {
+      id: "engine",
+      accessorKey: "name",
+      header: ({ column }) => <SortHeader column={column} label="Engine" />,
+      cell: ({ row }) => {
+        const e = row.original
+        return (
+          <div className="flex items-center gap-2">
+            {e.is_local ? (
+              <Server className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            ) : (
+              <Radio className="h-3.5 w-3.5 shrink-0 text-primary" />
+            )}
+            {e.is_local ? (
+              <span className="font-medium">{e.name}</span>
+            ) : (
+              <button
+                type="button"
+                className="font-medium hover:underline"
+                onClick={() => setDetail(e)}
+              >
+                {e.name}
+              </button>
+            )}
+            {!e.is_local && (
+              <span className="text-[10px] text-muted-foreground">
+                {e.transport === "ssh" ? "SSH" : "HTTPS"}
+              </span>
+            )}
+            {!e.enabled && (
+              <Badge variant="secondary" className="text-[10px]">
+                disabled
+              </Badge>
+            )}
+          </div>
+        )
+      },
+    },
+    {
+      id: "health",
+      accessorFn: (e) => seenLabel(e).text,
+      header: "Health",
+      cell: ({ row }) => {
+        const e = row.original
+        const seen = seenLabel(e)
+        if (e.is_local)
+          return <span className="text-muted-foreground">built-in</span>
+        if (!e.token_set)
+          return (
+            <Badge variant="warning" className="text-[10px]">
+              not enrolled
+            </Badge>
+          )
+        return (
+          <Badge
+            variant={seen.ok ? "success" : "secondary"}
+            className="text-[10px]"
+          >
+            {seen.text}
+          </Badge>
+        )
+      },
+    },
+    {
+      id: "scope",
+      accessorFn: (e) => e.binding_count,
+      header: ({ column }) => <SortHeader column={column} label="Scope" />,
+      cell: ({ row }) => (
+        <span className="num text-muted-foreground tabular-nums">
+          {row.original.binding_count} site/loc · {row.original.check_count}{" "}
+          checks
+        </span>
+      ),
+    },
+    {
+      id: "version",
+      accessorKey: "agent_version",
+      header: ({ column }) => <SortHeader column={column} label="Version" />,
+      cell: ({ row }) => (
+        <span className="font-mono text-xs text-muted-foreground">
+          {row.original.agent_version || "—"}
+        </span>
+      ),
+    },
+    // Outpost-only row actions: (re)enroll, enable/disable, remove. The local
+    // engine is built in, so it has none.
+    actionsColumn<MonitoringEngine>({
+      canDelete: (e) => !e.is_local,
+      onDelete: (e) => remove.mutate(e),
+      deleteLabel: "Remove Outpost",
+      extra: (e) =>
+        e.is_local ? null : (
+          <>
+            {e.transport === "pull" && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 gap-1 text-xs"
+                onClick={() => enroll.mutate(e)}
+                title="Regenerate the install token"
+              >
+                <KeyRound className="h-3.5 w-3.5" />
+                {e.token_set ? "Rotate" : "Enroll"}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs"
+              onClick={() => toggle.mutate(e)}
+            >
+              {e.enabled ? "Disable" : "Enable"}
+            </Button>
+          </>
+        ),
+    }),
+  ]
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6">
-        <h1 className="text-base font-semibold">Monitoring engines</h1>
-        {q.data && <Badge variant="secondary">{engines.length}</Badge>}
-      </header>
+    <ListPageShell
+      title="Monitoring engines"
+      count={q.data ? rows.length : undefined}
+      search={{
+        value: search,
+        onChange: setSearch,
+        placeholder: "Filter by name, version…",
+      }}
+      actions={
+        <Button size="sm" onClick={() => setAdding(true)}>
+          Add Outpost
+        </Button>
+      }
+      query={q}
+    >
+      <div className="space-y-6">
+        <p className="max-w-3xl text-[13px] text-muted-foreground">
+          Where checks run. <b>Local</b> is the core server's workers; an{" "}
+          <b>Outpost</b> is a remote agent at a site with no path to the core.
+          Assign Outposts to a site/location on their form — the default engine
+          catches everything else.
+        </p>
 
-      <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
-        <div className="mx-auto max-w-6xl space-y-6">
-          <p className="max-w-3xl text-[13px] text-muted-foreground">
-            Where checks run. <b>Local</b> is the core server's workers; an{" "}
-            <b>Outpost</b> is a remote agent at a site with no path to the core.
-            Assign Outposts to a site/location on their form — the default
-            engine catches everything else.
-          </p>
+        <DataTable
+          data={rows}
+          columns={columns}
+          flexColumn="engine"
+          tableId="monitoring-engines"
+          exportName="monitoring-engines"
+          exportTitle="Monitoring engines"
+        />
 
-          {q.isError ? (
-            <QueryError error={q.error} />
-          ) : (
-            <>
-              {/* Primary: the engines table, full width. */}
-              <section className="space-y-2">
-                <h2 className="text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-                  Engines
-                </h2>
-                <div className="overflow-hidden rounded-lg border border-border">
-                  <table className="w-full text-left text-[13px]">
-                    <thead className="bg-muted/40 text-[10px] tracking-[0.06em] text-muted-foreground uppercase">
-                      <tr>
-                        <th className="px-3 py-2 font-medium">Engine</th>
-                        <th className="px-3 py-2 font-medium">Health</th>
-                        <th className="px-3 py-2 font-medium">Scope</th>
-                        <th className="px-3 py-2 font-medium">Version</th>
-                        <th className="px-3 py-2" />
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {engines.map((e) => {
-                        const seen = seenLabel(e)
-                        return (
-                          <tr key={e.id}>
-                            <td className="px-3 py-2">
-                              <div className="flex items-center gap-2">
-                                {e.is_local ? (
-                                  <Server className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                ) : (
-                                  <Radio className="h-3.5 w-3.5 shrink-0 text-primary" />
-                                )}
-                                {e.is_local ? (
-                                  <span className="font-medium">{e.name}</span>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    className="font-medium hover:underline"
-                                    onClick={() => setDetail(e)}
-                                  >
-                                    {e.name}
-                                  </button>
-                                )}
-                                {!e.is_local && (
-                                  <span className="text-[10px] text-muted-foreground">
-                                    {e.transport === "ssh" ? "SSH" : "HTTPS"}
-                                  </span>
-                                )}
-                                {!e.enabled && (
-                                  <Badge
-                                    variant="secondary"
-                                    className="text-[10px]"
-                                  >
-                                    disabled
-                                  </Badge>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-3 py-2">
-                              {e.is_local ? (
-                                <span className="text-muted-foreground">
-                                  built-in
-                                </span>
-                              ) : !e.token_set ? (
-                                <Badge
-                                  variant="warning"
-                                  className="text-[10px]"
-                                >
-                                  not enrolled
-                                </Badge>
-                              ) : (
-                                <Badge
-                                  variant={seen.ok ? "success" : "secondary"}
-                                  className="text-[10px]"
-                                >
-                                  {seen.text}
-                                </Badge>
-                              )}
-                            </td>
-                            <td className="num px-3 py-2 text-muted-foreground tabular-nums">
-                              {e.binding_count} site/loc · {e.check_count}{" "}
-                              checks
-                            </td>
-                            <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
-                              {e.agent_version || "—"}
-                            </td>
-                            <td className="px-3 py-2">
-                              {!e.is_local && (
-                                <div className="flex justify-end gap-1">
-                                  {e.transport === "pull" && (
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="h-7 gap-1 text-xs"
-                                      onClick={() => enroll.mutate(e)}
-                                      title="Regenerate the install token"
-                                    >
-                                      <KeyRound className="h-3.5 w-3.5" />
-                                      {e.token_set ? "Rotate" : "Enroll"}
-                                    </Button>
-                                  )}
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-7 text-xs"
-                                    onClick={() => toggle.mutate(e)}
-                                  >
-                                    {e.enabled ? "Disable" : "Enable"}
-                                  </Button>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    className="h-7 w-7 text-destructive hover:text-destructive"
-                                    onClick={() => remove.mutate(e)}
-                                    title="Remove Outpost"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
+        {/* Secondary config — two columns so it stops stacking. */}
+        <div className="grid items-start gap-4 lg:grid-cols-2">
+          <div className="space-y-2 rounded-lg border border-border bg-card p-4">
+            <div>
+              <h3 className="text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+                Default engine
+              </h3>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Runs everything not pinned to a site or location.
+              </p>
+            </div>
+            <Select
+              value={settings.data?.default_engine || LOCAL_ENGINE}
+              onValueChange={(v) =>
+                setDefault.mutate(v === LOCAL_ENGINE ? null : v)
+              }
+              disabled={!settings.data}
+            >
+              <SelectTrigger className="h-9 w-full text-[13px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={LOCAL_ENGINE}>Local (built-in)</SelectItem>
+                {engines
+                  .filter((e) => !e.is_local && e.enabled)
+                  .map((e) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      {e.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-              {/* Secondary config — two columns so it stops stacking. */}
-              <div className="grid items-start gap-4 lg:grid-cols-2">
-                <div className="space-y-3 rounded-lg border border-border bg-card p-4">
-                  <div>
-                    <h3 className="text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-                      Add an Outpost
-                    </h3>
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      A remote agent for a site the core can't reach.
-                    </p>
-                  </div>
-                  <form
-                    className="space-y-3"
-                    onSubmit={(ev) => {
-                      ev.preventDefault()
-                      if (name.trim()) create.mutate()
-                    }}
-                  >
-                    <Input
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="Outpost AMS-02"
-                      className="h-9 text-sm"
-                    />
-                    <Select
-                      value={transport}
-                      onValueChange={(v) => setTransport(v as "pull" | "ssh")}
-                    >
-                      <SelectTrigger className="h-9 w-full text-[13px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pull">
-                          Outpost dials out (HTTPS)
-                        </SelectItem>
-                        <SelectItem value="ssh">
-                          Danbyte dials in (SSH)
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      type="submit"
-                      size="sm"
-                      className="h-9 w-full"
-                      disabled={!name.trim() || create.isPending}
-                    >
-                      <Plus className="h-3.5 w-3.5" /> Add Outpost
-                    </Button>
-                  </form>
-                </div>
+          <form
+            className="space-y-2 rounded-lg border border-border bg-card p-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              saveRepo.mutate()
+            }}
+          >
+            <div>
+              <h3 className="text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+                Outpost repo
+              </h3>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Source for the versions in the package store.
+              </p>
+            </div>
+            <Input
+              className="h-9 font-mono text-xs"
+              placeholder="https://github.com/danbyte-net/danbyte-outpost"
+              value={repoUrl}
+              onChange={(e) => setRepoUrl(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <Input
+                className="h-9 font-mono text-xs"
+                type="password"
+                placeholder={
+                  settings.data?.outpost_repo_token_set
+                    ? "token set — leave blank"
+                    : "token (private repo)"
+                }
+                value={repoToken}
+                onChange={(e) => setRepoToken(e.target.value)}
+              />
+              <Button
+                type="submit"
+                size="sm"
+                variant="outline"
+                className="h-9 shrink-0 text-xs"
+                disabled={saveRepo.isPending}
+              >
+                Save
+              </Button>
+            </div>
+          </form>
+        </div>
 
-                <div className="space-y-4">
-                  <div className="space-y-2 rounded-lg border border-border bg-card p-4">
-                    <div>
-                      <h3 className="text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-                        Default engine
-                      </h3>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        Runs everything not pinned to a site or location.
-                      </p>
-                    </div>
-                    <Select
-                      value={settings.data?.default_engine || LOCAL_ENGINE}
-                      onValueChange={(v) =>
-                        setDefault.mutate(v === LOCAL_ENGINE ? null : v)
-                      }
-                      disabled={!settings.data}
-                    >
-                      <SelectTrigger className="h-9 w-full text-[13px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={LOCAL_ENGINE}>
-                          Local (built-in)
-                        </SelectItem>
-                        {engines
-                          .filter((e) => !e.is_local && e.enabled)
-                          .map((e) => (
-                            <SelectItem key={e.id} value={e.id}>
-                              {e.name}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <form
-                    className="space-y-2 rounded-lg border border-border bg-card p-4"
-                    onSubmit={(e) => {
-                      e.preventDefault()
-                      saveRepo.mutate()
-                    }}
-                  >
-                    <div>
-                      <h3 className="text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-                        Outpost repo
-                      </h3>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        Source for the versions in the package store.
-                      </p>
-                    </div>
-                    <input
-                      className="h-9 w-full rounded-md border border-border bg-background px-2 font-mono text-xs"
-                      placeholder="https://github.com/danbyte-net/danbyte-outpost"
-                      value={repoUrl}
-                      onChange={(e) => setRepoUrl(e.target.value)}
-                    />
-                    <div className="flex gap-2">
-                      <input
-                        className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono text-xs"
-                        type="password"
-                        placeholder={
-                          settings.data?.outpost_repo_token_set
-                            ? "token set — leave blank"
-                            : "token (private repo)"
-                        }
-                        value={repoToken}
-                        onChange={(e) => setRepoToken(e.target.value)}
-                      />
-                      <Button
-                        type="submit"
-                        size="sm"
-                        variant="outline"
-                        className="h-9 shrink-0 text-xs"
-                        disabled={saveRepo.isPending}
-                      >
-                        Save
-                      </Button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-
-              <div className="border-t border-border pt-6">
-                <OutpostVersions />
-              </div>
-            </>
-          )}
+        <div className="border-t border-border pt-6">
+          <OutpostVersions />
         </div>
       </div>
 
+      <AddOutpostDialog
+        open={adding}
+        onOpenChange={setAdding}
+        onCreated={(e) => {
+          invalidate()
+          // Pull engines need an install token; SSH engines are driven by Danbyte.
+          if (e.transport === "pull") enroll.mutate(e)
+        }}
+      />
       <EnrollDialog
         engine={enrollFor}
         token={token}
@@ -446,7 +407,79 @@ function MonitoringEnginesPage() {
         }}
       />
       <EngineDetailDialog engine={detail} onClose={() => setDetail(null)} />
-    </div>
+    </ListPageShell>
+  )
+}
+
+/** "Add Outpost" from the page header — name + how it connects. */
+function AddOutpostDialog({
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onCreated: (engine: MonitoringEngine) => void
+}) {
+  const [name, setName] = useState("")
+  const [transport, setTransport] = useState<"pull" | "ssh">("pull")
+
+  const create = useMutation({
+    mutationFn: () =>
+      api<MonitoringEngine>("/api/monitoring/engines/", {
+        method: "POST",
+        body: JSON.stringify({ name: name.trim(), transport }),
+      }),
+    onSuccess: (e) => {
+      setName("")
+      setTransport("pull")
+      onOpenChange(false)
+      onCreated(e)
+    },
+    onError: (e: unknown) => apiErrorToast(e, "Create failed"),
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add an Outpost</DialogTitle>
+          <DialogDescription>
+            A remote agent for a site the core can't reach.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-3"
+          onSubmit={(ev) => {
+            ev.preventDefault()
+            if (name.trim()) create.mutate()
+          }}
+        >
+          <FormText
+            label="Name"
+            value={name}
+            onChange={setName}
+            placeholder="Outpost AMS-02"
+            required
+            autoFocus
+          />
+          <FormSelect
+            label="Connection"
+            value={transport}
+            onChange={(v) => setTransport(v === "ssh" ? "ssh" : "pull")}
+            options={[
+              { value: "pull", label: "Outpost dials out (HTTPS)" },
+              { value: "ssh", label: "Danbyte dials in (SSH)" },
+            ]}
+          />
+          <FormFooter
+            onCancel={() => onOpenChange(false)}
+            submitting={create.isPending}
+            submitLabel="Add Outpost"
+          />
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 

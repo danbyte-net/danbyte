@@ -1,7 +1,11 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
-import { api, type IpUptime } from "@/lib/api"
+import { api } from "@/lib/api"
+import type { IpUptime, UptimeCheck } from "@/lib/api"
+import { SimpleTable } from "@/components/ui/simple-table"
+import type { SimpleColumn } from "@/components/ui/simple-table"
+import { SegmentedTabs } from "@/components/segmented-tabs"
 
 const WINDOWS: { days: number; label: string }[] = [
   { days: 1, label: "24h" },
@@ -32,6 +36,60 @@ function fmtDuration(s: number | null): string {
   return `${(h / 24).toFixed(1)}d`
 }
 
+const COLUMNS: SimpleColumn<UptimeCheck>[] = [
+  {
+    id: "check",
+    header: "Check",
+    flex: true,
+    cell: (c) => (
+      <>
+        {c.template_name ?? c.kind}{" "}
+        <span className="font-mono text-[10px] text-muted-foreground uppercase">
+          {c.kind}
+        </span>
+      </>
+    ),
+  },
+  {
+    id: "uptime",
+    header: "Uptime",
+    align: "right",
+    cell: (c) => (
+      <span className={`num font-medium ${tier(c.uptime_pct)}`}>
+        {fmtPct(c.uptime_pct)}
+      </span>
+    ),
+  },
+  {
+    id: "incidents",
+    header: "Incidents",
+    align: "right",
+    cell: (c) => (
+      <span className="num text-muted-foreground">{c.incidents}</span>
+    ),
+  },
+  {
+    id: "mttr",
+    header: "MTTR",
+    align: "right",
+    cell: (c) => (
+      <span className="num text-muted-foreground">
+        {fmtDuration(c.mttr_seconds)}
+      </span>
+    ),
+  },
+  {
+    id: "downtime",
+    header: "Downtime",
+    align: "right",
+    cell: (c) => (
+      <span className="num text-muted-foreground">
+        {fmtDuration(c.down_seconds)}
+      </span>
+    ),
+  },
+]
+
 export function UptimePanel({ ipId }: { ipId: string }) {
   const [days, setDays] = useState(30)
   const q = useQuery({
@@ -50,22 +108,15 @@ export function UptimePanel({ ipId }: { ipId: string }) {
         <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
           Uptime (SLA)
         </h3>
-        <div className="ml-auto flex items-center gap-0.5 rounded-md border border-border p-0.5">
-          {WINDOWS.map((w) => (
-            <button
-              key={w.days}
-              type="button"
-              onClick={() => setDays(w.days)}
-              className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                days === w.days
-                  ? "bg-foreground text-background"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {w.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedTabs
+          className="ml-auto"
+          value={String(days)}
+          onValueChange={(v) => setDays(Number(v))}
+          items={WINDOWS.map((w) => ({
+            value: String(w.days),
+            label: w.label,
+          }))}
+        />
       </div>
 
       {data && (
@@ -85,43 +136,13 @@ export function UptimePanel({ ipId }: { ipId: string }) {
           </div>
 
           {data.checks.length > 1 && (
-            <table className="mt-3 w-full text-left text-[12px]">
-              <thead className="text-[10px] tracking-[0.06em] text-muted-foreground uppercase">
-                <tr>
-                  <th className="py-1 font-medium">Check</th>
-                  <th className="py-1 text-right font-medium">Uptime</th>
-                  <th className="py-1 text-right font-medium">Incidents</th>
-                  <th className="py-1 text-right font-medium">MTTR</th>
-                  <th className="py-1 text-right font-medium">Downtime</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {data.checks.map((c) => (
-                  <tr key={c.template_id}>
-                    <td className="py-1">
-                      {c.template_name ?? c.kind}{" "}
-                      <span className="font-mono text-[10px] text-muted-foreground uppercase">
-                        {c.kind}
-                      </span>
-                    </td>
-                    <td
-                      className={`num py-1 text-right font-medium ${tier(c.uptime_pct)}`}
-                    >
-                      {fmtPct(c.uptime_pct)}
-                    </td>
-                    <td className="num py-1 text-right text-muted-foreground">
-                      {c.incidents}
-                    </td>
-                    <td className="num py-1 text-right text-muted-foreground">
-                      {fmtDuration(c.mttr_seconds)}
-                    </td>
-                    <td className="num py-1 text-right text-muted-foreground">
-                      {fmtDuration(c.down_seconds)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="mt-3">
+              <SimpleTable
+                columns={COLUMNS}
+                data={data.checks}
+                getRowKey={(c) => c.template_id}
+              />
+            </div>
           )}
         </>
       )}

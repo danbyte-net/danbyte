@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery, keepPreviousData } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
-import { ListChecks, AlertTriangle, Cpu, Clock, RefreshCw } from "lucide-react"
+import { AlertTriangle, Cpu, Clock, RefreshCw } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type {
@@ -14,11 +14,12 @@ import type {
   EngineHeartbeat,
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
-import { FilterRail } from "@/components/filter-rail"
+import { FacetGroup, FilterRail } from "@/components/filter-rail"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { DataTable } from "@/components/data-table"
+import { EmptyState } from "@/components/empty-state"
+import { ListPageShell } from "@/components/list-page-shell"
 import { TimeCell } from "@/components/cells/time-ago"
-import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/jobs/")({ component: JobsPage })
@@ -36,15 +37,6 @@ export const STATE_META: Record<
   scheduled: { label: "Scheduled", variant: "secondary" },
   finished: { label: "Finished", variant: "success" },
   failed: { label: "Failed", variant: "destructive" },
-}
-
-// Dot colour per state — mirrors the badge variant, used in the filter rail.
-const STATE_DOT: Record<Variant, string> = {
-  secondary: "bg-zinc-400",
-  info: "bg-sky-500",
-  success: "bg-emerald-500",
-  destructive: "bg-red-500",
-  warning: "bg-amber-500",
 }
 
 export function StateBadge({ state }: { state: string }) {
@@ -258,6 +250,9 @@ function SystemUpgradeCard({ system }: { system: SystemJobStatus }) {
 
 const PAGE_SIZE = 50
 
+// Stable empty selection for the single-select rail facets below.
+const EMPTY_FACET: Set<string> = new Set()
+
 const columns: ColumnDef<JobBrief>[] = [
   {
     id: "status",
@@ -366,9 +361,12 @@ function JobsPage() {
 
   if (!can("jobs.manage")) {
     return (
-      <div className="flex h-full flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-        You don't have permission to view background jobs.
-      </div>
+      <ListPageShell title="Jobs">
+        <EmptyState title="You don't have permission to view background jobs.">
+          Ask an administrator for the{" "}
+          <span className="font-mono">jobs.manage</span> permission.
+        </EmptyState>
+      </ListPageShell>
     )
   }
 
@@ -382,19 +380,31 @@ function JobsPage() {
   const total = counts.total ?? 0
 
   // Only surface deferred/scheduled facets when there's something in them.
+  // Counts come from the server's aggregates, not the visible page — no "All"
+  // row is needed: the rail's own "clear" is what resets to every state.
   const baseStates = ["queued", "started", "finished", "failed"]
   const extraStates = ["deferred", "scheduled"].filter(
     (s) => (counts[s] ?? 0) > 0
   )
-  const statusFacets = [
-    { value: "all", label: "All", count: total },
-    ...[...baseStates, ...extraStates].map((s) => ({
-      value: s,
-      label: STATE_META[s]?.label ?? s,
-      count: counts[s] ?? 0,
-    })),
-  ]
+  const statusFacets = [...baseStates, ...extraStates].map((s) => ({
+    value: s,
+    label: STATE_META[s]?.label ?? s,
+    count: counts[s] ?? 0,
+  }))
+  // Indexed access may miss a key at runtime; type it honestly (as with
+  // `counts` above) so the fallbacks below are meaningful.
+  const byQueue: Record<string, Record<string, number> | undefined> =
+    data?.counts.by_queue ?? {}
   const queues = data?.queues ?? []
+  const queueFacets = queues.map((qn) => ({
+    value: qn,
+    label: qn,
+    // Honour the active state filter so the two facet groups agree.
+    count:
+      state === "all"
+        ? Object.values(byQueue[qn] ?? {}).reduce((a, b) => a + b, 0)
+        : (byQueue[qn]?.[state] ?? 0),
+  }))
 
   const rows = data?.jobs ?? []
   const filteredTotal = data?.total ?? 0
@@ -404,15 +414,30 @@ function JobsPage() {
   const noWorkers = workers.length === 0
   const stalled = noWorkers && queued > 0
 
+  // Worker roll-up — the same readout on every tab, in the shell's action slot.
+  const workerReadout = (
+    <span className="flex items-center gap-2 text-xs text-muted-foreground">
+      <Cpu className="h-3.5 w-3.5" />
+      <span>
+        <span
+          className={
+            workers.length > 0
+              ? "font-medium text-foreground"
+              : "font-medium text-destructive"
+          }
+        >
+          {workers.length}
+        </span>{" "}
+        worker{workers.length === 1 ? "" : "s"}
+        {workers.length > 0 && ` · ${busyWorkers} busy`}
+      </span>
+    </span>
+  )
+
   return (
-    <div className="flex h-full flex-1 flex-col">
-      <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-        <h1 className="flex items-center gap-2 text-base font-semibold">
-          <ListChecks className="h-4 w-4 text-muted-foreground" />
-          Jobs
-        </h1>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex h-10 shrink-0 items-center border-b border-border px-4 lg:px-6">
         <SegmentedTabs
-          className="ml-2"
           value={tab}
           onValueChange={setTab}
           items={[
@@ -429,203 +454,113 @@ function JobsPage() {
             { value: "queue", label: "Queue", count: total || null },
           ]}
         />
-        <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-          <Cpu className="h-3.5 w-3.5" />
-          <span>
-            <span
-              className={
-                workers.length > 0
-                  ? "font-medium text-foreground"
-                  : "font-medium text-destructive"
-              }
-            >
-              {workers.length}
-            </span>{" "}
-            worker{workers.length === 1 ? "" : "s"}
-            {workers.length > 0 && ` · ${busyWorkers} busy`}
-          </span>
-        </div>
-      </header>
+      </div>
 
       {tab === "scheduled" && (
-        <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
-          {sched.isError ? (
-            <QueryError error={sched.error} />
-          ) : sched.data ? (
-            <ScheduledTasksCard tasks={sched.data.tasks} />
-          ) : (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          )}
-        </div>
+        <ListPageShell
+          title="Jobs"
+          count={sched.data?.tasks.length}
+          actions={workerReadout}
+          query={sched}
+        >
+          <ScheduledTasksCard tasks={sched.data?.tasks ?? []} />
+        </ListPageShell>
       )}
 
       {tab === "engines" && (
-        <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
-          {sched.isError ? (
-            <QueryError error={sched.error} />
-          ) : !sched.data ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : sched.data.engines.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No monitoring engines configured for this tenant yet.
-            </p>
+        <ListPageShell
+          title="Jobs"
+          count={sched.data?.engines.length}
+          actions={workerReadout}
+          query={sched}
+        >
+          {sched.data && sched.data.engines.length === 0 ? (
+            <EmptyState title="No monitoring engines yet.">
+              None are configured for this tenant — the local engine appears
+              here once checks run.
+            </EmptyState>
           ) : (
-            <EnginesCard engines={sched.data.engines} />
+            <EnginesCard engines={sched.data?.engines ?? []} />
           )}
-        </div>
+        </ListPageShell>
       )}
 
       {tab === "queue" && (
-        <div className="flex min-h-0 flex-1">
-          {/* Filter rail — state + queue are single-select and *server-side*
-            (query params → paginated API; facet counts come from server
-            aggregates, not the visible page). That's why this can't use the
-            client-side `useTableFilters`/`FacetGroup` (multi-select over an
-            in-memory row set) — only the shared `FilterRail` container chrome
-            is reused; the single-select buttons stay bespoke. */}
-          <FilterRail>
-            <div>
-              <h3 className="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-                Status
-              </h3>
-              <ul className="space-y-0.5">
-                {statusFacets.map((opt) => {
-                  const active = state === opt.value
-                  const variant = STATE_META[opt.value]?.variant
-                  return (
-                    <li key={opt.value}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setState(opt.value)
-                          setOffset(0)
-                        }}
-                        className={
-                          "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted/50 " +
-                          (active ? "bg-muted font-medium text-foreground" : "")
-                        }
-                      >
-                        <span
-                          className={
-                            "inline-block h-1.5 w-1.5 shrink-0 rounded-full " +
-                            (variant
-                              ? STATE_DOT[variant]
-                              : "bg-muted-foreground")
-                          }
-                        />
-                        <span className="flex-1 truncate">{opt.label}</span>
-                        <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">
-                          {opt.count.toLocaleString()}
-                        </span>
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            </div>
+        <ListPageShell
+          title="Jobs"
+          count={q.data ? filteredTotal : undefined}
+          actions={workerReadout}
+          /* State + queue are single-select and *server-side* (query params →
+             paginated API), so the facets are driven from the server's own
+             aggregates rather than the visible page; clearing a group is what
+             widens it back to "any". */
+          rail={
+            <FilterRail>
+              <FacetGroup
+                label="Status"
+                options={statusFacets}
+                selected={state === "all" ? EMPTY_FACET : new Set([state])}
+                onToggle={(v) => {
+                  setState(v === state ? "all" : v)
+                  setOffset(0)
+                }}
+              />
+              <FacetGroup
+                label="Queue"
+                options={queueFacets}
+                selected={queue === "all" ? EMPTY_FACET : new Set([queue])}
+                onToggle={(v) => {
+                  setQueue(v === queue ? "all" : v)
+                  setOffset(0)
+                }}
+              />
+            </FilterRail>
+          }
+          query={q}
+        >
+          <div className="space-y-3">
+            {/* Self-upgrade progress / next auto-update countdown. */}
+            {data?.system && <SystemUpgradeCard system={data.system} />}
 
-            {queues.length > 0 && (
-              <div>
-                <h3 className="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-                  Queue
-                </h3>
-                <ul className="space-y-0.5">
-                  {[
-                    { value: "all", label: "Any queue" },
-                    ...queues.map((qn) => ({ value: qn, label: qn })),
-                  ].map((opt) => {
-                    const active = queue === opt.value
-                    return (
-                      <li key={opt.value}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setQueue(opt.value)
-                            setOffset(0)
-                          }}
-                          className={
-                            "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted/50 " +
-                            (active
-                              ? "bg-muted font-medium text-foreground"
-                              : "")
-                          }
-                        >
-                          <span className="flex-1 truncate font-mono">
-                            {opt.label}
-                          </span>
-                        </button>
-                      </li>
-                    )
-                  })}
-                </ul>
+            {/* No-workers diagnostic — the exact failure mode this page exists for. */}
+            {stalled && (
+              <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-[13px] text-destructive">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div>
+                  <span className="font-medium">No workers are running.</span>{" "}
+                  {queued.toLocaleString()} job{queued === 1 ? "" : "s"} are
+                  queued and won't be processed until a worker comes online (
+                  <code className="font-mono">
+                    systemctl --user start danbyte-workers
+                  </code>
+                  ).
+                </div>
               </div>
             )}
-          </FilterRail>
 
-          {/* Main column — alerts + table + pagination. */}
-          <div className="flex min-w-0 flex-1 flex-col overflow-auto p-4 lg:p-6">
-            <div className="space-y-3">
-              {/* Self-upgrade progress / next auto-update countdown. */}
-              {data?.system && <SystemUpgradeCard system={data.system} />}
+            {data?.truncated && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[13px] text-amber-800 dark:text-amber-300">
+                Showing the first {data.total.toLocaleString()} jobs — narrow by
+                state or queue to see the rest.
+              </div>
+            )}
 
-              {/* No-workers diagnostic — the exact failure mode this page exists for. */}
-              {stalled && (
-                <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-[13px] text-destructive">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <div>
-                    <span className="font-medium">No workers are running.</span>{" "}
-                    {queued.toLocaleString()} job{queued === 1 ? "" : "s"} are
-                    queued and won't be processed until a worker comes online (
-                    <code className="font-mono">
-                      systemctl --user start danbyte-workers
-                    </code>
-                    ).
-                  </div>
-                </div>
-              )}
-
-              {data?.truncated && (
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[13px] text-amber-800 dark:text-amber-300">
-                  Showing the first {data.total.toLocaleString()} jobs — narrow
-                  by state or queue to see the rest.
-                </div>
-              )}
-
-              {q.isError && <QueryError error={q.error} />}
-
-              <DataTable
-                data={rows}
-                columns={columns}
-                flexColumn="job"
-                stickyHeader
-                tableId="jobs"
-                enableExport={false}
-              />
-
-              {pages > 1 && (
-                <div className="flex items-center justify-end gap-2 text-[13px]">
-                  <button
-                    disabled={offset <= 0}
-                    onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
-                    className="rounded-md border border-border px-2.5 py-1 disabled:opacity-40"
-                  >
-                    Prev
-                  </button>
-                  <span className="text-muted-foreground">
-                    {page} / {pages}
-                  </span>
-                  <button
-                    disabled={page >= pages}
-                    onClick={() => setOffset((o) => o + PAGE_SIZE)}
-                    className="rounded-md border border-border px-2.5 py-1 disabled:opacity-40"
-                  >
-                    Next
-                  </button>
-                </div>
-              )}
-            </div>
+            <DataTable
+              data={rows}
+              columns={columns}
+              flexColumn="job"
+              stickyHeader
+              tableId="jobs"
+              enableExport={false}
+              serverPagination={{
+                page,
+                pageCount: pages,
+                totalRows: filteredTotal,
+                onPageChange: (p) => setOffset((p - 1) * PAGE_SIZE),
+              }}
+            />
           </div>
-        </div>
+        </ListPageShell>
       )}
     </div>
   )

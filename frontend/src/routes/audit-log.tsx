@@ -2,12 +2,11 @@ import { useMemo, useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery, keepPreviousData } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
-import { ChevronRight, History } from "lucide-react"
+import { ChevronRight } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type { ChangeAction, ChangeLogEntry, Paginated } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
@@ -16,8 +15,10 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { DataTable, SortHeader } from "@/components/data-table"
+import { FilterRail } from "@/components/filter-rail"
+import { ListPageShell } from "@/components/list-page-shell"
+import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TimeCell } from "@/components/cells/time-ago"
-import { QueryError } from "@/components/query-error"
 import { objectDetailRoute } from "@/lib/object-routes"
 
 export const Route = createFileRoute("/audit-log")({ component: AuditLogPage })
@@ -26,6 +27,13 @@ const ACTION_VARIANT: Record<
   ChangeAction,
   "success" | "warning" | "destructive"
 > = { create: "success", update: "warning", delete: "destructive" }
+
+const ACTION_TABS = [
+  { value: "all", label: "All" },
+  { value: "create", label: "Created" },
+  { value: "update", label: "Updated" },
+  { value: "delete", label: "Deleted" },
+] as const
 
 const TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "all", label: "All types" },
@@ -67,105 +75,79 @@ function AuditLogPage() {
   const columns = useMemo<ColumnDef<ChangeLogEntry>[]>(() => buildColumns(), [])
 
   return (
-    <div className="flex h-full flex-1 flex-col">
-      <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-        <h1 className="flex items-center gap-2 text-base font-semibold">
-          <History className="h-4 w-4 text-muted-foreground" />
-          Audit log
-        </h1>
-        <Badge variant="secondary" className="ml-1">
-          {total.toLocaleString()}
-        </Badge>
-      </header>
-
-      <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
-        <div className="mx-auto max-w-6xl space-y-3">
-          {/* Filters */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1">
-              {(["all", "create", "update", "delete"] as const).map((a) => (
-                <button
-                  key={a}
-                  type="button"
-                  onClick={() => {
-                    setAction(a)
-                    reset()
-                  }}
-                  className={`inline-flex h-8 items-center rounded-md px-2.5 text-[13px] font-medium capitalize transition-colors ${
-                    action === a
-                      ? "bg-foreground text-background"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }`}
-                >
-                  {a === "all" ? "All" : a + "d"}
-                </button>
-              ))}
-            </div>
-            <Select
-              value={type}
-              onValueChange={(v) => {
-                setType(v)
-                reset()
-              }}
-            >
-              <SelectTrigger className="h-8 w-40 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TYPE_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value)
-                reset()
-              }}
-              placeholder="Search object…"
-              className="h-8 w-52 text-sm"
-            />
-          </div>
-
-          {q.isError && <QueryError error={q.error} />}
-
-          {q.data && (
-            <DataTable
-              data={rows}
-              columns={columns}
-              flexColumn="object"
-              tableId="audit-log"
-              exportName="audit-log"
-              exportTitle="Audit log"
-            />
-          )}
-
-          {pages > 1 && (
-            <div className="flex items-center justify-end gap-2 text-[13px]">
-              <button
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-                className="rounded-md border border-border px-2.5 py-1 disabled:opacity-40"
-              >
-                Prev
-              </button>
-              <span className="text-muted-foreground">
-                {page} / {pages}
-              </span>
-              <button
-                disabled={page >= pages}
-                onClick={() => setPage((p) => p + 1)}
-                className="rounded-md border border-border px-2.5 py-1 disabled:opacity-40"
-              >
-                Next
-              </button>
-            </div>
-          )}
-        </div>
+    // Action is a page-level split of the whole log (server-side `action=`), so
+    // it rides the canonical tab strip; object type is a rail facet; the free
+    // text search is the shell's own box. All three reset to page 1.
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex h-10 shrink-0 items-center border-b border-border px-4 lg:px-6">
+        <SegmentedTabs
+          value={action}
+          onValueChange={(v) => {
+            setAction(v)
+            reset()
+          }}
+          items={ACTION_TABS}
+        />
       </div>
+
+      <ListPageShell
+        title="Audit log"
+        count={q.data ? total : undefined}
+        rail={
+          <FilterRail>
+            {/* Single-select and server-side (`object_type=`), over the full
+                fixed type list — so it stays a Select rather than a FacetGroup,
+                whose per-option counts the changelog API doesn't report. */}
+            <div>
+              <h3 className="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+                Object type
+              </h3>
+              <Select
+                value={type}
+                onValueChange={(v) => {
+                  setType(v)
+                  reset()
+                }}
+              >
+                <SelectTrigger className="h-8 w-full text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TYPE_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </FilterRail>
+        }
+        search={{
+          value: search,
+          onChange: (v) => {
+            setSearch(v)
+            reset()
+          },
+          placeholder: "Search object…",
+        }}
+        query={q}
+      >
+        <DataTable
+          data={rows}
+          columns={columns}
+          flexColumn="object"
+          tableId="audit-log"
+          exportName="audit-log"
+          exportTitle="Audit log"
+          serverPagination={{
+            page,
+            pageCount: pages,
+            totalRows: total,
+            onPageChange: setPage,
+          }}
+        />
+      </ListPageShell>
     </div>
   )
 }
