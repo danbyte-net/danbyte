@@ -22,7 +22,15 @@ import { useRegisterPresence } from "@/lib/presence-context"
 //     title={<span className="font-mono">{v.vlan_id} · {v.name}</span>}
 //     presence={{ type: "vlan", id: v.id }}
 //     actions={<>{canEdit && <EditLink/>}{canDelete && <DeleteButton/>}</>}
-//     hero={<VlanHero vlan={v} />}
+//     hero={
+//       <DetailHero
+//         title={`VLAN ${v.vlan_id}`} mono
+//         badges={<StatusBadge status={v.status} />}
+//         tags={<TagList tags={v.tags} />}
+//         description={v.description}
+//         stats={<DetailStat label="Prefixes" value={v.prefix_count} />}
+//       />
+//     }
 //     tabs={[{ value: "overview", label: "Overview" }, …]}
 //     tab={tab} onTabChange={setTab}
 //   >
@@ -145,6 +153,110 @@ export function DetailTab({
     >
       {children}
     </TabsContent>
+  )
+}
+
+/** How many columns the stat rail lays its `DetailStat`s out in. `3` stays
+ * two-up on narrow viewports. */
+export type DetailStatCols = 1 | 2 | 3
+
+const STAT_COLS: Record<DetailStatCols, string> = {
+  1: "grid-cols-1",
+  2: "grid-cols-2",
+  3: "grid-cols-2 sm:grid-cols-3",
+}
+
+/**
+ * The hero strip under the breadcrumb header — pass it to `DetailShell`'s
+ * `hero`. It owns the section wrapper, the page's single `<h1>` and its size,
+ * and the stat rail, so a detail page only supplies content.
+ *
+ * The title is **always** an `<h1>` at `text-2xl font-semibold tracking-tight`.
+ * This was hand-rolled 42× and had drifted to four sizes (`text-lg` …
+ * `text-3xl`) and three elements (`div`/`span`/`h1`) for the same role; one
+ * page had no title at all. Don't reintroduce a size override — if a title
+ * needs the mono face (IP, CIDR, ASN, interface, circuit ID) pass `mono`, and
+ * if it needs to *be* a coloured catalog badge pass the `ColorBadge` as
+ * `title`: the badge sizes itself, and the `<h1>` still lands in the outline.
+ *
+ * Slots render top-to-bottom in the left column — title row (title + inline
+ * `badges`), `subtitle`, `tags`, `description`, `children` — with `stats` in
+ * the right-hand rail.
+ */
+export function DetailHero({
+  title,
+  mono = false,
+  badges,
+  subtitle,
+  tags,
+  description,
+  stats,
+  statCols = 2,
+  children,
+}: {
+  /** The object's identity. Rendered as the page's `<h1>`. */
+  title: ReactNode
+  /** Mono face for the title — identifiers, not names. */
+  mono?: boolean
+  /** Status/state chips inline after the title (they wrap with it). */
+  badges?: ReactNode
+  /** One secondary line under the title: a parent link, a facility ID, ports,
+   * a second row of chips. Muted 13px — wrap in your own span/Link to override
+   * the face or colour. */
+  subtitle?: ReactNode
+  /** `<TagList tags={…} />`. */
+  tags?: ReactNode
+  /** Free-text description. Falsy (including `""`) renders nothing. */
+  description?: ReactNode
+  /** `<DetailStat/>`s for the rail — the `<dl>` is the primitive's. */
+  stats?: ReactNode
+  /** Rail column count. Defaults to 2. */
+  statCols?: DetailStatCols
+  /** Anything else belonging in the left column, below the description. */
+  children?: ReactNode
+}) {
+  return (
+    <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1
+            className={cn(
+              "text-2xl font-semibold tracking-tight",
+              mono && "font-mono"
+            )}
+          >
+            {title}
+          </h1>
+          {badges}
+        </div>
+        {/* `empty:hidden` on every optional row: a slot often holds a
+            component that decides for itself whether it has anything to draw
+            (a prefix's masters chain, a flags array), and without it a
+            null-rendering slot still spent its margin. */}
+        {subtitle && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground empty:hidden">
+            {subtitle}
+          </div>
+        )}
+        {tags && <div className="mt-2 empty:hidden">{tags}</div>}
+        {description && (
+          <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground empty:hidden">
+            {description}
+          </p>
+        )}
+        {children && <div className="mt-3 empty:hidden">{children}</div>}
+      </div>
+      {stats && (
+        <dl
+          className={cn(
+            "ml-auto grid gap-x-8 gap-y-3 text-[13px]",
+            STAT_COLS[statCols]
+          )}
+        >
+          {stats}
+        </dl>
+      )}
+    </section>
   )
 }
 

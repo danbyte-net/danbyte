@@ -33,7 +33,7 @@ import { IpDeleteDialog } from "@/components/ip-delete-dialog"
 import { IpMonitoring } from "@/components/monitoring/ip-monitoring"
 import { IpMonitoringSummary } from "@/components/monitoring/ip-monitoring-summary"
 import { QueryError } from "@/components/query-error"
-import { DetailShell, DetailTab } from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { useMe, objCan } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -424,35 +424,31 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
         </>
       }
       hero={
-        /* Big address + chips + description (emphasis on description because
-           that's what operators actually look up). */
-        <section className="flex shrink-0 flex-col gap-3 border-b border-border px-6 py-5">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <h1 className="font-mono text-3xl font-semibold tracking-tight">
-              {ip.ip_address}
-            </h1>
-            <ViolationBadge objectId={ip.id} prominent />
-            <CatalogCell value={ip.status} />
-            <RoleChip
-              role={ip.role}
-              showVirtualTag
-              isVirtual={ip.role?.is_virtual}
-            />
-            {/* The containing subnet's zone (via its VLAN) — where this IP
-                lives, firewall-wise. */}
-            {ip.prefix?.vlan?.zone && (
-              <ColorBadge
-                name={ip.prefix.vlan.zone.name}
-                color={ip.prefix.vlan.zone.color || undefined}
+        <DetailHero
+          title={ip.ip_address}
+          mono
+          badges={
+            <>
+              <ViolationBadge objectId={ip.id} prominent />
+              <CatalogCell value={ip.status} />
+              <RoleChip
+                role={ip.role}
+                showVirtualTag
+                isVirtual={ip.role?.is_virtual}
               />
-            )}
-            {ip.tags.length > 0 && <TagList tags={ip.tags} />}
-          </div>
-          {ip.description && (
-            <p className="max-w-prose text-sm leading-relaxed text-foreground">
-              {ip.description}
-            </p>
-          )}
+              {/* The containing subnet's zone (via its VLAN) — where this IP
+                  lives, firewall-wise. */}
+              {ip.prefix?.vlan?.zone && (
+                <ColorBadge
+                  name={ip.prefix.vlan.zone.name}
+                  color={ip.prefix.vlan.zone.color || undefined}
+                />
+              )}
+            </>
+          }
+          tags={ip.tags.length > 0 && <TagList tags={ip.tags} />}
+          description={ip.description}
+        >
           {ip.reservation_note && (
             <p className="max-w-prose text-xs text-muted-foreground italic">
               <span className="mr-1 text-muted-foreground/80">
@@ -461,7 +457,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
               {ip.reservation_note}
             </p>
           )}
-        </section>
+        </DetailHero>
       }
       tabs={[
         { value: "overview", label: "Overview" },

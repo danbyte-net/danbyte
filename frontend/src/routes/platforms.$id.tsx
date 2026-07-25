@@ -8,7 +8,12 @@ import { api, type Platform } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
 import { PlatformDeleteDialog } from "@/components/platform-delete-dialog"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -75,42 +80,37 @@ function Body({ platform: p }: { platform: Platform }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2.5">
-              <span className="text-2xl font-semibold tracking-tight">
-                {p.name}
-              </span>
-              <LifecycleBadge state={p.lifecycle_state} />
-            </div>
-            {p.manufacturer && (
+        <DetailHero
+          title={p.name}
+          badges={<LifecycleBadge state={p.lifecycle_state} />}
+          subtitle={
+            p.manufacturer && (
               <Link
                 to="/manufacturers/$id"
                 params={{ id: p.manufacturer.id }}
-                className="mt-2 inline-block text-[13px] text-primary hover:underline"
+                className="text-primary hover:underline"
               >
                 {p.manufacturer.name}
               </Link>
-            )}
-            {p.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {p.description}
-              </p>
-            )}
-          </div>
-          <dl className="ml-auto grid grid-cols-1 gap-y-3 text-[13px]">
-            {humanIds && p.numid != null && (
+            )
+          }
+          description={p.description}
+          statCols={1}
+          stats={
+            <>
+              {humanIds && p.numid != null && (
+                <DetailStat
+                  label="Number"
+                  value={<span className="num font-mono">#{p.numid}</span>}
+                />
+              )}
               <DetailStat
-                label="Number"
-                value={<span className="num font-mono">#{p.numid}</span>}
+                label="Devices"
+                value={<span className="num">{p.device_count}</span>}
               />
-            )}
-            <DetailStat
-              label="Devices"
-              value={<span className="num">{p.device_count}</span>}
-            />
-          </dl>
-        </section>
+            </>
+          }
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

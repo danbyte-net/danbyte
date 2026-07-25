@@ -15,7 +15,15 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { CableStatusControl } from "@/components/cable-status-control"
 import { SnmpLinkBadge } from "@/components/snmp-link-badge"
-import { SortHeader } from "@/components/data-table"
+import { SortHeader, selectionColumn } from "@/components/data-table"
+import { dash } from "@/components/cells/dash"
+import { DeviceCell } from "@/components/cells/device-cell"
+import { tagsColumn } from "@/components/cells/tag-list"
+import { vrfColumn } from "@/components/cells/vrf-cell"
+import {
+  actionsColumn,
+  type ActionsColumnOpts,
+} from "@/components/columns/actions-column"
 
 /** An interface row with its nesting depth (sub-interfaces indent under their
  * parent). Shared by the device interfaces table and the whole-stack table. */
@@ -52,26 +60,120 @@ export function nestInterfaces(rows: Interface[]): NestedInterface[] {
   return out
 }
 
-/**
- * The canonical read-only interface columns — name, type, MAC, layer, enabled,
- * speed, VLAN, VRF, IPs, cables. Shared so the per-device "This member" table
- * and the "Whole stack" (virtual chassis) table render identically; each caller
- * prepends/appends its own columns (a Member column, or the row actions).
- */
-export function buildInterfaceColumns(opts?: {
+export type InterfaceColumnId =
+  | "device"
+  | "name"
+  | "type"
+  | "mac"
+  | "layer"
+  | "enabled"
+  | "speed"
+  | "mtu"
+  | "vlan"
+  | "vrf"
+  | "ips"
+  | "cables"
+  | "tags"
+  | "description"
+
+const CANONICAL_ORDER: InterfaceColumnId[] = [
+  "device",
+  "name",
+  "type",
+  "mac",
+  "layer",
+  "enabled",
+  "speed",
+  "mtu",
+  "vlan",
+  "vrf",
+  "ips",
+  "cables",
+  "tags",
+  "description",
+]
+
+/** The per-device / whole-stack interface table. No Device column (the whole
+ * page is one device, or the Member column already names it), and no MTU / Tags
+ * — those read on the interface detail page. Named so the per-device table and
+ * the virtual-chassis table cannot drift apart. */
+export const DEVICE_INTERFACE_COLUMNS: InterfaceColumnId[] = [
+  "name",
+  "type",
+  "mac",
+  "layer",
+  "enabled",
+  "speed",
+  "vlan",
+  "vrf",
+  "ips",
+  "cables",
+  "description",
+]
+
+export interface InterfaceColumnOpts<T extends Interface> {
+  /** Drop columns. */
+  omit?: InterfaceColumnId[]
+  /** Keep only these columns (canonical order still applies). */
+  include?: InterfaceColumnId[]
+  /** Leading checkbox column for bulk selection. */
+  selection?: boolean
   /** SNMP drift items grouped by interface id — each drifted row gets a badge
    * whose popover lists exactly what differs (review/accept stays in the Drift
    * panel; source of truth is untouched). */
   driftByIface?: Map<string, SnmpDriftItem[]>
-}): ColumnDef<NestedInterface>[] {
-  const driftByIface = opts?.driftByIface
-  return [
-    {
+  /** Cabled rows show an editable cable-status control instead of the plain
+   * cable count. The per-device tables put that control in their actions
+   * column, so they leave this off. */
+  cableControl?: { canEdit: boolean }
+  /** Wire tag chips to a page-level tag filter (defaults to inert). */
+  tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }
+  /** Trailing RowActions column. */
+  actions?: ActionsColumnOpts<T>
+}
+
+/**
+ * The one source of truth for "a table of interfaces" — /interfaces, the
+ * per-device "This member" table, the "Whole stack" (virtual chassis) table.
+ * Sub-interfaces indent under their parent via `_depth` (see `nestInterfaces`);
+ * flat rows simply render at depth 0. Callers pick columns with
+ * `include`/`omit` and splice their own around this output (a Member column).
+ */
+export function buildInterfaceColumns<T extends Interface = NestedInterface>(
+  opts: InterfaceColumnOpts<T> = {}
+): ColumnDef<T, unknown>[] {
+  const driftByIface = opts.driftByIface
+  const omit = new Set(opts.omit ?? [])
+  const keep = (id: InterfaceColumnId) =>
+    !omit.has(id) && (!opts.include || opts.include.includes(id))
+
+  const byId: Record<InterfaceColumnId, () => ColumnDef<T, unknown>> = {
+    device: () => ({
+      id: "device",
+      accessorFn: (r) => r.device.name,
+      header: ({ column }) => <SortHeader column={column} label="Device" />,
+      cell: ({ row }) => (
+        <DeviceCell
+          device={row.original.device}
+          className="font-mono text-xs"
+        />
+      ),
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Device",
+          get: (r: T) => r.device.id,
+          formatValue: (_v, sample) => ({ label: sample.device.name }),
+        },
+      },
+    }),
+    name: () => ({
       id: "name",
       accessorKey: "name",
       header: ({ column }) => <SortHeader column={column} label="Interface" />,
       cell: ({ row }) => {
-        const depth = row.original._depth
+        const depth =
+          (row.original as Interface & { _depth?: number })._depth ?? 0
         return (
           <div
             className="flex items-center gap-1.5"
@@ -138,18 +240,18 @@ export function buildInterfaceColumns(opts?: {
           </div>
         )
       },
-    },
-    {
+    }),
+    type: () => ({
       id: "type",
       header: "Type",
       cell: ({ row }) =>
         row.original.type ? (
           <span className="text-xs">{row.original.type_display}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          dash
         ),
-    },
-    {
+    }),
+    mac: () => ({
       id: "mac",
       header: "MAC",
       cell: ({ row }) =>
@@ -157,15 +259,15 @@ export function buildInterfaceColumns(opts?: {
           <Link
             to="/macs/$mac"
             params={{ mac: row.original.mac_address }}
-            className="font-mono text-xs text-primary hover:underline"
+            className="font-mono text-xs hover:underline"
           >
             {row.original.mac_address}
           </Link>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          dash
         ),
-    },
-    {
+    }),
+    layer: () => ({
       id: "layer",
       header: "Layer",
       // Derived: an interface with an IP operates at L3, otherwise it's L2.
@@ -174,9 +276,10 @@ export function buildInterfaceColumns(opts?: {
           {row.original.ip_addresses.length > 0 ? "L3" : "L2"}
         </Badge>
       ),
-    },
-    {
+    }),
+    enabled: () => ({
       id: "enabled",
+      accessorKey: "enabled",
       header: "Enabled",
       cell: ({ row }) =>
         row.original.enabled ? (
@@ -184,18 +287,30 @@ export function buildInterfaceColumns(opts?: {
         ) : (
           <Badge variant="secondary">Disabled</Badge>
         ),
-    },
-    {
+    }),
+    speed: () => ({
       id: "speed",
+      accessorKey: "speed",
       header: "Speed",
       cell: ({ row }) =>
         row.original.speed ? (
           <span className="text-xs">{row.original.speed}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          dash
         ),
-    },
-    {
+    }),
+    mtu: () => ({
+      id: "mtu",
+      accessorKey: "mtu",
+      header: "MTU",
+      cell: ({ row }) =>
+        row.original.mtu != null ? (
+          <span className="num text-xs">{row.original.mtu}</span>
+        ) : (
+          dash
+        ),
+    }),
+    vlan: () => ({
       id: "vlan",
       header: "VLAN",
       cell: ({ row }) => {
@@ -216,33 +331,17 @@ export function buildInterfaceColumns(opts?: {
             )}
           </span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          dash
         )
       },
-    },
-    {
-      id: "vrf",
-      header: "VRF",
-      cell: ({ row }) =>
-        row.original.vrf ? (
-          <Link
-            to="/vrfs/$id"
-            params={{ id: row.original.vrf.id }}
-            className="text-xs text-primary hover:underline"
-          >
-            {row.original.vrf.name}
-          </Link>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
+    }),
+    vrf: () => vrfColumn<T>({ get: (r) => r.vrf }),
+    ips: () => ({
       id: "ips",
       header: "IP addresses",
       cell: ({ row }) => {
         const ips = row.original.ip_addresses
-        if (ips.length === 0)
-          return <span className="text-muted-foreground">—</span>
+        if (ips.length === 0) return dash
         return (
           <div className="flex flex-wrap gap-1">
             {ips.map((ip) => (
@@ -250,7 +349,7 @@ export function buildInterfaceColumns(opts?: {
                 key={ip.id}
                 to="/ips/$id"
                 params={{ id: ip.id }}
-                className="font-mono text-xs text-primary hover:underline"
+                className="font-mono text-xs hover:underline"
               >
                 {ip.ip_address}
               </Link>
@@ -258,28 +357,52 @@ export function buildInterfaceColumns(opts?: {
           </div>
         )
       },
-    },
-    {
+    }),
+    cables: () => ({
       id: "cables",
       accessorKey: "cable_count",
-      header: "Cables",
-      cell: ({ row }) => (
-        <span className="num text-xs text-muted-foreground">
-          {row.original.cable_count || "—"}
-        </span>
-      ),
-    },
-    {
+      header: opts.cableControl ? "Cable" : "Cables",
+      cell: ({ row }) => {
+        const cable = row.original.cable
+        if (opts.cableControl && cable)
+          return (
+            <CableStatusControl
+              cableId={cable.id}
+              status={cable.status}
+              canEdit={opts.cableControl.canEdit}
+            />
+          )
+        return (
+          <span className="num text-xs text-muted-foreground">
+            {row.original.cable_count || "—"}
+          </span>
+        )
+      },
+    }),
+    tags: () =>
+      tagsColumn<T>({
+        getTags: (r) => r.tags,
+        activeSlugs: opts.tagFilter?.activeSlugs,
+        onToggle: opts.tagFilter?.onToggle,
+      }),
+    description: () => ({
       id: "description",
+      accessorKey: "description",
       header: "Description",
       cell: ({ row }) =>
         row.original.description ? (
           <span className="text-xs">{row.original.description}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          dash
         ),
-    },
-  ]
+    }),
+  }
+
+  const cols: ColumnDef<T, unknown>[] = []
+  if (opts.selection) cols.push(selectionColumn<T>())
+  for (const id of CANONICAL_ORDER) if (keep(id)) cols.push(byId[id]())
+  if (opts.actions) cols.push(actionsColumn<T>(opts.actions))
+  return cols
 }
 
 export interface InterfaceActionsOpts<T extends Interface> {

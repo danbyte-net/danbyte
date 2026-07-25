@@ -19,7 +19,12 @@ import { QueryError } from "@/components/query-error"
 import { ClusterDeleteDialog } from "@/components/cluster-delete-dialog"
 import { StatusBadge } from "@/components/status-badge"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
@@ -93,48 +98,36 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
       }
       hero={
         <>
-          <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-            <div className="min-w-0">
-              <div className="flex items-center gap-3">
-                <div className="text-3xl font-semibold tracking-tight">
-                  {c.name}
-                </div>
-                <StatusBadge status={c.status} />
-              </div>
-              {c.tags.length > 0 && (
-                <div className="mt-2">
-                  <TagList tags={c.tags} />
-                </div>
-              )}
-              {c.description && (
-                <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                  {c.description}
-                </p>
-              )}
-            </div>
-            <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
-              <DetailStat
-                label="Type"
-                value={<span className="text-xs">{c.type.name}</span>}
-              />
-              <DetailStat
-                label="Site"
-                value={
-                  c.site ? (
-                    <Link
-                      to="/sites/$id"
-                      params={{ id: c.site.id }}
-                      className="text-xs text-primary hover:underline"
-                    >
-                      {c.site.name}
-                    </Link>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )
-                }
-              />
-            </dl>
-          </section>
+          <DetailHero
+            title={c.name}
+            badges={<StatusBadge status={c.status} />}
+            tags={c.tags.length > 0 && <TagList tags={c.tags} />}
+            description={c.description}
+            stats={
+              <>
+                <DetailStat
+                  label="Type"
+                  value={<span className="text-xs">{c.type.name}</span>}
+                />
+                <DetailStat
+                  label="Site"
+                  value={
+                    c.site ? (
+                      <Link
+                        to="/sites/$id"
+                        params={{ id: c.site.id }}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        {c.site.name}
+                      </Link>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )
+                  }
+                />
+              </>
+            }
+          />
 
           <CustomFieldValues model="cluster" values={c.custom_fields} />
         </>

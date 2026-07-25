@@ -11,6 +11,7 @@ import { ColorBadge } from "@/components/cells/color-badge"
 import { numidColumn } from "@/components/cells/numid"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
+import { siteColumn } from "@/components/cells/site-cell"
 import { ListPageShell } from "@/components/list-page-shell"
 import { useTableFilters } from "@/components/table-filters"
 import { RackDeleteDialog } from "@/components/rack-delete-dialog"
@@ -113,28 +114,7 @@ function buildColumns({
         </Link>
       ),
     },
-    {
-      id: "site",
-      header: ({ column }) => <SortHeader column={column} label="Site" />,
-      accessorFn: (r) => r.site.name,
-      cell: ({ row }) => (
-        <Link
-          to="/sites/$id"
-          params={{ id: row.original.site.id }}
-          className="text-xs text-primary hover:underline"
-        >
-          {row.original.site.name}
-        </Link>
-      ),
-      meta: {
-        facet: {
-          kind: "enum",
-          label: "Site",
-          get: (r: Rack) => r.site.id,
-          formatValue: (_v, r) => ({ label: r.site.name }),
-        },
-      },
-    },
+    siteColumn<Rack>({ get: (r) => r.site, className: "text-xs" }),
     {
       id: "role",
       header: ({ column }) => <SortHeader column={column} label="Role" />,

@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
 import { CustomFieldDeleteDialog } from "@/components/custom-field-delete-dialog"
-import { DetailShell, DetailTab } from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
@@ -38,7 +38,9 @@ function CustomFieldDetail() {
 }
 
 function CustomFieldDetailBody({ field: f }: { field: CustomField }) {
-  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">("overview")
+  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">(
+    "overview"
+  )
   const nav = useNavigate()
   const { canDo } = useMe()
   const canEdit = canDo("customfield", "change")
@@ -74,25 +76,17 @@ function CustomFieldDetailBody({ field: f }: { field: CustomField }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-6 gap-y-2 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight">
-                {f.label}
-              </h1>
+        <DetailHero
+          title={f.label}
+          badges={
+            <>
               <Badge variant="secondary">{fieldTypeLabel(f.type)}</Badge>
               {f.required && <Badge variant="secondary">Required</Badge>}
-            </div>
-            <p className="mt-1 font-mono text-[13px] text-muted-foreground">
-              {f.key}
-            </p>
-            {f.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {f.description}
-              </p>
-            )}
-          </div>
-        </section>
+            </>
+          }
+          subtitle={<span className="font-mono">{f.key}</span>}
+          description={f.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

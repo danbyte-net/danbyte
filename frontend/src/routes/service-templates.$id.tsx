@@ -7,7 +7,7 @@ import { useCallback, useState } from "react"
 import { api, type ServiceTemplate } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { DetailShell, DetailTab } from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { ServiceTemplateDeleteDialog } from "@/components/service-template-delete-dialog"
@@ -38,7 +38,9 @@ function ServiceTemplateDetail() {
 }
 
 function Body({ template: t }: { template: ServiceTemplate }) {
-  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">("overview")
+  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">(
+    "overview"
+  )
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<ServiceTemplate | null>(null)
   const goBack = useCallback(() => nav({ to: "/service-templates" }), [nav])
@@ -72,26 +74,20 @@ function Body({ template: t }: { template: ServiceTemplate }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-semibold tracking-tight">
-                {t.name}
-              </span>
-              <Badge variant="secondary">
-                {t.protocol_display || t.protocol.toUpperCase()}
-              </Badge>
-            </div>
-            <p className="mt-2 font-mono text-[13px] text-muted-foreground">
+        <DetailHero
+          title={t.name}
+          badges={
+            <Badge variant="secondary">
+              {t.protocol_display || t.protocol.toUpperCase()}
+            </Badge>
+          }
+          subtitle={
+            <span className="font-mono">
               {t.ports.length ? t.ports.join(", ") : "no ports"}
-            </p>
-            {t.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {t.description}
-              </p>
-            )}
-          </div>
-        </section>
+            </span>
+          }
+          description={t.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

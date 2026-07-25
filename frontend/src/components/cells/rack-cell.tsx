@@ -45,6 +45,8 @@ export interface RackColumnOpts<T> {
   header?: string
   get: (row: T) => RackLike | null | undefined
   linked?: boolean
+  /** Class on the cell (e.g. `text-xs` where the table runs small). */
+  className?: string
 }
 
 export function rackColumn<T>(opts: RackColumnOpts<T>): ColumnDef<T, unknown> {
@@ -55,7 +57,11 @@ export function rackColumn<T>(opts: RackColumnOpts<T>): ColumnDef<T, unknown> {
     accessorFn: (r) => opts.get(r)?.name ?? "",
     header: ({ column }) => <SortHeader column={column} label={header} />,
     cell: ({ row }) => (
-      <RackCell rack={opts.get(row.original)} linked={opts.linked} />
+      <RackCell
+        rack={opts.get(row.original)}
+        linked={opts.linked}
+        className={opts.className}
+      />
     ),
     meta: {
       facet: {

@@ -8,11 +8,12 @@ import { useCallback, useMemo, useState } from "react"
 import { api, type Paginated, type VLAN, type VLANGroup } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
-import { DataTable, SortHeader } from "@/components/data-table"
-import { timeAgoColumn } from "@/components/cells/time-ago"
+import { DataTable } from "@/components/data-table"
+import { buildVlanColumns } from "@/components/columns/vlan-columns"
 import { QueryError } from "@/components/query-error"
 import { VlanGroupDeleteDialog } from "@/components/vlan-group-delete-dialog"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
+import { DetailHero, DetailStat } from "@/components/detail-shell"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -90,17 +91,11 @@ function Body({ group: g }: { group: VLANGroup }) {
         </div>
       </header>
 
-      <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-        <div className="min-w-0">
-          <div className="text-2xl font-semibold tracking-tight">{g.name}</div>
-          {g.description && (
-            <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-              {g.description}
-            </p>
-          )}
-        </div>
-        <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
-          <Stat
+      <DetailHero
+        title={g.name}
+        description={g.description}
+        stats={
+          <DetailStat
             label="VID range"
             value={
               <span className="num font-mono">
@@ -108,8 +103,8 @@ function Body({ group: g }: { group: VLANGroup }) {
               </span>
             }
           />
-        </dl>
-      </section>
+        }
+      />
 
       <Tabs
         value={tab}
@@ -205,44 +200,13 @@ function GroupVlansTable({ groupId }: { groupId: string }) {
       api<Paginated<VLAN>>(`/api/vlans/?group=${groupId}&page_size=500`),
   })
   const columns = useMemo<ColumnDef<VLAN>[]>(
-    () => [
-      {
-        id: "vlan_id",
-        accessorKey: "vlan_id",
-        header: ({ column }) => <SortHeader column={column} label="VID" />,
-        cell: ({ row }) => (
-          <Link
-            to="/vlans/$id"
-            params={{ id: row.original.id }}
-            className="font-mono font-medium hover:underline"
-          >
-            {row.original.vlan_id}
-          </Link>
-        ),
-      },
-      {
-        id: "name",
-        accessorKey: "name",
-        header: "Name",
-        cell: ({ row }) => <span className="text-xs">{row.original.name}</span>,
-      },
-      {
-        id: "description",
-        accessorKey: "description",
-        header: "Description",
-        cell: ({ row }) => (
-          <span className="line-clamp-1 block text-muted-foreground">
-            {row.original.description || "—"}
-          </span>
-        ),
-      },
-      timeAgoColumn<VLAN>({
-        id: "updated",
-        header: "Updated",
-        get: (r) => r.updated_at,
-        align: "right",
+    () =>
+      buildVlanColumns({
+        include: ["vlan_id", "name", "description", "updated"],
+        // "VID" here: the page is already about one VLAN group, so the column
+        // labels the number, not the object.
+        vidHeader: "VID",
       }),
-    ],
     []
   )
 
@@ -263,16 +227,5 @@ function GroupVlansTable({ groupId }: { groupId: string }) {
       flexColumn="description"
       embedded
     />
-  )
-}
-
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div>
-      <dt className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-        {label}
-      </dt>
-      <dd className="mt-0.5 text-[13px]">{value}</dd>
-    </div>
   )
 }

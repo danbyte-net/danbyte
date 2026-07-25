@@ -52,7 +52,12 @@ import {
 } from "@/components/interface-trace-dialog"
 import { VcAddMemberDialog } from "@/components/vc-add-member-dialog"
 import { VcMembershipDialog } from "@/components/vc-membership-dialog"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
@@ -153,45 +158,35 @@ function Body({ vc }: { vc: VirtualChassis }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="text-2xl font-semibold tracking-tight">
-              {vc.name}
-            </div>
-            {vc.tags.length > 0 && (
-              <div className="mt-2">
-                <TagList tags={vc.tags} />
-              </div>
-            )}
-            {vc.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {vc.description}
-              </p>
-            )}
-          </div>
-          <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
-            <DetailStat
-              label="Master"
-              value={
-                vc.master ? (
-                  <Link
-                    to="/devices/$id"
-                    params={{ id: vc.master.id }}
-                    className="font-mono text-[13px] text-primary hover:underline"
-                  >
-                    {vc.master.name}
-                  </Link>
-                ) : (
-                  dash
-                )
-              }
-            />
-            <DetailStat
-              label="Members"
-              value={<span className="num">{vc.member_count}</span>}
-            />
-          </dl>
-        </section>
+        <DetailHero
+          title={vc.name}
+          tags={vc.tags.length > 0 && <TagList tags={vc.tags} />}
+          description={vc.description}
+          stats={
+            <>
+              <DetailStat
+                label="Master"
+                value={
+                  vc.master ? (
+                    <Link
+                      to="/devices/$id"
+                      params={{ id: vc.master.id }}
+                      className="font-mono text-[13px] text-primary hover:underline"
+                    >
+                      {vc.master.name}
+                    </Link>
+                  ) : (
+                    dash
+                  )
+                }
+              />
+              <DetailStat
+                label="Members"
+                value={<span className="num">{vc.member_count}</span>}
+              />
+            </>
+          }
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

@@ -12,7 +12,7 @@ import { ImportBundleDialog } from "@/components/device-bundle"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { numidColumn } from "@/components/cells/numid"
-import { ManufacturerCell } from "@/components/cells/manufacturer-cell"
+import { manufacturerColumn } from "@/components/cells/manufacturer-cell"
 import { lifecycleColumn } from "@/components/cells/lifecycle-cell"
 import {
   FilterRail,
@@ -180,16 +180,7 @@ function buildColumns({
         </Link>
       ),
     },
-    {
-      id: "manufacturer",
-      accessorFn: (r) => r.manufacturer?.name ?? "",
-      header: ({ column }) => (
-        <SortHeader column={column} label="Manufacturer" />
-      ),
-      cell: ({ row }) => (
-        <ManufacturerCell manufacturer={row.original.manufacturer} />
-      ),
-    },
+    manufacturerColumn<DeviceType>({ get: (r) => r.manufacturer }),
     {
       id: "model",
       accessorKey: "model",

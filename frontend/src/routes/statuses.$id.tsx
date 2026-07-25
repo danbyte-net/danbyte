@@ -8,7 +8,12 @@ import { api, STATUSABLE_MODELS, type Status } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { IpStatusDeleteDialog } from "@/components/ip-status-delete-dialog"
@@ -88,29 +93,21 @@ function Body({ status: s }: { status: Status }) {
       }
       hero={
         <>
-          <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-            <div className="min-w-0">
-              <ColorBadge name={s.name} color={s.color || undefined} />
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {flags.map((f) => (
-                  <Badge key={f} variant="secondary">
-                    {f}
-                  </Badge>
-                ))}
-              </div>
-              {s.description && (
-                <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                  {s.description}
-                </p>
-              )}
-            </div>
-            <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
+          <DetailHero
+            title={<ColorBadge name={s.name} color={s.color || undefined} />}
+            subtitle={flags.map((f) => (
+              <Badge key={f} variant="secondary">
+                {f}
+              </Badge>
+            ))}
+            description={s.description}
+            stats={
               <DetailStat
                 label="IPs"
                 value={<span className="num">{s.usage_count}</span>}
               />
-            </dl>
-          </section>
+            }
+          />
 
           <section className="shrink-0 border-b border-border px-6 py-4">
             <p className="text-sm text-muted-foreground">

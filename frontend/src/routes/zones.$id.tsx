@@ -8,15 +8,20 @@ import { useCallback, useMemo, useState } from "react"
 import { api, type Paginated, type VLAN, type Zone } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { SiteCell } from "@/components/cells/site-cell"
 import { TagList } from "@/components/cells/tag-list"
 import { TimeCell } from "@/components/cells/time-ago"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
+import { buildVlanColumns } from "@/components/columns/vlan-columns"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { ZoneDeleteDialog } from "@/components/zone-delete-dialog"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import {
   LocalityBadge,
   PromoteToGlobalButton,
@@ -89,10 +94,10 @@ function Body({ zone: z }: { zone: Zone }) {
       }
       hero={
         <>
-          <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <ColorBadge name={z.name} color={z.color || undefined} />
+          <DetailHero
+            title={<ColorBadge name={z.name} color={z.color || undefined} />}
+            badges={
+              <>
                 <LocalityBadge owningSite={z.owning_site} />
                 {canPromote && (
                   <PromoteToGlobalButton
@@ -101,25 +106,17 @@ function Body({ zone: z }: { zone: Zone }) {
                     invalidate={[["zones"], ["zones-picker"], ["zone", z.id]]}
                   />
                 )}
-              </div>
-              {z.tags.length > 0 && (
-                <div className="mt-2">
-                  <TagList tags={z.tags} />
-                </div>
-              )}
-              {z.description && (
-                <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                  {z.description}
-                </p>
-              )}
-            </div>
-            <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
+              </>
+            }
+            tags={z.tags.length > 0 && <TagList tags={z.tags} />}
+            description={z.description}
+            stats={
               <DetailStat
                 label="VLANs"
                 value={<span className="num">{z.usage_count}</span>}
               />
-            </dl>
-          </section>
+            }
+          />
 
           <section className="shrink-0 border-b border-border px-6 py-4">
             <p className="text-sm text-muted-foreground">
@@ -225,52 +222,10 @@ function ZoneVlansTable({ zoneId }: { zoneId: string }) {
     [q.data, zoneId]
   )
   const columns = useMemo<ColumnDef<VLAN>[]>(
-    () => [
-      {
-        id: "vlan_id",
-        accessorKey: "vlan_id",
-        header: ({ column }) => <SortHeader column={column} label="VLAN" />,
-        cell: ({ row }) => (
-          <Link
-            to="/vlans/$id"
-            params={{ id: row.original.id }}
-            className="num font-mono text-xs font-medium hover:underline"
-          >
-            {row.original.vlan_id}
-          </Link>
-        ),
-      },
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => (
-          <Link
-            to="/vlans/$id"
-            params={{ id: row.original.id }}
-            className="font-medium hover:underline"
-          >
-            {row.original.name}
-          </Link>
-        ),
-      },
-      {
-        id: "site",
-        accessorFn: (v) => v.site?.name ?? "",
-        header: "Site",
-        cell: ({ row }) => <SiteCell site={row.original.site} />,
-      },
-      {
-        id: "description",
-        accessorKey: "description",
-        header: "Description",
-        cell: ({ row }) => (
-          <span className="line-clamp-1 block text-muted-foreground">
-            {row.original.description || "—"}
-          </span>
-        ),
-      },
-    ],
+    () =>
+      buildVlanColumns({
+        include: ["vlan_id", "name", "site", "description"],
+      }),
     []
   )
 

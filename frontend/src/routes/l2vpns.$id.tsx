@@ -32,7 +32,12 @@ import { QueryError } from "@/components/query-error"
 import { StatusBadge } from "@/components/status-badge"
 import { L2vpnDeleteDialog } from "@/components/l2vpn-delete-dialog"
 import { L2vpnTerminationDialog } from "@/components/l2vpn-termination-dialog"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -99,39 +104,27 @@ function Body({ l2vpn: v }: { l2vpn: L2VPN }) {
       }
       hero={
         <>
-          <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-            <div className="min-w-0">
-              <div className="text-2xl font-semibold tracking-tight">
-                {v.name}
-              </div>
-              <div className="mt-2 flex items-center gap-1.5">
-                <StatusBadge status={v.status} />
-              </div>
-              {v.tags.length > 0 && (
-                <div className="mt-2">
-                  <TagList tags={v.tags} />
-                </div>
-              )}
-              {v.description && (
-                <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                  {v.description}
-                </p>
-              )}
-            </div>
-            <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
-              <DetailStat label="Type" value={v.type_display} />
-              <DetailStat
-                label="Identifier"
-                value={
-                  v.identifier != null ? (
-                    <span className="num font-mono">{v.identifier}</span>
-                  ) : (
-                    dash
-                  )
-                }
-              />
-            </dl>
-          </section>
+          <DetailHero
+            title={v.name}
+            badges={<StatusBadge status={v.status} />}
+            tags={v.tags.length > 0 && <TagList tags={v.tags} />}
+            description={v.description}
+            stats={
+              <>
+                <DetailStat label="Type" value={v.type_display} />
+                <DetailStat
+                  label="Identifier"
+                  value={
+                    v.identifier != null ? (
+                      <span className="num font-mono">{v.identifier}</span>
+                    ) : (
+                      dash
+                    )
+                  }
+                />
+              </>
+            }
+          />
 
           <CustomFieldValues model="l2vpn" values={v.custom_fields} />
         </>

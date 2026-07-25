@@ -2,18 +2,14 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Cable as CableIcon, Workflow } from "lucide-react"
+import { Cable as CableIcon } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api, type Interface, type Paginated } from "@/lib/api"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
-import {
-  cableTint,
-  CableStatusControl,
-} from "@/components/cable-status-control"
-import { tagsColumn } from "@/components/cells/tag-list"
+import { DataTable } from "@/components/data-table"
+import { buildInterfaceColumns } from "@/components/columns/interface-columns"
+import { cableTint } from "@/components/cable-status-control"
 import {
   FilterRail,
   FacetGroup,
@@ -22,7 +18,6 @@ import {
 } from "@/components/filter-rail"
 import { ListPageShell } from "@/components/list-page-shell"
 import { InterfaceDeleteDialog } from "@/components/interface-delete-dialog"
-import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/interfaces/")({
@@ -76,12 +71,46 @@ function InterfacesPage() {
   const handleDelete = useCallback((i: Interface) => setDeleting(i), [])
   const columns = useMemo<ColumnDef<Interface>[]>(
     () =>
-      buildColumns({
-        onDelete: handleDelete,
-        canEdit,
-        canDelete,
-        canAddCable,
-        canChangeCable,
+      buildInterfaceColumns<Interface>({
+        selection: true,
+        include: [
+          "device",
+          "name",
+          "enabled",
+          "speed",
+          "mtu",
+          "vlan",
+          "cables",
+          "tags",
+          "description",
+        ],
+        // Only this table lets you flip a cable's status inline; the per-device
+        // tables keep that control in their actions column.
+        cableControl: { canEdit: canChangeCable },
+        actions: {
+          editTo: "/interfaces/$id/edit",
+          editParams: (i) => ({ id: i.id }),
+          canEdit: () => canEdit,
+          onDelete: handleDelete,
+          canDelete: () => canDelete,
+          extra: (i) =>
+            canAddCable && !i.cable ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                asChild
+                className="h-7 px-1.5"
+                title="Connect a cable to this port"
+              >
+                <Link
+                  to="/cables/new"
+                  search={{ a_kind: "interface", a_id: i.id }}
+                >
+                  <CableIcon className="h-3.5 w-3.5" />
+                </Link>
+              </Button>
+            ) : null,
+        },
       }),
     [handleDelete, canEdit, canDelete, canAddCable, canChangeCable]
   )
@@ -141,177 +170,4 @@ function InterfacesPage() {
       />
     </ListPageShell>
   )
-}
-
-function buildColumns({
-  onDelete,
-  canEdit,
-  canDelete,
-  canAddCable,
-  canChangeCable,
-}: {
-  onDelete: (i: Interface) => void
-  canEdit: boolean
-  canDelete: boolean
-  canAddCable: boolean
-  canChangeCable: boolean
-}): ColumnDef<Interface>[] {
-  return [
-    selectionColumn<Interface>(),
-    {
-      id: "device",
-      accessorFn: (r) => r.device.name,
-      header: ({ column }) => <SortHeader column={column} label="Device" />,
-      cell: ({ row }) => (
-        <Link
-          to="/devices/$id"
-          params={{ id: row.original.device.id }}
-          className="font-mono text-xs hover:underline"
-        >
-          {row.original.device.name}
-        </Link>
-      ),
-    },
-    {
-      id: "name",
-      accessorKey: "name",
-      header: ({ column }) => <SortHeader column={column} label="Interface" />,
-      cell: ({ row }) => (
-        <div className="flex items-center gap-1.5">
-          <Link
-            to="/interfaces/$id"
-            params={{ id: row.original.id }}
-            className="font-mono font-medium hover:underline"
-          >
-            {row.original.name}
-          </Link>
-          {row.original.tunnel_terminations.map((tt) => (
-            <Link
-              key={tt.id}
-              to="/tunnels/$id"
-              params={{ id: tt.tunnel.id }}
-              title={`${tt.role_display} termination on tunnel ${tt.tunnel.name}`}
-            >
-              <Badge
-                variant="secondary"
-                className="h-4 gap-1 px-1.5 text-[10px] hover:bg-muted"
-              >
-                <Workflow className="h-2.5 w-2.5" />
-                {tt.tunnel.name}
-              </Badge>
-            </Link>
-          ))}
-        </div>
-      ),
-    },
-    {
-      id: "enabled",
-      accessorKey: "enabled",
-      header: "Enabled",
-      cell: ({ row }) =>
-        row.original.enabled ? (
-          <Badge variant="success">Enabled</Badge>
-        ) : (
-          <Badge variant="secondary">Disabled</Badge>
-        ),
-    },
-    {
-      id: "speed",
-      accessorKey: "speed",
-      header: "Speed",
-      cell: ({ row }) =>
-        row.original.speed ? (
-          <span className="text-xs">{row.original.speed}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      id: "mtu",
-      accessorKey: "mtu",
-      header: "MTU",
-      cell: ({ row }) =>
-        row.original.mtu != null ? (
-          <span className="num text-xs">{row.original.mtu}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      id: "vlan",
-      header: "VLAN",
-      cell: ({ row }) => {
-        const v = row.original.vlan
-        return v ? (
-          <span className="font-mono text-xs">
-            {v.vlan_id} · {v.name}
-          </span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )
-      },
-    },
-    {
-      id: "cables",
-      accessorKey: "cable_count",
-      header: "Cable",
-      cell: ({ row }) =>
-        row.original.cable ? (
-          <CableStatusControl
-            cableId={row.original.cable.id}
-            status={row.original.cable.status}
-            canEdit={canChangeCable}
-          />
-        ) : (
-          <span className="num text-xs text-muted-foreground">
-            {row.original.cable_count || "—"}
-          </span>
-        ),
-    },
-    tagsColumn<Interface>({
-      getTags: (r) => r.tags,
-      activeSlugs: new Set<string>(),
-      onToggle: () => {},
-    }),
-    {
-      id: "description",
-      accessorKey: "description",
-      header: "Description",
-      cell: ({ row }) =>
-        row.original.description ? (
-          <span className="text-xs">{row.original.description}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      id: "actions",
-      enableHiding: false,
-      cell: ({ row }) => (
-        <RowActions
-          editTo={canEdit ? "/interfaces/$id/edit" : undefined}
-          editParams={{ id: row.original.id }}
-          onDelete={canDelete ? () => onDelete(row.original) : undefined}
-          extra={
-            canAddCable && !row.original.cable ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                asChild
-                className="h-7 px-1.5"
-                title="Connect a cable to this port"
-              >
-                <Link
-                  to="/cables/new"
-                  search={{ a_kind: "interface", a_id: row.original.id }}
-                >
-                  <CableIcon className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
-            ) : null
-          }
-        />
-      ),
-    },
-  ]
 }

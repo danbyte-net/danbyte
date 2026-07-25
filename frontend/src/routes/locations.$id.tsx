@@ -21,7 +21,7 @@ import { QueryError } from "@/components/query-error"
 import { LocationDeleteDialog } from "@/components/location-delete-dialog"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { ObjectImages } from "@/components/object-images"
-import { DetailShell, DetailTab } from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
 import { EmbeddedRackTable } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -119,23 +119,11 @@ function Body({ location: l }: { location: Location }) {
         </>
       }
       hero={
-        <>
-          <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-            <div className="min-w-0">
-              <div className="text-2xl font-semibold tracking-tight">
-                {l.name}
-              </div>
-              <div className="mt-2">
-                <StatusBadge status={l.status} />
-              </div>
-            </div>
-          </section>
-          {l.description && (
-            <p className="shrink-0 border-b border-border px-6 py-4 text-[13px] text-muted-foreground">
-              {l.description}
-            </p>
-          )}
-        </>
+        <DetailHero
+          title={l.name}
+          badges={<StatusBadge status={l.status} />}
+          description={l.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

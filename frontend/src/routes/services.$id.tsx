@@ -20,7 +20,7 @@ import { TimeCell } from "@/components/cells/time-ago"
 import { QueryError } from "@/components/query-error"
 import { ServiceDeleteDialog } from "@/components/service-delete-dialog"
 import { ServiceFormDialog } from "@/components/services-pane"
-import { DetailShell, DetailTab } from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import {
@@ -224,28 +224,21 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
         </>
       }
       hero={
-        <>
-          {/* Overview strip — name + protocol/ports, tags, description. */}
-          <section className="flex shrink-0 flex-col gap-3 border-b border-border px-6 py-5">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <h1 className="text-2xl font-semibold tracking-tight">
-                {s.name}
-              </h1>
+        <DetailHero
+          title={s.name}
+          badges={
+            <>
               <Badge variant="secondary">{s.protocol_display}</Badge>
               {s.ports.length > 0 && (
                 <span className="font-mono text-sm text-muted-foreground">
                   {s.ports.join(", ")}
                 </span>
               )}
-            </div>
-            {s.tags.length > 0 && <TagList tags={s.tags} />}
-            {s.description && (
-              <p className="max-w-prose text-sm leading-relaxed text-foreground">
-                {s.description}
-              </p>
-            )}
-          </section>
-        </>
+            </>
+          }
+          tags={s.tags.length > 0 && <TagList tags={s.tags} />}
+          description={s.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

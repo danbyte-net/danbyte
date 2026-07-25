@@ -10,7 +10,12 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { DataTable, SortHeader } from "@/components/data-table"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import {
@@ -79,10 +84,10 @@ function TagDetailBody({ tag: t }: { tag: Tag }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <ColorBadge name={t.name} color={t.color || undefined} />
+        <DetailHero
+          title={<ColorBadge name={t.name} color={t.color || undefined} />}
+          badges={
+            <>
               <LocalityBadge owningSite={t.owning_site} />
               {canPromote && (
                 <PromoteToGlobalButton
@@ -95,9 +100,9 @@ function TagDetailBody({ tag: t }: { tag: Tag }) {
                   ]}
                 />
               )}
-            </div>
-          </div>
-          <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
+            </>
+          }
+          stats={
             <DetailStat
               label="Used by"
               value={
@@ -106,8 +111,8 @@ function TagDetailBody({ tag: t }: { tag: Tag }) {
                 </span>
               }
             />
-          </dl>
-        </section>
+          }
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

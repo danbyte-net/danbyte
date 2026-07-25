@@ -18,7 +18,12 @@ import type { KvRow } from "@/components/kv-card"
 import { LocalityBadge } from "@/components/locality-badge"
 import { QueryError } from "@/components/query-error"
 import { ManufacturerDeleteDialog } from "@/components/manufacturer-delete-dialog"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { EmbeddedDeviceTypeTable } from "@/components/embedded-device-type-table"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -83,24 +88,17 @@ function Body({ manufacturer: m }: { manufacturer: Manufacturer }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="text-2xl font-semibold tracking-tight">
-              {m.name}
-            </div>
-            {m.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {m.description}
-              </p>
-            )}
-          </div>
-          <dl className="ml-auto grid grid-cols-1 gap-y-3 text-[13px]">
+        <DetailHero
+          title={m.name}
+          description={m.description}
+          statCols={1}
+          stats={
             <DetailStat
               label="Device types"
               value={<span className="num">{m.device_type_count}</span>}
             />
-          </dl>
-        </section>
+          }
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge"
 import { TagList } from "@/components/cells/tag-list"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
-import { DetailShell, DetailTab } from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard, mono, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { ContactDeleteDialog } from "@/components/contact-delete-dialog"
@@ -139,24 +139,18 @@ function Body({ contact: c }: { contact: Contact }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-2xl font-semibold tracking-tight">
-                {c.name}
-              </span>
+        <DetailHero
+          title={c.name}
+          badges={
+            <>
               {c.title && (
                 <span className="text-sm text-muted-foreground">{c.title}</span>
               )}
               {c.group && <Badge variant="secondary">{c.group.name}</Badge>}
-            </div>
-            {c.tags.length > 0 && (
-              <div className="mt-2">
-                <TagList tags={c.tags} />
-              </div>
-            )}
-          </div>
-        </section>
+            </>
+          }
+          tags={c.tags.length > 0 && <TagList tags={c.tags} />}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

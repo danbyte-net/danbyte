@@ -20,7 +20,7 @@ import { QueryError } from "@/components/query-error"
 import { CableDeleteDialog } from "@/components/cable-delete-dialog"
 import { CableTracePath } from "@/components/cable-trace-path"
 import { TraceSection } from "@/components/topology/trace-section"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
@@ -130,7 +130,16 @@ function Body({ cable: c }: { cable: Cable }) {
         </>
       }
       hero={
-        <section className="shrink-0 border-b border-border px-6 py-5">
+        <DetailHero
+          title={
+            c.label ||
+            `${summary(c.a_terminations)} ↔ ${summary(c.b_terminations)}`
+          }
+          mono
+          badges={<StatusBadge status={c.status} />}
+          tags={c.tags.length > 0 && <TagList tags={c.tags} />}
+          description={c.description}
+        >
           {/* The flat end-to-end run when it can be drawn; the classic A ↔ B
             boxes when it can't (breakouts, loops, dangling ends). */}
           <CableTracePath
@@ -157,25 +166,7 @@ function Body({ cable: c }: { cable: Cable }) {
               </div>
             }
           />
-
-          <dl className="mt-6 flex max-w-4xl flex-wrap gap-x-10 gap-y-3 text-[13px]">
-            <DetailStat
-              label="Status"
-              value={<StatusBadge status={c.status} />}
-            />
-          </dl>
-
-          {c.tags.length > 0 && (
-            <div className="mt-4">
-              <TagList tags={c.tags} />
-            </div>
-          )}
-          {c.description && (
-            <p className="mt-4 max-w-2xl text-[13px] text-muted-foreground">
-              {c.description}
-            </p>
-          )}
-        </section>
+        </DetailHero>
       }
       tabs={[
         { value: "overview", label: "Overview" },

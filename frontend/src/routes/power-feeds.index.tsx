@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { numidColumn } from "@/components/cells/numid"
-import { RackCell } from "@/components/cells/rack-cell"
+import { rackColumn } from "@/components/cells/rack-cell"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
@@ -72,14 +72,7 @@ function PowerFeedsPage() {
           </span>
         ),
       },
-      {
-        id: "rack",
-        accessorFn: (f) => f.rack?.name ?? "",
-        header: "Rack",
-        cell: ({ row }) => (
-          <RackCell rack={row.original.rack} className="text-xs" />
-        ),
-      },
+      rackColumn<PowerFeed>({ get: (r) => r.rack, className: "text-xs" }),
       {
         id: "status",
         accessorFn: (r) => r.status?.name ?? "",

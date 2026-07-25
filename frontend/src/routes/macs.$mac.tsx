@@ -20,6 +20,7 @@ import { CopyButton } from "@/components/kv-card"
 import { TagList } from "@/components/cells/tag-list"
 import { CatalogCell } from "@/components/cells/catalog-cell"
 import { DataTable, SortHeader } from "@/components/data-table"
+import { DetailHero } from "@/components/detail-shell"
 import { QueryError } from "@/components/query-error"
 import { MacObjectDialog } from "@/components/mac-object-dialog"
 import { MacObjectDeleteDialog } from "@/components/mac-object-delete-dialog"
@@ -102,23 +103,27 @@ function Body({ data }: { data: MacDetail }) {
         </div>
       </header>
 
-      <section className="flex shrink-0 flex-wrap items-center gap-x-6 gap-y-2 border-b border-border px-6 py-5">
-        <div className="font-mono text-2xl font-semibold tracking-tight">
-          {data.mac}
-        </div>
-        {data.objects.length > 0 && (
-          <Badge variant="secondary">
-            {data.objects.length} object{data.objects.length === 1 ? "" : "s"}
-          </Badge>
-        )}
-        <Badge variant="secondary">
-          {data.interfaces.length} interface
-          {data.interfaces.length === 1 ? "" : "s"}
-        </Badge>
-        <Badge variant="secondary">
-          {data.ips.length} IP{data.ips.length === 1 ? "" : "s"}
-        </Badge>
-      </section>
+      <DetailHero
+        title={data.mac}
+        mono
+        badges={
+          <>
+            {data.objects.length > 0 && (
+              <Badge variant="secondary">
+                {data.objects.length} object
+                {data.objects.length === 1 ? "" : "s"}
+              </Badge>
+            )}
+            <Badge variant="secondary">
+              {data.interfaces.length} interface
+              {data.interfaces.length === 1 ? "" : "s"}
+            </Badge>
+            <Badge variant="secondary">
+              {data.ips.length} IP{data.ips.length === 1 ? "" : "s"}
+            </Badge>
+          </>
+        }
+      />
 
       <div className="min-h-0 flex-1 space-y-8 overflow-auto p-4 lg:p-6">
         <section className="space-y-3">

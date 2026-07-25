@@ -52,7 +52,12 @@ import { DataTable, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
 import { KvCard, mono, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { Section } from "@/components/ui/section"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -103,6 +108,7 @@ import { cableTint } from "@/components/cable-status-control"
 import { buildIpColumns } from "@/components/columns/ip-columns"
 import {
   buildInterfaceColumns,
+  DEVICE_INTERFACE_COLUMNS,
   buildInterfaceActionsColumn,
   nestInterfaces,
   type NestedInterface,
@@ -265,16 +271,17 @@ function Body({ device: d }: { device: Device }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="font-mono text-2xl font-semibold tracking-tight">
-                {d.name}
-              </div>
+        <DetailHero
+          title={d.name}
+          mono
+          badges={
+            <>
               <ViolationBadge objectId={d.id} objectType="device" prominent />
               <DeviceDriftBadge deviceId={d.id} prominent />
-            </div>
-            <div className="mt-2 flex items-center gap-2">
+            </>
+          }
+          subtitle={
+            <>
               <StatusBadge status={d.status} />
               <DeviceMonitoringBadge deviceId={d.id} />
               {d.virtual_chassis && (
@@ -289,38 +296,33 @@ function Body({ device: d }: { device: Device }) {
                   </Link>
                 </Badge>
               )}
-            </div>
-            {d.tags.length > 0 && (
-              <div className="mt-2">
-                <TagList tags={d.tags} />
-              </div>
-            )}
-            {d.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {d.description}
-              </p>
-            )}
-          </div>
-          <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px] sm:grid-cols-3">
-            <DetailStat label="Site" value={<SiteCell site={d.site} />} />
-            <DetailStat
-              label="Primary IP"
-              value={
-                d.primary_ip ? (
-                  <Link
-                    to="/ips/$id"
-                    params={{ id: d.primary_ip.id }}
-                    className="font-mono text-[13px] text-primary hover:underline"
-                  >
-                    {d.primary_ip.ip_address}
-                  </Link>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )
-              }
-            />
-          </dl>
-        </section>
+            </>
+          }
+          tags={d.tags.length > 0 && <TagList tags={d.tags} />}
+          description={d.description}
+          statCols={3}
+          stats={
+            <>
+              <DetailStat label="Site" value={<SiteCell site={d.site} />} />
+              <DetailStat
+                label="Primary IP"
+                value={
+                  d.primary_ip ? (
+                    <Link
+                      to="/ips/$id"
+                      params={{ id: d.primary_ip.id }}
+                      className="font-mono text-[13px] text-primary hover:underline"
+                    >
+                      {d.primary_ip.ip_address}
+                    </Link>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )
+                }
+              />
+            </>
+          }
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -1440,7 +1442,10 @@ function DeviceInterfacesPane({
     })
     return [
       ...(canEdit ? [selectionColumn<NestedInterface>()] : []),
-      ...buildInterfaceColumns({ driftByIface }),
+      ...buildInterfaceColumns({
+        include: DEVICE_INTERFACE_COLUMNS,
+        driftByIface,
+      }),
       ...(actions ? [actions] : []),
     ]
   }, [

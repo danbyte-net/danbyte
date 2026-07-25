@@ -13,7 +13,12 @@ import {
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
 import { PlatformGroupDeleteDialog } from "@/components/platform-group-delete-dialog"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
@@ -126,43 +131,40 @@ function Body({ group: g }: { group: PlatformGroup }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <span className="text-2xl font-semibold tracking-tight">
-              {g.name}
-            </span>
-            {g.parent && (
+        <DetailHero
+          title={g.name}
+          subtitle={
+            g.parent && (
               <Link
                 to="/platform-groups/$id"
                 params={{ id: g.parent.id }}
-                className="mt-2 block text-[13px] text-primary hover:underline"
+                className="text-primary hover:underline"
               >
                 {g.parent.name}
               </Link>
-            )}
-            {g.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {g.description}
-              </p>
-            )}
-          </div>
-          <dl className="ml-auto grid grid-cols-1 gap-y-3 text-[13px]">
-            {humanIds && g.numid != null && (
+            )
+          }
+          description={g.description}
+          statCols={1}
+          stats={
+            <>
+              {humanIds && g.numid != null && (
+                <DetailStat
+                  label="Number"
+                  value={<span className="num font-mono">#{g.numid}</span>}
+                />
+              )}
               <DetailStat
-                label="Number"
-                value={<span className="num font-mono">#{g.numid}</span>}
+                label="Platforms"
+                value={<span className="num">{g.platform_count}</span>}
               />
-            )}
-            <DetailStat
-              label="Platforms"
-              value={<span className="num">{g.platform_count}</span>}
-            />
-            <DetailStat
-              label="Subgroups"
-              value={<span className="num">{g.child_count}</span>}
-            />
-          </dl>
-        </section>
+              <DetailStat
+                label="Subgroups"
+                value={<span className="num">{g.child_count}</span>}
+              />
+            </>
+          }
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

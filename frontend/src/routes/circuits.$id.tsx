@@ -21,7 +21,12 @@ import { CircuitDeleteDialog } from "@/components/circuit-delete-dialog"
 import { CircuitTerminationDialog } from "@/components/circuit-termination-dialog"
 import { StatusBadge } from "@/components/status-badge"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -111,52 +116,45 @@ function Body({ circuit: c }: { circuit: Circuit }) {
       }
       hero={
         <>
-          <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="font-mono text-2xl font-semibold tracking-tight">
-                  {c.cid}
-                </span>
+          <DetailHero
+            title={c.cid}
+            mono
+            badges={
+              <>
                 {humanIds && c.numid != null && (
                   <span className="num font-mono text-sm text-muted-foreground">
                     #{c.numid}
                   </span>
                 )}
                 <StatusBadge status={c.status} />
-              </div>
-              {c.tags.length > 0 && (
-                <div className="mt-2">
-                  <TagList tags={c.tags} />
-                </div>
-              )}
-              {c.description && (
-                <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                  {c.description}
-                </p>
-              )}
-            </div>
-            <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
-              <DetailStat
-                label="Provider"
-                value={
-                  c.provider ? (
-                    <Link
-                      to="/providers"
-                      className="text-primary hover:underline"
-                    >
-                      {c.provider.name}
-                    </Link>
-                  ) : (
-                    dash
-                  )
-                }
-              />
-              <DetailStat
-                label="Commit rate"
-                value={fmtKbps(c.commit_rate_kbps)}
-              />
-            </dl>
-          </section>
+              </>
+            }
+            tags={c.tags.length > 0 && <TagList tags={c.tags} />}
+            description={c.description}
+            stats={
+              <>
+                <DetailStat
+                  label="Provider"
+                  value={
+                    c.provider ? (
+                      <Link
+                        to="/providers"
+                        className="text-primary hover:underline"
+                      >
+                        {c.provider.name}
+                      </Link>
+                    ) : (
+                      dash
+                    )
+                  }
+                />
+                <DetailStat
+                  label="Commit rate"
+                  value={fmtKbps(c.commit_rate_kbps)}
+                />
+              </>
+            }
+          />
 
           <CustomFieldValues model="circuit" values={c.custom_fields} />
         </>

@@ -67,6 +67,8 @@ export interface DeviceColumnOpts<T> {
   header?: string
   get: (row: T) => DeviceLike | null | undefined
   linked?: boolean
+  /** Class on the cell (e.g. `text-xs` where the table runs small). */
+  className?: string
 }
 
 export function deviceColumn<T>(
@@ -79,7 +81,11 @@ export function deviceColumn<T>(
     accessorFn: (r) => opts.get(r)?.name ?? "",
     header: ({ column }) => <SortHeader column={column} label={header} />,
     cell: ({ row }) => (
-      <DeviceCell device={opts.get(row.original)} linked={opts.linked} />
+      <DeviceCell
+        device={opts.get(row.original)}
+        linked={opts.linked}
+        className={opts.className}
+      />
     ),
     meta: {
       facet: {

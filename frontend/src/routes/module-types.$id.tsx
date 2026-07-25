@@ -34,7 +34,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
-import { DetailShell, DetailTab } from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { DeviceTypeFaceplatePane } from "@/components/device-type-faceplate-pane"
@@ -123,16 +123,7 @@ function Body({ moduleType: m }: { moduleType: ModuleType }) {
           )}
         </>
       }
-      hero={
-        <section className="shrink-0 border-b border-border px-6 py-5">
-          <div className="text-3xl font-semibold tracking-tight">{m.name}</div>
-          {m.description && (
-            <p className="mt-2 max-w-2xl text-[13px] text-muted-foreground">
-              {m.description}
-            </p>
-          )}
-        </section>
-      }
+      hero={<DetailHero title={m.name} description={m.description} />}
       tabs={[
         {
           value: "overview",

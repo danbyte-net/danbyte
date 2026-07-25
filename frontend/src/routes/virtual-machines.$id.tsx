@@ -8,7 +8,12 @@ import { api, type VirtualMachine } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { CustomFieldValues } from "@/components/custom-field-display"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { QueryError } from "@/components/query-error"
 import { VmDeleteDialog } from "@/components/vm-delete-dialog"
 import { StatusBadge } from "@/components/status-badge"
@@ -95,56 +100,45 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3">
-              <div className="text-3xl font-semibold tracking-tight">
-                {vm.name}
-              </div>
-              <StatusBadge status={vm.status} />
-            </div>
-            {vm.tags.length > 0 && (
-              <div className="mt-2">
-                <TagList tags={vm.tags} />
-              </div>
-            )}
-            {vm.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {vm.description}
-              </p>
-            )}
-          </div>
-          <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px] sm:grid-cols-3">
-            <DetailStat
-              label="Cluster"
-              value={
-                <Link
-                  to="/clusters/$id"
-                  params={{ id: vm.cluster.id }}
-                  className="text-xs text-primary hover:underline"
-                >
-                  {vm.cluster.name}
-                </Link>
-              }
-            />
-            <DetailStat
-              label="Primary IP"
-              value={
-                vm.primary_ip ? (
+        <DetailHero
+          title={vm.name}
+          badges={<StatusBadge status={vm.status} />}
+          tags={vm.tags.length > 0 && <TagList tags={vm.tags} />}
+          description={vm.description}
+          statCols={3}
+          stats={
+            <>
+              <DetailStat
+                label="Cluster"
+                value={
                   <Link
-                    to="/ips/$id"
-                    params={{ id: vm.primary_ip.id }}
-                    className="font-mono text-[13px] text-primary hover:underline"
+                    to="/clusters/$id"
+                    params={{ id: vm.cluster.id }}
+                    className="text-xs text-primary hover:underline"
                   >
-                    {vm.primary_ip.ip_address}
+                    {vm.cluster.name}
                   </Link>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )
-              }
-            />
-          </dl>
-        </section>
+                }
+              />
+              <DetailStat
+                label="Primary IP"
+                value={
+                  vm.primary_ip ? (
+                    <Link
+                      to="/ips/$id"
+                      params={{ id: vm.primary_ip.id }}
+                      className="font-mono text-[13px] text-primary hover:underline"
+                    >
+                      {vm.primary_ip.ip_address}
+                    </Link>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )
+                }
+              />
+            </>
+          }
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

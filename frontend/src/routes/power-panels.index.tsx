@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { numidColumn } from "@/components/cells/numid"
-import { SiteCell } from "@/components/cells/site-cell"
+import { siteColumn } from "@/components/cells/site-cell"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
@@ -54,24 +54,7 @@ function PowerPanelsPage() {
           </Link>
         ),
       },
-      {
-        id: "site",
-        accessorFn: (p) => p.site?.name ?? "",
-        header: "Site",
-        cell: ({ row }) => (
-          <SiteCell site={row.original.site} className="text-xs" />
-        ),
-        meta: {
-          facet: {
-            kind: "enum",
-            label: "Site",
-            get: (r: PowerPanel) => r.site?.id ?? "__none__",
-            formatValue: (_v, sample) => ({
-              label: sample.site?.name ?? "No site",
-            }),
-          },
-        },
-      },
+      siteColumn<PowerPanel>({ get: (r) => r.site, className: "text-xs" }),
       {
         id: "feeds",
         accessorKey: "feed_count",
