@@ -2056,7 +2056,9 @@ function TileInspector({
         </Button>
       </div>
 
-      {tile.linked?.kind === "rack" && (
+      {/* Facing is the TILE's own property — build-in-advance tiles need it
+          set before any rack is linked, so only zones (no front) skip it. */}
+      {!tileIsZone(tile) && (
         <Field label="Front faces" hint="Marked on the tile's front edge">
           <div className="grid grid-cols-4 gap-1">
             {(
@@ -2739,6 +2741,11 @@ function StructureRail({
             dive as deep as its plenum, and the 3D room shows the void.
           </p>
         )}
+        {areas.length > 0 && (
+          <p className="px-1.5 pb-1 text-[10px] leading-snug text-muted-foreground/80">
+            Structure edits save immediately — the Save button governs tiles.
+          </p>
+        )}
         {areas.map((a) => (
           <button
             key={a.id}
@@ -2789,6 +2796,10 @@ function AreaInspector({
           value={label}
           onChange={(e) => setLabel(e.target.value)}
           onBlur={() => label !== area.label && onPatch({ label })}
+          onKeyDown={(e) => {
+            // Enter = commit, the key everyone presses in a text field.
+            if (e.key === "Enter") e.currentTarget.blur()
+          }}
           placeholder="DC pad"
           className="h-8"
         />
@@ -2805,6 +2816,9 @@ function AreaInspector({
             const v = Number(plenum)
             if (Number.isFinite(v) && v !== area.plenum_mm)
               onPatch({ plenum_mm: v })
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur()
           }}
           className="h-8"
         />
