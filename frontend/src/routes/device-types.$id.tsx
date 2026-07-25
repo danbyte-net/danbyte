@@ -100,6 +100,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
   const nav = useNavigate()
   const canPromote =
     !!d.owning_site && editableSites === "all" && canDo("devicetype", "change")
+  const canAddDevice = canDo("device", "add")
   const [deleting, setDeleting] = useState<DeviceType | null>(null)
   const goBack = useCallback(() => nav({ to: "/device-types" }), [nav])
 
@@ -250,10 +251,21 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
         <DeviceSensorsCard deviceTypeId={d.id} typeScoped />
       </DetailTab>
       <DetailTab value="devices">
-        <EmbeddedDeviceTable
-          filter={{ device_type: d.id }}
-          emptyText="No devices of this type yet."
-        />
+        <div className="grid gap-3">
+          {canAddDevice && (
+            <div className="flex justify-end">
+              <Button size="sm" asChild>
+                <Link to="/devices/new" search={{ device_type: d.id }}>
+                  Add device
+                </Link>
+              </Button>
+            </div>
+          )}
+          <EmbeddedDeviceTable
+            filter={{ device_type: d.id }}
+            emptyText="No devices of this type yet."
+          />
+        </div>
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.devicetype" objectId={d.id} />

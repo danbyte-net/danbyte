@@ -56,7 +56,13 @@ export interface DeviceFormProps {
   device?: Device
   /** Pre-fill rack placement (create only) — e.g. "+ Add here" from an empty
    * rack unit arrives with rack/position/face already chosen. */
-  initial?: { rackId?: string; position?: number; face?: "" | "front" | "rear" }
+  initial?: {
+    rackId?: string
+    position?: number
+    face?: "" | "front" | "rear"
+    /** Pre-pick the hardware model — "Add device" from a device type's page. */
+    deviceTypeId?: string
+  }
   /** Clone seed (create only): the source's carried-over fields from
    * GET /api/devices/<id>/clone/. Identity/placement (name, serial, rack) are
    * absent by design, so they start blank; type/role/site/etc. are pre-filled.
@@ -83,7 +89,7 @@ export function DeviceForm({
 
   const [name, setName] = useState(device?.name ?? "")
   const [deviceTypeId, setDeviceTypeId] = useState<string | null>(
-    seed?.device_type?.id ?? null
+    seed?.device_type?.id ?? initial?.deviceTypeId ?? null
   )
   const [siteId, setSiteId] = useState<string | null>(seed?.site?.id ?? null)
   const [roleId, setRoleId] = useState<string | null>(seed?.role?.id ?? null)
