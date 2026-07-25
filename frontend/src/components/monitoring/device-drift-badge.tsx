@@ -1,3 +1,5 @@
+import { useMemo } from "react"
+import { Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { GitCompareArrows } from "lucide-react"
 
@@ -37,6 +39,110 @@ export function useDeviceDrift(deviceId: string): SnmpDriftItem[] {
     staleTime: 60_000,
   })
   return q.data?.drift ?? []
+}
+
+/** One row of the tenant-wide drift summary (`GET /api/monitoring/snmp-drift/`). */
+export interface DeviceDriftRow {
+  device: string
+  device_name: string
+  status: string
+  reachable: boolean
+  drift_count: number
+  by_kind: Record<string, number>
+}
+
+/**
+ * Fleet-wide drift, keyed by device id — the drift analogue of
+ * `useViolationMap()`. ONE request for a whole table: the endpoint pre-groups
+ * SNMP state and interfaces per device specifically so a fleet view doesn't
+ * issue an N+1, which is what makes a per-row badge affordable at all.
+ */
+export function useDriftMap(): Map<string, DeviceDriftRow> {
+  const q = useQuery({
+    queryKey: ["snmp-drift-fleet"],
+    queryFn: () =>
+      api<{ results?: DeviceDriftRow[] } | DeviceDriftRow[]>(
+        "/api/monitoring/snmp-drift/"
+      ),
+    staleTime: 2 * 60_000,
+    refetchOnWindowFocus: false,
+  })
+  return useMemo(() => {
+    const raw = q.data
+    const rows = Array.isArray(raw) ? raw : (raw?.results ?? [])
+    const m = new Map<string, DeviceDriftRow>()
+    for (const r of rows) if (r.drift_count > 0) m.set(r.device, r)
+    return m
+  }, [q.data])
+}
+
+/** Human summary of a fleet row's `by_kind`, for the marker's tooltip. */
+const KIND_LABEL: Record<string, string> = {
+  device_field: "device field",
+  interface_missing: "interface not in Danbyte",
+  interface_mismatch: "interface mismatch",
+  interface_stale: "not reported by SNMP",
+  part_status: "hardware status",
+  part_missing: "unknown part",
+}
+
+/**
+ * The quiet row marker for a table — the drift twin of `ViolationBadge`'s bare
+ * triangle, and like it, renders nothing when the device is in sync so it can
+ * sit next to any name without disturbing clean rows. Pass the shared map from
+ * the table so 200 rows cost one request.
+ */
+export function DeviceDriftMarker({
+  deviceId,
+  map,
+  className,
+}: {
+  deviceId: string
+  map: Map<string, DeviceDriftRow>
+  className?: string
+}) {
+  const row = map.get(deviceId)
+  if (!row) return null
+  const kinds = Object.entries(row.by_kind).filter(([, n]) => n > 0)
+  const n = row.drift_count
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Link
+          to="/devices/$id"
+          params={{ id: deviceId }}
+          search={{ tab: "snmp" }}
+          aria-label={`${n} SNMP difference${n === 1 ? "" : "s"}`}
+          onClick={(e) => e.stopPropagation()}
+          className={cn(
+            "inline-flex shrink-0 items-center align-middle text-amber-500 dark:text-amber-400",
+            className
+          )}
+        >
+          <GitCompareArrows className="h-3.5 w-3.5" />
+        </Link>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        variant="panel"
+        className="flex-col items-start gap-0.5"
+      >
+        <span className="font-medium">
+          {n} SNMP {n === 1 ? "difference" : "differences"}
+        </span>
+        <span className="text-[11px] text-muted-foreground">
+          Observed by SNMP, differs from the source of truth.
+        </span>
+        <ul className="mt-0.5 space-y-0.5">
+          {kinds.map(([k, count]) => (
+            <li key={k} className="text-[11px]">
+              {count} × {KIND_LABEL[k] ?? k}
+            </li>
+          ))}
+        </ul>
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 /** True when any drift concerns the device's components (ports, IPs, parts). */

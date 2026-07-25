@@ -6,6 +6,10 @@ import { SortHeader, selectionColumn } from "@/components/data-table"
 import { StatusBadge } from "@/components/status-badge"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
+import {
+  DeviceDriftMarker,
+  type DeviceDriftRow,
+} from "@/components/monitoring/device-drift-badge"
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -78,6 +82,9 @@ export interface DeviceColumnOpts<T extends Device = Device> {
    * avoid one lookup per row; `true` lets each badge subscribe itself (the
    * shared query is cached, so a table of rows still costs one fetch). */
   violations?: boolean | Map<string, ComplianceViolation[]>
+  /** Fleet drift map from `useDriftMap()` — one request per table, shared by
+   * every row. Omit on views that are already about drift. */
+  drift?: Map<string, DeviceDriftRow>
   /** Monitoring status per device id — enables the "Monitoring" column. */
   monitoring?: Record<string, BulkStatusEntry>
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
@@ -158,6 +165,12 @@ export function buildDeviceColumns<T extends Device = Device>(
               objectType="device"
               map={opts.violations === true ? undefined : opts.violations}
             />
+          )}
+          {/* Drift beside compliance: a rule you wrote failing and the device
+              reporting something else are different problems, and the list was
+              only ever showing the first. Distinct glyph, distinct tooltip. */}
+          {opts.drift && (
+            <DeviceDriftMarker deviceId={row.original.id} map={opts.drift} />
           )}
         </span>
       ),
