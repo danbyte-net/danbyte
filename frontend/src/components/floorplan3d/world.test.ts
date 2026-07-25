@@ -4,6 +4,7 @@ import {
   APPLIANCE_D_FRAC,
   APPLIANCE_H_U,
   APPLIANCE_W_FRAC,
+  DOOR_DEFAULT_MM,
   RACK_BASE_M,
   airflowGlyphPlacements,
   cellToWorld,
@@ -12,6 +13,8 @@ import {
   rackFootprintM,
   trayElevationM,
   underfloorMM,
+  wallDoorSpans,
+  wallSegmentsWithOpenings,
   type SceneRack,
   type SceneTray,
   type ScenePayload,
@@ -301,5 +304,148 @@ describe("underfloorMM + area-aware trayElevationM", () => {
         areas
       )
     ).toBeCloseTo(-0.45)
+  })
+})
+
+describe("wallSegmentsWithOpenings — the geometry that shapes every room", () => {
+  const H = 3 // wall height (m) for these cases
+  const run: [number, number][] = [
+    [0, 0],
+    [10, 0],
+  ]
+
+  it("no openings → one full-height box per segment", () => {
+    const L: [number, number][] = [
+      [0, 0],
+      [10, 0],
+      [10, 6],
+    ]
+    const boxes = wallSegmentsWithOpenings(L, [], H)
+    expect(boxes).toHaveLength(2)
+    for (const b of boxes) {
+      expect(b.y0).toBe(0)
+      expect(b.y1).toBe(H)
+    }
+    expect([boxes[1].x0, boxes[1].z0, boxes[1].x1, boxes[1].z1]).toEqual([
+      10, 0, 10, 6,
+    ])
+  })
+
+  it("a mid-segment door yields two solid spans + a lintel over the gap", () => {
+    const boxes = wallSegmentsWithOpenings(
+      run,
+      [{ seg: 0, from: 4, to: 5.5, height_mm: null }],
+      H
+    )
+    expect(boxes).toHaveLength(3)
+    const [lead, lintel, tail] = boxes
+    expect([lead.x0, lead.x1, lead.y0, lead.y1]).toEqual([0, 4, 0, H])
+    // Default door: lintel from 2.1 m up to the wall top, spanning the gap.
+    expect([lintel.x0, lintel.x1]).toEqual([4, 5.5])
+    expect(lintel.y0).toBeCloseTo(DOOR_DEFAULT_MM / 1000)
+    expect(lintel.y1).toBe(H)
+    expect([tail.x0, tail.x1]).toEqual([5.5, 10])
+  })
+
+  it("an opening at the very start produces no zero-length leading span", () => {
+    const boxes = wallSegmentsWithOpenings(
+      run,
+      [{ seg: 0, from: 0, to: 1, height_mm: null }],
+      H
+    )
+    // Lintel + the rest of the run — nothing degenerate before the door.
+    expect(boxes).toHaveLength(2)
+    expect(boxes[0].y0).toBeCloseTo(2.1)
+    expect([boxes[1].x0, boxes[1].x1, boxes[1].y0]).toEqual([1, 10, 0])
+  })
+
+  it("a full-height opening drops the lintel entirely", () => {
+    const boxes = wallSegmentsWithOpenings(
+      run,
+      [{ seg: 0, from: 4, to: 6, height_mm: 3000 }],
+      H
+    )
+    expect(boxes).toHaveLength(2)
+    for (const b of boxes) expect(b.y0).toBe(0)
+  })
+
+  it("two openings on one segment slice it into alternating spans", () => {
+    const boxes = wallSegmentsWithOpenings(
+      run,
+      [
+        { seg: 0, from: 6, to: 7, height_mm: null },
+        { seg: 0, from: 2, to: 3, height_mm: 1000 },
+      ],
+      H
+    )
+    // 0–2 solid, lintel 2–3, 3–6 solid, lintel 6–7, 7–10 solid (sorted).
+    const solids = boxes.filter((b) => b.y0 === 0)
+    const lintels = boxes.filter((b) => b.y0 > 0)
+    expect(solids.map((b) => [b.x0, b.x1])).toEqual([
+      [0, 2],
+      [3, 6],
+      [7, 10],
+    ])
+    expect(lintels).toHaveLength(2)
+  })
+
+  it("an opening only affects its own segment", () => {
+    const L: [number, number][] = [
+      [0, 0],
+      [5, 0],
+      [5, 5],
+    ]
+    const boxes = wallSegmentsWithOpenings(
+      L,
+      [{ seg: 1, from: 1, to: 2, height_mm: null }],
+      H
+    )
+    // Segment 0 stays one solid box; segment 1 splits around its door.
+    const seg0 = boxes.filter((b) => b.z0 === 0 && b.z1 === 0)
+    expect(seg0).toHaveLength(1)
+    expect(seg0[0].y0).toBe(0)
+  })
+
+  it("out-of-range spans are clamped and inverted ones dropped", () => {
+    const boxes = wallSegmentsWithOpenings(
+      run,
+      [
+        { seg: 0, from: 8, to: 99, height_mm: null }, // clamps to 10
+        { seg: 0, from: 5, to: 4, height_mm: null }, // inverted → ignored
+      ],
+      H
+    )
+    const solids = boxes.filter((b) => b.y0 === 0)
+    expect(solids.map((b) => [b.x0, b.x1])).toEqual([[0, 8]])
+  })
+})
+
+describe("wallDoorSpans — 2D gaps from the same clamp rules", () => {
+  it("interpolates the door span along its segment", () => {
+    const spans = wallDoorSpans(
+      [
+        [0, 0],
+        [0, 8],
+      ],
+      [{ seg: 0, from: 2, to: 3, height_mm: null }]
+    )
+    expect(spans).toHaveLength(1)
+    expect([spans[0].x0, spans[0].z0, spans[0].x1, spans[0].z1]).toEqual([
+      0, 2, 0, 3,
+    ])
+  })
+
+  it("drops invalid spans exactly like the 3D span builder", () => {
+    const spans = wallDoorSpans(
+      [
+        [0, 0],
+        [4, 0],
+      ],
+      [
+        { seg: 0, from: 3, to: 2, height_mm: null }, // inverted
+        { seg: 7, from: 0, to: 1, height_mm: null }, // no such segment
+      ]
+    )
+    expect(spans).toEqual([])
   })
 })

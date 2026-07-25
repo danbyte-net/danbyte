@@ -242,6 +242,39 @@ The plenum is data, not decoration:
 Areas are drawn with the same drag-a-rectangle gesture as tiles; select one
 in the left rail to edit its label, plenum depth and color, or delete it.
 
+## Walls & doors (Structure mode)
+
+The Structure tab also draws the **room shell**: walls as polylines on the
+same half-cell lattice trays snap to, so a wall can run along tile
+boundaries or straight down a tile's centerline. Click **Draw wall**, click
+corners (drawing magnetically snaps to existing walls, so rooms chain
+cleanly), and double-click or press ++enter++ to finish — the wall is saved
+immediately and its inspector opens.
+
+A selected wall edits like the rest of the structure kit:
+
+- **Label, color** — cosmetic; the default wall follows the theme.
+- **Height (mm)** — blank means full height, i.e. the plan's ceiling.
+  A half wall is just a wall with a height.
+- **Doors** — arm **Add door**, then click the wall where the opening goes.
+  Each door is a 900 mm gap by default (2100 mm tall); width and height are
+  editable per door in the inspector, and a blank door height renders the
+  standard 2100 mm. Doors live *on* the wall (spans of a segment), so a
+  wall and its openings always move — and save — together.
+- **Move** — drag a wall to translate the whole run (0.5-cell snap);
+  delete and redraw to reshape it.
+
+The 2D canvas draws walls in **every mode** — solid spans with a dashed
+threshold and jamb ticks across each door gap — because the shell is
+context whether you're placing tiles or pulling cable. The 3D room raises
+the same geometry: solid runs, true door gaps, and a lintel over each
+opening (none when a door reaches the wall top). The **Walls** toggle
+(View menu, 3D) hides the shell when it blocks the view — it defaults on.
+
+Walls are documentation geometry in this release: **walls do not affect
+routing in v1**. A cable's route and length ignore them, exactly as they
+did before walls existed.
+
 ## Cable trays (Cables mode)
 
 The **Cables** tab (top-right toggle, next to Layout) turns the plan into a

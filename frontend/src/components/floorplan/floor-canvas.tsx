@@ -6,7 +6,15 @@ import type {
   FloorPlanLiveState,
   FloorPlanTile,
   FloorPlanTray,
+  FloorPlanWall,
 } from "@/lib/api"
+// Pure geometry shared with the 3D room (world.ts imports no three.js) — the
+// same span math shapes both views, so a door gap can't sit in two places.
+import {
+  WALL_THICKNESS_M,
+  wallDoorSpans,
+  wallSegmentsWithOpenings,
+} from "@/components/floorplan3d/world"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -186,6 +194,18 @@ export interface FloorCanvasProps {
     id: string,
     rect: { x: number; y: number; width: number; height: number }
   ) => void
+  // ── Walls (Structure mode) ─────────────────────────────────────────────
+  /** Wall polylines with door openings — drawn in ALL modes; interactive
+   * (select / move / place doors) only in Structure mode. */
+  walls?: FloorPlanWall[]
+  selectedWallId?: string | null
+  onSelectWall?: (id: string | null) => void
+  /** Structure mode: a whole-wall drag ended — persist the translated points. */
+  onMoveWall?: (id: string, points: [number, number][]) => void
+  /** "Add door" is armed: the next click on a wall segment drops an opening. */
+  doorArmed?: boolean
+  /** Door placement: segment `seg` of wall `id` was clicked, `at` cells along it. */
+  onPlaceDoor?: (id: string, seg: number, at: number) => void
   // ── Cable trays ────────────────────────────────────────────────────────
   /** "layout" edits tiles; "cable" draws/selects trays. */
   mode?: "layout" | "cable" | "structure"
@@ -237,6 +257,13 @@ type DragState =
       moved: boolean
       inserted?: boolean
     }
+  | {
+      mode: "wall-move"
+      id: string
+      grab: [number, number]
+      orig: [number, number][]
+      moved: boolean
+    }
 
 /**
  * The rendering core: one `<svg>` with a pan/zoom `<g>`, a cell `<pattern>`
@@ -256,6 +283,12 @@ export function FloorCanvas({
   selectedAreaId,
   onSelectArea,
   onAreaRectChange,
+  walls = [],
+  selectedWallId = null,
+  onSelectWall,
+  onMoveWall,
+  doorArmed = false,
+  onPlaceDoor,
   onSelect,
   multiSelectedIds,
   onToggleSelect,
@@ -305,6 +338,11 @@ export function FloorCanvas({
     id: string
     points: [number, number][]
   } | null>(null)
+  // Live points of the wall being moved (whole-run translate).
+  const [wallDraft, setWallDraft] = useState<{
+    id: string
+    points: [number, number][]
+  } | null>(null)
   // Right-click menu: screen-relative position + what's under the cursor.
   const [ctxMenu, setCtxMenu] = useState<{
     x: number
@@ -318,7 +356,8 @@ export function FloorCanvas({
   const editing = trayEditMode
   const gw = plan.grid_width * CELL
   const gh = plan.grid_height * CELL
-  const drawing = mode === "cable" && !!drawPoints
+  // Cable mode draws trays; Structure mode draws walls — same polyline rig.
+  const drawing = (mode === "cable" || mode === "structure") && !!drawPoints
 
   // Fit the grid on first mount (and when the plan changes identity).
   useEffect(() => {
@@ -385,10 +424,13 @@ export function FloorCanvas({
     const round05 = (v: number, max: number) =>
       Math.max(0, Math.min(max, Math.round(v * 2) / 2))
 
-    // Magnetic snap: nearest tray vertex or on-segment point within 0.5 cell.
+    // Magnetic snap: nearest vertex or on-segment point within 0.5 cell.
+    // Cable mode chains into trays; Structure mode chains walls into walls.
+    const snapSources: { points: [number, number][] }[] =
+      mode === "structure" ? walls : trays
     let best: [number, number] | null = null
     let bestD = 0.5
-    for (const tray of trays) {
+    for (const tray of snapSources) {
       const pts = tray.points
       for (const v of pts) {
         const d = Math.hypot(cx - v[0], cy - v[1])
@@ -447,6 +489,11 @@ export function FloorCanvas({
       onSelectCable?.(null)
       return
     }
+    // Structure mode with a wall draw in progress: clicks drop vertices.
+    if (mode === "structure" && drawing) {
+      onAddDrawPoint?.(toLattice(e))
+      return
+    }
     e.currentTarget.setPointerCapture(e.pointerId)
     if (editable && !armed && e.shiftKey && onMarquee) {
       // Shift-drag = selection sweep. Plain drag stays panning, so the
@@ -461,6 +508,7 @@ export function FloorCanvas({
       startPan(e)
       onSelect?.(null)
       onSelectArea?.(null)
+      onSelectWall?.(null)
       onSelectCable?.(null)
     }
   }
@@ -582,6 +630,43 @@ export function FloorCanvas({
     )
   }
 
+  // Grab a wall body → select it; in Structure mode, arm a whole-run move.
+  const handleWallDown = (wall: FloorPlanWall, e: React.PointerEvent) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    onSelectWall?.(wall.id)
+    if (!editable) return
+    drag.current = {
+      mode: "wall-move",
+      id: wall.id,
+      grab: toCellRaw(e),
+      orig: wall.points.map((p) => [p[0], p[1]]),
+      moved: false,
+    }
+  }
+
+  // Armed door placement: project the click onto the segment → cells along it.
+  const handleWallSegmentClick = (
+    wall: FloorPlanWall,
+    seg: number,
+    e: React.PointerEvent
+  ) => {
+    if (!doorArmed || !onPlaceDoor) return
+    e.stopPropagation()
+    const [cx, cy] = toCellRaw(e)
+    const [ax, ay] = wall.points[seg]
+    const [bx, by] = wall.points[seg + 1]
+    const dx = bx - ax
+    const dy = by - ay
+    const len = Math.hypot(dx, dy)
+    if (len < 1e-9) return
+    const at = Math.max(
+      0,
+      Math.min(len, ((cx - ax) * dx + (cy - ay) * dy) / len)
+    )
+    onPlaceDoor(wall.id, seg, at)
+  }
+
   const handleMove = (e: React.PointerEvent<SVGSVGElement>) => {
     // Tray drawing: trail a dashed preview from the last vertex to the cursor.
     if (drawPoints) {
@@ -644,6 +729,18 @@ export function FloorCanvas({
       pts[d.index] = toLattice(e)
       d.moved = true
       setTrayDraft({ id: d.id, points: pts })
+    } else if (d.mode === "wall-move") {
+      // Translate every vertex by the cursor delta, snapped to the 0.5 grid.
+      const [rx, ry] = toCellRaw(e)
+      const dxc = Math.round((rx - d.grab[0]) * 2) / 2
+      const dyc = Math.round((ry - d.grab[1]) * 2) / 2
+      const clamp = (v: number, max: number) => Math.max(0, Math.min(max, v))
+      const pts = d.orig.map(([x, y]): [number, number] => [
+        clamp(x + dxc, plan.grid_width),
+        clamp(y + dyc, plan.grid_height),
+      ])
+      if (dxc !== 0 || dyc !== 0) d.moved = true
+      setWallDraft({ id: d.id, points: pts })
     } else if (d.mode === "area-move") {
       const a = raisedFloors?.find((x) => x.id === d.id)
       if (a) {
@@ -719,6 +816,10 @@ export function FloorCanvas({
       if (changed && trayDraft?.id === d.id)
         onMoveTray?.(d.id, trayDraft.points)
       setTrayDraft(null)
+    } else if (d.mode === "wall-move") {
+      if (d.moved && wallDraft?.id === d.id)
+        onMoveWall?.(d.id, wallDraft.points)
+      setWallDraft(null)
     }
   }
 
@@ -985,6 +1086,25 @@ export function FloorCanvas({
               )
               .map((tl) => <FovCone key={`fov-${tl.id}`} tile={tl} />)}
 
+          {/* Walls — the structural print, in every mode: solid spans broken
+              by door gaps with threshold ticks. Interactive (select / move /
+              place doors) only in Structure mode. */}
+          {walls.map((w) => (
+            <WallShape
+              key={w.id}
+              wall={
+                wallDraft?.id === w.id ? { ...w, points: wallDraft.points } : w
+              }
+              cellMM={plan.cell_mm}
+              selected={w.id === selectedWallId}
+              interactive={mode === "structure" && !drawing}
+              editable={editable && mode === "structure" && !drawing}
+              doorArmed={doorArmed}
+              onPointerDown={(e) => handleWallDown(w, e)}
+              onSegmentClick={(seg, e) => handleWallSegmentClick(w, seg, e)}
+            />
+          ))}
+
           {/* Cable trays — drawn above tiles so the run reads on a builder's
               print. Clickable only in cable mode so layout editing is undisturbed. */}
           {showTrays &&
@@ -1187,6 +1307,174 @@ export function FloorCanvas({
         </DropdownMenu>
       )}
     </div>
+  )
+}
+
+/**
+ * A wall polyline: solid spans broken by door gaps (dashed threshold + jamb
+ * ticks across each gap) — the plan-view read of exactly what the 3D wall
+ * builds, via the same shared span math. Interactive only in Structure mode:
+ * click selects, drag translates the whole run, and with "Add door" armed a
+ * click on a segment drops an opening there. Only the invisible fat
+ * per-segment hit lines take pointer events, so the visuals can't steal or
+ * double-fire a grab.
+ */
+function WallShape({
+  wall,
+  cellMM,
+  selected,
+  interactive,
+  editable,
+  doorArmed,
+  onPointerDown,
+  onSegmentClick,
+}: {
+  wall: FloorPlanWall
+  cellMM: number
+  selected: boolean
+  interactive: boolean
+  editable: boolean
+  doorArmed: boolean
+  onPointerDown: (e: React.PointerEvent) => void
+  onSegmentClick: (seg: number, e: React.PointerEvent) => void
+}) {
+  if (wall.points.length < 2) return null
+  // Walls without a picked color follow the theme (the svg sets
+  // text-foreground), so structure reads on light and dark alike.
+  const color = wall.color || "currentColor"
+  // True thickness on this grid (0.1 m), floored so it always reads.
+  const px = Math.max(3.5, (WALL_THICKNESS_M * 1000 * CELL) / cellMM)
+  const openings = wall.openings
+  // Height 1 is a placeholder: plan view only keeps the floor-touching spans.
+  const solids = wallSegmentsWithOpenings(wall.points, openings, 1).filter(
+    (b) => b.y0 === 0
+  )
+  const doors = wallDoorSpans(wall.points, openings)
+  const outline = wall.points
+    .map(([x, y]) => `${x * CELL},${y * CELL}`)
+    .join(" ")
+  return (
+    <g
+      pointerEvents={interactive ? "auto" : "none"}
+      style={
+        interactive
+          ? {
+              cursor: doorArmed ? "crosshair" : editable ? "move" : "pointer",
+            }
+          : undefined
+      }
+    >
+      <title>
+        {wall.label || "Wall"}
+        {wall.height_mm ? ` · ${wall.height_mm} mm` : ""}
+        {doors.length
+          ? ` · ${doors.length} door${doors.length === 1 ? "" : "s"}`
+          : ""}
+      </title>
+      {selected && (
+        <polyline
+          points={outline}
+          fill="none"
+          stroke="#0ea5e9"
+          strokeOpacity={0.45}
+          strokeWidth={px + 5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          pointerEvents="none"
+        />
+      )}
+      {solids.map((b, i) => (
+        <line
+          key={`s${i}`}
+          x1={b.x0 * CELL}
+          y1={b.z0 * CELL}
+          x2={b.x1 * CELL}
+          y2={b.z1 * CELL}
+          stroke={color}
+          strokeOpacity={0.85}
+          strokeWidth={px}
+          strokeLinecap="square"
+          pointerEvents="none"
+        />
+      ))}
+      {doors.map((dv, i) => {
+        const x0 = dv.x0 * CELL
+        const y0 = dv.z0 * CELL
+        const x1 = dv.x1 * CELL
+        const y1 = dv.z1 * CELL
+        const len = Math.hypot(x1 - x0, y1 - y0) || 1
+        const nx = -(y1 - y0) / len
+        const ny = (x1 - x0) / len
+        const h = px / 2 + 2
+        return (
+          <g key={`d${i}`} pointerEvents="none">
+            {/* Threshold across the gap + a jamb tick at each end. */}
+            <line
+              x1={x0}
+              y1={y0}
+              x2={x1}
+              y2={y1}
+              stroke={color}
+              strokeOpacity={0.5}
+              strokeWidth={1.5}
+              strokeDasharray="3 3"
+            />
+            <line
+              x1={x0 - nx * h}
+              y1={y0 - ny * h}
+              x2={x0 + nx * h}
+              y2={y0 + ny * h}
+              stroke={color}
+              strokeOpacity={0.85}
+              strokeWidth={1.5}
+            />
+            <line
+              x1={x1 - nx * h}
+              y1={y1 - ny * h}
+              x2={x1 + nx * h}
+              y2={y1 + ny * h}
+              stroke={color}
+              strokeOpacity={0.85}
+              strokeWidth={1.5}
+            />
+          </g>
+        )
+      })}
+      {interactive &&
+        wall.points.slice(0, -1).map(([x, y], i) => {
+          const [ex, ey] = wall.points[i + 1]
+          return (
+            <line
+              key={`hit${i}`}
+              x1={x * CELL}
+              y1={y * CELL}
+              x2={ex * CELL}
+              y2={ey * CELL}
+              stroke="transparent"
+              strokeWidth={Math.max(px + 8, 12)}
+              strokeLinecap="round"
+              onPointerDown={(e) => {
+                if (doorArmed) onSegmentClick(i, e)
+                else onPointerDown(e)
+              }}
+            />
+          )
+        })}
+      {selected &&
+        editable &&
+        wall.points.map(([x, y], i) => (
+          <circle
+            key={`v${i}`}
+            cx={x * CELL}
+            cy={y * CELL}
+            r={3.5}
+            fill="var(--background)"
+            stroke={color}
+            strokeWidth={1.5}
+            pointerEvents="none"
+          />
+        ))}
+    </g>
   )
 }
 

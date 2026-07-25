@@ -5700,6 +5700,37 @@ export interface RaisedFloorAreaWritePayload {
   color?: string
 }
 
+/** A door/passage span on one wall segment. `from`/`to` are cell units along
+ * segment `seg`; `height_mm` null renders the standard 2100 door. */
+export interface FloorPlanWallOpening {
+  seg: number
+  from: number
+  to: number
+  height_mm: number | null
+}
+
+export interface FloorPlanWall {
+  id: string
+  label: string
+  /** [[x, y], …] in cell units, snapped to 0.5 steps (the tray lattice). */
+  points: [number, number][]
+  /** null = full height (the plan's ceiling). */
+  height_mm: number | null
+  color: string
+  openings: FloorPlanWallOpening[]
+  created_at: string
+  updated_at: string
+}
+
+export interface FloorPlanWallWritePayload {
+  floor_plan_id?: string
+  label?: string
+  points?: [number, number][]
+  height_mm?: number | null
+  color?: string
+  openings?: FloorPlanWallOpening[]
+}
+
 export interface FloorPlanTrayWritePayload {
   floor_plan_id?: string
   name?: string
