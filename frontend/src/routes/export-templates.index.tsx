@@ -68,6 +68,8 @@ export const Route = createFileRoute("/export-templates/")({
 })
 
 function ExportTemplatesPage() {
+  const { canDo } = useMe()
+  const canAdd = canDo("exporttemplate", "add")
   const { humanIds } = useMe()
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<ExportTemplate | null>(null)
@@ -156,9 +158,11 @@ function ExportTemplatesPage() {
       actions={
         <>
           <TableActions ioType="exporttemplate" />
-          <Button size="sm" asChild>
-            <Link to="/export-templates/new">Add template</Link>
-          </Button>
+          {canAdd && (
+            <Button size="sm" asChild>
+              <Link to="/export-templates/new">Add template</Link>
+            </Button>
+          )}
         </>
       }
       query={query}

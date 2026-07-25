@@ -22,6 +22,8 @@ export const Route = createFileRoute("/wireless-lans/")({
 
 function WirelessLANsPage() {
   const { humanIds } = useMe()
+  const { canDo } = useMe()
+  const canAdd = canDo("wirelesslan", "add")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<WirelessLAN | null>(null)
 
@@ -167,9 +169,11 @@ function WirelessLANsPage() {
       actions={
         <>
           <TableActions ioType="wirelesslan" />
-          <Button size="sm" asChild>
-            <Link to="/wireless-lans/new">Add wireless LAN</Link>
-          </Button>
+          {canAdd && (
+            <Button size="sm" asChild>
+              <Link to="/wireless-lans/new">Add wireless LAN</Link>
+            </Button>
+          )}
         </>
       }
       query={query}

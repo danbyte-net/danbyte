@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
+import { useMe } from "@/lib/use-me"
 import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { AutomationTargetDeleteDialog } from "@/components/automation-target-delete-dialog"
@@ -57,6 +58,8 @@ export const Route = createFileRoute("/automation-targets/")({
 })
 
 function AutomationTargetsPage() {
+  const { canDo } = useMe()
+  const canAdd = canDo("automationtarget", "add")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<AutomationTarget | null>(null)
 
@@ -160,9 +163,11 @@ function AutomationTargetsPage() {
               Guided setup
             </Link>
           </Button>
-          <Button size="sm" asChild>
-            <Link to="/automation-targets/new">Add target</Link>
-          </Button>
+          {canAdd && (
+            <Button size="sm" asChild>
+              <Link to="/automation-targets/new">Add target</Link>
+            </Button>
+          )}
         </>
       }
       query={query}

@@ -39,6 +39,7 @@ function RirDetail() {
 }
 
 function Body({ rir: r }: { rir: RIR }) {
+  const { canDo } = useMe()
   const [tab, setTab] = useUrlTab<"aggregates" | "journal" | "history">(
     "aggregates"
   )
@@ -55,19 +56,23 @@ function Body({ rir: r }: { rir: RIR }) {
       presence={{ type: "rir", id: r.id }}
       actions={
         <>
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/rirs/$id/edit" params={{ id: r.id }}>
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </Link>
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-destructive hover:text-destructive"
-            onClick={() => setDeleting(r)}
-          >
-            <Trash2 className="h-3.5 w-3.5" /> Delete
-          </Button>
+          {canDo("rir", "change") && (
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/rirs/$id/edit" params={{ id: r.id }}>
+                <Pencil className="h-3.5 w-3.5" /> Edit
+              </Link>
+            </Button>
+          )}
+          {canDo("rir", "delete") && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setDeleting(r)}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </Button>
+          )}
         </>
       }
       hero={

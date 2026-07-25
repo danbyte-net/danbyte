@@ -20,6 +20,8 @@ export const Route = createFileRoute("/ipsec-profiles/")({
 })
 
 function IPSecProfilesPage() {
+  const { canDo } = useMe()
+  const canAdd = canDo("ipsecprofile", "add")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<IPSecProfile | null>(null)
   const [selectedRows, setSelectedRows] = useState<IPSecProfile[]>([])
@@ -54,9 +56,11 @@ function IPSecProfilesPage() {
       actions={
         <>
           <TableActions ioType="ipsecprofile" />
-          <Button size="sm" asChild>
-            <Link to="/ipsec-profiles/new">Add profile</Link>
-          </Button>
+          {canAdd && (
+            <Button size="sm" asChild>
+              <Link to="/ipsec-profiles/new">Add profile</Link>
+            </Button>
+          )}
         </>
       }
       query={query}

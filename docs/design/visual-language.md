@@ -22,7 +22,19 @@ a lot of data fast — typography and spacing serve that, not decoration.
     - Warning — `amber`
     - Danger — `red`
     - Neutral — `zinc`
-- **Primary button**: high-contrast neutral (black in light mode, white in dark). **No** brand accent color.
+- **Primary / accent**: `--primary` is Danbyte **blue** (`styles.css`), and the
+  chart ramp is built from it. Earlier drafts of this doc claimed a neutral
+  primary with no brand accent; the shipped token has been blue for a long time
+  and the whole product is built and screenshotted against it, so the doc was the
+  stale side and has been corrected here rather than the token. Blue is for
+  *primary action and selection only* — it is not decoration, and it never
+  carries meaning that belongs to a status colour.
+- **One selection colour.** Anything meaning "this is the selected thing" uses
+  `--primary`. Canvas surfaces (3D, floor plan, site map, topology) can't read
+  CSS variables today and hard-code `#0ea5e9` in ~19 places, which is a
+  *different* blue — so selection currently reads as two colours depending on
+  which surface you're on. Until a `readCssVar()` bridge exists, keep new canvas
+  code on the shared constant rather than adding another literal.
 - **Links**: dotted underline, not blue.
 - **Mono font**: for every IP, CIDR, MAC, serial, ID, UUID, custom-field key.
 - **Tabular nums**: on every counter, percentage, timestamp.

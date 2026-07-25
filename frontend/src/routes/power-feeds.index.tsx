@@ -29,6 +29,8 @@ export const Route = createFileRoute("/power-feeds/")({
 })
 
 function PowerFeedsPage() {
+  const { canDo } = useMe()
+  const canAdd = canDo("powerfeed", "add")
   const { humanIds } = useMe()
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<PowerFeed | null>(null)
@@ -177,9 +179,11 @@ function PowerFeedsPage() {
       actions={
         <>
           <TableActions ioType="powerfeed" />
-          <Button size="sm" asChild>
-            <Link to="/power-feeds/new">Add feed</Link>
-          </Button>
+          {canAdd && (
+            <Button size="sm" asChild>
+              <Link to="/power-feeds/new">Add feed</Link>
+            </Button>
+          )}
         </>
       }
       query={query}
