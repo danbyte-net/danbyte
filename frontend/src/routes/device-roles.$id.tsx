@@ -7,6 +7,9 @@ import { useCallback, useState } from "react"
 import { api, type DeviceRole } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { TimeCell } from "@/components/cells/time-ago"
+import { KvCard, dash } from "@/components/kv-card"
+import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { DeviceRoleDeleteDialog } from "@/components/device-role-delete-dialog"
 import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
@@ -40,11 +43,13 @@ function DeviceRoleDetail() {
 }
 
 function Body({ role: r }: { role: DeviceRole }) {
-  const [tab, setTab] = useUrlTab<"devices" | "journal" | "history">("devices")
+  const [tab, setTab] = useUrlTab<
+    "overview" | "devices" | "journal" | "history"
+  >("overview")
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<DeviceRole | null>(null)
   const goBack = useCallback(() => nav({ to: "/device-roles" }), [nav])
-  const { canDo, humanIds } = useMe()
+  const { canDo } = useMe()
 
   return (
     <DetailShell
@@ -85,12 +90,6 @@ function Body({ role: r }: { role: DeviceRole }) {
               )}
             </div>
             <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
-              {humanIds && r.numid != null && (
-                <DetailStat
-                  label="Number"
-                  value={<span className="num font-mono">#{r.numid}</span>}
-                />
-              )}
               <DetailStat
                 label="Devices"
                 value={<span className="num">{r.device_count}</span>}
@@ -116,11 +115,10 @@ function Body({ role: r }: { role: DeviceRole }) {
               device type can override it.
             </p>
           </section>
-
-          <CustomFieldValues model="devicerole" values={r.custom_fields} />
         </>
       }
       tabs={[
+        { value: "overview", label: "Overview" },
         { value: "devices", label: "Devices", count: r.device_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
@@ -128,6 +126,9 @@ function Body({ role: r }: { role: DeviceRole }) {
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}
     >
+      <DetailTab value="overview">
+        <DeviceRoleOverview role={r} />
+      </DetailTab>
       <DetailTab value="devices">
         <EmbeddedDeviceTable filter={{ role: r.id }} />
       </DetailTab>
@@ -144,5 +145,61 @@ function Body({ role: r }: { role: DeviceRole }) {
         onDeleted={goBack}
       />
     </DetailShell>
+  )
+}
+
+/** Device-role attributes that used to crowd the header, grouped into tables.
+ * Only the colored name badge, description and counts stay up top. */
+function DeviceRoleOverview({ role: r }: { role: DeviceRole }) {
+  const { humanIds } = useMe()
+
+  const details: KvRow[] = [
+    ...(humanIds && r.numid != null
+      ? [
+          {
+            label: "Number",
+            value: <span className="num font-mono">#{r.numid}</span>,
+          } satisfies KvRow,
+        ]
+      : []),
+    {
+      label: "Slug",
+      value: <span className="font-mono text-[13px]">{r.slug}</span>,
+      copy: r.slug,
+    },
+    {
+      label: "Color",
+      value: r.color ? (
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            className="h-3 w-3 rounded-sm border border-border"
+            style={{ backgroundColor: r.color }}
+          />
+          <span className="font-mono">{r.color}</span>
+        </span>
+      ) : (
+        dash
+      ),
+    },
+    { label: "Created", value: <TimeCell iso={r.created_at} /> },
+    { label: "Updated", value: <TimeCell iso={r.updated_at} /> },
+  ]
+
+  const behaviour: KvRow[] = [
+    { label: "Patch-panel role", value: r.is_patch_panel ? "Yes" : "No" },
+    { label: "Camera field of view", value: r.has_fov ? "Yes" : "No" },
+    { label: "Config template", value: r.config_template?.name ?? dash },
+  ]
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <KvCard title="Device role" rows={details} />
+      <KvCard title="Behaviour" rows={behaviour} />
+      <CustomFieldValues
+        model="devicerole"
+        values={r.custom_fields}
+        layout="cards"
+      />
+    </div>
   )
 }

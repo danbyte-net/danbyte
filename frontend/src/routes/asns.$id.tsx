@@ -6,8 +6,11 @@ import { useCallback, useState } from "react"
 
 import { api, type ASN } from "@/lib/api"
 import { TagList } from "@/components/cells/tag-list"
+import { TimeCell } from "@/components/cells/time-ago"
 import { DetailShell, DetailTab } from "@/components/detail-shell"
 import { Button } from "@/components/ui/button"
+import { KvCard, dash } from "@/components/kv-card"
+import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { AsnDeleteDialog } from "@/components/asn-delete-dialog"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -35,11 +38,13 @@ function AsnDetail() {
 }
 
 function Body({ asn: a }: { asn: ASN }) {
-  const [tab, setTab] = useUrlTab<"journal" | "history">("journal")
+  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">(
+    "overview"
+  )
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<ASN | null>(null)
   const goBack = useCallback(() => nav({ to: "/asns" }), [nav])
-  const { canDo, humanIds } = useMe()
+  const { canDo } = useMe()
 
   return (
     <DetailShell
@@ -71,25 +76,9 @@ function Body({ asn: a }: { asn: ASN }) {
       hero={
         <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="font-mono text-2xl font-semibold tracking-tight">
-                AS{a.asn}
-              </span>
-              {humanIds && a.numid != null && (
-                <span className="num font-mono text-sm text-muted-foreground">
-                  #{a.numid}
-                </span>
-              )}
-              {a.rir && (
-                <Link
-                  to="/rirs/$id"
-                  params={{ id: a.rir.id }}
-                  className="text-sm text-primary hover:underline"
-                >
-                  {a.rir.name}
-                </Link>
-              )}
-            </div>
+            <span className="font-mono text-2xl font-semibold tracking-tight">
+              AS{a.asn}
+            </span>
             {a.tags.length > 0 && (
               <div className="mt-2">
                 <TagList tags={a.tags} />
@@ -100,33 +89,20 @@ function Body({ asn: a }: { asn: ASN }) {
                 {a.description}
               </p>
             )}
-            {a.sites.length > 0 && (
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="text-[10px] tracking-wider text-muted-foreground uppercase">
-                  Sites
-                </span>
-                {a.sites.map((s) => (
-                  <Link
-                    key={s.id}
-                    to="/sites/$id"
-                    params={{ id: s.id }}
-                    className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-foreground hover:bg-muted/80"
-                  >
-                    {s.name}
-                  </Link>
-                ))}
-              </div>
-            )}
           </div>
         </section>
       }
       tabs={[
+        { value: "overview", label: "Overview" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}
     >
+      <DetailTab value="overview">
+        <AsnOverview asn={a} />
+      </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.asn" objectId={a.id} />
       </DetailTab>
@@ -140,5 +116,71 @@ function Body({ asn: a }: { asn: ASN }) {
         onDeleted={goBack}
       />
     </DetailShell>
+  )
+}
+
+/** ASN attributes, moved out of the page header. */
+function AsnOverview({ asn: a }: { asn: ASN }) {
+  const { humanIds } = useMe()
+
+  const details: KvRow[] = [
+    ...(humanIds && a.numid != null
+      ? [
+          {
+            label: "Number",
+            value: <span className="num font-mono">#{a.numid}</span>,
+          } satisfies KvRow,
+        ]
+      : []),
+    {
+      label: "AS number",
+      value: <span className="num font-mono text-[13px]">{a.asn}</span>,
+      copy: String(a.asn),
+    },
+    {
+      label: "RIR",
+      value: a.rir ? (
+        <Link
+          to="/rirs/$id"
+          params={{ id: a.rir.id }}
+          className="text-primary hover:underline"
+        >
+          {a.rir.name}
+        </Link>
+      ) : (
+        dash
+      ),
+    },
+  ]
+
+  const assignment: KvRow[] = [
+    {
+      label: "Sites",
+      value: a.sites.length ? (
+        <span className="flex flex-wrap gap-1">
+          {a.sites.map((s) => (
+            <Link
+              key={s.id}
+              to="/sites/$id"
+              params={{ id: s.id }}
+              className="rounded-sm bg-muted px-1.5 py-0.5 text-[11px] hover:bg-muted/80"
+            >
+              {s.name}
+            </Link>
+          ))}
+        </span>
+      ) : (
+        dash
+      ),
+    },
+    { label: "Created", value: <TimeCell iso={a.created_at} /> },
+    { label: "Updated", value: <TimeCell iso={a.updated_at} /> },
+  ]
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <KvCard title="ASN" rows={details} />
+      <KvCard title="Assignment" rows={assignment} />
+    </div>
   )
 }

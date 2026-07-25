@@ -18,9 +18,12 @@ import {
   affectedColumnsFor,
   AFFECTED_FLEX_COLUMN,
 } from "@/components/columns/affected-columns"
+import { KvCard, dash, mono } from "@/components/kv-card"
+import type { KvRow } from "@/components/kv-card"
 import { Markdown } from "@/components/markdown"
 import { QueryError } from "@/components/query-error"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import { DetailShell, DetailTab } from "@/components/detail-shell"
+import { TimeCell } from "@/components/cells/time-ago"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
@@ -59,7 +62,9 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
   const canEdit = canDo("compliancerule", "change")
   const canDelete = canDo("compliancerule", "delete")
   const [deleting, setDeleting] = useState<ComplianceRule | null>(null)
-  const [tab, setTab] = useUrlTab<"affected" | "journal" | "history">("affected")
+  const [tab, setTab] = useUrlTab<
+    "overview" | "affected" | "journal" | "history"
+  >("overview")
 
   return (
     <DetailShell
@@ -106,18 +111,10 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
               </p>
             )}
           </div>
-          <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px] sm:grid-cols-3">
-            <DetailStat label="Applies to" value={r.object_type_label} />
-            <DetailStat
-              label="Check"
-              value={
-                <span className="font-mono text-xs">{ruleSummary(r)}</span>
-              }
-            />
-          </dl>
         </section>
       }
       tabs={[
+        { value: "overview", label: "Overview" },
         { value: "affected", label: "Affected objects" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
@@ -125,6 +122,9 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}
     >
+      <DetailTab value="overview">
+        <RuleOverview rule={r} />
+      </DetailTab>
       <DetailTab value="affected">
         {r.remediation && (
           <div className="mb-4 rounded-lg border border-border bg-card px-4 py-3">
@@ -158,6 +158,45 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
         onDeleted={() => nav({ to: "/compliance", search: { tab: "rules" } })}
       />
     </DetailShell>
+  )
+}
+
+/** Rule attributes that used to crowd the header, grouped into tables. Only the
+ * name, severity and enabled state stay up top. */
+function RuleOverview({ rule: r }: { rule: ComplianceRule }) {
+  const rule: KvRow[] = [
+    { label: "Applies to", value: r.object_type_label },
+    { label: "Enabled", value: r.enabled ? "Yes" : "No" },
+    {
+      label: "Severity",
+      value: (
+        <Badge variant={SEV_VARIANT[r.severity]} className="capitalize">
+          {r.severity}
+        </Badge>
+      ),
+    },
+  ]
+
+  const check: KvRow[] = [
+    { label: "Check type", value: r.check_type_display || r.check_type },
+    { label: "Condition", value: mono(ruleSummary(r)) },
+    { label: "Field", value: mono(r.field) },
+    { label: "Pattern", value: mono(r.pattern) },
+    { label: "Tag", value: r.tag || dash },
+    { label: "Custom field", value: mono(r.cf_key) },
+  ]
+
+  const record: KvRow[] = [
+    { label: "Created", value: <TimeCell iso={r.created_at} /> },
+    { label: "Updated", value: <TimeCell iso={r.updated_at} /> },
+  ]
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <KvCard title="Rule" rows={rule} />
+      <KvCard title="Check" rows={check} />
+      <KvCard title="Record" rows={record} />
+    </div>
   )
 }
 

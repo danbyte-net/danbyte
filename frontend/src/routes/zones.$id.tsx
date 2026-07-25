@@ -10,7 +10,10 @@ import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { SiteCell } from "@/components/cells/site-cell"
 import { TagList } from "@/components/cells/tag-list"
+import { TimeCell } from "@/components/cells/time-ago"
 import { DataTable, SortHeader } from "@/components/data-table"
+import { KvCard, dash } from "@/components/kv-card"
+import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { ZoneDeleteDialog } from "@/components/zone-delete-dialog"
 import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
@@ -46,7 +49,9 @@ function ZoneDetail() {
 }
 
 function Body({ zone: z }: { zone: Zone }) {
-  const [tab, setTab] = useUrlTab<"vlans" | "journal" | "history">("vlans")
+  const [tab, setTab] = useUrlTab<"overview" | "vlans" | "journal" | "history">(
+    "overview"
+  )
   const nav = useNavigate()
   const { canDo, editableSites } = useMe()
   const canEdit = canDo("zone", "change")
@@ -113,10 +118,6 @@ function Body({ zone: z }: { zone: Zone }) {
                 label="VLANs"
                 value={<span className="num">{z.usage_count}</span>}
               />
-              <DetailStat
-                label="Weight"
-                value={<span className="num">{z.weight}</span>}
-              />
             </dl>
           </section>
 
@@ -127,11 +128,10 @@ function Body({ zone: z }: { zone: Zone }) {
                 : "No VLANs use this zone yet."}
             </p>
           </section>
-
-          <CustomFieldValues model="zone" values={z.custom_fields} />
         </>
       }
       tabs={[
+        { value: "overview", label: "Overview" },
         { value: "vlans", label: "VLANs", count: z.usage_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
@@ -139,6 +139,9 @@ function Body({ zone: z }: { zone: Zone }) {
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}
     >
+      <DetailTab value="overview">
+        <ZoneOverview zone={z} />
+      </DetailTab>
       <DetailTab value="vlans">
         <ZoneVlansTable zoneId={z.id} />
       </DetailTab>
@@ -155,6 +158,60 @@ function Body({ zone: z }: { zone: Zone }) {
         onDeleted={goBack}
       />
     </DetailShell>
+  )
+}
+
+/** Zone attributes that used to crowd the header, grouped into tables. Only the
+ * colored name badge, locality, tags, description and VLAN count stay up top. */
+function ZoneOverview({ zone: z }: { zone: Zone }) {
+  const attributes: KvRow[] = [
+    {
+      label: "Slug",
+      value: <span className="font-mono text-[13px]">{z.slug}</span>,
+      copy: z.slug,
+    },
+    {
+      label: "Color",
+      value: z.color ? (
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            className="h-3 w-3 rounded-sm border border-border"
+            style={{ backgroundColor: z.color }}
+          />
+          <span className="font-mono">{z.color}</span>
+        </span>
+      ) : (
+        dash
+      ),
+    },
+    { label: "Weight", value: <span className="num">{z.weight}</span> },
+  ]
+
+  const record: KvRow[] = [
+    {
+      label: "Scoped to",
+      value: z.owning_site ? (
+        <Link
+          to="/sites/$id"
+          params={{ id: z.owning_site.id }}
+          className="text-primary hover:underline"
+        >
+          {z.owning_site.name}
+        </Link>
+      ) : (
+        <span className="text-muted-foreground">Whole tenant</span>
+      ),
+    },
+    { label: "Created", value: <TimeCell iso={z.created_at} /> },
+    { label: "Updated", value: <TimeCell iso={z.updated_at} /> },
+  ]
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <KvCard title="Attributes" rows={attributes} />
+      <KvCard title="Record" rows={record} />
+      <CustomFieldValues model="zone" values={z.custom_fields} layout="cards" />
+    </div>
   )
 }
 
