@@ -131,6 +131,14 @@ intended configuration and lists the differences:
 - **Stale** — Danbyte has an interface the device no longer reports (shown for
   awareness; discovery never deletes from the SoT).
 
+Wherever a component is *drawn*, a difference shows as an **amber outline** next
+to the record rather than replacing it: on the photo faceplate, on the
+[3D room](floor-plans.md#drift-in-the-room)'s port and bay markers, and as a
+drift pill in the component tables. Clicking the marker names the difference
+("SNMP says failed", "speed: SNMP says 1 Gbps"). The device header carries a
+count badge, and the Components tab and its sub-tabs are dotted when something
+inside them differs — so you can find drift without opening every tab.
+
 ### Excluding a port from drift {#drift-exclude}
 
 Some ports can *never* be polled — the silkscreened host NICs a BMC agent

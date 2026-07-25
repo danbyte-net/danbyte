@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { TriangleAlert } from "lucide-react"
 import { Canvas } from "@react-three/fiber"
 import { Link } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -12,7 +13,9 @@ import {
   type TerminationInput,
 } from "@/lib/api"
 import { renderTemplateName } from "@/lib/faceplate-geometry"
-import { SpeedScale } from "@/components/speed-scale"
+import { legendIsEmpty } from "@/lib/faceplate-colors"
+import { useLegendCollector } from "@/components/speed-scale"
+import { FaceplateLegend } from "@/components/device-faceplate"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -146,7 +149,10 @@ export default function FloorScene3D({
     const sameRack = connecting.tileId === sel.tileId
     setRouting(!sameRack && scene.data?.trays.length ? "trays" : "p2p")
     setRouteTrayIds([])
-    setModal({ initialA: [connecting.a], initialB: [{ kind: b.kind, id: b.id }] })
+    setModal({
+      initialA: [connecting.a],
+      initialB: [{ kind: b.kind, id: b.id }],
+    })
     setConnecting(null)
     setSelection(null)
   }
@@ -166,7 +172,9 @@ export default function FloorScene3D({
           }),
         })
       } catch {
-        toast.error("Couldn't assign the cable to a duct — set it on the 2D plan.")
+        toast.error(
+          "Couldn't assign the cable to a duct — set it on the 2D plan."
+        )
         return
       }
     }
@@ -192,6 +200,10 @@ export default function FloorScene3D({
     return () => window.removeEventListener("keydown", onKey)
   }, [connecting])
 
+  // Every near-tier device reports the colours it draws; the HUD legend keys
+  // their union (and hides when nothing photo-anchored is in view). Above the
+  // WebGL/loading early returns — hook order has to be unconditional.
+  const { content: legend, report: onLegend } = useLegendCollector()
   const supported = useMemo(webglSupported, [])
   if (!supported)
     return (
@@ -231,7 +243,10 @@ export default function FloorScene3D({
     <div className="relative h-full min-h-0 w-full">
       <Canvas
         frameloop="demand"
-        dpr={[1, 1.75]}
+        // Render at the display's real pixel ratio (capped at 2): 1.75 left a
+        // HiDPI canvas rendering below native and reading softer than the 2D
+        // faceplate beside it.
+        dpr={[1, 2]}
         camera={{
           position: [w / 2 + diag * 0.55, diag * 0.6, d + diag * 0.45],
           fov: 45,
@@ -258,6 +273,7 @@ export default function FloorScene3D({
             showUNumbers={showUNumbers}
             showNames={showNames}
             onSelect={handleSelect}
+            onLegend={onLegend}
             onFlyTo={(target, position) => {
               flyToRef.current = { target, position }
             }}
@@ -419,11 +435,15 @@ export default function FloorScene3D({
           )}
         </DialogContent>
       </Dialog>
-      {/* Port speed scale — the SAME colorbar the 2D faceplate legend uses.
-          The overlay toggles live in the route's View popover. */}
-      <div className="absolute top-3 right-3 rounded-lg border border-border bg-popover/90 p-2 text-popover-foreground shadow backdrop-blur">
-        <SpeedScale live />
-      </div>
+      {/* The SAME legend the 2D faceplate uses, keyed to what the near-tier
+          devices actually draw — so it's absent until a photo panel with real
+          ports is in view, and then explains only those colours. The overlay
+          toggles live in the route's View popover. */}
+      {!legendIsEmpty(legend) && (
+        <div className="absolute top-3 right-3 rounded-lg border border-border bg-popover/90 p-2 text-popover-foreground shadow backdrop-blur">
+          <FaceplateLegend observed content={legend} />
+        </div>
+      )}
     </div>
   )
 }
@@ -475,13 +495,13 @@ function DeviceHud({ tile, dev }: { tile: SceneTile; dev: SceneDevice }) {
   const row = (label: string, value: React.ReactNode) => (
     <div className="flex items-baseline justify-between gap-3">
       <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="min-w-0 flex-1 break-words text-right">{value}</span>
+      <span className="min-w-0 flex-1 text-right break-words">{value}</span>
     </div>
   )
   return (
     <div className="absolute top-3 left-3 w-64 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur">
       <div className="flex items-start justify-between gap-2">
-        <span className="min-w-0 flex-1 break-words font-mono text-[13px] font-semibold">
+        <span className="min-w-0 flex-1 font-mono text-[13px] font-semibold break-words">
           {dev.name}
         </span>
         {dev.status && (
@@ -523,7 +543,10 @@ function DeviceHud({ tile, dev }: { tile: SceneTile; dev: SceneDevice }) {
             (dev.face === "rear" ? " · rear" : "")
         )}
         {dev.primary_ip &&
-          row("Primary IP", <span className="font-mono">{dev.primary_ip}</span>)}
+          row(
+            "Primary IP",
+            <span className="font-mono">{dev.primary_ip}</span>
+          )}
         {dev.serial_number &&
           row("Serial", <span className="font-mono">{dev.serial_number}</span>)}
       </div>
@@ -571,10 +594,7 @@ function PortHud({
   const fp = (
     selection.portSide
       ? (facePorts.data?.[selection.portSide] ?? [])
-      : [
-          ...(facePorts.data?.front ?? []),
-          ...(facePorts.data?.rear ?? []),
-        ]
+      : [...(facePorts.data?.front ?? []), ...(facePorts.data?.rear ?? [])]
   ).find((p) => p.marker === selection.portName)
 
   // Cabled → load the cable for its identity + far-end terminations.
@@ -596,7 +616,7 @@ function PortHud({
   const row = (label: string, value: React.ReactNode) => (
     <div className="flex items-baseline justify-between gap-3">
       <span className="shrink-0">{label}</span>
-      <span className="min-w-0 flex-1 break-words text-right text-foreground">
+      <span className="min-w-0 flex-1 text-right break-words text-foreground">
         {value}
       </span>
     </div>
@@ -609,7 +629,10 @@ function PortHud({
   // color). Hardware wears its status colour; ports their cabling state.
   const chip = fp
     ? hardware
-      ? { label: fp.status?.name || "part", color: fp.status?.color || "#64748b" }
+      ? {
+          label: fp.status?.name || "part",
+          color: fp.status?.color || "#64748b",
+        }
       : fp.connected
         ? { label: "cabled", color: "#10b981" }
         : fp.id
@@ -619,7 +642,7 @@ function PortHud({
   return (
     <div className="absolute top-3 left-3 w-72 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur">
       <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 break-words font-mono text-[13px] font-semibold">
+        <span className="min-w-0 flex-1 font-mono text-[13px] font-semibold break-words">
           {fp?.name || portLabel}
         </span>
         {chip && (
@@ -635,10 +658,7 @@ function PortHud({
         )}
       </div>
       <div className="mt-1.5 grid gap-1 text-[12px] text-muted-foreground">
-        {row(
-          "Device",
-          <span className="font-mono">{dev.name}</span>
-        )}
+        {row("Device", <span className="font-mono">{dev.name}</span>)}
         {selection.portKind &&
           row(
             "Kind",
@@ -649,6 +669,20 @@ function PortHud({
         {row("Position", `${rack.name} · U${dev.position}`)}
         {fp?.speed && row("Speed", <span className="num">{fp.speed}</span>)}
       </div>
+
+      {/* ── Drift: what SNMP saw, beside what the record says ──────────── */}
+      {fp?.drift && (
+        <div className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-[11px] text-amber-700 dark:text-amber-300">
+          <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 break-words">
+            {fp.drift}
+            <span className="mt-0.5 block text-muted-foreground">
+              Review it on the device's Monitoring tab — nothing changes until
+              you accept it.
+            </span>
+          </span>
+        </div>
+      )}
 
       {/* ── Cabled: the run + its far end ─────────────────────────────── */}
       {fp?.connected && (
@@ -663,7 +697,7 @@ function PortHud({
                     style={{ backgroundColor: cable.data.color }}
                   />
                 )}
-                <span className="min-w-0 flex-1 break-words font-mono text-foreground">
+                <span className="min-w-0 flex-1 font-mono break-words text-foreground">
                   {cable.data.label || `Cable #${cable.data.numid ?? ""}`}
                 </span>
                 {cable.data.type_display && (
@@ -679,7 +713,7 @@ function PortHud({
                     <Link
                       to="/devices/$id"
                       params={{ id: t.device.id }}
-                      className="min-w-0 flex-1 break-words font-mono text-foreground hover:underline"
+                      className="min-w-0 flex-1 font-mono break-words text-foreground hover:underline"
                     >
                       {t.device.name}
                       <span className="text-muted-foreground">:</span>
@@ -819,7 +853,7 @@ function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
           key={t.id}
           to="/devices/$id"
           params={{ id: t.device.id }}
-          className="min-w-0 break-words font-mono text-foreground hover:underline"
+          className="min-w-0 font-mono break-words text-foreground hover:underline"
         >
           {t.device.name}
           <span className="text-muted-foreground">:</span>
@@ -843,7 +877,7 @@ function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
                 style={{ backgroundColor: c.color }}
               />
             )}
-            <span className="min-w-0 flex-1 break-words font-mono text-[13px] font-semibold">
+            <span className="min-w-0 flex-1 font-mono text-[13px] font-semibold break-words">
               {c.label || `Cable #${c.numid ?? ""}`}
             </span>
             {c.type_display && (
@@ -862,12 +896,7 @@ function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
             )}
           </div>
           <div className="mt-2 flex gap-1.5">
-            <Button
-              size="sm"
-              variant="outline"
-              asChild
-              className="h-7 flex-1"
-            >
+            <Button size="sm" variant="outline" asChild className="h-7 flex-1">
               <Link to="/cables/$id" params={{ id: c.id }}>
                 Open cable →
               </Link>

@@ -1,8 +1,71 @@
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { api, type Paginated, type Status } from "@/lib/api"
-import { PORT_NEUTRAL, SPEED_TIERS } from "@/lib/faceplate-colors"
+import {
+  mergeLegend,
+  PORT_NEUTRAL,
+  SPEED_TIERS,
+  type LegendContent,
+} from "@/lib/faceplate-colors"
 import { cn } from "@/lib/utils"
+
+// ─── who tells the legend what's on screen ───────────────────────────────────
+// A legend must key the pixels, and only the renderer knows which markers
+// resolved to something. So the renderers REPORT what they drew and the legend
+// keys that — rather than the legend re-deriving it from the device (which is
+// how you end up advertising 400G under a shelf of disk bays).
+
+/** A panel reports its content under a stable key; `null` on unmount. */
+export type LegendReporter = (
+  key: string,
+  content: LegendContent | null
+) => void
+
+/**
+ * Collect what the panels below/around this legend actually draw. Several
+ * panels can report (stack members, every rack in a 3D room) and the legend
+ * shows their union.
+ */
+export function useLegendCollector(): {
+  content: LegendContent
+  report: LegendReporter
+} {
+  const [parts, setParts] = useState<Record<string, LegendContent>>({})
+  const report = useCallback<LegendReporter>((key, content) => {
+    setParts((prev) => {
+      if (content === null) {
+        if (!(key in prev)) return prev
+        const next = { ...prev }
+        delete next[key]
+        return next
+      }
+      // Reporters memoize their content, so a repeat report of the same object
+      // is a no-op — this is what keeps report → render → report from looping.
+      if (prev[key] === content) return prev
+      return { ...prev, [key]: content }
+    })
+  }, [])
+  const content = useMemo(() => mergeLegend(Object.values(parts)), [parts])
+  return { content, report }
+}
+
+/**
+ * The renderer side of the collector: publish `content` while mounted, retract
+ * it on unmount. `content` MUST be memoized by the caller — an object rebuilt
+ * every render would report in a loop.
+ */
+export function useReportLegend(
+  report: LegendReporter | undefined,
+  key: string,
+  content: LegendContent
+) {
+  useEffect(() => {
+    if (!report) return
+    report(key, content)
+    return () => report(key, null)
+  }, [report, key, content])
+}
 
 /**
  * The port speed legend, drawn as a compact COLORBAR (like a map scale), not a
@@ -33,32 +96,34 @@ export function SpeedScale({
 }) {
   // A legend for colours that aren't on screen is noise, and on a panel of
   // disk bays it's the majority of the legend.
-  const ramp = tiers ? SPEED_TIERS.filter((t) => tiers.has(t.label)) : SPEED_TIERS
+  const ramp = tiers
+    ? SPEED_TIERS.filter((t) => tiers.has(t.label))
+    : SPEED_TIERS
   const shows = (k: string) => !states || states.has(k)
   if (ramp.length === 0 && !shows("idle") && !shows("off") && !shows("down"))
     return extras ? <div className={className}>{extras}</div> : null
   return (
     <div className={cn("grid w-fit gap-1.5", className)}>
       {ramp.length > 0 && (
-      <div className="flex h-2 w-72 gap-px overflow-hidden rounded-full">
-        {ramp.map((t) => (
-          <span
-            key={t.label}
-            className="h-full flex-1"
-            style={{ backgroundColor: t.hex }}
-            title={t.label}
-          />
-        ))}
-      </div>
+        <div className="flex h-2 w-72 gap-px overflow-hidden rounded-full">
+          {ramp.map((t) => (
+            <span
+              key={t.label}
+              className="h-full flex-1"
+              style={{ backgroundColor: t.hex }}
+              title={t.label}
+            />
+          ))}
+        </div>
       )}
       {ramp.length > 0 && (
-      <div className="num flex w-72 text-[9px] leading-none text-muted-foreground">
-        {ramp.map((t) => (
-          <span key={t.label} className="flex-1 text-center">
-            {t.label}
-          </span>
-        ))}
-      </div>
+        <div className="num flex w-72 text-[9px] leading-none text-muted-foreground">
+          {ramp.map((t) => (
+            <span key={t.label} className="flex-1 text-center">
+              {t.label}
+            </span>
+          ))}
+        </div>
       )}
       <div className="mt-0.5 flex w-72 flex-nowrap items-center gap-x-3 overflow-hidden text-[10px] leading-none whitespace-nowrap text-muted-foreground">
         {shows("idle") && (
@@ -90,13 +155,13 @@ export function SpeedScale({
  */
 export function HardwareStatusKey({
   className,
-  slugs,
+  statusIds,
 }: {
   className?: string
-  /** Status slugs actually drawn on this panel. Omit for the whole catalog;
-   * pass an empty set and nothing renders. A panel showing Active and Empty
-   * disks shouldn't also claim Planned, Failed and Spare. */
-  slugs?: Set<string>
+  /** Status ids actually drawn on this panel. Omit for the whole catalog; pass
+   * an empty set and nothing renders. A panel showing Active and Empty disks
+   * shouldn't also claim Planned, Failed and Spare. */
+  statusIds?: Set<string>
 }) {
   const statuses = useQuery({
     queryKey: ["statuses", "inventoryitem"],
@@ -107,7 +172,7 @@ export function HardwareStatusKey({
     staleTime: 5 * 60_000,
   })
   const rows = (statuses.data?.results ?? [])
-    .filter((s) => !slugs || slugs.has(s.slug))
+    .filter((s) => !statusIds || statusIds.has(s.id))
     .slice(0, 6)
   if (rows.length === 0) return null
   return (
@@ -139,7 +204,10 @@ function Swatch({
   return (
     <span className="inline-flex items-center gap-1">
       <span
-        className={cn("h-2 w-2 rounded-[3px]", dashed && "border border-dashed")}
+        className={cn(
+          "h-2 w-2 rounded-[3px]",
+          dashed && "border border-dashed"
+        )}
         style={{
           backgroundColor: dashed ? "transparent" : hex,
           borderColor: dashed ? hex : undefined,

@@ -4,6 +4,7 @@ import type { Interface, VirtualChassisMember } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
 import { DeviceFaceplate } from "@/components/device-faceplate"
+import type { LegendReporter } from "@/components/speed-scale"
 import { cn } from "@/lib/utils"
 
 /** The stack drawn as a chassis — one bar per member in position order,
@@ -15,6 +16,7 @@ export function StackElevation({
   masterId,
   highlightId,
   interfacesByMember,
+  onLegend,
 }: {
   members: VirtualChassisMember[]
   masterId: string | null
@@ -22,6 +24,9 @@ export function StackElevation({
   /** Per-member interface lists — when provided, each member renders its
    * front panel (the "switch builder") inside the bar. */
   interfacesByMember?: Map<string, Interface[]>
+  /** One legend under the whole stack: every member reports what it drew and
+   * the collector unions them. */
+  onLegend?: LegendReporter
 }) {
   if (members.length === 0)
     return (
@@ -63,6 +68,7 @@ export function StackElevation({
             isMaster={m.id === masterId}
             highlight={m.id === highlightId}
             interfaces={interfacesByMember?.get(m.id)}
+            onLegend={onLegend}
           />
         )
       })}
@@ -74,6 +80,7 @@ export function StackElevation({
           isMaster={m.id === masterId}
           highlight={m.id === highlightId}
           interfaces={interfacesByMember?.get(m.id)}
+          onLegend={onLegend}
         />
       ))}
     </div>
@@ -101,12 +108,14 @@ function MemberBar({
   isMaster,
   highlight,
   interfaces,
+  onLegend,
 }: {
   member: VirtualChassisMember
   pos: number | null
   isMaster: boolean
   highlight: boolean
   interfaces?: Interface[]
+  onLegend?: LegendReporter
 }) {
   const hasPanel = !!interfaces && interfaces.some((i) => !i.virtual)
   return (
@@ -152,6 +161,8 @@ function MemberBar({
             vcPosition={m.vc_position}
             fit="container"
             className="mt-1 mb-1 border-0 bg-transparent p-0"
+            onLegend={onLegend}
+            legendKey={m.id}
           />
         )}
       </div>
