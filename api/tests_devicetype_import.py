@@ -191,6 +191,45 @@ class HelperTests(APITestCase):
         self.assertEqual(len(allf), 3)
         self.assertNotIn(raw + "README.md", allf)
 
+    def test_expand_unquotes_pasted_urls_and_fails_loud_on_empty(self):
+        """Address-bar URLs carry %20 where the trees API answers with real
+        spaces ("Palo Alto Networks") — the prefix must compare unquoted, and
+        the built raw URLs must re-quote. An empty match is a raised error,
+        not a silent 0-file success that looks stuck in the UI."""
+
+        class FakeResp:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {
+                    "truncated": False,
+                    "tree": [
+                        {"type": "blob",
+                         "path": "device-types/Palo Alto Networks/pa-5410.yaml"},
+                        {"type": "blob",
+                         "path": "device-types/Palo Alto Networks/pa-440.yaml"},
+                    ],
+                }
+
+        def fake_get(url, timeout=30):
+            return FakeResp()
+
+        base = "https://github.com/danbyte-net/device-library"
+        got = expand_github_dir(
+            f"{base}/tree/master/device-types/Palo%20Alto%20Networks", fake_get
+        )
+        self.assertEqual(len(got), 2)
+        # Raw URLs are re-quoted so the fetch layer gets a valid URL.
+        self.assertIn(
+            "https://raw.githubusercontent.com/danbyte-net/device-library/"
+            "master/device-types/Palo%20Alto%20Networks/pa-5410.yaml",
+            got,
+        )
+        with self.assertRaises(ValueError) as ctx:
+            expand_github_dir(f"{base}/tree/master/device-types/Nope", fake_get)
+        self.assertIn("No YAML files found", str(ctx.exception))
+
 
 class ImportEndpointTests(APITestCase):
     def setUp(self):
