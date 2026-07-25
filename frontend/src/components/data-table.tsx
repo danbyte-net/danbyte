@@ -116,6 +116,19 @@ interface DataTableProps<T> {
   searchable?: boolean
   /** Placeholder for the filter box. */
   searchPlaceholder?: string
+  /** Server-paginated lists (the API hands back one page at a time — audit log,
+   * jobs) pass their page state here so the table's own pager drives the
+   * *server* page. Without it those pages hand-rolled a second Prev/Next row
+   * under the table and showed two pagers. Client-side paging is off in this
+   * mode: the fetched page is rendered in full. */
+  serverPagination?: {
+    /** 1-based current page. */
+    page: number
+    pageCount: number
+    /** Total matching rows on the server (not just this page). */
+    totalRows: number
+    onPageChange: (page: number) => void
+  }
 }
 
 // Headless data table for every list page in Danbyte. Hands the column
@@ -142,6 +155,7 @@ export function DataTable<T>({
   pagedWhenGrouped,
   searchable,
   searchPlaceholder,
+  serverPagination,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
@@ -164,7 +178,10 @@ export function DataTable<T>({
   // (Settings → Preferences). Grouped/tree views aren't paged — they show the
   // whole hierarchy. `0` (or grouping) means "show all".
   const prefPageSize = Number(displayPrefs.page_size) || 25
-  const paged = prefPageSize > 0 && (!groupBy || pagedWhenGrouped === true)
+  const paged =
+    !serverPagination &&
+    prefPageSize > 0 &&
+    (!groupBy || pagedWhenGrouped === true)
   const [pagination, setPagination] = useState({
     pageIndex: 0,
     pageSize: paged ? prefPageSize : 100000,
@@ -558,7 +575,9 @@ export function DataTable<T>({
                           // Chrome columns hug their content (see the header
                           // note), and the actions sit at the row's right edge.
                           (cell.column.id === "select" ? "w-px " : "") +
-                          (cell.column.id === "actions" ? "w-px text-right " : "") +
+                          (cell.column.id === "actions"
+                            ? "w-px text-right "
+                            : "") +
                           // Keep the row-actions column pinned to the right edge
                           // (see the header note) so it never scrolls out of reach.
                           (cell.column.id === "actions"
@@ -591,49 +610,65 @@ export function DataTable<T>({
 
       {/* Pager — shown on every flat (non-grouped) list, even single-page ones,
           so the row count + rows-per-page control are always available (the
-          selector persists to Settings → Preferences). */}
-      {paged && (
+          selector persists to Settings → Preferences). In `serverPagination`
+          mode the same row drives the server's page instead, and the
+          rows-per-page control is dropped (the caller owns the page size). */}
+      {(paged || serverPagination) && (
         <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
           <span className="num">
-            {table.getFilteredRowModel().rows.length} rows
+            {serverPagination?.totalRows ??
+              table.getFilteredRowModel().rows.length}{" "}
+            rows
           </span>
           <div className="flex items-center gap-2">
-            <span className="flex items-center gap-1">
-              Rows
-              <Select
-                value={String(prefPageSize)}
-                onValueChange={(v) => {
-                  const n = Number(v)
-                  table.setPageSize(n)
-                  setPref("page_size", n)
-                }}
-              >
-                <SelectTrigger
-                  size="sm"
-                  className="h-6 w-20 text-xs"
-                  aria-label="Rows"
+            {!serverPagination && (
+              <span className="flex items-center gap-1">
+                Rows
+                <Select
+                  value={String(prefPageSize)}
+                  onValueChange={(v) => {
+                    const n = Number(v)
+                    table.setPageSize(n)
+                    setPref("page_size", n)
+                  }}
                 >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[25, 50, 100, 250, 1000].map((n) => (
-                    <SelectItem key={n} value={String(n)}>
-                      {n}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </span>
+                  <SelectTrigger
+                    size="sm"
+                    className="h-6 w-20 text-xs"
+                    aria-label="Rows"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[25, 50, 100, 250, 1000].map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </span>
+            )}
             <span className="num">
-              Page {table.getState().pagination.pageIndex + 1} of{" "}
-              {table.getPageCount()}
+              Page{" "}
+              {serverPagination?.page ??
+                table.getState().pagination.pageIndex + 1}{" "}
+              of {serverPagination?.pageCount ?? table.getPageCount()}
             </span>
             <Button
               variant="ghost"
               size="sm"
               className="h-6 px-2 text-xs"
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
+              onClick={() =>
+                serverPagination
+                  ? serverPagination.onPageChange(serverPagination.page - 1)
+                  : table.previousPage()
+              }
+              disabled={
+                serverPagination
+                  ? serverPagination.page <= 1
+                  : !table.getCanPreviousPage()
+              }
             >
               Prev
             </Button>
@@ -641,8 +676,16 @@ export function DataTable<T>({
               variant="ghost"
               size="sm"
               className="h-6 px-2 text-xs"
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
+              onClick={() =>
+                serverPagination
+                  ? serverPagination.onPageChange(serverPagination.page + 1)
+                  : table.nextPage()
+              }
+              disabled={
+                serverPagination
+                  ? serverPagination.page >= serverPagination.pageCount
+                  : !table.getCanNextPage()
+              }
             >
               Next
             </Button>

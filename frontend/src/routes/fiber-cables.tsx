@@ -1,21 +1,20 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
-import { ArrowLeftRight, Search } from "lucide-react"
+import { ArrowLeftRight } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { Cable, Paginated } from "@/lib/api"
 import { fiberColor } from "@/lib/fiber"
-import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
-import { Input } from "@/components/ui/input"
 import { DataTable, selectionColumn } from "@/components/data-table"
+import { EmptyState } from "@/components/empty-state"
+import { ListPageShell } from "@/components/list-page-shell"
 import { useTableFilters } from "@/components/table-filters"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { numidColumn } from "@/components/cells/numid"
-import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
 import { termSummary } from "./cables.index"
 
@@ -55,53 +54,34 @@ function FiberCablesPage() {
     () => buildColumns(humanIds),
     [humanIds]
   )
-  const { rail, filteredRows } = useTableFilters(columns, rows)
+  const { rail, filteredRows, activeCount } = useTableFilters(columns, rows)
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-0 flex-1">
-        {rail}
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-            <h1 className="text-base font-semibold">Fibre cables</h1>
-            {query.data && (
-              <Badge variant="secondary">{filteredRows.length}</Badge>
-            )}
-            <div className="ml-auto flex items-center gap-2">
-              <div className="relative">
-                <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Filter by device, port…"
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  className="h-8 w-72 pl-8 text-xs"
-                />
-              </div>
-            </div>
-          </header>
-          <div className="flex-1 overflow-auto p-4 lg:p-6">
-            {query.isLoading && (
-              <p className="text-sm text-muted-foreground">Loading…</p>
-            )}
-            {query.isError && <QueryError error={query.error} />}
-            {query.data && filteredRows.length === 0 && (
-              <p className="text-sm text-muted-foreground">
-                No fibre cables. A cable becomes fibre when its type is a
-                single-mode (smf*) or multimode (mmf*) medium.
-              </p>
-            )}
-            {query.data && filteredRows.length > 0 && (
-              <DataTable
-                data={filteredRows}
-                columns={columns}
-                flexColumn="a"
-                tableId="fiber-cables"
-              />
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+    <ListPageShell
+      title="Fibre cables"
+      count={query.data ? filteredRows.length : undefined}
+      rail={rail}
+      search={{
+        value: q,
+        onChange: setQ,
+        placeholder: "Filter by device, port…",
+      }}
+      query={query}
+    >
+      {rows.length === 0 && !q && activeCount === 0 ? (
+        <EmptyState title="No fibre cables yet.">
+          A cable becomes fibre when its type is a single-mode (smf*) or
+          multimode (mmf*) medium.
+        </EmptyState>
+      ) : (
+        <DataTable
+          data={filteredRows}
+          columns={columns}
+          flexColumn="a"
+          tableId="fiber-cables"
+        />
+      )}
+    </ListPageShell>
   )
 }
 

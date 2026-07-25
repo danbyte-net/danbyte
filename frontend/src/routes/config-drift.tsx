@@ -11,8 +11,9 @@ import {
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { DataTable } from "@/components/data-table"
+import { EmptyState } from "@/components/empty-state"
+import { ListPageShell } from "@/components/list-page-shell"
 import { TimeCell } from "@/components/cells/time-ago"
-import { QueryError } from "@/components/query-error"
 import { DriftStatusBadge } from "@/components/drift-status-badge"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
@@ -34,11 +35,11 @@ function ConfigDriftPage() {
   const [tab, setTab] = useState<Tab>("config")
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-        <h1 className="text-base font-semibold">Drift</h1>
+    // Page-level tab strip over one ListPageShell per tab — the shell owns the
+    // title/count/actions row and the loading/error triad for both tabs.
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex h-10 shrink-0 items-center border-b border-border px-4 lg:px-6">
         <SegmentedTabs
-          className="ml-2"
           value={tab}
           onValueChange={(v) => setTab(v as Tab)}
           items={[
@@ -46,9 +47,36 @@ function ConfigDriftPage() {
             { value: "snmp", label: "SNMP drift" },
           ]}
         />
-      </header>
+      </div>
       {tab === "config" ? <ConfigTab /> : <SnmpTab />}
     </div>
+  )
+}
+
+/** Status dropdown shared by both tabs' shell headers. */
+function StatusFilter({
+  value,
+  onChange,
+  statuses,
+}: {
+  value: string
+  onChange: (v: string) => void
+  statuses: readonly string[]
+}) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className="h-8 w-36 text-xs">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All statuses</SelectItem>
+        {statuses.map((s) => (
+          <SelectItem key={s} value={s}>
+            {s}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 
@@ -128,54 +156,40 @@ function ConfigTab() {
   )
 
   return (
-    <>
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4 lg:px-6">
-        {query.data && (
-          <Badge variant={driftCount > 0 ? "warning" : "secondary"}>
-            {driftCount > 0 ? `${driftCount} drifted` : `${rows.length}`}
-          </Badge>
-        )}
-        <div className="ml-auto flex items-center gap-2">
-          <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="h-8 w-36 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              {STATUSES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      <div className="flex-1 overflow-auto p-4 lg:p-6">
-        {query.isLoading && (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        )}
-        {query.isError && <QueryError error={query.error} />}
-        {query.data &&
-          (rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No config state reported yet. Have your runner POST each device's
-              actual config to{" "}
-              <span className="font-mono text-[12px]">
-                /api/devices/&lt;id&gt;/config-state/
-              </span>{" "}
-              after a render/compare, and drift shows up here.
-            </p>
-          ) : (
-            <DataTable
-              data={rows}
-              columns={columns}
-              flexColumn="source"
-              tableId="config-drift"
-            />
-          ))}
-      </div>
-    </>
+    <ListPageShell
+      title="Config drift"
+      count={query.data ? rows.length : undefined}
+      actions={
+        <>
+          {driftCount > 0 && (
+            <Badge variant="warning">{driftCount} drifted</Badge>
+          )}
+          <StatusFilter
+            value={status}
+            onChange={setStatus}
+            statuses={STATUSES}
+          />
+        </>
+      }
+      query={query}
+    >
+      {rows.length === 0 && status === "all" ? (
+        <EmptyState title="No config state reported yet.">
+          Have your runner POST each device's actual config to{" "}
+          <span className="font-mono text-[12px]">
+            /api/devices/&lt;id&gt;/config-state/
+          </span>{" "}
+          after a render/compare, and drift shows up here.
+        </EmptyState>
+      ) : (
+        <DataTable
+          data={rows}
+          columns={columns}
+          flexColumn="source"
+          tableId="config-drift"
+        />
+      )}
+    </ListPageShell>
   )
 }
 
@@ -273,52 +287,38 @@ function SnmpTab() {
   )
 
   return (
-    <>
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4 lg:px-6">
-        {query.data && (
-          <Badge variant={driftCount > 0 ? "warning" : "secondary"}>
-            {driftCount > 0 ? `${driftCount} drifted` : `${rows.length}`}
-          </Badge>
-        )}
-        <div className="ml-auto flex items-center gap-2">
-          <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="h-8 w-36 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              {SNMP_STATUSES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      <div className="flex-1 overflow-auto p-4 lg:p-6">
-        {query.isLoading && (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        )}
-        {query.isError && <QueryError error={query.error} />}
-        {query.data &&
-          (rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No SNMP-polled devices yet. Add an{" "}
-              <span className="font-mono text-[12px]">SNMP profile</span>, bind
-              it to a device, and poll it from the device's{" "}
-              <span className="font-medium">Observed (SNMP)</span> card — drift
-              between the observed state and Danbyte's intent shows up here.
-            </p>
-          ) : (
-            <DataTable
-              data={rows}
-              columns={columns}
-              flexColumn="drift"
-              tableId="snmp-drift"
-            />
-          ))}
-      </div>
-    </>
+    <ListPageShell
+      title="SNMP drift"
+      count={query.data ? rows.length : undefined}
+      actions={
+        <>
+          {driftCount > 0 && (
+            <Badge variant="warning">{driftCount} drifted</Badge>
+          )}
+          <StatusFilter
+            value={status}
+            onChange={setStatus}
+            statuses={SNMP_STATUSES}
+          />
+        </>
+      }
+      query={query}
+    >
+      {rows.length === 0 && status === "all" ? (
+        <EmptyState title="No SNMP-polled devices yet.">
+          Add an <span className="font-mono text-[12px]">SNMP profile</span>,
+          bind it to a device, and poll it from the device's{" "}
+          <span className="font-medium">Observed (SNMP)</span> card — drift
+          between the observed state and Danbyte's intent shows up here.
+        </EmptyState>
+      ) : (
+        <DataTable
+          data={rows}
+          columns={columns}
+          flexColumn="drift"
+          tableId="snmp-drift"
+        />
+      )}
+    </ListPageShell>
   )
 }

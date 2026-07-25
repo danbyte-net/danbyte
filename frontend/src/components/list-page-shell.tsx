@@ -1,7 +1,10 @@
 import { type ReactNode } from "react"
-import { Search } from "lucide-react"
+import { Link } from "@tanstack/react-router"
+import type { LinkProps } from "@tanstack/react-router"
+import { ChevronLeft, ChevronRight, Search } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { QueryError } from "@/components/query-error"
 
@@ -32,6 +35,8 @@ import { QueryError } from "@/components/query-error"
 
 export function ListPageShell({
   title,
+  backTo,
+  backLabel,
   count,
   rail,
   search,
@@ -40,6 +45,11 @@ export function ListPageShell({
   children,
 }: {
   title: string
+  /** Sub-list pages (a view *of* another list, e.g. /racks/elevations) get the
+   * same breadcrumb back-link DetailShell renders — pass the parent list route
+   * and its label. Omit on a top-level list. */
+  backTo?: LinkProps["to"]
+  backLabel?: string
   /** Row-count chip next to the title. Omit to hide it. */
   count?: number
   /** Filter rail (typically `useTableFilters().rail`) rendered to the left. */
@@ -65,7 +75,21 @@ export function ListPageShell({
 
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-            <h1 className="text-base font-semibold">{title}</h1>
+            {backTo ? (
+              <nav className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Button variant="ghost" size="sm" asChild className="h-6 px-1">
+                  <Link to={backTo}>
+                    <ChevronLeft className="h-3 w-3" /> {backLabel}
+                  </Link>
+                </Button>
+                <ChevronRight className="h-3 w-3 opacity-60" />
+                <h1 className="text-base font-semibold text-foreground">
+                  {title}
+                </h1>
+              </nav>
+            ) : (
+              <h1 className="text-base font-semibold">{title}</h1>
+            )}
             {count !== undefined && <Badge variant="secondary">{count}</Badge>}
             <div className="ml-auto flex items-center gap-2">
               {search && (

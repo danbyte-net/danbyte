@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import type { ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
 
 import { api, type CheckTemplate, type Paginated } from "@/lib/api"
@@ -16,6 +16,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { DataTable, SortHeader } from "@/components/data-table"
+import { RowActions } from "@/components/row-actions"
+import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
 import { TemplateEditor } from "./template-editor"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -33,6 +36,75 @@ export function TemplatesList() {
 
   const rows = q.data?.results ?? []
 
+  const columns: ColumnDef<CheckTemplate>[] = [
+    {
+      id: "name",
+      accessorFn: (t) => t.name,
+      header: ({ column }) => <SortHeader column={column} label="Name" />,
+      cell: ({ row }) => (
+        <>
+          <button
+            type="button"
+            className="font-medium hover:underline"
+            onClick={() => setEditing(row.original)}
+          >
+            {row.original.name}
+          </button>
+          {row.original.has_secrets && (
+            <Badge variant="secondary" className="ml-2 h-4 px-1.5 text-[10px]">
+              creds
+            </Badge>
+          )}
+        </>
+      ),
+    },
+    {
+      id: "kind",
+      accessorFn: (t) => t.kind,
+      header: ({ column }) => <SortHeader column={column} label="Type" />,
+      meta: { label: "Type" },
+      cell: ({ row }) => (
+        <span className="font-mono text-[11px] text-muted-foreground uppercase">
+          {row.original.kind}
+        </span>
+      ),
+    },
+    {
+      id: "interval",
+      accessorFn: (t) => t.interval_seconds,
+      header: () => <div className="text-right">Interval</div>,
+      meta: { label: "Interval" },
+      cell: ({ row }) => (
+        <div className="num text-right text-muted-foreground">
+          {formatInterval(row.original.interval_seconds)}
+        </div>
+      ),
+    },
+    {
+      id: "usage",
+      accessorFn: (t) => t.usage_count,
+      header: () => <div className="text-right">Used by</div>,
+      meta: { label: "Used by" },
+      cell: ({ row }) => (
+        <div className="num text-right text-muted-foreground">
+          {row.original.usage_count}
+        </div>
+      ),
+    },
+    {
+      id: "actions",
+      enableSorting: false,
+      enableHiding: false,
+      header: "",
+      cell: ({ row }) => (
+        <RowActions
+          onEdit={() => setEditing(row.original)}
+          onDelete={() => setDeleting(row.original)}
+        />
+      ),
+    },
+  ]
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
@@ -41,92 +113,26 @@ export function TemplatesList() {
           them all.
         </p>
         <Button size="sm" className="ml-auto" onClick={() => setCreating(true)}>
-          <Plus className="h-3.5 w-3.5" /> New check
+          Add check
         </Button>
       </div>
 
       {q.isError && <QueryError error={q.error} />}
 
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
-        <table className="w-full text-left text-[13px]">
-          <thead className="bg-muted/40 text-[10px] tracking-[0.06em] text-muted-foreground uppercase">
-            <tr>
-              <th className="px-3 py-2 font-medium">Name</th>
-              <th className="px-3 py-2 font-medium">Type</th>
-              <th className="px-3 py-2 text-right font-medium">Interval</th>
-              <th className="px-3 py-2 text-right font-medium">Used by</th>
-              <th className="w-20 px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {rows.map((t) => (
-              <tr key={t.id} className="hover:bg-muted/40">
-                <td className="px-3 py-1.5">
-                  <button
-                    type="button"
-                    className="font-medium hover:underline"
-                    onClick={() => setEditing(t)}
-                  >
-                    {t.name}
-                  </button>
-                  {t.has_secrets && (
-                    <Badge
-                      variant="secondary"
-                      className="ml-2 h-4 px-1.5 text-[10px]"
-                    >
-                      creds
-                    </Badge>
-                  )}
-                </td>
-                <td className="px-3 py-1.5">
-                  <span className="font-mono text-[11px] text-muted-foreground uppercase">
-                    {t.kind}
-                  </span>
-                </td>
-                <td className="num px-3 py-1.5 text-right text-muted-foreground">
-                  {formatInterval(t.interval_seconds)}
-                </td>
-                <td className="num px-3 py-1.5 text-right text-muted-foreground">
-                  {t.usage_count}
-                </td>
-                <td className="px-3 py-1.5">
-                  <div className="flex items-center justify-end gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground"
-                      onClick={() => setEditing(t)}
-                      title="Edit"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                      onClick={() => setDeleting(t)}
-                      title="Delete"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {q.data && rows.length === 0 && (
-              <tr>
-                <td
-                  colSpan={5}
-                  className="px-3 py-10 text-center text-sm text-muted-foreground"
-                >
-                  No check templates yet. Create one, then attach it from any IP
-                  or prefix.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {q.data && rows.length === 0 ? (
+        <EmptyState title="No check templates yet.">
+          Create one, then attach it from any IP or prefix.
+        </EmptyState>
+      ) : (
+        <DataTable
+          tableId="check-templates"
+          data={rows}
+          columns={columns}
+          flexColumn="name"
+          exportName="check-templates"
+          exportTitle="Check templates"
+        />
+      )}
 
       <TemplateEditor open={creating} onOpenChange={setCreating} />
       <TemplateEditor

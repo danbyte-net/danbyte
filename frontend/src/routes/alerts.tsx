@@ -7,14 +7,7 @@ import {
   keepPreviousData,
 } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import {
-  BellRing,
-  BellOff,
-  Check,
-  Activity,
-  ArrowUpCircle,
-  Search,
-} from "lucide-react"
+import { BellOff, Check, Activity, ArrowUpCircle } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -25,7 +18,6 @@ import {
   type MonitoringAlert,
   type Paginated,
 } from "@/lib/api"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import {
   Select,
@@ -37,9 +29,10 @@ import {
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
-import { RowActions } from "@/components/row-actions"
+import { actionsColumn } from "@/components/columns/actions-column"
+import { FacetGroup, FilterRail } from "@/components/filter-rail"
+import { ListPageShell } from "@/components/list-page-shell"
 import { timeAgoColumn } from "@/components/cells/time-ago"
-import { QueryError } from "@/components/query-error"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { AlertRulesList } from "@/components/monitoring/alert-rules"
 import { ChannelsList } from "@/components/monitoring/channels-list"
@@ -83,6 +76,9 @@ const SEV_VARIANT: Record<
   warning: "warning",
   info: "secondary",
 }
+
+// Stable empty selection for the single-select rail facets.
+const EMPTY_FACET: Set<string> = new Set()
 
 function AlertsPage() {
   const { tab, state, severity, ack, q: search, site } = Route.useSearch()
@@ -138,15 +134,50 @@ function AlertsPage() {
   const counts = q.data?.counts ?? {}
   const rows = q.data?.results ?? []
 
+  // Severity + ack are single-select and server-side; the rail's "clear" is
+  // what widens each one back to "any". Counts are the server's own aggregates
+  // (firing-scoped, exactly the numbers the old chips showed).
+  const acked = counts.acknowledged ?? 0
+  const firing = counts.firing ?? 0
+  const rail = (
+    <FilterRail>
+      <FacetGroup
+        label="Severity"
+        options={(["critical", "warning", "info"] as const).map((sv) => ({
+          value: sv,
+          label: sv[0].toUpperCase() + sv.slice(1),
+          count: counts[sv] ?? 0,
+        }))}
+        selected={severity === "all" ? EMPTY_FACET : new Set([severity])}
+        onToggle={(v) =>
+          go({ severity: v === severity ? "all" : (v as AlertSeverity) })
+        }
+      />
+      <FacetGroup
+        label="Acknowledged"
+        options={[
+          { value: "unacknowledged", label: "Unacked", count: firing - acked },
+          { value: "acknowledged", label: "Acked", count: acked },
+        ]}
+        selected={ack === "all" ? EMPTY_FACET : new Set([ack])}
+        onToggle={(v) => go({ ack: v === ack ? "all" : (v as AckFilter) })}
+      />
+    </FilterRail>
+  )
+
+  const secondaryTab =
+    tab === "rules" ? (
+      <AlertRulesList />
+    ) : tab === "channels" ? (
+      <ChannelsList />
+    ) : tab === "silences" ? (
+      <SilencesList />
+    ) : null
+
   return (
-    <div className="flex h-full flex-1 flex-col bg-muted/30">
-      <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border bg-background px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-        <h1 className="flex items-center gap-2 text-base font-semibold">
-          <BellRing className="h-4 w-4 text-muted-foreground" />
-          Alerts
-        </h1>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex h-10 shrink-0 items-center border-b border-border px-4 lg:px-6">
         <SegmentedTabs
-          className="ml-2"
           value={tab}
           onValueChange={(v) => go({ tab: v as AlertsTab })}
           items={[
@@ -156,121 +187,64 @@ function AlertsPage() {
             { value: "silences", label: "Silences" },
           ]}
         />
-        {tab === "alerts" && (counts.firing ?? 0) > 0 && (
-          <Badge variant="destructive" className="ml-auto">
-            {counts.firing} firing
-          </Badge>
-        )}
-      </header>
-
-      <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
-        {tab === "silences" ? (
-          <div className="mx-auto max-w-6xl">
-            <SilencesList />
-          </div>
-        ) : tab === "channels" ? (
-          <div className="mx-auto max-w-6xl">
-            <ChannelsList />
-          </div>
-        ) : tab === "rules" ? (
-          <div className="mx-auto max-w-6xl">
-            <AlertRulesList />
-          </div>
-        ) : (
-          <div className="mx-auto max-w-6xl space-y-3">
-            {/* Firing / Resolved + severity + ack + search + site filters */}
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1">
-                {(["firing", "resolved"] as const).map((s) => (
-                  <FilterButton
-                    key={s}
-                    active={state === s}
-                    onClick={() => go({ state: s })}
-                    label={s === "firing" ? "Firing" : "Resolved"}
-                    count={counts[s]}
-                  />
-                ))}
-              </div>
-              <span className="mx-1 h-4 w-px bg-border" />
-              <div className="flex items-center gap-1">
-                {(["all", "critical", "warning", "info"] as const).map((sv) => (
-                  <FilterButton
-                    key={sv}
-                    active={severity === sv}
-                    onClick={() => go({ severity: sv })}
-                    label={sv[0].toUpperCase() + sv.slice(1)}
-                    count={sv === "all" ? undefined : counts[sv]}
-                  />
-                ))}
-              </div>
-              <span className="mx-1 h-4 w-px bg-border" />
-              <div className="flex items-center gap-1">
-                {(
-                  [
-                    ["all", "Any ack"],
-                    ["unacknowledged", "Unacked"],
-                    ["acknowledged", "Acked"],
-                  ] as const
-                ).map(([v, label]) => (
-                  <FilterButton
-                    key={v}
-                    active={ack === v}
-                    onClick={() => go({ ack: v })}
-                    label={label}
-                    count={
-                      v === "acknowledged" ? counts.acknowledged : undefined
-                    }
-                  />
-                ))}
-              </div>
-              <div className="ml-auto flex items-center gap-2">
-                <Select value={site} onValueChange={(v) => go({ site: v })}>
-                  <SelectTrigger
-                    className="h-8 w-40 text-xs"
-                    aria-label="Filter by site"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All sites</SelectItem>
-                    {(sites.data?.results ?? []).map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <div className="relative">
-                  <Search className="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={searchDraft}
-                    onChange={(e) => setSearchDraft(e.target.value)}
-                    placeholder="IP, description, rule…"
-                    className="h-8 w-56 pl-7 text-xs"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {q.isError && <QueryError error={q.error} />}
-
-            <AlertsTable rows={rows} emptyState={state} loaded={!!q.data} />
-          </div>
-        )}
       </div>
+
+      {secondaryTab ? (
+        <ListPageShell title="Alerts">{secondaryTab}</ListPageShell>
+      ) : (
+        <ListPageShell
+          title="Alerts"
+          count={q.data ? rows.length : undefined}
+          rail={rail}
+          search={{
+            value: searchDraft,
+            onChange: setSearchDraft,
+            placeholder: "IP, description, rule…",
+          }}
+          actions={
+            <>
+              {/* Lifecycle is an either/or split of the whole list (never
+                  "any"), so it stays a segmented switch rather than a facet. */}
+              <SegmentedTabs<AlertLifecycle>
+                value={state}
+                onValueChange={(v) => go({ state: v })}
+                items={[
+                  { value: "firing", label: "Firing", count: counts.firing },
+                  {
+                    value: "resolved",
+                    label: "Resolved",
+                    count: counts.resolved,
+                  },
+                ]}
+              />
+              <Select value={site} onValueChange={(v) => go({ site: v })}>
+                <SelectTrigger
+                  className="h-8 w-40 text-xs"
+                  aria-label="Filter by site"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All sites</SelectItem>
+                  {(sites.data?.results ?? []).map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
+          }
+          query={q}
+        >
+          <AlertsTable rows={rows} />
+        </ListPageShell>
+      )}
     </div>
   )
 }
 
-function AlertsTable({
-  rows,
-  emptyState,
-  loaded,
-}: {
-  rows: MonitoringAlert[]
-  emptyState: AlertLifecycle
-  loaded: boolean
-}) {
+function AlertsTable({ rows }: { rows: MonitoringAlert[] }) {
   const columns: ColumnDef<MonitoringAlert>[] = [
     {
       id: "severity",
@@ -386,24 +360,12 @@ function AlertsTable({
         )
       },
     },
-    {
-      id: "actions",
-      enableSorting: false,
-      enableHiding: false,
-      header: "",
-      cell: ({ row }) => <AlertRowActions a={row.original} />,
-    },
+    // Ack / unack is the only row action alerts have — it rides the shared
+    // actions column's `extra` slot instead of a bespoke cell.
+    actionsColumn<MonitoringAlert>({
+      extra: (a) => (a.status === "firing" ? <AckButton a={a} /> : null),
+    }),
   ]
-
-  if (loaded && rows.length === 0) {
-    return (
-      <div className="overflow-hidden rounded-lg border border-border bg-card px-3 py-10 text-center text-sm text-muted-foreground">
-        {emptyState === "firing"
-          ? "No firing alerts — all clear."
-          : "No resolved alerts."}
-      </div>
-    )
-  }
 
   return (
     <DataTable
@@ -415,7 +377,8 @@ function AlertsTable({
   )
 }
 
-function AlertRowActions({ a }: { a: MonitoringAlert }) {
+/** Acknowledge / clear-acknowledgement toggle for one firing alert. */
+function AckButton({ a }: { a: MonitoringAlert }) {
   const qc = useQueryClient()
 
   const ack = useMutation({
@@ -431,63 +394,22 @@ function AlertRowActions({ a }: { a: MonitoringAlert }) {
     onError: (err) => apiErrorToast(err),
   })
 
-  if (a.status !== "firing") return null
-
   return (
-    <RowActions
-      extra={
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-muted-foreground hover:text-foreground"
-          title={a.acknowledged ? "Clear acknowledgement" : "Acknowledge"}
-          disabled={ack.isPending}
-          onClick={() => ack.mutate(a.acknowledged)}
-        >
-          {a.acknowledged ? (
-            <BellOff className="h-3.5 w-3.5" />
-          ) : (
-            <Check className="h-3.5 w-3.5" />
-          )}
-          <span className="sr-only">{a.acknowledged ? "Unack" : "Ack"}</span>
-        </Button>
-      }
-    />
-  )
-}
-
-function FilterButton({
-  active,
-  onClick,
-  label,
-  count,
-}: {
-  active: boolean
-  onClick: () => void
-  label: string
-  count?: number
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium transition-colors ${
-        active
-          ? "bg-foreground text-background"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-      }`}
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+      title={a.acknowledged ? "Clear acknowledgement" : "Acknowledge"}
+      disabled={ack.isPending}
+      onClick={() => ack.mutate(a.acknowledged)}
     >
-      {label}
-      {count != null && (
-        <span
-          className={`num text-[11px] ${
-            active ? "text-background/70" : "text-muted-foreground/70"
-          }`}
-        >
-          {count}
-        </span>
+      {a.acknowledged ? (
+        <BellOff className="h-3.5 w-3.5" />
+      ) : (
+        <Check className="h-3.5 w-3.5" />
       )}
-    </button>
+      <span className="sr-only">{a.acknowledged ? "Unack" : "Ack"}</span>
+    </Button>
   )
 }
 
