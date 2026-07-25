@@ -21,6 +21,7 @@ import {
   renderTemplateName,
 } from "@/lib/faceplate-geometry"
 import {
+  bayHex,
   EMPTY_LEGEND,
   legendContent,
   PORT_NEUTRAL,
@@ -34,6 +35,7 @@ import {
 } from "@/lib/faceplate-colors"
 import {
   HardwareStatusKey,
+  ModuleBayKey,
   SpeedScale,
   useReportLegend,
   type LegendReporter,
@@ -969,6 +971,7 @@ export function ImagePortsFaceplate({
     if (!image) return EMPTY_LEGEND
     const ports: Parameters<typeof legendContent>[0]["ports"] = []
     const parts: { status?: { id: string } | null }[] = []
+    const bays: { occupied: boolean }[] = []
     const obs = new Map<string, ObservedPort>()
     for (const m of markers) {
       const kind = m.kind || "interface"
@@ -978,6 +981,13 @@ export function ImagePortsFaceplate({
       if (kind === "inventory-item") {
         const item = itemByName.get(key)
         if (item) parts.push(item)
+        continue
+      }
+      if (kind === "module-bay") {
+        // A bay that resolved is keyed by what's in it; one that didn't is a
+        // ghost with no colour, so it earns no entry.
+        const fp = portByMarker.get(m.name)
+        if (fp?.id) bays.push({ occupied: !!fp.module })
         continue
       }
       if (kind !== "interface") {
@@ -1002,7 +1012,7 @@ export function ImagePortsFaceplate({
       const live = observed?.get(key)
       if (live) obs.set(key, live)
     }
-    return legendContent({ ports, observed: obs, parts })
+    return legendContent({ ports, observed: obs, parts, bays })
   }, [
     image,
     markers,
@@ -1168,6 +1178,57 @@ export function ImagePortsFaceplate({
                   <div className="pt-0.5 font-sans text-[10px] text-muted-foreground">
                     Click to edit
                   </div>
+                )}
+              </HoverCardContent>
+            </HoverCard>
+          )
+        }
+        // Module bays (line-card slots) read OCCUPANCY: an installed bay is
+        // filled, a free one is the same faint outline an idle port wears.
+        // Without a device (a type preview) every bay is definitionally
+        // unoccupied — that's an empty slot, not a broken marker.
+        if (kind === "module-bay") {
+          const fp = portByMarker.get(m.name)
+          if (deviceId && !fp?.id)
+            return (
+              <span
+                key={`${m.name}-${idx}`}
+                style={style}
+                title={`${name} (not on this device)`}
+                className="absolute rounded-[2px] border border-dashed border-border/70 bg-background/20"
+              />
+            )
+          const mod = fp?.module ?? null
+          const hex = bayHex(!!mod)
+          return (
+            <HoverCard key={`${m.name}-${idx}`} openDelay={100} closeDelay={80}>
+              <HoverCardTrigger asChild>
+                <span
+                  style={
+                    mod
+                      ? { ...style, ...portOverlayStyle(hex) }
+                      : { ...style, borderColor: `${hex}59` }
+                  }
+                  className="absolute rounded-[2px] border-2"
+                />
+              </HoverCardTrigger>
+              <HoverCardContent
+                side="top"
+                className="grid gap-0.5 font-mono text-[11px] whitespace-nowrap"
+              >
+                <div className="font-semibold">{name}</div>
+                <div className="text-muted-foreground">module bay</div>
+                {mod ? (
+                  <>
+                    <div>{mod.module_type.name}</div>
+                    {mod.serial_number && (
+                      <div className="text-muted-foreground">
+                        SN {mod.serial_number}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div>Empty</div>
                 )}
               </HoverCardContent>
             </HoverCard>
@@ -1379,6 +1440,7 @@ export function FaceplateLegend({
         }
       />
       {hasHardware && <HardwareStatusKey statusIds={content?.partStatusIds} />}
+      {content && <ModuleBayKey bays={content.bays} />}
     </div>
   )
 }

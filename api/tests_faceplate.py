@@ -163,6 +163,38 @@ class FaceplateFieldTests(APITestCase):
         ):
             self.assertEqual(self._patch_ports(bad).status_code, 400, bad)
 
+    def test_image_ports_accept_photo_only_kinds(self):
+        """Hardware parts and MODULE BAYS are placeable on a photo — you mark
+        where a chassis's line-card slots physically are."""
+        ports = {
+            "front": [
+                {"kind": "inventory-item", "name": "Disk 0", "x": 0.1,
+                 "y": 0.5, "w": 0.03, "h": 0.35},
+                {"kind": "module-bay", "name": "Slot 1", "x": 0.4, "y": 0.5,
+                 "w": 0.2, "h": 0.45},
+            ],
+            "rear": [],
+        }
+        resp = self._patch_ports(ports)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        kinds = [m["kind"] for m in resp.json()["image_ports"]["front"]]
+        self.assertEqual(kinds, ["inventory-item", "module-bay"])
+
+    def test_faceplate_still_rejects_photo_only_kinds(self):
+        """The boundary is the point: the schematic faceplate stays PORT-only.
+        A module bay appears there as a group's `bay` placeholder (which the
+        device render composes an installed module into), never as a slot."""
+        for kind in ("module-bay", "inventory-item"):
+            doc = {
+                "v": 1, "rear": [],
+                "front": [
+                    {"id": "a", "rows": 1, "bank": 0, "slots": [
+                        {"t": "port", "kind": kind, "name": "Slot 1"},
+                    ]}
+                ],
+            }
+            self.assertEqual(self._patch(doc).status_code, 400, kind)
+
     def test_rejects_duplicate_kind_name(self):
         doc = {
             "v": 1, "rear": [],
@@ -372,6 +404,69 @@ class FacePortsResolveTests(APITestCase):
         front = self._get().json()["front"]
         self.assertIsNone(front[0]["drift"])
         self.assertIsNone(front[1]["drift"])
+
+    def _bay_markers(self):
+        self.dt.image_ports = {
+            "front": [{"kind": "module-bay", "name": "Slot 1",
+                       "x": 0.3, "y": 0.5, "w": 0.2, "h": 0.45}],
+            "rear": [],
+        }
+        self.dt.save(update_fields=["image_ports"])
+
+    def test_module_bay_marker_empty_then_installed(self):
+        """The whole chain a bay marker travels: a module-bay TEMPLATE on the
+        type → a bay stamped onto a new device → a marker naming that template
+        → resolved empty, then occupied once a module is seated. "Empty" is a
+        real answer; "not on this device" is not."""
+        from api.models import Manufacturer, ModuleBayTemplate, ModuleType
+
+        ModuleBayTemplate.objects.create(device_type=self.dt, name="Slot 1")
+        # Stamped by device creation, exactly as the palette's template implies.
+        resp = self.client.post(
+            "/api/devices/",
+            {"name": "c9400", "device_type_id": str(self.dt.id)},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        chassis = Device.objects.get(name="c9400")
+        bay = chassis.module_bays.get(name="Slot 1")
+        self._bay_markers()
+
+        front = self.client.get(
+            f"/api/devices/{chassis.id}/face-ports/"
+        ).json()["front"]
+        self.assertEqual(front[0]["id"], str(bay.id))
+        self.assertIsNone(front[0]["kind"])  # not cable-able
+        self.assertIsNone(front[0]["module"])
+        # A bay is not a hardware part — it has no lifecycle status of its own.
+        self.assertIsNone(front[0]["status"])
+
+        mfr = Manufacturer.objects.create(tenant=self.tenant, name="Cisco")
+        mt = ModuleType.objects.create(
+            tenant=self.tenant, manufacturer=mfr, name="C9400-LC-48U"
+        )
+        resp = self.client.post(
+            "/api/modules/",
+            {"device_id": str(chassis.id), "module_bay_id": str(bay.id),
+             "module_type_id": str(mt.id), "serial_number": "FOC123"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+        front = self.client.get(
+            f"/api/devices/{chassis.id}/face-ports/"
+        ).json()["front"]
+        self.assertEqual(front[0]["id"], str(bay.id))
+        self.assertEqual(front[0]["module"]["id"], resp.json()["id"])
+        self.assertEqual(front[0]["module"]["module_type"]["name"],
+                         "C9400-LC-48U")
+        self.assertEqual(front[0]["module"]["serial_number"], "FOC123")
+
+    def test_module_bay_marker_with_no_bay_is_a_ghost(self):
+        self._bay_markers()
+        front = self._get().json()["front"]
+        self.assertIsNone(front[0]["id"])
+        self.assertIsNone(front[0]["module"])
 
     def test_connected_flag_and_cable_id(self):
         peer = Device.objects.create(

@@ -94,6 +94,32 @@ describe("legendContent", () => {
     expect(c.trunk).toBe(false)
   })
 
+  it("keys module bays only when bay markers were drawn", () => {
+    // The reported case: bays are placeable on a photo now, and a panel with
+    // none of them must not sprout an occupied/empty key.
+    expect(legendContent({}).bays.size).toBe(0)
+    expect(legendContent({ ports: [cabled("1G")] }).bays.size).toBe(0)
+    expect(legendContent({ parts: [{ status: { id: "s1" } }] }).bays.size).toBe(
+      0
+    )
+    const c = legendContent({ bays: [{ occupied: true }, { occupied: false }] })
+    expect([...c.bays].sort()).toEqual(["empty", "installed"])
+    // Bays are not ports: no tier, no state, no trunk comes along for the ride.
+    expect(c.tiers.size).toBe(0)
+    expect(c.states.size).toBe(0)
+    expect(c.trunk).toBe(false)
+  })
+
+  it("keys only the occupancies present — a device type is all empty", () => {
+    // On a TYPE there is no device, so every bay is definitionally unoccupied.
+    const t = legendContent({
+      bays: [{ occupied: false }, { occupied: false }],
+    })
+    expect([...t.bays]).toEqual(["empty"])
+    const full = legendContent({ bays: [{ occupied: true }] })
+    expect([...full.bays]).toEqual(["installed"])
+  })
+
   it("is empty when nothing resolved", () => {
     expect(legendIsEmpty(legendContent({}))).toBe(true)
     expect(legendIsEmpty(EMPTY_LEGEND)).toBe(true)
@@ -101,6 +127,10 @@ describe("legendContent", () => {
     expect(
       legendIsEmpty(legendContent({ parts: [{ status: { id: "s1" } }] }))
     ).toBe(false)
+    // A photo of nothing but bays still needs its key.
+    expect(legendIsEmpty(legendContent({ bays: [{ occupied: false }] }))).toBe(
+      false
+    )
   })
 })
 
@@ -139,9 +169,16 @@ describe("legendSignature", () => {
         ports: [cabled("1G")],
         parts: [{ status: { id: "s" } }],
       }),
+      // Bays must be IN the signature: a field the signature forgets makes the
+      // collector drop the update, and the legend silently stops keying it.
+      legendContent({ ports: [cabled("1G")], bays: [{ occupied: false }] }),
     ]
     for (const c of cases)
       expect(legendSignature(c)).not.toBe(legendSignature(base))
+    // And occupied vs empty is a different picture, not the same one.
+    expect(
+      legendSignature(legendContent({ bays: [{ occupied: true }] }))
+    ).not.toBe(legendSignature(legendContent({ bays: [{ occupied: false }] })))
   })
 })
 
@@ -151,10 +188,14 @@ describe("mergeLegend", () => {
       legendContent({ ports: [cabled("1G")] }),
       legendContent({ ports: [{ ...cabled("10G"), mode: "tagged" }] }),
       legendContent({ parts: [{ status: { id: "s-failed" } }] }),
+      legendContent({ bays: [{ occupied: true }] }),
+      legendContent({ bays: [{ occupied: false }] }),
     ])
     expect([...merged.tiers].sort()).toEqual(["10G", "1G"])
     expect(merged.trunk).toBe(true)
     expect([...merged.partStatusIds]).toEqual(["s-failed"])
+    // Two chassis, one legend: one has a card seated, the other doesn't.
+    expect([...merged.bays].sort()).toEqual(["empty", "installed"])
   })
 
   it("of nothing is empty, and doesn't alias EMPTY_LEGEND", () => {
@@ -163,5 +204,6 @@ describe("mergeLegend", () => {
     // A shared mutable Set leaking into callers would poison every later
     // legend on the page.
     expect(merged.tiers).not.toBe(EMPTY_LEGEND.tiers)
+    expect(merged.bays).not.toBe(EMPTY_LEGEND.bays)
   })
 })

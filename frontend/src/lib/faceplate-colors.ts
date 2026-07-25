@@ -8,6 +8,10 @@
  * green — at a glance the colour answers "how fast", not just "is it plugged
  * in". Free / disabled / unknown stay neutral. Live SNMP overrides with the
  * OBSERVED speed's tier when the link is up, red when it's down.
+ *
+ * The non-port things a photo panel can carry answer different questions and
+ * so get their own (still neutral) treatment: a hardware part wears its own
+ * lifecycle status colour, a module bay wears occupied-vs-empty (`bayHex`).
  */
 
 import type { CSSProperties } from "react"
@@ -139,6 +143,18 @@ export function portCapabilityHex(p: {
   return mbps == null ? null : speedTier(mbps).hex
 }
 
+/**
+ * A module bay's colour. A bay answers ONE question — "is this slot free?" —
+ * so it borrows the neutral pair the panel already uses for exactly that
+ * distinction on ports: occupied wears the "present, claims no speed tier"
+ * slate; empty wears the free-port grey, drawn as an outline. No speed ramp (a
+ * line card is not fast), and no status palette (a bay has no lifecycle of its
+ * own — the module in it does).
+ */
+export function bayHex(occupied: boolean): string {
+  return occupied ? PORT_NEUTRAL.cabled : PORT_NEUTRAL.free
+}
+
 /** Live-SNMP colour: admin-down → zinc, link down → red, up → the OBSERVED
  * speed's tier (so a hot 100G link reads violet, not generic green). */
 export function liveHex(o: {
@@ -190,6 +206,10 @@ export interface LegendContent {
    * its status as StatusMini (id/name/color), and the id is what joins it to
    * the tenant's Status catalog the key is drawn from. */
   partStatusIds: Set<string>
+  /** Module-bay occupancies drawn: "installed" and/or "empty". A device TYPE
+   * has no modules, so its panel keys "empty" alone — which is the honest key
+   * for what it draws. */
+  bays: Set<string>
 }
 
 /** Nothing drawn — a panel that resolved no markers at all. */
@@ -198,6 +218,7 @@ export const EMPTY_LEGEND: LegendContent = {
   states: new Set(),
   trunk: false,
   partStatusIds: new Set(),
+  bays: new Set(),
 }
 
 /** A canonical string for a legend's CONTENT, so consumers can compare two of
@@ -205,7 +226,13 @@ export const EMPTY_LEGEND: LegendContent = {
  * objects by identity is what turns "report what you drew" into a render loop. */
 export function legendSignature(c: LegendContent): string {
   const sorted = (s: Set<string>) => [...s].sort().join(",")
-  return `${sorted(c.tiers)}|${sorted(c.states)}|${c.trunk ? 1 : 0}|${sorted(c.partStatusIds)}`
+  return [
+    sorted(c.tiers),
+    sorted(c.states),
+    c.trunk ? 1 : 0,
+    sorted(c.partStatusIds),
+    sorted(c.bays),
+  ].join("|")
 }
 
 /** True when nothing on screen needs a key — hide the legend entirely. */
@@ -214,7 +241,8 @@ export function legendIsEmpty(c: LegendContent): boolean {
     c.tiers.size === 0 &&
     c.states.size === 0 &&
     !c.trunk &&
-    c.partStatusIds.size === 0
+    c.partStatusIds.size === 0 &&
+    c.bays.size === 0
   )
 }
 
@@ -226,11 +254,13 @@ export function mergeLegend(parts: LegendContent[]): LegendContent {
     states: new Set(),
     trunk: false,
     partStatusIds: new Set(),
+    bays: new Set(),
   }
   for (const p of parts) {
     for (const t of p.tiers) out.tiers.add(t)
     for (const s of p.states) out.states.add(s)
     for (const s of p.partStatusIds) out.partStatusIds.add(s)
+    for (const b of p.bays) out.bays.add(b)
     out.trunk = out.trunk || p.trunk
   }
   return out
@@ -251,6 +281,8 @@ export function legendContent(input: {
   }[]
   observed?: Map<string, { oper_status: string; admin_status: string }> | null
   parts?: { status?: { id: string } | null }[]
+  /** Module bays drawn — one entry per bay marker that resolved. */
+  bays?: { occupied: boolean }[]
 }): LegendContent {
   const tiers = new Set<string>()
   const states = new Set<string>()
@@ -273,5 +305,7 @@ export function legendContent(input: {
   const partStatusIds = new Set<string>()
   for (const it of input.parts ?? [])
     if (it.status?.id) partStatusIds.add(it.status.id)
-  return { tiers, states, trunk, partStatusIds }
+  const bays = new Set<string>()
+  for (const b of input.bays ?? []) bays.add(b.occupied ? "installed" : "empty")
+  return { tiers, states, trunk, partStatusIds, bays }
 }
