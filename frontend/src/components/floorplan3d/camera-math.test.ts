@@ -5,6 +5,7 @@ import {
   PAGE_SCROLL_KEYS,
   normalizeKey,
   panVector,
+  pullInTarget,
 } from "./camera-math"
 
 // Camera looking toward -z (the three.js default view direction).
@@ -118,5 +119,28 @@ describe("panVector", () => {
   it("suppresses horizontal motion on a degenerate forward, keeps vertical", () => {
     expect(panVector(keys("w", "d"), [0, 0], DIST, 1, false)).toEqual([0, 0, 0])
     expect(panVector(keys("q"), [0, 0], DIST, 1, false)[1]).toBeCloseTo(5.4)
+  })
+})
+
+describe("pullInTarget", () => {
+  it("pulls a far target to the pivot distance along the sight line", () => {
+    const t = pullInTarget([0, 1.6, 0], [0, 1.6, 10], 3)
+    expect(t).not.toBeNull()
+    expect(t![0]).toBeCloseTo(0)
+    expect(t![1]).toBeCloseTo(1.6)
+    expect(t![2]).toBeCloseTo(3)
+  })
+
+  it("keeps the vertical component of the sight line", () => {
+    const t = pullInTarget([0, 4, 0], [0, 0, 8], 3)!
+    const d = Math.hypot(t[0] - 0, t[1] - 4, t[2] - 0)
+    expect(d).toBeCloseTo(3)
+    expect(t[1]).toBeLessThan(4) // still descending toward the old target
+  })
+
+  it("returns null when the target is already near (never zooms the view)", () => {
+    expect(pullInTarget([0, 1, 0], [0, 1, 2], 3)).toBeNull()
+    expect(pullInTarget([0, 1, 0], [0, 1, 3], 3)).toBeNull()
+    expect(pullInTarget([1, 1, 1], [1, 1, 1], 3)).toBeNull() // degenerate
   })
 })

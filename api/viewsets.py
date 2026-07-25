@@ -5918,6 +5918,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "u_height": dt.u_height if dt else 1,
                 "rack_width": (dt.rack_width if dt else "full") or "full",
                 "is_full_depth": dt.is_full_depth if dt else True,
+                # Effective airflow (device override, else type default) so the
+                # 3D room can draw intake/exhaust glyphs. "" = unknown/passive.
+                "airflow": d.effective_airflow,
                 "role_color": d.role.color if d.role_id else "",
                 "role_name": d.role.name if d.role_id else "",
                 "device_type": dt.name if dt else "",

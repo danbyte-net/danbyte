@@ -594,6 +594,57 @@ class SceneTests(_Base):
         resp = self.client.get(f"/api/floor-plans/{hidden.id}/scene/")
         self.assertEqual(resp.status_code, 404)
 
+    def test_scene_device_airflow_is_effective_and_additive(self):
+        """The scene carries EFFECTIVE airflow (device override beats the
+        type's default), added without disturbing the rest of device_geo —
+        the 2D canvas and older consumers read the same keys they always did.
+        """
+        from .models import DeviceType
+
+        dt = DeviceType.objects.create(
+            tenant=self.tenant, name="FTR Switch", u_height=1,
+            airflow="front-to-rear",
+        )
+        Device.objects.create(
+            tenant=self.tenant, name="inherits", device_type=dt,
+            rack=self.rack, position=1, face="front",
+        )
+        Device.objects.create(
+            tenant=self.tenant, name="overrides", device_type=dt,
+            rack=self.rack, position=3, face="front",
+            airflow="rear-to-front",
+        )
+        FloorPlanTile.objects.create(
+            floor_plan=self.plan, tile_type=self.tt, x=0, y=0,
+            rack=self.rack, link_kind="rack",
+        )
+        body = self.client.get(f"/api/floor-plans/{self.plan.id}/scene/").json()
+        devs = {d["name"]: d for d in body["tiles"][0]["rack"]["devices"]}
+        self.assertEqual(devs["inherits"]["airflow"], "front-to-rear")
+        self.assertEqual(devs["overrides"]["airflow"], "rear-to-front")
+        # Additive: the established key set is intact alongside the new one.
+        for key in (
+            "id", "name", "position", "face", "rack_side", "u_height",
+            "rack_width", "is_full_depth", "role_color", "role_name",
+            "device_type", "status", "primary_ip", "serial_number",
+            "front_image", "rear_image", "has_faceplate", "image_ports",
+        ):
+            self.assertIn(key, devs["inherits"])
+
+    def test_effective_airflow_on_the_device_serializer(self):
+        from .models import DeviceType
+
+        dt = DeviceType.objects.create(
+            tenant=self.tenant, name="RTF Router", u_height=1,
+            airflow="rear-to-front",
+        )
+        dev = Device.objects.create(
+            tenant=self.tenant, name="edge1", device_type=dt
+        )
+        body = self.client.get(f"/api/devices/{dev.id}/").json()
+        self.assertEqual(body["airflow"], "")
+        self.assertEqual(body["effective_airflow"], "rear-to-front")
+
 
 class CablePathTests(_Base):
     def test_cable_paths_resolve_to_rack_tiles(self):

@@ -63,6 +63,7 @@ export default function FloorScene3D({
   traceCableId,
   showUNumbers = false,
   showNames = false,
+  showAirflow = false,
   showCables = false,
 }: {
   planId: string
@@ -71,6 +72,7 @@ export default function FloorScene3D({
   /** Overlay toggles — owned by the route's View popover, like the 2D prefs. */
   showUNumbers?: boolean
   showNames?: boolean
+  showAirflow?: boolean
   showCables?: boolean
 }) {
   const scene = useScene(planId)
@@ -305,6 +307,7 @@ export default function FloorScene3D({
             selection={selection}
             showUNumbers={showUNumbers}
             showNames={showNames}
+            showAirflow={showAirflow}
             onSelect={handleSelect}
             onLegend={onLegend}
             onFlyTo={(target, position) => {

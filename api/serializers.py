@@ -1574,6 +1574,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     role = serializers.SerializerMethodField()
     platform = serializers.SerializerMethodField()
     effective_platform = serializers.SerializerMethodField()
+    # Model property: the device's own airflow, else its type's default.
+    effective_airflow = serializers.CharField(read_only=True)
     location = serializers.SerializerMethodField()
     cluster = serializers.SerializerMethodField()
 
@@ -1879,7 +1881,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "vc_position", "vc_priority", "vc_renamed_interfaces",
                   "config_template", "config_template_id",
                   "status", "status_id",  "serial_number", "asset_tag",
-                  "description", "comments", "airflow",
+                  "description", "comments", "airflow", "effective_airflow",
                   "latitude", "longitude",
                   "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
                   "primary_ip", "primary_ip_id",

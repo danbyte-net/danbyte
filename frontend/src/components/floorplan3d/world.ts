@@ -32,6 +32,9 @@ export interface SceneDevice {
   has_faceplate: boolean
   /** Photo-anchored port markers (per device type), or null. */
   image_ports: ImagePorts | null
+  /** Effective airflow (device override, else type default). Optional so
+   * older cached payloads stay type-valid; "" = unknown. */
+  airflow?: string
 }
 
 export interface SceneRack {
@@ -193,7 +196,9 @@ export function deviceBoxM(
         : 0
   const dd = dev.is_full_depth ? rackDepthM * 0.9 : rackDepthM * 0.45
   const mountedRear = dev.face === "rear"
-  const dz = mountedRear ? rackDepthM * 0.45 - dd / 2 : dd / 2 - rackDepthM * 0.45
+  const dz = mountedRear
+    ? rackDepthM * 0.45 - dd / 2
+    : dd / 2 - rackDepthM * 0.45
   return { y, h, dx, dz, dw, dd, boxH: h * 0.94, mountedRear }
 }
 
@@ -214,13 +219,100 @@ export function portLocalM(
     : [box.dx - mx, box.y + box.h / 2 + my, box.dz - box.dd / 2 - 0.004]
 }
 
+// ─── Airflow glyphs ──────────────────────────────────────────────────────────
+
+export interface AirflowGlyph {
+  kind: "intake" | "exhaust"
+  /** Cone centre, local to the rack group (m). */
+  pos: [number, number, number]
+  /** Unit flow direction the cone points along. */
+  dir: [number, number, number]
+}
+
+/** How far a cone centre sits off its face plane (m) — half pokes out. */
+const GLYPH_OFF_M = 0.05
+
+/**
+ * Where a device's airflow cones go, in rack-local space. A direction CUE,
+ * not CFD: 2–3 cones per face, all pointing along the flow.
+ *
+ * Conventions (rack-local): the front plane is at `dz − dd/2` (faces −Z),
+ * the rear at `dz + dd/2` (faces +Z). "front-to-rear" flow therefore points
+ * +Z: intake cones sit on the front plane, exhaust cones on the rear, both
+ * pointing +Z. Side flows run along ±X ("left" = −X side as drawn, which is
+ * the device's left as seen from the aisle facing its front). "passive",
+ * "mixed-without-a-face" and unknown draw nothing; "mixed" draws one intake
+ * and one exhaust side by side on the exposed face.
+ */
+export function airflowGlyphPlacements(
+  airflow: string | undefined,
+  box: ReturnType<typeof deviceBoxM>
+): AirflowGlyph[] {
+  if (!airflow || airflow === "passive") return []
+  const midY = box.y + box.h / 2
+  const frontZ = box.dz - box.dd / 2 - GLYPH_OFF_M
+  const rearZ = box.dz + box.dd / 2 + GLYPH_OFF_M
+  // 3 across the width for wide gear, 2 for half-width — spread, not centred.
+  const n = box.dw > 0.3 ? 3 : 2
+  const xs = Array.from(
+    { length: n },
+    (_, i) => box.dx + ((i + 1) / (n + 1) - 0.5) * box.dw
+  )
+  const out: AirflowGlyph[] = []
+  const row = (
+    kind: AirflowGlyph["kind"],
+    z: number,
+    dir: [number, number, number]
+  ) => {
+    for (const x of xs) out.push({ kind, pos: [x, midY, z], dir })
+  }
+  switch (airflow) {
+    case "front-to-rear":
+      row("intake", frontZ, [0, 0, 1])
+      row("exhaust", rearZ, [0, 0, 1])
+      break
+    case "rear-to-front":
+      row("intake", rearZ, [0, 0, -1])
+      row("exhaust", frontZ, [0, 0, -1])
+      break
+    case "left-to-right":
+    case "right-to-left": {
+      const sign = airflow === "left-to-right" ? 1 : -1
+      const inX = box.dx - (sign * box.dw) / 2 - sign * GLYPH_OFF_M
+      const outX = box.dx + (sign * box.dw) / 2 + sign * GLYPH_OFF_M
+      for (const z of [box.dz - box.dd / 4, box.dz + box.dd / 4]) {
+        out.push({ kind: "intake", pos: [inX, midY, z], dir: [sign, 0, 0] })
+        out.push({ kind: "exhaust", pos: [outX, midY, z], dir: [sign, 0, 0] })
+      }
+      break
+    }
+    case "mixed": {
+      // One of each, side by side on the exposed face, pointing in and out.
+      const z = box.mountedRear ? rearZ : frontZ
+      const outward = box.mountedRear ? 1 : -1
+      out.push({
+        kind: "intake",
+        pos: [box.dx - box.dw / 4, midY, z],
+        dir: [0, 0, -outward],
+      })
+      out.push({
+        kind: "exhaust",
+        pos: [box.dx + box.dw / 4, midY, z],
+        dir: [0, 0, outward],
+      })
+      break
+    }
+    default:
+      return []
+  }
+  return out
+}
+
 /** True when this browser can do WebGL at all (feature gate for the view). */
 export function webglSupported(): boolean {
   try {
     const canvas = document.createElement("canvas")
-    return !!(
-      canvas.getContext("webgl2") ?? canvas.getContext("webgl")
-    )
+    return !!(canvas.getContext("webgl2") ?? canvas.getContext("webgl"))
   } catch {
     return false
   }

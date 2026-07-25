@@ -36,6 +36,7 @@ import {
 } from "@/lib/faceplate-colors"
 import {
   HardwareStatusKey,
+  AirflowKey,
   ModuleBayKey,
   SpeedScale,
   useReportLegend,
@@ -1544,6 +1545,7 @@ export function FaceplateLegend({
       />
       {hasHardware && <HardwareStatusKey statusIds={content?.partStatusIds} />}
       {content && <ModuleBayKey bays={content.bays} />}
+      {content && <AirflowKey airflow={content.airflow} />}
     </div>
   )
 }

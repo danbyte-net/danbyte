@@ -210,6 +210,16 @@ export interface LegendContent {
    * has no modules, so its panel keys "empty" alone — which is the honest key
    * for what it draws. */
   bays: Set<string>
+  /** Airflow glyphs drawn (3D room only): "intake" and/or "exhaust". */
+  airflow: Set<string>
+}
+
+/** Airflow glyph + legend-chip colours — one source so the key can never
+ * disagree with the cones. The same blue/red these modules already use for
+ * meaning (speed tiers / observed-down). */
+export const AIRFLOW_HEX: Record<"intake" | "exhaust", string> = {
+  intake: "#3b82f6",
+  exhaust: "#ef4444",
 }
 
 /** Nothing drawn — a panel that resolved no markers at all. */
@@ -219,6 +229,7 @@ export const EMPTY_LEGEND: LegendContent = {
   trunk: false,
   partStatusIds: new Set(),
   bays: new Set(),
+  airflow: new Set(),
 }
 
 /** A canonical string for a legend's CONTENT, so consumers can compare two of
@@ -232,6 +243,7 @@ export function legendSignature(c: LegendContent): string {
     c.trunk ? 1 : 0,
     sorted(c.partStatusIds),
     sorted(c.bays),
+    sorted(c.airflow),
   ].join("|")
 }
 
@@ -242,7 +254,8 @@ export function legendIsEmpty(c: LegendContent): boolean {
     c.states.size === 0 &&
     !c.trunk &&
     c.partStatusIds.size === 0 &&
-    c.bays.size === 0
+    c.bays.size === 0 &&
+    c.airflow.size === 0
   )
 }
 
@@ -255,12 +268,14 @@ export function mergeLegend(parts: LegendContent[]): LegendContent {
     trunk: false,
     partStatusIds: new Set(),
     bays: new Set(),
+    airflow: new Set(),
   }
   for (const p of parts) {
     for (const t of p.tiers) out.tiers.add(t)
     for (const s of p.states) out.states.add(s)
     for (const s of p.partStatusIds) out.partStatusIds.add(s)
     for (const b of p.bays) out.bays.add(b)
+    for (const a of p.airflow) out.airflow.add(a)
     out.trunk = out.trunk || p.trunk
   }
   return out
@@ -307,5 +322,6 @@ export function legendContent(input: {
     if (it.status?.id) partStatusIds.add(it.status.id)
   const bays = new Set<string>()
   for (const b of input.bays ?? []) bays.add(b.occupied ? "installed" : "empty")
-  return { tiers, states, trunk, partStatusIds, bays }
+  // 2D faceplates never draw airflow glyphs; only the 3D room reports them.
+  return { tiers, states, trunk, partStatusIds, bays, airflow: new Set() }
 }

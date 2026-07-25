@@ -75,14 +75,24 @@ uploaded blueprint textures it.
   in the direction it faces — the way to walk the aisles — while
   PageUp/PageDown or Q/E change height and Shift triples the pace. Speed
   tracks how far you are zoomed out, so close-up moves are fine-grained and
-  hall-scale hops are quick. **Double-click a rack** to fly the camera to
-  its front.
+  hall-scale hops are quick. The first key press also pulls the orbit pivot
+  to a few metres ahead of the camera, so dragging looks around
+  first-person-style while you walk; **double-click a rack** to re-anchor
+  the pivot on it and orbit for inspection, flying the camera to its front.
 - **Click a rack** for a summary card (space used, monitoring rollup) and a
   jump to the rack page; **click a device** inside an open cabinet for its
   own card (U position, size, face) and a jump to the device page. Up close,
   devices wear their device-type **front/rear images**. Monitoring state
   lights a beacon on top of each cabinet — the same worst-status rollup the
   2D overlays use.
+- **Airflow** (View menu, 3D): draws each device's cooling direction as
+  small cones — blue where air is drawn in, red where it is exhausted —
+  from the device's effective airflow (its own setting, else its type's).
+  Front-to-rear gear shows intake cones on the face and exhaust cones on
+  the rear, side-breathing gear shows them on its flanks, `mixed` shows one
+  of each on the exposed face, and `passive` draws nothing. The legend
+  gains an Airflow row only while cones are on screen.
+
 - Up close, a device whose type has **photo-anchored ports** wears its port
   markers on the image, coloured exactly as on the device page — speed tier
   for cabled ports, the part's status for hardware bays. Click one for a card

@@ -6,6 +6,7 @@ import type { FloorTileCheck } from "@/lib/api"
 
 import type { LegendReporter } from "@/components/speed-scale"
 
+import { AirflowGlyphs } from "./airflow-glyphs"
 import { DeviceMesh } from "./device-mesh"
 import { RackRuler } from "./rack-ruler"
 import { FaceLabel } from "./text-sprite"
@@ -54,6 +55,7 @@ export function RackMesh({
   selection,
   showUNumbers,
   showNames,
+  showAirflow,
   onSelect,
   onFlyTo,
   onLegend,
@@ -64,6 +66,8 @@ export function RackMesh({
   selection: Sel | null
   showUNumbers: boolean
   showNames: boolean
+  /** Draw intake/exhaust cones per device (near tier only). */
+  showAirflow?: boolean
   onSelect: (sel: Sel) => void
   onFlyTo: (target: THREE.Vector3, position: THREE.Vector3) => void
   /** Forwarded to each device so the room's legend keys what's on screen. */
@@ -191,6 +195,11 @@ export function RackMesh({
         </group>
       ) : (
         <Frame w={width} h={height} d={depth} color={frameColor} />
+      )}
+      {/* Airflow cues — near tier only, like every overlay; the glyph layer
+          reports its legend content and retracts it on unmount. */}
+      {near && showAirflow && (
+        <AirflowGlyphs rack={rack} legendKey={tile.id} onLegend={onLegend} />
       )}
       {/* Overlays — near tier only, and drawn FLAT on the front face so they
           stay anchored (billboards piled up in the aisle). */}
