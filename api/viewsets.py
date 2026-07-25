@@ -2794,8 +2794,7 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
 class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
     """Interfaces have no direct tenant FK — scope via device.tenant."""
 
-    # Interface has no description column (yet) — don't offer one.
-    bulk_str_fields = ("type", "mode", "speed", "duplex")
+    bulk_str_fields = ("type", "mode", "speed", "duplex", "description")
     bulk_bool_fields = ("enabled", "mgmt_only")
     bulk_int_fields = ("mtu",)
     bulk_fk_fields = {"vlan_id": VLAN, "vrf_id": VRF}

@@ -246,6 +246,21 @@ Notes:
   submit; with a 2-strand connector each port takes the next *pair*. Pick the
   rear port and starting strand once and the rest follows.
 
+## Component descriptions
+
+Every component a device can carry — interfaces, console and console server
+ports, power ports and outlets, front and rear ports, aux ports, module and
+device bays, inventory parts — has a short free-text **description** for notes:
+what's on the far end, why a port is reserved, a ticket reference. It's a single
+line (255 characters). Fill it in on the component's add/edit dialog, read it
+back as a column in the component's table, and retype it across a whole
+selection from the bulk-edit bar.
+
+A component **template** on the device type has one too, and it's copied onto
+every component stamped from it — so "reserved for out-of-band" written once on
+the type reaches every device built from it. Editing the concrete component's
+description afterwards doesn't touch the template.
+
 ## Bulk editing components
 
 Every component table — interfaces, console ports, power ports/outlets,

@@ -1926,7 +1926,8 @@ def device_snmp_drift_view(request, device_id):
 
 
 # Drift kinds we summarise per device on the fleet list (in compute order).
-_DRIFT_KINDS = ("device_field", "interface_missing", "interface_mismatch", "interface_stale")
+_DRIFT_KINDS = ("device_field", "interface_missing", "interface_mismatch",
+                "interface_stale", "part_status", "part_missing")
 
 
 @extend_schema(

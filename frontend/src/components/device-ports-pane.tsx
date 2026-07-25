@@ -129,6 +129,16 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
           ),
       },
       {
+        id: "description",
+        header: "Description",
+        cell: ({ row }) =>
+          row.original.description ? (
+            <span className="text-xs">{row.original.description}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+      {
         id: "actions",
         header: "",
         cell: ({ row }) => (
@@ -233,6 +243,16 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
           ),
       },
       {
+        id: "description",
+        header: "Description",
+        cell: ({ row }) =>
+          row.original.description ? (
+            <span className="text-xs">{row.original.description}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+      {
         id: "actions",
         header: "",
         cell: ({ row }) => (
@@ -319,11 +339,12 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
           <DataTable
             data={rearRows}
             columns={rearCols}
+            flexColumn="description"
             rowStyle={(r) => cableTint(r.cable?.status)}
             onSelectedRowsChange={setSelRear}
             embedded
-          searchable
-          searchPlaceholder="Search ports…"
+            searchable
+            searchPlaceholder="Search ports…"
           />
         )}
       </section>
@@ -345,11 +366,12 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
           <DataTable
             data={frontRows}
             columns={frontCols}
+            flexColumn="description"
             rowStyle={(r) => cableTint(r.cable?.status)}
             onSelectedRowsChange={setSelFront}
             embedded
-          searchable
-          searchPlaceholder="Search ports…"
+            searchable
+            searchPlaceholder="Search ports…"
           />
         )}
       </section>

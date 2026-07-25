@@ -101,7 +101,8 @@ class SnmpSensorSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "slug", "description", "device_type",
             "device_type_name", "oid", "walk", "item_kind", "name_template",
-            "value_map", "absent_status", "enabled", "created_at", "updated_at",
+            "value_map", "absent_status", "apply_mode", "enabled",
+            "created_at", "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
         extra_kwargs = {"slug": {"required": False}}

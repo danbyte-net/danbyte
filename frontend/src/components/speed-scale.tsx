@@ -15,6 +15,8 @@ export function SpeedScale({
   className,
   live,
   extras,
+  tiers,
+  states,
 }: {
   className?: string
   /** Include the live-SNMP down/admin-down swatches. */
@@ -22,11 +24,24 @@ export function SpeedScale({
   /** Extra swatches appended INTO the single key row (e.g. trunk / live
    * dots), so callers never stack a second wrapping line. */
   extras?: React.ReactNode
+  /** Tier labels actually drawn on this panel. Omit to show the full ramp
+   * (unfiltered callers keep their old behaviour); pass an empty set and the
+   * scale renders nothing — a disk-only panel shouldn't advertise 400G. */
+  tiers?: Set<string>
+  /** Neutral states actually drawn ("idle" / "off" / "down"), same contract. */
+  states?: Set<string>
 }) {
+  // A legend for colours that aren't on screen is noise, and on a panel of
+  // disk bays it's the majority of the legend.
+  const ramp = tiers ? SPEED_TIERS.filter((t) => tiers.has(t.label)) : SPEED_TIERS
+  const shows = (k: string) => !states || states.has(k)
+  if (ramp.length === 0 && !shows("idle") && !shows("off") && !shows("down"))
+    return extras ? <div className={className}>{extras}</div> : null
   return (
     <div className={cn("grid w-fit gap-1.5", className)}>
+      {ramp.length > 0 && (
       <div className="flex h-2 w-72 gap-px overflow-hidden rounded-full">
-        {SPEED_TIERS.map((t) => (
+        {ramp.map((t) => (
           <span
             key={t.label}
             className="h-full flex-1"
@@ -35,23 +50,32 @@ export function SpeedScale({
           />
         ))}
       </div>
+      )}
+      {ramp.length > 0 && (
       <div className="num flex w-72 text-[9px] leading-none text-muted-foreground">
-        {SPEED_TIERS.map((t) => (
+        {ramp.map((t) => (
           <span key={t.label} className="flex-1 text-center">
             {t.label}
           </span>
         ))}
       </div>
+      )}
       <div className="mt-0.5 flex w-72 flex-nowrap items-center gap-x-3 overflow-hidden text-[10px] leading-none whitespace-nowrap text-muted-foreground">
-        <span className="inline-flex items-center gap-1">
-          <span
-            className="h-2 w-2 rounded-[3px] border"
-            style={{ borderColor: `${SPEED_TIERS[6].hex}66` }}
-          />
-          idle
-        </span>
-        <Swatch hex={PORT_NEUTRAL.disabled} label="off" dashed />
-        {live && <Swatch hex={PORT_NEUTRAL.down} label="down" />}
+        {shows("idle") && (
+          <span className="inline-flex items-center gap-1">
+            <span
+              className="h-2 w-2 rounded-[3px] border"
+              style={{ borderColor: `${SPEED_TIERS[6].hex}66` }}
+            />
+            idle
+          </span>
+        )}
+        {shows("off") && (
+          <Swatch hex={PORT_NEUTRAL.disabled} label="off" dashed />
+        )}
+        {live && shows("down") && (
+          <Swatch hex={PORT_NEUTRAL.down} label="down" />
+        )}
         {extras}
       </div>
     </div>
@@ -64,7 +88,16 @@ export function SpeedScale({
  * legend can never disagree with the badges. Rendered only when the faceplate
  * actually carries hardware markers.
  */
-export function HardwareStatusKey({ className }: { className?: string }) {
+export function HardwareStatusKey({
+  className,
+  slugs,
+}: {
+  className?: string
+  /** Status slugs actually drawn on this panel. Omit for the whole catalog;
+   * pass an empty set and nothing renders. A panel showing Active and Empty
+   * disks shouldn't also claim Planned, Failed and Spare. */
+  slugs?: Set<string>
+}) {
   const statuses = useQuery({
     queryKey: ["statuses", "inventoryitem"],
     queryFn: () =>
@@ -73,7 +106,9 @@ export function HardwareStatusKey({ className }: { className?: string }) {
       ),
     staleTime: 5 * 60_000,
   })
-  const rows = (statuses.data?.results ?? []).slice(0, 6)
+  const rows = (statuses.data?.results ?? [])
+    .filter((s) => !slugs || slugs.has(s.slug))
+    .slice(0, 6)
   if (rows.length === 0) return null
   return (
     <div

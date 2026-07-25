@@ -400,11 +400,41 @@ On the device's **SNMP tab → Custom SNMP sensors** card, **Add sensor**:
 - **Scope** — limit the sensor to this device type, or apply it to all types
   (define once, reuse across every server of that model).
 
-**Poll sensors** runs every applicable sensor with the device's SNMP profile,
-then reconciles: matching items are created if missing and their **status is
-flipped** — so a failing disk turns red on the Hardware tab, the photo
-faceplate and the 3D rack, exactly like the Redfish path. Flips are journaled;
-the last raw readings show on the card.
+**Poll sensors** runs every applicable sensor with the device's SNMP profile and
+records what it read. What that does to your data depends on one setting:
+
+### A reading is observed data {#sensor-sot}
+
+Danbyte is a source of truth *with drift visualisation*, and a health reading is
+observed data like any other. So by default a sensor **never writes**: the
+reading is stored, and where it disagrees with the status you set, that
+difference is listed as [drift](#drift-and-reconciliation) for you to accept —
+exactly how interfaces behave.
+
+That means a part carries **both** states, and you can see them at once:
+
+- The **Hardware** tab shows the part's status with an amber **drift** pill
+  beside it; the pill's popover reads `Active → failed (Drive health: Critical)`
+  — set status, observed status, and the raw value behind it.
+- The **photo faceplate** and 3D rack keep drawing the part in its *set* status
+  and ring a drifting bay in amber, so the picture stays the source of truth and
+  the disagreement is a separate signal. The bay's popover names what SNMP said.
+- The **drift inbox** on the Monitoring tab lists it with the usual accept /
+  dismiss, and a part the agent reports that Danbyte has no record of appears as
+  a **new part** to accept rather than being created behind your back.
+
+Accepting is the only thing that writes.
+
+!!! note "Opt in to automatic application"
+    Tick **Apply readings automatically** on the sensor and it writes straight
+    through instead — a failing disk turns red with nobody watching. Off by
+    default, deliberately: that mode can overwrite a status a human set, so it
+    has to be asked for. Flips are journaled either way.
+
+!!! warning "The Redfish collector still writes directly"
+    [BMC/Redfish](#redfish) health has not been moved onto this path yet — it
+    reconciles part statuses on every poll, as sensors used to. Sensors are the
+    SoT-compliant path today.
 
 ### How a reading finds its part {#sensor-matching}
 

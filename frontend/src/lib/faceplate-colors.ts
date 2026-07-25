@@ -171,3 +171,58 @@ export function portOverlayStyle(hex: string): CSSProperties {
     backgroundColor: `${hex}59`, // 35%
   }
 }
+
+
+/** What a rendered panel actually contains, so its legend can show only that.
+ *
+ * A legend is a key to the picture, not a catalogue of everything Danbyte can
+ * draw — a shelf of disk bays listing FE…400G+ teaches nothing and buries the
+ * two colours that are on screen. Derived from the same inputs the renderers
+ * use, so the key and the pixels can't disagree. */
+export interface LegendContent {
+  /** Speed-tier labels present on cabled ports. */
+  tiers: Set<string>
+  /** Neutral states present: "idle" (enabled, no cable), "off" (disabled),
+   * "down" (observed down). */
+  states: Set<string>
+  /** A trunk port is drawn. */
+  trunk: boolean
+  /** Status slugs of the hardware parts drawn. */
+  partSlugs: Set<string>
+}
+
+export function legendContent(input: {
+  ports?: {
+    enabled: boolean
+    cable?: unknown
+    speed?: string | null
+    type?: string | null
+    mode?: string | null
+  }[]
+  observed?: Map<string, { oper_status: string; admin_status: string }> | null
+  parts?: { status?: { slug: string } | null }[]
+}): LegendContent {
+  const tiers = new Set<string>()
+  const states = new Set<string>()
+  let trunk = false
+  for (const p of input.ports ?? []) {
+    if (p.mode === "tagged" || p.mode === "tagged-all") trunk = true
+    if (!p.enabled) {
+      states.add("off")
+      continue
+    }
+    if (p.cable) {
+      // Same resolution order the colours use: explicit speed, else what the
+      // cage type is capable of.
+      const mbps = speedMbps(p.speed ?? "") ?? typeMaxMbps(p.type) ?? 0
+      tiers.add(speedTier(mbps).label)
+    }
+    else states.add("idle")
+  }
+  for (const o of (input.observed ?? new Map()).values())
+    if (o.admin_status !== "down" && o.oper_status !== "up") states.add("down")
+  const partSlugs = new Set<string>()
+  for (const it of input.parts ?? [])
+    if (it.status?.slug) partSlugs.add(it.status.slug)
+  return { tiers, states, trunk, partSlugs }
+}

@@ -16,6 +16,7 @@ import {
   type InventoryMedia,
   type ManufacturerOption,
   type Paginated,
+  type SnmpDriftItem,
   type Status,
   type StorageUnit,
 } from "@/lib/api"
@@ -39,6 +40,7 @@ import {
   FormText,
   useFieldErrors,
 } from "@/components/forms"
+import { DriftBadge } from "@/components/drift-detail"
 import { NameRangeHint } from "@/components/name-range-hint"
 import { QueryError } from "@/components/query-error"
 import { createEach, expandNameRange } from "@/lib/name-range"
@@ -85,11 +87,32 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
   const del = useMutation({
     mutationFn: (id: string) =>
       api<void>(`/api/inventory-items/${id}/`, { method: "DELETE" }),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["device-inventory", deviceId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["device-inventory", deviceId] })
+      // Removing a part turns any drift about it into a "new part" row.
+      qc.invalidateQueries({ queryKey: ["device-snmp-drift", deviceId] })
+    },
     onError: (err) => apiErrorToast(err),
   })
   const delMutate = del.mutate
+
+  // Observed hardware health for this device, grouped by part — shares the
+  // drift query the Monitoring tab uses, so no extra polling.
+  const drift = useQuery({
+    queryKey: ["device-snmp-drift", deviceId],
+    queryFn: () =>
+      api<{ drift: SnmpDriftItem[] }>(
+        `/api/monitoring/devices/${deviceId}/snmp/drift/`
+      ),
+  })
+  const driftByPart = useMemo(() => {
+    const map = new Map<string, SnmpDriftItem[]>()
+    for (const d of drift.data?.drift ?? []) {
+      if (d.kind !== "part_status") continue
+      map.set(d.part_id, [...(map.get(d.part_id) ?? []), d])
+    }
+    return map
+  }, [drift.data])
 
   // Roots first, children directly under their parent. Memoised: a fresh
   // array each render changes DataTable's `data` identity, which re-fires its
@@ -158,7 +181,15 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
         id: "status",
         header: "Status",
         accessorFn: (r) => r.status?.name ?? "",
-        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+        cell: ({ row }) => (
+          <span className="flex items-center gap-1.5">
+            <StatusBadge status={row.original.status} />
+            {/* Observed health disagreeing with the set status is a difference
+                to review, not a silent overwrite — same treatment interfaces
+                get. Accepting stays in the drift inbox. */}
+            <DriftBadge items={driftByPart.get(row.original.id) ?? []} />
+          </span>
+        ),
       },
       {
         id: "manufacturer",
@@ -191,6 +222,16 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
         ),
       },
       {
+        id: "description",
+        header: "Description",
+        accessorFn: (r) => r.description,
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {row.original.description || "—"}
+          </span>
+        ),
+      },
+      {
         id: "asset_tag",
         header: "Asset tag",
         accessorFn: (r) => r.asset_tag,
@@ -211,7 +252,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
       // Memoised: an inline array is a new identity every render, which makes
       // DataTable's selection effect loop and locks the pane up.
     ],
-    [canWrite, delMutate]
+    [canWrite, delMutate, driftByPart]
   )
 
   return (
@@ -242,7 +283,11 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
           kindLabel="part"
           selected={selected}
           onCleared={() => setSelected([])}
-          invalidate={[["device-inventory", deviceId]]}
+          invalidate={[
+            ["device-inventory", deviceId],
+            // Bulk status edits resolve drift as surely as single ones.
+            ["device-snmp-drift", deviceId],
+          ]}
           fields={[
             {
               key: "status_id",
@@ -325,6 +370,7 @@ export function InventoryItemDialog({
   const [capacity, setCapacity] = useState("")
   const [capacityUnit, setCapacityUnit] = useState<StorageUnit>("GB")
   const [speed, setSpeed] = useState("")
+  const [description, setDescription] = useState("")
   const [statusId, setStatusId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -341,6 +387,7 @@ export function InventoryItemDialog({
     setCapacity(cap.value)
     setCapacityUnit(cap.unit)
     setSpeed(item?.speed ?? "")
+    setDescription(item?.description ?? "")
     setStatusId(item?.status?.id ?? null)
     reset()
   }, [open, item, initialName, reset])
@@ -377,6 +424,7 @@ export function InventoryItemDialog({
         media: kind === "disk" ? media : "",
         capacity_bytes: unitToBytes(capacity, capacityUnit),
         speed: speed.trim(),
+        description: description.trim(),
         status_id: statusId,
       }
       if (editing)
@@ -394,6 +442,10 @@ export function InventoryItemDialog({
     },
     onSuccess: ({ count }) => {
       qc.invalidateQueries({ queryKey: ["device-inventory", deviceId] })
+      // Setting a part's status to what SNMP observed resolves its drift, so
+      // the pill and the faceplate ring have to be re-asked — otherwise they
+      // sit stale until React Query happens to refetch.
+      qc.invalidateQueries({ queryKey: ["device-snmp-drift", deviceId] })
       toast.success(
         editing
           ? "Part updated"
@@ -439,6 +491,13 @@ export function InventoryItemDialog({
             error={fieldErrors.name}
           />
           <NameRangeHint name={name} editing={editing} noun="parts" />
+          <FormText
+            label="Description"
+            value={description}
+            onChange={setDescription}
+            placeholder="notes about this part"
+            error={fieldErrors.description}
+          />
           <div className="grid grid-cols-2 gap-3">
             <FormSelect
               label="Kind"

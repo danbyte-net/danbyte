@@ -66,6 +66,7 @@ export function InterfaceForm({
   const [poeMode, setPoeMode] = useState(iface?.poe_mode ?? "")
   const [poeType, setPoeType] = useState(iface?.poe_type ?? "")
   const [wwn, setWwn] = useState(iface?.wwn ?? "")
+  const [description, setDescription] = useState(iface?.description ?? "")
   const [mode, setMode] = useState(iface?.mode ?? "")
   const [vlanId, setVlanId] = useState<string | null>(iface?.vlan?.id ?? null)
   const [taggedVlanIds, setTaggedVlanIds] = useState<string[]>(
@@ -100,6 +101,7 @@ export function InterfaceForm({
     setPoeMode(iface.poe_mode)
     setPoeType(iface.poe_type)
     setWwn(iface.wwn)
+    setDescription(iface.description ?? "")
     setMode(iface.mode)
     setVlanId(iface.vlan?.id ?? null)
     setTaggedVlanIds(iface.tagged_vlans.map((v) => v.id))
@@ -153,6 +155,7 @@ export function InterfaceForm({
         poe_mode: poeMode,
         poe_type: poeType,
         wwn: wwn.trim(),
+        description: description.trim(),
         mode,
         vlan_id: vlanId,
         tagged_vlan_ids: mode === "tagged" ? taggedVlanIds : [],
@@ -445,6 +448,13 @@ export function InterfaceForm({
           />
         )}
       </div>
+      <FormText
+        label="Description"
+        value={description}
+        onChange={setDescription}
+        placeholder="Optional"
+        error={fieldErrors.description}
+      />
       <Field label="Tags" error={fieldErrors.tag_ids}>
         <TagMultiSelect
           options={tags.data?.results ?? []}

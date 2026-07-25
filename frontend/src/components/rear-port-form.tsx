@@ -44,6 +44,7 @@ export function RearPortForm({
   )
   const [type, setType] = useState(port?.type ?? "")
   const [isSplitter, setIsSplitter] = useState(port?.is_splitter ?? false)
+  const [description, setDescription] = useState(port?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
     port?.tags.map((t) => t.id) ?? []
   )
@@ -54,6 +55,7 @@ export function RearPortForm({
     setPositions(String(port.positions))
     setType(port.type)
     setIsSplitter(port.is_splitter ?? false)
+    setDescription(port.description ?? "")
     setTagIds(port.tags.map((t) => t.id))
     reset()
   }, [port, reset])
@@ -72,6 +74,7 @@ export function RearPortForm({
         positions: positions.trim() === "" ? 1 : Number(positions),
         is_splitter: isSplitter,
         type: type.trim(),
+        description: description.trim(),
         tag_ids: tagIds,
       }
       if (isEdit)
@@ -161,6 +164,13 @@ export function RearPortForm({
           }}
         />
       </Field>
+      <FormText
+        label="Description"
+        value={description}
+        onChange={setDescription}
+        placeholder="Optional"
+        error={fieldErrors.description}
+      />
       <Field label="Tags" error={fieldErrors.tag_ids}>
         <TagMultiSelect
           options={tags.data?.results ?? []}

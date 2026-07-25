@@ -26,6 +26,10 @@ export function driftKey(item: SnmpDriftItem): string {
       return `ip_missing:${item.interface_id}:${item.ip}`
     case "switch_link_suggested":
       return `switch_link:${item.ip_id}:${item.interface_id}`
+    case "part_status":
+      return `part_status:${item.part_id}`
+    case "part_missing":
+      return `part_missing:${item.name}`
   }
 }
 
@@ -80,6 +84,40 @@ export function DriftDescription({ item }: { item: SnmpDriftItem }) {
         <span className="font-mono">{item.ip}</span>
         <span className="text-muted-foreground">on</span>
         <span className="font-mono">{item.name}</span>
+      </span>
+    )
+  }
+  if (item.kind === "part_status") {
+    return (
+      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <span className="font-mono">{item.name}</span>
+        <span className="font-mono line-through opacity-60">
+          {item.intended}
+        </span>
+        <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+        <span className="font-mono capitalize">{item.observed}</span>
+        {/* The value the agent actually returned — "Failed" is a conclusion,
+            "Critical" is the evidence for it. */}
+        {item.raw && (
+          <span className="text-[11px] text-muted-foreground">
+            ({item.sensor ? `${item.sensor}: ` : ""}
+            {item.raw})
+          </span>
+        )}
+      </span>
+    )
+  }
+  if (item.kind === "part_missing") {
+    return (
+      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <Badge variant="secondary">new part</Badge>
+        <span className="font-mono">{item.name}</span>
+        <span className="font-mono capitalize text-muted-foreground">
+          {item.observed}
+        </span>
+        {item.raw && (
+          <span className="text-[11px] text-muted-foreground">({item.raw})</span>
+        )}
       </span>
     )
   }

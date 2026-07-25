@@ -32,7 +32,9 @@ import { useRegisterPresence } from "@/lib/presence-context"
 
 export interface DetailTabItem {
   value: string
-  label: string
+  /** Node, not string: a tab may carry a marker (e.g. a drift dot) beside its
+   * name without every caller reaching into SegmentedTabs. */
+  label: React.ReactNode
   count?: number
 }
 

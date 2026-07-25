@@ -52,6 +52,7 @@ export function FrontPortForm({
   const [positions, setPositions] = useState(
     port?.positions != null ? String(port.positions) : "1"
   )
+  const [description, setDescription] = useState(port?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
     port?.tags.map((t) => t.id) ?? []
   )
@@ -66,6 +67,7 @@ export function FrontPortForm({
     setPosition(String(port.rear_port_position))
     setType(port.type)
     setPositions(String(port.positions))
+    setDescription(port.description ?? "")
     setTagIds(port.tags.map((t) => t.id))
     reset()
   }, [port, reset])
@@ -120,6 +122,7 @@ export function FrontPortForm({
         rear_port_position: position.trim() === "" ? 1 : Number(position),
         positions: positions.trim() === "" ? 1 : Number(positions),
         type: type.trim(),
+        description: description.trim(),
         tag_ids: tagIds,
       }
       if (isEdit)
@@ -241,6 +244,13 @@ export function FrontPortForm({
           />
         )}
       </div>
+      <FormText
+        label="Description"
+        value={description}
+        onChange={setDescription}
+        placeholder="Optional"
+        error={fieldErrors.description}
+      />
       <Field label="Tags" error={fieldErrors.tag_ids}>
         <TagMultiSelect
           options={tags.data?.results ?? []}

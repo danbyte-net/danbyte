@@ -132,6 +132,7 @@ function InterfacesPage() {
         data={rows}
         columns={columns}
         tableId="interfaces"
+        flexColumn="description"
         rowStyle={(r) => cableTint(r.cable?.status)}
       />
       <InterfaceDeleteDialog
@@ -272,6 +273,17 @@ function buildColumns({
       activeSlugs: new Set<string>(),
       onToggle: () => {},
     }),
+    {
+      id: "description",
+      accessorKey: "description",
+      header: "Description",
+      cell: ({ row }) =>
+        row.original.description ? (
+          <span className="text-xs">{row.original.description}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
     {
       id: "actions",
       enableHiding: false,

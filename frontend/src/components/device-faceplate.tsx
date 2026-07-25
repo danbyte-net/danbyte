@@ -9,6 +9,7 @@ import type {
   Interface,
   InventoryItemRow,
   Paginated,
+  SnmpDriftItem,
 } from "@/lib/api"
 import {
   CONNECTOR_MM,
@@ -859,6 +860,22 @@ export function ImagePortsFaceplate({
       ),
     [sensorReadings.data]
   )
+  // Observed-vs-set disagreements on this device's parts. Same query the
+  // Monitoring tab and Hardware table use, so it costs nothing extra.
+  const partDriftQuery = useQuery({
+    queryKey: ["device-snmp-drift", deviceId],
+    queryFn: () =>
+      api<{ drift: SnmpDriftItem[] }>(
+        `/api/monitoring/devices/${deviceId}/snmp/drift/`
+      ),
+    enabled: wantsInventory,
+  })
+  const partDrift = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const d of partDriftQuery.data?.drift ?? [])
+      if (d.kind === "part_status") map.set(d.part_id, d.observed)
+    return map
+  }, [partDriftQuery.data])
   const itemByName = useMemo(
     () =>
       new Map(
@@ -938,9 +955,20 @@ export function ImagePortsFaceplate({
                       borderColor: hex,
                       backgroundColor: `${hex}40`,
                     }}
-                    title={`${item.name} — click to edit`}
+                    title={
+                      partDrift.get(item.id)
+                        ? `${item.name} — SNMP says ${partDrift.get(item.id)}, click to review`
+                        : `${item.name} — click to edit`
+                    }
                     onClick={() => setPartDialog({ item, name })}
-                    className="absolute cursor-pointer rounded-[2px] border-2 transition-opacity hover:opacity-100 hover:ring-2 hover:ring-primary/40"
+                    className={cn(
+                      "absolute cursor-pointer rounded-[2px] border-2 transition-opacity hover:opacity-100 hover:ring-2 hover:ring-primary/40",
+                      // Observed health disagrees with the set status: ring it
+                      // rather than recolouring, so the bay keeps showing the
+                      // SoT and the drift reads as a separate signal.
+                      partDrift.get(item.id) &&
+                        "ring-2 ring-amber-500 ring-offset-1 ring-offset-background"
+                    )}
                   />
                 ) : (
                   <span
@@ -999,6 +1027,13 @@ export function ImagePortsFaceplate({
                 {sensorByName.get(normalizePortName(name)) && (
                   <div className="text-muted-foreground">
                     SNMP {sensorByName.get(normalizePortName(name))}
+                  </div>
+                )}
+                {/* Set status vs observed health, side by side — the difference
+                    is the point, and accepting it stays in the drift inbox. */}
+                {partDrift.get(item.id) && (
+                  <div className="font-sans text-[10px] text-amber-600 dark:text-amber-400">
+                    drift · SNMP says {partDrift.get(item.id)}
                   </div>
                 )}
                 {canEditParts && (

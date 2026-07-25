@@ -48,8 +48,23 @@ class _Base(APITestCase):
             value_map={"3": "active", "4": "failed"},
         )
 
+    def _write_through(self):
+        """Opt the fixture sensor into writing intent directly.
+
+        The default is observe-and-report (Danbyte's contract); these suites
+        exercise the write path, so they ask for it explicitly."""
+        self.sensor.apply_mode = "auto"
+        self.sensor.save(update_fields=["apply_mode"])
+
 
 class SensorReconcileTests(_Base):
+    """The `auto` write path. Observe-only behaviour lives in
+    SensorSoTComplianceTests."""
+
+    def setUp(self):
+        super().setUp()
+        self._write_through()
+
     def test_walk_creates_and_flips_status(self):
         with mock.patch(
             "monitoring.snmp_sensors.fetch_oid_sync",
@@ -125,6 +140,131 @@ class SensorReconcileTests(_Base):
         self.assertEqual(self.device.inventory_items.count(), 0)
 
 
+class SensorSoTComplianceTests(_Base):
+    """Danbyte is a source of truth with drift visualisation. A reading is
+    observed data: by default it is recorded and the difference is listed, and
+    it never overwrites a status a human set unless the sensor opts in.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from api.models import InventoryItem
+        from api.status_registry import resolve_status
+
+        self.active = resolve_status(self.tenant, "active", "inventoryitem")
+        self.disk = InventoryItem.objects.create(
+            device=self.device, name="Disk 1", kind="disk", status=self.active
+        )
+
+    def _poll(self, raw={"1": "4"}):
+        from .snmp_sensors import poll_device_sensors
+
+        with mock.patch(
+            "monitoring.snmp_sensors.fetch_oid_sync", return_value=raw
+        ):
+            return poll_device_sensors(self.device, self.tenant)
+
+    def _drift(self):
+        from .snmp_drift import compute_device_drift
+
+        return compute_device_drift(self.device, self.tenant)
+
+    def test_default_mode_records_the_reading_without_writing(self):
+        self.assertEqual(self.sensor.apply_mode, "drift")  # the default
+
+        result = self._poll()
+
+        self.disk.refresh_from_db()
+        self.assertEqual(self.disk.status.slug, "active", "intent was overwritten")
+        self.assertEqual(result["flipped"], 0)
+        # The observation is still recorded — that's what drift reads.
+        self.assertEqual(
+            [(r["name"], r["status"]) for r in result["readings"]],
+            [("Disk 1", "failed")],
+        )
+
+    def test_the_difference_surfaces_as_drift(self):
+        self._poll()
+        items = [d for d in self._drift() if d["kind"] == "part_status"]
+        self.assertEqual(len(items), 1, items)
+        self.assertEqual(items[0]["part_id"], str(self.disk.id))
+        self.assertEqual(items[0]["intended"], "Active")
+        self.assertEqual(items[0]["observed"], "failed")
+        self.assertEqual(items[0]["raw"], "4")
+
+    def test_accepting_the_drift_writes_it(self):
+        self._poll()
+        item = next(d for d in self._drift() if d["kind"] == "part_status")
+
+        resp = self.client.post(
+            f"/api/monitoring/devices/{self.device.id}/snmp/reconcile/",
+            {"action": item}, format="json",
+        )
+
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.disk.refresh_from_db()
+        self.assertEqual(self.disk.status.slug, "failed")
+        # And the difference is gone.
+        self.assertEqual([d for d in self._drift() if d["kind"] == "part_status"], [])
+
+    def test_auto_mode_writes_through_and_shows_no_drift(self):
+        """The opt-in: health acted on with nobody watching."""
+        self.sensor.apply_mode = "auto"
+        self.sensor.save(update_fields=["apply_mode"])
+
+        result = self._poll()
+
+        self.disk.refresh_from_db()
+        self.assertEqual(self.disk.status.slug, "failed")
+        self.assertEqual(result["flipped"], 1)
+        # Intent now matches the reading, so nothing is left to review.
+        self.assertEqual([d for d in self._drift() if d["kind"] == "part_status"], [])
+
+    def test_a_part_danbyte_has_never_seen_is_offered_not_created(self):
+        result = self._poll({"1": "4", "9": "3"})
+
+        self.assertEqual(
+            self.device.inventory_items.count(), 1, "a part was created silently"
+        )
+        missing = [d for d in self._drift() if d["kind"] == "part_missing"]
+        self.assertEqual([d["name"] for d in missing], ["Disk 9"])
+        self.assertEqual(missing[0]["part_kind"], "disk")
+
+        resp = self.client.post(
+            f"/api/monitoring/devices/{self.device.id}/snmp/reconcile/",
+            {"action": missing[0]}, format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        created = self.device.inventory_items.get(name="Disk 9")
+        self.assertEqual(created.kind, "disk")
+        self.assertEqual(created.status.slug, "active")
+        self.assertEqual(result["flipped"], 0)
+
+    def test_an_empty_bay_is_drift_too_not_a_write(self):
+        """The absent case goes through the same review path."""
+        from api.models import InventoryItem
+
+        InventoryItem.objects.create(
+            device=self.device, name="Disk 2", kind="disk", status=self.active
+        )
+        self.sensor.absent_status = "empty"
+        self.sensor.save(update_fields=["absent_status"])
+
+        self._poll({"1": "3"})  # only Disk 1 reported
+
+        bay2 = self.device.inventory_items.get(name="Disk 2")
+        self.assertEqual(bay2.status.slug, "active", "intent was overwritten")
+        drifted = {
+            d["name"]: d["observed"]
+            for d in self._drift() if d["kind"] == "part_status"
+        }
+        self.assertEqual(drifted, {"Disk 2": "empty"})
+
+    def test_unmapped_values_are_never_drift(self):
+        self._poll({"1": "99"})
+        self.assertEqual([d for d in self._drift() if d["kind"] == "part_status"], [])
+
+
 class SensorAbsentStatusTests(_Base):
     """A chassis template stamps every bay; the agent only reports the populated
     ones. Without this, the empty bays keep claiming to hold healthy hardware.
@@ -132,6 +272,7 @@ class SensorAbsentStatusTests(_Base):
 
     def setUp(self):
         super().setUp()
+        self._write_through()
         self.sensor.absent_status = "empty"
         self.sensor.save(update_fields=["absent_status"])
         # Four bays stamped from the type; the agent will report two.
@@ -251,6 +392,7 @@ class SensorApiTests(_Base):
         self.assertEqual(resp.status_code, 400)
 
     def test_poll_view(self):
+        self._write_through()  # creating parts is a write, so opt in
         with mock.patch(
             "monitoring.snmp_sensors.fetch_oid_sync",
             return_value={"1": "3", "2": "4"},
@@ -261,6 +403,18 @@ class SensorApiTests(_Base):
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertEqual(len(resp.json()["readings"]), 2)
         self.assertEqual(self.device.inventory_items.count(), 2)
+
+    def test_poll_view_observes_without_writing_by_default(self):
+        with mock.patch(
+            "monitoring.snmp_sensors.fetch_oid_sync",
+            return_value={"1": "3", "2": "4"},
+        ):
+            resp = self.client.post(
+                f"/api/monitoring/devices/{self.device.id}/sensor-poll/"
+            )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(len(resp.json()["readings"]), 2)
+        self.assertEqual(self.device.inventory_items.count(), 0)
 
     def test_tenant_isolation(self):
         other_org = Organization.objects.create(name="Evil", slug="evil")

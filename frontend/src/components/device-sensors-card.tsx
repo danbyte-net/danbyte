@@ -258,6 +258,8 @@ function SensorDialog({
   const [nameTemplate, setNameTemplate] = useState("{kind} {index}")
   const [scopeThisType, setScopeThisType] = useState(true)
   const [absentStatus, setAbsentStatus] = useState("")
+  // Off by default: a reading is observed data, not a write.
+  const [autoApply, setAutoApply] = useState(false)
   const [rows, setRows] = useState<{ raw: string; slug: string }[]>([
     { raw: "", slug: "" },
   ])
@@ -271,6 +273,7 @@ function SensorDialog({
     setNameTemplate(sensor?.name_template ?? "{kind} {index}")
     setScopeThisType(sensor ? !!sensor.device_type : true)
     setAbsentStatus(sensor?.absent_status ?? "")
+    setAutoApply(sensor?.apply_mode === "auto")
     const vm = sensor?.value_map ?? {}
     const entries = Object.entries(vm).map(([raw, slug]) => ({ raw, slug }))
     if (entries.length) setRows(entries)
@@ -312,6 +315,7 @@ function SensorDialog({
         name_template: nameTemplate.trim() || "{kind} {index}",
         value_map,
         absent_status: absentStatus,
+        apply_mode: autoApply ? "auto" : "drift",
         device_type: scopeThisType ? (deviceTypeId ?? null) : null,
       }
       const base = "/api/monitoring/snmp-sensors/"
@@ -468,6 +472,13 @@ function SensorDialog({
               </Button>
             </div>
           </Field>
+
+          <FormCheckbox
+            label="Apply readings automatically"
+            hint="off (default) keeps readings observed-only and lists the difference as drift for you to accept — Danbyte never overwrites a status you set unless you ask it to"
+            checked={autoApply}
+            onChange={setAutoApply}
+          />
 
           <FormSelect
             label="Never reported"

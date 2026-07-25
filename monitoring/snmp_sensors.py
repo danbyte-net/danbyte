@@ -75,17 +75,22 @@ def poll_device_sensors(device, tenant, profile=None) -> dict:
         except SnmpFactsError as exc:
             errors.append(f"{sensor.name}: {exc}")
             continue
+        # Danbyte is a source of truth with drift visualisation: a reading is
+        # OBSERVED data. In the default mode it is recorded and the difference
+        # is listed for review — it never overwrites a status a human set. Only
+        # an explicitly `auto` sensor writes through.
+        writes = sensor.apply_mode == sensor.APPLY_AUTO
         seen: set[str] = set()
         for index, value in raw.items():
             name = _render_name(sensor.name_template, sensor.item_kind, index)
             seen.add(name)
             slug = (sensor.value_map or {}).get(str(value))
             readings.append({
-                "sensor": sensor.name, "name": name,
+                "sensor": sensor.name, "name": name, "kind": sensor.item_kind,
                 "raw": value, "status": slug or "",
             })
-            if not slug:
-                continue  # unmapped value → leave status alone
+            if not slug or not writes:
+                continue  # unmapped, or observe-only → intent untouched
             status = resolve_status(tenant, slug, "inventoryitem")
             if status is None:
                 continue
@@ -110,7 +115,17 @@ def poll_device_sensors(device, tenant, profile=None) -> dict:
         # (blocked column, wrong community, a subtree that moved) is indis-
         # tinguishable from "all bays empty", and acting on it would mark every
         # real disk missing. No readings, no conclusions.
+        # Recorded either way so drift can report it; only written when the
+        # sensor is explicitly `auto`.
         if sensor.absent_status and raw:
+            for item in items:
+                if item.kind == sensor.item_kind and item.name not in seen:
+                    readings.append({
+                        "sensor": sensor.name, "name": item.name,
+                        "kind": sensor.item_kind, "raw": "",
+                        "status": sensor.absent_status,
+                    })
+        if sensor.absent_status and raw and writes:
             absent = resolve_status(tenant, sensor.absent_status, "inventoryitem")
             if absent is not None:
                 for item in items:
