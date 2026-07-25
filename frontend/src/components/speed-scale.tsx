@@ -89,8 +89,6 @@ export function SpeedScale({
   className,
   live,
   extras,
-  tiers,
-  states,
 }: {
   className?: string
   /** Include the live-SNMP down/admin-down swatches. */
@@ -98,60 +96,43 @@ export function SpeedScale({
   /** Extra swatches appended INTO the single key row (e.g. trunk / live
    * dots), so callers never stack a second wrapping line. */
   extras?: React.ReactNode
-  /** Tier labels actually drawn on this panel. Omit to show the full ramp
-   * (unfiltered callers keep their old behaviour); pass an empty set and the
-   * scale renders nothing — a disk-only panel shouldn't advertise 400G. */
-  tiers?: Set<string>
-  /** Neutral states actually drawn ("idle" / "off" / "down"), same contract. */
-  states?: Set<string>
 }) {
-  // A legend for colours that aren't on screen is noise, and on a panel of
-  // disk bays it's the majority of the legend.
-  const ramp = tiers
-    ? SPEED_TIERS.filter((t) => tiers.has(t.label))
-    : SPEED_TIERS
-  const shows = (k: string) => !states || states.has(k)
-  if (ramp.length === 0 && !shows("idle") && !shows("off") && !shows("down"))
-    return extras ? <div className={className}>{extras}</div> : null
+  // The ramp is STATIC — always all nine tiers, always the same width per
+  // segment. It was briefly filtered to only the tiers on screen, which sounds
+  // right and looks wrong: the segments are `flex-1` inside a fixed `w-72`, so
+  // a two-speed panel rendered two 144px slabs. A colour ramp is a scale, and a
+  // scale you can't compare between pages isn't one. Filtering belongs to the
+  // HARDWARE key below, where the entries are chips and shrinking the list is
+  // just a shorter list.
   return (
     <div className={cn("grid w-fit gap-1.5", className)}>
-      {ramp.length > 0 && (
-        <div className="flex h-2 w-72 gap-px overflow-hidden rounded-full">
-          {ramp.map((t) => (
-            <span
-              key={t.label}
-              className="h-full flex-1"
-              style={{ backgroundColor: t.hex }}
-              title={t.label}
-            />
-          ))}
-        </div>
-      )}
-      {ramp.length > 0 && (
-        <div className="num flex w-72 text-[9px] leading-none text-muted-foreground">
-          {ramp.map((t) => (
-            <span key={t.label} className="flex-1 text-center">
-              {t.label}
-            </span>
-          ))}
-        </div>
-      )}
-      <div className="mt-0.5 flex w-72 flex-nowrap items-center gap-x-3 overflow-hidden text-[10px] leading-none whitespace-nowrap text-muted-foreground">
-        {shows("idle") && (
-          <span className="inline-flex items-center gap-1">
-            <span
-              className="h-2 w-2 rounded-[3px] border"
-              style={{ borderColor: `${SPEED_TIERS[6].hex}66` }}
-            />
-            idle
+      <div className="flex h-2 w-72 gap-px overflow-hidden rounded-full">
+        {SPEED_TIERS.map((t) => (
+          <span
+            key={t.label}
+            className="h-full flex-1"
+            style={{ backgroundColor: t.hex }}
+            title={t.label}
+          />
+        ))}
+      </div>
+      <div className="num flex w-72 text-[9px] leading-none text-muted-foreground">
+        {SPEED_TIERS.map((t) => (
+          <span key={t.label} className="flex-1 text-center">
+            {t.label}
           </span>
-        )}
-        {shows("off") && (
-          <Swatch hex={PORT_NEUTRAL.disabled} label="off" dashed />
-        )}
-        {live && shows("down") && (
-          <Swatch hex={PORT_NEUTRAL.down} label="down" />
-        )}
+        ))}
+      </div>
+      <div className="mt-0.5 flex w-72 flex-nowrap items-center gap-x-3 overflow-hidden text-[10px] leading-none whitespace-nowrap text-muted-foreground">
+        <span className="inline-flex items-center gap-1">
+          <span
+            className="h-2 w-2 rounded-[3px] border"
+            style={{ borderColor: `${SPEED_TIERS[6].hex}66` }}
+          />
+          idle
+        </span>
+        <Swatch hex={PORT_NEUTRAL.disabled} label="off" dashed />
+        {live && <Swatch hex={PORT_NEUTRAL.down} label="down" />}
         {extras}
       </div>
     </div>

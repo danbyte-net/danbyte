@@ -1359,8 +1359,9 @@ export function FaceplateLegend({
   /** The faceplate carries hardware markers → add the status key. Ignored when
    * `content` is given, which knows this for itself. */
   hardware?: boolean
-  /** What the panel(s) below actually drew, from `useLegendCollector`. Given,
-   * the legend keys only those colours; omitted, it shows everything. */
+  /** What the panel(s) below actually drew, from `useLegendCollector`. Used
+   * ONLY to pick the hardware statuses to list — the speed ramp is static, so
+   * the same scale reads the same on every page. */
   content?: LegendContent
 }) {
   const hasHardware = content ? content.partStatusIds.size > 0 : !!hardware
@@ -1368,17 +1369,13 @@ export function FaceplateLegend({
     <div className={cn("grid gap-1.5", className)}>
       <SpeedScale
         live={observed}
-        tiers={content?.tiers}
-        states={content?.states}
         extras={
-          (!content || content.trunk) && (
-            <span className="inline-flex items-center gap-1">
-              <span className="relative h-2.5 w-3 rounded-[2px] border border-border bg-muted/40">
-                <span className="absolute inset-x-0.5 top-0 h-[2px] rounded-b bg-foreground/60" />
-              </span>
-              trunk
+          <span className="inline-flex items-center gap-1">
+            <span className="relative h-2.5 w-3 rounded-[2px] border border-border bg-muted/40">
+              <span className="absolute inset-x-0.5 top-0 h-[2px] rounded-b bg-foreground/60" />
             </span>
-          )
+            trunk
+          </span>
         }
       />
       {hasHardware && <HardwareStatusKey statusIds={content?.partStatusIds} />}

@@ -215,18 +215,19 @@ source of truth stays yours.
 
 ### The panel's key
 
-The colour key under a panel describes **that panel** — not everything Danbyte
-can draw. It lists only the speed tiers actually worn by ports on screen, adds
-the `idle` / `off` / `down` swatches only when a port is in that state, shows
-the trunk mark only when a trunk is drawn, and lists hardware statuses only for
-the bays present. A server whose photo panel is nothing but disk bays gets a key
-reading `Active · Empty` — no speed ramp, because nothing on the panel wears
-one — even though the device has ethernet ports on other tabs.
+The **speed ramp is always the full scale**, FE → 400G+, at a fixed width. It's a
+scale, and a scale only means something if it reads identically on every page —
+so it doesn't shrink to the speeds on the panel in front of you. (It briefly did.
+With two speeds present, two segments split a fixed-width bar into two enormous
+slabs, which looked like a different control rather than a shorter one.)
 
-A virtual chassis draws one key for the whole stack: each member reports what it
-drew and the key shows the union. The [3D room](../features/floor-plans.md#the-3d-room-view)
-does the same for the cabinets in view. If a panel draws nothing that needs
-explaining, the key isn't rendered at all.
+The **hardware key** does adapt, because its entries are chips and a shorter list
+is just a shorter list: a server whose photo panel is nothing but disk bays gets
+`Active · Empty`, not the tenant's whole inventory-status catalog.
+
+A virtual chassis draws one key for the whole stack, unioning what its members
+drew. In the [3D room](../features/floor-plans.md#the-3d-room-view) the key is
+hidden entirely until something photo-anchored is in view.
 
 ## Adding many components at once
 
