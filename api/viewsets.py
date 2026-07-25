@@ -2098,6 +2098,60 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         "end_of_support", "lifecycle_url",
     )
 
+    # Importing a bundle creates a device type, so it demands `add`; replacing
+    # one that already exists is a change and checked separately.
+    rbac_action_map = {"import_bundle": "add"}
+
+    @action(detail=True, methods=["get"], url_path="library-export")
+    def library_export(self, request, pk=None):
+        """This device type as a portable bundle — templates, faceplate,
+        photo-port markers, inventory templates and bound SNMP sensors.
+
+        The point of the device library: the work of teaching Danbyte a piece of
+        hardware is model knowledge, identical for everyone who owns the box, so
+        it should move as a file instead of being redone. Carries no credentials
+        (see ``api/device_library.py``).
+        """
+        from .device_library import export_bundle
+
+        return Response(export_bundle(self.get_object()))
+
+    @action(detail=False, methods=["post"], url_path="import-bundle")
+    def import_bundle(self, request):
+        """Create or update a device type from a bundle.
+
+        ``?dry_run=1`` reports what would happen and writes nothing — importing
+        a stranger's file should never be a blind action. ``?replace=1`` is
+        required to touch a type that already exists here, and additionally
+        demands `change`.
+        """
+        from auth_api import rbac
+
+        from .device_library import BundleError, import_bundle as run_import
+
+        tenant = self._tenant_or_403()
+        flag = lambda k: str(  # noqa: E731 - tiny local reader
+            request.query_params.get(k, "")
+        ).lower() in ("1", "true", "yes")
+        replace, dry_run = flag("replace"), flag("dry_run")
+        if replace and not (
+            request.user.is_superuser
+            or rbac.has_action(request.user, tenant, "devicetype", "change")
+        ):
+            raise PermissionDenied(
+                "Replacing an existing device type needs change access; import "
+                "without replace to add only what's new."
+            )
+        try:
+            return Response(
+                run_import(
+                    request.data, tenant, replace=replace, dry_run=dry_run,
+                    owning_site=self._import_owning_site(request, tenant),
+                )
+            )
+        except BundleError as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+
     def _import_owning_site(self, request, tenant):
         """Under enhanced site separation, a site-scoped importer's new device
         types (and any manufacturers minted along the way) are LOCAL to their

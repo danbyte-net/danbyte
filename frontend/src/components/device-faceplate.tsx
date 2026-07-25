@@ -6,6 +6,8 @@ import { api, formatBytes } from "@/lib/api"
 import type {
   DeviceSnmp,
   DeviceType,
+  FacePort,
+  FacePorts,
   Interface,
   InventoryItemRow,
   Paginated,
@@ -21,6 +23,7 @@ import {
 import {
   EMPTY_LEGEND,
   legendContent,
+  PORT_NEUTRAL,
   portCapabilityHex,
   portHex,
   portOverlayStyle,
@@ -881,6 +884,27 @@ export function ImagePortsFaceplate({
   )
   const wantsInventory =
     !!deviceId && markers.some((m) => m.kind === "inventory-item")
+  // Console / power / aux / panel-port markers resolve through the same
+  // /face-ports/ payload the 3D room uses. Without this they fell through to
+  // the "not on this device" ghost even when the component was right there —
+  // this component knew only two of the nine kinds, while 3D knew them all.
+  const wantsFacePorts =
+    !!deviceId &&
+    markers.some(
+      (m) => m.kind && m.kind !== "interface" && m.kind !== "inventory-item"
+    )
+  const facePorts = useQuery({
+    queryKey: ["device-face-ports", deviceId],
+    queryFn: () => api<FacePorts>(`/api/devices/${deviceId}/face-ports/`),
+    enabled: wantsFacePorts,
+    staleTime: 30_000,
+  })
+  const portByMarker = useMemo(() => {
+    const map = new Map<string, FacePort>()
+    const d = facePorts.data
+    if (d) for (const p of [...d.front, ...d.rear]) map.set(p.marker, p)
+    return map
+  }, [facePorts.data])
   const inventory = useQuery({
     queryKey: ["device-inventory", deviceId],
     queryFn: () =>
@@ -956,7 +980,16 @@ export function ImagePortsFaceplate({
         if (item) parts.push(item)
         continue
       }
-      if (kind !== "interface") continue
+      if (kind !== "interface") {
+        // Non-interface ports (power inlets, console, aux) wear the neutral
+        // cabled/free tints. A free one is the "idle" swatch the key already
+        // explains; a cabled one has NO speed tier to claim, so it stays out of
+        // the ramp rather than dragging FE into the key.
+        const fp = portByMarker.get(m.name)
+        if (fp?.id && !fp.connected)
+          ports.push({ enabled: true, cable: null, speed: "" })
+        continue
+      }
       const iface = ifaceByName.get(key)
       if (!iface) continue
       ports.push({
@@ -970,7 +1003,15 @@ export function ImagePortsFaceplate({
       if (live) obs.set(key, live)
     }
     return legendContent({ ports, observed: obs, parts })
-  }, [image, markers, vcPosition, ifaceByName, itemByName, observed])
+  }, [
+    image,
+    markers,
+    vcPosition,
+    ifaceByName,
+    itemByName,
+    portByMarker,
+    observed,
+  ])
   useReportLegend(onLegend, legendKey, legend)
 
   if (!image) return null
@@ -1126,6 +1167,57 @@ export function ImagePortsFaceplate({
                 {canEditParts && (
                   <div className="pt-0.5 font-sans text-[10px] text-muted-foreground">
                     Click to edit
+                  </div>
+                )}
+              </HoverCardContent>
+            </HoverCard>
+          )
+        }
+        // A non-interface port kind (power inlet, console, aux, panel port):
+        // resolved through /face-ports/, drawn as a real cage — cabled ports
+        // tinted, free ones outlined — with drift ringed like everywhere else.
+        if (kind !== "interface") {
+          const fp = portByMarker.get(m.name)
+          if (!fp?.id)
+            return (
+              <span
+                key={`${m.name}-${idx}`}
+                style={style}
+                title={`${name} (not on this device)`}
+                className="absolute rounded-[2px] border border-dashed border-border/70 bg-background/20"
+              />
+            )
+          const hex = fp.connected ? PORT_NEUTRAL.cabled : PORT_NEUTRAL.free
+          return (
+            <HoverCard key={`${m.name}-${idx}`} openDelay={100} closeDelay={80}>
+              <HoverCardTrigger asChild>
+                <span
+                  style={
+                    fp.connected
+                      ? { ...style, ...portOverlayStyle(hex) }
+                      : { ...style, borderColor: `${hex}59` }
+                  }
+                  className={cn(
+                    "absolute rounded-[2px] border-2",
+                    fp.drift &&
+                      "ring-2 ring-amber-500 ring-offset-1 ring-offset-background"
+                  )}
+                />
+              </HoverCardTrigger>
+              <HoverCardContent
+                side="top"
+                className="grid gap-0.5 font-mono text-[11px] whitespace-nowrap"
+              >
+                <div className="font-semibold">{fp.name}</div>
+                <div className="text-muted-foreground">
+                  {[kind.replace(/-/g, " "), fp.type]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </div>
+                <div>{fp.connected ? "cabled" : "free"}</div>
+                {fp.drift && (
+                  <div className="font-sans text-[10px] text-amber-600 dark:text-amber-400">
+                    drift · {fp.drift}
                   </div>
                 )}
               </HoverCardContent>

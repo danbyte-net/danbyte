@@ -109,7 +109,48 @@ seeded from the URL), so you land on exactly those devices — the same
 foreign-key linkage used throughout Danbyte to keep related objects one click
 apart.
 
-### Component templates
+### Share a device type as a bundle {#bundles}
+
+Teaching Danbyte a piece of hardware is real work: stamp the component
+templates, draw the [faceplate](#faceplate-builder), place the photo-port
+markers on the rear image, find the vendor OID that reports drive health. All of
+it is knowledge about the **model** — identical for everyone who owns that box.
+
+A **bundle** is that work in one file. On a device type, **Export bundle**
+downloads everything that makes the model work:
+
+- every component template (interfaces, console, power, panel ports, bays)
+- the faceplate layout and the photo-port markers
+- inventory-item templates (the disk bays a chassis ships with)
+- the [custom SNMP sensors](../features/snmp-discovery.md#sensors) bound to it
+
+**Import bundle** on the device-type list reads one back. It **previews first** —
+importing a file from elsewhere should never be blind — showing what would be
+created, and only then offering to apply it.
+
+Three rules make a bundle safe to accept from anyone:
+
+- **No credentials.** Sensors poll with *your* deployment's own
+  [SNMP profile](../features/snmp-discovery.md#snmp-profiles); a bundle
+  references nothing secret.
+- **Imported sensors are observe-only.** Whatever the file says, they arrive as
+  `drift` — they surface differences for review and can never overwrite a status
+  you set. Switch one to automatic yourself if you want that.
+- **Nothing is overwritten silently.** A device type you already have is skipped
+  unless you tick *Update the device type if it already exists* (which needs
+  change access, not just add).
+
+Ids never travel — manufacturers, an outlet's inlet, a front port's rear port all
+move as **names** and are re-resolved locally. Anything that can't be resolved is
+reported, never dropped in silence. Photo-port coordinates are normalized 0–1, so
+they line up at any resolution of the same photo; if the bundle was built against
+an image you don't have, the import says so — upload it on the device type and
+the markers land correctly.
+
+API: `GET /api/device-types/{id}/library-export/` and
+`POST /api/device-types/import-bundle/?dry_run=1&replace=1`.
+
+## Component templates
 
 A device type owns **component templates** — the ports the hardware ships
 with: interfaces, console port(s), power inlets, PDU outlets, and patch-panel
