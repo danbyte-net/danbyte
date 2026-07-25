@@ -1494,6 +1494,13 @@ class SnmpSensor(TimestampedModel):
         help_text='Raw SNMP value → status slug, e.g. {"3": "active", '
         '"4": "failed"}. Unmapped values leave the status unchanged.',
     )
+    absent_status = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Status slug for items this sensor covers but the agent never "
+        "reported — the empty bays a chassis template stamped. Blank leaves "
+        "them alone. Only applied after a poll that actually returned readings, "
+        "so a timeout can't mark real hardware missing.",
+    )
     enabled = models.BooleanField(default=True)
 
     class Meta:

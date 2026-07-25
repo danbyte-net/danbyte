@@ -48,6 +48,7 @@ BUILTIN_STATUS_COLORS = {
     "container": "#a1a1aa",
     "disabled": "#a1a1aa",
     "spare": "#a1a1aa",
+    "empty": "#71717a",
     "not_connected": "#71717a",
     "decommissioned": "#71717a",
     "retired": "#71717a",
@@ -91,8 +92,9 @@ STATUS_MODEL_VALUES = {
     "wirelesslan": ["active", "reserved", "disabled", "deprecated"],
     "tunnel": ["planned", "active", "disabled"],
     "location": ["active", "planned", "decommissioning", "retired"],
-    # Hardware parts: health/lifecycle — "failed" lights the faceplate red.
-    "inventoryitem": ["active", "planned", "failed", "spare"],
+    # Hardware parts: health/lifecycle — "failed" lights the faceplate red,
+    # "empty" is a bay a chassis template stamped that holds nothing.
+    "inventoryitem": ["active", "planned", "failed", "spare", "empty"],
 }
 
 # model slug → default status value (None for ipaddress → fall back to "active").

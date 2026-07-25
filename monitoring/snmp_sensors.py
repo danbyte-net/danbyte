@@ -75,8 +75,10 @@ def poll_device_sensors(device, tenant, profile=None) -> dict:
         except SnmpFactsError as exc:
             errors.append(f"{sensor.name}: {exc}")
             continue
+        seen: set[str] = set()
         for index, value in raw.items():
             name = _render_name(sensor.name_template, sensor.item_kind, index)
+            seen.add(name)
             slug = (sensor.value_map or {}).get(str(value))
             readings.append({
                 "sensor": sensor.name, "name": name,
@@ -99,6 +101,28 @@ def poll_device_sensors(device, tenant, profile=None) -> dict:
                 item.status = status
                 item.save(update_fields=["status", "updated_at"])
                 flips.append(f"{name}: {old} → {status.name}")
+
+        # Items this sensor covers that the agent never mentioned — the empty
+        # bays a chassis template stamped, which would otherwise keep claiming
+        # to hold healthy hardware.
+        #
+        # Gated on `raw` being non-empty: an agent that answered with nothing
+        # (blocked column, wrong community, a subtree that moved) is indis-
+        # tinguishable from "all bays empty", and acting on it would mark every
+        # real disk missing. No readings, no conclusions.
+        if sensor.absent_status and raw:
+            absent = resolve_status(tenant, sensor.absent_status, "inventoryitem")
+            if absent is not None:
+                for item in items:
+                    if (
+                        item.kind == sensor.item_kind
+                        and item.name not in seen
+                        and item.status_id != absent.id
+                    ):
+                        old = item.status.name if item.status_id else "—"
+                        item.status = absent
+                        item.save(update_fields=["status", "updated_at"])
+                        flips.append(f"{item.name}: {old} → {absent.name}")
 
     if flips:
         JournalEntry.objects.create(
