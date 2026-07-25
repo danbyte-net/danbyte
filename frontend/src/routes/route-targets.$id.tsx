@@ -42,6 +42,7 @@ function RtDetail() {
 }
 
 function RtDetailBody({ rt: r }: { rt: RouteTarget }) {
+  const { canDo } = useMe()
   const [tab, setTab] = useUrlTab<"overview" | "vrfs" | "journal" | "history">(
     "overview"
   )
@@ -61,19 +62,23 @@ function RtDetailBody({ rt: r }: { rt: RouteTarget }) {
       presence={{ type: "routetarget", id: r.id }}
       actions={
         <>
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/route-targets/$id/edit" params={{ id: r.id }}>
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </Link>
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-destructive hover:text-destructive"
-            onClick={openDelete}
-          >
-            <Trash2 className="h-3.5 w-3.5" /> Delete
-          </Button>
+          {canDo("routetarget", "change") && (
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/route-targets/$id/edit" params={{ id: r.id }}>
+                <Pencil className="h-3.5 w-3.5" /> Edit
+              </Link>
+            </Button>
+          )}
+          {canDo("routetarget", "delete") && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-destructive hover:text-destructive"
+              onClick={openDelete}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </Button>
+          )}
         </>
       }
       hero={

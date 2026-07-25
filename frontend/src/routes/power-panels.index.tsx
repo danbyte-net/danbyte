@@ -22,6 +22,8 @@ export const Route = createFileRoute("/power-panels/")({
 
 function PowerPanelsPage() {
   const { humanIds } = useMe()
+  const { canDo } = useMe()
+  const canAdd = canDo("powerpanel", "add")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<PowerPanel | null>(null)
 
@@ -114,9 +116,11 @@ function PowerPanelsPage() {
       actions={
         <>
           <TableActions ioType="powerpanel" />
-          <Button size="sm" asChild>
-            <Link to="/power-panels/new">Add panel</Link>
-          </Button>
+          {canAdd && (
+            <Button size="sm" asChild>
+              <Link to="/power-panels/new">Add panel</Link>
+            </Button>
+          )}
         </>
       }
       query={query}

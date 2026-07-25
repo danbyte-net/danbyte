@@ -20,6 +20,8 @@ export const Route = createFileRoute("/tunnel-groups/")({
 })
 
 function TunnelGroupsPage() {
+  const { canDo } = useMe()
+  const canAdd = canDo("tunnelgroup", "add")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<TunnelGroup | null>(null)
   const [selectedRows, setSelectedRows] = useState<TunnelGroup[]>([])
@@ -114,9 +116,11 @@ function TunnelGroupsPage() {
       actions={
         <>
           <TableActions ioType="tunnelgroup" />
-          <Button size="sm" asChild>
-            <Link to="/tunnel-groups/new">Add group</Link>
-          </Button>
+          {canAdd && (
+            <Button size="sm" asChild>
+              <Link to="/tunnel-groups/new">Add group</Link>
+            </Button>
+          )}
         </>
       }
       query={query}

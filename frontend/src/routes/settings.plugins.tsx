@@ -246,6 +246,7 @@ function PluginRow({
           body="Removes the uploaded plugin files and manifest entry. Takes effect after Apply changes (restart)."
           onConfirm={onUninstall}
           disabled={busy}
+          destructive
           small
         />
       )}
@@ -300,6 +301,7 @@ function ServicesSection() {
           body="This restarts the core Danbyte services (web, workers, websocket). Active users will briefly lose connectivity."
           onConfirm={() => restart.mutate("/api/services/restart-all/")}
           disabled={restart.isPending}
+          destructive
           icon
         />
       </div>
@@ -427,6 +429,7 @@ function ConfirmButton({
   title,
   body,
   onConfirm,
+  destructive,
   disabled,
   small,
   icon,
@@ -436,6 +439,9 @@ function ConfirmButton({
   title: string
   body: string
   onConfirm: () => void
+  /** Irreversible (uninstall, restart-all) → destructive treatment on the
+   * confirm button, so the dialog looks as consequential as it is. */
+  destructive?: boolean
   disabled?: boolean
   small?: boolean
   icon?: boolean
@@ -460,7 +466,15 @@ function ConfirmButton({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={onConfirm}>Confirm</AlertDialogAction>
+          {/* Says what it does ("Uninstall"), not "Confirm", and carries the
+              same disabled guard as the trigger so it can't fire twice. */}
+          <AlertDialogAction
+            variant={destructive ? "destructive" : "default"}
+            disabled={disabled}
+            onClick={onConfirm}
+          >
+            {disabled ? pendingLabel : label}
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

@@ -20,6 +20,8 @@ import { useMe } from "@/lib/use-me"
 export const Route = createFileRoute("/tunnels/")({ component: TunnelsPage })
 
 function TunnelsPage() {
+  const { canDo } = useMe()
+  const canAdd = canDo("tunnel", "add")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<Tunnel | null>(null)
   const [selectedRows, setSelectedRows] = useState<Tunnel[]>([])
@@ -156,9 +158,11 @@ function TunnelsPage() {
       actions={
         <>
           <TableActions ioType="tunnel" />
-          <Button size="sm" asChild>
-            <Link to="/tunnels/new">Add tunnel</Link>
-          </Button>
+          {canAdd && (
+            <Button size="sm" asChild>
+              <Link to="/tunnels/new">Add tunnel</Link>
+            </Button>
+          )}
         </>
       }
       query={query}

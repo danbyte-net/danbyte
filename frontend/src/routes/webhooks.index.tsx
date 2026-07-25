@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
+import { useMe } from "@/lib/use-me"
 import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { WebhookDeleteDialog } from "@/components/webhook-delete-dialog"
@@ -60,6 +61,8 @@ function triggers(w: Webhook): string {
 export const Route = createFileRoute("/webhooks/")({ component: WebhooksPage })
 
 function WebhooksPage() {
+  const { canDo } = useMe()
+  const canAdd = canDo("webhook", "add")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<Webhook | null>(null)
 
@@ -166,9 +169,11 @@ function WebhooksPage() {
       actions={
         <>
           <TableActions ioType="webhook" />
-          <Button size="sm" asChild>
-            <Link to="/webhooks/new">Add webhook</Link>
-          </Button>
+          {canAdd && (
+            <Button size="sm" asChild>
+              <Link to="/webhooks/new">Add webhook</Link>
+            </Button>
+          )}
         </>
       }
       query={query}

@@ -17,6 +17,8 @@ export const Route = createFileRoute("/regions/")({ component: RegionsPage })
 
 function RegionsPage() {
   const { humanIds } = useMe()
+  const { canDo } = useMe()
+  const canAdd = canDo("region", "add")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<Region | null>(null)
 
@@ -117,9 +119,11 @@ function RegionsPage() {
       actions={
         <>
           <TableActions ioType="region" />
-          <Button size="sm" asChild>
-            <Link to="/regions/new">Add region</Link>
-          </Button>
+          {canAdd && (
+            <Button size="sm" asChild>
+              <Link to="/regions/new">Add region</Link>
+            </Button>
+          )}
         </>
       }
       query={query}

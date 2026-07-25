@@ -28,6 +28,8 @@ export const Route = createFileRoute("/config-contexts/")({
 })
 
 function ConfigContextsPage() {
+  const { canDo } = useMe()
+  const canAdd = canDo("configcontext", "add")
   const { humanIds } = useMe()
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<ConfigContext | null>(null)
@@ -122,9 +124,11 @@ function ConfigContextsPage() {
       actions={
         <>
           <TableActions ioType="configcontext" />
-          <Button size="sm" asChild>
-            <Link to="/config-contexts/new">Add context</Link>
-          </Button>
+          {canAdd && (
+            <Button size="sm" asChild>
+              <Link to="/config-contexts/new">Add context</Link>
+            </Button>
+          )}
         </>
       }
       query={query}

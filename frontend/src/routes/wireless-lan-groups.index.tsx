@@ -20,6 +20,8 @@ export const Route = createFileRoute("/wireless-lan-groups/")({
 
 function WlanGroupsPage() {
   const { humanIds } = useMe()
+  const { canDo } = useMe()
+  const canAdd = canDo("wirelesslangroup", "add")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<WirelessLANGroup | null>(null)
 
@@ -113,9 +115,11 @@ function WlanGroupsPage() {
       actions={
         <>
           <TableActions ioType="wirelesslangroup" />
-          <Button size="sm" asChild>
-            <Link to="/wireless-lan-groups/new">Add group</Link>
-          </Button>
+          {canAdd && (
+            <Button size="sm" asChild>
+              <Link to="/wireless-lan-groups/new">Add group</Link>
+            </Button>
+          )}
         </>
       }
       query={query}

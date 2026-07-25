@@ -494,7 +494,9 @@ function UpdatesSettingsPage() {
               </Button>
               <Button
                 size="sm"
-                disabled={!confirmChecked}
+                // Also on isPending: this takes a database backup, migrates and
+                // restarts the service, and was re-firable by double-clicking.
+                disabled={!confirmChecked || upgrade.isPending}
                 onClick={() => {
                   const v = confirmVersion
                   setConfirmVersion(null)

@@ -53,6 +53,8 @@ function nestLocations(rows: Location[]): NestedLocation[] {
 }
 
 function LocationsPage() {
+  const { canDo } = useMe()
+  const canAdd = canDo("location", "add")
   const { humanIds } = useMe()
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<Location | null>(null)
@@ -164,9 +166,11 @@ function LocationsPage() {
       actions={
         <>
           <TableActions ioType="location" />
-          <Button size="sm" asChild>
-            <Link to="/locations/new">Add location</Link>
-          </Button>
+          {canAdd && (
+            <Button size="sm" asChild>
+              <Link to="/locations/new">Add location</Link>
+            </Button>
+          )}
         </>
       }
       query={query}
