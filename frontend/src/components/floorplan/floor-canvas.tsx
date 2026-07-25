@@ -181,6 +181,11 @@ export interface FloorCanvasProps {
   selectedAreaId?: string | null
   /** Structure mode: an area outline was clicked. */
   onSelectArea?: (id: string | null) => void
+  /** Structure mode: an area was dragged/resized — persist its new rect. */
+  onAreaRectChange?: (
+    id: string,
+    rect: { x: number; y: number; width: number; height: number }
+  ) => void
   // ── Cable trays ────────────────────────────────────────────────────────
   /** "layout" edits tiles; "cable" draws/selects trays. */
   mode?: "layout" | "cable" | "structure"
@@ -216,6 +221,8 @@ type DragState =
   | { mode: "resize"; id: string; origin: CellPoint }
   | { mode: "paint"; start: CellPoint; end: CellPoint }
   | { mode: "marquee"; start: CellPoint; end: CellPoint }
+  | { mode: "area-move"; id: string; grabDx: number; grabDy: number }
+  | { mode: "area-resize"; id: string; origin: CellPoint }
   | {
       mode: "tray-move"
       id: string
@@ -248,6 +255,7 @@ export function FloorCanvas({
   raisedFloors,
   selectedAreaId,
   onSelectArea,
+  onAreaRectChange,
   onSelect,
   multiSelectedIds,
   onToggleSelect,
@@ -282,6 +290,15 @@ export function FloorCanvas({
   const svgRef = useRef<SVGSVGElement>(null)
   const drag = useRef<DragState | null>(null)
   const paintPreview = useRef<SVGRectElement>(null)
+  // Structure mode: the area being dragged/resized, rendered over the query
+  // data until release commits it (server validates overlap/bounds).
+  const [areaDraft, setAreaDraft] = useState<{
+    id: string
+    x: number
+    y: number
+    width: number
+    height: number
+  } | null>(null)
   const drawPreview = useRef<SVGPolylineElement>(null)
   // Live points of the tray being dragged/reshaped (null = none).
   const [trayDraft, setTrayDraft] = useState<{
@@ -443,6 +460,7 @@ export function FloorCanvas({
       drag.current = { mode: "pan" }
       startPan(e)
       onSelect?.(null)
+      onSelectArea?.(null)
       onSelectCable?.(null)
     }
   }
@@ -626,6 +644,28 @@ export function FloorCanvas({
       pts[d.index] = toLattice(e)
       d.moved = true
       setTrayDraft({ id: d.id, points: pts })
+    } else if (d.mode === "area-move") {
+      const a = raisedFloors?.find((x) => x.id === d.id)
+      if (a) {
+        setAreaDraft({
+          id: a.id,
+          x: Math.max(0, Math.round(c.x - d.grabDx)),
+          y: Math.max(0, Math.round(c.y - d.grabDy)),
+          width: a.width,
+          height: a.height,
+        })
+      }
+    } else if (d.mode === "area-resize") {
+      const a = raisedFloors?.find((x) => x.id === d.id)
+      if (a) {
+        setAreaDraft({
+          id: a.id,
+          x: a.x,
+          y: a.y,
+          width: Math.max(1, Math.round(c.x - d.origin.x)),
+          height: Math.max(1, Math.round(c.y - d.origin.y)),
+        })
+      }
     } else {
       d.end = c
       // Imperative preview — avoids re-rendering every tile per pointermove.
@@ -653,6 +693,26 @@ export function FloorCanvas({
     } else if (d.mode === "marquee") {
       paintPreview.current?.setAttribute("visibility", "hidden")
       onMarquee?.(paintRect(d.start, d.end))
+    } else if (d.mode === "area-move" || d.mode === "area-resize") {
+      setAreaDraft((draft) => {
+        if (draft && draft.id === d.id) {
+          const a = raisedFloors?.find((x) => x.id === d.id)
+          const changed =
+            !a ||
+            a.x !== draft.x ||
+            a.y !== draft.y ||
+            a.width !== draft.width ||
+            a.height !== draft.height
+          if (changed)
+            onAreaRectChange?.(d.id, {
+              x: draft.x,
+              y: draft.y,
+              width: draft.width,
+              height: draft.height,
+            })
+        }
+        return null
+      })
     } else if (d.mode === "tray-move" || d.mode === "tray-vertex") {
       // Persist a drag, OR a "+"-click that inserted a bend without dragging.
       const changed = d.moved || (d.mode === "tray-vertex" && d.inserted)
@@ -784,74 +844,135 @@ export function FloorCanvas({
 
           {/* Raised-floor areas — construction context under everything.
               Interactive (selectable) only in Structure mode. */}
-          {(raisedFloors ?? []).map((a) => (
-            <g
-              key={a.id}
-              onPointerDown={
-                mode === "structure"
-                  ? (e) => {
-                      e.stopPropagation()
-                      onSelectArea?.(a.id)
-                    }
-                  : undefined
-              }
-              style={{
-                cursor: mode === "structure" ? "pointer" : undefined,
-                pointerEvents: mode === "structure" ? "auto" : "none",
-              }}
-            >
-              <rect
-                x={a.x * CELL}
-                y={a.y * CELL}
-                width={a.width * CELL}
-                height={a.height * CELL}
-                fill={a.color || "#71717a"}
-                fillOpacity={0.1}
-                stroke={a.color || "#71717a"}
-                strokeOpacity={a.id === selectedAreaId ? 0.9 : 0.35}
-                strokeWidth={a.id === selectedAreaId ? 2.5 : 1.5}
-                strokeDasharray="7 4"
-                rx={3}
-              />
-              {(a.label || a.id === selectedAreaId) && (
-                <text
-                  x={a.x * CELL + 6}
-                  y={a.y * CELL + 14}
-                  className="fill-muted-foreground"
-                  fontSize={10}
-                  pointerEvents="none"
-                >
-                  {a.label || "Raised floor"} · {a.plenum_mm} mm
-                </text>
-              )}
-            </g>
-          ))}
+          {(raisedFloors ?? []).map((raw) => {
+            // While dragging/resizing, render the draft rect instead.
+            const a =
+              areaDraft && areaDraft.id === raw.id
+                ? { ...raw, ...areaDraft }
+                : raw
+            const labelText = `${a.label || "Raised floor"} · ${a.plenum_mm} mm`
+            // ~5.6 px/char at 10px — hide the label when it would spill past
+            // the area's edge (the rail always shows the full name).
+            const labelFits = a.width * CELL - 12 >= labelText.length * 5.6
+            return (
+              <g
+                key={a.id}
+                onPointerDown={
+                  mode === "structure" && editable
+                    ? (e) => {
+                        if (e.button !== 0) return
+                        e.stopPropagation()
+                        onSelectArea?.(a.id)
+                        e.currentTarget.setPointerCapture(e.pointerId)
+                        const c = toCell(e)
+                        drag.current = {
+                          mode: "area-move",
+                          id: a.id,
+                          grabDx: c.x - a.x,
+                          grabDy: c.y - a.y,
+                        }
+                      }
+                    : mode === "structure"
+                      ? (e) => {
+                          e.stopPropagation()
+                          onSelectArea?.(a.id)
+                        }
+                      : undefined
+                }
+                style={{
+                  cursor:
+                    mode === "structure"
+                      ? editable
+                        ? "move"
+                        : "pointer"
+                      : undefined,
+                  pointerEvents: mode === "structure" ? "auto" : "none",
+                }}
+              >
+                <rect
+                  x={a.x * CELL}
+                  y={a.y * CELL}
+                  width={a.width * CELL}
+                  height={a.height * CELL}
+                  fill={a.color || "#71717a"}
+                  fillOpacity={0.1}
+                  stroke={a.color || "#71717a"}
+                  strokeOpacity={a.id === selectedAreaId ? 0.9 : 0.35}
+                  strokeWidth={a.id === selectedAreaId ? 2.5 : 1.5}
+                  strokeDasharray="7 4"
+                  rx={3}
+                />
+                {(a.label || a.id === selectedAreaId) && labelFits && (
+                  <text
+                    x={a.x * CELL + 6}
+                    y={a.y * CELL + 14}
+                    className="fill-muted-foreground"
+                    fontSize={10}
+                    pointerEvents="none"
+                  >
+                    {labelText}
+                  </text>
+                )}
+                {mode === "structure" &&
+                  editable &&
+                  a.id === selectedAreaId && (
+                    // Bottom-right resize grip, same drag pattern as tiles.
+                    <rect
+                      x={(a.x + a.width) * CELL - 7}
+                      y={(a.y + a.height) * CELL - 7}
+                      width={10}
+                      height={10}
+                      rx={2}
+                      fill={a.color || "#71717a"}
+                      style={{ cursor: "nwse-resize" }}
+                      onPointerDown={(e) => {
+                        if (e.button !== 0) return
+                        e.stopPropagation()
+                        e.currentTarget.setPointerCapture(e.pointerId)
+                        drag.current = {
+                          mode: "area-resize",
+                          id: a.id,
+                          origin: { x: a.x, y: a.y },
+                        }
+                      }}
+                    />
+                  )}
+              </g>
+            )
+          })}
 
           {/* Zones first (background), then normal tiles, then FOV cones. */}
           {[
             ...tiles.filter(tileIsZone),
             ...tiles.filter((tl) => !tileIsZone(tl)),
           ].map((tile) => (
-            <TileShape
+            // In Structure mode tiles are context, not targets — they pass
+            // pointer events through so an area underneath stays reachable
+            // (and movable) even when fully covered by racks.
+            <g
               key={tile.id}
-              tile={tile}
-              selected={
-                tile.id === selectedId || !!multiSelectedIds?.has(tile.id)
-              }
-              editable={editable}
-              labelFit={labelFit}
-              showZoneLabels={showZoneLabels}
-              live={liveState?.tiles[tile.id]}
-              onPointerDown={(e) => handleTileDown(tile, e)}
-              onResizeDown={(e) => handleResizeDown(tile, e)}
-              // In Cables mode a double-click finishes a tray draw — don't also
-              // open the tile's deep-view underneath it.
-              onDoubleClick={() => {
-                if (mode !== "cable") onOpenTile?.(tile)
-              }}
-              onPointerEnter={(e) => reportHover(tile, e)}
-              onPointerLeave={() => onHoverTile?.(null, null)}
-            />
+              pointerEvents={mode === "structure" ? "none" : undefined}
+            >
+              <TileShape
+                tile={tile}
+                selected={
+                  tile.id === selectedId || !!multiSelectedIds?.has(tile.id)
+                }
+                editable={editable}
+                labelFit={labelFit}
+                showZoneLabels={showZoneLabels}
+                live={liveState?.tiles[tile.id]}
+                onPointerDown={(e) => handleTileDown(tile, e)}
+                onResizeDown={(e) => handleResizeDown(tile, e)}
+                // In Cables mode a double-click finishes a tray draw — don't
+                // also open the tile's deep-view underneath it.
+                onDoubleClick={() => {
+                  if (mode !== "cable") onOpenTile?.(tile)
+                }}
+                onPointerEnter={(e) => reportHover(tile, e)}
+                onPointerLeave={() => onHoverTile?.(null, null)}
+              />
+            </g>
           ))}
 
           {showFov &&

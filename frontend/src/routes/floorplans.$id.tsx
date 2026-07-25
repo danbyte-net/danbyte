@@ -1553,6 +1553,9 @@ function FloorPlanPage() {
                 raisedFloors={areas}
                 selectedAreaId={selectedAreaId}
                 onSelectArea={setSelectedAreaId}
+                onAreaRectChange={(areaId, rect) =>
+                  patchArea.mutate({ areaId, body: rect })
+                }
                 onOpenTile={openTile}
                 exportRef={exportRef}
                 liveState={liveState.data ?? null}
@@ -1590,22 +1593,82 @@ function FloorPlanPage() {
                     </span>
                     <span className="h-4 w-px bg-border" />
                     <span className="text-[11px] text-muted-foreground">
-                      Facing
+                      Front faces
                     </span>
-                    {([0, 90, 180, 270] as const).map((deg) => (
+                    {(
+                      [
+                        { o: 0 as const, icon: ArrowUp, label: "up" },
+                        { o: 90 as const, icon: ArrowRight, label: "right" },
+                        { o: 180 as const, icon: ArrowDown, label: "down" },
+                        { o: 270 as const, icon: ArrowLeft, label: "left" },
+                      ] as const
+                    ).map(({ o, icon: Icon, label }) => (
                       <Button
-                        key={deg}
+                        key={o}
                         size="sm"
                         variant="ghost"
-                        className="num h-7 px-2"
+                        className="h-7 w-7 p-0"
+                        title={`Front faces ${label}`}
+                        aria-label={`Front faces ${label}`}
                         onClick={() => {
-                          for (const tid of multiSel)
-                            changeTile(tid, { orientation: deg })
+                          // Per-tile absolute facing — setTileFacing keeps the
+                          // footprint-swap + collision rules a hand rotate has.
+                          for (const tid of multiSel) {
+                            const t = tiles.find((x) => x.id === tid)
+                            if (t) setTileFacing(t, o)
+                          }
                         }}
                       >
-                        {deg}°
+                        <Icon className="h-3.5 w-3.5" />
                       </Button>
                     ))}
+                    <span className="h-4 w-px bg-border" />
+                    <Select
+                      value=""
+                      onValueChange={(key) => {
+                        // "tt:<id>" | "role:<id>" — the palette's own keys.
+                        const [kind, tid] = key.split(":")
+                        if (kind === "tt") {
+                          const row = tileTypes.data?.results.find(
+                            (r) => r.id === tid
+                          )
+                          if (!row) return
+                          for (const sel of multiSel)
+                            changeTile(sel, {
+                              tile_type: row,
+                              role_type: null,
+                            })
+                        } else {
+                          const row = roles.data?.results.find(
+                            (r) => r.id === tid
+                          )
+                          if (!row) return
+                          for (const sel of multiSel)
+                            changeTile(sel, {
+                              tile_type: null,
+                              role_type: row,
+                            })
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-7 w-32 text-xs">
+                        <SelectValue placeholder="Set type…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(tileTypes.data?.results ?? [])
+                          .filter((tt) => !tt.is_zone)
+                          .map((tt) => (
+                            <SelectItem key={tt.id} value={`tt:${tt.id}`}>
+                              {tt.name}
+                            </SelectItem>
+                          ))}
+                        {(roles.data?.results ?? []).map((r) => (
+                          <SelectItem key={r.id} value={`role:${r.id}`}>
+                            {r.name} (role)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <span className="h-4 w-px bg-border" />
                     <Button
                       size="sm"
@@ -2650,14 +2713,19 @@ function StructureRail({
       </div>
       <div className="px-3 pb-2">
         {drawing ? (
-          <Button
-            size="sm"
-            variant="outline"
-            className="w-full"
-            onClick={onCancelDraw}
-          >
-            Drag a rectangle… (Esc to cancel)
-          </Button>
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full"
+              onClick={onCancelDraw}
+            >
+              Cancel drawing
+            </Button>
+            <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+              Drag a rectangle on the grid. Esc cancels.
+            </p>
+          </>
         ) : (
           <Button size="sm" className="w-full" onClick={onStartDraw}>
             Draw area
