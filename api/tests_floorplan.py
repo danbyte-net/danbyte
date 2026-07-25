@@ -594,6 +594,19 @@ class SceneTests(_Base):
         resp = self.client.get(f"/api/floor-plans/{hidden.id}/scene/")
         self.assertEqual(resp.status_code, 404)
 
+    def test_scene_carries_type_name_for_unlinked_tiles(self):
+        """Build-in-advance: a typed tile with NO linked object still lands
+        in the scene with its type's name, so 3D can draw planning massing."""
+        FloorPlanTile.objects.create(
+            floor_plan=self.plan, tile_type=self.tt, x=4, y=4,
+            label="future row",
+        )
+        body = self.client.get(f"/api/floor-plans/{self.plan.id}/scene/").json()
+        tile = next(t for t in body["tiles"] if t["label"] == "future row")
+        self.assertEqual(tile["kind"], "other")
+        self.assertIsNone(tile["rack"])
+        self.assertEqual(tile["type_name"], "Rack")
+
     def test_scene_device_airflow_is_effective_and_additive(self):
         """The scene carries EFFECTIVE airflow (device override beats the
         type's default), added without disturbing the rest of device_geo —
