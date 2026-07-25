@@ -29,6 +29,15 @@ def run_devicetype_import(run_id: str) -> None:
 
     run = DeviceTypeImportRun.objects.filter(pk=run_id).first()
     if run is None:
+        # A worker that can't see the run is almost always the WRONG WORKER:
+        # two instances sharing one Redis DB race for each other's jobs, and
+        # the winner looks the id up in the wrong database. Returning silently
+        # here once turned that misconfiguration into "imports hang forever" —
+        # say it out loud so the next person greps it in minutes.
+        logger.warning(
+            "devicetype import run %s not found in this database — is another "
+            "instance's worker sharing this Redis queue (RQ_REDIS_DB)?", run_id
+        )
         return
     run.status = "running"
     run.started_at = timezone.now()
@@ -133,6 +142,10 @@ def run_devicetype_image_reimport(run_id: str) -> None:
         pk=run_id, kind="image_reimport"
     ).first()
     if run is None:
+        logger.warning(
+            "image reimport run %s not found in this database — is another "
+            "instance's worker sharing this Redis queue (RQ_REDIS_DB)?", run_id
+        )
         return
     run.status = "running"
     run.started_at = timezone.now()
