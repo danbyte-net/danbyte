@@ -1,8 +1,12 @@
 // Read-only column sets per object type, used to render the *real* table of
 // objects a compliance rule currently fails (the genuine prefix/IP/device/…
 // columns, all exportable). One module so the rule detail can dispatch on
-// object_type. These mirror the list pages' display columns (no row actions /
-// selection — the consumer adds those).
+// object_type.
+//
+// These are not a second definition of those columns: each set is the entity's
+// own `components/columns/*` factory with the interactive bits left off (no
+// selection, no row actions, no tag filter to drive), so an affected row reads
+// exactly like the same object on its list page.
 import { type ColumnDef } from "@tanstack/react-table"
 import { dash } from "@/components/cells/dash"
 import { Link } from "@tanstack/react-router"
@@ -18,12 +22,11 @@ import {
 import { SortHeader } from "@/components/data-table"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
-import { StatusBadge } from "@/components/status-badge"
-import { UtilCell } from "@/components/cells/util-cell"
-import { VrfCell } from "@/components/cells/vrf-cell"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { CatalogCell } from "@/components/cells/catalog-cell"
-import { RoleChip } from "@/components/role-chip"
+import { buildDeviceColumns } from "@/components/columns/device-columns"
+import { buildIpColumns } from "@/components/columns/ip-columns"
+import { buildPrefixColumns } from "@/components/columns/prefix-columns"
+import { buildVlanColumns } from "@/components/columns/vlan-columns"
 
 function descCol<T extends { description: string }>(): ColumnDef<T> {
   return {
@@ -54,211 +57,63 @@ const updated = <T extends { updated_at: string }>() =>
   })
 
 export function prefixColumns(): ColumnDef<Prefix>[] {
-  return [
-    {
-      id: "cidr",
-      accessorKey: "cidr",
-      header: ({ column }) => <SortHeader column={column} label="Prefix" />,
-      cell: ({ row }) => (
-        <Link
-          to="/prefixes/$id"
-          params={{ id: row.original.id }}
-          className="font-mono font-medium hover:underline"
-        >
-          {row.original.cidr}
-        </Link>
-      ),
-    },
-    {
-      id: "status",
-      accessorFn: (r) => r.status?.name ?? "",
-      header: ({ column }) => <SortHeader column={column} label="Status" />,
-      cell: ({ row }) => <StatusBadge status={row.original.status} />,
-    },
-    {
-      id: "utilisation",
-      accessorKey: "utilisation_pct",
-      header: ({ column }) => (
-        <SortHeader column={column} label="Utilisation" />
-      ),
-      cell: ({ row }) => <UtilCell pct={row.original.utilisation_pct} />,
-      meta: {
-        export: {
-          value: (r) =>
-            r.utilisation_pct == null ? "" : `${r.utilisation_pct}%`,
-        },
-      },
-    },
-    {
-      id: "site",
-      accessorFn: (r) => r.site?.name ?? "",
-      header: "Site",
-      cell: ({ row }) => row.original.site?.name ?? dash,
-    },
-    {
-      id: "vrf",
-      accessorFn: (r) => r.vrf?.name ?? "Global",
-      header: "VRF",
-      cell: ({ row }) => <VrfCell vrf={row.original.vrf} />,
-    },
-    descCol<Prefix>(),
-    readonlyTags<Prefix>(),
-    updated<Prefix>(),
-  ]
+  return buildPrefixColumns({
+    // This table leads with utilisation, so it spells the sequence out.
+    order: [
+      "cidr",
+      "status",
+      "utilisation",
+      "site",
+      "vrf",
+      "description",
+      "tags",
+      "updated",
+    ],
+  })
 }
 
 export function ipColumns(): ColumnDef<IPAddress>[] {
-  return [
-    {
-      id: "ip_address",
-      accessorKey: "ip_address",
-      header: ({ column }) => <SortHeader column={column} label="IP address" />,
-      cell: ({ row }) => (
-        <Link
-          to="/ips/$id"
-          params={{ id: row.original.id }}
-          className="font-mono font-medium hover:underline"
-        >
-          {row.original.ip_address}
-        </Link>
-      ),
-    },
-    {
-      id: "status",
-      accessorFn: (r) => r.status?.name ?? "",
-      header: "Status",
-      cell: ({ row }) => <CatalogCell value={row.original.status} />,
-    },
-    {
-      id: "role",
-      accessorFn: (r) => r.role?.name ?? "",
-      header: "Role",
-      cell: ({ row }) =>
-        row.original.role ? <RoleChip role={row.original.role} /> : dash,
-    },
-    {
-      id: "dns_name",
-      accessorKey: "dns_name",
-      header: "DNS name",
-      cell: ({ row }) =>
-        row.original.dns_name ? (
-          <span className="font-mono text-xs">{row.original.dns_name}</span>
-        ) : (
-          dash
-        ),
-    },
-    {
-      id: "device",
-      accessorFn: (r) => r.assigned_device?.name ?? "",
-      header: "Device",
-      cell: ({ row }) => row.original.assigned_device?.name ?? dash,
-    },
-    descCol<IPAddress>(),
-    readonlyTags<IPAddress>(),
-    updated<IPAddress>(),
-  ]
+  return buildIpColumns<IPAddress>({
+    include: [
+      "ip",
+      "status",
+      "role",
+      "dns",
+      "assigned",
+      "description",
+      "tags",
+      "updated",
+    ],
+  })
 }
 
 export function deviceColumns(): ColumnDef<Device>[] {
-  return [
-    {
-      id: "name",
-      accessorKey: "name",
-      header: ({ column }) => <SortHeader column={column} label="Name" />,
-      cell: ({ row }) => (
-        <Link
-          to="/devices/$id"
-          params={{ id: row.original.id }}
-          className="font-mono font-medium hover:underline"
-        >
-          {row.original.name}
-        </Link>
-      ),
-    },
-    {
-      id: "status",
-      accessorFn: (r) => r.status?.name ?? "",
-      header: ({ column }) => <SortHeader column={column} label="Status" />,
-      cell: ({ row }) => <StatusBadge status={row.original.status} />,
-      meta: { export: { value: (r) => r.status?.name ?? "" } },
-    },
-    {
-      id: "role",
-      accessorFn: (r) => r.role?.name ?? "",
-      header: "Role",
-      cell: ({ row }) =>
-        row.original.role ? (
-          <ColorBadge
-            name={row.original.role.name}
-            color={row.original.role.color || undefined}
-          />
-        ) : (
-          dash
-        ),
-    },
-    {
-      id: "site",
-      accessorFn: (r) => r.site?.name ?? "",
-      header: "Site",
-      cell: ({ row }) => row.original.site?.name ?? dash,
-    },
-    {
-      id: "serial",
-      accessorKey: "serial_number",
-      header: "Serial",
-      cell: ({ row }) =>
-        row.original.serial_number ? (
-          <span className="font-mono text-xs">
-            {row.original.serial_number}
-          </span>
-        ) : (
-          dash
-        ),
-    },
-    descCol<Device>(),
-    readonlyTags<Device>(),
-    updated<Device>(),
-  ]
+  return buildDeviceColumns({
+    include: [
+      "name",
+      "status",
+      "role",
+      "site",
+      "serial",
+      "description",
+      "tags",
+      "updated",
+    ],
+  })
 }
 
 export function vlanColumns(): ColumnDef<VLAN>[] {
-  return [
-    {
-      id: "vlan_id",
-      accessorKey: "vlan_id",
-      header: ({ column }) => <SortHeader column={column} label="VLAN" />,
-      cell: ({ row }) => (
-        <Link
-          to="/vlans/$id"
-          params={{ id: row.original.id }}
-          className="num font-mono font-medium hover:underline"
-        >
-          {row.original.vlan_id}
-        </Link>
-      ),
-    },
-    {
-      id: "name",
-      accessorKey: "name",
-      header: ({ column }) => <SortHeader column={column} label="Name" />,
-      cell: ({ row }) => row.original.name,
-    },
-    {
-      id: "site",
-      accessorFn: (r) => r.site?.name ?? "",
-      header: "Site",
-      cell: ({ row }) => row.original.site?.name ?? dash,
-    },
-    {
-      id: "group",
-      accessorFn: (r) => r.group?.name ?? "",
-      header: "Group",
-      cell: ({ row }) => row.original.group?.name ?? dash,
-    },
-    descCol<VLAN>(),
-    readonlyTags<VLAN>(),
-    updated<VLAN>(),
-  ]
+  return buildVlanColumns({
+    include: [
+      "vlan_id",
+      "name",
+      "site",
+      "group",
+      "description",
+      "tags",
+      "updated",
+    ],
+  })
 }
 
 export function vrfColumns(): ColumnDef<VRF>[] {

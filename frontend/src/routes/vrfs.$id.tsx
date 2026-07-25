@@ -8,7 +8,12 @@ import { useCallback, useMemo, useState } from "react"
 import { api, type Paginated, type Prefix, type VRF } from "@/lib/api"
 import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { Button } from "@/components/ui/button"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { DataTable } from "@/components/data-table"
@@ -85,43 +90,39 @@ function VrfDetailBody({ vrf: v }: { vrf: VRF }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3">
-              <ColorBadge
-                name={v.name}
-                color={v.color || undefined}
-                className="h-7 px-3 text-sm"
-              />
+        <DetailHero
+          title={
+            <ColorBadge
+              name={v.name}
+              color={v.color || undefined}
+              className="h-7 px-3 text-sm"
+            />
+          }
+          badges={
+            <>
               {v.rd && (
                 <span className="font-mono text-sm text-muted-foreground">
                   RD {v.rd}
                 </span>
               )}
               <ViolationBadge objectId={v.id} prominent />
-            </div>
-            {v.tags.length > 0 && (
-              <div className="mt-2">
-                <TagList tags={v.tags} />
-              </div>
-            )}
-            {v.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {v.description}
-              </p>
-            )}
-          </div>
-          <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
-            <DetailStat
-              label="Prefixes"
-              value={<span className="num">{v.prefix_count}</span>}
-            />
-            <DetailStat
-              label="IPs"
-              value={<span className="num">{v.ip_count}</span>}
-            />
-          </dl>
-        </section>
+            </>
+          }
+          tags={v.tags.length > 0 && <TagList tags={v.tags} />}
+          description={v.description}
+          stats={
+            <>
+              <DetailStat
+                label="Prefixes"
+                value={<span className="num">{v.prefix_count}</span>}
+              />
+              <DetailStat
+                label="IPs"
+                value={<span className="num">{v.ip_count}</span>}
+              />
+            </>
+          }
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

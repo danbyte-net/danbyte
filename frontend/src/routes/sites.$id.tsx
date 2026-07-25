@@ -16,12 +16,12 @@ import {
 import { TagList } from "@/components/cells/tag-list"
 import { VrfCell } from "@/components/cells/vrf-cell"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
+import { buildVlanColumns } from "@/components/columns/vlan-columns"
 import { EmptyState } from "@/components/empty-state"
-import { DetailShell, DetailTab } from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
-import { timeAgoColumn } from "@/components/cells/time-ago"
+import { DataTable } from "@/components/data-table"
 import { QueryError } from "@/components/query-error"
 import { SiteDeleteDialog } from "@/components/site-delete-dialog"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
@@ -119,41 +119,24 @@ function SiteDetailBody({ site: s }: { site: Site }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="text-3xl font-semibold tracking-tight">
-                {s.name}
-              </div>
-              <ViolationBadge objectId={s.id} prominent />
+        <DetailHero
+          title={s.name}
+          badges={<ViolationBadge objectId={s.id} prominent />}
+          subtitle={s.location}
+          tags={s.tags.length > 0 && <TagList tags={s.tags} />}
+          description={s.description}
+        >
+          {s.vrfs.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+              <span className="text-[10px] tracking-wider text-muted-foreground uppercase">
+                VRFs
+              </span>
+              {s.vrfs.map((v) => (
+                <VrfCell key={v.id} vrf={v} />
+              ))}
             </div>
-            {s.location && (
-              <div className="mt-1 text-sm text-muted-foreground">
-                {s.location}
-              </div>
-            )}
-            {s.tags.length > 0 && (
-              <div className="mt-2">
-                <TagList tags={s.tags} />
-              </div>
-            )}
-            {s.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {s.description}
-              </p>
-            )}
-            {s.vrfs.length > 0 && (
-              <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px]">
-                <span className="text-[10px] tracking-wider text-muted-foreground uppercase">
-                  VRFs
-                </span>
-                {s.vrfs.map((v) => (
-                  <VrfCell key={v.id} vrf={v} />
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
+          )}
+        </DetailHero>
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -423,63 +406,10 @@ function SiteVlansTable({ siteId }: { siteId: string }) {
       api<Paginated<VLAN>>(`/api/vlans/?site=${siteId}&page_size=500`),
   })
   const columns = useMemo<ColumnDef<VLAN>[]>(
-    () => [
-      {
-        id: "vlan_id",
-        accessorKey: "vlan_id",
-        header: ({ column }) => <SortHeader column={column} label="VLAN" />,
-        cell: ({ row }) => (
-          <Link
-            to="/vlans/$id"
-            params={{ id: row.original.id }}
-            className="num font-mono text-xs font-medium hover:underline"
-          >
-            {row.original.vlan_id}
-          </Link>
-        ),
-      },
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => (
-          <Link
-            to="/vlans/$id"
-            params={{ id: row.original.id }}
-            className="font-medium hover:underline"
-          >
-            {row.original.name}
-          </Link>
-        ),
-      },
-      {
-        id: "prefix_count",
-        accessorKey: "prefix_count",
-        header: "Prefixes",
-        cell: ({ row }) =>
-          row.original.prefix_count > 0 ? (
-            <span className="num text-xs">{row.original.prefix_count}</span>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          ),
-      },
-      {
-        id: "description",
-        accessorKey: "description",
-        header: "Description",
-        cell: ({ row }) => (
-          <span className="line-clamp-1 block text-muted-foreground">
-            {row.original.description || "—"}
-          </span>
-        ),
-      },
-      timeAgoColumn<VLAN>({
-        id: "updated",
-        header: "Updated",
-        get: (r) => r.updated_at,
-        align: "right",
+    () =>
+      buildVlanColumns({
+        include: ["vlan_id", "name", "prefixes", "description", "updated"],
       }),
-    ],
     []
   )
 

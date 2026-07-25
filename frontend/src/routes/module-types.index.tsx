@@ -19,7 +19,7 @@ import {
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { numidColumn } from "@/components/cells/numid"
-import { ManufacturerCell } from "@/components/cells/manufacturer-cell"
+import { manufacturerColumn } from "@/components/cells/manufacturer-cell"
 import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
@@ -126,16 +126,7 @@ function buildColumns({
         </Link>
       ),
     },
-    {
-      id: "manufacturer",
-      accessorFn: (r) => r.manufacturer?.name ?? "",
-      header: ({ column }) => (
-        <SortHeader column={column} label="Manufacturer" />
-      ),
-      cell: ({ row }) => (
-        <ManufacturerCell manufacturer={row.original.manufacturer} />
-      ),
-    },
+    manufacturerColumn<ModuleType>({ get: (r) => r.manufacturer }),
     {
       id: "part_number",
       accessorKey: "part_number",

@@ -49,6 +49,8 @@ export interface ManufacturerColumnOpts<T> {
   header?: string
   get: (row: T) => ManufacturerLike | null | undefined
   linked?: boolean
+  /** Class on the cell (e.g. `text-xs` where the table runs small). */
+  className?: string
 }
 
 export function manufacturerColumn<T>(
@@ -64,6 +66,7 @@ export function manufacturerColumn<T>(
       <ManufacturerCell
         manufacturer={opts.get(row.original)}
         linked={opts.linked}
+        className={opts.className}
       />
     ),
     meta: {

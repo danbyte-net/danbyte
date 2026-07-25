@@ -12,7 +12,12 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { RackRoleDeleteDialog } from "@/components/rack-role-delete-dialog"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { EmbeddedRackTable } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -77,22 +82,16 @@ function Body({ role: r }: { role: RackRole }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <ColorBadge name={r.name} color={r.color || undefined} />
-            {r.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {r.description}
-              </p>
-            )}
-          </div>
-          <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
+        <DetailHero
+          title={<ColorBadge name={r.name} color={r.color || undefined} />}
+          description={r.description}
+          stats={
             <DetailStat
               label="Racks"
               value={<span className="num">{r.rack_count}</span>}
             />
-          </dl>
-        </section>
+          }
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

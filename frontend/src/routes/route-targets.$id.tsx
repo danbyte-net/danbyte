@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { DataTable, SortHeader } from "@/components/data-table"
-import { DetailShell, DetailTab } from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { RtDeleteDialog } from "@/components/rt-delete-dialog"
@@ -82,23 +82,12 @@ function RtDetailBody({ rt: r }: { rt: RouteTarget }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="font-mono text-3xl font-semibold tracking-tight">
-              {r.name}
-            </div>
-            {r.tags.length > 0 && (
-              <div className="mt-2">
-                <TagList tags={r.tags} />
-              </div>
-            )}
-            {r.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {r.description}
-              </p>
-            )}
-          </div>
-        </section>
+        <DetailHero
+          title={r.name}
+          mono
+          tags={r.tags.length > 0 && <TagList tags={r.tags} />}
+          description={r.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

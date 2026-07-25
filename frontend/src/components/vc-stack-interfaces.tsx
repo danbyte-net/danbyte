@@ -13,6 +13,7 @@ import { DataTable } from "@/components/data-table"
 import {
   buildInterfaceActionsColumn,
   buildInterfaceColumns,
+  DEVICE_INTERFACE_COLUMNS,
   nestInterfaces,
   type InterfaceActionsOpts,
   type NestedInterface,
@@ -151,7 +152,9 @@ export function StackInterfacesTable({
       // The identical interface columns + row actions used by the per-device
       // table. Widened to StackRow (a superset of NestedInterface) — the cells
       // only read interface fields, so this is safe.
-      ...(buildInterfaceColumns() as ColumnDef<StackRow>[]),
+      ...(buildInterfaceColumns({
+        include: DEVICE_INTERFACE_COLUMNS,
+      }) as ColumnDef<StackRow>[]),
       ...(actionsCol ? [actionsCol] : []),
     ]
   }, [

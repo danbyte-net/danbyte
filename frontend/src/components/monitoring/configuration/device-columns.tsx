@@ -5,12 +5,10 @@ import type { Device, DeviceRole, DeviceType } from "@/lib/api"
 import { SortHeader } from "@/components/data-table"
 import { dash } from "@/components/cells/dash"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { ManufacturerCell } from "@/components/cells/manufacturer-cell"
-import { PlatformCell } from "@/components/cells/platform-cell"
-import { SiteCell } from "@/components/cells/site-cell"
+import { manufacturerColumn } from "@/components/cells/manufacturer-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
-import { StatusBadge } from "@/components/status-badge"
+import { buildDeviceColumns } from "@/components/columns/device-columns"
 import {
   monitoringControlColumn,
   type PolicyColumnContext,
@@ -33,169 +31,27 @@ export function enumFacet<T>(
   }
 }
 
-export function IpRef({
-  ip,
-}: {
-  ip: { id: string; ip_address: string; dns_name?: string } | null | undefined
-}) {
-  if (!ip) return dash
-  return (
-    <Link
-      to="/ips/$id"
-      params={{ id: ip.id }}
-      className="font-mono text-xs text-primary hover:underline"
-      title={ip.dns_name || undefined}
-    >
-      {ip.ip_address}
-    </Link>
-  )
-}
-
 export function buildDevicePolicyColumns({
   controls,
 }: PolicyColumnContext<Device>): ColumnDef<Device>[] {
   return [
-    {
-      id: "name",
-      accessorKey: "name",
-      header: ({ column }) => <SortHeader column={column} label="Name" />,
-      cell: ({ row }) => (
-        <Link
-          to="/devices/$id"
-          params={{ id: row.original.id }}
-          className="font-mono font-medium hover:underline"
-        >
-          {row.original.name}
-        </Link>
-      ),
-    },
-    {
-      id: "status",
-      accessorFn: (r) => r.status?.name ?? "",
-      header: ({ column }) => <SortHeader column={column} label="Status" />,
-      cell: ({ row }) => <StatusBadge status={row.original.status} />,
-      meta: enumFacet<Device>(
-        "Status",
-        (row) => row.status?.id ?? "__none__",
-        (row) => ({
-          label: row.status?.name ?? "No status",
-          color: row.status?.color,
-          textColor: row.status?.text_color,
-        })
-      ),
-    },
-    {
-      id: "role",
-      accessorFn: (r) => r.role?.name ?? "",
-      header: ({ column }) => <SortHeader column={column} label="Role" />,
-      cell: ({ row }) =>
-        row.original.role ? (
-          <ColorBadge
-            name={row.original.role.name}
-            color={row.original.role.color || undefined}
-          />
-        ) : (
-          dash
-        ),
-      meta: enumFacet<Device>(
-        "Role",
-        (row) => row.role?.id ?? "__none__",
-        (row) => ({
-          label: row.role?.name ?? "No role",
-          color: row.role?.color,
-        })
-      ),
-    },
-    {
-      id: "platform",
-      accessorFn: (r) => r.platform?.name ?? "",
-      header: ({ column }) => <SortHeader column={column} label="Platform" />,
-      cell: ({ row }) => <PlatformCell platform={row.original.platform} />,
-      meta: enumFacet<Device>(
-        "Platform",
-        (row) => row.platform?.id ?? "__none__",
-        (row) => ({
-          label: row.platform?.name ?? "No platform",
-        })
-      ),
-    },
-    {
-      id: "type",
-      accessorFn: (r) => r.device_type?.name ?? "",
-      header: ({ column }) => <SortHeader column={column} label="Type" />,
-      cell: ({ row }) => row.original.device_type?.name ?? dash,
-      meta: enumFacet<Device>(
-        "Type",
-        (row) => row.device_type?.id ?? "__none__",
-        (row) => ({
-          label: row.device_type?.name ?? "No type",
-        })
-      ),
-    },
-    {
-      id: "site",
-      accessorFn: (r) => r.site?.name ?? "",
-      header: ({ column }) => <SortHeader column={column} label="Site" />,
-      cell: ({ row }) => <SiteCell site={row.original.site} />,
-      meta: enumFacet<Device>(
-        "Site",
-        (row) => row.site?.id ?? "__none__",
-        (row) => ({
-          label: row.site?.name ?? "No site",
-        })
-      ),
-    },
-    {
-      id: "serial",
-      accessorKey: "serial_number",
-      header: "Serial",
-      cell: ({ row }) =>
-        row.original.serial_number ? (
-          <span className="font-mono text-xs">
-            {row.original.serial_number}
-          </span>
-        ) : (
-          dash
-        ),
-    },
-    {
-      id: "ips",
-      accessorKey: "ip_count",
-      header: "IPs",
-      cell: ({ row }) => (
-        <span className="num text-xs">{row.original.ip_count}</span>
-      ),
-      meta: {
-        facet: {
-          kind: "range",
-          label: "IPs",
-          get: (row: Device) => row.ip_count,
-          min: 0,
-        },
-      },
-    },
-    {
-      id: "primary_ip",
-      accessorFn: (r) => r.primary_ip?.ip_address ?? "",
-      header: "Primary IP",
-      cell: ({ row }) => <IpRef ip={row.original.primary_ip} />,
-    },
-    {
-      id: "description",
-      accessorKey: "description",
-      header: "Description",
-      cell: ({ row }) => (
-        <span className="line-clamp-1 block max-w-[34ch] text-muted-foreground">
-          {row.original.description || "—"}
-        </span>
-      ),
-    },
-    tagsColumn<Device>({ getTags: (r) => r.tags }),
-    timeAgoColumn<Device>({
-      id: "updated",
-      header: "Updated",
-      get: (r) => r.updated_at,
-      align: "right",
+    // The device row itself is the shared factory's — this table only adds the
+    // monitoring binding control.
+    ...buildDeviceColumns({
+      include: [
+        "name",
+        "status",
+        "role",
+        "platform",
+        "type",
+        "site",
+        "serial",
+        "ips",
+        "primary_ip",
+        "description",
+        "tags",
+        "updated",
+      ],
     }),
     monitoringControlColumn(controls),
   ]
@@ -219,23 +75,7 @@ export function buildDeviceTypePolicyColumns({
         </Link>
       ),
     },
-    {
-      id: "manufacturer",
-      accessorFn: (r) => r.manufacturer?.name ?? "",
-      header: ({ column }) => (
-        <SortHeader column={column} label="Manufacturer" />
-      ),
-      cell: ({ row }) => (
-        <ManufacturerCell manufacturer={row.original.manufacturer} />
-      ),
-      meta: enumFacet<DeviceType>(
-        "Manufacturer",
-        (row) => row.manufacturer?.id ?? "__none__",
-        (row) => ({
-          label: row.manufacturer?.name ?? "No manufacturer",
-        })
-      ),
-    },
+    manufacturerColumn<DeviceType>({ get: (r) => r.manufacturer }),
     {
       id: "model",
       accessorKey: "model",

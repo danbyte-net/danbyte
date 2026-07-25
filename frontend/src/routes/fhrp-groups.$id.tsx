@@ -13,7 +13,12 @@ import { Input } from "@/components/ui/input"
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox"
 import { QueryError } from "@/components/query-error"
 import { FhrpGroupDeleteDialog } from "@/components/fhrp-group-delete-dialog"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
@@ -85,34 +90,22 @@ function Body({ group: g }: { group: FHRPGroup }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-2xl font-semibold tracking-tight">
-                {label}
-              </span>
-              {g.name && (
-                <span className="text-sm text-muted-foreground">{g.name}</span>
-              )}
-            </div>
-            {g.tags.length > 0 && (
-              <div className="mt-2">
-                <TagList tags={g.tags} />
-              </div>
-            )}
-            {g.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {g.description}
-              </p>
-            )}
-          </div>
-          <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
+        <DetailHero
+          title={label}
+          badges={
+            g.name && (
+              <span className="text-sm text-muted-foreground">{g.name}</span>
+            )
+          }
+          tags={g.tags.length > 0 && <TagList tags={g.tags} />}
+          description={g.description}
+          stats={
             <DetailStat
               label="Members"
               value={<span className="num">{g.assignment_count}</span>}
             />
-          </dl>
-        </section>
+          }
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

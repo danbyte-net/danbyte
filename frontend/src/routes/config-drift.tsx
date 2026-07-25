@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
@@ -10,6 +10,7 @@ import {
   type SnmpDriftRow,
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
+import { deviceColumn } from "@/components/cells/device-cell"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -100,20 +101,10 @@ function ConfigTab() {
   const driftCount = rows.filter((r) => r.status === "drift").length
   const columns = useMemo<ColumnDef<DeviceConfigStateRow>[]>(
     () => [
-      {
-        id: "device",
-        accessorKey: "device_name",
-        header: "Device",
-        cell: ({ row }) => (
-          <Link
-            to="/devices/$id"
-            params={{ id: row.original.device }}
-            className="font-medium hover:underline"
-          >
-            {row.original.device_name}
-          </Link>
-        ),
-      },
+      deviceColumn<DeviceConfigStateRow>({
+        get: (r) => ({ id: r.device, name: r.device_name }),
+        className: "font-medium",
+      }),
       {
         id: "status",
         header: "Status",
@@ -232,20 +223,10 @@ function SnmpTab() {
   const driftCount = rows.filter((r) => r.status === "drift").length
   const columns = useMemo<ColumnDef<SnmpDriftRow>[]>(
     () => [
-      {
-        id: "device",
-        accessorKey: "device_name",
-        header: "Device",
-        cell: ({ row }) => (
-          <Link
-            to="/devices/$id"
-            params={{ id: row.original.device }}
-            className="font-medium hover:underline"
-          >
-            {row.original.device_name}
-          </Link>
-        ),
-      },
+      deviceColumn<SnmpDriftRow>({
+        get: (r) => ({ id: r.device, name: r.device_name }),
+        className: "font-medium",
+      }),
       {
         id: "status",
         header: "Status",

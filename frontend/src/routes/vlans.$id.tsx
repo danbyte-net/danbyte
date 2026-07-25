@@ -11,7 +11,12 @@ import { TimeCell } from "@/components/cells/time-ago"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { Button } from "@/components/ui/button"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
@@ -90,36 +95,24 @@ function VlanDetailBody({ vlan: v }: { vlan: VLAN }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <div className="font-mono text-3xl font-semibold tracking-tight">
-                <span className="text-xl text-muted-foreground/70">VLAN </span>
-                {v.vlan_id}
-              </div>
-              <div className="text-xl font-medium text-foreground">
-                {v.name}
-              </div>
+        <DetailHero
+          title={`VLAN ${v.vlan_id}`}
+          mono
+          badges={
+            <>
+              <span className="text-sm text-muted-foreground">{v.name}</span>
               <ViolationBadge objectId={v.id} prominent />
-            </div>
-            {v.tags.length > 0 && (
-              <div className="mt-2">
-                <TagList tags={v.tags} />
-              </div>
-            )}
-            {v.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {v.description}
-              </p>
-            )}
-          </div>
-          <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
+            </>
+          }
+          tags={v.tags.length > 0 && <TagList tags={v.tags} />}
+          description={v.description}
+          stats={
             <DetailStat
               label="Prefixes"
               value={<span className="num">{v.prefix_count}</span>}
             />
-          </dl>
-        </section>
+          }
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

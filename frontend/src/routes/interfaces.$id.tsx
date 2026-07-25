@@ -24,7 +24,12 @@ import {
 } from "@/components/assign-ip-dialog"
 import { TraceSection } from "@/components/topology/trace-section"
 import { TracePathStrip, TracePreview } from "@/components/cable-trace-path"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
@@ -110,12 +115,11 @@ function Body({ iface: i }: { iface: Interface }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="font-mono text-2xl font-semibold tracking-tight">
-              {i.name}
-            </div>
-            <div className="mt-2 flex items-center gap-1.5">
+        <DetailHero
+          title={i.name}
+          mono
+          subtitle={
+            <>
               {i.enabled ? (
                 <Badge variant="success">Enabled</Badge>
               ) : (
@@ -135,40 +139,38 @@ function Body({ iface: i }: { iface: Interface }) {
                   </Badge>
                 </Link>
               ))}
-            </div>
-            {i.tags.length > 0 && (
-              <div className="mt-2">
-                <TagList tags={i.tags} />
-              </div>
-            )}
-          </div>
-          <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
-            <DetailStat
-              label="Device"
-              value={
-                <Link
-                  to="/devices/$id"
-                  params={{ id: i.device.id }}
-                  className="font-mono text-primary hover:underline"
-                >
-                  {i.device.name}
-                </Link>
-              }
-            />
-            <DetailStat
-              label="Type"
-              value={
-                i.type ? (
-                  <span className="font-mono text-[13px]">
-                    {i.type_display}
-                  </span>
-                ) : (
-                  dash
-                )
-              }
-            />
-          </dl>
-        </section>
+            </>
+          }
+          tags={i.tags.length > 0 && <TagList tags={i.tags} />}
+          stats={
+            <>
+              <DetailStat
+                label="Device"
+                value={
+                  <Link
+                    to="/devices/$id"
+                    params={{ id: i.device.id }}
+                    className="font-mono text-primary hover:underline"
+                  >
+                    {i.device.name}
+                  </Link>
+                }
+              />
+              <DetailStat
+                label="Type"
+                value={
+                  i.type ? (
+                    <span className="font-mono text-[13px]">
+                      {i.type_display}
+                    </span>
+                  ) : (
+                    dash
+                  )
+                }
+              />
+            </>
+          }
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -487,22 +489,22 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
     <div className="space-y-6">
       <InterfaceDriftAlert deviceId={i.device.id} interfaceId={i.id} />
       <div className="grid gap-6 lg:grid-cols-2">
-      <div className="space-y-6">
-        <KvCard title="Interface" rows={attributes} />
-        <KvCard title="Switching" rows={switching} />
-        <KvCard title="Relationships" rows={relationships} />
-      </div>
-      {i.cable && (
-        <div className="rounded-lg border border-border bg-card p-4">
-          <TracePreview
-            url={`/api/interfaces/${i.id}/trace/`}
-            queryKey={["trace", "interface", i.id]}
-            highlightPort={i.name}
-            originInterfaceId={i.id}
-            originDeviceId={i.device.id}
-          />
+        <div className="space-y-6">
+          <KvCard title="Interface" rows={attributes} />
+          <KvCard title="Switching" rows={switching} />
+          <KvCard title="Relationships" rows={relationships} />
         </div>
-      )}
+        {i.cable && (
+          <div className="rounded-lg border border-border bg-card p-4">
+            <TracePreview
+              url={`/api/interfaces/${i.id}/trace/`}
+              queryKey={["trace", "interface", i.id]}
+              highlightPort={i.name}
+              originInterfaceId={i.id}
+              originDeviceId={i.device.id}
+            />
+          </div>
+        )}
       </div>
     </div>
   )

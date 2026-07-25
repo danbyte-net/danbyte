@@ -14,7 +14,12 @@ import { IpRangeDeleteDialog } from "@/components/ip-range-delete-dialog"
 import { StatusBadge } from "@/components/status-badge"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/ip-ranges/$id")({
@@ -80,12 +85,11 @@ function Body({ range: r }: { range: IPRange }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="font-mono text-xl font-semibold tracking-tight">
-                {r.start_address} – {r.end_address}
-              </span>
+        <DetailHero
+          title={`${r.start_address} – ${r.end_address}`}
+          mono
+          badges={
+            <>
               <StatusBadge status={r.status} />
               {r.role && (
                 <ColorBadge
@@ -93,35 +97,31 @@ function Body({ range: r }: { range: IPRange }) {
                   color={r.role.color || undefined}
                 />
               )}
-            </div>
-            {r.tags.length > 0 && (
-              <div className="mt-2">
-                <TagList tags={r.tags} />
-              </div>
-            )}
-            {r.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {r.description}
-              </p>
-            )}
-          </div>
-          <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
-            <DetailStat
-              label="Size"
-              value={
-                <span className="num">
-                  {r.size != null ? r.size.toLocaleString() : "—"}
-                </span>
-              }
-            />
-            <DetailStat
-              label="Family"
-              value={
-                <span className="num">{r.family ? `IPv${r.family}` : "—"}</span>
-              }
-            />
-          </dl>
-        </section>
+            </>
+          }
+          tags={r.tags.length > 0 && <TagList tags={r.tags} />}
+          description={r.description}
+          stats={
+            <>
+              <DetailStat
+                label="Size"
+                value={
+                  <span className="num">
+                    {r.size != null ? r.size.toLocaleString() : "—"}
+                  </span>
+                }
+              />
+              <DetailStat
+                label="Family"
+                value={
+                  <span className="num">
+                    {r.family ? `IPv${r.family}` : "—"}
+                  </span>
+                }
+              />
+            </>
+          }
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

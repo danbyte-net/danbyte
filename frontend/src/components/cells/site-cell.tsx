@@ -45,6 +45,8 @@ export interface SiteColumnOpts<T> {
   header?: string
   get: (row: T) => SiteLike | null | undefined
   linked?: boolean
+  /** Class on the cell (e.g. `text-xs` where the table runs small). */
+  className?: string
 }
 
 export function siteColumn<T>(opts: SiteColumnOpts<T>): ColumnDef<T, unknown> {
@@ -55,7 +57,11 @@ export function siteColumn<T>(opts: SiteColumnOpts<T>): ColumnDef<T, unknown> {
     accessorFn: (r) => opts.get(r)?.name ?? "",
     header: ({ column }) => <SortHeader column={column} label={header} />,
     cell: ({ row }) => (
-      <SiteCell site={opts.get(row.original)} linked={opts.linked} />
+      <SiteCell
+        site={opts.get(row.original)}
+        linked={opts.linked}
+        className={opts.className}
+      />
     ),
     meta: {
       facet: {

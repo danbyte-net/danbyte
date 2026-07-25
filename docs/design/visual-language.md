@@ -158,6 +158,46 @@ can't drift page to page (source of truth:
 Row actions always go through `RowActions` / `actionsColumn()`, and every
 list-page table names a `tableId` so it gets the persistent column picker.
 
+## Column factories
+
+**One entity, one column factory** (`frontend/src/components/columns/`), reused
+by its list page *and* every embedded table. A second `ColumnDef[]` for the same
+entity is how a row starts reading differently depending on which page you
+opened it from — a device that shows its compliance marker on `/devices` and
+hides it on the site page, a site link that is blue in one table and neutral in
+the next.
+
+| Entity | Factory |
+|---|---|
+| Prefix | `buildPrefixColumns()` |
+| IP address | `buildIpColumns()` |
+| Device | `buildDeviceColumns()` |
+| Interface | `buildInterfaceColumns()` (+ `DEVICE_INTERFACE_COLUMNS` preset) |
+| VLAN | `buildVlanColumns()` |
+
+Each takes options — never per-caller branches inside the factory:
+
+- `include` / `omit` pick columns; the factory's canonical order always applies,
+  so two pages showing the same columns cannot show them in a different order.
+  `buildPrefixColumns` also takes `order` for the one surface that genuinely
+  leads with a different column.
+- `selection`, `actions`, `humanIds` add the checkbox, `actionsColumn()`, and
+  the `#` numid column.
+- `violations` adds the compliance marker, `monitoring` the roll-up status
+  column, `tagFilter` wires tag chips to a page filter (omit it and the chips
+  are static rather than falsely clickable), `cfDefs` adds custom-field columns.
+- A page's own columns are **spliced around** the factory's output (rack
+  position, monitoring bindings, a virtual-chassis Member column) — see
+  `routes/locations.$id.tsx` and `routes/racks.$id.tsx`.
+
+Object references inside a cell come from `components/cells/`: `siteColumn` /
+`SiteCell`, `deviceColumn` / `DeviceCell`, plus `locationColumn`,
+`rackColumn`, `platformColumn`, `manufacturerColumn`, `vrfColumn`, `tagsColumn`,
+`timeAgoColumn`, `numidColumn`. They render a reference as a link (never plain
+text), underlined on hover and **never `text-primary` blue**, and they carry the
+facet meta the filter rail reads. Each column helper takes `className` for
+tables that run `text-xs`.
+
 ## Detail-page tabs
 
 Every object detail page follows one tab convention (source of truth:
@@ -179,3 +219,38 @@ Every object detail page follows one tab convention (source of truth:
 Never render History (`ChangeLogPanel`) or Journal (`JournalPanel`) — or a
 wall of attribute fields — inline in the header. Attributes go in the Overview
 tab's `KvCard`s; history and journal are always their own tabs.
+
+## The detail hero
+
+The summary section itself is `DetailHero`, passed to `DetailShell`'s `hero`
+prop (source of truth: `frontend/src/components/detail-shell.tsx`, reference
+implementation `routes/aggregates.$id.tsx`). It owns the section wrapper, the
+title element and its size, and the stat rail — a page only supplies content:
+
+| slot | renders |
+|---|---|
+| `title` (+ `mono`) | the page's single `<h1>`, always `text-2xl font-semibold tracking-tight` |
+| `badges` | status/state chips, inline with the title and wrapping with it |
+| `subtitle` | one secondary line — a parent link, a facility ID, ports, a second row of chips |
+| `tags` | `<TagList tags={…} />` |
+| `description` | the object's description |
+| `children` | anything else in the left column, below the description |
+| `stats` + `statCols` | `<DetailStat/>`s in the right-hand rail (1, 2 or 3 columns) |
+
+**Never pass a title size, and never hand-roll the section.** The hero was
+copied 42× before this primitive existed and had drifted to four title sizes
+(`text-lg`, `text-xl`, `text-2xl`, `text-3xl`), three title elements
+(`div`/`span`/`h1`, only four of them a real heading), two incompatible
+layouts, a local `DetailStat` fork that rendered prefix utilisation 50% larger
+than every other stat in the product, and one page (cables) with no title at
+all. If a title is an identifier — IP, CIDR, ASN, interface, circuit ID — pass
+`mono`; if it *is* a coloured catalog object, pass the `ColorBadge` as `title`
+so the badge still sizes itself and the `<h1>` still lands in the document
+outline.
+
+A hero needing an extra full-width band under it (SNMP credentials,
+`CustomFieldValues`, a usage note) renders `DetailHero` and the band as
+siblings in a fragment. Prefer folding the content into a slot: extra stacked
+strips push the tab bar down the page, which is why the prefix page's ancestor
+chain is now its hero `subtitle` and its subnet-details disclosure sits at the
+top of the Overview tab.

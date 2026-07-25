@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { DataTable, SortHeader } from "@/components/data-table"
+import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { ObjectImages } from "@/components/object-images"
 import { QueryError } from "@/components/query-error"
@@ -21,7 +22,12 @@ import {
 } from "@/components/rack-elevation"
 import { StatusBadge } from "@/components/status-badge"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { FormCheckbox } from "@/components/forms"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -90,75 +96,63 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
       }
       hero={
         <>
-          <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-            <div className="min-w-0">
-              <div className="flex items-center gap-3">
-                <div className="text-3xl font-semibold tracking-tight">
-                  {r.name}
-                </div>
-                <StatusBadge status={r.status} />
-              </div>
-              {r.facility_id && (
-                <p className="mt-1 font-mono text-xs text-muted-foreground">
-                  {r.facility_id}
-                </p>
-              )}
-              {r.tags.length > 0 && (
-                <div className="mt-2">
-                  <TagList tags={r.tags} />
-                </div>
-              )}
-              {r.description && (
-                <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                  {r.description}
-                </p>
-              )}
-            </div>
-            <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
-              <DetailStat
-                label="Site"
-                value={
-                  <Link
-                    to="/sites/$id"
-                    params={{ id: r.site.id }}
-                    className="text-xs text-primary hover:underline"
-                  >
-                    {r.site.name}
-                  </Link>
-                }
-              />
-              <DetailStat
-                label="Height"
-                value={<span className="num">{r.u_height}U</span>}
-              />
-              {(r.power.allocated_w > 0 ||
-                r.power.maximum_w > 0 ||
-                r.power.available_w > 0) && (
+          <DetailHero
+            title={r.name}
+            badges={<StatusBadge status={r.status} />}
+            subtitle={
+              r.facility_id && (
+                <span className="font-mono">{r.facility_id}</span>
+              )
+            }
+            tags={r.tags.length > 0 && <TagList tags={r.tags} />}
+            description={r.description}
+            stats={
+              <>
                 <DetailStat
-                  label="Power"
-                  value={<PowerStat power={r.power} />}
-                />
-              )}
-              {(r.total_weight_kg > 0 || r.max_weight_kg != null) && (
-                <DetailStat
-                  label="Weight"
+                  label="Site"
                   value={
-                    <span
-                      className={
-                        r.max_weight_kg != null &&
-                        r.total_weight_kg > r.max_weight_kg
-                          ? "num font-medium text-destructive"
-                          : "num"
-                      }
+                    <Link
+                      to="/sites/$id"
+                      params={{ id: r.site.id }}
+                      className="text-xs text-primary hover:underline"
                     >
-                      {r.total_weight_kg} kg
-                      {r.max_weight_kg != null && ` / ${r.max_weight_kg} kg`}
-                    </span>
+                      {r.site.name}
+                    </Link>
                   }
                 />
-              )}
-            </dl>
-          </section>
+                <DetailStat
+                  label="Height"
+                  value={<span className="num">{r.u_height}U</span>}
+                />
+                {(r.power.allocated_w > 0 ||
+                  r.power.maximum_w > 0 ||
+                  r.power.available_w > 0) && (
+                  <DetailStat
+                    label="Power"
+                    value={<PowerStat power={r.power} />}
+                  />
+                )}
+                {(r.total_weight_kg > 0 || r.max_weight_kg != null) && (
+                  <DetailStat
+                    label="Weight"
+                    value={
+                      <span
+                        className={
+                          r.max_weight_kg != null &&
+                          r.total_weight_kg > r.max_weight_kg
+                            ? "num font-medium text-destructive"
+                            : "num"
+                        }
+                      >
+                        {r.total_weight_kg} kg
+                        {r.max_weight_kg != null && ` / ${r.max_weight_kg} kg`}
+                      </span>
+                    }
+                  />
+                )}
+              </>
+            }
+          />
 
           <CustomFieldValues model="rack" values={r.custom_fields} />
         </>
@@ -205,22 +199,14 @@ function RackDevicesPane({ rackId }: { rackId: string }) {
     queryFn: () => api<Paginated<Device>>(`/api/devices/?rack=${rackId}`),
   })
   const rows = q.data?.results ?? []
-  const columns = useMemo<ColumnDef<Device>[]>(
-    () => [
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => (
-          <Link
-            to="/devices/$id"
-            params={{ id: row.original.id }}
-            className="font-medium hover:underline"
-          >
-            {row.original.name}
-          </Link>
-        ),
-      },
+  const columns = useMemo<ColumnDef<Device>[]>(() => {
+    // Shared name + status from the device factory; the rack placement columns
+    // (position, face, height) are this pane's own and sit between them.
+    const [name, status] = buildDeviceColumns({
+      include: ["name", "status"],
+    })
+    return [
+      name,
       {
         id: "position",
         accessorKey: "position",
@@ -253,15 +239,9 @@ function RackDevicesPane({ rackId }: { rackId: string }) {
           <span className="num text-xs">{row.original.u_height}U</span>
         ),
       },
-      {
-        id: "status",
-        accessorKey: "status",
-        header: ({ column }) => <SortHeader column={column} label="Status" />,
-        cell: ({ row }) => <StatusBadge status={row.original.status} />,
-      },
-    ],
-    []
-  )
+      status,
+    ]
+  }, [])
   if (q.isLoading)
     return <p className="text-sm text-muted-foreground">Loading…</p>
   if (q.isError) return <QueryError error={q.error} />
@@ -376,10 +356,7 @@ function RackFaces({ rack }: { rack: Rack }) {
   const stepZoom = (dir: -1 | 1) => {
     const i = ZOOM_STEPS.findIndex((z) => z >= zoom)
     const cur = i < 0 ? ZOOM_STEPS.length - 1 : i
-    const next = Math.min(
-      ZOOM_STEPS.length - 1,
-      Math.max(0, cur + dir)
-    )
+    const next = Math.min(ZOOM_STEPS.length - 1, Math.max(0, cur + dir))
     setZoom(ZOOM_STEPS[next])
   }
 

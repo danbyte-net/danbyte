@@ -9,7 +9,7 @@ import { api, type Tenant, type TenantPicker } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { DetailShell, DetailTab } from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { QueryError } from "@/components/query-error"
 import { TenantDeleteDialog } from "@/components/tenant-delete-dialog"
 import { KvCard, type KvRow } from "@/components/kv-card"
@@ -41,7 +41,9 @@ function TenantDetail() {
 }
 
 function TenantDetailBody({ tenant: t }: { tenant: Tenant }) {
-  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">("overview")
+  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">(
+    "overview"
+  )
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<Tenant | null>(null)
   const qc = useQueryClient()
@@ -114,27 +116,25 @@ function TenantDetailBody({ tenant: t }: { tenant: Tenant }) {
       }
       hero={
         <>
-          <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-3">
-                <ColorBadge
-                  name={t.name}
-                  color={t.color || undefined}
-                  className="h-7 px-3 text-sm"
-                />
+          <DetailHero
+            title={
+              <ColorBadge
+                name={t.name}
+                color={t.color || undefined}
+                className="h-7 px-3 text-sm"
+              />
+            }
+            badges={
+              <>
                 <span className="font-mono text-sm text-muted-foreground">
                   {t.slug}
                 </span>
                 {isActive && <Badge variant="secondary">active</Badge>}
                 {!t.is_active && <Badge variant="outline">inactive</Badge>}
-              </div>
-              {t.description && (
-                <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                  {t.description}
-                </p>
-              )}
-            </div>
-          </section>
+              </>
+            }
+            description={t.description}
+          />
           <section className="shrink-0 border-b border-border px-6 py-4">
             <p className="text-sm text-muted-foreground">
               Switch to this tenant to browse its sites, prefixes, VLANs, and

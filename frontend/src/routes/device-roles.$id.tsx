@@ -12,7 +12,12 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { DeviceRoleDeleteDialog } from "@/components/device-role-delete-dialog"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -80,26 +85,22 @@ function Body({ role: r }: { role: DeviceRole }) {
       }
       hero={
         <>
-          <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-            <div className="min-w-0">
-              <ColorBadge name={r.name} color={r.color || undefined} />
-              {r.description && (
-                <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                  {r.description}
-                </p>
-              )}
-            </div>
-            <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
-              <DetailStat
-                label="Devices"
-                value={<span className="num">{r.device_count}</span>}
-              />
-              <DetailStat
-                label="VMs"
-                value={<span className="num">{r.vm_count}</span>}
-              />
-            </dl>
-          </section>
+          <DetailHero
+            title={<ColorBadge name={r.name} color={r.color || undefined} />}
+            description={r.description}
+            stats={
+              <>
+                <DetailStat
+                  label="Devices"
+                  value={<span className="num">{r.device_count}</span>}
+                />
+                <DetailStat
+                  label="VMs"
+                  value={<span className="num">{r.vm_count}</span>}
+                />
+              </>
+            }
+          />
 
           <section className="border-b border-border px-6 py-4">
             <div className="flex flex-wrap items-center gap-3">

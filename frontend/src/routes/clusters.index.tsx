@@ -11,6 +11,7 @@ import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { numidColumn } from "@/components/cells/numid"
 import { useTableFilters } from "@/components/table-filters"
+import { siteColumn } from "@/components/cells/site-cell"
 import { ListPageShell } from "@/components/list-page-shell"
 import { ClusterDeleteDialog } from "@/components/cluster-delete-dialog"
 import { StatusBadge } from "@/components/status-badge"
@@ -145,24 +146,7 @@ function buildColumns({
         },
       },
     },
-    {
-      id: "site",
-      header: ({ column }) => <SortHeader column={column} label="Site" />,
-      accessorFn: (r) => r.site?.name ?? "",
-      cell: ({ row }) =>
-        row.original.site ? (
-          <span className="text-xs">{row.original.site.name}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-      meta: {
-        facet: {
-          kind: "enum",
-          label: "Site",
-          get: (r: Cluster) => r.site?.name ?? "—",
-        },
-      },
-    },
+    siteColumn<Cluster>({ get: (r) => r.site, className: "text-xs" }),
     {
       id: "status",
       accessorFn: (r) => r.status?.name ?? "",

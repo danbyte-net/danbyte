@@ -22,7 +22,7 @@ import { KvCard, dash, mono } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { Markdown } from "@/components/markdown"
 import { QueryError } from "@/components/query-error"
-import { DetailShell, DetailTab } from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { TimeCell } from "@/components/cells/time-ago"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -94,24 +94,18 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-2xl font-semibold tracking-tight">
-                {r.name}
-              </span>
+        <DetailHero
+          title={r.name}
+          badges={
+            <>
               <Badge variant={SEV_VARIANT[r.severity]} className="capitalize">
                 {r.severity}
               </Badge>
               {!r.enabled && <Badge variant="outline">Disabled</Badge>}
-            </div>
-            {r.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {r.description}
-              </p>
-            )}
-          </div>
-        </section>
+            </>
+          }
+          description={r.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

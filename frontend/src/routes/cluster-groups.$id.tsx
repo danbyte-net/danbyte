@@ -11,7 +11,12 @@ import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { TimeCell } from "@/components/cells/time-ago"
 import { ClusterGroupDeleteDialog } from "@/components/cluster-group-delete-dialog"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { EmbeddedClusterTable } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -78,24 +83,17 @@ function Body({ clusterGroup: m }: { clusterGroup: ClusterGroup }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="text-2xl font-semibold tracking-tight">
-              {m.name}
-            </div>
-            {m.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {m.description}
-              </p>
-            )}
-          </div>
-          <dl className="ml-auto grid grid-cols-1 gap-y-3 text-[13px]">
+        <DetailHero
+          title={m.name}
+          description={m.description}
+          statCols={1}
+          stats={
             <DetailStat
               label="Clusters"
               value={<span className="num">{m.cluster_count}</span>}
             />
-          </dl>
-        </section>
+          }
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

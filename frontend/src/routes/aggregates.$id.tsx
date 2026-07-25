@@ -11,7 +11,12 @@ import { KvCard, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { UtilCell } from "@/components/cells/util-cell"
 import { AggregateDeleteDialog } from "@/components/aggregate-delete-dialog"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
@@ -39,7 +44,9 @@ function AggregateDetail() {
 }
 
 function Body({ aggregate: a }: { aggregate: Aggregate }) {
-  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">("overview")
+  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">(
+    "overview"
+  )
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<Aggregate | null>(null)
   const goBack = useCallback(() => nav({ to: "/aggregates" }), [nav])
@@ -73,40 +80,30 @@ function Body({ aggregate: a }: { aggregate: Aggregate }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="font-mono text-2xl font-semibold tracking-tight">
-                {a.prefix}
-              </span>
-              {a.rir && (
-                <Link
-                  to="/rirs/$id"
-                  params={{ id: a.rir.id }}
-                  className="text-sm text-primary hover:underline"
-                >
-                  {a.rir.name}
-                </Link>
-              )}
-            </div>
-            {a.tags.length > 0 && (
-              <div className="mt-2">
-                <TagList tags={a.tags} />
-              </div>
-            )}
-            {a.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {a.description}
-              </p>
-            )}
-          </div>
-          <dl className="ml-auto grid grid-cols-1 gap-x-8 gap-y-3 text-[13px]">
+        <DetailHero
+          title={a.prefix}
+          mono
+          badges={
+            a.rir && (
+              <Link
+                to="/rirs/$id"
+                params={{ id: a.rir.id }}
+                className="text-sm text-primary hover:underline"
+              >
+                {a.rir.name}
+              </Link>
+            )
+          }
+          tags={a.tags.length > 0 && <TagList tags={a.tags} />}
+          description={a.description}
+          statCols={1}
+          stats={
             <DetailStat
               label="Utilisation"
               value={<UtilCell pct={a.utilisation_pct} />}
             />
-          </dl>
-        </section>
+          }
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },

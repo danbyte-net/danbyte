@@ -53,7 +53,12 @@ import { DataTable } from "@/components/data-table"
 import { useMe, objCan } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { DetailShell, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import {
   Table,
   TableBody,
@@ -281,47 +286,35 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
         </>
       }
       hero={
-        <>
-          <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="font-mono text-3xl font-semibold tracking-tight">
-                  {p.cidr}
-                </div>
-                <ViolationBadge objectId={p.id} prominent />
-                <VrfCell vrf={p.vrf} showRd />
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <StatusBadge status={p.status} />
-                {/* The VLAN's security zone — network context worth surfacing
-                    at the same glance level as status/tags. */}
-                {p.vlan?.zone && (
-                  <ColorBadge
-                    name={p.vlan.zone.name}
-                    color={p.vlan.zone.color || undefined}
-                  />
-                )}
-                {p.tags.length > 0 && <TagList tags={p.tags} />}
-              </div>
-              {p.description && (
-                <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                  {p.description}
-                </p>
+        <DetailHero
+          title={p.cidr}
+          mono
+          badges={
+            <>
+              <ViolationBadge objectId={p.id} prominent />
+              <VrfCell vrf={p.vrf} showRd />
+              <StatusBadge status={p.status} />
+              {/* The VLAN's security zone — network context worth surfacing
+                  at the same glance level as status/tags. */}
+              {p.vlan?.zone && (
+                <ColorBadge
+                  name={p.vlan.zone.name}
+                  color={p.vlan.zone.color || undefined}
+                />
               )}
-            </div>
-
-            <dl className="ml-auto grid grid-cols-1 gap-y-3 text-[13px]">
-              <Stat
-                label="Utilisation"
-                value={<UtilPct pct={p.utilisation_pct} />}
-              />
-            </dl>
-          </section>
-
-          <MastersStrip prefix={p} />
-
-          <SubnetDetailsStrip prefix={p} onOpenAddIp={openAddIpAt} />
-        </>
+            </>
+          }
+          subtitle={<MastersChain prefix={p} />}
+          tags={p.tags.length > 0 && <TagList tags={p.tags} />}
+          description={p.description}
+          statCols={1}
+          stats={
+            <DetailStat
+              label="Utilisation"
+              value={<UtilPct pct={p.utilisation_pct} />}
+            />
+          }
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -340,7 +333,10 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
-        <PrefixOverview prefix={p} humanIds={humanIds} />
+        <div className="space-y-6">
+          <SubnetDetailsCard prefix={p} onOpenAddIp={openAddIpAt} />
+          <PrefixOverview prefix={p} humanIds={humanIds} />
+        </div>
       </DetailTab>
 
       <DetailTab value="ips" bare>
@@ -465,17 +461,6 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   )
 }
 
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div>
-      <dt className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-        {label}
-      </dt>
-      <dd className="mt-1 text-xl font-semibold tracking-tight">{value}</dd>
-    </div>
-  )
-}
-
 /** The prefix's attributes, grouped into labelled tables — the detail that used
  * to crowd the page header. Only headline data (CIDR, VRF, status, tags,
  * description) and the single most-scanned metric (utilisation) stay up top;
@@ -573,7 +558,9 @@ function freeCount(p: Prefix): string {
   return `${100 - p.utilisation_pct}%`
 }
 
-function SubnetDetailsStrip({
+/** Network · mask · usable range · broadcast · next available, as a collapsed
+ * disclosure at the top of the Overview tab. */
+function SubnetDetailsCard({
   prefix,
   onOpenAddIp,
 }: {
@@ -589,15 +576,15 @@ function SubnetDetailsStrip({
   if (details.length === 0 && next.length === 0) return null
 
   return (
-    <details className="shrink-0 border-b border-border">
-      <summary className="flex cursor-pointer items-center gap-2 px-6 py-2.5 text-[11px] tracking-[0.06em] text-muted-foreground uppercase hover:text-foreground">
+    <details className="overflow-hidden rounded-lg border border-border">
+      <summary className="flex cursor-pointer items-center gap-2 px-4 py-2.5 text-[11px] tracking-[0.06em] text-muted-foreground uppercase hover:text-foreground">
         <ChevronRight className="h-3.5 w-3.5 transition-transform" />
         <span>Subnet details</span>
         <span className="ml-2 tracking-normal text-muted-foreground normal-case">
           network · mask · usable range · broadcast · next available
         </span>
       </summary>
-      <div className="grid gap-5 bg-muted/40 px-6 pt-3 pb-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid gap-5 border-t border-border bg-muted/40 px-4 pt-3 pb-5 lg:grid-cols-[minmax(0,1fr)_320px]">
         <SubnetDetailsTable rows={details} />
         <NextAvailableTable addresses={next} onPick={onOpenAddIp} />
       </div>
@@ -705,7 +692,8 @@ function NextAvailableTable({
   )
 }
 
-function MastersStrip({ prefix }: { prefix: Prefix }) {
+/** The prefix's ancestor chain, inline in the hero's subtitle line. */
+function MastersChain({ prefix }: { prefix: Prefix }) {
   const query = useQuery({
     queryKey: ["prefixes", "all"],
     queryFn: () => api<Paginated<Prefix>>("/api/prefixes/?page_size=2000"),
@@ -730,7 +718,7 @@ function MastersStrip({ prefix }: { prefix: Prefix }) {
 
   if (masters.length === 0) return null
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/20 px-6 py-2 text-xs">
+    <>
       <span className="text-[10px] tracking-wider text-muted-foreground uppercase">
         Masters
       </span>
@@ -754,7 +742,7 @@ function MastersStrip({ prefix }: { prefix: Prefix }) {
           </span>
         ))}
       </div>
-    </div>
+    </>
   )
 }
 

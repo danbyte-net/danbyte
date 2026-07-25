@@ -27,7 +27,12 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { TagList } from "@/components/cells/tag-list"
-import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import {
+  DetailHero,
+  DetailShell,
+  DetailStat,
+  DetailTab,
+} from "@/components/detail-shell"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { StatusBadge } from "@/components/status-badge"
@@ -106,47 +111,35 @@ function Body({ tunnel: t }: { tunnel: Tunnel }) {
       }
       hero={
         <>
-          <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-            <div className="min-w-0">
-              <div className="text-2xl font-semibold tracking-tight">
-                {t.name}
-              </div>
-              <div className="mt-2 flex items-center gap-1.5">
-                <StatusBadge status={t.status} />
-              </div>
-              {t.tags.length > 0 && (
-                <div className="mt-2">
-                  <TagList tags={t.tags} />
-                </div>
-              )}
-              {t.description && (
-                <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                  {t.description}
-                </p>
-              )}
-            </div>
-            <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
-              <DetailStat
-                label="Encapsulation"
-                value={t.encapsulation_display}
-              />
-              <DetailStat
-                label="Group"
-                value={
-                  t.group ? (
-                    <Link
-                      to="/tunnel-groups"
-                      className="text-primary hover:underline"
-                    >
-                      {t.group.name}
-                    </Link>
-                  ) : (
-                    dash
-                  )
-                }
-              />
-            </dl>
-          </section>
+          <DetailHero
+            title={t.name}
+            badges={<StatusBadge status={t.status} />}
+            tags={t.tags.length > 0 && <TagList tags={t.tags} />}
+            description={t.description}
+            stats={
+              <>
+                <DetailStat
+                  label="Encapsulation"
+                  value={t.encapsulation_display}
+                />
+                <DetailStat
+                  label="Group"
+                  value={
+                    t.group ? (
+                      <Link
+                        to="/tunnel-groups"
+                        className="text-primary hover:underline"
+                      >
+                        {t.group.name}
+                      </Link>
+                    ) : (
+                      dash
+                    )
+                  }
+                />
+              </>
+            }
+          />
 
           <CustomFieldValues model="tunnel" values={t.custom_fields} />
         </>

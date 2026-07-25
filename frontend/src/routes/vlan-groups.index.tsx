@@ -8,6 +8,7 @@ import { api, type Paginated, type VLANGroup } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { useTableFilters } from "@/components/table-filters"
+import { siteColumn } from "@/components/cells/site-cell"
 import { ListPageShell } from "@/components/list-page-shell"
 import { numidColumn } from "@/components/cells/numid"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -114,25 +115,7 @@ function buildColumns({
         </span>
       ),
     },
-    {
-      id: "site",
-      header: "Site",
-      enableSorting: false,
-      cell: ({ row }) =>
-        row.original.site ? (
-          <span className="text-xs">{row.original.site.name}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-      meta: {
-        facet: {
-          kind: "enum",
-          label: "Site",
-          get: (r: VLANGroup) => r.site?.id ?? "__none__",
-          formatValue: (_v, s) => ({ label: s.site?.name ?? "No site" }),
-        },
-      },
-    },
+    siteColumn<VLANGroup>({ get: (r) => r.site, className: "text-xs" }),
     {
       id: "cluster",
       header: "Cluster",

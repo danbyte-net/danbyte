@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
+import { locationColumn } from "@/components/cells/location-cell"
+import { siteColumn } from "@/components/cells/site-cell"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TableActions } from "@/components/table-actions"
 import { numidColumn } from "@/components/cells/numid"
@@ -109,24 +111,8 @@ function buildColumns({
         </Link>
       ),
     },
-    {
-      id: "location",
-      accessorFn: (r) => r.location.name,
-      header: ({ column }) => <SortHeader column={column} label="Location" />,
-      cell: ({ row }) => (
-        <span className="text-muted-foreground">
-          {row.original.location.name}
-        </span>
-      ),
-    },
-    {
-      id: "site",
-      accessorFn: (r) => r.site.name,
-      header: ({ column }) => <SortHeader column={column} label="Site" />,
-      cell: ({ row }) => (
-        <span className="text-muted-foreground">{row.original.site.name}</span>
-      ),
-    },
+    locationColumn<FloorPlan>({ get: (r) => r.location }),
+    siteColumn<FloorPlan>({ get: (r) => r.site }),
     {
       id: "grid",
       header: "Grid",

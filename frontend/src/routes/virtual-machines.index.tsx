@@ -11,8 +11,8 @@ import { numidColumn } from "@/components/cells/numid"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { SiteCell } from "@/components/cells/site-cell"
-import { PlatformCell } from "@/components/cells/platform-cell"
+import { siteColumn } from "@/components/cells/site-cell"
+import { platformColumn } from "@/components/cells/platform-cell"
 import { ListPageShell } from "@/components/list-page-shell"
 import { useTableFilters } from "@/components/table-filters"
 import { VmDeleteDialog } from "@/components/vm-delete-dialog"
@@ -213,21 +213,7 @@ function buildColumns({
           <span className="text-muted-foreground">—</span>
         ),
     },
-    {
-      id: "site",
-      header: ({ column }) => <SortHeader column={column} label="Site" />,
-      accessorFn: (r) => r.site?.name ?? "",
-      cell: ({ row }) => (
-        <SiteCell site={row.original.site} className="text-xs" />
-      ),
-      meta: {
-        facet: {
-          kind: "enum",
-          label: "Site",
-          get: (r: VirtualMachine) => r.site?.name ?? "—",
-        },
-      },
-    },
+    siteColumn<VirtualMachine>({ get: (r) => r.site, className: "text-xs" }),
     {
       id: "role",
       header: ({ column }) => <SortHeader column={column} label="Role" />,
@@ -253,24 +239,10 @@ function buildColumns({
         },
       },
     },
-    {
-      id: "platform",
-      header: ({ column }) => <SortHeader column={column} label="Platform" />,
-      accessorFn: (r) => r.platform?.name ?? "",
-      cell: ({ row }) => (
-        <PlatformCell platform={row.original.platform} className="text-xs" />
-      ),
-      meta: {
-        facet: {
-          kind: "enum",
-          label: "Platform",
-          get: (r: VirtualMachine) => r.platform?.id ?? "__none__",
-          formatValue: (_v, r) => ({
-            label: r.platform?.name ?? "No platform",
-          }),
-        },
-      },
-    },
+    platformColumn<VirtualMachine>({
+      get: (r) => r.platform,
+      className: "text-xs",
+    }),
     tagsColumn<VirtualMachine>({
       getTags: (r) => r.tags,
     }),

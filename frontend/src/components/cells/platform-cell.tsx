@@ -49,6 +49,8 @@ export interface PlatformColumnOpts<T> {
   header?: string
   get: (row: T) => PlatformLike | null | undefined
   linked?: boolean
+  /** Class on the cell (e.g. `text-xs` where the table runs small). */
+  className?: string
 }
 
 export function platformColumn<T>(
@@ -61,7 +63,11 @@ export function platformColumn<T>(
     accessorFn: (r) => opts.get(r)?.name ?? "",
     header: ({ column }) => <SortHeader column={column} label={header} />,
     cell: ({ row }) => (
-      <PlatformCell platform={opts.get(row.original)} linked={opts.linked} />
+      <PlatformCell
+        platform={opts.get(row.original)}
+        linked={opts.linked}
+        className={opts.className}
+      />
     ),
     meta: {
       facet: {

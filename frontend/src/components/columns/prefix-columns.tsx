@@ -67,6 +67,10 @@ export interface PrefixColumnOpts<T extends Prefix = Prefix> {
   omit?: PrefixColumnId[]
   /** Keep only these columns (canonical order still applies). */
   include?: PrefixColumnId[]
+  /** Emit exactly these columns in exactly this sequence, overriding the
+   * canonical order. For a surface that genuinely leads with a different
+   * column — the compliance affected-objects table puts Utilisation third. */
+  order?: PrefixColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
   /** Depth chevrons for the nested list view (rows carry `_depth`). */
@@ -257,6 +261,11 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
           max: 100,
           unit: "%",
         },
+        // Export the percentage as displayed, not the bare number.
+        export: {
+          value: (r) =>
+            r.utilisation_pct == null ? "" : `${r.utilisation_pct}%`,
+        },
       },
     }),
     tags: () =>
@@ -276,7 +285,8 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
 
   const cols: ColumnDef<T, unknown>[] = []
   if (opts.selection) cols.push(selectionColumn<T>())
-  for (const id of CANONICAL_ORDER) if (keep(id)) cols.push(byId[id]())
+  for (const id of opts.order ?? CANONICAL_ORDER.filter(keep))
+    cols.push(byId[id]())
 
   // One column per tenant custom field. Values come from the prefix's
   // custom_fields blob; hide any you don't want via the Columns menu. Each

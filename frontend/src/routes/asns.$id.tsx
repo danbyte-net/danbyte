@@ -7,7 +7,7 @@ import { useCallback, useState } from "react"
 import { api, type ASN } from "@/lib/api"
 import { TagList } from "@/components/cells/tag-list"
 import { TimeCell } from "@/components/cells/time-ago"
-import { DetailShell, DetailTab } from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { Button } from "@/components/ui/button"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
@@ -74,23 +74,12 @@ function Body({ asn: a }: { asn: ASN }) {
         </>
       }
       hero={
-        <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <span className="font-mono text-2xl font-semibold tracking-tight">
-              AS{a.asn}
-            </span>
-            {a.tags.length > 0 && (
-              <div className="mt-2">
-                <TagList tags={a.tags} />
-              </div>
-            )}
-            {a.description && (
-              <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
-                {a.description}
-              </p>
-            )}
-          </div>
-        </section>
+        <DetailHero
+          title={`AS${a.asn}`}
+          mono
+          tags={a.tags.length > 0 && <TagList tags={a.tags} />}
+          description={a.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
