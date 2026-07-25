@@ -86,6 +86,56 @@ def _speed_mbps(value) -> int | None:
     return int(n)
 
 
+def _part_drift(device, tenant, state) -> list[dict]:
+    """Differences between observed hardware health and the parts' set statuses.
+
+    Readings live on ``DeviceSnmp.sensors``, each carrying the status its value
+    map resolved to. Compared against the part's own status, that yields either
+    a status to review or a part Danbyte has never heard of.
+
+    Covers the SNMP sensor path only for now. The Redfish collector still writes
+    part statuses directly (``monitoring/redfish.py``) and so never appears here
+    — the same treatment is owed to it.
+
+    Deliberately mode-agnostic: an ``auto`` sensor has already written its
+    reading into intent, so the two agree and it contributes nothing.
+    """
+    from api.models import InventoryItem
+
+    readings = [r for r in (state.sensors or []) if r.get("status")]
+    if not readings:
+        return []
+
+    parts = {
+        _norm(p.name): p
+        for p in InventoryItem.objects.filter(device=device).select_related("status")
+    }
+    out: list[dict] = []
+    for r in readings:
+        name = (r.get("name") or "").strip()
+        if not name:
+            continue
+        part = parts.get(_norm(name))
+        if part is None:
+            out.append({
+                "kind": "part_missing", "name": name,
+                "part_kind": r.get("kind") or "other",
+                "sensor": r.get("sensor") or "",
+                "observed": r["status"], "raw": r.get("raw") or "",
+            })
+            continue
+        intended = part.status.slug if part.status_id else ""
+        if intended == r["status"]:
+            continue
+        out.append({
+            "kind": "part_status", "part_id": str(part.id), "name": part.name,
+            "sensor": r.get("sensor") or "",
+            "intended": part.status.name if part.status_id else "—",
+            "observed": r["status"], "raw": r.get("raw") or "",
+        })
+    return out
+
+
 def _observed_ip_rows(tenant, observed) -> dict:
     """Existing IPAddress rows for every address this poll reported, by address."""
     addrs = {
@@ -291,6 +341,12 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
                 "kind": "interface_stale", "interface_id": str(i.id), "name": i.name,
             })
 
+    # 3b. Hardware parts. Sensor and BMC readings are observed data like any
+    #     other, so a health value that disagrees with the status a human set is
+    #     a difference to review — not a write. (A sensor in `auto` mode has
+    #     already written, so its intent matches and nothing appears here.)
+    items.extend(_part_drift(device, tenant, state))
+
     # 4. Switch-link suggestions — join this device's ARP (IP↔MAC) with its FDB
     #    (MAC↔switch port) to propose which access port each already-known IP
     #    sits behind. Only fires on bridging devices (empty fdb → nothing) and
@@ -412,6 +468,34 @@ def apply_drift_action(device, tenant, action: dict) -> bool:
         # "skipped" → already assigned elsewhere, or no containing prefix exists
         # (add the prefix first). assigned/created both succeed.
         return _attach_observed_ip(tenant, iface, ip) != "skipped"
+
+    if kind in ("part_status", "part_missing"):
+        from api.models import InventoryItem
+        from api.status_registry import resolve_status
+
+        status = resolve_status(tenant, action.get("observed") or "", "inventoryitem")
+        if status is None:
+            return False
+        if kind == "part_status":
+            part = InventoryItem.objects.filter(
+                pk=action.get("part_id"), device=device
+            ).first()
+            if part is None:
+                return False
+            part.status = status
+            part.save(update_fields=["status", "updated_at"])
+            return True
+        name = (action.get("name") or "").strip()[:128]
+        if not name:
+            return False
+        try:
+            InventoryItem.objects.create(
+                device=device, name=name,
+                kind=action.get("part_kind") or "other", status=status,
+            )
+        except IntegrityError:
+            return False  # double-accept, or the name is taken
+        return True
 
     if kind == "switch_link_suggested":
         row = IPAddress.objects.filter(tenant=tenant, pk=action.get("ip_id")).first()

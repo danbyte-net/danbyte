@@ -1501,6 +1501,20 @@ class SnmpSensor(TimestampedModel):
         "them alone. Only applied after a poll that actually returned readings, "
         "so a timeout can't mark real hardware missing.",
     )
+    APPLY_DRIFT = "drift"
+    APPLY_AUTO = "auto"
+    APPLY_CHOICES = [
+        (APPLY_DRIFT, "Surface as drift — you accept it"),
+        (APPLY_AUTO, "Apply automatically"),
+    ]
+    apply_mode = models.CharField(
+        max_length=8, choices=APPLY_CHOICES, default=APPLY_DRIFT,
+        help_text="What a reading does to the source of truth. 'drift' keeps "
+        "readings observed-only and lists the difference for review — Danbyte's "
+        "normal contract, and the only mode that can't overwrite a status you "
+        "set. 'auto' writes straight through, for health you want acted on with "
+        "no one watching.",
+    )
     enabled = models.BooleanField(default=True)
 
     class Meta:

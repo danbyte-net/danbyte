@@ -306,6 +306,40 @@ class ComponentTemplateMaterializationTests(_TenantAPITestCase):
         self.assertEqual(upd.json()["duplex"], "full")
         self.assertEqual(upd.json()["wwn"], "10:00:00:90:fa:12:34:56")
 
+    def test_component_description_roundtrip_and_stamp(self):
+        InterfaceTemplate.objects.create(
+            device_type=self.dt, name="uplink", description="to spine",
+        )
+        rear = RearPortTemplate.objects.create(
+            device_type=self.dt, name="R9", positions=2, description="trunk A",
+        )
+        FrontPortTemplate.objects.create(
+            device_type=self.dt, name="F9", rear_port_template=rear,
+            description="patch A",
+        )
+        r = self.client.post("/api/devices/", {
+            "name": "panel-1", "device_type_id": str(self.dt.id),
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        dev_id = r.json()["id"]
+        dev = Device.objects.get(pk=dev_id)
+        self.assertEqual(dev.interfaces.get(name="uplink").description, "to spine")
+        self.assertEqual(dev.rear_ports.get(name="R9").description, "trunk A")
+        self.assertEqual(dev.front_ports.get(name="F9").description, "patch A")
+
+        # Writable on the concrete components, and read back on the wire.
+        for path, obj in (
+            ("interfaces", dev.interfaces.get(name="uplink")),
+            ("rear-ports", dev.rear_ports.get(name="R9")),
+            ("front-ports", dev.front_ports.get(name="F9")),
+        ):
+            upd = self.client.patch(
+                f"/api/{path}/{obj.id}/", {"description": "spare"},
+                format="json",
+            )
+            self.assertEqual(upd.status_code, 200, upd.content)
+            self.assertEqual(upd.json()["description"], "spare")
+
     def test_device_create_materializes_components(self):
         r = self.client.post("/api/devices/", {
             "name": "access-sw-1", "device_type_id": str(self.dt.id),

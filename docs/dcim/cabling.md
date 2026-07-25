@@ -70,6 +70,8 @@ connection **passes through** to the rear and continues on whatever's cabled
 there — so a link can cross several panels and Danbyte still follows it.
 
 Manage a panel's front/rear ports from its device page, alongside its interfaces.
+Each port takes a **description** — the room the trunk runs to, the label on the
+sticker — shown as a column in the front/rear port tables and editable in bulk.
 
 ## Tracing a connection
 

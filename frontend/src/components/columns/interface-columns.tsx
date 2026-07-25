@@ -269,6 +269,16 @@ export function buildInterfaceColumns(opts?: {
         </span>
       ),
     },
+    {
+      id: "description",
+      header: "Description",
+      cell: ({ row }) =>
+        row.original.description ? (
+          <span className="text-xs">{row.original.description}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
   ]
 }
 

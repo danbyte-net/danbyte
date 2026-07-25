@@ -7,8 +7,8 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from api.models import (
-    ConsolePort, Device, DeviceType, Interface, InterfaceTemplate,
-    VLAN, VirtualMachine, Cluster, ClusterType, VMInterface,
+    ConsolePort, Device, DeviceType, FrontPort, Interface, InterfaceTemplate,
+    RearPort, VLAN, VirtualMachine, Cluster, ClusterType, VMInterface,
 )
 from core.models import Organization, Tag, Tenant
 
@@ -149,6 +149,27 @@ class ComponentBulkTests(TestCase):
         )
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(ConsolePort.objects.count(), 0)
+
+    def test_description_bulk_editable_on_ports_and_interfaces(self):
+        # The bulk bar offers Description on every component table, so the
+        # allow-list and the model must agree on all of them.
+        rear = RearPort.objects.create(device=self.dev, name="R1", positions=2)
+        front = FrontPort.objects.create(
+            device=self.dev, name="F1", rear_port=rear
+        )
+        for path, obj in (
+            ("interfaces", self.if1),
+            ("rear-ports", rear),
+            ("front-ports", front),
+        ):
+            r = self.client_api.post(
+                f"/api/{path}/bulk-update/",
+                {"ids": [str(obj.id)], "fields": {"description": "row 3"}},
+                format="json",
+            )
+            self.assertEqual(r.status_code, 200, r.content)
+            obj.refresh_from_db()
+            self.assertEqual(obj.description, "row 3")
 
     def test_interface_templates(self):
         t1 = InterfaceTemplate.objects.create(device_type=self.dt, name="eth0")

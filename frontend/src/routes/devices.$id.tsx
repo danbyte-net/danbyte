@@ -62,6 +62,12 @@ import { DeviceSyncTypeDialog } from "@/components/device-sync-type-dialog"
 import { StatusBadge } from "@/components/status-badge"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
+import {
+  DeviceDriftBadge,
+  DriftDot,
+  hasComponentDrift,
+  useDeviceDrift,
+} from "@/components/monitoring/device-drift-badge"
 import { ContactsPanel } from "@/components/contacts-panel"
 import { ConfigContextPanel } from "@/components/config-context-panel"
 import { DeviceConfigRender } from "@/components/device-config-render"
@@ -182,6 +188,9 @@ function Body({ device: d }: { device: Device }) {
   const [syncingType, setSyncingType] = useState(false)
   const { tab: tabFromUrl } = Route.useSearch()
   const [tab, setTab] = useUrlTab<DeviceTab>(tabFromUrl ?? "overview")
+  // Shared with the header badge and the drift inbox — one request, and the
+  // tab markers can never disagree with what the inbox lists.
+  const deviceDrift = useDeviceDrift(d.id)
   const goBack = useCallback(() => nav({ to: "/devices" }), [nav])
 
   return (
@@ -241,6 +250,7 @@ function Body({ device: d }: { device: Device }) {
                 {d.name}
               </div>
               <ViolationBadge objectId={d.id} objectType="device" prominent />
+              <DeviceDriftBadge deviceId={d.id} prominent />
             </div>
             <div className="mt-2 flex items-center gap-2">
               <StatusBadge status={d.status} />
@@ -295,7 +305,12 @@ function Body({ device: d }: { device: Device }) {
         { value: "ips", label: "IPs", count: d.ip_count },
         {
           value: "components",
-          label: "Components",
+          label: (
+            <>
+              Components
+              {hasComponentDrift(deviceDrift) && <DriftDot />}
+            </>
+          ),
           count:
             (d.interface_count || 0) +
               (d.hardware_count || 0) +
@@ -303,7 +318,15 @@ function Body({ device: d }: { device: Device }) {
               (d.power_count || 0) || undefined,
         },
         { value: "images", label: "Images" },
-        { value: "snmp", label: "Monitoring" },
+        {
+          value: "snmp",
+          label: (
+            <>
+              Monitoring
+              {deviceDrift.length > 0 && <DriftDot />}
+            </>
+          ),
+        },
         {
           value: "services",
           label: "Services",
@@ -1523,6 +1546,7 @@ function DeviceInterfacesPane({
             choices: "interface_duplex",
           },
           { key: "mgmt_only", label: "Management only", kind: "bool" },
+          { key: "description", label: "Description", kind: "text" },
         ]}
         tags
         canDelete={canEdit}

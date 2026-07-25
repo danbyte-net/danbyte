@@ -34,6 +34,7 @@ From a device's **Interfaces** tab, click **Add interface**, then fill in:
 | **VLAN** | An optional VLAN association. |
 | **MAC address** | The port's hardware address. |
 | **Enabled** | Whether the port is administratively up. |
+| **Description** | A short free-text note — what's on the far end, why the port is reserved, a ticket reference. |
 
 ### Interface type
 
@@ -96,8 +97,9 @@ type's component templates.
 ## What you see in the list
 
 On the device's **Interfaces** tab, each row shows the name, type, enabled state,
-speed, VLAN, cable count, and any **IP addresses** attached to it. Sub-interfaces
-are indented under their parent, and aggregate members show their LAG — see
+speed, VLAN, cable count, any **IP addresses** attached to it, and the
+description. Sub-interfaces are indented under their parent, and aggregate
+members show their LAG — see
 [Virtual & aggregate interfaces](virtual-interfaces.md).
 
 ## Attaching IP addresses
@@ -109,8 +111,8 @@ an address on the port without leaving the page. See
 ## The interface detail page
 
 Click an interface name to open its page. It shows the device, type, speed, MTU,
-VLAN, MAC, any parent/LAG/bridge relationships, the IPs assigned to it, and a
-cable trace. From here you can also add or assign IPs.
+VLAN, MAC, description, any parent/LAG/bridge relationships, the IPs assigned to
+it, and a cable trace. From here you can also add or assign IPs.
 
 ## VM interfaces
 

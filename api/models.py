@@ -921,7 +921,7 @@ def materialize_device_components(device) -> dict[str, int]:
     made = [
         Interface(device=device, name=n, type=t.type, enabled=t.enabled,
                   mgmt_only=t.mgmt_only, poe_mode=t.poe_mode,
-                  poe_type=t.poe_type)
+                  poe_type=t.poe_type, description=t.description)
         for t in dt.interface_templates.all()
         if (n := render_component_name(t.name, pos)) not in have
     ]
@@ -983,7 +983,7 @@ def materialize_device_components(device) -> dict[str, int]:
     have = _names(device.rear_ports)
     made = [
         RearPort(device=device, name=n, type=t.type, positions=t.positions,
-                 is_splitter=t.is_splitter)
+                 is_splitter=t.is_splitter, description=t.description)
         for t in dt.rear_port_templates.all()
         if (n := render_component_name(t.name, pos)) not in have
     ]
@@ -1000,6 +1000,7 @@ def materialize_device_components(device) -> dict[str, int]:
             ],
             rear_port_position=t.rear_port_position,
             positions=t.positions,
+            description=t.description,
         )
         for t in dt.front_port_templates.select_related("rear_port_template")
         if (n := render_component_name(t.name, pos)) not in have
@@ -1173,7 +1174,8 @@ def install_module(module) -> int:
     have = set(module.device.interfaces.values_list("name", flat=True))
     made = [
         Interface(device=module.device, name=n, type=t.type,
-                  enabled=t.enabled, mgmt_only=t.mgmt_only)
+                  enabled=t.enabled, mgmt_only=t.mgmt_only,
+                  description=t.description)
         for n, t in types.items()
         if n not in have
     ]
@@ -2028,6 +2030,7 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         max_length=17, blank=True,
         help_text="Layer-2 hardware address, e.g. 00:1b:44:11:3a:b7.",
     )
+    description = models.CharField(max_length=255, blank=True, default="")
     # ─── L2: 802.1Q switching ────────────────────────────────────────────
     # `vlan` is the **untagged / access (native)** VLAN. `mode` says how the
     # port behaves; `tagged_vlans` are the trunk VLANs when tagged.
@@ -2150,6 +2153,7 @@ class RearPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "position 1 and carries the same signal (PON). Requires positions=1.",
     )
     type = models.CharField(max_length=64, blank=True)
+    description = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
         unique_together = ("device", "name")
@@ -2192,6 +2196,7 @@ class FrontPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "rear-port positions from the start.",
     )
     type = models.CharField(max_length=64, blank=True)
+    description = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
         ordering = ["name"]

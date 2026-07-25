@@ -1508,6 +1508,9 @@ export interface SnmpSensor {
   /** Status slug for covered parts the agent never reports (empty bays); ""
    * leaves them alone. */
   absent_status: string
+  /** "drift" = observe only and list the difference (default); "auto" = write
+   * the reading straight into the part's status. */
+  apply_mode: "drift" | "auto"
   enabled: boolean
   created_at: string
   updated_at: string
@@ -1607,6 +1610,7 @@ export interface Interface {
   mac_address: string
   /** First-class MAC objects this interface bears (primary flagged). */
   mac_addresses: { id: string; mac_address: string; is_primary: boolean }[]
+  description: string
   /** 802.1Q mode: "" | "access" | "tagged" | "tagged-all". */
   mode: string
   mode_display: string
@@ -1659,6 +1663,7 @@ export interface InterfaceWritePayload {
   mtu?: number | null
   enabled?: boolean
   mac_address?: string
+  description?: string
   mode?: string
   vlan_id?: string | null
   tagged_vlan_ids?: string[]
@@ -1679,6 +1684,7 @@ export interface RearPort {
   positions: number
   is_splitter?: boolean
   type: string
+  description: string
   tags: Tag[]
   cable: CableMini | null
   front_port_count: number
@@ -1692,6 +1698,7 @@ export interface RearPortWritePayload {
   positions?: number
   is_splitter?: boolean
   type?: string
+  description?: string
   tag_ids?: number[]
 }
 
@@ -1708,6 +1715,7 @@ export interface FrontPort {
   rear_port_position: number
   positions: number
   type: string
+  description: string
   tags: Tag[]
   cable: CableMini | null
   created_at: string
@@ -1721,6 +1729,7 @@ export interface FrontPortWritePayload {
   rear_port_position?: number
   positions?: number
   type?: string
+  description?: string
   tag_ids?: number[]
 }
 
@@ -4177,6 +4186,25 @@ export type SnmpDriftItem =
       observed: string | boolean
     }
   | { kind: "interface_stale"; interface_id: string; name: string }
+  | {
+      /** A part's set status disagrees with what the sensor/BMC reported. */
+      kind: "part_status"
+      part_id: string
+      name: string
+      sensor: string
+      intended: string
+      observed: string
+      raw: string
+    }
+  | {
+      /** Health reported for a part Danbyte has no record of. */
+      kind: "part_missing"
+      name: string
+      part_kind: string
+      sensor: string
+      observed: string
+      raw: string
+    }
   | {
       kind: "ip_missing"
       interface_id: string

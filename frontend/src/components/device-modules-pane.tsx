@@ -98,6 +98,7 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
                 <TableHead>Position</TableHead>
                 <TableHead>Installed module</TableHead>
                 <TableHead>Serial</TableHead>
+                <TableHead>Description</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
@@ -123,6 +124,9 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
                   </TableCell>
                   <TableCell className="font-mono text-xs">
                     {b.module?.serial_number || "—"}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {b.description || "—"}
                   </TableCell>
                   <TableCell>
                     {canWrite && (

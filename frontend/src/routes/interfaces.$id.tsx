@@ -347,6 +347,7 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
         ),
     },
     { label: "Cables", value: <span className="num">{i.cable_count}</span> },
+    { label: "Description", value: i.description || dash },
   ]
 
   const switching: KvRow[] = [

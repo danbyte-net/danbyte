@@ -73,6 +73,10 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
     qc.invalidateQueries({ queryKey: ["device-interfaces", deviceId] })
     qc.invalidateQueries({ queryKey: ["device-ips", deviceId] })
     qc.invalidateQueries({ queryKey: ["interfaces"] })
+    // Accepting part drift writes a part's status: the Hardware table, the
+    // photo faceplate and the 3D rack all read that, so they must re-ask too.
+    qc.invalidateQueries({ queryKey: ["device-inventory", deviceId] })
+    qc.invalidateQueries({ queryKey: ["device-face-ports", deviceId] })
   }
 
   const accept = useMutation({
