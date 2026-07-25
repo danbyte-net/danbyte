@@ -71,6 +71,16 @@ _IMAGE_BASE = (
     "master/elevation-images"
 )
 
+# Default repository for *re*-importing images (Danbyte's fork of the library —
+# same layout, images under elevation-images/). The YAML importer above keeps
+# pulling from netbox-community at the pinned ref, unchanged.
+DEFAULT_REIMPORT_REPO = "https://github.com/danbyte-net/device-library"
+
+# GitHub shorthand: a bare "owner/name".
+_OWNER_NAME_RE = re.compile(r"^[\w.-]+/[\w.-]+$")
+# A repository page URL with no /tree|/blob path: https://github.com/o/r[.git]
+_GITHUB_REPO_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$")
+
 # github.com blob URLs → raw file URLs, so users can paste straight from the
 # browser address bar.
 _GITHUB_BLOB_RE = re.compile(
@@ -146,6 +156,56 @@ def to_raw_url(url: str) -> str:
             f"{m.group(3)}"
         )
     return url.strip()
+
+
+def elevation_image_base(repo: str) -> str:
+    """Normalise a repository reference to the https base URL under which
+    elevation images live (``<base>/<Manufacturer>/<slug>.<face>.<png|jpg>``).
+
+    Accepts what people actually paste:
+
+    - plain ``owner/name`` GitHub shorthand,
+    - a ``https://github.com/owner/name`` page URL, optionally with
+      ``/tree/<ref>`` or ``/tree/<ref>/<path>`` (``/blob/`` too — address-bar
+      paste), or
+    - a full ``https://`` base (a raw.githubusercontent.com URL, or an
+      internal mirror that serves the same layout).
+
+    GitHub forms without an explicit ref use ``HEAD`` — the repository's
+    default branch, whatever it's called — rather than guessing ``master`` vs
+    ``main``. ``elevation-images`` is appended unless the given path already
+    ends with it (the library keeps images there and forks keep the layout).
+    Raises :class:`ValueError` for anything that isn't https; the fetch itself
+    still goes through ``core.ssrf.safe_request`` like every outbound call.
+    """
+    from urllib.parse import urlparse
+
+    ref = (repo or "").strip().rstrip("/")
+    if not ref:
+        raise ValueError("Provide a repository — owner/name or an https:// URL.")
+    if _OWNER_NAME_RE.match(ref):
+        return f"https://raw.githubusercontent.com/{ref}/HEAD/elevation-images"
+    m = _GITHUB_REPO_RE.match(ref)
+    if m:
+        return (
+            f"https://raw.githubusercontent.com/{m.group(1)}/{m.group(2)}/"
+            "HEAD/elevation-images"
+        )
+    m = _GITHUB_DIR_RE.match(ref)
+    if m:
+        owner, name, gref = m.group(1), m.group(2), m.group(3)
+        path = (m.group(4) or "").strip("/")
+        base = f"https://raw.githubusercontent.com/{owner}/{name}/{gref}"
+        if path and path != "elevation-images" and not path.endswith("/elevation-images"):
+            path = f"{path}/elevation-images"
+        return f"{base}/{path or 'elevation-images'}"
+    parsed = urlparse(ref)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError(
+            "Repository must be owner/name, a github.com URL, or an https:// "
+            "base URL."
+        )
+    return ref if ref.endswith("/elevation-images") else f"{ref}/elevation-images"
 
 
 def positionize(name: str) -> str:
@@ -485,9 +545,23 @@ def import_moduletype_yaml(tenant, text: str, *, owning_site=None) -> dict:
     }
 
 
-def _fetch_elevation_image(dt, manufacturer: str, slug: str, face: str) -> bool:
+def _fetch_elevation_image(
+    dt, manufacturer: str, slug: str, face: str, image_base: str = _IMAGE_BASE
+) -> bool:
     """Try to download <slug>.<face>.png|jpg from the devicetype-library and
     attach it to the DeviceType. Returns True on success."""
+    return _pull_elevation_image(dt, manufacturer, slug, face, image_base) == "saved"
+
+
+def _pull_elevation_image(
+    dt, manufacturer: str, slug: str, face: str, image_base: str
+) -> str:
+    """Download one face's image and attach it. ``"saved"`` on success,
+    ``"not_found"`` when the repo simply doesn't have it, ``"fetch_failed"``
+    when the network/SSRF layer refused — callers report the difference.
+
+    The attach goes through ``FieldFile.save(..., save=True)`` → a plain model
+    ``.save()``, so the audit change-log signal fires for the image change."""
     from urllib.parse import quote
 
     from django.core.files.base import ContentFile
@@ -496,16 +570,223 @@ def _fetch_elevation_image(dt, manufacturer: str, slug: str, face: str) -> bool:
 
     for ext in ("png", "jpg"):
         # Manufacturer dirs can contain spaces ("Palo Alto") — quote segments.
-        url = f"{_IMAGE_BASE}/{quote(manufacturer)}/{quote(slug)}.{face}.{ext}"
+        url = f"{image_base}/{quote(manufacturer)}/{quote(slug)}.{face}.{ext}"
         try:
             resp = safe_get(url, timeout=5)
         except Exception:  # noqa: BLE001 — network is best-effort here
-            return False
+            return "fetch_failed"
         if resp.status_code == 200 and resp.content:
             field = dt.front_image if face == "front" else dt.rear_image
             field.save(f"{slug}.{face}.{ext}", ContentFile(resp.content), save=True)
-            return True
-    return False
+            return "saved"
+    return "not_found"
+
+
+# ─── Re-importing images for EXISTING device types ──────────────────────────
+# Recovery tool: the media folder was lost/corrupted (or types were created
+# without images) while the DeviceType rows survived. Match each type against
+# a devicetype-library-layout repo and re-download only the elevation images —
+# no types are created or modified beyond the two image fields.
+
+REIMPORT_FACES = ("front", "rear")
+
+#: Types handled in one synchronous request; bigger catalogs go to the RQ run.
+#: A type typically costs 2–4 probe requests (worst-case bounded by the
+#: candidate cap below), so 50 types lands in the same outbound budget as the
+#: YAML importer's 200-file sync cap.
+REIMPORT_SYNC_CAP = 50
+
+#: How many slug candidates to probe per type before declaring no_match.
+_MAX_SLUG_CANDIDATES = 5
+
+# The importer saves downloads as "<slug>.<face>.<ext>"; Django dedupes
+# collisions to "<slug>.<face>_<rand>.<ext>". Either way the basename still
+# carries the library slug — the strongest matching signal we have, since
+# DeviceType doesn't persist the library slug itself.
+_IMAGE_NAME_RE = re.compile(
+    r"^(?P<slug>.+)\.(?:front|rear)(?:_\w+)?\.(?:png|jpe?g)$", re.IGNORECASE
+)
+
+
+#: Refusal shown when an airgapped deployment asks for a repo fetch. Kept in
+#: one place so the endpoint and the background task word it identically.
+AIRGAP_IMAGES_DETAIL = (
+    "This deployment is airgapped (update checks are disabled), so images "
+    "can't be re-downloaded from a repository. Recover offline instead: "
+    "restore the media folder from a backup, or re-upload images on each "
+    "device type — offline device-type bundles carry definitions but "
+    "reference images rather than embed them."
+)
+
+
+def airgap_refusal() -> str | None:
+    """The refusal message when this deployment is airgapped
+    (``DeploymentSettings.disable_update_check`` — the same switch that stops
+    release-repo checks), else ``None``. Checked BEFORE any outbound attempt
+    so an airgapped install gets a clean error, not a hanging timeout."""
+    from core.models import DeploymentSettings
+
+    if DeploymentSettings.load().disable_update_check:
+        return AIRGAP_IMAGES_DETAIL
+    return None
+
+
+def summarize_reimport(rows: list[dict]) -> dict:
+    """Totals for a batch of :func:`reimport_images_for_type` rows."""
+    totals = {
+        "types": len(rows), "matched": 0, "no_match": 0,
+        "skipped_has_images": 0, "fetch_failed": 0, "images_downloaded": 0,
+    }
+    for r in rows:
+        totals[r["status"]] = totals.get(r["status"], 0) + 1
+        totals["images_downloaded"] += r.get("downloaded", 0)
+    return totals
+
+
+def candidate_slugs(dt) -> list[str]:
+    """Library slugs this type could be filed under, most-confident first.
+
+    Order: slugs recovered from the stored image *filenames* (exactly what the
+    original import wrote — they survive in the DB even when the files are
+    gone), then derivations using the same ``django.utils.text.slugify`` the
+    importer uses, following the library convention of vendor-prefixed slugs
+    (``cisco-c9300-48p``) with unprefixed fallbacks."""
+    out: list[str] = []
+
+    def add(s: str) -> None:
+        if s and s not in out:
+            out.append(s)
+
+    for field in (dt.front_image, dt.rear_image):
+        name = (getattr(field, "name", "") or "").rsplit("/", 1)[-1]
+        m = _IMAGE_NAME_RE.match(name)
+        if m:
+            add(m.group("slug"))
+    mfr = dt.manufacturer.name if dt.manufacturer_id else ""
+    for label in (dt.name, dt.part_number, dt.model):
+        label = (label or "").strip()
+        if not label:
+            continue
+        if mfr:
+            add(slugify(f"{mfr} {label}"))
+        add(slugify(label))
+    return out[:_MAX_SLUG_CANDIDATES]
+
+
+def _face_missing(dt, face: str) -> bool:
+    """True when this face needs an image: the field is empty, OR the field
+    holds a path whose file no longer exists in storage. The latter is the
+    corrupt/lost-media case — the DB survived, the media folder didn't — and
+    counts as a gap for fill-gaps-only reimports."""
+    field = dt.front_image if face == "front" else dt.rear_image
+    if not field or not field.name:
+        return True
+    try:
+        return not field.storage.exists(field.name)
+    except Exception:  # noqa: BLE001 — unreadable storage counts as missing
+        return True
+
+
+def _face_in_repo(manufacturer: str, slug: str, face: str, image_base: str) -> str:
+    """Does the repo have this face's image? ``"available"`` / ``"not_found"``
+    / ``"fetch_failed"``. HEAD requests — existence only, no body."""
+    from urllib.parse import quote
+
+    from core.ssrf import safe_request
+
+    for ext in ("png", "jpg"):
+        url = f"{image_base}/{quote(manufacturer)}/{quote(slug)}.{face}.{ext}"
+        try:
+            resp = safe_request("HEAD", url, timeout=5)
+        except Exception:  # noqa: BLE001 — SSRF refusal / network trouble
+            return "fetch_failed"
+        if resp.status_code == 200:
+            return "available"
+    return "not_found"
+
+
+def reimport_images_for_type(dt, image_base: str, *, overwrite: bool = False,
+                             apply: bool = False) -> dict:
+    """Match one EXISTING DeviceType against a library-layout repo and, when
+    ``apply``, re-download its elevation images.
+
+    Returns ``{"id", "name", "manufacturer", "slug", "status", "faces",
+    "downloaded"}``. ``status`` is ``matched`` (repo has images for it — on
+    apply, see per-face detail), ``no_match``, ``skipped_has_images`` (both
+    faces present *and their files exist on disk* — with ``overwrite`` off
+    there is nothing to do, so the repo isn't even probed), or
+    ``fetch_failed``. ``faces`` maps front/rear to ``kept`` / ``available`` /
+    ``downloaded`` / ``not_found`` / ``fetch_failed``.
+
+    Fill-gaps is the default: a face is written only when the field is empty
+    or its file is missing from storage (``_face_missing``). ``overwrite``
+    replaces intact images too. Network trouble on one face degrades to that
+    face's ``fetch_failed`` — never an exception out of here."""
+    faces: dict[str, str] = {}
+    row = {
+        "id": str(dt.id),
+        "name": dt.name,
+        "manufacturer": dt.manufacturer.name if dt.manufacturer_id else "",
+        "slug": "",
+        "status": "",
+        "faces": faces,
+        "downloaded": 0,
+    }
+    todo = [f for f in REIMPORT_FACES if overwrite or _face_missing(dt, f)]
+    if not todo:
+        row["status"] = "skipped_has_images"
+        faces.update(dict.fromkeys(REIMPORT_FACES, "kept"))
+        return row
+
+    mfr = row["manufacturer"]
+    candidates = candidate_slugs(dt)
+    if not mfr or not candidates:
+        # Library images live under a <Manufacturer>/ dir — nothing to probe.
+        row["status"] = "no_match"
+        return row
+
+    # Resolve THE slug once: the library names both faces with the same slug,
+    # so the first candidate with any face present wins. Memoised so the
+    # per-face report below doesn't re-probe.
+    probed: dict[tuple[str, str], str] = {}
+
+    def probe(slug: str, face: str) -> str:
+        key = (slug, face)
+        if key not in probed:
+            probed[key] = _face_in_repo(mfr, slug, face, image_base)
+        return probed[key]
+
+    slug = None
+    for cand in candidates:
+        statuses = []
+        for face in REIMPORT_FACES:
+            statuses.append(probe(cand, face))
+            if statuses[-1] != "not_found":
+                break
+        if "fetch_failed" in statuses:
+            # Can't tell match from no-match while the repo is unreachable.
+            row["status"] = "fetch_failed"
+            return row
+        if "available" in statuses:
+            slug = cand
+            break
+    if slug is None:
+        row["status"] = "no_match"
+        return row
+
+    row["slug"] = slug
+    row["status"] = "matched"
+    for face in REIMPORT_FACES:
+        if face not in todo:
+            faces[face] = "kept"
+        elif not apply:
+            faces[face] = probe(slug, face)
+        else:
+            pulled = _pull_elevation_image(dt, mfr, slug, face, image_base)
+            faces[face] = "downloaded" if pulled == "saved" else pulled
+            if pulled == "saved":
+                row["downloaded"] += 1
+    return row
 
 
 def _err(message: str, name: str = "") -> dict:

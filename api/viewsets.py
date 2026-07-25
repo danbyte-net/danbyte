@@ -2101,8 +2101,14 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
     # Importing a bundle creates a device type, so it demands `add`; replacing
     # one that already exists is a change and checked separately. Bulk delete
     # must demand `delete` — the @action default is `change`, which would let a
-    # read/write-but-not-delete editor empty the catalog.
-    rbac_action_map = {"import_bundle": "add", "bulk_delete": "delete"}
+    # read/write-but-not-delete editor empty the catalog. Reimporting images
+    # rewrites existing rows' image fields — `change`, pinned explicitly so the
+    # row restriction below scopes the batch the same way.
+    rbac_action_map = {
+        "import_bundle": "add",
+        "bulk_delete": "delete",
+        "reimport_images": "change",
+    }
 
     @action(detail=True, methods=["get"], url_path="library-export")
     def library_export(self, request, pk=None):
@@ -2180,10 +2186,12 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
     def _run_dict(self, run):
         return {
             "id": str(run.id),
+            "kind": run.kind,
             "source_url": run.source_url,
             "status": run.status,
             "progress": run.progress or {},
             "failures": run.failures or [],
+            "options": run.options or {},
             "error": run.error,
             "created_at": run.created_at.isoformat(),
             "finished_at": run.finished_at.isoformat()
@@ -2349,6 +2357,91 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
                 )
             )
         return Response({"results": results})
+
+    @action(detail=False, methods=["post"], url_path="reimport-images")
+    def reimport_images(self, request):
+        """Re-download elevation images for EXISTING device types — the
+        recovery tool for a lost/corrupt media folder (the DB rows survived,
+        the files didn't). Matches each in-scope type against a
+        devicetype-library-layout repo and touches nothing but the two image
+        fields; no types are created.
+
+        Body: ``{"repo": "<owner/name | github.com URL | https base>"}`` —
+        blank uses Danbyte's device-library fork. ``?dry_run=1`` (bundle-import
+        convention; a body flag works too) classifies without downloading:
+        ``matched`` / ``no_match`` / ``skipped_has_images``. Default apply is
+        fill-gaps-only — a face is written only when its field is empty or the
+        file is missing from storage; ``?overwrite=1`` replaces intact images
+        too. Catalogs over the sync cap run in the background instead (202 +
+        ``{"run": …}``, poll ``import-runs/<id>/``).
+
+        The batch is the ``change``-restricted queryset (tenant + row
+        constraints, same discipline as ``bulk_delete``); airgapped
+        deployments get a clean 409 before any outbound attempt."""
+        from .devicetype_import import (
+            DEFAULT_REIMPORT_REPO,
+            REIMPORT_SYNC_CAP,
+            airgap_refusal,
+            elevation_image_base,
+            reimport_images_for_type,
+            summarize_reimport,
+        )
+        from .devicetype_import_tasks import enqueue_devicetype_image_reimport
+
+        tenant = self._tenant_or_403()
+        refusal = airgap_refusal()
+        if refusal:
+            return Response(
+                {"detail": refusal}, status=drf_status.HTTP_409_CONFLICT
+            )
+
+        body = request.data or {}
+
+        def flag(k):
+            v = request.query_params.get(k)
+            if v is None:
+                v = body.get(k)
+            if isinstance(v, bool):
+                return v
+            return str(v or "").lower() in ("1", "true", "yes")
+
+        dry_run, overwrite = flag("dry_run"), flag("overwrite")
+        repo = str(body.get("repo") or "").strip() or DEFAULT_REIMPORT_REPO
+        try:
+            image_base = elevation_image_base(repo)
+        except ValueError as exc:
+            return Response(
+                {"detail": str(exc)}, status=drf_status.HTTP_400_BAD_REQUEST
+            )
+
+        qs = (
+            self.get_queryset()
+            .select_related("manufacturer")
+            .order_by("name")
+        )
+        if qs.count() > REIMPORT_SYNC_CAP:
+            run = enqueue_devicetype_image_reimport(
+                tenant, image_base, overwrite=overwrite, dry_run=dry_run,
+                user=request.user,
+            )
+            return Response(
+                {"run": self._run_dict(run)},
+                status=drf_status.HTTP_202_ACCEPTED,
+            )
+
+        results = [
+            reimport_images_for_type(
+                dt, image_base, overwrite=overwrite, apply=not dry_run
+            )
+            for dt in qs
+        ]
+        return Response({
+            "dry_run": dry_run,
+            "overwrite": overwrite,
+            "repo": image_base,
+            "results": results,
+            "totals": summarize_reimport(results),
+        })
 
     def get_serializer_class(self):
         if self.action == "list" and self.request and self.request.query_params.get("picker") == "1":

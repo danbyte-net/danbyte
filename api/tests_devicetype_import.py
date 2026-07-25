@@ -1,11 +1,15 @@
 """Import from the NetBox devicetype-library (YAML → DeviceType + templates)."""
 from __future__ import annotations
 
+import tempfile
+
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from rest_framework.test import APITestCase
 
 from core.models import Organization, Tenant
 from .devicetype_import import (
+    elevation_image_base,
     expand_github_dir,
     is_github_dir,
     positionize,
@@ -94,6 +98,46 @@ class HelperTests(APITestCase):
         # Raw / non-github URLs pass through.
         self.assertEqual(to_raw_url("https://example.com/x.yaml"),
                          "https://example.com/x.yaml")
+
+    def test_elevation_image_base(self):
+        raw = "https://raw.githubusercontent.com"
+        # Plain owner/name shorthand → default branch via HEAD.
+        self.assertEqual(
+            elevation_image_base("danbyte-net/device-library"),
+            f"{raw}/danbyte-net/device-library/HEAD/elevation-images",
+        )
+        # Repo page URL (trailing slash tolerated).
+        self.assertEqual(
+            elevation_image_base("https://github.com/danbyte-net/device-library/"),
+            f"{raw}/danbyte-net/device-library/HEAD/elevation-images",
+        )
+        # /tree/<ref> pins the ref; an explicit elevation-images path is kept.
+        self.assertEqual(
+            elevation_image_base(
+                "https://github.com/netbox-community/devicetype-library/tree/master"
+            ),
+            f"{raw}/netbox-community/devicetype-library/master/elevation-images",
+        )
+        self.assertEqual(
+            elevation_image_base("https://github.com/o/r/tree/main/elevation-images"),
+            f"{raw}/o/r/main/elevation-images",
+        )
+        # A full raw base passes through; a bare base gains the folder.
+        self.assertEqual(
+            elevation_image_base(f"{raw}/o/r/master/elevation-images"),
+            f"{raw}/o/r/master/elevation-images",
+        )
+        self.assertEqual(
+            elevation_image_base("https://mirror.example/devicetype-library"),
+            "https://mirror.example/devicetype-library/elevation-images",
+        )
+        # https only; garbage is refused with a readable message.
+        with self.assertRaises(ValueError):
+            elevation_image_base("http://github.com/o/r")
+        with self.assertRaises(ValueError):
+            elevation_image_base("not a repo")
+        with self.assertRaises(ValueError):
+            elevation_image_base("")
 
     def test_is_github_dir(self):
         base = "https://github.com/netbox-community/devicetype-library"
@@ -377,3 +421,326 @@ class BackgroundImportTests(APITestCase):
         run.refresh_from_db()
         self.assertEqual(run.status, "failed")
         self.assertIn("truncated", run.error)
+
+
+# ─── Reimporting images for existing types ──────────────────────────────────
+
+class _Resp:
+    def __init__(self, status_code: int, content: bytes = b""):
+        self.status_code = status_code
+        self.content = content
+
+
+class FakeRepo:
+    """In-memory raw.githubusercontent.com: ``{"Cisco/slug.front.png": b"…"}``.
+    Lookup keys on the URL's trailing ``<Manufacturer>/<file>`` segments, so
+    any normalised base works. Stands in for BOTH ``safe_request`` (HEAD
+    probes) and ``safe_get`` (downloads) — tests never touch the network."""
+
+    def __init__(self, files: dict[str, bytes]):
+        self.files = files
+        self.calls: list[str] = []
+
+    def _body(self, url: str) -> bytes | None:
+        from urllib.parse import unquote
+
+        self.calls.append(url)
+        return self.files.get(unquote("/".join(url.split("/")[-2:])))
+
+    def request(self, method: str, url: str, **kw) -> _Resp:  # safe_request
+        body = self._body(url)
+        return _Resp(404) if body is None else _Resp(200)
+
+    def get(self, url: str, **kw) -> _Resp:  # safe_get
+        body = self._body(url)
+        return _Resp(404) if body is None else _Resp(200, body)
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="danbyte-test-media-"))
+class ReimportImagesTests(APITestCase):
+    """The media-loss recovery flow: match EXISTING types against a
+    library-layout repo and re-download only the elevation images."""
+
+    URL = "/api/device-types/reimport-images/"
+
+    def setUp(self):
+        from .models import Manufacturer
+
+        self.org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=self.org, name="Acme", slug="acme")
+        self.other = Tenant.objects.create(org=self.org, name="Other", slug="oth")
+        admin = User.objects.create_superuser("admin", "admin@example.com", "x")
+        self.client.force_login(admin)
+        session = self.client.session
+        session["current_tenant_id"] = str(self.tenant.id)
+        session.save()
+        self.cisco = Manufacturer.objects.create(
+            tenant=self.tenant, name="Cisco", slug="cisco"
+        )
+
+    def _repo(self, *slugs: str, faces=("front", "rear")) -> FakeRepo:
+        return FakeRepo({
+            f"Cisco/{slug}.{face}.png": f"PNG:{slug}.{face}".encode()
+            for slug in slugs
+            for face in faces
+        })
+
+    def _post(self, repo: FakeRepo, *, dry_run=False, overwrite=False, body=None):
+        from unittest import mock
+
+        payload = {"repo": "danbyte-net/device-library", **(body or {})}
+        qs = []
+        if dry_run:
+            qs.append("dry_run=1")
+        if overwrite:
+            qs.append("overwrite=1")
+        url = self.URL + ("?" + "&".join(qs) if qs else "")
+        with mock.patch("core.ssrf.safe_request", side_effect=repo.request), \
+                mock.patch("core.ssrf.safe_get", side_effect=repo.get):
+            return self.client.post(url, payload, format="json")
+
+    def _attach(self, dt, face: str, content=b"OLD"):
+        from django.core.files.base import ContentFile
+
+        field = dt.front_image if face == "front" else dt.rear_image
+        field.save(f"cisco-{dt.name.lower()}.{face}.png", ContentFile(content),
+                   save=True)
+
+    def test_dry_run_classification(self):
+        # A: no images, repo has it → matched. B: no images, repo doesn't →
+        # no_match. C: both faces present with real files on disk → skipped.
+        a = DeviceType.objects.create(
+            tenant=self.tenant, name="C9300-48P", manufacturer=self.cisco
+        )
+        b = DeviceType.objects.create(
+            tenant=self.tenant, name="Unobtainium X1", manufacturer=self.cisco
+        )
+        c = DeviceType.objects.create(
+            tenant=self.tenant, name="C9200-24T", manufacturer=self.cisco
+        )
+        self._attach(c, "front")
+        self._attach(c, "rear")
+
+        resp = self._post(self._repo("cisco-c9300-48p"), dry_run=True)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        data = resp.json()
+        self.assertTrue(data["dry_run"])
+        by_id = {r["id"]: r for r in data["results"]}
+        self.assertEqual(by_id[str(a.id)]["status"], "matched")
+        self.assertEqual(by_id[str(a.id)]["slug"], "cisco-c9300-48p")
+        self.assertEqual(by_id[str(a.id)]["faces"]["front"], "available")
+        self.assertEqual(by_id[str(b.id)]["status"], "no_match")
+        self.assertEqual(by_id[str(c.id)]["status"], "skipped_has_images")
+        self.assertEqual(data["totals"]["matched"], 1)
+        self.assertEqual(data["totals"]["no_match"], 1)
+        self.assertEqual(data["totals"]["skipped_has_images"], 1)
+        # Dry run never writes.
+        a.refresh_from_db()
+        self.assertFalse(a.front_image)
+
+    def test_corrupt_media_counts_as_gap(self):
+        # DB says the type has a front image; the file is GONE from storage
+        # (the lost-media case). It must classify as matched, not skipped —
+        # and the surviving filename is itself the matching signal.
+        dt = DeviceType.objects.create(
+            tenant=self.tenant, name="Nexus Something Odd",
+            manufacturer=self.cisco,
+        )
+        from django.core.files.base import ContentFile
+
+        # Filename carries a slug the *name* would never derive.
+        dt.front_image.save(
+            "cisco-n9k-c93180yc-ex.front.png", ContentFile(b"x"), save=True
+        )
+        dt.front_image.storage.delete(dt.front_image.name)
+
+        resp = self._post(self._repo("cisco-n9k-c93180yc-ex"), dry_run=True)
+        row = resp.json()["results"][0]
+        self.assertEqual(row["status"], "matched")
+        self.assertEqual(row["slug"], "cisco-n9k-c93180yc-ex")
+        self.assertEqual(row["faces"]["front"], "available")
+
+    def test_apply_fills_gaps_only(self):
+        dt = DeviceType.objects.create(
+            tenant=self.tenant, name="C9300-48P", manufacturer=self.cisco
+        )
+        self._attach(dt, "front", b"OLD")  # intact on disk → kept
+
+        resp = self._post(self._repo("cisco-c9300-48p"))
+        self.assertEqual(resp.status_code, 200, resp.content)
+        row = resp.json()["results"][0]
+        self.assertEqual(row["status"], "matched")
+        self.assertEqual(row["faces"], {"front": "kept", "rear": "downloaded"})
+        self.assertEqual(row["downloaded"], 1)
+        dt.refresh_from_db()
+        with dt.front_image.open() as fh:
+            self.assertEqual(fh.read(), b"OLD")  # untouched
+        with dt.rear_image.open() as fh:
+            self.assertEqual(fh.read(), b"PNG:cisco-c9300-48p.rear")
+
+    def test_apply_overwrite_replaces_intact_images(self):
+        dt = DeviceType.objects.create(
+            tenant=self.tenant, name="C9300-48P", manufacturer=self.cisco
+        )
+        self._attach(dt, "front", b"OLD")
+
+        resp = self._post(self._repo("cisco-c9300-48p"), overwrite=True)
+        row = resp.json()["results"][0]
+        self.assertEqual(row["faces"]["front"], "downloaded")
+        dt.refresh_from_db()
+        with dt.front_image.open() as fh:
+            self.assertEqual(fh.read(), b"PNG:cisco-c9300-48p.front")
+
+    def test_apply_writes_changelog(self):
+        from audit.models import ChangeLogEntry
+
+        dt = DeviceType.objects.create(
+            tenant=self.tenant, name="C9300-48P", manufacturer=self.cisco
+        )
+        ChangeLogEntry.objects.all().delete()
+        self._post(self._repo("cisco-c9300-48p"))
+        self.assertTrue(
+            ChangeLogEntry.objects.filter(
+                object_type="api.devicetype", object_id=str(dt.id),
+                action="update",
+            ).exists()
+        )
+
+    def test_tenant_scoping_never_touches_other_tenant(self):
+        from .models import Manufacturer
+
+        theirs_mfr = Manufacturer.objects.create(
+            tenant=self.other, name="Cisco", slug="cisco"
+        )
+        theirs = DeviceType.objects.create(
+            tenant=self.other, name="C9300-48P", manufacturer=theirs_mfr
+        )
+        resp = self._post(self._repo("cisco-c9300-48p"))
+        data = resp.json()
+        self.assertNotIn(str(theirs.id), {r["id"] for r in data["results"]})
+        theirs.refresh_from_db()
+        self.assertFalse(theirs.front_image)
+        self.assertFalse(theirs.rear_image)
+
+    def test_airgapped_refuses_before_any_fetch(self):
+        from unittest import mock
+
+        from core.models import DeploymentSettings
+
+        dep = DeploymentSettings.load()
+        dep.disable_update_check = True
+        dep.save()
+        DeviceType.objects.create(
+            tenant=self.tenant, name="C9300-48P", manufacturer=self.cisco
+        )
+        with mock.patch("core.ssrf.safe_request") as req, \
+                mock.patch("core.ssrf.safe_get") as get:
+            resp = self.client.post(
+                self.URL, {"repo": "danbyte-net/device-library"}, format="json"
+            )
+            req.assert_not_called()
+            get.assert_not_called()
+        self.assertEqual(resp.status_code, 409, resp.content)
+        self.assertIn("airgapped", resp.json()["detail"])
+
+    def test_fetch_failure_is_reported_not_500(self):
+        from unittest import mock
+
+        dt = DeviceType.objects.create(
+            tenant=self.tenant, name="C9300-48P", manufacturer=self.cisco
+        )
+        with mock.patch(
+            "core.ssrf.safe_request", side_effect=OSError("connection refused")
+        ), mock.patch(
+            "core.ssrf.safe_get", side_effect=OSError("connection refused")
+        ):
+            resp = self.client.post(
+                self.URL, {"repo": "danbyte-net/device-library"}, format="json"
+            )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        row = resp.json()["results"][0]
+        self.assertEqual(row["id"], str(dt.id))
+        self.assertEqual(row["status"], "fetch_failed")
+        self.assertEqual(resp.json()["totals"]["fetch_failed"], 1)
+
+    def test_bad_repo_is_a_400(self):
+        resp = self.client.post(
+            self.URL, {"repo": "http://github.com/o/r"}, format="json"
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_over_cap_enqueues_background_run(self):
+        from unittest import mock
+
+        for i in range(3):
+            DeviceType.objects.create(
+                tenant=self.tenant, name=f"T{i}", manufacturer=self.cisco
+            )
+        with mock.patch("api.devicetype_import.REIMPORT_SYNC_CAP", 2), \
+                mock.patch("django_rq.get_queue") as gq:
+            resp = self.client.post(
+                self.URL + "?overwrite=1",
+                {"repo": "danbyte-net/device-library"},
+                format="json",
+            )
+            gq.return_value.enqueue.assert_called_once()
+        self.assertEqual(resp.status_code, 202, resp.content)
+        run = resp.json()["run"]
+        self.assertEqual(run["kind"], "image_reimport")
+        self.assertEqual(run["options"], {"overwrite": True, "dry_run": False})
+        self.assertIn("elevation-images", run["source_url"])
+
+    def test_background_task_applies_and_records_totals(self):
+        from unittest import mock
+
+        from .devicetype_import_tasks import run_devicetype_image_reimport
+        from .models import DeviceTypeImportRun
+
+        DeviceType.objects.create(
+            tenant=self.tenant, name="C9300-48P", manufacturer=self.cisco
+        )
+        DeviceType.objects.create(
+            tenant=self.tenant, name="Unobtainium X1", manufacturer=self.cisco
+        )
+        admin = User.objects.get(username="admin")
+        run = DeviceTypeImportRun.objects.create(
+            tenant=self.tenant, kind="image_reimport",
+            source_url="https://raw.githubusercontent.com/o/r/HEAD/elevation-images",
+            options={"overwrite": False, "dry_run": False},
+            created_by=admin, status="queued",
+        )
+        repo = self._repo("cisco-c9300-48p")
+        with mock.patch("core.ssrf.safe_request", side_effect=repo.request), \
+                mock.patch("core.ssrf.safe_get", side_effect=repo.get):
+            run_devicetype_image_reimport(str(run.id))
+        run.refresh_from_db()
+        self.assertEqual(run.status, "success", run.error)
+        self.assertEqual(run.progress["total"], 2)
+        self.assertEqual(run.progress["matched"], 1)
+        self.assertEqual(run.progress["no_match"], 1)
+        self.assertEqual(run.progress["images_downloaded"], 2)
+        self.assertEqual(run.failures[0]["name"], "Unobtainium X1")
+
+    def test_background_task_rechecks_airgap(self):
+        from unittest import mock
+
+        from core.models import DeploymentSettings
+
+        from .devicetype_import_tasks import run_devicetype_image_reimport
+        from .models import DeviceTypeImportRun
+
+        admin = User.objects.get(username="admin")
+        run = DeviceTypeImportRun.objects.create(
+            tenant=self.tenant, kind="image_reimport",
+            source_url="https://raw.githubusercontent.com/o/r/HEAD/elevation-images",
+            options={}, created_by=admin, status="queued",
+        )
+        dep = DeploymentSettings.load()
+        dep.disable_update_check = True
+        dep.save()
+        with mock.patch("core.ssrf.safe_request") as req:
+            run_devicetype_image_reimport(str(run.id))
+            req.assert_not_called()
+        run.refresh_from_db()
+        self.assertEqual(run.status, "failed")
+        self.assertIn("airgapped", run.error)

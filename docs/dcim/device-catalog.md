@@ -157,6 +157,52 @@ looks like the real thing. Use the **Front / Rear** toggle on the rack to switch
 faces. The same images also render read-only on each **device's** Overview tab,
 so you can see the hardware without opening the type.
 
+### Recovering lost images {#reimport-images}
+
+Images live in the media folder; the device types live in the database. Lose
+the media folder — disk corruption, a restore that skipped `media/`, a botched
+migration between hosts — and every type still *lists* an image it no longer
+has. **Reimport images** on the Device types page (needs `change` on device
+types) rebuilds exactly that: it matches your **existing** types against a
+devicetype-library-layout repository and re-downloads their elevation images.
+Nothing is created, renamed, or otherwise modified — only the two image fields
+are written, and every write lands in the change log.
+
+Point it at a repository in whichever form you have handy — plain
+`owner/name`, a `github.com` URL (optionally `/tree/<ref>`), or a full https
+base such as an internal mirror. The default is Danbyte's
+[device-library](https://github.com/danbyte-net/device-library) fork, which
+keeps the upstream layout: images at
+`elevation-images/<Manufacturer>/<slug>.front|rear.png`. Matching reuses the
+import's own naming: the slug embedded in a surviving image filename first
+(it's still in the database even when the file is gone), then
+vendor-prefixed slugs derived from the type's name, part number and model.
+
+**Dry run** classifies without writing: **matched** (the repo has images for
+it), **no match**, or **has images** (both faces present *and their files
+actually exist on disk*). Apply is **fill-gaps-only** by default — a face is
+written only when its field is empty *or* the field is set but the file is
+missing from storage. That second case is the whole point: after media loss
+the database still says "has image", and Danbyte treats it as a gap rather
+than trusting the stale reference. Tick **overwrite** to replace intact
+images too, e.g. after switching to a repo with better photos. A repo that's
+unreachable mid-run marks the affected faces `fetch failed` and carries on —
+one bad fetch never aborts the batch.
+
+Small catalogs answer synchronously with a per-type report; anything over
+~50 types runs in the background with the same pollable progress as the
+[folder import](#importing-from-the-netbox-devicetype-library). The API is
+`POST /api/device-types/reimport-images/` (`{"repo": …}`, flags `?dry_run=1`
+/ `?overwrite=1`), which either returns the report or `202` + a run to poll
+at `import-runs/<id>/`.
+
+**Airgapped deployments** (update checks disabled) get a clean refusal
+instead of a hanging timeout — no outbound request is attempted. Recovery
+there is the offline route: restore the media folder from a backup, or
+re-upload images per type; [bundles](#bundles) stay the offline carrier for
+*definitions*, but they deliberately reference images rather than embed
+them, so they can't restore the files themselves.
+
 ### Jumping to the devices
 
 The **Devices** count on a device type's detail page is a link: it opens the
