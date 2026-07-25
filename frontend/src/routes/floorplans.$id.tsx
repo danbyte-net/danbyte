@@ -625,7 +625,12 @@ function FloorPlanPage() {
         method: "PATCH",
         body: JSON.stringify(body),
       }),
-    onSuccess: invalidateAreas,
+    onSuccess: () => {
+      invalidateAreas()
+      // Structure edits persist immediately (tray-style) — without a word,
+      // the page's Save-button mental model reads that as "not saved".
+      toast.success("Raised floor saved")
+    },
     onError: (e) => apiErrorToast(e),
   })
   const deleteArea = useMutation({
