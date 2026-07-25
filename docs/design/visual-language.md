@@ -143,6 +143,12 @@ can't drift page to page (source of truth:
   is genuinely either/or (no "any" state) is a `SegmentedTabs` switch in the
   action cluster instead; a single-select filter over a long fixed list can be a
   `Select` under a rail heading.
+- A facet with no options renders nothing, and a **derived** enum facet (a
+  yes/no or state split computed from the row rather than read off a catalog
+  object) sets `hideWhenSingle` so it also disappears when every row lands in
+  the same bucket — ticking its one option would select the whole table. Rail
+  length is the budget: a rail you have to scroll to reach Manufacturer is worse
+  than a short one.
 - Empty is either the `DataTable` "No results." row (a filter matched nothing)
   or an `EmptyState` carrying first-run guidance (nothing exists yet) — never a
   bare paragraph. Loading and errors are the shell's, via its `query` prop.

@@ -92,6 +92,37 @@ to the [`{position}` token](virtual-chassis.md#position-aware-interface-names)
 (`1/…` → `{position}/…`, Juniper-style `0/…` → `{position:0}/…`) so one
 imported type serves every member of a stack.
 
+### Filtering a long catalog {#filtering}
+
+Import a vendor folder or two and the catalog runs to hundreds of models, so the
+Device types list carries a full filter rail. The search box still matches name
+and model; the rail narrows by:
+
+| Facet | Picks out |
+|---|---|
+| **Manufacturer** | one vendor's models |
+| **U** | a height range — 1U top-of-rack gear, or everything ≥ 4U |
+| **Images** | whether the type has a [rack-face photo](#rack-face-images) at all |
+| **Faceplate** | how its devices draw their panel: **Photo ports**, **Custom** or **Auto** |
+| **Usage** | **In use** vs **Unused** — catalog entries no device is built from |
+| **Lifecycle** | [vendor lifecycle state](../features/lifecycle.md) — what's end-of-life |
+| **Scope** | site-local vs tenant-wide entries, where the deployment scopes catalogs per site |
+| **Tags** | any tag; the chips in the Tags column toggle the same filter |
+
+Facets stack (**Cisco** + **Unused** + **End of life** is the prune list), and
+the count chip beside the title always reports what survived them. A facet that
+can't split the rows you have — every type global, nothing laid out yet — hides
+itself rather than take up rail space.
+
+Two columns carry what the rail filters on. **Images** shows which faces exist
+(**Front**, **Rear**, or `—`), and **Faceplate** reads *Photo ports* when
+[markers are placed on a photo](#photo-ports), *Custom* when a
+[faceplate layout](#faceplate-builder) is saved, and a muted *Auto* when the
+panel is drawn automatically — so **Images: Yes** plus **Faceplate: Auto** is
+exactly the queue of types you have a photo for but haven't marked up yet. Hide
+either column from the **Columns** menu if you don't work with panels; the
+filters stay.
+
 ### Rack-face images
 
 On a device type's detail page you can upload a **front image** and a **rear
@@ -262,7 +293,7 @@ Templates renamed or deleted after a layout was saved render as dashed
 **ghost** cages, and the tab counts them so you can tidy up. Interfaces the
 layout doesn't place are appended automatically — nothing silently disappears.
 
-### Photo ports (anchoring ports on a real image)
+### Photo ports (anchoring ports on a real image) {#photo-ports}
 
 When a device type has a front and/or rear **[image](#rack-face-images)**, a
 **Photo ports** tab appears. Instead of the schematic cage layout, you place

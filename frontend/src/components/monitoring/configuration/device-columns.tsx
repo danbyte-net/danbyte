@@ -57,7 +57,8 @@ export function buildDeviceTypePolicyColumns({
 }: PolicyColumnContext<DeviceType>): ColumnDef<DeviceType>[] {
   return [
     // The device-type row itself is the shared factory's — this table only adds
-    // the monitoring binding control.
+    // the monitoring binding control. As with roles, this tab filters the
+    // device count by range rather than the list page's in-use / unused split.
     ...buildDeviceTypeColumns({
       include: [
         "name",
@@ -69,6 +70,7 @@ export function buildDeviceTypePolicyColumns({
         "tags",
         "updated",
       ],
+      countFacets: "range",
     }),
     monitoringControlColumn(controls),
   ]

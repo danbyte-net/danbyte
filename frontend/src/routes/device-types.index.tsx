@@ -10,12 +10,7 @@ import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { ImportBundleDialog } from "@/components/device-bundle"
 import { buildDeviceTypeColumns } from "@/components/columns/device-type-columns"
-import {
-  FilterRail,
-  FacetGroup,
-  toggleInSet,
-  type FacetOption,
-} from "@/components/filter-rail"
+import { useTableFilters } from "@/components/table-filters"
 import { DeviceTypeDeleteDialog } from "@/components/device-type-delete-dialog"
 import { DeviceTypeImportDialog } from "@/components/device-type-import-dialog"
 import { useMe, objCan } from "@/lib/use-me"
@@ -30,7 +25,6 @@ function DeviceTypesPage() {
   const canEdit = canDo("devicetype", "change")
   const canDelete = canDo("devicetype", "delete")
   const [q, setQ] = useState("")
-  const [mfrFilter, setMfrFilter] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState<DeviceType | null>(null)
   const [importing, setImporting] = useState(false)
   const [importingBundle, setImportingBundle] = useState(false)
@@ -42,34 +36,22 @@ function DeviceTypesPage() {
         `/api/device-types/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })
-  const allRows = query.data?.results ?? []
+  const allRows = useMemo(() => query.data?.results ?? [], [query.data])
 
-  const rows = useMemo(
-    () =>
-      allRows.filter(
-        (d) =>
-          mfrFilter.size === 0 ||
-          (d.manufacturer && mfrFilter.has(d.manufacturer.id))
-      ),
-    [allRows, mfrFilter]
+  // A hardware catalog runs to thousands of rows, so the rail carries the whole
+  // facet set the factory declares — manufacturer, height, images, faceplate,
+  // usage, lifecycle, scope, tags — and a new facetable column joins it for
+  // free. These facet-source columns are never rendered; the render columns
+  // below add selection, the tag-chip wiring, and row actions.
+  const facetColumns = useMemo<ColumnDef<DeviceType>[]>(
+    () => buildDeviceTypeColumns<DeviceType>({ omit: ["part_number"] }),
+    []
   )
-
-  const facets = useMemo(() => {
-    const c: Record<string, { name: string; count: number }> = {}
-    for (const d of allRows) {
-      const key = d.manufacturer?.id ?? "none"
-      const name = d.manufacturer?.name ?? "No manufacturer"
-      if (!c[key]) c[key] = { name, count: 0 }
-      c[key].count++
-    }
-    return Object.entries(c)
-      .sort(([, a], [, b]) => b.count - a.count)
-      .map<FacetOption>(([id, v]) => ({
-        value: id,
-        label: v.name,
-        count: v.count,
-      }))
-  }, [allRows])
+  const { rail, filteredRows, toggleValue, selectedValues } = useTableFilters(
+    facetColumns,
+    allRows
+  )
+  const tagSelection = selectedValues("tags")
 
   const handleDelete = useCallback((d: DeviceType) => setDeleting(d), [])
   const columns = useMemo<ColumnDef<DeviceType>[]>(
@@ -78,6 +60,10 @@ function DeviceTypesPage() {
         selection: true,
         humanIds,
         omit: ["part_number"],
+        tagFilter: {
+          activeSlugs: tagSelection,
+          onToggle: (slug) => toggleValue("tags", slug),
+        },
         actions: {
           editTo: "/device-types/$id/edit",
           editParams: (d) => ({ id: d.id }),
@@ -86,23 +72,14 @@ function DeviceTypesPage() {
           canDelete: (d) => objCan(d, "delete", canDelete),
         },
       }),
-    [handleDelete, canEdit, canDelete, humanIds]
+    [handleDelete, canEdit, canDelete, humanIds, tagSelection, toggleValue]
   )
 
   return (
     <ListPageShell
       title="Device types"
-      count={query.data ? rows.length : undefined}
-      rail={
-        <FilterRail>
-          <FacetGroup
-            label="Manufacturer"
-            options={facets}
-            selected={mfrFilter}
-            onToggle={(v) => toggleInSet(mfrFilter, v, setMfrFilter)}
-          />
-        </FilterRail>
-      }
+      count={query.data ? filteredRows.length : undefined}
+      rail={rail}
       search={{
         value: q,
         onChange: setQ,
@@ -139,7 +116,7 @@ function DeviceTypesPage() {
       query={query}
     >
       <DataTable
-        data={rows}
+        data={filteredRows}
         columns={columns}
         flexColumn="description"
         tableId="device-types"
