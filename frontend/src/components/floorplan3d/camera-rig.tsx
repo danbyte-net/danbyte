@@ -46,7 +46,7 @@ const _fwd = new THREE.Vector3()
  *
  * Also owns keyboard navigation: arrows / WASD pan the camera AND the orbit
  * target parallel to the ground plane (forward = camera→target projected to
- * XZ), PageUp/PageDown or Q/E change height, Shift sprints. Speed scales
+ * XZ), Space rises and Shift descends (PageUp/PageDown too). Speed scales
  * with the orbit distance (see `camera-math.ts`). A nav keypress cancels an
  * in-flight fly-to. Listeners live on `window` but the rig only exists while
  * the 3D view is mounted, so 2D editing never sees them.
@@ -70,12 +70,9 @@ export function CameraRig({
     t: number
   } | null>(null)
   const pressed = useRef<Set<string>>(new Set())
-  const shiftHeld = useRef(false)
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      // Track Shift from every event so a sprint engages/releases mid-hold.
-      shiftHeld.current = e.shiftKey
       // Leave browser/app shortcuts (Alt+Left history, Ctrl+A…) alone.
       if (e.metaKey || e.ctrlKey || e.altKey) return
       if (isEditableTarget(e.target)) return
@@ -109,7 +106,6 @@ export function CameraRig({
       invalidate()
     }
     const onKeyUp = (e: KeyboardEvent) => {
-      shiftHeld.current = e.shiftKey
       // No guards on release: a key that went down must always come back up,
       // even if focus moved into a field or a modifier joined mid-hold.
       pressed.current.delete(normalizeKey(e.key))
@@ -117,7 +113,6 @@ export function CameraRig({
     const onBlur = () => {
       // Alt-tab with a key held must not pan forever.
       pressed.current.clear()
-      shiftHeld.current = false
     }
     window.addEventListener("keydown", onKeyDown)
     window.addEventListener("keyup", onKeyUp)
@@ -178,8 +173,7 @@ export function CameraRig({
       keysDown,
       [_fwd.x, _fwd.z],
       state.camera.position.distanceTo(c.target),
-      Math.min(delta, MAX_NAV_DT),
-      shiftHeld.current
+      Math.min(delta, MAX_NAV_DT)
     )
     if (dx !== 0 || dy !== 0 || dz !== 0) {
       state.camera.position.x += dx

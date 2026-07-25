@@ -72,10 +72,10 @@ uploaded blueprint textures it.
 
 - **Navigate**: drag to orbit, scroll to zoom, right-drag to pan.
   **Keyboard**: the arrow keys or WASD glide the camera level with the floor
-  in the direction it faces — the way to walk the aisles — while
-  PageUp/PageDown or Q/E change height and Shift triples the pace. Speed
-  tracks how far you are zoomed out, so close-up moves are fine-grained and
-  hall-scale hops are quick. The first key press also pulls the orbit pivot
+  in the direction it faces — the way to walk the aisles — while **Space**
+  rises and **Shift** descends (PageUp/PageDown work too). Speed tracks how
+  far you are zoomed out, so close-up moves are fine-grained and hall-scale
+  hops are quick. The first key press also pulls the orbit pivot
   to a few metres ahead of the camera, so dragging looks around
   first-person-style while you walk; **double-click a rack** to re-anchor
   the pivot on it and orbit for inspection, flying the camera to its front.
