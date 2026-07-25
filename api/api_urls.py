@@ -145,6 +145,7 @@ from .viewsets import (
     CableRouteViewSet,
     FloorPlanRaisedFloorAreaViewSet,
     FloorPlanTrayViewSet,
+    FloorPlanWallViewSet,
     FloorPlanViewSet,
     FloorTileTypeViewSet,
     ModuleViewSet,
@@ -281,6 +282,9 @@ router.register(
     r"floor-plan-raised-floors",
     FloorPlanRaisedFloorAreaViewSet,
     basename="floor-plan-raised-floor",
+)
+router.register(
+    r"floor-plan-walls", FloorPlanWallViewSet, basename="floor-plan-wall"
 )
 router.register(r"cable-routes", CableRouteViewSet, basename="cable-route")
 router.register(r"module-interface-templates", ModuleInterfaceTemplateViewSet, basename="module-interface-template")

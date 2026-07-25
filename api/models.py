@@ -5173,6 +5173,43 @@ class FloorPlanRaisedFloorArea(TimestampedModel):
         return self.label or f"raised floor @ ({self.x},{self.y})"
 
 
+class FloorPlanWall(TimestampedModel):
+    """A wall drawn on a floor plan: a polyline on the same half-cell lattice
+    trays use, so a wall can run along the boundary BETWEEN two tiles or down
+    the centreline OF a tile. ``openings`` are door/passage spans along the
+    polyline's segments; v1 doors are pure geometry (no per-door metadata),
+    so they live as JSON on the wall — one PATCH keeps wall + doors atomic,
+    exactly how a tray keeps its whole geometry in ``points``.
+
+    v1 walls are documentation geometry: they render in 2D and 3D but do NOT
+    constrain cable auto-routing, which follows the tray graph."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    floor_plan = models.ForeignKey(
+        FloorPlan, on_delete=models.CASCADE, related_name="walls"
+    )
+    label = models.CharField(max_length=64, blank=True, default="")
+    # [[x, y], …] in cell units snapped to the half-cell lattice.
+    points = models.JSONField(default=list)
+    height_mm = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(200), MaxValueValidator(20000)],
+        help_text="Blank = full height (the plan's ceiling).",
+    )
+    color = models.CharField(max_length=7, blank=True, default="")
+    # [{"seg": int, "from": float, "to": float, "height_mm": int|null}, …] —
+    # spans along segment ``seg`` measured in cell units from its start
+    # vertex; null height renders a standard 2100 mm door.
+    openings = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["label"]
+        indexes = [models.Index(fields=["floor_plan"])]
+
+    def __str__(self) -> str:
+        return self.label or f"wall ({len(self.points or [])} pts)"
+
+
 class CableRoute(TimestampedModel):
     """A geographic cable run drawn on the site map: a named polyline of
     lat/lng waypoints that physical cables are assigned to follow — ducts,
