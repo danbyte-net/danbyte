@@ -9,7 +9,9 @@ import { api, type Aggregate, type Paginated, type RIR } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
-import { timeAgoColumn } from "@/components/cells/time-ago"
+import { TimeCell, timeAgoColumn } from "@/components/cells/time-ago"
+import { KvCard } from "@/components/kv-card"
+import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { RirDeleteDialog } from "@/components/rir-delete-dialog"
 import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
@@ -40,10 +42,9 @@ function RirDetail() {
 
 function Body({ rir: r }: { rir: RIR }) {
   const { canDo } = useMe()
-  const [tab, setTab] = useUrlTab<"aggregates" | "journal" | "history">(
-    "aggregates"
-  )
-  const { humanIds } = useMe()
+  const [tab, setTab] = useUrlTab<
+    "overview" | "aggregates" | "journal" | "history"
+  >("overview")
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<RIR | null>(null)
   const goBack = useCallback(() => nav({ to: "/rirs" }), [nav])
@@ -95,12 +96,6 @@ function Body({ rir: r }: { rir: RIR }) {
             )}
           </div>
           <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
-            {humanIds && r.numid != null && (
-              <DetailStat
-                label="Number"
-                value={<span className="num font-mono">#{r.numid}</span>}
-              />
-            )}
             <DetailStat
               label="Aggregates"
               value={<span className="num">{r.aggregate_count}</span>}
@@ -109,6 +104,7 @@ function Body({ rir: r }: { rir: RIR }) {
         </section>
       }
       tabs={[
+        { value: "overview", label: "Overview" },
         {
           value: "aggregates",
           label: "Aggregates",
@@ -120,6 +116,9 @@ function Body({ rir: r }: { rir: RIR }) {
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}
     >
+      <DetailTab value="overview">
+        <RirOverview rir={r} />
+      </DetailTab>
       <DetailTab value="aggregates">
         <RirAggregatesTable rirId={r.id} />
       </DetailTab>
@@ -136,6 +135,44 @@ function Body({ rir: r }: { rir: RIR }) {
         onDeleted={goBack}
       />
     </DetailShell>
+  )
+}
+
+/** RIR attributes, moved out of the page header. Only the name, public/private
+ * badge, description and aggregate count stay up top. */
+function RirOverview({ rir: r }: { rir: RIR }) {
+  const { humanIds } = useMe()
+
+  const details: KvRow[] = [
+    ...(humanIds && r.numid != null
+      ? [
+          {
+            label: "Number",
+            value: <span className="num font-mono">#{r.numid}</span>,
+          } satisfies KvRow,
+        ]
+      : []),
+    {
+      label: "Slug",
+      value: <span className="font-mono text-[13px]">{r.slug}</span>,
+      copy: r.slug,
+    },
+    {
+      label: "Space",
+      value: r.is_private ? (
+        <Badge variant="secondary">Private</Badge>
+      ) : (
+        <Badge variant="success">Public</Badge>
+      ),
+    },
+    { label: "Created", value: <TimeCell iso={r.created_at} /> },
+    { label: "Updated", value: <TimeCell iso={r.updated_at} /> },
+  ]
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <KvCard title="RIR" rows={details} />
+    </div>
   )
 }
 

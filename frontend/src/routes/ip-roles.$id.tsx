@@ -8,6 +8,10 @@ import { api, type IPRole } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { TimeCell } from "@/components/cells/time-ago"
+import { KvCard, dash, mono } from "@/components/kv-card"
+import type { KvRow } from "@/components/kv-card"
+import { LocalityBadge } from "@/components/locality-badge"
 import { QueryError } from "@/components/query-error"
 import { IpRoleDeleteDialog } from "@/components/ip-role-delete-dialog"
 import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
@@ -39,7 +43,9 @@ function IpRoleDetail() {
 }
 
 function Body({ role: r }: { role: IPRole }) {
-  const [tab, setTab] = useUrlTab<"ips" | "journal" | "history">("ips")
+  const [tab, setTab] = useUrlTab<"overview" | "ips" | "journal" | "history">(
+    "overview"
+  )
   const nav = useNavigate()
   const { canDo } = useMe()
   const canEdit = canDo("iprole", "change")
@@ -88,11 +94,6 @@ function Body({ role: r }: { role: IPRole }) {
                     {f}
                   </Badge>
                 ))}
-                {r.icon && (
-                  <Badge variant="secondary" className="font-mono">
-                    {r.icon}
-                  </Badge>
-                )}
               </div>
               {r.description && (
                 <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
@@ -104,10 +105,6 @@ function Body({ role: r }: { role: IPRole }) {
               <DetailStat
                 label="IPs"
                 value={<span className="num">{r.usage_count}</span>}
-              />
-              <DetailStat
-                label="Weight"
-                value={<span className="num">{r.weight}</span>}
               />
             </dl>
           </section>
@@ -122,6 +119,7 @@ function Body({ role: r }: { role: IPRole }) {
         </>
       }
       tabs={[
+        { value: "overview", label: "Overview" },
         { value: "ips", label: "IPs", count: r.usage_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
@@ -129,6 +127,9 @@ function Body({ role: r }: { role: IPRole }) {
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}
     >
+      <DetailTab value="overview">
+        <IpRoleOverview role={r} />
+      </DetailTab>
       <DetailTab value="ips">
         <EmbeddedIpTable filter={{ role: r.id }} />
       </DetailTab>
@@ -145,5 +146,51 @@ function Body({ role: r }: { role: IPRole }) {
         onDeleted={goBack}
       />
     </DetailShell>
+  )
+}
+
+/** IP-role attributes that used to crowd the header, grouped into tables. Only
+ * the colored name badge, flags, description and IP count stay up top. */
+function IpRoleOverview({ role: r }: { role: IPRole }) {
+  const attributes: KvRow[] = [
+    {
+      label: "Slug",
+      value: <span className="font-mono text-[13px]">{r.slug}</span>,
+      copy: r.slug,
+    },
+    {
+      label: "Color",
+      value: r.color ? (
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            className="h-3 w-3 rounded-sm border border-border"
+            style={{ backgroundColor: r.color }}
+          />
+          <span className="font-mono">{r.color}</span>
+        </span>
+      ) : (
+        dash
+      ),
+    },
+    { label: "Icon", value: mono(r.icon) },
+    { label: "Weight", value: <span className="num">{r.weight}</span> },
+    { label: "Gateway", value: r.is_gateway ? "Yes" : "No" },
+    { label: "Virtual", value: r.is_virtual ? "Yes" : "No" },
+  ]
+
+  const record: KvRow[] = [
+    {
+      label: "Locality",
+      value: <LocalityBadge owningSite={r.owning_site} />,
+    },
+    { label: "Created", value: <TimeCell iso={r.created_at} /> },
+    { label: "Updated", value: <TimeCell iso={r.updated_at} /> },
+  ]
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <KvCard title="Attributes" rows={attributes} />
+      <KvCard title="Record" rows={record} />
+    </div>
   )
 }

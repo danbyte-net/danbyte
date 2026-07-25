@@ -12,6 +12,10 @@ import {
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { SimpleTable } from "@/components/ui/simple-table"
+import { TimeCell } from "@/components/cells/time-ago"
+import { KvCard, dash } from "@/components/kv-card"
+import type { KvRow } from "@/components/kv-card"
+import { LocalityBadge } from "@/components/locality-badge"
 import { QueryError } from "@/components/query-error"
 import { ManufacturerDeleteDialog } from "@/components/manufacturer-delete-dialog"
 import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
@@ -44,10 +48,10 @@ function ManufacturerDetail() {
 
 function Body({ manufacturer: m }: { manufacturer: Manufacturer }) {
   const [tab, setTab] = useUrlTab<
-    "device-types" | "module-types" | "journal" | "history"
-  >("device-types")
+    "overview" | "device-types" | "module-types" | "journal" | "history"
+  >("overview")
   const nav = useNavigate()
-  const { canDo, humanIds } = useMe()
+  const { canDo } = useMe()
   const [deleting, setDeleting] = useState<Manufacturer | null>(null)
   const goBack = useCallback(() => nav({ to: "/manufacturers" }), [nav])
 
@@ -84,17 +88,6 @@ function Body({ manufacturer: m }: { manufacturer: Manufacturer }) {
             <div className="text-2xl font-semibold tracking-tight">
               {m.name}
             </div>
-            {m.url && (
-              <a
-                href={m.url}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-2 inline-flex items-center gap-1 text-[13px] text-primary hover:underline"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />{" "}
-                {m.url.replace(/^https?:\/\//, "")}
-              </a>
-            )}
             {m.description && (
               <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
                 {m.description}
@@ -102,12 +95,6 @@ function Body({ manufacturer: m }: { manufacturer: Manufacturer }) {
             )}
           </div>
           <dl className="ml-auto grid grid-cols-1 gap-y-3 text-[13px]">
-            {humanIds && m.numid != null && (
-              <DetailStat
-                label="Number"
-                value={<span className="num font-mono">#{m.numid}</span>}
-              />
-            )}
             <DetailStat
               label="Device types"
               value={<span className="num">{m.device_type_count}</span>}
@@ -116,6 +103,7 @@ function Body({ manufacturer: m }: { manufacturer: Manufacturer }) {
         </section>
       }
       tabs={[
+        { value: "overview", label: "Overview" },
         {
           value: "device-types",
           label: "Device types",
@@ -128,6 +116,9 @@ function Body({ manufacturer: m }: { manufacturer: Manufacturer }) {
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}
     >
+      <DetailTab value="overview">
+        <ManufacturerOverview manufacturer={m} />
+      </DetailTab>
       <DetailTab value="device-types">
         <EmbeddedDeviceTypeTable
           filter={{ manufacturer: m.id }}
@@ -150,6 +141,65 @@ function Body({ manufacturer: m }: { manufacturer: Manufacturer }) {
         onDeleted={goBack}
       />
     </DetailShell>
+  )
+}
+
+/** Manufacturer attributes that used to crowd the header, grouped into tables.
+ * Only the name, description and device-type count stay up top. */
+function ManufacturerOverview({
+  manufacturer: m,
+}: {
+  manufacturer: Manufacturer
+}) {
+  const { humanIds } = useMe()
+
+  const details: KvRow[] = [
+    ...(humanIds && m.numid != null
+      ? [
+          {
+            label: "Number",
+            value: <span className="num font-mono">#{m.numid}</span>,
+          } satisfies KvRow,
+        ]
+      : []),
+    {
+      label: "Slug",
+      value: <span className="font-mono text-[13px]">{m.slug}</span>,
+      copy: m.slug,
+    },
+    {
+      label: "Website",
+      value: m.url ? (
+        <a
+          href={m.url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-primary hover:underline"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+          {m.url.replace(/^https?:\/\//, "")}
+        </a>
+      ) : (
+        dash
+      ),
+      copy: m.url || undefined,
+    },
+  ]
+
+  const record: KvRow[] = [
+    {
+      label: "Locality",
+      value: <LocalityBadge owningSite={m.owning_site} />,
+    },
+    { label: "Created", value: <TimeCell iso={m.created_at} /> },
+    { label: "Updated", value: <TimeCell iso={m.updated_at} /> },
+  ]
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <KvCard title="Manufacturer" rows={details} />
+      <KvCard title="Record" rows={record} />
+    </div>
   )
 }
 

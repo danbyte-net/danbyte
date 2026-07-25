@@ -6,9 +6,12 @@ import { useCallback, useState } from "react"
 
 import { api, type ClusterType } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { KvCard } from "@/components/kv-card"
+import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
+import { TimeCell } from "@/components/cells/time-ago"
 import { ClusterTypeDeleteDialog } from "@/components/cluster-type-delete-dialog"
-import { DetailShell, DetailTab } from "@/components/detail-shell"
+import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
 import { EmbeddedClusterTable } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -37,10 +40,12 @@ function ClusterTypeDetail() {
 }
 
 function Body({ clusterType: m }: { clusterType: ClusterType }) {
-  const { canDo, humanIds } = useMe()
+  const { canDo } = useMe()
   const canEdit = canDo("clustertype", "change")
   const canDelete = canDo("clustertype", "delete")
-  const [tab, setTab] = useUrlTab<"clusters" | "journal" | "history">("clusters")
+  const [tab, setTab] = useUrlTab<
+    "overview" | "clusters" | "journal" | "history"
+  >("overview")
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<ClusterType | null>(null)
   const goBack = useCallback(() => nav({ to: "/cluster-types" }), [nav])
@@ -78,9 +83,6 @@ function Body({ clusterType: m }: { clusterType: ClusterType }) {
             <div className="text-2xl font-semibold tracking-tight">
               {m.name}
             </div>
-            <div className="mt-1 font-mono text-[13px] text-muted-foreground">
-              {m.slug}
-            </div>
             {m.description && (
               <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground">
                 {m.description}
@@ -88,28 +90,15 @@ function Body({ clusterType: m }: { clusterType: ClusterType }) {
             )}
           </div>
           <dl className="ml-auto grid grid-cols-1 gap-y-3 text-[13px]">
-            {humanIds && m.numid != null && (
-              <div>
-                <dt className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-                  Number
-                </dt>
-                <dd className="mt-0.5">
-                  <span className="num font-mono">#{m.numid}</span>
-                </dd>
-              </div>
-            )}
-            <div>
-              <dt className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-                Clusters
-              </dt>
-              <dd className="mt-0.5">
-                <span className="num">{m.cluster_count}</span>
-              </dd>
-            </div>
+            <DetailStat
+              label="Clusters"
+              value={<span className="num">{m.cluster_count}</span>}
+            />
           </dl>
         </section>
       }
       tabs={[
+        { value: "overview", label: "Overview" },
         { value: "clusters", label: "Clusters", count: m.cluster_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
@@ -117,6 +106,9 @@ function Body({ clusterType: m }: { clusterType: ClusterType }) {
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}
     >
+      <DetailTab value="overview">
+        <ClusterTypeOverview clusterType={m} />
+      </DetailTab>
       <DetailTab value="clusters">
         <EmbeddedClusterTable filter={{ type: m.id }} />
       </DetailTab>
@@ -133,5 +125,34 @@ function Body({ clusterType: m }: { clusterType: ClusterType }) {
         onDeleted={goBack}
       />
     </DetailShell>
+  )
+}
+
+/** Cluster-type attributes, moved out of the page header. */
+function ClusterTypeOverview({ clusterType: m }: { clusterType: ClusterType }) {
+  const { humanIds } = useMe()
+
+  const details: KvRow[] = [
+    ...(humanIds && m.numid != null
+      ? [
+          {
+            label: "Number",
+            value: <span className="num font-mono">#{m.numid}</span>,
+          } satisfies KvRow,
+        ]
+      : []),
+    {
+      label: "Slug",
+      value: <span className="font-mono text-[13px]">{m.slug}</span>,
+      copy: m.slug,
+    },
+    { label: "Created", value: <TimeCell iso={m.created_at} /> },
+    { label: "Updated", value: <TimeCell iso={m.updated_at} /> },
+  ]
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <KvCard title="Cluster type" rows={details} />
+    </div>
   )
 }

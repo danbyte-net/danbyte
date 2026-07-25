@@ -7,6 +7,9 @@ import { useCallback, useState } from "react"
 import { api, type RackRole } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { TimeCell } from "@/components/cells/time-ago"
+import { KvCard, dash } from "@/components/kv-card"
+import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { RackRoleDeleteDialog } from "@/components/rack-role-delete-dialog"
 import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
@@ -38,9 +41,11 @@ function RackRoleDetail() {
 }
 
 function Body({ role: r }: { role: RackRole }) {
-  const [tab, setTab] = useUrlTab<"racks" | "journal" | "history">("racks")
+  const [tab, setTab] = useUrlTab<"overview" | "racks" | "journal" | "history">(
+    "overview"
+  )
   const nav = useNavigate()
-  const { canDo, humanIds } = useMe()
+  const { canDo } = useMe()
   const [deleting, setDeleting] = useState<RackRole | null>(null)
   const goBack = useCallback(() => nav({ to: "/rack-roles" }), [nav])
 
@@ -82,12 +87,6 @@ function Body({ role: r }: { role: RackRole }) {
             )}
           </div>
           <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
-            {humanIds && r.numid != null && (
-              <DetailStat
-                label="Number"
-                value={<span className="num font-mono">#{r.numid}</span>}
-              />
-            )}
             <DetailStat
               label="Racks"
               value={<span className="num">{r.rack_count}</span>}
@@ -96,6 +95,7 @@ function Body({ role: r }: { role: RackRole }) {
         </section>
       }
       tabs={[
+        { value: "overview", label: "Overview" },
         { value: "racks", label: "Racks", count: r.rack_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
@@ -103,6 +103,9 @@ function Body({ role: r }: { role: RackRole }) {
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}
     >
+      <DetailTab value="overview">
+        <RackRoleOverview role={r} />
+      </DetailTab>
       <DetailTab value="racks">
         <EmbeddedRackTable filter={{ role: r.id }} />
       </DetailTab>
@@ -119,5 +122,49 @@ function Body({ role: r }: { role: RackRole }) {
         onDeleted={goBack}
       />
     </DetailShell>
+  )
+}
+
+/** Rack-role attributes, moved out of the page header. Only the colored name
+ * badge, description and rack count stay up top. */
+function RackRoleOverview({ role: r }: { role: RackRole }) {
+  const { humanIds } = useMe()
+
+  const details: KvRow[] = [
+    ...(humanIds && r.numid != null
+      ? [
+          {
+            label: "Number",
+            value: <span className="num font-mono">#{r.numid}</span>,
+          } satisfies KvRow,
+        ]
+      : []),
+    {
+      label: "Slug",
+      value: <span className="font-mono text-[13px]">{r.slug}</span>,
+      copy: r.slug,
+    },
+    {
+      label: "Color",
+      value: r.color ? (
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            className="h-3 w-3 rounded-sm border border-border"
+            style={{ backgroundColor: r.color }}
+          />
+          <span className="font-mono">{r.color}</span>
+        </span>
+      ) : (
+        dash
+      ),
+    },
+    { label: "Created", value: <TimeCell iso={r.created_at} /> },
+    { label: "Updated", value: <TimeCell iso={r.updated_at} /> },
+  ]
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <KvCard title="Rack role" rows={details} />
+    </div>
   )
 }

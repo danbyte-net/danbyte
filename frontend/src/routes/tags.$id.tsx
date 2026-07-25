@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
+import { KvCard, dash } from "@/components/kv-card"
+import type { KvRow } from "@/components/kv-card"
 import {
   LocalityBadge,
   PromoteToGlobalButton,
@@ -42,7 +44,9 @@ function TagDetail() {
 }
 
 function TagDetailBody({ tag: t }: { tag: Tag }) {
-  const [tab, setTab] = useUrlTab<"objects" | "journal" | "history">("objects")
+  const [tab, setTab] = useUrlTab<
+    "overview" | "objects" | "journal" | "history"
+  >("overview")
   const nav = useNavigate()
   const { canDo, editableSites } = useMe()
   const canPromote =
@@ -92,27 +96,8 @@ function TagDetailBody({ tag: t }: { tag: Tag }) {
                 />
               )}
             </div>
-            <p className="mt-3 font-mono text-[13px] text-muted-foreground">
-              {t.slug}
-            </p>
           </div>
           <dl className="ml-auto grid grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
-            <DetailStat
-              label="Color"
-              value={
-                t.color ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <span
-                      className="h-3 w-3 rounded-sm border border-border"
-                      style={{ backgroundColor: t.color }}
-                    />
-                    <span className="font-mono">{t.color}</span>
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">none</span>
-                )
-              }
-            />
             <DetailStat
               label="Used by"
               value={
@@ -125,6 +110,7 @@ function TagDetailBody({ tag: t }: { tag: Tag }) {
         </section>
       }
       tabs={[
+        { value: "overview", label: "Overview" },
         { value: "objects", label: "Tagged objects", count: usage },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
@@ -132,6 +118,9 @@ function TagDetailBody({ tag: t }: { tag: Tag }) {
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}
     >
+      <DetailTab value="overview">
+        <TagOverview tag={t} />
+      </DetailTab>
       <DetailTab value="objects">
         <TagUsageTable tagId={t.id} />
       </DetailTab>
@@ -148,6 +137,53 @@ function TagDetailBody({ tag: t }: { tag: Tag }) {
         onDeleted={goBack}
       />
     </DetailShell>
+  )
+}
+
+/** Tag attributes that used to crowd the header, grouped into a table. Only the
+ * colored name badge, locality and usage count stay up top. */
+function TagOverview({ tag: t }: { tag: Tag }) {
+  const details: KvRow[] = [
+    {
+      label: "Slug",
+      value: <span className="font-mono text-[13px]">{t.slug}</span>,
+      copy: t.slug,
+    },
+    {
+      label: "Color",
+      value: t.color ? (
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            className="h-3 w-3 rounded-sm border border-border"
+            style={{ backgroundColor: t.color }}
+          />
+          <span className="font-mono">{t.color}</span>
+        </span>
+      ) : (
+        dash
+      ),
+      copy: t.color || undefined,
+    },
+    {
+      label: "Scoped to",
+      value: t.owning_site ? (
+        <Link
+          to="/sites/$id"
+          params={{ id: t.owning_site.id }}
+          className="text-primary hover:underline"
+        >
+          {t.owning_site.name}
+        </Link>
+      ) : (
+        <span className="text-muted-foreground">Whole tenant</span>
+      ),
+    },
+  ]
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <KvCard title="Tag" rows={details} />
+    </div>
   )
 }
 
