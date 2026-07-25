@@ -71,7 +71,12 @@ ceiling, underfloor runs sit beneath the slab), zones tint the floor, and the
 uploaded blueprint textures it.
 
 - **Navigate**: drag to orbit, scroll to zoom, right-drag to pan.
-  **Double-click a rack** to fly the camera to its front.
+  **Keyboard**: the arrow keys or WASD glide the camera level with the floor
+  in the direction it faces — the way to walk the aisles — while
+  PageUp/PageDown or Q/E change height and Shift triples the pace. Speed
+  tracks how far you are zoomed out, so close-up moves are fine-grained and
+  hall-scale hops are quick. **Double-click a rack** to fly the camera to
+  its front.
 - **Click a rack** for a summary card (space used, monitoring rollup) and a
   jump to the rack page; **click a device** inside an open cabinet for its
   own card (U position, size, face) and a jump to the device page. Up close,
