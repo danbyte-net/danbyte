@@ -137,6 +137,12 @@ export interface FloorCanvasProps {
    * release creates a tile instead of panning. */
   armed: PaletteEntry | null
   onSelect?: (id: string | null) => void
+  /** Layout QoL: Ctrl/⌘-click toggles a tile in the multi-selection. */
+  multiSelectedIds?: Set<string>
+  onToggleSelect?: (id: string) => void
+  /** Layout QoL: Shift-drag on empty grid sweeps a marquee; release reports
+   * the swept rect (cell units) so the page can select what it covers. */
+  onMarquee?: (rect: { x: number; y: number; w: number; h: number }) => void
   onChangeTile?: (id: string, patch: Partial<FloorPlanTile>) => void
   /** Fired when a paint-drag completes (place-mode). */
   onCreateRect?: (rect: { x: number; y: number; w: number; h: number }) => void
@@ -209,6 +215,7 @@ type DragState =
   | { mode: "move"; id: string; grabDx: number; grabDy: number; moved: boolean }
   | { mode: "resize"; id: string; origin: CellPoint }
   | { mode: "paint"; start: CellPoint; end: CellPoint }
+  | { mode: "marquee"; start: CellPoint; end: CellPoint }
   | {
       mode: "tray-move"
       id: string
@@ -242,6 +249,9 @@ export function FloorCanvas({
   selectedAreaId,
   onSelectArea,
   onSelect,
+  multiSelectedIds,
+  onToggleSelect,
+  onMarquee,
   onChangeTile,
   onCreateRect,
   onOpenTile,
@@ -421,7 +431,12 @@ export function FloorCanvas({
       return
     }
     e.currentTarget.setPointerCapture(e.pointerId)
-    if (editable && armed) {
+    if (editable && !armed && e.shiftKey && onMarquee) {
+      // Shift-drag = selection sweep. Plain drag stays panning, so the
+      // marquee never fights the hand tool.
+      const c = toCell(e)
+      drag.current = { mode: "marquee", start: c, end: c }
+    } else if (editable && armed) {
       const c = toCell(e)
       drag.current = { mode: "paint", start: c, end: c }
     } else {
@@ -439,6 +454,12 @@ export function FloorCanvas({
     e.stopPropagation()
     if (!editable) {
       onOpenTile?.(tile)
+      return
+    }
+    // Ctrl/⌘-click builds the multi-selection instead of moving — the bulk
+    // bar (orientation, delete) works the swept set.
+    if ((e.ctrlKey || e.metaKey) && onToggleSelect) {
+      onToggleSelect(tile.id)
       return
     }
     // Armed placement wins over background zones: clicking a zone with a
@@ -629,6 +650,9 @@ export function FloorCanvas({
     } else if (d.mode === "paint") {
       paintPreview.current?.setAttribute("visibility", "hidden")
       onCreateRect?.(paintRect(d.start, d.end))
+    } else if (d.mode === "marquee") {
+      paintPreview.current?.setAttribute("visibility", "hidden")
+      onMarquee?.(paintRect(d.start, d.end))
     } else if (d.mode === "tray-move" || d.mode === "tray-vertex") {
       // Persist a drag, OR a "+"-click that inserted a bend without dragging.
       const changed = d.moved || (d.mode === "tray-vertex" && d.inserted)
@@ -811,7 +835,9 @@ export function FloorCanvas({
             <TileShape
               key={tile.id}
               tile={tile}
-              selected={tile.id === selectedId}
+              selected={
+                tile.id === selectedId || !!multiSelectedIds?.has(tile.id)
+              }
               editable={editable}
               labelFit={labelFit}
               showZoneLabels={showZoneLabels}

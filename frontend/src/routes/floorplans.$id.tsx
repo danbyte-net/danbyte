@@ -297,6 +297,9 @@ function FloorPlanPage() {
   // Structure mode: arm-to-draw a raised-floor rectangle + selection.
   const [areaArmed, setAreaArmed] = useState(false)
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null)
+  // Layout QoL: Ctrl/⌘-click and Shift-drag build a multi-selection the bulk
+  // bar (orientation, delete) acts on. Draft-level edits — Save persists.
+  const [multiSel, setMultiSel] = useState<Set<string>>(new Set())
   const [paletteTab, setPaletteTab] = useState<"tiles" | "zones">("tiles")
   const [showGrid, setShowGrid] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -818,6 +821,10 @@ function FloorPlanPage() {
         setAreaArmed(false)
         return
       }
+      if (e.key === "Escape" && multiSel.size > 0) {
+        setMultiSel(new Set())
+        return
+      }
       if (mode === "cable" && drawPoints !== null && e.key === "Enter") {
         e.preventDefault()
         finishDraw()
@@ -858,6 +865,7 @@ function FloorPlanPage() {
     nav,
     view3d,
     areaArmed,
+    multiSel,
   ])
 
   // ── Save (explicit, one bulk transaction) ──────────────────────────────
@@ -1113,6 +1121,7 @@ function FloorPlanPage() {
                 setDrawPoints(null)
                 setSelectedAreaId(null)
                 setAreaArmed(false)
+                setMultiSel(new Set())
                 // Leaving Cables mode must exit tray-edit — otherwise Layout
                 // mode stays frozen (tiles unselectable, cables hidden).
                 setTrayEditMode(false)
@@ -1505,10 +1514,38 @@ function FloorPlanPage() {
                 }
                 onSelect={(id) => {
                   setSelectedId(id)
+                  // A plain click always collapses the multi-selection — it
+                  // means "work with THIS one now".
+                  setMultiSel((prev) => (prev.size ? new Set() : prev))
                   // Clicking a tile pins its popover (the pointer is already over
                   // it, so the hook has the anchor point); clicking the background
                   // dismisses.
                   if (!id || !popover.pinCurrent()) popover.close()
+                }}
+                multiSelectedIds={multiSel}
+                onToggleSelect={(tid) => {
+                  setSelectedId(null)
+                  setMultiSel((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(tid)) next.delete(tid)
+                    else next.add(tid)
+                    return next
+                  })
+                }}
+                onMarquee={(rect) => {
+                  // Non-zone tiles intersecting the sweep join the selection.
+                  const hit = tiles.filter(
+                    (t) =>
+                      !tileIsZone(t) &&
+                      t.x < rect.x + rect.w &&
+                      rect.x < t.x + t.width &&
+                      t.y < rect.y + rect.h &&
+                      rect.y < t.y + t.height
+                  )
+                  if (hit.length) {
+                    setSelectedId(null)
+                    setMultiSel(new Set(hit.map((t) => t.id)))
+                  }
                 }}
                 onHoverTile={popover.onHover}
                 onChangeTile={changeTileGuarded}
@@ -1545,6 +1582,54 @@ function FloorPlanPage() {
                 }}
                 apiRef={canvasApi}
               />
+              {canEdit && mode === "layout" && multiSel.size > 0 && (
+                <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center">
+                  <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-border bg-popover px-2 py-1.5 text-popover-foreground shadow-lg">
+                    <span className="num pl-1 text-xs font-medium">
+                      {multiSel.size} selected
+                    </span>
+                    <span className="h-4 w-px bg-border" />
+                    <span className="text-[11px] text-muted-foreground">
+                      Facing
+                    </span>
+                    {([0, 90, 180, 270] as const).map((deg) => (
+                      <Button
+                        key={deg}
+                        size="sm"
+                        variant="ghost"
+                        className="num h-7 px-2"
+                        onClick={() => {
+                          for (const tid of multiSel)
+                            changeTile(tid, { orientation: deg })
+                        }}
+                      >
+                        {deg}°
+                      </Button>
+                    ))}
+                    <span className="h-4 w-px bg-border" />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-destructive hover:text-destructive"
+                      onClick={() => {
+                        for (const tid of multiSel) deleteTile(tid)
+                        setMultiSel(new Set())
+                      }}
+                    >
+                      <Trash2 className="mr-1 h-3 w-3" /> Delete
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0"
+                      onClick={() => setMultiSel(new Set())}
+                      title="Clear selection"
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              )}
               {mode === "cable" && drawPoints !== null && (
                 <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full border border-border bg-background px-4 py-1.5 text-xs shadow-sm">
                   Click corners to route the tray · double-click to finish · Esc
