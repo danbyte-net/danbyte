@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react"
+import { Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Pencil, Trash2 } from "lucide-react"
+import { Cable as CableIcon, Pencil, Trash2 } from "lucide-react"
 
 import {
   api,
@@ -28,6 +29,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
   const canAddOutlet = canDo("poweroutlet", "add")
   const canEditOutlet = canDo("poweroutlet", "change")
   const canDeleteOutlet = canDo("poweroutlet", "delete")
+  const canConnect = canDo("cable", "add")
 
   const [portOpen, setPortOpen] = useState(false)
   const [editPort, setEditPort] = useState<PowerPort | null>(null)
@@ -110,6 +112,22 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
         header: "",
         cell: ({ row }) => (
           <div className="flex justify-end gap-1">
+            {canConnect && !row.original.cable && (
+              <Button
+                size="sm"
+                variant="ghost"
+                asChild
+                className="h-7 text-muted-foreground/60 hover:text-foreground"
+                title="Not cabled — connect a cable"
+              >
+                <Link
+                  to="/cables/new"
+                  search={{ a_kind: "power_port", a_id: row.original.id }}
+                >
+                  <CableIcon className="h-3.5 w-3.5" />
+                </Link>
+              </Button>
+            )}
             {canEditPort && (
               <Button
                 size="icon"
@@ -134,7 +152,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
         ),
       },
     ],
-    [canEditPort, canDeletePort]
+    [canConnect, canEditPort, canDeletePort]
   )
 
   const outletCols = useMemo<ColumnDef<PowerOutlet>[]>(
@@ -199,6 +217,22 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
         header: "",
         cell: ({ row }) => (
           <div className="flex justify-end gap-1">
+            {canConnect && !row.original.cable && (
+              <Button
+                size="sm"
+                variant="ghost"
+                asChild
+                className="h-7 text-muted-foreground/60 hover:text-foreground"
+                title="Not cabled — connect a cable"
+              >
+                <Link
+                  to="/cables/new"
+                  search={{ a_kind: "power_outlet", a_id: row.original.id }}
+                >
+                  <CableIcon className="h-3.5 w-3.5" />
+                </Link>
+              </Button>
+            )}
             {canEditOutlet && (
               <Button
                 size="icon"
@@ -223,7 +257,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
         ),
       },
     ],
-    [canEditOutlet, canDeleteOutlet]
+    [canConnect, canEditOutlet, canDeleteOutlet]
   )
 
   const portRows = ports.data?.results ?? []
@@ -258,8 +292,8 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
             data={portRows}
             columns={portCols}
             embedded
-          searchable
-          searchPlaceholder="Search ports…"
+            searchable
+            searchPlaceholder="Search ports…"
             onSelectedRowsChange={setSelPorts}
           />
         )}
@@ -283,8 +317,8 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
             data={outletRows}
             columns={outletCols}
             embedded
-          searchable
-          searchPlaceholder="Search ports…"
+            searchable
+            searchPlaceholder="Search ports…"
             onSelectedRowsChange={setSelOutlets}
           />
         )}

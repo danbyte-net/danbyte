@@ -101,3 +101,22 @@ You don't have to start from the Cables page: any **uncabled interface** offers
 a **Connect cable** button — on the interfaces table (row action) and in the
 interface detail header. It opens the cable form with that port already on the
 A side; pick the B side and save.
+
+The same affordance follows every other cable-able port, permissions allowing
+(you need cable-add rights; the server enforces them regardless):
+
+- **Power tab** — uncabled **power ports** and **power outlets** carry the same
+  ghosted connect button as interface rows, landing on the cable form with the
+  inlet or outlet pre-seeded as side A.
+- **Photo faceplate** — on a device whose type has
+  [photo ports](device-catalog.md#photo-ports), a **free** power / console /
+  console-server / aux / front / rear marker is a button: click it and the
+  cable maker opens right there, titled from that port, with it already on the
+  A side. Cabled markers keep their hover card.
+- **3D room** — clicking a free port marker on a device's face offers the same
+  connect flow (pick the far end in 3D, or open the cable maker) — see
+  [floor plans](../features/floor-plans.md#the-3d-room-view).
+
+However you arrive, the pre-seeded port shows as a **named chip**
+(`device:port`) on the form, never a raw id — a **power feed** chip reads
+`panel:feed`, since feeds terminate on power panels rather than devices.

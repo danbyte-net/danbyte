@@ -446,6 +446,9 @@ export function InventoryItemDialog({
       // the pill and the faceplate ring have to be re-asked — otherwise they
       // sit stale until React Query happens to refetch.
       qc.invalidateQueries({ queryKey: ["device-snmp-drift", deviceId] })
+      // 3D hardware markers wear the part's status via /face-ports/ — recolour
+      // them too, not just the inventory-backed 2D markers.
+      qc.invalidateQueries({ queryKey: ["device-face-ports", deviceId] })
       toast.success(
         editing
           ? "Part updated"

@@ -28,6 +28,15 @@ const KIND_ENDPOINT: Record<Exclude<TerminationKind, "power_feed">, string> = {
   aux_port: "aux-ports",
 }
 
+// Every kind a chip may need to LABEL — the picker's map plus power_feed,
+// which only ever arrives pre-seeded (`/cables/new?a_kind=power_feed&…`)
+// since feeds hang off power panels, not devices. Used for label resolution
+// only; the type dropdown below stays device-first (KIND_ENDPOINT).
+const LABEL_ENDPOINT: Record<TerminationKind, string> = {
+  ...KIND_ENDPOINT,
+  power_feed: "power-feeds",
+}
+
 const KIND_LABEL: Record<string, string> = {
   interface: "Interface",
   front_port: "Front port",
@@ -52,6 +61,15 @@ interface PortRow {
   id: string
   name: string
   device: { id: string; name: string }
+}
+
+/** A detail row fetched only to label a chip. Feeds belong to a power panel,
+ * everything else to a device — so both owners are optional here. */
+interface LabelRow {
+  id: string
+  name: string
+  device?: { id: string; name: string } | null
+  power_panel?: { id: string; name: string } | null
 }
 
 export interface CableTerminationSideProps {
@@ -102,16 +120,11 @@ export function CableTerminationSide({
   // Any selected termination we don't yet have a label for (e.g. an A-side port
   // pre-seeded by "Connect cable" from a device page) — fetch its detail so the
   // chip shows "device:port" instead of the raw uuid.
-  const unlabeled = value.filter(
-    (v) => !labels[keyOf(v)] && v.kind in KIND_ENDPOINT
-  )
+  const unlabeled = value.filter((v) => !labels[keyOf(v)])
   const fetched = useQueries({
     queries: unlabeled.map((v) => ({
       queryKey: ["termination-label", v.kind, v.id],
-      queryFn: () =>
-        api<PortRow>(
-          `/api/${KIND_ENDPOINT[v.kind as keyof typeof KIND_ENDPOINT]}/${v.id}/`
-        ),
+      queryFn: () => api<LabelRow>(`/api/${LABEL_ENDPOINT[v.kind]}/${v.id}/`),
       staleTime: 5 * 60_000,
     })),
   })
@@ -120,7 +133,9 @@ export function CableTerminationSide({
     if (labels[k]) return labels[k]
     const i = unlabeled.findIndex((u) => keyOf(u) === k)
     const d = i >= 0 ? fetched[i]?.data : undefined
-    return d ? `${d.device.name}:${d.name}` : k
+    if (!d) return k
+    const owner = d.device?.name ?? d.power_panel?.name
+    return owner ? `${owner}:${d.name}` : d.name
   }
 
   const ports = useQuery({

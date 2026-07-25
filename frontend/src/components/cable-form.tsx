@@ -151,6 +151,10 @@ export function CableForm({
       qc.invalidateQueries({ queryKey: ["cables"] })
       qc.invalidateQueries({ queryKey: ["cable", saved.id] })
       qc.invalidateQueries({ queryKey: ["interfaces"] })
+      // The per-device faceplate/port caches — broad on purpose: a cable flips
+      // `connected` on BOTH ends' markers (2D photo faceplate and 3D room),
+      // and this form doesn't know which devices those ports live on.
+      qc.invalidateQueries({ queryKey: ["device-face-ports"] })
       toast.success(isEdit ? "Cable updated" : "Cable created")
       onSaved(saved)
     },

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  MARKER_TERMINATION_KIND,
   composeModuleFaceplates,
+  markerTerminationKind,
   type FaceplateDoc,
   type InstalledModuleFaceplate,
 } from "./faceplate-layout"
@@ -161,5 +163,41 @@ describe("composeModuleFaceplates", () => {
     ])
     expect(out.front.map((g) => g.id)).toEqual(["g1", "mod:m1:mg"])
     expect(out.front[1].slots[0]).toEqual({ t: "port", name: "Te1/3/1" })
+  })
+})
+
+describe("markerTerminationKind", () => {
+  it("maps every cable-able marker kind to its termination kind", () => {
+    expect(markerTerminationKind("power-port")).toBe("power_port")
+    expect(markerTerminationKind("power-outlet")).toBe("power_outlet")
+    expect(markerTerminationKind("console-port")).toBe("console_port")
+    expect(markerTerminationKind("console-server-port")).toBe(
+      "console_server_port"
+    )
+    expect(markerTerminationKind("aux-port")).toBe("aux_port")
+    expect(markerTerminationKind("front-port")).toBe("front_port")
+    expect(markerTerminationKind("rear-port")).toBe("rear_port")
+  })
+
+  it("returns null for markers that can't host a cable end", () => {
+    // Interface markers link to the interface page instead; hardware and
+    // module bays aren't terminations; unknown kinds must stay inert.
+    expect(markerTerminationKind("interface")).toBeNull()
+    expect(markerTerminationKind("inventory-item")).toBeNull()
+    expect(markerTerminationKind("module-bay")).toBeNull()
+    expect(markerTerminationKind("")).toBeNull()
+    expect(markerTerminationKind("bogus")).toBeNull()
+  })
+
+  it("covers exactly the seven non-interface port kinds", () => {
+    expect(Object.keys(MARKER_TERMINATION_KIND).sort()).toEqual([
+      "aux-port",
+      "console-port",
+      "console-server-port",
+      "front-port",
+      "power-outlet",
+      "power-port",
+      "rear-port",
+    ])
   })
 })

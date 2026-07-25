@@ -59,6 +59,9 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
   })
   const bays = q.data?.results ?? []
 
+  // Removal-side refresh. Install's invalidations live INSIDE
+  // InstallModuleDialog (shared with the 2D faceplate and the 3D room);
+  // removing a module changes the same caches, so this mirrors that list.
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["device-module-bays", deviceId] })
     qc.invalidateQueries({ queryKey: ["device-modules-faceplate", deviceId] })
@@ -66,8 +69,11 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
     qc.invalidateQueries({
       predicate: (x) =>
         typeof x.queryKey[0] === "string" &&
-        (x.queryKey[0] as string).includes("interface"),
+        x.queryKey[0].includes("interface"),
     })
+    // Photo/3D bay markers read occupancy from /face-ports/ — an emptied bay
+    // has to go back to its faint outline.
+    qc.invalidateQueries({ queryKey: ["device-face-ports", deviceId] })
   }
 
   const remove = useMutation({
@@ -163,7 +169,6 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
         deviceId={deviceId}
         bay={installBay}
         onOpenChange={(o) => !o && setInstallBay(null)}
-        onInstalled={invalidate}
       />
 
       <AlertDialog
@@ -201,17 +206,24 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
   )
 }
 
-function InstallModuleDialog({
+/** Install a module into a bay. Exported so the 2D photo faceplate and the 3D
+ * room can open the same dialog from a clicked bay marker — one write path,
+ * one set of cache invalidations, whichever surface the click came from. `bay`
+ * needs only id + name (a marker doesn't know the bay's position). */
+export function InstallModuleDialog({
   deviceId,
   bay,
   onOpenChange,
   onInstalled,
 }: {
   deviceId: string
-  bay: ModuleBayRow | null
+  bay: { id: string; name: string; position?: string } | null
   onOpenChange: (open: boolean) => void
-  onInstalled: () => void
+  /** Extra refresh work for the host — the module/interface/face-port caches
+   * are already invalidated here. */
+  onInstalled?: () => void
 }) {
+  const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const [moduleTypeId, setModuleTypeId] = useState<string | null>(null)
   const [serial, setSerial] = useState("")
@@ -245,11 +257,26 @@ function InstallModuleDialog({
       })
     },
     onSuccess: (r) => {
+      // Everything a seated module changes, invalidated HERE so every host —
+      // the Modules pane, the 2D faceplate, the 3D room — refreshes the same
+      // way: the bay list, the composed faceplate, the stamped interfaces,
+      // and the photo markers' occupancy.
+      qc.invalidateQueries({ queryKey: ["device-module-bays", deviceId] })
+      qc.invalidateQueries({
+        queryKey: ["device-modules-faceplate", deviceId],
+      })
+      qc.invalidateQueries({ queryKey: ["device-interfaces", deviceId] })
+      qc.invalidateQueries({
+        predicate: (x) =>
+          typeof x.queryKey[0] === "string" &&
+          x.queryKey[0].includes("interface"),
+      })
+      qc.invalidateQueries({ queryKey: ["device-face-ports", deviceId] })
       const n = r.created_interfaces ?? 0
       toast.success(
         `Module installed${n ? ` — ${n} interface${n === 1 ? "" : "s"} added` : ""}`
       )
-      onInstalled()
+      onInstalled?.()
       onOpenChange(false)
     },
     onError: (err) => {
