@@ -179,7 +179,7 @@ export function PathStrip({
                         navigate({
                           to: "/devices/$id",
                           params: { id: s.chip.deviceId! },
-                          search: { tab: "components" },
+                          search: { tab: "components", sub: "hardware" },
                         })
                     : undefined
                 return (
