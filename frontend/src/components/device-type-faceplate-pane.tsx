@@ -63,13 +63,19 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { FormCheckbox } from "@/components/forms"
+import { FormCheckbox, FormFooter, FormText } from "@/components/forms"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
   TEMPLATE_ENDPOINT,
@@ -186,6 +192,11 @@ export function DeviceTypeFaceplatePane({
   const [side, setSide] = useState<FaceplateSide>("front")
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
+  // "+ Label" on the selected group: the id of the group the text is for (null
+  // = closed), plus the draft text. A dialog rather than window.prompt — a
+  // native prompt is unstyleable and reads as a browser artefact.
+  const [labelFor, setLabelFor] = useState<string | null>(null)
+  const [labelText, setLabelText] = useState("")
   const [dragCage, setDragCage] = useState<{
     family: ReturnType<typeof familyForType>
     num: number | null
@@ -458,6 +469,15 @@ export function DeviceTypeFaceplatePane({
       [side]: sideGroups.map((g) => (g.id === gid ? { ...g, ...patch } : g)),
     })
 
+  // Append a text label slot to a group. Takes the group id (captured when the
+  // dialog opened) rather than reading `selected`, so the label always lands on
+  // the group the button belonged to.
+  const addLabel = (gid: string, text: string) => {
+    const g = sideGroups.find((x) => x.id === gid)
+    if (!g) return
+    patchGroup(gid, { slots: [...g.slots, { t: "label", text }] })
+  }
+
   const removeSlot = (gid: string, index: number) =>
     update(
       withSide(
@@ -702,14 +722,8 @@ export function DeviceTypeFaceplatePane({
                             variant="outline"
                             size="xs"
                             onClick={() => {
-                              const text = window.prompt("Label text")?.trim()
-                              if (text)
-                                patchGroup(selected.id, {
-                                  slots: [
-                                    ...selected.slots,
-                                    { t: "label", text },
-                                  ],
-                                })
+                              setLabelText("")
+                              setLabelFor(selected.id)
                             }}
                           >
                             <Plus className="h-3 w-3" /> Label
@@ -873,6 +887,41 @@ export function DeviceTypeFaceplatePane({
           </span>
         )}
       </div>
+
+      {/* The text for a "+ Label" slot. Cancelling or closing adds nothing,
+          exactly as dismissing the old prompt did. */}
+      <Dialog
+        open={labelFor !== null}
+        onOpenChange={(o) => !o && setLabelFor(null)}
+      >
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>Add label</DialogTitle>
+          </DialogHeader>
+          <form
+            className="grid gap-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              const text = labelText.trim()
+              if (labelFor && text) addLabel(labelFor, text)
+              setLabelFor(null)
+            }}
+          >
+            <FormText
+              label="Label text"
+              required
+              autoFocus
+              value={labelText}
+              onChange={setLabelText}
+              placeholder="Uplinks"
+            />
+            <FormFooter
+              onCancel={() => setLabelFor(null)}
+              submitLabel="Add label"
+            />
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={confirmReset} onOpenChange={setConfirmReset}>
         <AlertDialogContent>

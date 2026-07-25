@@ -52,6 +52,11 @@ every device and panel the run passes through as linked chips, with the
 pass-through ports shown `front ⇄ rear` and each cable segment labelled
 (the current cable highlighted). Breakout fan-outs fall back to the Trace tab.
 
+The port cells in a chip are click targets: an interface opens its own page,
+while a front / rear / console / power port opens its device's
+[Components → Hardware](devices.md#the-device-page) sub-tab
+(`?tab=components&sub=hardware`), where those ports live.
+
 ## Connection shapes
 
 You're not limited to one-to-one patches:

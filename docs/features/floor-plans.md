@@ -120,9 +120,10 @@ so a rack of cabinets costs no extra round trips.
 A location can hold **several plans — its floors**. Name them "Basement",
 "Floor 1", "Floor 2"… and the plan header shows a **floor switcher** (the
 same segmented tabs used everywhere) plus a **+** to add another floor to
-the same location. Switching floors with unsaved edits asks first. For
-click-through navigation *between* plans (e.g. a stairwell tile), link a
-tile to another floor plan.
+the same location. Switching floors with unsaved edits asks first — the same
+guard that covers every other way out of the editor, described under
+[the editor](#the-editor). For click-through navigation *between* plans (e.g. a
+stairwell tile), link a tile to another floor plan.
 
 ## The editor
 
@@ -149,10 +150,15 @@ Edits are local until you press **Save** — one transactional bulk call writes
 all creates, moves, and deletes together, and the change log records each
 tile individually.
 
-While there are unsaved edits an **unsaved** badge sits in the header, the
-floor switcher asks before discarding them, and closing the tab or reloading
-raises the browser's own leave-site prompt. Navigating to another *page* inside
-the app is not guarded yet — save first.
+While there are unsaved edits an **unsaved** badge sits in the header, and
+leaving the plan asks first — **Discard unsaved changes?**, with *Keep editing*
+or *Discard and leave*. One guard covers every in-app exit: a sidebar link, a
+breadcrumb, browser back/forward, a tile that links out to a rack or another
+floor, and the floor switcher. Closing the tab or reloading raises the
+browser's own leave-site prompt instead, since that never reaches the app.
+
+Switching the same plan between 2D and 3D, or clearing a cable trace, is a view
+change rather than an exit, so neither is guarded.
 
 Under **View**: **Fit labels to tiles** auto-sizes each tile's text to its
 footprint (so single-cell tiles keep readable names) — the preference is

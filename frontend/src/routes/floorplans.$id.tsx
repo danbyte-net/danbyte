@@ -1,4 +1,10 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import {
+  createFileRoute,
+  Link,
+  useBlocker,
+  useNavigate,
+} from "@tanstack/react-router"
+import type { ShouldBlockFn } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toPng } from "html-to-image"
 import {
@@ -162,6 +168,10 @@ let tempCounter = 0
 const tempId = () => `new-${++tempCounter}`
 const isTemp = (id: string) => id.startsWith("new-")
 
+/** Same page? Compared loosely so a trailing slash can't read as a move. */
+const samePath = (a: string, b: string) =>
+  a.replace(/\/+$/, "") === b.replace(/\/+$/, "")
+
 const STATUS_OPTIONS = [
   { value: "active", label: "Active" },
   { value: "planned", label: "Planned" },
@@ -262,9 +272,6 @@ function FloorPlanPage() {
   const [paletteTab, setPaletteTab] = useState<"tiles" | "zones">("tiles")
   const [showGrid, setShowGrid] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  // Floor the switcher wants to go to while there are unsaved edits — held
-  // until the confirm dialog resolves (null = no pending switch).
-  const [pendingFloorId, setPendingFloorId] = useState<string | null>(null)
   // Deep view: the rack/device contents + end-to-end trace side sheet.
   const [deepTile, setDeepTile] = useState<FloorPlanTile | null>(null)
   // View prefs — seeded from plan.state, persisted back for editors.
@@ -314,6 +321,36 @@ function FloorPlanPage() {
   const isDirtyRef = useRef(isDirty)
   isDirtyRef.current = isDirty
 
+  // ── Unsaved-edit guard ─────────────────────────────────────────────────
+  // One dialog for every in-app way out of a dirty editor: sidebar links,
+  // breadcrumbs, browser back/forward, the "leave plan" links on tiles, and the
+  // floor switcher (which just navigates, like everything else). The router's
+  // blocker is the single decision point — the switcher deliberately has no
+  // confirm of its own, because two guards on one action means two dialogs.
+  //
+  // Same-pathname navigations are let through on purpose: this page drives
+  // ?viz=3d and clears ?trace= through the router, and a view toggle is not an
+  // exit. Only a different pathname means the edits are about to be dropped.
+  //
+  // shouldBlockFn is a dependency of the hook's own effect, so it reads the ref
+  // and stays referentially stable — an inline closure would tear down and
+  // re-register the history blocker on every render.
+  const shouldBlockLeave = useCallback<ShouldBlockFn>(
+    ({ current, next }) =>
+      isDirtyRef.current && !samePath(next.pathname, current.pathname),
+    []
+  )
+  // withResolver hands back proceed/reset, which the themed AlertDialog at the
+  // end of this component drives — a native window.confirm can't be styled and
+  // reads as a browser error. enableBeforeUnload stays off because the blocker
+  // is registered whether or not the plan is dirty; the ref-gated listener
+  // below owns the browser-level case, which no router blocker can reach.
+  const leaveGuard = useBlocker({
+    shouldBlockFn: shouldBlockLeave,
+    enableBeforeUnload: false,
+    withResolver: true,
+  })
+
   // Switching floors re-uses this mounted component — reset every bit of
   // editor state so one floor's unsaved edits can never bleed into another.
   useEffect(() => {
@@ -323,7 +360,6 @@ function FloorPlanPage() {
     setSelectedId(null)
     setArmed(null)
     setDeepTile(null)
-    setPendingFloorId(null)
     setLabelFitLocal(null)
     setShowFovLocal(null)
     setMode("layout")
@@ -345,9 +381,10 @@ function FloorPlanPage() {
   }, [tilesQuery.data])
 
   // Closing the tab, reloading, or leaving for another origin would drop
-  // unsaved tile edits without a word — the browser's own leave-site prompt is
-  // the only guard that covers those. Registered only while dirty, and it reads
-  // the ref so a stale closure can never make the guard lie.
+  // unsaved tile edits without a word, and those never reach the router — so
+  // the browser's own leave-site prompt is the only guard that covers them.
+  // In-app navigation is the blocker's job, above. Registered only while dirty,
+  // and it reads the ref so a stale closure can never make the guard lie.
   useEffect(() => {
     if (!isDirty) return
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -906,12 +943,10 @@ function FloorPlanPage() {
               value={plan.id}
               onValueChange={(pid) => {
                 if (pid === plan.id) return
-                // Unsaved edits don't survive the switch — confirm in the
-                // themed dialog below rather than a native prompt.
-                if (isDirty) {
-                  setPendingFloorId(pid)
-                  return
-                }
+                // Just navigate. Switching floors re-mounts the editor and drops
+                // unsaved edits, but that is the leave guard's call to make —
+                // confirming here too would stack a second dialog on the same
+                // click.
                 nav({ to: "/floorplans/$id", params: { id: pid } })
               }}
               items={(floors.data?.results ?? []).map((p) => ({
@@ -1503,35 +1538,35 @@ function FloorPlanPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Floor switcher guard. Switching re-mounts the editor and drops every
-          unsaved tile edit, so it's a destructive confirm — and a themed one:
-          a native window.confirm can't be styled and reads as a browser error. */}
+      {/* The leave guard's one dialog — for a floor switch, a sidebar link, and
+          browser back alike. The router holds the navigation open until this
+          resolves, so every close path must settle it: leave the blocker
+          hanging and the next navigation is stuck behind it forever. */}
       <AlertDialog
-        open={pendingFloorId !== null}
+        open={leaveGuard.status === "blocked"}
         onOpenChange={(open) => {
-          if (!open) setPendingFloorId(null)
+          // Escape, an overlay click, and "Keep editing" all mean stay.
+          if (!open) leaveGuard.reset?.()
         }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Discard unsaved edits?</AlertDialogTitle>
+            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
             <AlertDialogDescription>
-              This plan has unsaved changes. Switching floors leaves them behind
-              — save first to keep them.
+              This plan has unsaved changes. Leaving this page — including
+              switching to another floor — drops them. Save first to keep them.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            {/* Radix closes on action too, so onOpenChange's reset() lands right
+                after this proceed(). Both settle the same promise and only the
+                first wins, so the navigation still goes through. */}
             <AlertDialogAction
               variant="destructive"
-              onClick={() => {
-                const target = pendingFloorId
-                setPendingFloorId(null)
-                if (target)
-                  nav({ to: "/floorplans/$id", params: { id: target } })
-              }}
+              onClick={() => leaveGuard.proceed?.()}
             >
-              Discard and switch
+              Discard and leave
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

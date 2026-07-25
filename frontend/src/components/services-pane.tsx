@@ -294,14 +294,19 @@ export function ServicesPane({
   )
 }
 
-function ServiceFormDialog({
+/** Create/edit form for one service, in a dialog. Shared by the device/VM
+ * Services tab (create + edit) and the service detail page's Edit action —
+ * services have no `/services/$id/edit` route, this dialog *is* the editor. */
+export function ServiceFormDialog({
   parent,
   service,
   open,
   onOpenChange,
   onSaved,
 }: {
-  parent: Parent
+  /** Which device/VM a *new* service attaches to. Omitted when editing: the
+   * parent is fixed and the PATCH payload never carries it. */
+  parent?: Parent
   service: Service | null
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -334,7 +339,7 @@ function ServiceForm({
   onSaved,
   onCancel,
 }: {
-  parent: Parent
+  parent?: Parent
   service: Service | null
   onSaved: () => void
   onCancel: () => void
@@ -392,7 +397,7 @@ function ServiceForm({
         ip_address_id: ipId,
         monitored,
       }
-      if (!isEdit) {
+      if (!isEdit && parent) {
         if (parent.kind === "device") payload.device_id = parent.id
         else payload.virtual_machine_id = parent.id
       }

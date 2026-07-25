@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
-import { useMutation, useQuery } from "@tanstack/react-query"
-import { Activity, Trash2 } from "lucide-react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Activity, Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 import { toast } from "sonner"
 
@@ -19,6 +19,7 @@ import { TagList } from "@/components/cells/tag-list"
 import { TimeCell } from "@/components/cells/time-ago"
 import { QueryError } from "@/components/query-error"
 import { ServiceDeleteDialog } from "@/components/service-delete-dialog"
+import { ServiceFormDialog } from "@/components/services-pane"
 import { DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -60,6 +61,8 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
   )
   const { canDo, humanIds } = useMe()
   const nav = useNavigate()
+  const qc = useQueryClient()
+  const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState<Service | null>(null)
   const goBack = useCallback(() => nav({ to: "/services" }), [nav])
 
@@ -199,6 +202,15 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
             }
             onClick={() => monitor.mutate()}
           />
+          {canDo("service", "change") && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setEditing(true)}
+            >
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </Button>
+          )}
           {canDo("service", "delete") && (
             <Button
               size="sm"
@@ -269,6 +281,20 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
       <DetailTab value="history">
         <ChangeLogPanel objectType="api.service" objectId={s.id} />
       </DetailTab>
+
+      {/* Services have no `/services/$id/edit` route — the same dialog the
+          device/VM Services tab uses is the editor here too. */}
+      <ServiceFormDialog
+        service={s}
+        open={editing}
+        onOpenChange={setEditing}
+        onSaved={() => {
+          setEditing(false)
+          qc.invalidateQueries({ queryKey: ["service", s.id] })
+          qc.invalidateQueries({ queryKey: ["services-list"] })
+          qc.invalidateQueries({ queryKey: ["services"] })
+        }}
+      />
 
       <ServiceDeleteDialog
         service={deleting}

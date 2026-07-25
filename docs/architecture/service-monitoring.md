@@ -76,6 +76,10 @@ that were waiting for one.
 - **Device type → Components → Services.** Define the services a device of this
   type exposes and tick **Monitor** to have every new device auto-watched. This
   is the fleet-wide control plane.
+- **Service detail page.** **Monitor** resolves the target IP and starts
+  watching, **Edit** opens the same form the Services tab uses (there is no
+  separate edit route — the dialog *is* the editor), and **Delete** removes the
+  service and cascades its checks.
 - The old `POST /api/services/{id}/monitor/` action still exists (sets
   `monitored=True` + reconciles) for backward compatibility.
 
