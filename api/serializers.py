@@ -24,7 +24,7 @@ from .models import (
     ImageAttachment,
     FiberSettings,
     FloorPlan, FloorPlanRaisedFloorArea, FloorPlanTile, FloorPlanTray,
-    FloorTileType, FrontPort,
+    FloorPlanWall, FloorTileType, FrontPort,
     FrontPortTemplate, InterfaceTemplate,
     IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
     DeviceBay, DeviceBayTemplate, InventoryItem, InventoryItemTemplate,
@@ -1378,6 +1378,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
         write_only=True, required=False, many=True,
     )
     device_count = serializers.SerializerMethodField()
+    component_count = serializers.SerializerMethodField()
     front_image = serializers.SerializerMethodField()
     rear_image = serializers.SerializerMethodField()
 
@@ -1389,6 +1390,27 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     def get_device_count(self, obj) -> int:
         v = getattr(obj, "device_count_annotated", None)
         return v if v is not None else obj.device_set.count()
+
+    def get_component_count(self, obj) -> int:
+        # The Components tab's total — every template kind summed. Detail
+        # page only: eleven counts per row would be an N+1 on the list, and
+        # the list never renders it.
+        view = self.context.get("view")
+        if view is not None and getattr(view, "action", None) == "list":
+            return 0
+        return (
+            obj.interface_templates.count()
+            + obj.console_port_templates.count()
+            + obj.console_server_port_templates.count()
+            + obj.power_port_templates.count()
+            + obj.power_outlet_templates.count()
+            + obj.front_port_templates.count()
+            + obj.rear_port_templates.count()
+            + obj.aux_port_templates.count()
+            + obj.device_bay_templates.count()
+            + obj.module_bay_templates.count()
+            + obj.inventory_item_templates.count()
+        )
 
     def get_front_image(self, obj) -> str | None:
         return _img_url(self, obj.front_image)
@@ -1532,8 +1554,10 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "subdevice_role", "exclude_from_utilization",
                   "custom_fields",
                   *LIFECYCLE_FIELDS,
-                  "tags", "tag_ids", "device_count", "created_at", "updated_at"]
-        read_only_fields = ["id", "device_count", "front_image", "rear_image",
+                  "tags", "tag_ids", "device_count", "component_count",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "device_count", "component_count",
+                  "front_image", "rear_image",
                             "lifecycle_state", "created_at", "updated_at"]
 
 
@@ -5297,6 +5321,27 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
         read_only_fields = ["id", "linked", "created_at", "updated_at"]
 
 
+def validate_lattice_points(v):
+    """Shared geometry rule for plan polylines (trays, walls): 2–256 [x, y]
+    pairs inside the grid, snapped to the half-cell lattice — twice as fine
+    as the tile grid, so runs can follow tile boundaries OR centrelines."""
+    if not isinstance(v, list) or not (2 <= len(v) <= 256):
+        raise serializers.ValidationError(
+            "points must be a list of 2–256 [x, y] pairs"
+        )
+    for p in v:
+        if (
+            not isinstance(p, (list, tuple))
+            or len(p) != 2
+            or not all(isinstance(n, (int, float)) for n in p)
+            or not all(0 <= n <= 512 for n in p)
+        ):
+            raise serializers.ValidationError(
+                "each point must be an [x, y] pair within the grid"
+            )
+    return [[round(p[0] * 2) / 2, round(p[1] * 2) / 2] for p in v]
+
+
 class FloorPlanTraySerializer(NumIdModelSerializer):
     """A tray/conduit run on a plan. Cables are assigned manually in v1 —
     the tray lists the physical cables routed through it."""
@@ -5326,24 +5371,8 @@ class FloorPlanTraySerializer(NumIdModelSerializer):
         ]
 
     def validate_points(self, v):
-        # Trays route on a half-cell lattice (twice as fine as the tile grid),
-        # so cells can carry parallel/crossing runs. Values are in cell units
-        # snapped to the nearest 0.5.
-        if not isinstance(v, list) or not (2 <= len(v) <= 256):
-            raise serializers.ValidationError(
-                "points must be a list of 2–256 [x, y] pairs"
-            )
-        for p in v:
-            if (
-                not isinstance(p, (list, tuple))
-                or len(p) != 2
-                or not all(isinstance(n, (int, float)) for n in p)
-                or not all(0 <= n <= 512 for n in p)
-            ):
-                raise serializers.ValidationError(
-                    "each point must be an [x, y] pair within the grid"
-                )
-        return [[round(p[0] * 2) / 2, round(p[1] * 2) / 2] for p in v]
+        # Shared with walls: same half-cell lattice, same snap.
+        return validate_lattice_points(v)
 
     class Meta:
         model = FloorPlanTray
@@ -5352,6 +5381,94 @@ class FloorPlanTraySerializer(NumIdModelSerializer):
                   "description", "cables", "cable_ids",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "cables", "created_at", "updated_at"]
+
+
+class FloorPlanWallSerializer(NumIdModelSerializer):
+    """A wall polyline with door/passage ``openings``. Doors are JSON spans on
+    the wall (not child rows): v1 doors carry no metadata of their own, and
+    one PATCH keeps wall + doors atomic — the tray-points precedent.
+
+    v1 walls are documentation geometry; they do not constrain routing."""
+
+    floor_plan_id = TenantScopedPrimaryKeyRelatedField(
+        source="floor_plan", queryset=FloorPlan.objects.all(),
+        write_only=True, required=False,
+    )
+    points = serializers.JSONField(required=False)
+    openings = serializers.JSONField(required=False)
+
+    def validate_points(self, v):
+        return validate_lattice_points(v)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        points = attrs.get(
+            "points", self.instance.points if self.instance else None
+        )
+        openings = attrs.get(
+            "openings", self.instance.openings if self.instance else []
+        )
+        if not openings:
+            return attrs
+        if not points:
+            raise serializers.ValidationError(
+                {"openings": "Openings need wall points to sit on."}
+            )
+        import math
+
+        seg_lens = [
+            math.hypot(b[0] - a[0], b[1] - a[1])
+            for a, b in zip(points, points[1:])
+        ]
+        if not isinstance(openings, list) or len(openings) > 64:
+            raise serializers.ValidationError(
+                {"openings": "openings must be a list of at most 64 spans"}
+            )
+        wall_h = attrs.get(
+            "height_mm", self.instance.height_mm if self.instance else None
+        )
+        by_seg: dict[int, list[tuple[float, float]]] = {}
+        for o in openings:
+            if not isinstance(o, dict):
+                raise serializers.ValidationError(
+                    {"openings": "each opening must be an object"}
+                )
+            seg = o.get("seg")
+            start, end = o.get("from"), o.get("to")
+            if (
+                not isinstance(seg, int)
+                or not (0 <= seg < len(seg_lens))
+                or not isinstance(start, (int, float))
+                or not isinstance(end, (int, float))
+                or not (0 <= start < end <= seg_lens[seg] + 1e-6)
+            ):
+                raise serializers.ValidationError(
+                    {"openings": "each opening needs seg + 0 ≤ from < to ≤ "
+                     "that segment's length (cell units)"}
+                )
+            h = o.get("height_mm")
+            if h is not None and (
+                not isinstance(h, int)
+                or h < 200
+                or (wall_h is not None and h > wall_h)
+            ):
+                raise serializers.ValidationError(
+                    {"openings": "opening height must be ≥200 mm and not "
+                     "taller than the wall"}
+                )
+            spans = by_seg.setdefault(seg, [])
+            if any(start < e and s < end for s, e in spans):
+                raise serializers.ValidationError(
+                    {"openings": "openings on one segment must not overlap"}
+                )
+            spans.append((float(start), float(end)))
+        return attrs
+
+    class Meta:
+        model = FloorPlanWall
+        fields = ["id", "floor_plan_id", "label", "points", "height_mm",
+                  "color", "openings", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class FloorPlanRaisedFloorAreaSerializer(NumIdModelSerializer):

@@ -53,6 +53,7 @@ function dt(patch: Partial<DeviceType> = {}): DeviceType {
     tags: [],
     custom_fields: {},
     device_count: 0,
+    component_count: 0,
     owning_site: null,
     release_date: null,
     end_of_sale: null,
@@ -85,6 +86,7 @@ const laidOut = dt({
   rear_image: "/media/rear.png",
   image_ports: { front: [marker], rear: [] },
   device_count: 4,
+  component_count: 0,
   lifecycle_state: "eol",
   tags: [tag("core")],
   owning_site: site,
@@ -97,6 +99,7 @@ const photographed = dt({
   front_image: "/media/front.png",
   faceplate: { v: 1, front: [], rear: [] },
   device_count: 2,
+  component_count: 0,
   tags: [tag("core"), tag("edge")],
 })
 // markers but the photo was removed — the panel falls back, so must the facet
@@ -104,6 +107,7 @@ const orphanMarkers = dt({
   name: "orphan-markers",
   image_ports: { front: [marker], rear: [] },
   device_count: 1,
+  component_count: 0,
 })
 // nothing: no photo, no layout, nothing built from it
 const bare = dt({ name: "bare", tags: [tag("edge")] })

@@ -1020,6 +1020,9 @@ export interface DeviceType extends LifecycleInfo {
   tags: Tag[]
   custom_fields: Record<string, unknown>
   device_count: number
+  /** Every component-template kind summed — detail responses only (0 on
+   * list, where it isn't rendered). */
+  component_count: number
   owning_site?: { id: string; name: string } | null
   permissions?: ObjectPerms
   created_at: string
