@@ -10,6 +10,7 @@ import {
   type ImagePortMarker,
 } from "@/lib/api"
 import {
+  bayHex,
   EMPTY_LEGEND,
   legendContent,
   liveHex,
@@ -185,10 +186,17 @@ export function DeviceMesh({
     if (!wantPorts) return EMPTY_LEGEND
     const ports: Parameters<typeof legendContent>[0]["ports"] = []
     const parts: { status?: { id: string } | null }[] = []
+    const bays: { occupied: boolean }[] = []
     const obs = new Map<string, { oper_status: string; admin_status: string }>()
     for (const m of markers) {
       const fp = resolved.get(m.name)
       if (!fp?.id) continue
+      // A module bay reads occupancy, not health — and it shares `kind: null`
+      // with hardware, so the MARKER's kind is what tells them apart.
+      if (m.kind === "module-bay") {
+        bays.push({ occupied: !!fp.module })
+        continue
+      }
       // kind === null is a hardware marker: status colour, not a speed tier.
       if (fp.kind === null) {
         parts.push({ status: fp.status })
@@ -204,7 +212,7 @@ export function DeviceMesh({
       const live = observed?.get(key)
       if (live) obs.set(key, live)
     }
-    return legendContent({ ports, observed: obs, parts })
+    return legendContent({ ports, observed: obs, parts, bays })
   }, [wantPorts, markers, resolved, observed])
   useReportLegend(onLegend, dev.id, legend)
 
@@ -280,29 +288,41 @@ export function DeviceMesh({
                 }
               : null
             const capability = tint ? portCapabilityHex(tint) : null
+            // Module bays share `kind: null` with hardware, so the MARKER's
+            // kind separates them: a bay reads occupied/empty, a part reads
+            // health. Both from the shared colour module, so 2D and 3D can't
+            // teach different colours.
+            const bay = defined && m.kind === "module-bay"
+            const bayFull = bay && !!fp.module
             // Hardware markers (disk bays…): the PART's status colour
             // (failed = red), same as the 2D photo faceplate.
-            const hardware = defined && fp!.kind === null
+            const hardware = defined && !bay && fp!.kind === null
             const color = isSel
               ? PORT_SELECTED
               : !defined
                 ? PORT_UNDEFINED
-                : hardware
-                  ? fp!.status?.color || "#64748b"
-                  : obs
-                    ? liveHex(obs)
-                    : (capability ?? portHex(tint!))
-            // Undefined markers sit dim in the back; idle ports faint (the
-            // photo stays the star — mirrors the 2D ~35% outline); lit
-            // ports and hardware solid.
+                : bay
+                  ? bayHex(bayFull)
+                  : hardware
+                    ? fp!.status?.color || "#64748b"
+                    : obs
+                      ? liveHex(obs)
+                      : (capability ?? portHex(tint!))
+            // Undefined markers sit dim in the back; idle ports and empty bays
+            // faint (the photo stays the star — mirrors the 2D ~35% outline);
+            // lit ports, hardware and filled bays solid.
             const opacity =
               isSel || isHot
                 ? 0.9
                 : !defined
                   ? 0.2
-                  : !hardware && capability
-                    ? 0.32
-                    : 0.66
+                  : bay
+                    ? bayFull
+                      ? 0.66
+                      : 0.32
+                    : !hardware && capability
+                      ? 0.32
+                      : 0.66
             return (
               <group key={i}>
                 {/* Drift halo: an amber quad a touch larger, sitting just

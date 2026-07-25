@@ -1484,9 +1484,20 @@ export interface FacePort {
   type: string
   /** Hardware markers (inventory items): lifecycle status; null for ports. */
   status: StatusMini | null
+  /** Module-bay markers: the module seated in the bay, or null when the bay is
+   * empty (an empty bay still resolves — `id` is set, this is not). */
+  module: InstalledModuleMini | null
   /** One line naming what SNMP saw differently, or null when they agree. The
    * fields above stay the source of truth — this is drawn beside them. */
   drift: string | null
+}
+
+/** The module occupying a bay, as carried by a bay's resolution — enough to
+ * name it without a second request. */
+export interface InstalledModuleMini {
+  id: string
+  module_type: { id: string; name: string }
+  serial_number: string
 }
 
 export interface FacePorts {
@@ -2036,11 +2047,7 @@ export interface ModuleBayRow {
   position: string
   description: string
   /** Installed module, or null when the bay is empty. */
-  module: {
-    id: string
-    module_type: { id: string; name: string }
-    serial_number: string
-  } | null
+  module: InstalledModuleMini | null
   tags: Tag[]
 }
 

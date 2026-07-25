@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import { api, type Paginated, type Status } from "@/lib/api"
 import {
+  bayHex,
   legendSignature,
   mergeLegend,
   PORT_NEUTRAL,
@@ -182,27 +183,67 @@ export function HardwareStatusKey({
   )
 }
 
+/**
+ * Key for MODULE-BAY markers, which read occupancy rather than speed or
+ * health. Shown only for the occupancies actually drawn: a device type (no
+ * modules, ever) keys "empty" alone, and a fully-populated chassis keys
+ * "installed" alone.
+ */
+export function ModuleBayKey({
+  className,
+  bays,
+}: {
+  className?: string
+  /** Occupancies on this panel — "installed" / "empty". Empty set → nothing. */
+  bays: Set<string>
+}) {
+  if (bays.size === 0) return null
+  return (
+    <div
+      className={cn(
+        "flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] leading-none text-muted-foreground",
+        className
+      )}
+    >
+      <span className="text-muted-foreground/70">Module bays</span>
+      {bays.has("installed") && <Swatch hex={bayHex(true)} label="installed" />}
+      {/* Outlined, because that is exactly how an empty bay is drawn — the
+          dashed swatch means "not on this device", which is a different thing. */}
+      {bays.has("empty") && (
+        <Swatch hex={bayHex(false)} label="empty" outline />
+      )}
+    </div>
+  )
+}
+
 function Swatch({
   hex,
   label,
   dim,
   dashed,
+  outline,
 }: {
   hex: string
   label: string
   dim?: boolean
+  /** Dashed border, no fill — the "absent / not here" reading. */
   dashed?: boolean
+  /** Solid border, no fill — the "present but unlit" reading (idle port, empty
+   * bay), matching how those are actually drawn on a panel. */
+  outline?: boolean
 }) {
+  const hollow = dashed || outline
   return (
     <span className="inline-flex items-center gap-1">
       <span
         className={cn(
           "h-2 w-2 rounded-[3px]",
-          dashed && "border border-dashed"
+          hollow && "border",
+          dashed && "border-dashed"
         )}
         style={{
-          backgroundColor: dashed ? "transparent" : hex,
-          borderColor: dashed ? hex : undefined,
+          backgroundColor: hollow ? "transparent" : hex,
+          borderColor: hollow ? hex : undefined,
           opacity: dim ? 0.55 : 0.9,
         }}
       />

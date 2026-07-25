@@ -31,9 +31,11 @@ import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import { cn } from "@/lib/utils"
 
-// Placeable kinds — the port-ish component templates PLUS inventory items
-// (disk bays and other hardware, drawn status-coloured; never cable-able).
-export type PhotoMarkerKind = SlotKind | "inventory-item"
+// Placeable kinds — the port-ish component templates PLUS the physical things
+// that aren't ports: inventory items (disk bays and other hardware, drawn
+// status-coloured) and module bays (line-card slots, drawn occupied/empty).
+// Neither is cable-able, and neither belongs on the schematic faceplate.
+export type PhotoMarkerKind = SlotKind | "inventory-item" | "module-bay"
 const KINDS: PhotoMarkerKind[] = [
   "interface",
   "console-port",
@@ -44,6 +46,7 @@ const KINDS: PhotoMarkerKind[] = [
   "rear-port",
   "aux-port",
   "inventory-item",
+  "module-bay",
 ]
 const KIND_LABEL: Record<PhotoMarkerKind, string> = {
   interface: "Interfaces",
@@ -55,10 +58,20 @@ const KIND_LABEL: Record<PhotoMarkerKind, string> = {
   "rear-port": "Rear ports",
   "aux-port": "Aux ports",
   "inventory-item": "Hardware (disks, PSUs…)",
+  "module-bay": "Module bays (line cards)",
 }
 
+// A dropped marker should land roughly the size of the thing it marks, or
+// every one of them needs dragging out by hand. A connector is a narrow
+// sliver; a line-card slot is a broad rectangle across a fifth of the chassis.
 const DEFAULT_W = 0.03
 const DEFAULT_H = 0.35
+const DEFAULT_SIZE: Partial<Record<PhotoMarkerKind, { w: number; h: number }>> =
+  {
+    "module-bay": { w: 0.2, h: 0.45 },
+  }
+const defaultSize = (kind: string) =>
+  DEFAULT_SIZE[kind as PhotoMarkerKind] ?? { w: DEFAULT_W, h: DEFAULT_H }
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
 const markerKey = (m: { kind: string; name: string }) => `${m.kind}:${m.name}`
 
@@ -262,7 +275,8 @@ export function DeviceTypeImagePortsPane({
     const name = raw.slice(sep + 1)
     const x = clamp01(snapV((e.clientX - box.left) / box.width))
     const y = clamp01(snapV((e.clientY - box.top) / box.height))
-    setMarkers([...markers, { kind, name, x, y, w: DEFAULT_W, h: DEFAULT_H }])
+    const { w, h } = defaultSize(kind)
+    setMarkers([...markers, { kind, name, x, y, w, h }])
     setSel(markers.length)
   }
 
@@ -305,6 +319,9 @@ export function DeviceTypeImagePortsPane({
     const kind =
       KINDS.find((k) => (unplacedByKind[k] ?? []).length) ?? "interface"
     const names = unplacedByKind[kind] ?? []
+    // A RUN of ports packs tighter than one dropped marker; a run of bays is
+    // still bay-sized. Either way the user can retune before applying.
+    const { w, h } = DEFAULT_SIZE[kind] ?? { w: 0.02, h: 0.22 }
     setSel(null)
     setSearch("")
     setFill({
@@ -317,8 +334,8 @@ export function DeviceTypeImagePortsPane({
       y1: 0.4,
       x2: 0.94,
       row2y: 0.66,
-      w: 0.02,
-      h: 0.22,
+      w,
+      h,
     })
   }
 

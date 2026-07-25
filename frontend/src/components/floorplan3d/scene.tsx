@@ -13,7 +13,7 @@ import {
   type TerminationInput,
 } from "@/lib/api"
 import { renderTemplateName } from "@/lib/faceplate-geometry"
-import { legendIsEmpty } from "@/lib/faceplate-colors"
+import { bayHex, legendIsEmpty } from "@/lib/faceplate-colors"
 import { useLegendCollector } from "@/components/speed-scale"
 import { FaceplateLegend } from "@/components/device-faceplate"
 import { Button } from "@/components/ui/button"
@@ -622,22 +622,31 @@ function PortHud({
     </div>
   )
 
+  // Module bays resolve with `kind: null` too, so the MARKER's kind is what
+  // separates them from hardware: a bay reads occupied/empty, not health.
+  const bay = !!fp?.id && selection.portKind === "module-bay"
   // Hardware markers (inventory items) resolve with a status, never a
   // termination kind — the card shows part health, not cabling.
-  const hardware = !!fp?.id && fp.kind === null
+  const hardware = !!fp?.id && !bay && fp.kind === null
   // State chip, tinted like every other badge (bg = color at ~15%, text =
-  // color). Hardware wears its status colour; ports their cabling state.
+  // color). Hardware wears its status colour; bays their occupancy; ports
+  // their cabling state.
   const chip = fp
-    ? hardware
+    ? bay
       ? {
-          label: fp.status?.name || "part",
-          color: fp.status?.color || "#64748b",
+          label: fp.module ? "installed" : "empty",
+          color: bayHex(!!fp.module),
         }
-      : fp.connected
-        ? { label: "cabled", color: "#10b981" }
-        : fp.id
-          ? { label: "free", color: "#71717a" }
-          : { label: "no port", color: "#71717a" }
+      : hardware
+        ? {
+            label: fp.status?.name || "part",
+            color: fp.status?.color || "#64748b",
+          }
+        : fp.connected
+          ? { label: "cabled", color: "#10b981" }
+          : fp.id
+            ? { label: "free", color: "#71717a" }
+            : { label: "no port", color: "#71717a" }
     : null
   return (
     <div className="absolute top-3 left-3 w-72 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur">
@@ -668,6 +677,21 @@ function PortHud({
           )}
         {row("Position", `${rack.name} · U${dev.position}`)}
         {fp?.speed && row("Speed", <span className="num">{fp.speed}</span>)}
+        {bay &&
+          row(
+            "Module",
+            fp.module ? (
+              <span className="font-mono">{fp.module.module_type.name}</span>
+            ) : (
+              "Empty"
+            )
+          )}
+        {bay &&
+          fp.module?.serial_number &&
+          row(
+            "Serial",
+            <span className="font-mono">{fp.module.serial_number}</span>
+          )}
       </div>
 
       {/* ── Drift: what SNMP saw, beside what the record says ──────────── */}

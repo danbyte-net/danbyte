@@ -1404,6 +1404,13 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
         "power-outlet", "front-port", "rear-port", "aux-port",
     }
 
+    # Photo markers place the port kinds PLUS the physical things that are not
+    # ports: hardware parts (disk bays, PSUs) and module bays (line-card
+    # slots). Those two are photo-only — the schematic faceplate stays
+    # port-only, and a module bay appears there as a group's `bay` placeholder
+    # instead.
+    _PHOTO_MARKER_KINDS = _FACEPLATE_SLOT_KINDS | {"inventory-item", "module-bay"}
+
     def validate_faceplate(self, value):
         if value is None:
             return None
@@ -1495,10 +1502,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                     raise serializers.ValidationError(
                         "Each marker must be an object.")
                 kind = m.get("kind", "interface")
-                # Photo markers also place HARDWARE (disk bays etc.) — the
-                # schematic faceplate stays port-only.
-                if (kind not in self._FACEPLATE_SLOT_KINDS
-                        and kind != "inventory-item"):
+                if kind not in self._PHOTO_MARKER_KINDS:
                     raise serializers.ValidationError(
                         f"Unknown marker kind {kind!r}.")
                 name = m.get("name")
