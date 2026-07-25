@@ -174,10 +174,14 @@ export function ViolationBadge({
       </TooltipTrigger>
       <TooltipContent
         side="top"
+        variant="panel"
         className="max-w-xs flex-col items-start gap-0.5"
       >
         <span className="font-medium">
           {n} compliance {n === 1 ? "violation" : "violations"}
+        </span>
+        <span className="text-[11px] text-muted-foreground">
+          A rule you wrote isn't satisfied.
         </span>
         <ul className="mt-0.5 space-y-0.5">
           {violations.slice(0, 6).map((v) => (

@@ -180,6 +180,7 @@ import { Route as SettingsUpdatesRouteImport } from './routes/settings.updates'
 import { Route as SettingsTenantLdapRouteImport } from './routes/settings.tenant-ldap'
 import { Route as SettingsTenantEmailRouteImport } from './routes/settings.tenant-email'
 import { Route as SettingsTenantRouteImport } from './routes/settings.tenant'
+import { Route as SettingsSnmpSensorsRouteImport } from './routes/settings.snmp-sensors'
 import { Route as SettingsSnmpRouteImport } from './routes/settings.snmp'
 import { Route as SettingsSiteRouteImport } from './routes/settings.site'
 import { Route as SettingsPreferencesRouteImport } from './routes/settings.preferences'
@@ -1202,6 +1203,11 @@ const SettingsTenantRoute = SettingsTenantRouteImport.update({
   path: '/tenant',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsSnmpSensorsRoute = SettingsSnmpSensorsRouteImport.update({
+  id: '/snmp-sensors',
+  path: '/snmp-sensors',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsSnmpRoute = SettingsSnmpRouteImport.update({
   id: '/snmp',
   path: '/snmp',
@@ -2203,6 +2209,7 @@ export interface FileRoutesByFullPath {
   '/settings/preferences': typeof SettingsPreferencesRoute
   '/settings/site': typeof SettingsSiteRoute
   '/settings/snmp': typeof SettingsSnmpRoute
+  '/settings/snmp-sensors': typeof SettingsSnmpSensorsRoute
   '/settings/tenant': typeof SettingsTenantRoute
   '/settings/tenant-email': typeof SettingsTenantEmailRoute
   '/settings/tenant-ldap': typeof SettingsTenantLdapRoute
@@ -2487,6 +2494,7 @@ export interface FileRoutesByTo {
   '/settings/preferences': typeof SettingsPreferencesRoute
   '/settings/site': typeof SettingsSiteRoute
   '/settings/snmp': typeof SettingsSnmpRoute
+  '/settings/snmp-sensors': typeof SettingsSnmpSensorsRoute
   '/settings/tenant': typeof SettingsTenantRoute
   '/settings/tenant-email': typeof SettingsTenantEmailRoute
   '/settings/tenant-ldap': typeof SettingsTenantLdapRoute
@@ -2827,6 +2835,7 @@ export interface FileRoutesById {
   '/settings/preferences': typeof SettingsPreferencesRoute
   '/settings/site': typeof SettingsSiteRoute
   '/settings/snmp': typeof SettingsSnmpRoute
+  '/settings/snmp-sensors': typeof SettingsSnmpSensorsRoute
   '/settings/tenant': typeof SettingsTenantRoute
   '/settings/tenant-email': typeof SettingsTenantEmailRoute
   '/settings/tenant-ldap': typeof SettingsTenantLdapRoute
@@ -3168,6 +3177,7 @@ export interface FileRouteTypes {
     | '/settings/preferences'
     | '/settings/site'
     | '/settings/snmp'
+    | '/settings/snmp-sensors'
     | '/settings/tenant'
     | '/settings/tenant-email'
     | '/settings/tenant-ldap'
@@ -3452,6 +3462,7 @@ export interface FileRouteTypes {
     | '/settings/preferences'
     | '/settings/site'
     | '/settings/snmp'
+    | '/settings/snmp-sensors'
     | '/settings/tenant'
     | '/settings/tenant-email'
     | '/settings/tenant-ldap'
@@ -3791,6 +3802,7 @@ export interface FileRouteTypes {
     | '/settings/preferences'
     | '/settings/site'
     | '/settings/snmp'
+    | '/settings/snmp-sensors'
     | '/settings/tenant'
     | '/settings/tenant-email'
     | '/settings/tenant-ldap'
@@ -5290,6 +5302,13 @@ declare module '@tanstack/react-router' {
       path: '/tenant'
       fullPath: '/settings/tenant'
       preLoaderRoute: typeof SettingsTenantRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/snmp-sensors': {
+      id: '/settings/snmp-sensors'
+      path: '/snmp-sensors'
+      fullPath: '/settings/snmp-sensors'
+      preLoaderRoute: typeof SettingsSnmpSensorsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/snmp': {
@@ -7101,6 +7120,7 @@ interface SettingsRouteChildren {
   SettingsPreferencesRoute: typeof SettingsPreferencesRoute
   SettingsSiteRoute: typeof SettingsSiteRoute
   SettingsSnmpRoute: typeof SettingsSnmpRoute
+  SettingsSnmpSensorsRoute: typeof SettingsSnmpSensorsRoute
   SettingsTenantRoute: typeof SettingsTenantRoute
   SettingsTenantEmailRoute: typeof SettingsTenantEmailRoute
   SettingsTenantLdapRoute: typeof SettingsTenantLdapRoute
@@ -7118,6 +7138,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsPreferencesRoute: SettingsPreferencesRoute,
   SettingsSiteRoute: SettingsSiteRoute,
   SettingsSnmpRoute: SettingsSnmpRoute,
+  SettingsSnmpSensorsRoute: SettingsSnmpSensorsRoute,
   SettingsTenantRoute: SettingsTenantRoute,
   SettingsTenantEmailRoute: SettingsTenantEmailRoute,
   SettingsTenantLdapRoute: SettingsTenantLdapRoute,

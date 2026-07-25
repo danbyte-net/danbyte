@@ -200,6 +200,14 @@ export const EMPTY_LEGEND: LegendContent = {
   partStatusIds: new Set(),
 }
 
+/** A canonical string for a legend's CONTENT, so consumers can compare two of
+ * them by value. Sets and booleans have no useful `===`, and comparing the
+ * objects by identity is what turns "report what you drew" into a render loop. */
+export function legendSignature(c: LegendContent): string {
+  const sorted = (s: Set<string>) => [...s].sort().join(",")
+  return `${sorted(c.tiers)}|${sorted(c.states)}|${c.trunk ? 1 : 0}|${sorted(c.partStatusIds)}`
+}
+
 /** True when nothing on screen needs a key — hide the legend entirely. */
 export function legendIsEmpty(c: LegendContent): boolean {
   return (

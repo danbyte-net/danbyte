@@ -955,7 +955,12 @@ function DeviceFrontPanel({ device }: { device: Device }) {
   const hasRear = usePhoto
     ? !!device.device_type?.rear_image
     : (savedDoc?.rear?.length ?? 0) > 0
-  const physical = (q.data?.results ?? []).filter((i) => !i.virtual)
+  // Memoized: this is the faceplate's `interfaces` prop, and a fresh array each
+  // render invalidates every memo downstream of it.
+  const physical = useMemo(
+    () => (q.data?.results ?? []).filter((i) => !i.virtual),
+    [q.data]
+  )
   if (physical.length === 0) return null
   const showRear = side === "rear"
   return (

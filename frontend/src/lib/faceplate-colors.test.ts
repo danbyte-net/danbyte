@@ -4,6 +4,7 @@ import {
   EMPTY_LEGEND,
   legendContent,
   legendIsEmpty,
+  legendSignature,
   mergeLegend,
 } from "./faceplate-colors"
 
@@ -100,6 +101,47 @@ describe("legendContent", () => {
     expect(
       legendIsEmpty(legendContent({ parts: [{ status: { id: "s1" } }] }))
     ).toBe(false)
+  })
+})
+
+describe("legendSignature", () => {
+  // This is the loop guard. A renderer whose inputs are rebuilt every render
+  // (the device page's interface list was) produces a NEW LegendContent each
+  // time; if the collector compared by identity it would setState → render →
+  // report forever and freeze the page. It did. Compare by value.
+  it("is equal for distinct objects describing the same panel", () => {
+    const a = legendContent({ ports: [cabled("1G"), cabled("10G")] })
+    const b = legendContent({ ports: [cabled("1G"), cabled("10G")] })
+    expect(a).not.toBe(b)
+    expect(legendSignature(a)).toBe(legendSignature(b))
+  })
+
+  it("does not depend on the order things were drawn in", () => {
+    const a = legendContent({ ports: [cabled("10G"), cabled("1G")] })
+    const b = legendContent({ ports: [cabled("1G"), cabled("10G")] })
+    expect(legendSignature(a)).toBe(legendSignature(b))
+    const p1 = legendContent({
+      parts: [{ status: { id: "b" } }, { status: { id: "a" } }],
+    })
+    const p2 = legendContent({
+      parts: [{ status: { id: "a" } }, { status: { id: "b" } }],
+    })
+    expect(legendSignature(p1)).toBe(legendSignature(p2))
+  })
+
+  it("differs whenever any part of the content differs", () => {
+    const base = legendContent({ ports: [cabled("1G")] })
+    const cases = [
+      legendContent({ ports: [cabled("10G")] }), // other tier
+      legendContent({ ports: [{ ...cabled("1G"), mode: "tagged" }] }), // trunk
+      legendContent({ ports: [{ enabled: false, cable: null, speed: "" }] }), // state
+      legendContent({
+        ports: [cabled("1G")],
+        parts: [{ status: { id: "s" } }],
+      }),
+    ]
+    for (const c of cases)
+      expect(legendSignature(c)).not.toBe(legendSignature(base))
   })
 })
 

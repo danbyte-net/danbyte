@@ -424,3 +424,100 @@ class SensorApiTests(_Base):
         )
         resp = self.client.get(f"/api/monitoring/snmp-sensors/{foreign.id}/")
         self.assertEqual(resp.status_code, 404)
+
+
+class SensorPackTests(_Base):
+    """Export/import of sensor definitions as a portable JSON pack.
+
+    A sensor is per-vendor OID archaeology worth sharing; it holds no
+    credentials, which is what makes the pack safe to move between deployments.
+    """
+
+    EXPORT = "/api/monitoring/snmp-sensors/export/"
+    IMPORT = "/api/monitoring/snmp-sensors/import/"
+
+    def test_export_shape_and_device_type_by_name(self):
+        resp = self.client.get(self.EXPORT)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        pack = resp.json()
+        self.assertEqual(pack["danbyte_snmp_sensor_pack"], 1)
+        self.assertEqual(pack["count"], 1)
+        row = pack["sensors"][0]
+        self.assertEqual(row["name"], "Disk health")
+        self.assertEqual(row["value_map"], {"3": "active", "4": "failed"})
+        # Ids are per-deployment; the NAME is what the far side can match on.
+        self.assertEqual(row["device_type_name"], "R750")
+        self.assertNotIn("id", row)
+        self.assertNotIn("tenant", row)
+
+    def test_round_trip_into_a_clean_tenant(self):
+        pack = self.client.get(self.EXPORT).json()
+        SnmpSensor.objects.all().delete()
+        resp = self.client.post(self.IMPORT, pack, format="json")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()["created"], 1)
+        s = SnmpSensor.objects.get(tenant=self.tenant, slug="disk-health")
+        self.assertEqual(s.oid, "1.3.6.1.4.1.674.1.1")
+        self.assertEqual(s.value_map, {"3": "active", "4": "failed"})
+        # Rebound to the local device type of the same name.
+        self.assertEqual(s.device_type_id, self.dt.id)
+
+    def test_import_skips_existing_unless_replace(self):
+        pack = self.client.get(self.EXPORT).json()
+        pack["sensors"][0]["oid"] = "9.9.9"
+        resp = self.client.post(self.IMPORT, pack, format="json")
+        self.assertEqual(resp.json()["skipped"], 1)
+        self.sensor.refresh_from_db()
+        self.assertEqual(self.sensor.oid, "1.3.6.1.4.1.674.1.1")  # untouched
+
+        resp = self.client.post(f"{self.IMPORT}?replace=1", pack, format="json")
+        self.assertEqual(resp.json()["updated"], 1)
+        self.sensor.refresh_from_db()
+        self.assertEqual(self.sensor.oid, "9.9.9")
+
+    def test_unknown_device_type_imports_unbound_not_dropped(self):
+        pack = self.client.get(self.EXPORT).json()
+        pack["sensors"][0]["slug"] = "borrowed"
+        pack["sensors"][0]["device_type_name"] = "Some Chassis We Lack"
+        resp = self.client.post(self.IMPORT, pack, format="json")
+        body = resp.json()
+        self.assertEqual(body["created"], 1)
+        self.assertEqual(body["unbound_device_types"], ["Some Chassis We Lack"])
+        self.assertIsNone(
+            SnmpSensor.objects.get(tenant=self.tenant, slug="borrowed").device_type_id
+        )
+
+    def test_rejects_a_file_that_is_not_a_pack(self):
+        for bad in ({"sensors": []}, {"danbyte_snmp_sensor_pack": 99, "sensors": []}):
+            resp = self.client.post(self.IMPORT, bad, format="json")
+            self.assertEqual(resp.status_code, 400, bad)
+
+    def test_import_cannot_bind_another_tenants_device_type(self):
+        other_org = Organization.objects.create(name="Evil", slug="evil")
+        other = Tenant.objects.create(org=other_org, name="Evil", slug="evil")
+        DeviceType.objects.create(tenant=other, name="Secret Chassis")
+        pack = self.client.get(self.EXPORT).json()
+        pack["sensors"][0]["slug"] = "sneaky"
+        pack["sensors"][0]["device_type_name"] = "Secret Chassis"
+        resp = self.client.post(self.IMPORT, pack, format="json")
+        self.assertEqual(resp.json()["created"], 1)
+        # Name resolution is tenant-scoped, so it lands unbound rather than
+        # reaching across into the other tenant's catalog.
+        self.assertIsNone(
+            SnmpSensor.objects.get(tenant=self.tenant, slug="sneaky").device_type_id
+        )
+
+    def test_device_type_only_filter_excludes_all_types_sensors(self):
+        SnmpSensor.objects.create(
+            tenant=self.tenant, name="Everywhere", slug="everywhere",
+            oid="1.1", device_type=None,
+        )
+        both = self.client.get(
+            f"/api/monitoring/snmp-sensors/?device_type={self.dt.id}"
+        ).json()
+        self.assertEqual(both["count"], 2)
+        only = self.client.get(
+            f"/api/monitoring/snmp-sensors/?device_type_only={self.dt.id}"
+        ).json()
+        self.assertEqual(only["count"], 1)
+        self.assertEqual(only["results"][0]["name"], "Disk health")

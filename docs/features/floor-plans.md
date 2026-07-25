@@ -110,7 +110,7 @@ uses. The marker keeps showing your **source of truth**; the outline is a
 separate signal saying "look here". Click it and the card names the difference
 ("SNMP says failed", "speed: SNMP says 1 Gbps"). Nothing changes until you
 accept it on the device's Monitoring tab — see
-[SNMP discovery](snmp-discovery.md#drift).
+[SNMP discovery](snmp-discovery.md#drift-and-reconciliation).
 
 Drift rides along in the same per-device request the port markers already use,
 so a rack of cabinets costs no extra round trips.

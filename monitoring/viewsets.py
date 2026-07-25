@@ -18,6 +18,7 @@ from rest_framework.response import Response
 
 from api.views import _get_active_tenant
 from api.viewsets import TenantScopedViewSet
+from auth_api import rbac
 from auth_api.permissions import can_manage_admin
 
 from .models import (
@@ -185,6 +186,20 @@ class SnmpSensorViewSet(TenantScopedViewSet):
     queryset = SnmpSensor.objects.select_related("device_type").order_by("name")
     serializer_class = SnmpSensorSerializer
 
+    # A sensor is a portable definition — an OID, a value map, a naming rule —
+    # with no secrets and no per-device state, which is exactly what makes it
+    # worth moving between deployments. Version the envelope so a future shape
+    # change can be detected rather than silently mis-imported.
+    PACK_VERSION = 1
+    # Importing creates sensors, so it demands `add`; overwriting an existing
+    # one is a change and checked separately below. Without this the shared
+    # mapping would let an add-only grant replace a tuned definition.
+    rbac_action_map = {"import_pack": "add"}
+    PACK_FIELDS = (
+        "name", "slug", "description", "oid", "walk", "item_kind",
+        "name_template", "value_map", "absent_status", "apply_mode", "enabled",
+    )
+
     def get_queryset(self):
         qs = super().get_queryset()
         dt = self.request.query_params.get("device_type")
@@ -192,8 +207,127 @@ class SnmpSensorViewSet(TenantScopedViewSet):
             # A device's applicable sensors: this type or all-types.
             from django.db.models import Q
 
-            qs = qs.filter(Q(device_type__isnull=True) | Q(device_type_id=dt))
+            if dt == "none":
+                qs = qs.filter(device_type__isnull=True)
+            else:
+                qs = qs.filter(Q(device_type__isnull=True) | Q(device_type_id=dt))
+        # `only=1` narrows to sensors bound to exactly this type — the device
+        # TYPE page manages its own, where inheriting the all-types rows would
+        # invite editing a shared definition by accident.
+        only = self.request.query_params.get("device_type_only")
+        if only:
+            qs = qs.filter(device_type_id=only)
         return qs
+
+    @action(detail=False, methods=["get"])
+    def export(self, request):
+        """The tenant's sensors as a portable JSON pack.
+
+        Device types travel as their NAME, not their id: ids are per-deployment,
+        names are what a human recognises on the far side. A sensor bound to a
+        type Danbyte doesn't have on import stays unbound rather than failing the
+        whole pack.
+        """
+        qs = self.filter_queryset(self.get_queryset())
+        sensors = []
+        for s in qs:
+            row = {f: getattr(s, f) for f in self.PACK_FIELDS}
+            row["device_type_name"] = s.device_type.name if s.device_type_id else None
+            sensors.append(row)
+        return Response({
+            "danbyte_snmp_sensor_pack": self.PACK_VERSION,
+            "count": len(sensors),
+            "sensors": sensors,
+        })
+
+    @action(detail=False, methods=["post"], url_path="import")
+    def import_pack(self, request, *args, **kwargs):
+        """Load a pack exported here or hand-written.
+
+        Matched by `slug` within the tenant: re-importing updates in place
+        instead of piling up duplicates. `?replace=0` (the default) skips a slug
+        that already exists so an import can't quietly rewrite a sensor someone
+        tuned; `?replace=1` updates it.
+        """
+        from api.models import DeviceType
+
+        tenant = self._tenant_or_403()
+        payload = request.data if isinstance(request.data, dict) else {}
+        version = payload.get("danbyte_snmp_sensor_pack")
+        if version is None:
+            raise ValidationError(
+                {"danbyte_snmp_sensor_pack": "Not a sensor pack — the key is missing."}
+            )
+        if version != self.PACK_VERSION:
+            raise ValidationError({
+                "danbyte_snmp_sensor_pack":
+                    f"Pack version {version} isn't supported (this build reads "
+                    f"{self.PACK_VERSION}).",
+            })
+        rows = payload.get("sensors")
+        if not isinstance(rows, list):
+            raise ValidationError({"sensors": "Expected a list of sensors."})
+
+        replace = str(request.query_params.get("replace", "")).lower() in (
+            "1", "true", "yes",
+        )
+        if replace and not (
+            request.user.is_superuser
+            or rbac.has_action(request.user, tenant, "snmpsensor", "change")
+        ):
+            raise PermissionDenied(
+                "Overwriting existing sensors needs change access; import "
+                "without ?replace=1 to add only the new ones."
+            )
+        # Resolved once, and only within this tenant — a pack naming another
+        # tenant's device type must not reach across.
+        types = {
+            name.strip().lower(): pk
+            for pk, name in DeviceType.objects.filter(tenant=tenant).values_list(
+                "id", "name"
+            )
+        }
+        created, updated, skipped, unbound, errors = 0, 0, 0, [], []
+        for i, row in enumerate(rows):
+            if not isinstance(row, dict):
+                errors.append({"index": i, "error": "Not an object."})
+                continue
+            data = {f: row.get(f) for f in self.PACK_FIELDS if f in row}
+            dt_name = row.get("device_type_name")
+            if dt_name:
+                pk = types.get(str(dt_name).strip().lower())
+                if pk is None:
+                    # Keep the sensor, lose the binding, say so — better than
+                    # dropping a definition the user can rebind in one click.
+                    unbound.append(dt_name)
+                data["device_type"] = pk
+            else:
+                data["device_type"] = None
+
+            slug = (data.get("slug") or "").strip()
+            existing = (
+                SnmpSensor.objects.filter(tenant=tenant, slug=slug).first()
+                if slug else None
+            )
+            if existing and not replace:
+                skipped += 1
+                continue
+            ser = self.get_serializer(existing, data=data, partial=bool(existing))
+            if not ser.is_valid():
+                errors.append({
+                    "index": i, "name": row.get("name"), "error": ser.errors,
+                })
+                continue
+            ser.save(tenant=tenant)
+            if existing:
+                updated += 1
+            else:
+                created += 1
+        return Response({
+            "created": created, "updated": updated, "skipped": skipped,
+            "unbound_device_types": sorted(set(unbound)),
+            "errors": errors,
+        })
 
 
 class CheckTemplateViewSet(TenantScopedViewSet):

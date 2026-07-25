@@ -12,6 +12,7 @@ import { DeviceTypeDeleteDialog } from "@/components/device-type-delete-dialog"
 import { DeviceTypeImages } from "@/components/device-type-images"
 import { DeviceTypeComponentsPane } from "@/components/device-type-components-pane"
 import { DeviceTypeFaceplatePane } from "@/components/device-type-faceplate-pane"
+import { DeviceSensorsCard } from "@/components/device-sensors-card"
 import { DeviceTypeImagePortsPane } from "@/components/device-type-image-ports-pane"
 import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
 import {
@@ -56,6 +57,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
     | "components"
     | "faceplate"
     | "photo-ports"
+    | "sensors"
     | "devices"
     | "journal"
     | "history"
@@ -178,6 +180,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
         ...(d.front_image || d.rear_image
           ? [{ value: "photo-ports", label: "Photo ports" }]
           : []),
+        { value: "sensors", label: "Sensors" },
         { value: "devices", label: "Devices", count: d.device_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
@@ -207,6 +210,12 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
       </DetailTab>
       <DetailTab value="photo-ports">
         <DeviceTypeImagePortsPane deviceType={d} />
+      </DetailTab>
+      <DetailTab value="sensors" bare>
+        {/* Sensors belong to the MODEL, not one box: an OID that reads drive
+            health on this chassis reads it on every one you own. Defined here,
+            every device of this type inherits them. */}
+        <DeviceSensorsCard deviceTypeId={d.id} typeScoped />
       </DetailTab>
       <DetailTab value="devices">
         <EmbeddedDeviceTable
