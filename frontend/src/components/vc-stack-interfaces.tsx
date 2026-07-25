@@ -19,6 +19,7 @@ import {
   type NestedInterface,
 } from "@/components/columns/interface-columns"
 import { cableTint } from "@/components/cable-status-control"
+import { useInterfaceDriftMap } from "@/components/monitoring/device-drift-badge"
 import { QueryError } from "@/components/query-error"
 
 export interface StackInterfaceRow {
@@ -112,6 +113,10 @@ export function StackInterfacesTable({
     onTrace,
     onAssignIp,
   } = actions ?? {}
+  // This table spans every stack member, so the owning device's per-device drift
+  // query (which the "This member" table uses) can only cover one of them. The
+  // fleet map is one request for all members' ports.
+  const drift = useInterfaceDriftMap()
   const columns = useMemo<ColumnDef<StackRow>[]>(() => {
     const actionsCol =
       onTrace && onAssignIp
@@ -154,6 +159,7 @@ export function StackInterfacesTable({
       // only read interface fields, so this is safe.
       ...(buildInterfaceColumns({
         include: DEVICE_INTERFACE_COLUMNS,
+        drift,
       }) as ColumnDef<StackRow>[]),
       ...(actionsCol ? [actionsCol] : []),
     ]
@@ -165,6 +171,7 @@ export function StackInterfacesTable({
     canConnect,
     onTrace,
     onAssignIp,
+    drift,
   ])
 
   if (error) return <QueryError error={error} />

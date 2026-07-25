@@ -18,6 +18,7 @@ import {
 } from "@/components/filter-rail"
 import { ListPageShell } from "@/components/list-page-shell"
 import { InterfaceDeleteDialog } from "@/components/interface-delete-dialog"
+import { useInterfaceDriftMap } from "@/components/monitoring/device-drift-badge"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/interfaces/")({
@@ -69,10 +70,15 @@ function InterfacesPage() {
   }, [allRows])
 
   const handleDelete = useCallback((i: Interface) => setDeleting(i), [])
+  // Fleet-wide SNMP drift for every port on the page, in ONE request — the
+  // devices list marks drifted devices, and interfaces are what drift actually
+  // references (MAC / admin-status / speed / VLAN, stale ports, discovered IPs).
+  const drift = useInterfaceDriftMap()
   const columns = useMemo<ColumnDef<Interface>[]>(
     () =>
       buildInterfaceColumns<Interface>({
         selection: true,
+        drift,
         include: [
           "device",
           "name",
@@ -112,7 +118,7 @@ function InterfacesPage() {
             ) : null,
         },
       }),
-    [handleDelete, canEdit, canDelete, canAddCable, canChangeCable]
+    [handleDelete, canEdit, canDelete, canAddCable, canChangeCable, drift]
   )
 
   const rail = (

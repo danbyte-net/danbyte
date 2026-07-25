@@ -82,6 +82,7 @@ const KIND_LABEL: Record<string, string> = {
   interface_missing: "interface not in Danbyte",
   interface_mismatch: "interface mismatch",
   interface_stale: "not reported by SNMP",
+  ip_missing: "IP not recorded on this port",
   part_status: "hardware status",
   part_missing: "unknown part",
 }
@@ -137,6 +138,100 @@ export function DeviceDriftMarker({
           {kinds.map(([k, count]) => (
             <li key={k} className="text-[11px]">
               {count} × {KIND_LABEL[k] ?? k}
+            </li>
+          ))}
+        </ul>
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** One drifted interface from the fleet summary's opt-in `interfaces` map
+ * (`GET /api/monitoring/snmp-drift/?interfaces=1`). */
+export interface InterfaceDriftEntry {
+  /** The owning device — so a marker can link without knowing its row's device. */
+  device: string
+  count: number
+  kinds: string[]
+}
+
+/**
+ * Fleet-wide drift keyed by *interface* id — the same one-request trick as
+ * `useDriftMap()`, for tables of interfaces rather than devices. The endpoint
+ * already computes every device's drift items and pre-groups state + interfaces
+ * per device to avoid an N+1; `?interfaces=1` just stops it throwing the
+ * interface ids away, so a whole fleet of ports costs one request.
+ *
+ * Only interfaces that exist in Danbyte appear: an observed port Danbyte lacks
+ * (`interface_missing`) has no row to mark, and neither do discovered prefixes or
+ * IPs — no drift item references an existing Prefix or IPAddress at all.
+ */
+export function useInterfaceDriftMap(): Map<string, InterfaceDriftEntry> {
+  const q = useQuery({
+    queryKey: ["snmp-drift-fleet", "interfaces"],
+    queryFn: () =>
+      api<{ interfaces?: Record<string, InterfaceDriftEntry> }>(
+        "/api/monitoring/snmp-drift/?interfaces=1"
+      ),
+    staleTime: 2 * 60_000,
+    refetchOnWindowFocus: false,
+  })
+  return useMemo(
+    () => new Map(Object.entries(q.data?.interfaces ?? {})),
+    [q.data]
+  )
+}
+
+/**
+ * The quiet row marker for a table of interfaces — same glyph and manners as
+ * `DeviceDriftMarker` (renders nothing when the port is in sync, so it can sit
+ * next to any interface name), pointing at the device's Components → Interfaces
+ * table where the port's differences are listed in place.
+ */
+export function InterfaceDriftMarker({
+  interfaceId,
+  map,
+  className,
+}: {
+  interfaceId: string
+  map: Map<string, InterfaceDriftEntry>
+  className?: string
+}) {
+  const row = map.get(interfaceId)
+  if (!row) return null
+  const n = row.count
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Link
+          to="/devices/$id"
+          params={{ id: row.device }}
+          search={{ tab: "components", sub: "interfaces" }}
+          aria-label={`${n} SNMP difference${n === 1 ? "" : "s"} on this interface`}
+          onClick={(e) => e.stopPropagation()}
+          className={cn(
+            "inline-flex shrink-0 items-center align-middle text-amber-500 dark:text-amber-400",
+            className
+          )}
+        >
+          <GitCompareArrows className="h-3.5 w-3.5" />
+        </Link>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        variant="panel"
+        className="flex-col items-start gap-0.5"
+      >
+        <span className="font-medium">
+          {n} SNMP {n === 1 ? "difference" : "differences"}
+        </span>
+        <span className="text-[11px] text-muted-foreground">
+          Observed by SNMP, differs from the source of truth.
+        </span>
+        <ul className="mt-0.5 space-y-0.5">
+          {row.kinds.map((k) => (
+            <li key={k} className="text-[11px]">
+              {KIND_LABEL[k] ?? k}
             </li>
           ))}
         </ul>

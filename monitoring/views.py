@@ -1929,6 +1929,17 @@ def device_snmp_drift_view(request, device_id):
 _DRIFT_KINDS = ("device_field", "interface_missing", "interface_mismatch",
                 "interface_stale", "part_status", "part_missing")
 
+# Drift kinds that name an Interface row Danbyte ALREADY has — the only ones a
+# per-interface marker can attach to (``?interfaces=1``).
+#
+# ``interface_missing`` is excluded because it describes a port Danbyte doesn't
+# have: there is no row to mark. ``ip_missing`` is included because, while its
+# *address* is unknown to Danbyte, the item names the existing port it was
+# observed on. ``switch_link_suggested`` is excluded deliberately: it proposes
+# where an *IP* sits, so its interface is the suggested destination rather than a
+# record that disagrees with reality.
+_INTERFACE_DRIFT_KINDS = ("interface_mismatch", "interface_stale", "ip_missing")
+
 
 @extend_schema(
     summary="Tenant-wide SNMP drift summary, one row per polled device",
@@ -1940,6 +1951,17 @@ _DRIFT_KINDS = ("device_field", "interface_missing", "interface_mismatch",
             type=OpenApiTypes.STR,
             location=OpenApiParameter.QUERY,
             description="Filter rows by drift|in_sync|unreachable.",
+        ),
+        OpenApiParameter(
+            name="interfaces",
+            type=OpenApiTypes.BOOL,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "Opt in to an extra top-level `interfaces` object mapping each "
+                "drifted interface id → {device, count, kinds}, so a fleet-wide "
+                "interface table can mark its rows from this one request. Off by "
+                "default: the response is otherwise unchanged."
+            ),
         ),
     ],
     responses=OpenApiResponse(
@@ -1956,6 +1978,14 @@ def snmp_drift_list_view(request):
     happens per-device on the reconcile endpoint (which needs `device.change`).
 
     Optional ``?status=drift|in_sync|unreachable`` filters the rows.
+
+    Optional ``?interfaces=1`` adds a top-level ``interfaces`` object —
+    ``{interface_id: {device, count, kinds}}`` for every drifted interface in the
+    rows returned — so the fleet interfaces list can mark drifted ports from the
+    same single request the device list already makes. It is derived from the
+    drift items this view already computes and discards, so it costs no extra
+    query, and it is scoped by exactly the same device filter as the rows: a
+    caller who cannot see a device learns nothing about its interfaces.
     """
     tenant = _get_active_tenant(request)
     if tenant is None:
@@ -2005,6 +2035,12 @@ def snmp_drift_list_view(request):
         ifaces_by_device.setdefault(iface.device_id, []).append(iface)
 
     want = request.query_params.get("status")
+    # Opt-in per-interface lookup (see the docstring). Built from the same items,
+    # never from another query.
+    want_ifaces = (request.query_params.get("interfaces") or "").lower() in (
+        "1", "true", "yes",
+    )
+    iface_drift: dict[str, dict] = {}
     rows = []
     for state in states:
         # Only a confirmed-reachable poll has observed state worth comparing;
@@ -2038,6 +2074,15 @@ def snmp_drift_list_view(request):
                 ifaces_drifted.add(("name", it.get("name")))
             elif k in ("interface_mismatch", "interface_stale"):
                 ifaces_drifted.add(("id", it.get("interface_id")))
+            # Same pass, no query: fold the item into the per-interface lookup.
+            if want_ifaces and k in _INTERFACE_DRIFT_KINDS and it.get("interface_id"):
+                entry = iface_drift.setdefault(
+                    str(it["interface_id"]),
+                    {"device": str(state.device_id), "count": 0, "kinds": []},
+                )
+                entry["count"] += 1
+                if k not in entry["kinds"]:
+                    entry["kinds"].append(k)
         rows.append({
             "device": str(state.device_id),
             "device_name": state.device.name,
@@ -2049,6 +2094,12 @@ def snmp_drift_list_view(request):
             "profile_name": state.profile.name if state.profile_id else None,
             "polled_at": state.polled_at,
         })
+    if want_ifaces:
+        # Extra key only when asked for, so every existing caller keeps the exact
+        # response it has today.
+        return Response(
+            {"count": len(rows), "results": rows, "interfaces": iface_drift}
+        )
     return Response({"count": len(rows), "results": rows})
 
 
