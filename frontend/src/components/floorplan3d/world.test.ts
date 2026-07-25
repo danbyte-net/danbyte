@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  APPLIANCE_D_FRAC,
+  APPLIANCE_H_U,
+  APPLIANCE_W_FRAC,
   RACK_BASE_M,
   airflowGlyphPlacements,
   cellToWorld,
@@ -97,6 +100,36 @@ describe("deviceYM — must mirror the 2D elevation's unit math exactly", () => 
   it("starting_unit offsets the numbering, not the geometry", () => {
     const r = rack({ starting_unit: 10 })
     expect(deviceYM(r, dev(10)).y).toBeCloseTo(RACK_BASE_M)
+  })
+})
+
+describe("0U appliances — non-rack-format gear renders as a shelf box, not a plane", () => {
+  it("sits on its slot's bottom with a visible sub-1U height", () => {
+    const { y, h } = deviceYM(rack(), dev(5, 0))
+    expect(y).toBeCloseTo(RACK_BASE_M + 4 * 0.04445)
+    expect(h).toBeCloseTo(APPLIANCE_H_U * 0.04445)
+    expect(h).toBeGreaterThan(0)
+  })
+
+  it("desc_units: occupies the same slot a 1U device at that position would", () => {
+    const r = rack({ desc_units: true })
+    expect(deviceYM(r, dev(5, 0)).y).toBeCloseTo(deviceYM(r, dev(5, 1)).y)
+  })
+
+  it("boxes to appliance fractions, centred, flush with the front plane", () => {
+    const b = deviceBoxM(rack(), dev(5, 0), 0.6, 1.0)
+    expect(b.dw).toBeCloseTo(0.6 * APPLIANCE_W_FRAC)
+    expect(b.dd).toBeCloseTo(1.0 * APPLIANCE_D_FRAC)
+    expect(b.dx).toBe(0)
+    // Front face on the rack's front plane (−0.45 × depth), like other gear.
+    expect(b.dz - b.dd / 2).toBeCloseTo(-0.45)
+  })
+
+  it("regression: 1U+ geometry is untouched by the appliance path", () => {
+    const b = deviceBoxM(rack(), dev(10, 2), 0.6, 1.0)
+    expect(b.dw).toBeCloseTo(0.6 * 0.92)
+    expect(b.dd).toBeCloseTo(0.9)
+    expect(b.h).toBeCloseTo(2 * 0.04445)
   })
 })
 

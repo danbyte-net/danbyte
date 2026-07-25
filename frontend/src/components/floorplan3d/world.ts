@@ -88,6 +88,23 @@ export interface SceneRaisedFloor {
   color: string
 }
 
+export interface SceneWallOpening {
+  seg: number
+  from: number
+  to: number
+  height_mm: number | null
+}
+
+export interface SceneWall {
+  id: string
+  label: string
+  points: [number, number][]
+  /** null = full height (the plan's ceiling). */
+  height_mm: number | null
+  color: string
+  openings: SceneWallOpening[]
+}
+
 export interface ScenePayload {
   plan: {
     id: string
@@ -103,6 +120,8 @@ export interface ScenePayload {
   trays: SceneTray[]
   /** Raised-floor rectangles; optional so older cached payloads stay valid. */
   raised_floors?: SceneRaisedFloor[]
+  /** Wall polylines with door openings; optional for the same reason. */
+  walls?: SceneWall[]
   as_of: string
 }
 
@@ -183,6 +202,14 @@ export function rackFootprintM(rack: SceneRack): {
   return { width, depth, height }
 }
 
+/** 0U gear racked at a position is non-rack-format (a desktop appliance on a
+ * shelf, not a 19″ unit). Zero height would render a degenerate plane, so it
+ * draws as a smaller centred box: sub-1U tall, well under rack width/depth —
+ * honest about "sits in the rack" vs "fills the rack". */
+export const APPLIANCE_H_U = 0.8
+export const APPLIANCE_W_FRAC = 0.4
+export const APPLIANCE_D_FRAC = 0.35
+
 /**
  * A device's vertical placement inside its rack: bottom Y (m above the rack
  * base plate) + its height (m). Mirrors the 2D elevation's unit math exactly:
@@ -194,12 +221,15 @@ export function deviceYM(
   dev: SceneDevice
 ): { y: number; h: number } {
   const pitch = mm(PANEL_MM.uPitch)
+  // A 0U appliance still occupies its position's slot (the 2D elevation's
+  // Math.max(1, …) clamp), it just renders shorter than the slot.
+  const units = Math.max(dev.u_height, 1)
   const slotFromBottom = rack.desc_units
-    ? rack.u_height - (dev.position - rack.starting_unit) - dev.u_height
+    ? rack.u_height - (dev.position - rack.starting_unit) - units
     : dev.position - rack.starting_unit
   return {
     y: RACK_BASE_M + slotFromBottom * pitch,
-    h: dev.u_height * pitch,
+    h: (dev.u_height > 0 ? dev.u_height : APPLIANCE_H_U) * pitch,
   }
 }
 
@@ -224,14 +254,23 @@ export function deviceBoxM(
   mountedRear: boolean
 } {
   const { y, h } = deviceYM(rack, dev)
-  const dw = dev.rack_width === "half" ? rackWidthM * 0.44 : rackWidthM * 0.92
+  const appliance = dev.u_height <= 0
+  const dw = appliance
+    ? rackWidthM * APPLIANCE_W_FRAC
+    : dev.rack_width === "half"
+      ? rackWidthM * 0.44
+      : rackWidthM * 0.92
   const dx =
     dev.rack_side === "left"
       ? -rackWidthM * 0.23
       : dev.rack_side === "right"
         ? rackWidthM * 0.23
         : 0
-  const dd = dev.is_full_depth ? rackDepthM * 0.9 : rackDepthM * 0.45
+  const dd = appliance
+    ? rackDepthM * APPLIANCE_D_FRAC
+    : dev.is_full_depth
+      ? rackDepthM * 0.9
+      : rackDepthM * 0.45
   const mountedRear = dev.face === "rear"
   const dz = mountedRear
     ? rackDepthM * 0.45 - dd / 2
@@ -341,6 +380,80 @@ export function airflowGlyphPlacements(
     }
     default:
       return []
+  }
+  return out
+}
+
+// ─── Walls ───────────────────────────────────────────────────────────────────
+
+/** Wall thickness (m) — a frontend constant until someone needs it as data. */
+export const WALL_THICKNESS_M = 0.1
+/** An opening with no height renders a standard door. */
+export const DOOR_DEFAULT_MM = 2100
+
+export interface WallBox {
+  /** Segment endpoints in CELL units (the caller converts to metres). */
+  x0: number
+  z0: number
+  x1: number
+  z1: number
+  /** Vertical extent in metres. */
+  y0: number
+  y1: number
+}
+
+/**
+ * Decompose one wall segment run into solid boxes: full-height spans between
+ * openings, plus a lintel over each opening (door height → wall top). Pure —
+ * cell units in the plane, metres vertically — so the geometry that shapes
+ * every room is unit-tested instead of eyeballed.
+ */
+export function wallSegmentsWithOpenings(
+  points: [number, number][],
+  openings: SceneWallOpening[],
+  wallHeightM: number
+): WallBox[] {
+  const out: WallBox[] = []
+  for (let seg = 0; seg < points.length - 1; seg++) {
+    const [ax, az] = points[seg]
+    const [bx, bz] = points[seg + 1]
+    const len = Math.hypot(bx - ax, bz - az)
+    if (len < 1e-9) continue
+    const ux = (bx - ax) / len
+    const uz = (bz - az) / len
+    const at = (t: number): [number, number] => [ax + ux * t, az + uz * t]
+
+    const spans = openings
+      .filter((o) => o.seg === seg)
+      .map((o) => ({
+        from: Math.max(0, Math.min(o.from, len)),
+        to: Math.max(0, Math.min(o.to, len)),
+        doorM: mm(o.height_mm ?? DOOR_DEFAULT_MM),
+      }))
+      .filter((o) => o.to > o.from)
+      .sort((a, b) => a.from - b.from)
+
+    let cursor = 0
+    for (const o of spans) {
+      if (o.from > cursor) {
+        const [x0, z0] = at(cursor)
+        const [x1, z1] = at(o.from)
+        out.push({ x0, z0, x1, z1, y0: 0, y1: wallHeightM })
+      }
+      // Lintel above the door gap — omitted when the door reaches the top.
+      const doorTop = Math.min(o.doorM, wallHeightM)
+      if (doorTop < wallHeightM - 1e-9) {
+        const [x0, z0] = at(o.from)
+        const [x1, z1] = at(o.to)
+        out.push({ x0, z0, x1, z1, y0: doorTop, y1: wallHeightM })
+      }
+      cursor = Math.max(cursor, o.to)
+    }
+    if (cursor < len - 1e-9) {
+      const [x0, z0] = at(cursor)
+      const [x1, z1] = at(len)
+      out.push({ x0, z0, x1, z1, y0: 0, y1: wallHeightM })
+    }
   }
   return out
 }
