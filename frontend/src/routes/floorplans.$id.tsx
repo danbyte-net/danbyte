@@ -716,7 +716,9 @@ function FloorPlanPage() {
         finishDraw()
         return
       }
-      if (!canEdit || !selectedId) return
+      // In the 3D view the camera rig owns arrows (and a 2D tile selection
+      // is invisible) — don't nudge/delete a tile nobody can see.
+      if (!canEdit || !selectedId || view3d) return
       const tile = tiles.find((t) => t.id === selectedId)
       if (!tile || !plan) return
       if (e.key === "Delete" || e.key === "Backspace") {
@@ -747,6 +749,7 @@ function FloorPlanPage() {
     trayEditMode,
     traceParam,
     nav,
+    view3d,
   ])
 
   // ── Save (explicit, one bulk transaction) ──────────────────────────────
@@ -1334,8 +1337,8 @@ function FloorPlanPage() {
               </Suspense>
               {show3dHint && (
                 <div className="absolute right-3 bottom-3 flex items-center gap-2 rounded-md border border-border bg-popover/90 px-2.5 py-1.5 text-[11px] text-muted-foreground shadow backdrop-blur">
-                  Drag to orbit · scroll to zoom · right-drag to pan · click a
-                  rack
+                  Drag to orbit · scroll to zoom · right-drag to pan · arrows /
+                  WASD move · PgUp/PgDn height · click a rack
                   <button
                     onClick={() => setShow3dHint(false)}
                     aria-label="Dismiss"
