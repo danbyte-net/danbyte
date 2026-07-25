@@ -744,3 +744,112 @@ class ReimportImagesTests(APITestCase):
         run.refresh_from_db()
         self.assertEqual(run.status, "failed")
         self.assertIn("airgapped", run.error)
+
+
+class RepoInventoryTests(APITestCase):
+    """The one-shot repo listing that turns catalog matching into set lookups.
+    The speed contract is behavioural: with an inventory, matching makes ZERO
+    per-image probe requests."""
+
+    BASE = (
+        "https://raw.githubusercontent.com/danbyte-net/device-library/"
+        "HEAD/elevation-images"
+    )
+
+    @staticmethod
+    def _trees_get(url: str, **kw):
+        """Fake api.github.com: top tree → subtree sha; subtree → blobs."""
+        import json
+
+        if url.endswith("/git/trees/HEAD"):
+            body = {"tree": [
+                {"path": "elevation-images", "type": "tree", "sha": "sub123"},
+                {"path": "device-types", "type": "tree", "sha": "other"},
+            ]}
+        elif "/git/trees/sub123" in url:
+            body = {"truncated": False, "tree": [
+                {"path": "Cisco/catalyst-9300-24p.front.png", "type": "blob"},
+                {"path": "Cisco/catalyst-9300-24p.rear.png", "type": "blob"},
+                {"path": "APC/ap8853.front.jpg", "type": "blob"},
+            ]}
+        else:
+            return _Resp(404)
+        return _Resp(200, json.dumps(body).encode())
+
+    def test_inventory_two_calls_and_contents(self):
+        from unittest import mock
+
+        from .devicetype_import import repo_image_inventory
+
+        with mock.patch("core.ssrf.safe_get", side_effect=self._trees_get) as g:
+            inv = repo_image_inventory(self.BASE)
+        self.assertEqual(g.call_count, 2)
+        self.assertIn("Cisco/catalyst-9300-24p.front.png", inv)
+        self.assertIn("APC/ap8853.front.jpg", inv)
+
+    def test_non_github_base_and_truncated_fall_back_to_none(self):
+        from unittest import mock
+
+        from .devicetype_import import repo_image_inventory
+
+        self.assertIsNone(repo_image_inventory("https://mirror.example/images"))
+
+        def truncated(url, **kw):
+            import json
+
+            if url.endswith("/git/trees/HEAD"):
+                return _Resp(200, json.dumps({"tree": [
+                    {"path": "elevation-images", "type": "tree", "sha": "s"},
+                ]}).encode())
+            return _Resp(200, json.dumps(
+                {"truncated": True, "tree": []}
+            ).encode())
+
+        with mock.patch("core.ssrf.safe_get", side_effect=truncated):
+            self.assertIsNone(repo_image_inventory(self.BASE))
+
+    def test_missing_dir_is_an_honest_empty_set(self):
+        """A repo with no elevation-images dir yields set() — every type
+        reports no_match immediately instead of probing for an hour."""
+        import json
+        from unittest import mock
+
+        def no_dir(url, **kw):
+            if url.endswith("/git/trees/HEAD"):
+                return _Resp(200, json.dumps({"tree": []}).encode())
+            return _Resp(404)
+
+        from .devicetype_import import repo_image_inventory
+
+        with mock.patch("core.ssrf.safe_get", side_effect=no_dir):
+            self.assertEqual(repo_image_inventory(self.BASE), set())
+
+    def test_matching_with_inventory_makes_zero_probe_requests(self):
+        from unittest import mock
+
+        from .devicetype_import import reimport_images_for_type
+        from .models import DeviceType, Manufacturer
+
+        org = Organization.objects.create(name="Inv", slug="inv")
+        tenant = Tenant.objects.create(org=org, name="Inv", slug="inv")
+        mfr = Manufacturer.objects.create(tenant=tenant, name="Cisco", slug="cisco")
+        dt = DeviceType.objects.create(
+            tenant=tenant, manufacturer=mfr, name="Catalyst 9300-24P",
+            u_height=1,
+        )
+        inv = {
+            "Cisco/catalyst-9300-24p.front.png",
+            "Cisco/catalyst-9300-24p.rear.png",
+        }
+        with mock.patch(
+            "core.ssrf.safe_request",
+            side_effect=AssertionError("probe fired despite inventory"),
+        ):
+            row = reimport_images_for_type(
+                dt, self.BASE, apply=False, inventory=inv
+            )
+        self.assertEqual(row["status"], "matched")
+        self.assertEqual(row["slug"], "catalyst-9300-24p")
+        self.assertEqual(
+            row["faces"], {"front": "available", "rear": "available"}
+        )

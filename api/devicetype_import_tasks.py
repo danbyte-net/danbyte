@@ -117,6 +117,7 @@ def run_devicetype_image_reimport(run_id: str) -> None:
     from .devicetype_import import (
         airgap_refusal,
         reimport_images_for_type,
+        repo_image_inventory,
         summarize_reimport,
     )
     from .models import DeviceType, DeviceTypeImportRun
@@ -158,10 +159,15 @@ def run_devicetype_image_reimport(run_id: str) -> None:
         apply = not bool(opts.get("dry_run"))
         types = list(qs)
         total = len(types)
+        # One repo listing up front (two requests) turns matching into
+        # in-memory lookups. None → non-GitHub mirror or listing trouble,
+        # and each type falls back to its own HEAD probes.
+        inventory = repo_image_inventory(run.source_url)
         rows: list[dict] = []
         for i, dt in enumerate(types, start=1):
             row = reimport_images_for_type(
-                dt, run.source_url, overwrite=overwrite, apply=apply
+                dt, run.source_url, overwrite=overwrite, apply=apply,
+                inventory=inventory,
             )
             rows.append(row)
             # Only actionable rows go to `failures` — a big catalog's happy
