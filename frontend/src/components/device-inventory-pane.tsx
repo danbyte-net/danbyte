@@ -294,16 +294,21 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
   )
 }
 
-function InventoryItemDialog({
+/** Create/edit one physical part. Exported so the photo faceplate can open the
+ * real editor for a bay marker instead of duplicating the form. */
+export function InventoryItemDialog({
   deviceId,
   item,
   siblings,
+  initialName,
   open,
   onOpenChange,
 }: {
   deviceId: string
   item: InventoryItemRow | null
   siblings: InventoryItemRow[]
+  /** Name to pre-fill when creating — the bay marker that was clicked. */
+  initialName?: string
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -324,7 +329,7 @@ function InventoryItemDialog({
 
   useEffect(() => {
     if (!open) return
-    setName(item?.name ?? "")
+    setName(item?.name ?? initialName ?? "")
     setParentId(item?.parent?.id ?? null)
     setManufacturerId(item?.manufacturer?.id ?? null)
     setPartId(item?.part_id ?? "")
@@ -338,7 +343,7 @@ function InventoryItemDialog({
     setSpeed(item?.speed ?? "")
     setStatusId(item?.status?.id ?? null)
     reset()
-  }, [open, item, reset])
+  }, [open, item, initialName, reset])
 
   const manufacturers = useQuery({
     queryKey: ["manufacturers-picker"],
