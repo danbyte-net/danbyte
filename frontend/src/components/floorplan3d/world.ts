@@ -458,6 +458,37 @@ export function wallSegmentsWithOpenings(
   return out
 }
 
+/** The door/passage gaps of a wall in plan view: one span per valid opening,
+ * clamped exactly like wallSegmentsWithOpenings — so the 2D canvas's gaps and
+ * the 3D boxes can never disagree about where a doorway sits. */
+export function wallDoorSpans(
+  points: [number, number][],
+  openings: SceneWallOpening[]
+): { x0: number; z0: number; x1: number; z1: number }[] {
+  const out: { x0: number; z0: number; x1: number; z1: number }[] = []
+  for (let seg = 0; seg < points.length - 1; seg++) {
+    const [ax, az] = points[seg]
+    const [bx, bz] = points[seg + 1]
+    const len = Math.hypot(bx - ax, bz - az)
+    if (len < 1e-9) continue
+    const ux = (bx - ax) / len
+    const uz = (bz - az) / len
+    for (const o of openings) {
+      if (o.seg !== seg) continue
+      const from = Math.max(0, Math.min(o.from, len))
+      const to = Math.max(0, Math.min(o.to, len))
+      if (to <= from) continue
+      out.push({
+        x0: ax + ux * from,
+        z0: az + uz * from,
+        x1: ax + ux * to,
+        z1: az + uz * to,
+      })
+    }
+  }
+  return out
+}
+
 /** True when this browser can do WebGL at all (feature gate for the view). */
 export function webglSupported(): boolean {
   try {

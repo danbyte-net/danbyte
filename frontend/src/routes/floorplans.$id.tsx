@@ -55,6 +55,9 @@ import type {
   FloorPlanTray,
   RaisedFloorArea,
   FloorPlanTrayWritePayload,
+  FloorPlanWall,
+  FloorPlanWallOpening,
+  FloorPlanWallWritePayload,
   FloorTileStatus,
   FloorTileTypeOption,
   FovAnchor,
@@ -276,6 +279,15 @@ function FloorPlanPage() {
       ),
   })
   const areas = areasQuery.data?.results ?? []
+  // Walls (Structure mode) — polylines with door openings.
+  const wallsQuery = useQuery({
+    queryKey: ["floor-plan-walls", id],
+    queryFn: () =>
+      api<Paginated<FloorPlanWall>>(
+        `/api/floor-plan-walls/?floor_plan=${id}&page_size=500`
+      ),
+  })
+  const walls = wallsQuery.data?.results ?? []
   const cablePathsQuery = useQuery({
     queryKey: ["floor-plan-cable-paths", id],
     queryFn: () =>
@@ -297,6 +309,9 @@ function FloorPlanPage() {
   // Structure mode: arm-to-draw a raised-floor rectangle + selection.
   const [areaArmed, setAreaArmed] = useState(false)
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null)
+  // Structure mode: wall selection + "Add door" arm-and-click.
+  const [selectedWallId, setSelectedWallId] = useState<string | null>(null)
+  const [doorArmed, setDoorArmed] = useState(false)
   // Layout QoL: Ctrl/⌘-click and Shift-drag build a multi-selection the bulk
   // bar (orientation, delete) acts on. Draft-level edits — Save persists.
   const [multiSel, setMultiSel] = useState<Set<string>>(new Set())
@@ -324,6 +339,7 @@ function FloorPlanPage() {
     null
   )
   const [floorPeekLocal, setFloorPeekLocal] = useState<boolean | null>(null)
+  const [show3dWallsLocal, setShow3dWallsLocal] = useState<boolean | null>(null)
   const [highlightCableIds, setHighlightCableIds] = useState<string[]>([])
   // Tile popover: hover-preview (delayed) + click-to-pin.
   const popover = useTilePopover()
@@ -405,6 +421,10 @@ function FloorPlanPage() {
     setShowLinksLocal(null)
     setHighlightCableIds([])
     setTrayEditMode(false)
+    setAreaArmed(false)
+    setSelectedAreaId(null)
+    setSelectedWallId(null)
+    setDoorArmed(false)
   }, [id])
 
   // Hydrate local tiles from the server whenever fresh data lands and we
@@ -544,6 +564,12 @@ function FloorPlanPage() {
     floorPeekLocal ??
     (plan?.state.show_3d_floor_peek as boolean | undefined) ??
     false
+  // Walls default ON: a wall someone drew must show up without a hunt
+  // through the View popover — hiding the shell is the deliberate act.
+  const show3dWalls =
+    show3dWallsLocal ??
+    (plan?.state.show_3d_walls as boolean | undefined) ??
+    true
 
   // ?trace=<cableId> → highlight that cable + fit the view to its route, so a
   // "trace on map" link from a cable/rack lands on the run without any clicks.
@@ -572,7 +598,8 @@ function FloorPlanPage() {
       | "show_3d_names"
       | "show_3d_cables"
       | "show_3d_airflow"
-      | "show_3d_floor_peek",
+      | "show_3d_floor_peek"
+      | "show_3d_walls",
     value: boolean
   ) => {
     if (key === "label_fit") setLabelFitLocal(value)
@@ -585,6 +612,7 @@ function FloorPlanPage() {
     else if (key === "show_3d_cables") setShow3dCablesLocal(value)
     else if (key === "show_3d_airflow") setShow3dAirflowLocal(value)
     else if (key === "show_3d_floor_peek") setFloorPeekLocal(value)
+    else if (key === "show_3d_walls") setShow3dWallsLocal(value)
     else setShowLinksLocal(value)
     if (canEdit && plan)
       patchPlan.mutate({ state: { ...plan.state, [key]: value } })
@@ -652,6 +680,84 @@ function FloorPlanPage() {
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [areaArmed, plan, id]
+  )
+
+  // ── Walls (instant-save, tray-style) ───────────────────────────────────
+  const invalidateWalls = () => {
+    qc.invalidateQueries({ queryKey: ["floor-plan-walls", id] })
+    qc.invalidateQueries({ queryKey: ["floor-plan-scene", id] })
+  }
+  const createWall = useMutation({
+    mutationFn: (payload: FloorPlanWallWritePayload) =>
+      api<FloorPlanWall>("/api/floor-plan-walls/", {
+        method: "POST",
+        body: JSON.stringify({ ...payload, floor_plan_id: id }),
+      }),
+    onSuccess: (w) => {
+      invalidateWalls()
+      setSelectedWallId(w.id)
+      toast.success("Wall added")
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  const patchWall = useMutation({
+    mutationFn: ({
+      wallId,
+      body,
+    }: {
+      wallId: string
+      body: FloorPlanWallWritePayload
+    }) =>
+      api<FloorPlanWall>(`/api/floor-plan-walls/${wallId}/`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      invalidateWalls()
+      // Same contract as areas: instant-save needs a word, or the page's
+      // Save-button mental model reads it as "not saved".
+      toast.success("Wall saved")
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  const deleteWall = useMutation({
+    mutationFn: (wallId: string) =>
+      api<void>(`/api/floor-plan-walls/${wallId}/`, { method: "DELETE" }),
+    onSuccess: () => {
+      invalidateWalls()
+      setSelectedWallId(null)
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  /** "Add door" click: a 900 mm opening centred on the clicked spot, clamped
+   * into the segment (the server validates overlap and bounds). */
+  const placeDoor = useCallback(
+    (wallId: string, seg: number, at: number) => {
+      const wall = walls.find((w) => w.id === wallId)
+      if (!wall || !plan) return
+      const [ax, ay] = wall.points[seg]
+      const [bx, by] = wall.points[seg + 1]
+      const segLen = Math.hypot(bx - ax, by - ay)
+      const w = 900 / plan.cell_mm
+      if (segLen < w) {
+        toast.error("This wall segment is too short for a door.")
+        return
+      }
+      const from = Math.max(0, Math.min(segLen - w, at - w / 2))
+      const opening: FloorPlanWallOpening = {
+        seg,
+        from: Math.round(from * 100) / 100,
+        to: Math.round((from + w) * 100) / 100,
+        height_mm: null,
+      }
+      patchWall.mutate({
+        wallId,
+        body: { openings: [...wall.openings, opening] },
+      })
+      setDoorArmed(false)
+      setSelectedWallId(wallId)
+    },
+    [walls, plan, patchWall.mutate]
   )
 
   const createAt = useCallback(
@@ -782,12 +888,18 @@ function FloorPlanPage() {
       return [...arr, pt]
     })
   }, [])
+  // One polyline rig, two products: Cables mode finishes into the tray
+  // naming dialog; Structure mode creates the wall at once (label is
+  // optional — the inspector opens on it for the rest).
   const finishDraw = useCallback(() => {
     setDrawPoints((prev) => {
-      if (prev && prev.length >= 2) setNamingPoints(prev)
+      if (prev && prev.length >= 2) {
+        if (mode === "structure") createWall.mutate({ points: prev })
+        else setNamingPoints(prev)
+      }
       return null
     })
-  }, [])
+  }, [mode, createWall.mutate])
 
   // Keyboard: Delete removes the selection, Escape disarms/deselects,
   // arrows nudge. Skipped while typing in a field.
@@ -818,10 +930,14 @@ function FloorPlanPage() {
         setArmed(null)
         setSelectedId(null)
         setSelectedTrayId(null)
+        setSelectedWallId(null)
         setDrawPoints(null)
         return
       }
-      // Cable mode: Enter finishes an in-progress tray.
+      if (e.key === "Escape" && doorArmed) {
+        setDoorArmed(false)
+        return
+      }
       if (e.key === "Escape" && areaArmed) {
         setAreaArmed(false)
         return
@@ -830,7 +946,12 @@ function FloorPlanPage() {
         setMultiSel(new Set())
         return
       }
-      if (mode === "cable" && drawPoints !== null && e.key === "Enter") {
+      // Enter finishes an in-progress polyline (tray or wall).
+      if (
+        (mode === "cable" || mode === "structure") &&
+        drawPoints !== null &&
+        e.key === "Enter"
+      ) {
         e.preventDefault()
         finishDraw()
         return
@@ -870,6 +991,7 @@ function FloorPlanPage() {
     nav,
     view3d,
     areaArmed,
+    doorArmed,
     multiSel,
   ])
 
@@ -1248,6 +1370,12 @@ function FloorPlanPage() {
                     onChange={(v) => setViewPref("show_3d_floor_peek", v)}
                     className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
                   />
+                  <FormCheckbox
+                    label="Walls"
+                    checked={show3dWalls}
+                    onChange={(v) => setViewPref("show_3d_walls", v)}
+                    className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+                  />
                 </>
               )}
             </PopoverContent>
@@ -1369,12 +1497,33 @@ function FloorPlanPage() {
             areas={areas}
             selectedAreaId={selectedAreaId}
             drawing={areaArmed}
-            onSelectArea={setSelectedAreaId}
+            onSelectArea={(aid) => {
+              setSelectedAreaId(aid)
+              if (aid) setSelectedWallId(null)
+            }}
             onStartDraw={() => {
               setSelectedAreaId(null)
+              setSelectedWallId(null)
+              setDrawPoints(null)
+              setDoorArmed(false)
               setAreaArmed(true)
             }}
             onCancelDraw={() => setAreaArmed(false)}
+            walls={walls}
+            selectedWallId={selectedWallId}
+            wallDrawing={drawPoints !== null}
+            onSelectWall={(wid) => {
+              setSelectedWallId(wid)
+              if (wid) setSelectedAreaId(null)
+            }}
+            onStartWallDraw={() => {
+              setSelectedWallId(null)
+              setSelectedAreaId(null)
+              setAreaArmed(false)
+              setDoorArmed(false)
+              setDrawPoints([])
+            }}
+            onCancelWallDraw={() => setDrawPoints(null)}
           />
         )}
         {canEdit && mode === "layout" && (
@@ -1485,6 +1634,7 @@ function FloorPlanPage() {
                   showCables={show3dCables}
                   showAirflow={show3dAirflow}
                   floorPeek={floorPeek}
+                  showWalls={show3dWalls}
                 />
               </Suspense>
               {show3dHint && (
@@ -1564,6 +1714,14 @@ function FloorPlanPage() {
                 onAreaRectChange={(areaId, rect) =>
                   patchArea.mutate({ areaId, body: rect })
                 }
+                walls={walls}
+                selectedWallId={selectedWallId}
+                onSelectWall={setSelectedWallId}
+                onMoveWall={(wallId, points) =>
+                  patchWall.mutate({ wallId, body: { points } })
+                }
+                doorArmed={doorArmed}
+                onPlaceDoor={placeDoor}
                 onOpenTile={openTile}
                 exportRef={exportRef}
                 liveState={liveState.data ?? null}
@@ -1707,6 +1865,17 @@ function FloorPlanPage() {
                   to cancel ({drawPoints.length})
                 </div>
               )}
+              {mode === "structure" && drawPoints !== null && (
+                <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full border border-border bg-background px-4 py-1.5 text-xs shadow-sm">
+                  Click corners to run the wall · double-click to finish · Esc
+                  to cancel ({drawPoints.length})
+                </div>
+              )}
+              {doorArmed && (
+                <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full border border-border bg-background px-4 py-1.5 text-xs shadow-sm">
+                  Click a wall to place a 900 mm door · Esc to cancel
+                </div>
+              )}
               {trayEditMode && (
                 <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-full border border-border bg-background px-4 py-1.5 text-xs shadow-sm">
                   <span>
@@ -1804,6 +1973,22 @@ function FloorPlanPage() {
         {canEdit &&
           mode === "structure" &&
           (() => {
+            const wall = walls.find((w) => w.id === selectedWallId)
+            if (wall)
+              return (
+                <WallInspector
+                  key={wall.id}
+                  wall={wall}
+                  cellMM={plan.cell_mm}
+                  ceilingMM={plan.ceiling_mm}
+                  doorArmed={doorArmed}
+                  onArmDoor={() => setDoorArmed((v) => !v)}
+                  onPatch={(body) =>
+                    patchWall.mutate({ wallId: wall.id, body })
+                  }
+                  onDelete={() => deleteWall.mutate(wall.id)}
+                />
+              )
             const area = areas.find((a) => a.id === selectedAreaId)
             if (!area) return null
             return (
@@ -2698,7 +2883,8 @@ function TileSearch({
   )
 }
 
-/** Structure-mode left rail — draw control + the raised-floor area list. */
+/** Structure-mode left rail — raised-floor areas + walls, each with its own
+ * draw control. One rail, two catalogs: both are room construction. */
 function StructureRail({
   areas,
   selectedAreaId,
@@ -2706,6 +2892,12 @@ function StructureRail({
   onSelectArea,
   onStartDraw,
   onCancelDraw,
+  walls,
+  selectedWallId,
+  wallDrawing,
+  onSelectWall,
+  onStartWallDraw,
+  onCancelWallDraw,
 }: {
   areas: RaisedFloorArea[]
   selectedAreaId: string | null
@@ -2713,6 +2905,12 @@ function StructureRail({
   onSelectArea: (id: string | null) => void
   onStartDraw: () => void
   onCancelDraw: () => void
+  walls: FloorPlanWall[]
+  selectedWallId: string | null
+  wallDrawing: boolean
+  onSelectWall: (id: string | null) => void
+  onStartWallDraw: () => void
+  onCancelWallDraw: () => void
 }) {
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-border">
@@ -2749,7 +2947,7 @@ function StructureRail({
             dive as deep as its plenum, and the 3D room shows the void.
           </p>
         )}
-        {areas.length > 0 && (
+        {(areas.length > 0 || walls.length > 0) && (
           <p className="px-1.5 pb-1 text-[10px] leading-snug text-muted-foreground/80">
             Structure edits save immediately — the Save button governs tiles.
           </p>
@@ -2776,6 +2974,271 @@ function StructureRail({
             </span>
           </button>
         ))}
+
+        <div className="mt-2 flex items-center justify-between px-1.5 pt-2 pb-1">
+          <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+            Walls
+          </span>
+        </div>
+        <div className="px-1.5 pb-2">
+          {wallDrawing ? (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={onCancelWallDraw}
+              >
+                Cancel drawing
+              </Button>
+              <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+                Click corners along the tile lattice (0.5-cell snap).
+                Double-click or Enter finishes; Esc cancels.
+              </p>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full"
+              onClick={onStartWallDraw}
+            >
+              Draw wall
+            </Button>
+          )}
+        </div>
+        {walls.length === 0 && !wallDrawing && (
+          <p className="px-1.5 py-1 text-xs text-muted-foreground">
+            No walls yet. Draw the room shell — the 3D view raises it; doors are
+            added on a selected wall.
+          </p>
+        )}
+        {walls.map((w) => (
+          <button
+            key={w.id}
+            type="button"
+            onClick={() => onSelectWall(w.id === selectedWallId ? null : w.id)}
+            className={cn(
+              "flex w-full items-center gap-2 rounded px-1.5 py-1.5 text-left text-xs hover:bg-muted/60",
+              w.id === selectedWallId && "bg-muted"
+            )}
+          >
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
+              style={{ background: w.color || "#52525b" }}
+            />
+            <span className="min-w-0 flex-1 truncate">{w.label || "Wall"}</span>
+            <span className="num text-[10px] text-muted-foreground">
+              {Math.max(0, w.points.length - 1)} seg
+              {w.openings.length > 0
+                ? ` · ${w.openings.length} door${w.openings.length === 1 ? "" : "s"}`
+                : ""}
+            </span>
+          </button>
+        ))}
+      </div>
+    </aside>
+  )
+}
+
+/** Structure-mode right panel: edit the selected wall — label, height, color,
+ * and its doors (place by arm-and-click, tune or remove here). */
+function WallInspector({
+  wall,
+  cellMM,
+  ceilingMM,
+  doorArmed,
+  onArmDoor,
+  onPatch,
+  onDelete,
+}: {
+  wall: FloorPlanWall
+  cellMM: number
+  ceilingMM: number
+  doorArmed: boolean
+  onArmDoor: () => void
+  onPatch: (body: Partial<FloorPlanWall>) => void
+  onDelete: () => void
+}) {
+  const [label, setLabel] = useState(wall.label)
+  const [height, setHeight] = useState(
+    wall.height_mm == null ? "" : String(wall.height_mm)
+  )
+  const openings = wall.openings
+  // Total run length (m) — the number a builder actually wants at a glance.
+  const runM =
+    wall.points.reduce((acc, p, i) => {
+      if (i === 0) return 0
+      const [px, py] = wall.points[i - 1]
+      return acc + Math.hypot(p[0] - px, p[1] - py)
+    }, 0) *
+    (cellMM / 1000)
+
+  const patchOpening = (idx: number, patch: Partial<FloorPlanWallOpening>) => {
+    const next = openings.map((o, i) => (i === idx ? { ...o, ...patch } : o))
+    onPatch({ openings: next })
+  }
+
+  return (
+    <aside className="flex w-64 shrink-0 flex-col gap-3 overflow-y-auto border-l border-border p-3">
+      <div className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+        Wall
+      </div>
+      <label className="grid gap-1 text-xs">
+        <span className="text-muted-foreground">Label</span>
+        <Input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          onBlur={() => label !== wall.label && onPatch({ label })}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur()
+          }}
+          placeholder="North wall"
+          className="h-8"
+        />
+      </label>
+      <label className="grid gap-1 text-xs">
+        <span className="text-muted-foreground">Height (mm)</span>
+        <Input
+          type="number"
+          min={200}
+          max={20000}
+          value={height}
+          onChange={(e) => setHeight(e.target.value)}
+          onBlur={() => {
+            const v = height.trim() === "" ? null : Number(height)
+            if (v !== null && !Number.isFinite(v)) return
+            if (v !== wall.height_mm) onPatch({ height_mm: v })
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur()
+          }}
+          placeholder={`${ceilingMM} (ceiling)`}
+          className="h-8"
+        />
+        <span className="text-[10px] text-muted-foreground">
+          Blank = full height (the plan's ceiling).
+        </span>
+      </label>
+      <div className="grid gap-1 text-xs">
+        <span className="text-muted-foreground">Color</span>
+        <ColorPicker
+          value={wall.color}
+          onChange={(color) => onPatch({ color })}
+        />
+      </div>
+
+      <div className="grid gap-1.5 text-xs">
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">Doors</span>
+          <Button
+            size="sm"
+            variant={doorArmed ? "default" : "outline"}
+            className="h-6 px-2"
+            onClick={onArmDoor}
+          >
+            {doorArmed ? "Click the wall…" : "Add door"}
+          </Button>
+        </div>
+        {openings.length === 0 && !doorArmed && (
+          <p className="text-[11px] text-muted-foreground">
+            No doors. Arm “Add door”, then click where the opening goes.
+          </p>
+        )}
+        {openings.map((o, i) => {
+          const widthMM = Math.round((o.to - o.from) * cellMM)
+          return (
+            <div
+              key={i}
+              className="grid gap-1.5 rounded-md border border-border p-2"
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-medium">
+                  Door {i + 1}
+                  <span className="num ml-1 text-[10px] text-muted-foreground">
+                    seg {o.seg + 1}
+                  </span>
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                  aria-label="Remove door"
+                  onClick={() =>
+                    onPatch({ openings: openings.filter((_, x) => x !== i) })
+                  }
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <label className="grid gap-0.5">
+                  <span className="text-[10px] text-muted-foreground">
+                    Width (mm)
+                  </span>
+                  <Input
+                    type="number"
+                    min={100}
+                    defaultValue={widthMM}
+                    onBlur={(e) => {
+                      const v = Number(e.target.value)
+                      if (!Number.isFinite(v) || v < 100 || v === widthMM)
+                        return
+                      // Grow/shrink about the door's centre, in cells.
+                      const c = (o.from + o.to) / 2
+                      const half = v / cellMM / 2
+                      patchOpening(i, {
+                        from: Math.max(0, Math.round((c - half) * 100) / 100),
+                        to: Math.round((c + half) * 100) / 100,
+                      })
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur()
+                    }}
+                    className="h-7"
+                  />
+                </label>
+                <label className="grid gap-0.5">
+                  <span className="text-[10px] text-muted-foreground">
+                    Height (mm)
+                  </span>
+                  <Input
+                    type="number"
+                    min={200}
+                    defaultValue={o.height_mm ?? ""}
+                    placeholder="2100"
+                    onBlur={(e) => {
+                      const raw = e.target.value.trim()
+                      const v = raw === "" ? null : Number(raw)
+                      if (v !== null && !Number.isFinite(v)) return
+                      if (v !== o.height_mm) patchOpening(i, { height_mm: v })
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur()
+                    }}
+                    className="h-7"
+                  />
+                </label>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="num text-[11px] text-muted-foreground">
+        {Math.max(0, wall.points.length - 1)} segment
+        {wall.points.length - 1 === 1 ? "" : "s"} ·{" "}
+        {runM.toFixed(1).replace(/\.0$/, "")} m run
+      </div>
+      <div className="mt-auto">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="w-full text-destructive hover:text-destructive"
+          onClick={onDelete}
+        >
+          <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete wall
+        </Button>
       </div>
     </aside>
   )

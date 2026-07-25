@@ -40,6 +40,7 @@ import { RackMesh, type Sel } from "./rack-mesh"
 import { RaisedFloorMesh } from "./raised-floor-mesh"
 import { TileGhostMesh } from "./tile-ghost-mesh"
 import { TrayMesh } from "./tray-mesh"
+import { WallMesh } from "./wall-mesh"
 import { useScene } from "./use-scene"
 import {
   cellToWorld,
@@ -68,6 +69,7 @@ export default function FloorScene3D({
   showAirflow = false,
   floorPeek = false,
   showCables = false,
+  showWalls = true,
 }: {
   planId: string
   liveState: FloorPlanLiveState | null
@@ -80,6 +82,9 @@ export default function FloorScene3D({
    * trays and cable runs read through the plenum. */
   floorPeek?: boolean
   showCables?: boolean
+  /** Walls default ON — a drawn wall that silently didn't render would read
+   * as a bug; hiding the room shell is the opt-in. */
+  showWalls?: boolean
 }) {
   const scene = useScene(planId)
   const qc = useQueryClient()
@@ -332,6 +337,10 @@ export default function FloorScene3D({
         {(scene.data.raised_floors ?? []).map((a) => (
           <RaisedFloorMesh key={a.id} plan={plan} area={a} peek={floorPeek} />
         ))}
+        {showWalls &&
+          (scene.data.walls ?? []).map((wl) => (
+            <WallMesh key={wl.id} plan={plan} wall={wl} />
+          ))}
         {/* Unlinked / non-rack tiles as ghost massing — a typed tile holds
             its ground before any object is linked ("build in advance"). */}
         {scene.data.tiles
