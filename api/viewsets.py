@@ -31,7 +31,7 @@ from .models import (
     FHRPGroup, FHRPGroupAssignment,
     FiberSettings,
     FloorPlan, FloorPlanRaisedFloorArea, FloorPlanTile, FloorPlanTray,
-    FloorTileType, SiteMarker,
+    FloorPlanWall, FloorTileType, SiteMarker,
     FrontPort, FrontPortTemplate,
     InterfaceTemplate, DeviceTypeService,
     IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
@@ -58,6 +58,7 @@ from .serializers import (
     FloorPlanMiniSerializer,
     FloorPlanRaisedFloorAreaSerializer,
     FloorPlanTraySerializer,
+    FloorPlanWallSerializer,
     FloorPlanSerializer,
     FloorPlanTileSerializer,
     SiteMarkerSerializer,
@@ -6028,6 +6029,17 @@ class FloorPlanViewSet(TenantScopedViewSet):
             }
             for a in plan.raised_floor_areas.all()
         ]
+        walls = [
+            {
+                "id": str(w.id),
+                "label": w.label,
+                "points": w.points,
+                "height_mm": w.height_mm,
+                "color": w.color,
+                "openings": w.openings,
+            }
+            for w in plan.walls.all()
+        ]
         return Response({
             "plan": {
                 "id": str(plan.id),
@@ -6042,6 +6054,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
             "tiles": tiles,
             "trays": trays,
             "raised_floors": raised_floors,
+            "walls": walls,
             "as_of": timezone.now().isoformat(),
         })
 
@@ -6258,6 +6271,33 @@ class FloorPlanTrayViewSet(TenantScopedViewSet):
         "cables"
     ).order_by(NATURAL_NAME)
     serializer_class = FloorPlanTraySerializer
+    pagination_class = StandardPagination
+    tenant_field = None
+
+    def get_queryset(self):
+        tenant = _get_active_tenant(self.request)
+        if tenant is None:
+            return self.queryset.none()
+        qs = self.queryset.filter(floor_plan__tenant=tenant)
+        if self.request:
+            fp = self.request.query_params.get("floor_plan")
+            if fp:
+                qs = qs.filter(floor_plan_id=fp)
+        return restrict_for_view(self, qs)
+
+    def perform_create(self, serializer):
+        if serializer.validated_data.get("floor_plan") is None:
+            raise ValidationError({"floor_plan_id": "This field is required."})
+        serializer.save()
+
+
+class FloorPlanWallViewSet(TenantScopedViewSet):
+    """Wall polylines — scoped through their plan's tenant, like trays.
+    Render-only geometry in v1: drawn in 2D, extruded in 3D, and deliberately
+    NOT part of the cable-routing graph."""
+
+    queryset = FloorPlanWall.objects.select_related("floor_plan")
+    serializer_class = FloorPlanWallSerializer
     pagination_class = StandardPagination
     tenant_field = None
 

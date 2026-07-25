@@ -94,6 +94,7 @@ AUDITED_MODELS = [
     "api.SiteMarker",
     "api.FloorPlanTray",
     "api.FloorPlanRaisedFloorArea",
+    "api.FloorPlanWall",
     "api.CableRoute",
     # Customisation + monitoring config (not high-volume engine state).
     "customization.CustomField",

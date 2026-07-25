@@ -44,6 +44,7 @@ SITE_PATHS: dict[str, str] = {
     "floorplantile": "floor_plan__location__site",
     "floorplantray": "floor_plan__location__site",
     "floorplanraisedfloorarea": "floor_plan__location__site",
+    "floorplanwall": "floor_plan__location__site",
     # A site's own scope is itself.
     "site": "id",
     # Per-site settings rows — a change grant scoped to sites=[X] makes its
