@@ -21,15 +21,15 @@ export const NAV_KEYS: ReadonlySet<string> = new Set([
   "ArrowRight",
   "d",
   "PageUp",
-  "q",
+  " ",
   "PageDown",
-  "e",
+  "Shift",
 ])
 
 /**
  * Nav keys whose browser default scrolls the page — these get
  * `preventDefault()` while the 3D view is driving. Letters are absent on
- * purpose: w/a/s/d/q/e have no default worth suppressing.
+ * purpose: w/a/s/d and Shift have no default worth suppressing.
  */
 export const PAGE_SCROLL_KEYS: ReadonlySet<string> = new Set([
   "ArrowUp",
@@ -38,6 +38,7 @@ export const PAGE_SCROLL_KEYS: ReadonlySet<string> = new Set([
   "ArrowRight",
   "PageUp",
   "PageDown",
+  " ",
 ])
 
 /**
@@ -63,7 +64,6 @@ const MIN_SPEED = 1.5
 const MAX_SPEED = 40
 
 /** Holding Shift multiplies the speed — a sprint through the aisles. */
-const SHIFT_MULTIPLIER = 3
 
 /**
  * Vertical motion (PageUp/PageDown, Q/E) runs at this fraction of the
@@ -83,7 +83,6 @@ const EPSILON_SQ = 1e-12
  *                 horizontal motion is then suppressed, vertical still works).
  * @param distance Camera→orbit-target distance in metres (speed scale).
  * @param dt       Frame delta in seconds.
- * @param shift    Whether Shift is held (×{@link SHIFT_MULTIPLIER}).
  * @returns `[dx, dy, dz]` world-space delta in metres; `[0, 0, 0]` when no
  *          nav key is held or opposing keys cancel out. Diagonals are
  *          normalized so two keys are never faster than one.
@@ -92,8 +91,7 @@ export function panVector(
   pressed: ReadonlySet<string>,
   forward: [number, number],
   distance: number,
-  dt: number,
-  shift: boolean
+  dt: number
 ): [number, number, number] {
   // Booleans, not sums: ArrowUp + w together is still one "forward".
   const ahead =
@@ -103,8 +101,8 @@ export function panVector(
     (pressed.has("ArrowRight") || pressed.has("d") ? 1 : 0) -
     (pressed.has("ArrowLeft") || pressed.has("a") ? 1 : 0)
   const lift =
-    (pressed.has("PageUp") || pressed.has("q") ? 1 : 0) -
-    (pressed.has("PageDown") || pressed.has("e") ? 1 : 0)
+    (pressed.has("PageUp") || pressed.has(" ") ? 1 : 0) -
+    (pressed.has("PageDown") || pressed.has("Shift") ? 1 : 0)
   if (ahead === 0 && strafe === 0 && lift === 0) return [0, 0, 0]
 
   const [fx, fz] = forward
@@ -122,9 +120,10 @@ export function panVector(
     hz = 0
   }
 
-  const speed =
-    Math.min(MAX_SPEED, Math.max(MIN_SPEED, distance * SPEED_PER_DISTANCE)) *
-    (shift ? SHIFT_MULTIPLIER : 1)
+  const speed = Math.min(
+    MAX_SPEED,
+    Math.max(MIN_SPEED, distance * SPEED_PER_DISTANCE)
+  )
   const horizontal = speed * dt
   const vertical = speed * VERTICAL_FACTOR * dt
   return [hx * horizontal, lift * vertical, hz * horizontal]
