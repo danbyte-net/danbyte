@@ -14,7 +14,6 @@ import {
   type ServiceTemplate,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
   DialogContent,
@@ -40,7 +39,8 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { buildServiceColumns } from "@/components/columns/service-columns"
+import { DataTable } from "@/components/data-table"
 import { IpPicker } from "@/components/ip-picker"
 import { QueryError } from "@/components/query-error"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -60,11 +60,6 @@ export function parsePorts(input: string): number[] {
     out.push(n)
   }
   return out
-}
-
-/** "TCP 443, 8443" — protocol uppercase + comma-joined ports. */
-function formatProtocolPorts(svc: Service): string {
-  return `${svc.protocol.toUpperCase()} ${svc.ports.join(", ")}`
 }
 
 export function ServicesPane({
@@ -126,66 +121,12 @@ export function ServicesPane({
 
   const columns = useMemo<ColumnDef<Service>[]>(
     () => [
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => (
-          <span className="font-medium">{row.original.name}</span>
-        ),
-      },
-      {
-        id: "ports",
-        header: "Protocol / Ports",
-        cell: ({ row }) => (
-          <span className="font-mono text-xs">
-            {formatProtocolPorts(row.original)}
-          </span>
-        ),
-      },
-      {
-        id: "ip",
-        header: "IP",
-        cell: ({ row }) =>
-          row.original.ip_address ? (
-            <span className="font-mono text-xs">
-              {row.original.ip_address.ip_address}
-            </span>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          ),
-      },
-      {
-        id: "monitored",
-        header: "Monitoring",
-        cell: ({ row }) => {
-          const svc = row.original
-          if (!svc.monitored)
-            return <span className="text-muted-foreground">Off</span>
-          return svc.check_count > 0 ? (
-            <Badge variant="success" title={`${svc.check_count} port check(s)`}>
-              Monitored
-            </Badge>
-          ) : (
-            <Badge
-              variant="warning"
-              title="Monitored, but no target IP yet — set an IP on the service or a primary IP on its device/VM."
-            >
-              No IP
-            </Badge>
-          )
-        },
-      },
-      {
-        id: "description",
-        accessorKey: "description",
-        header: "Description",
-        cell: ({ row }) => (
-          <span className="line-clamp-1 block text-muted-foreground">
-            {row.original.description || "—"}
-          </span>
-        ),
-      },
+      // The shared service columns, rendered plainly: this pane's own edit
+      // dialog is the way into a row, so name / IP aren't links here.
+      ...buildServiceColumns<Service>({
+        include: ["name", "ports", "ip", "monitored", "description"],
+        linked: false,
+      }),
       {
         id: "actions",
         header: "",

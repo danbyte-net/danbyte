@@ -13,7 +13,8 @@ import {
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
+import { buildVmColumns } from "@/components/columns/vm-columns"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { QueryError } from "@/components/query-error"
 import { ClusterDeleteDialog } from "@/components/cluster-delete-dialog"
@@ -28,12 +29,6 @@ import {
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
-
-/** Memory in MB → "x GB" when an even multiple of 1024, else "x MB". */
-function formatMemory(mb: number): string {
-  if (mb >= 1024 && mb % 1024 === 0) return `${mb / 1024} GB`
-  return `${mb} MB`
-}
 
 export const Route = createFileRoute("/clusters/$id")({
   component: ClusterDetail,
@@ -173,68 +168,10 @@ function ClusterVmsPane({ clusterId }: { clusterId: string }) {
   })
   const rows = q.data?.results ?? []
   const columns = useMemo<ColumnDef<VirtualMachine>[]>(
-    () => [
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => (
-          <Link
-            to="/virtual-machines/$id"
-            params={{ id: row.original.id }}
-            className="font-medium hover:underline"
-          >
-            {row.original.name}
-          </Link>
-        ),
-      },
-      {
-        id: "status",
-        accessorKey: "status",
-        header: ({ column }) => <SortHeader column={column} label="Status" />,
-        cell: ({ row }) => <StatusBadge status={row.original.status} />,
-      },
-      {
-        id: "vcpus",
-        accessorKey: "vcpus",
-        header: ({ column }) => <SortHeader column={column} label="vCPUs" />,
-        cell: ({ row }) =>
-          row.original.vcpus != null ? (
-            <span className="num text-xs">{row.original.vcpus}</span>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          ),
-      },
-      {
-        id: "memory",
-        accessorKey: "memory_mb",
-        header: ({ column }) => <SortHeader column={column} label="Memory" />,
-        cell: ({ row }) =>
-          row.original.memory_mb != null ? (
-            <span className="num text-xs">
-              {formatMemory(row.original.memory_mb)}
-            </span>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          ),
-      },
-      {
-        id: "primary_ip",
-        header: "Primary IP",
-        cell: ({ row }) =>
-          row.original.primary_ip ? (
-            <Link
-              to="/ips/$id"
-              params={{ id: row.original.primary_ip.id }}
-              className="font-mono text-xs hover:underline"
-            >
-              {row.original.primary_ip.ip_address}
-            </Link>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          ),
-      },
-    ],
+    () =>
+      buildVmColumns({
+        include: ["name", "status", "vcpus", "memory", "primary_ip"],
+      }),
     []
   )
   if (q.isLoading)

@@ -1,6 +1,4 @@
 import { useMemo } from "react"
-import { dash } from "@/components/cells/dash"
-import { Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 
@@ -11,9 +9,10 @@ import {
   type Paginated,
   type Rack,
 } from "@/lib/api"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
+import { buildClusterColumns } from "@/components/columns/cluster-columns"
 import { buildIpColumns } from "@/components/columns/ip-columns"
-import { ColorBadge } from "@/components/cells/color-badge"
+import { buildRackColumns } from "@/components/columns/rack-columns"
 import { QueryError } from "@/components/query-error"
 
 function useEmbed<T>(
@@ -98,49 +97,11 @@ export function EmbeddedRackTable({
 }) {
   const q = useEmbed<Rack>("embedded-racks", "/api/racks/", filter)
   const columns = useMemo<ColumnDef<Rack>[]>(
-    () => [
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => (
-          <Link
-            to="/racks/$id"
-            params={{ id: row.original.id }}
-            className="font-medium hover:underline"
-          >
-            {row.original.name}
-          </Link>
-        ),
-      },
-      {
-        id: "site",
-        accessorFn: (r) => r.site.name,
-        header: "Site",
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground">
-            {row.original.site.name}
-          </span>
-        ),
-      },
-      {
-        id: "width",
-        header: "Width",
-        cell: ({ row }) => (
-          <span className="num text-xs">{row.original.width}″</span>
-        ),
-      },
-      {
-        id: "used",
-        header: ({ column }) => <SortHeader column={column} label="Used" />,
-        accessorFn: (r) => r.used_units,
-        cell: ({ row }) => (
-          <span className="num text-xs">
-            {row.original.used_units} / {row.original.u_height} U
-          </span>
-        ),
-      },
-    ],
+    () =>
+      buildRackColumns({
+        include: ["name", "site", "width", "used"],
+        siteVariant: "plain",
+      }),
     []
   )
   return (
@@ -164,51 +125,13 @@ export function EmbeddedClusterTable({
 }) {
   const q = useEmbed<Cluster>("embedded-clusters", "/api/clusters/", filter)
   const columns = useMemo<ColumnDef<Cluster>[]>(
-    () => [
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => (
-          <Link
-            to="/clusters/$id"
-            params={{ id: row.original.id }}
-            className="font-medium hover:underline"
-          >
-            {row.original.name}
-          </Link>
-        ),
-      },
-      {
-        id: "type",
-        accessorFn: (r) => r.type.name,
-        header: "Type",
-        cell: ({ row }) => (
-          <ColorBadge name={row.original.type.name} color={undefined} />
-        ),
-      },
-      {
-        id: "site",
-        accessorFn: (r) => r.site?.name ?? "",
-        header: "Site",
-        cell: ({ row }) =>
-          row.original.site ? (
-            <span className="text-xs text-muted-foreground">
-              {row.original.site.name}
-            </span>
-          ) : (
-            dash
-          ),
-      },
-      {
-        id: "vms",
-        accessorKey: "vm_count",
-        header: ({ column }) => <SortHeader column={column} label="VMs" />,
-        cell: ({ row }) => (
-          <span className="num text-xs">{row.original.vm_count}</span>
-        ),
-      },
-    ],
+    () =>
+      buildClusterColumns({
+        include: ["name", "type", "site", "vms"],
+        typeVariant: "badge",
+        siteVariant: "plain",
+        zeroCounts: "number",
+      }),
     []
   )
   return (

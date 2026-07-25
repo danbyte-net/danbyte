@@ -6,16 +6,11 @@ import { useCallback, useMemo, useState } from "react"
 
 import { api, type Cluster, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
-import { tagsColumn } from "@/components/cells/tag-list"
-import { timeAgoColumn } from "@/components/cells/time-ago"
-import { numidColumn } from "@/components/cells/numid"
+import { DataTable } from "@/components/data-table"
+import { buildClusterColumns } from "@/components/columns/cluster-columns"
 import { useTableFilters } from "@/components/table-filters"
-import { siteColumn } from "@/components/cells/site-cell"
 import { ListPageShell } from "@/components/list-page-shell"
 import { ClusterDeleteDialog } from "@/components/cluster-delete-dialog"
-import { StatusBadge } from "@/components/status-badge"
-import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/clusters/")({ component: ClustersPage })
@@ -40,7 +35,17 @@ function ClustersPage() {
 
   const columns = useMemo<ColumnDef<Cluster>[]>(
     () =>
-      buildColumns({ onDelete: handleDelete, canEdit, canDelete, humanIds }),
+      buildClusterColumns({
+        selection: true,
+        humanIds,
+        actions: {
+          editTo: "/clusters/$id/edit",
+          editParams: (c) => ({ id: c.id }),
+          canEdit: () => canEdit,
+          onDelete: handleDelete,
+          canDelete: () => canDelete,
+        },
+      }),
     [handleDelete, canEdit, canDelete, humanIds]
   )
 
@@ -81,129 +86,4 @@ function ClustersPage() {
       />
     </ListPageShell>
   )
-}
-
-interface ColumnOpts {
-  onDelete: (c: Cluster) => void
-  canEdit: boolean
-  canDelete: boolean
-  humanIds: boolean
-}
-
-function buildColumns({
-  onDelete,
-  canEdit,
-  canDelete,
-  humanIds,
-}: ColumnOpts): ColumnDef<Cluster>[] {
-  return [
-    selectionColumn<Cluster>(),
-    ...(humanIds ? [numidColumn<Cluster>({ get: (r) => r.numid })] : []),
-    {
-      id: "name",
-      accessorKey: "name",
-      header: ({ column }) => <SortHeader column={column} label="Name" />,
-      cell: ({ row }) => (
-        <Link
-          to="/clusters/$id"
-          params={{ id: row.original.id }}
-          className="font-medium hover:underline"
-        >
-          {row.original.name}
-        </Link>
-      ),
-    },
-    {
-      id: "type",
-      header: ({ column }) => <SortHeader column={column} label="Type" />,
-      accessorFn: (r) => r.type.name,
-      cell: ({ row }) => (
-        <span className="text-xs">{row.original.type.name}</span>
-      ),
-      meta: {
-        facet: {
-          kind: "enum",
-          label: "Type",
-          get: (r: Cluster) => r.type.name,
-        },
-      },
-    },
-    {
-      id: "group",
-      header: ({ column }) => <SortHeader column={column} label="Group" />,
-      accessorFn: (r) => r.group?.name ?? "",
-      cell: ({ row }) =>
-        row.original.group ? (
-          <span className="text-xs">{row.original.group.name}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-      meta: {
-        facet: {
-          kind: "enum",
-          label: "Group",
-          get: (r: Cluster) => r.group?.name ?? "—",
-        },
-      },
-    },
-    siteColumn<Cluster>({ get: (r) => r.site, className: "text-xs" }),
-    {
-      id: "status",
-      accessorFn: (r) => r.status?.name ?? "",
-      header: ({ column }) => <SortHeader column={column} label="Status" />,
-      cell: ({ row }) => <StatusBadge status={row.original.status} />,
-      meta: {
-        facet: {
-          kind: "enum",
-          label: "Status",
-          get: (r: Cluster) => r.status?.id ?? "__none__",
-          formatValue: (_v, r) => ({
-            label: r.status?.name ?? "No status",
-            color: r.status?.color,
-          }),
-        },
-      },
-    },
-    {
-      id: "vms",
-      accessorKey: "vm_count",
-      header: ({ column }) => <SortHeader column={column} label="VMs" />,
-      cell: ({ row }) =>
-        row.original.vm_count > 0 ? (
-          <span className="num text-xs">{row.original.vm_count}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    tagsColumn<Cluster>({
-      getTags: (r) => r.tags,
-    }),
-    {
-      id: "description",
-      accessorKey: "description",
-      header: "Description",
-      cell: ({ row }) => (
-        <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
-        </span>
-      ),
-    },
-    timeAgoColumn<Cluster>({
-      id: "updated",
-      header: "Updated",
-      get: (r) => r.updated_at,
-      align: "right",
-    }),
-    {
-      id: "actions",
-      enableHiding: false,
-      cell: ({ row }) => (
-        <RowActions
-          editTo={canEdit ? "/clusters/$id/edit" : undefined}
-          editParams={{ id: row.original.id }}
-          onDelete={canDelete ? () => onDelete(row.original) : undefined}
-        />
-      ),
-    },
-  ]
 }

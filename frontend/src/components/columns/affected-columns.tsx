@@ -8,8 +8,6 @@
 // selection, no row actions, no tag filter to drive), so an affected row reads
 // exactly like the same object on its list page.
 import { type ColumnDef } from "@tanstack/react-table"
-import { dash } from "@/components/cells/dash"
-import { Link } from "@tanstack/react-router"
 
 import {
   type Device,
@@ -19,42 +17,12 @@ import {
   type VLAN,
   type VRF,
 } from "@/lib/api"
-import { SortHeader } from "@/components/data-table"
-import { tagsColumn } from "@/components/cells/tag-list"
-import { timeAgoColumn } from "@/components/cells/time-ago"
-import { ColorBadge } from "@/components/cells/color-badge"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { buildIpColumns } from "@/components/columns/ip-columns"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
+import { buildSiteColumns } from "@/components/columns/site-columns"
 import { buildVlanColumns } from "@/components/columns/vlan-columns"
-
-function descCol<T extends { description: string }>(): ColumnDef<T> {
-  return {
-    id: "description",
-    accessorKey: "description",
-    header: "Description",
-    cell: ({ row }) => (
-      <span className="block whitespace-nowrap text-muted-foreground">
-        {row.original.description || "—"}
-      </span>
-    ),
-  }
-}
-
-const readonlyTags = <T extends { tags: { slug: string; name: string }[] }>() =>
-  tagsColumn<T>({
-    getTags: (r) => r.tags as never,
-    activeSlugs: new Set<string>(),
-    onToggle: () => {},
-  })
-
-const updated = <T extends { updated_at: string }>() =>
-  timeAgoColumn<T>({
-    id: "updated",
-    header: "Updated",
-    get: (r) => r.updated_at,
-    align: "right",
-  })
+import { buildVrfColumns } from "@/components/columns/vrf-columns"
 
 export function prefixColumns(): ColumnDef<Prefix>[] {
   return buildPrefixColumns({
@@ -117,79 +85,19 @@ export function vlanColumns(): ColumnDef<VLAN>[] {
 }
 
 export function vrfColumns(): ColumnDef<VRF>[] {
-  return [
-    {
-      id: "name",
-      accessorKey: "name",
-      header: ({ column }) => <SortHeader column={column} label="Name" />,
-      cell: ({ row }) => (
-        <Link to="/vrfs/$id" params={{ id: row.original.id }}>
-          <ColorBadge
-            name={row.original.name}
-            color={row.original.color || undefined}
-          />
-        </Link>
-      ),
-    },
-    {
-      id: "rd",
-      accessorKey: "rd",
-      header: "RD",
-      cell: ({ row }) =>
-        row.original.rd ? (
-          <span className="font-mono text-xs">{row.original.rd}</span>
-        ) : (
-          dash
-        ),
-    },
-    {
-      id: "prefixes",
-      accessorKey: "prefix_count",
-      header: ({ column }) => <SortHeader column={column} label="Prefixes" />,
-      cell: ({ row }) => (
-        <span className="num text-xs">{row.original.prefix_count}</span>
-      ),
-    },
-    descCol<VRF>(),
-    readonlyTags<VRF>(),
-    updated<VRF>(),
-  ]
+  return buildVrfColumns({
+    include: ["name", "rd", "prefixes", "description", "tags", "updated"],
+    plainHeaders: ["rd"],
+    zeroCounts: "number",
+  })
 }
 
 export function siteColumns(): ColumnDef<Site>[] {
-  return [
-    {
-      id: "name",
-      accessorKey: "name",
-      header: ({ column }) => <SortHeader column={column} label="Site" />,
-      cell: ({ row }) => (
-        <Link
-          to="/sites/$id"
-          params={{ id: row.original.id }}
-          className="font-medium hover:underline"
-        >
-          {row.original.name}
-        </Link>
-      ),
-    },
-    {
-      id: "location",
-      accessorKey: "location",
-      header: "Location",
-      cell: ({ row }) => row.original.location || dash,
-    },
-    {
-      id: "prefixes",
-      accessorKey: "prefix_count",
-      header: ({ column }) => <SortHeader column={column} label="Prefixes" />,
-      cell: ({ row }) => (
-        <span className="num text-xs">{row.original.prefix_count}</span>
-      ),
-    },
-    descCol<Site>(),
-    readonlyTags<Site>(),
-    updated<Site>(),
-  ]
+  return buildSiteColumns({
+    include: ["name", "location", "prefixes", "description", "tags", "updated"],
+    plainHeaders: ["location"],
+    zeroCounts: "number",
+  })
 }
 
 // The serialized objects arrive loosely typed (Record<string, unknown>), so the

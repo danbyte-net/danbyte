@@ -14,6 +14,12 @@ export interface SiteLike {
   name: string
 }
 
+/** How a column factory renders its Site column. "link" is the canonical
+ * /sites/$id link under a sortable header; "plain" is the muted, unsortable
+ * text an embedded pane shows when the page is already scoped to one site.
+ * Shared so every factory spells the same choice the same way. */
+export type SiteVariant = "link" | "plain"
+
 export interface SiteCellProps {
   site: SiteLike | null | undefined
   /** Wrap the name in a /sites/$id link. Default true. */
