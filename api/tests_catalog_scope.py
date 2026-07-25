@@ -12,7 +12,10 @@ from __future__ import annotations
 from django.contrib.auth.models import User
 from rest_framework.test import APITestCase
 
-from api.models import Device, DeviceType, Manufacturer, Site, VLAN, Zone
+from api.models import (
+    Device, DeviceType, InterfaceTemplate, Manufacturer, Site, VLAN, Zone,
+)
+from audit.models import ChangeAction, ChangeLogEntry
 from auth_api.models import ObjectPermission, UserProfile
 from core.models import DeploymentSettings, Organization, Tag, Tenant
 
@@ -189,6 +192,123 @@ class CatalogSeparationOffTests(_CatalogBase):
         )
         self.assertIn(res.status_code, (200, 201))
         self.assertIsNone(DeviceType.objects.get(name="GT2").owning_site_id)
+
+
+class DeviceTypeBulkDeleteTests(_CatalogBase):
+    """``POST /api/device-types/bulk-delete/``.
+
+    The id list is a *request*, never a grant: tenant and (with separation on)
+    site scope are re-derived server-side, so an id the caller may see but not
+    delete — or one they can't even see — falls out of the set.
+    """
+
+    def _post(self, ids):
+        return self.client.post(
+            "/api/device-types/bulk-delete/",
+            {"ids": [str(i) for i in ids]},
+            format="json",
+        )
+
+    def test_deletes_selection_and_counts_types_not_cascade(self):
+        """A type takes its component templates with it, but the count the
+        operator is shown is types — the toast must not say "49 deleted"
+        because one switch had 48 interface templates."""
+        self._login(self.hq)
+        keep = DeviceType.objects.create(
+            tenant=self.tenant, manufacturer=self.mfr_global, name="K", model="K"
+        )
+        for n in ("eth0", "eth1", "eth2"):
+            InterfaceTemplate.objects.create(device_type=self.dt_global, name=n)
+        res = self._post([self.dt_global.id, self.dt_b.id])
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json(), {"deleted": 2})
+        self.assertFalse(DeviceType.objects.filter(pk=self.dt_global.pk).exists())
+        self.assertFalse(DeviceType.objects.filter(pk=self.dt_b.pk).exists())
+        self.assertTrue(DeviceType.objects.filter(pk=keep.pk).exists())
+        self.assertEqual(InterfaceTemplate.objects.count(), 0)  # cascaded
+
+    def test_devices_survive_and_lose_their_type_reference(self):
+        """``Device.device_type`` is SET_NULL — the warning the bulk confirm
+        shows is the real behaviour, not a scare message."""
+        self._login(self.hq)
+        dev = Device.objects.create(
+            tenant=self.tenant, name="sw-1", device_type=self.dt_global,
+            site=self.a,
+        )
+        res = self._post([self.dt_global.id])
+        self.assertEqual(res.status_code, 200, res.content)
+        dev.refresh_from_db()
+        self.assertIsNone(dev.device_type_id)
+
+    def test_delete_grant_required(self):
+        """A view+change editor must not be able to empty the catalog: the
+        @action default maps to `change`, which is why the viewset pins
+        bulk_delete → delete."""
+        editor = User.objects.create_user("editor", password="x")
+        UserProfile.objects.create(user=editor).tenants.add(self.tenant)
+        grant = ObjectPermission.objects.create(
+            name="dt-editor", object_types=["devicetype"],
+            actions=["view", "change"],
+        )
+        grant.users.add(editor)
+        self._login(editor)
+        res = self._post([self.dt_global.id])
+        self.assertEqual(res.status_code, 403, res.content)
+        self.assertTrue(DeviceType.objects.filter(pk=self.dt_global.pk).exists())
+
+    def test_ids_outside_tenant_and_site_scope_are_not_deleted(self):
+        """The important one. A site-A editor submits four ids: their own local
+        type, a type local to site B, a tenant-global type they can see but not
+        write, and one belonging to another tenant entirely. Only their own
+        dies, and the count reflects that — no silent cross-scope deletion."""
+        other_org = Organization.objects.create(name="OO", slug="oo")
+        other_tenant = Tenant.objects.create(org=other_org, name="TO", slug="to")
+        other_mfr = Manufacturer.objects.create(
+            tenant=other_tenant, name="OtherCo", slug="otherco"
+        )
+        foreign = DeviceType.objects.create(
+            tenant=other_tenant, manufacturer=other_mfr, name="FT", model="FT"
+        )
+        mine = DeviceType.objects.create(
+            tenant=self.tenant, manufacturer=self.mfr_global,
+            name="A-own", model="A-own", owning_site=self.a,
+        )
+
+        self._login(self.site_user)
+        res = self._post([mine.id, self.dt_b.id, self.dt_global.id, foreign.id])
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json(), {"deleted": 1})
+
+        self.assertFalse(DeviceType.objects.filter(pk=mine.pk).exists())
+        self.assertTrue(DeviceType.objects.filter(pk=self.dt_b.pk).exists())
+        self.assertTrue(DeviceType.objects.filter(pk=self.dt_global.pk).exists())
+        self.assertTrue(DeviceType.objects.filter(pk=foreign.pk).exists())
+
+    def test_writes_exactly_one_audit_entry_per_deleted_type(self):
+        """A catalog wipe must leave a trace — and exactly one per row. The
+        cascade means Django can't fast-delete, so post_delete fires for every
+        DeviceType; an extra explicit log_bulk_delete() would double every
+        entry (which is what the sibling bulk-delete endpoints do today)."""
+        self._login(self.hq)
+        ChangeLogEntry.objects.all().delete()
+        res = self._post([self.dt_global.id, self.dt_b.id])
+        self.assertEqual(res.status_code, 200, res.content)
+        entries = ChangeLogEntry.objects.filter(
+            object_type="api.devicetype", action=ChangeAction.DELETE
+        )
+        self.assertEqual(entries.count(), 2)
+        self.assertEqual(
+            {e.object_id for e in entries},
+            {str(self.dt_global.id), str(self.dt_b.id)},
+        )
+        self.assertEqual({e.user_name for e in entries}, {"hq"})
+
+    def test_empty_id_list_is_a_400(self):
+        self._login(self.hq)
+        res = self.client.post(
+            "/api/device-types/bulk-delete/", {"ids": []}, format="json"
+        )
+        self.assertEqual(res.status_code, 400)
 
 
 class TagTenancyTests(APITestCase):
