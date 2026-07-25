@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest"
 
 import {
   RACK_BASE_M,
+  airflowGlyphPlacements,
   cellToWorld,
+  deviceBoxM,
   deviceYM,
   rackFootprintM,
   trayElevationM,
@@ -135,5 +137,62 @@ describe("trayElevationM", () => {
     expect(
       trayElevationM(plan, tray({ level: "overhead", elevation_mm: 2400 }))
     ).toBeCloseTo(2.4)
+  })
+})
+
+describe("airflowGlyphPlacements", () => {
+  const box = () => deviceBoxM(rack(), dev(10, 2), 0.6, 1.0)
+
+  it("draws nothing for passive, unknown or blank airflow", () => {
+    expect(airflowGlyphPlacements("passive", box())).toEqual([])
+    expect(airflowGlyphPlacements("", box())).toEqual([])
+    expect(airflowGlyphPlacements(undefined, box())).toEqual([])
+    expect(airflowGlyphPlacements("bottom-to-top", box())).toEqual([])
+  })
+
+  it("front-to-rear: intake on the front plane, exhaust on the rear, both +Z", () => {
+    const b = box()
+    const g = airflowGlyphPlacements("front-to-rear", b)
+    const intake = g.filter((x) => x.kind === "intake")
+    const exhaust = g.filter((x) => x.kind === "exhaust")
+    expect(intake.length).toBeGreaterThan(0)
+    expect(intake.length).toBe(exhaust.length)
+    for (const i of intake) {
+      expect(i.dir).toEqual([0, 0, 1])
+      expect(i.pos[2]).toBeLessThan(b.dz - b.dd / 2) // off the front plane
+    }
+    for (const e of exhaust) {
+      expect(e.dir).toEqual([0, 0, 1])
+      expect(e.pos[2]).toBeGreaterThan(b.dz + b.dd / 2)
+    }
+  })
+
+  it("rear-to-front mirrors the direction and the faces", () => {
+    const b = box()
+    const g = airflowGlyphPlacements("rear-to-front", b)
+    for (const x of g) expect(x.dir).toEqual([0, 0, -1])
+    const intake = g.filter((x) => x.kind === "intake")
+    for (const i of intake) expect(i.pos[2]).toBeGreaterThan(b.dz + b.dd / 2)
+  })
+
+  it("side flows run along ±X on the side planes", () => {
+    const b = box()
+    const lr = airflowGlyphPlacements("left-to-right", b)
+    for (const x of lr) expect(x.dir).toEqual([1, 0, 0])
+    const rl = airflowGlyphPlacements("right-to-left", b)
+    for (const x of rl) expect(x.dir).toEqual([-1, 0, 0])
+    const inL = lr.filter((x) => x.kind === "intake")
+    for (const i of inL) expect(i.pos[0]).toBeLessThan(b.dx - b.dw / 2)
+  })
+
+  it("mixed draws exactly one intake + one exhaust on the exposed face", () => {
+    const g = airflowGlyphPlacements("mixed", box())
+    expect(g.map((x) => x.kind).sort()).toEqual(["exhaust", "intake"])
+  })
+
+  it("glyphs sit at the device's vertical centre", () => {
+    const b = box()
+    for (const x of airflowGlyphPlacements("front-to-rear", b))
+      expect(x.pos[1]).toBeCloseTo(b.y + b.h / 2)
   })
 })

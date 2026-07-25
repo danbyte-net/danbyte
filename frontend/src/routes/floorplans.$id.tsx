@@ -289,6 +289,9 @@ function FloorPlanPage() {
   const [show3dCablesLocal, setShow3dCablesLocal] = useState<boolean | null>(
     null
   )
+  const [show3dAirflowLocal, setShow3dAirflowLocal] = useState<boolean | null>(
+    null
+  )
   const [highlightCableIds, setHighlightCableIds] = useState<string[]>([])
   // Tile popover: hover-preview (delayed) + click-to-pin.
   const popover = useTilePopover()
@@ -501,6 +504,10 @@ function FloorPlanPage() {
     show3dCablesLocal ??
     (plan?.state.show_3d_cables as boolean | undefined) ??
     false
+  const show3dAirflow =
+    show3dAirflowLocal ??
+    (plan?.state.show_3d_airflow as boolean | undefined) ??
+    false
 
   // ?trace=<cableId> → highlight that cable + fit the view to its route, so a
   // "trace on map" link from a cable/rack lands on the run without any clicks.
@@ -527,7 +534,8 @@ function FloorPlanPage() {
       | "show_objects"
       | "show_3d_u"
       | "show_3d_names"
-      | "show_3d_cables",
+      | "show_3d_cables"
+      | "show_3d_airflow",
     value: boolean
   ) => {
     if (key === "label_fit") setLabelFitLocal(value)
@@ -538,6 +546,7 @@ function FloorPlanPage() {
     else if (key === "show_3d_u") setShow3dULocal(value)
     else if (key === "show_3d_names") setShow3dNamesLocal(value)
     else if (key === "show_3d_cables") setShow3dCablesLocal(value)
+    else if (key === "show_3d_airflow") setShow3dAirflowLocal(value)
     else setShowLinksLocal(value)
     if (canEdit && plan)
       patchPlan.mutate({ state: { ...plan.state, [key]: value } })
@@ -1111,6 +1120,12 @@ function FloorPlanPage() {
                     onChange={(v) => setViewPref("show_3d_cables", v)}
                     className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
                   />
+                  <FormCheckbox
+                    label="Airflow"
+                    checked={show3dAirflow}
+                    onChange={(v) => setViewPref("show_3d_airflow", v)}
+                    className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+                  />
                 </>
               )}
             </PopoverContent>
@@ -1333,6 +1348,7 @@ function FloorPlanPage() {
                   showUNumbers={show3dU}
                   showNames={show3dNames}
                   showCables={show3dCables}
+                  showAirflow={show3dAirflow}
                 />
               </Suspense>
               {show3dHint && (

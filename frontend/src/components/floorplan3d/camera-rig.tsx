@@ -9,6 +9,7 @@ import {
   PAGE_SCROLL_KEYS,
   normalizeKey,
   panVector,
+  pullInTarget,
 } from "./camera-math"
 
 export interface FlyToRequest {
@@ -61,6 +62,7 @@ export function CameraRig({
 }) {
   const controls = useRef<OrbitControlsImpl>(null)
   const invalidate = useThree((s) => s.invalidate)
+  const camera = useThree((s) => s.camera)
   const anim = useRef<{
     fromPos: THREE.Vector3
     fromTarget: THREE.Vector3
@@ -82,6 +84,23 @@ export function CameraRig({
       // Only keys whose default scrolls the page; w/a/s/d/q/e stay untouched
       // (and Escape is never ours — the connect/trace flows own it).
       if (PAGE_SCROLL_KEYS.has(key)) e.preventDefault()
+      // First nav key of a session: pull the orbit pivot to ~3 m ahead so
+      // drag-look feels first-person while walking (fly-to re-anchors it on
+      // a rack for inspection). Idempotent afterwards - key pans move camera
+      // and target together, so their distance stays put.
+      if (pressed.current.size === 0) {
+        const c = controls.current
+        if (c) {
+          const pulled = pullInTarget(
+            [camera.position.x, camera.position.y, camera.position.z],
+            [c.target.x, c.target.y, c.target.z]
+          )
+          if (pulled) {
+            c.target.set(pulled[0], pulled[1], pulled[2])
+            c.update()
+          }
+        }
+      }
       pressed.current.add(key)
       // Driving the camera overrides an in-flight (or just-requested) fly-to.
       anim.current = null
@@ -108,11 +127,18 @@ export function CameraRig({
       window.removeEventListener("keyup", onKeyUp)
       window.removeEventListener("blur", onBlur)
     }
-  }, [invalidate, requestRef])
+  }, [invalidate, requestRef, camera])
 
   useFrame((state, delta) => {
     const c = controls.current
     if (!c) return
+    // Floor clamp: maxPolarAngle now allows looking up from below the pivot,
+    // so an orbit drag could push the eye underground - catch it on any frame
+    // that renders (drag frames do, via the controls' change -> invalidate).
+    if (state.camera.position.y < CAMERA_MIN_Y) {
+      state.camera.position.y = CAMERA_MIN_Y
+      c.update()
+    }
     // Pick up a new request.
     if (requestRef.current) {
       anim.current = {
@@ -178,7 +204,7 @@ export function CameraRig({
       ref={controls}
       makeDefault
       target={target}
-      maxPolarAngle={Math.PI / 2 - 0.02}
+      maxPolarAngle={Math.PI - 0.05}
       minDistance={0.5}
       maxDistance={maxDistance}
     />

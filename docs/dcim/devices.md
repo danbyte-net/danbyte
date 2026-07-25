@@ -25,7 +25,9 @@ detail page.
 
 !!! note "Built-in fields vs. custom fields"
     Danbyte ships a curated set of common attributes as built-in device
-    fields — including **comments**, **location**, **cluster**, **airflow**,
+    fields — including **comments**, **location**, **cluster**, **airflow**
+(the device's own value overrides its type's default; the resolved value is
+served as `effective_airflow` and drives the 3D room's airflow cones),
     and **latitude** / **longitude**. Comments, location, and the
     coordinates are on by default (coordinates put a device on the
     [site map](../features/site-map.md)); cluster and airflow are opt-in

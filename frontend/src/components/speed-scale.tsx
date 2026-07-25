@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import { api, type Paginated, type Status } from "@/lib/api"
 import {
+  AIRFLOW_HEX,
   bayHex,
   legendSignature,
   mergeLegend,
@@ -211,6 +212,38 @@ export function ModuleBayKey({
           dashed swatch means "not on this device", which is a different thing. */}
       {bays.has("empty") && (
         <Swatch hex={bayHex(false)} label="empty" outline />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Key for the 3D room's airflow cones. Renders only what the glyph layer
+ * actually drew (both chips on a mixed-airflow room, one on a uniform one),
+ * from the same hexes the cones use — the key can't disagree with the pixels.
+ */
+export function AirflowKey({
+  className,
+  airflow,
+}: {
+  className?: string
+  /** Kinds drawn — "intake" / "exhaust". Empty set → nothing. */
+  airflow: Set<string>
+}) {
+  if (airflow.size === 0) return null
+  return (
+    <div
+      className={cn(
+        "flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] leading-none text-muted-foreground",
+        className
+      )}
+    >
+      <span className="text-muted-foreground/70">Airflow</span>
+      {airflow.has("intake") && (
+        <Swatch hex={AIRFLOW_HEX.intake} label="intake" />
+      )}
+      {airflow.has("exhaust") && (
+        <Swatch hex={AIRFLOW_HEX.exhaust} label="exhaust" />
       )}
     </div>
   )

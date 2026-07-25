@@ -1377,6 +1377,13 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
             ),
         ]
 
+    @property
+    def effective_airflow(self) -> str:
+        """The device's own airflow when set, else its type's default, else
+        "". Derived like ``effective_platform`` — the stored field stays
+        untouched, so clearing the override falls back to the hardware's."""
+        return self.airflow or (self.device_type.airflow if self.device_type else "")
+
     def __str__(self) -> str:
         return self.name
 

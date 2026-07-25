@@ -129,3 +129,33 @@ export function panVector(
   const vertical = speed * VERTICAL_FACTOR * dt
   return [hx * horizontal, lift * vertical, hz * horizontal]
 }
+
+// ─── FPS-feel pivot ──────────────────────────────────────────────────────────
+
+/**
+ * When keyboard navigation starts, the orbit target is pulled to this many
+ * metres in front of the camera, so drag-look rotates around a NEAR point
+ * (first-person feel) instead of swinging the camera around a far-away rack,
+ * and scroll-zoom reads as "move forward". Rack double-click fly-to still
+ * re-anchors the pivot on the rack, so orbit-to-inspect is unchanged.
+ */
+export const NEAR_PIVOT_M = 3
+
+/**
+ * The pulled-in target: `maxDist` metres from `cam` along the current sight
+ * line, or `null` when the target is already at least that close (pulling a
+ * near pivot would zoom the view). Pure tuples — unit-testable.
+ */
+export function pullInTarget(
+  cam: readonly [number, number, number],
+  target: readonly [number, number, number],
+  maxDist: number = NEAR_PIVOT_M
+): [number, number, number] | null {
+  const dx = target[0] - cam[0]
+  const dy = target[1] - cam[1]
+  const dz = target[2] - cam[2]
+  const d = Math.hypot(dx, dy, dz)
+  if (d <= maxDist || d === 0) return null
+  const k = maxDist / d
+  return [cam[0] + dx * k, cam[1] + dy * k, cam[2] + dz * k]
+}

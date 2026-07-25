@@ -207,3 +207,22 @@ describe("mergeLegend", () => {
     expect(merged.bays).not.toBe(EMPTY_LEGEND.bays)
   })
 })
+
+describe("legend airflow field", () => {
+  it("is part of the signature (a forgotten field silently stops the collector)", () => {
+    const a = { ...EMPTY_LEGEND, airflow: new Set(["intake"]) }
+    const b = { ...EMPTY_LEGEND, airflow: new Set(["intake", "exhaust"]) }
+    expect(legendSignature(a)).not.toBe(legendSignature(EMPTY_LEGEND))
+    expect(legendSignature(a)).not.toBe(legendSignature(b))
+  })
+
+  it("merges as a union and keeps legendIsEmpty honest", () => {
+    const merged = mergeLegend([
+      { ...EMPTY_LEGEND, airflow: new Set(["intake"]) },
+      { ...EMPTY_LEGEND, airflow: new Set(["exhaust"]) },
+    ])
+    expect([...merged.airflow].sort()).toEqual(["exhaust", "intake"])
+    expect(legendIsEmpty(merged)).toBe(false)
+    expect(legendIsEmpty({ ...EMPTY_LEGEND, airflow: new Set() })).toBe(true)
+  })
+})
