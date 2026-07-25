@@ -9,6 +9,10 @@ import {
 } from "lucide-react"
 
 import { DriftBadge } from "@/components/drift-detail"
+import {
+  InterfaceDriftMarker,
+  type InterfaceDriftEntry,
+} from "@/components/monitoring/device-drift-badge"
 
 import type { Interface, SnmpDriftItem } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
@@ -122,6 +126,13 @@ export interface InterfaceColumnOpts<T extends Interface> {
    * whose popover lists exactly what differs (review/accept stays in the Drift
    * panel; source of truth is untouched). */
   driftByIface?: Map<string, SnmpDriftItem[]>
+  /** Fleet-wide interface drift from `useInterfaceDriftMap()` — one request for
+   * the whole table, for tables that span devices (/interfaces, the whole-stack
+   * table) where a per-device drift query would be one request per row's device.
+   * Ignored when `driftByIface` is given: that map comes from the device's own
+   * drift query and its popover names the exact differences, so the page that
+   * already has it must not also show the summarised marker. */
+  drift?: Map<string, InterfaceDriftEntry>
   /** Cabled rows show an editable cable-status control instead of the plain
    * cable count. The per-device tables put that control in their actions
    * column, so they leave this off. */
@@ -212,8 +223,17 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
                 <title>Excluded from SNMP drift</title>
               </EyeOff>
             )}
-            {driftByIface && (
+            {driftByIface ? (
               <DriftBadge items={driftByIface.get(row.original.id) ?? []} />
+            ) : (
+              opts.drift && (
+                // Interfaces are what drift references most, and the fleet list
+                // showed none of it. Quiet marker, same glyph as the device one.
+                <InterfaceDriftMarker
+                  interfaceId={row.original.id}
+                  map={opts.drift}
+                />
+              )
             )}
             {row.original.tunnel_terminations.map((tt) => (
               <Link

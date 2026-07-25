@@ -141,6 +141,35 @@ drift pill in the component tables. Clicking the marker names the difference
 count badge, and the Components tab and its sub-tabs are dotted when something
 inside them differs — so you can find drift without opening every tab.
 
+### Where drift is marked {#drift-markers}
+
+Drift is flagged **in place**, on the record it disagrees with, so you never have
+to open a device to learn that it differs:
+
+- The device's **Components → Interfaces** table shows an amber **drift** badge on
+  each affected row, and clicking it lists exactly what differs on that port.
+- The fleet **Interfaces** list marks every drifted port with a quiet amber
+  compare-arrows glyph next to its name. The tooltip counts the differences and
+  names their kinds (interface mismatch, not reported by SNMP, IP not recorded on
+  this port), and the marker links to that port's device → **Components →
+  Interfaces**. The **whole-stack** interfaces table on a virtual chassis marks its
+  ports the same way, for every member at once.
+- The **Devices** list carries the same glyph per device, next to the compliance
+  violation triangle — a rule you wrote failing and the device reporting something
+  else are different problems, so they get different marks.
+
+Every marker is a read-only signal: reviewing and accepting drift stays in the
+drift inbox, so the source of truth only changes when you choose (Danbyte stays
+drift-*aware*, never drift-*driven*).
+
+!!! note "Prefixes and IP addresses have no drift marker"
+    Deliberately — no drift item references a prefix or an IP address that already
+    exists in Danbyte. A **Discovered IP** is an address SNMP saw that Danbyte
+    *doesn't* record, so there is no row to mark; the item is reported against the
+    **interface** it was observed on (and marked there), plus, when no prefix
+    contains it, as a prefix to add. Prefixes and recorded IPs are never compared to
+    observed state, so a marker on those lists would always be blank.
+
 ### Excluding a port from drift {#drift-exclude}
 
 Some ports can *never* be polled — the silkscreened host NICs a BMC agent
@@ -159,13 +188,6 @@ where you undo it.
 MAC comparison is **separator-insensitive** — `00:11:22:33:44:55` and the Cisco
 dotted form `0011.2233.4455` are recognised as the same address, so reformatting
 alone never shows as drift.
-
-Interfaces that have drift are also flagged **in place**: the device's
-**Components → Interfaces** table shows an amber **drift** badge on each affected
-row, so you can spot which ports differ at a glance. It's a read-only signal —
-reviewing and accepting drift stays in the drift inbox, so the source of truth
-only changes when you choose (Danbyte stays drift-*aware*, never
-drift-*driven*).
 
 Click **Accept** on an item to write that observed value into intent. This is the
 **only** action that mutates the source of truth, and it requires the same

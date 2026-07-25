@@ -387,10 +387,15 @@ class SnmpFleetDriftTests(APITestCase):
         s["current_tenant_id"] = str(self.tenant.id)
         s.save()
 
-    def _list(self, status=None):
+    def _list(self, status=None, interfaces=False):
         url = "/api/monitoring/snmp-drift/"
+        params = []
         if status:
-            url += f"?status={status}"
+            params.append(f"status={status}")
+        if interfaces:
+            params.append("interfaces=1")
+        if params:
+            url += "?" + "&".join(params)
         return self.client.get(url).json()
 
     def test_lists_polled_devices_with_status(self):
@@ -421,6 +426,180 @@ class SnmpFleetDriftTests(APITestCase):
         names = {r["device_name"] for r in self._list()["results"]}
         self.assertIn("down", names)
         self.assertNotIn("stray", names)
+
+    def test_default_response_shape_is_unchanged(self):
+        # Every existing caller (the config-drift page, the devices-list drift
+        # marker) must keep the exact response it has today — the per-interface
+        # lookup is opt-in only.
+        data = self._list()
+        self.assertEqual(list(data), ["count", "results"])
+        self.assertEqual(
+            set(data["results"][0]),
+            {"device", "device_name", "status", "reachable", "drift_count",
+             "by_kind", "interfaces_drifted", "profile_name", "polled_at"},
+        )
+        # …including with the status filter applied.
+        self.assertEqual(list(self._list(status="drift")), ["count", "results"])
+
+    def test_interfaces_opt_in_maps_drift_to_existing_interface_ids(self):
+        eth0 = Interface.objects.get(device=self.drifted, name="eth0")
+        data = self._list(interfaces=True)
+        # The rows are byte-identical to the default response; only the extra
+        # top-level key is new.
+        self.assertEqual(list(data), ["count", "results", "interfaces"])
+        self.assertEqual(data["results"], self._list()["results"])
+        self.assertEqual(list(data["interfaces"]), [str(eth0.id)])
+        self.assertEqual(
+            data["interfaces"][str(eth0.id)],
+            # Two mismatch items (MAC + admin-status) on one interface, and the
+            # owning device so a marker can link without a second lookup.
+            {"device": str(self.drifted.id), "count": 2,
+             "kinds": ["interface_mismatch"]},
+        )
+        # The device row's own summary is untouched by the opt-in.
+        by_name = {r["device_name"]: r for r in data["results"]}
+        self.assertEqual(by_name["sw-intended"]["interfaces_drifted"], 1)
+
+    def test_interfaces_map_covers_stale_and_discovered_ips_not_missing_ports(self):
+        from api.models import Prefix
+        from django.utils import timezone
+
+        Prefix.objects.create(tenant=self.tenant, cidr="10.20.0.0/24")
+        device = Device.objects.create(tenant=self.tenant, name="mixed")
+        # Observed with an IP Danbyte doesn't record → ip_missing on THIS port.
+        seen = Interface.objects.create(device=device, name="eth1", enabled=True)
+        # Danbyte has it, the device never reported it → interface_stale.
+        gone = Interface.objects.create(device=device, name="eth9", enabled=True)
+        DeviceSnmp.objects.create(
+            tenant=self.tenant, device=device, reachable=True,
+            polled_at=timezone.now(), data={"sys_name": "mixed"},
+            interfaces=[
+                {"if_index": "1", "name": "eth1", "admin_status": "up",
+                 "ip_addresses": ["10.20.0.5"]},
+                # A port Danbyte has never heard of: interface_missing. There is
+                # no Interface row to mark, so it contributes nothing.
+                {"if_index": "2", "name": "eth2", "admin_status": "up"},
+            ],
+        )
+        SnmpProfileBinding.objects.create(
+            tenant=self.tenant, scope=SnmpProfileBinding.SCOPE_DEVICE,
+            object_id=device.id, profile=self.profile,
+        )
+        ifaces = self._list(interfaces=True)["interfaces"]
+        self.assertEqual(ifaces[str(seen.id)]["kinds"], ["ip_missing"])
+        self.assertEqual(ifaces[str(gone.id)]["kinds"], ["interface_stale"])
+        row = next(
+            r for r in self._list()["results"] if r["device_name"] == "mixed"
+        )
+        self.assertEqual(row["by_kind"]["interface_missing"], 1)
+        self.assertEqual(len(ifaces), 3)  # eth0 (drifted) + eth1 + eth9
+
+    def test_interfaces_map_costs_no_extra_query_per_interface(self):
+        # The N+1 guard: the endpoint pre-groups interfaces per device, and the
+        # per-interface lookup is folded out of the drift items already computed.
+        # More drifted interfaces must therefore not mean more queries.
+        from django.test.utils import CaptureQueriesContext
+        from django.db import connection
+
+        with CaptureQueriesContext(connection) as first:
+            self.assertEqual(len(self._list(interfaces=True)["interfaces"]), 1)
+        for n in range(2, 8):
+            # Each is stale (never reported by SNMP) → one drift item each.
+            Interface.objects.create(device=self.drifted, name=f"eth{n}")
+        with CaptureQueriesContext(connection) as second:
+            self.assertEqual(len(self._list(interfaces=True)["interfaces"]), 7)
+        self.assertEqual(len(second.captured_queries), len(first.captured_queries))
+        # …and asking for the map costs nothing over the default response.
+        with CaptureQueriesContext(connection) as plain:
+            self._list()
+        self.assertEqual(len(second.captured_queries), len(plain.captured_queries))
+
+
+class SnmpFleetDriftScopeTests(APITestCase):
+    """The opt-in per-interface drift map must not widen what a caller can see:
+    an interface belongs to a device, so it inherits that device's tenant/site
+    visibility exactly."""
+
+    def setUp(self):
+        from django.utils import timezone
+        from auth_api.models import ObjectPermission, UserProfile
+        from core.models import DeploymentSettings
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.other_tenant = Tenant.objects.create(org=org, name="Other", slug="other")
+        self.site_a = Site.objects.create(tenant=self.tenant, name="A")
+        self.site_b = Site.objects.create(tenant=self.tenant, name="B")
+        # A tenant default profile makes every polled device "configured".
+        SnmpProfile.objects.create(
+            tenant=self.tenant, name="P", slug="p", is_default=True,
+            secret_params={"community": "x"},
+        )
+        SnmpProfile.objects.create(
+            tenant=self.other_tenant, name="P", slug="p", is_default=True,
+            secret_params={"community": "x"},
+        )
+
+        def _drifted(tenant, name, site=None):
+            """A device whose one interface drifts on MAC (mismatch)."""
+            device = Device.objects.create(tenant=tenant, name=name, site=site)
+            iface = Interface.objects.create(
+                device=device, name="eth0", mac_address="00:00:00:00:00:01",
+            )
+            DeviceSnmp.objects.create(
+                tenant=tenant, device=device, reachable=True,
+                polled_at=timezone.now(), data={"sys_name": name},
+                interfaces=[{"if_index": "1", "name": "eth0",
+                             "mac": "00:00:00:00:00:02"}],
+            )
+            return device, iface
+
+        self.device_a, self.iface_a = _drifted(self.tenant, "a", self.site_a)
+        self.device_b, self.iface_b = _drifted(self.tenant, "b", self.site_b)
+        self.device_other, self.iface_other = _drifted(self.other_tenant, "x")
+
+        self.site_user = User.objects.create_user("site-a", password="x")
+        UserProfile.objects.create(user=self.site_user).tenants.add(self.tenant)
+        perm = ObjectPermission.objects.create(
+            name="site-a", object_types=["*"], actions=["view"],
+        )
+        perm.users.add(self.site_user)
+        perm.tenants.add(self.tenant)
+        perm.sites.set([self.site_a])
+
+        deployment = DeploymentSettings.load()
+        deployment.enhanced_site_separation = True
+        deployment.save(update_fields=["enhanced_site_separation", "updated_at"])
+
+    def _map(self, user):
+        self.client.force_login(user)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+        data = self.client.get("/api/monitoring/snmp-drift/?interfaces=1").json()
+        return data
+
+    def test_site_scoped_caller_only_learns_its_own_sites_interfaces(self):
+        data = self._map(self.site_user)
+        self.assertEqual(
+            {r["device_name"] for r in data["results"]}, {"a"}
+        )
+        # Site B's device is invisible, so its drifted port must be too.
+        self.assertEqual(list(data["interfaces"]), [str(self.iface_a.id)])
+        self.assertEqual(
+            data["interfaces"][str(self.iface_a.id)]["device"], str(self.device_a.id)
+        )
+
+    def test_other_tenants_interfaces_are_never_listed(self):
+        admin = User.objects.create_superuser("admin", "a@b.c", "x")
+        data = self._map(admin)
+        # A superuser sees both sites of the active tenant…
+        self.assertEqual(
+            set(data["interfaces"]),
+            {str(self.iface_a.id), str(self.iface_b.id)},
+        )
+        # …and never the other tenant's, even though it drifts identically.
+        self.assertNotIn(str(self.iface_other.id), data["interfaces"])
 
 
 class SnmpIpLoopTests(APITestCase):
