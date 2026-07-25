@@ -2384,6 +2384,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
             airgap_refusal,
             elevation_image_base,
             reimport_images_for_type,
+            repo_image_inventory,
             summarize_reimport,
         )
         from .devicetype_import_tasks import enqueue_devicetype_image_reimport
@@ -2429,9 +2430,12 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
                 status=drf_status.HTTP_202_ACCEPTED,
             )
 
+        # One repo listing (two requests) up front; None falls back to probes.
+        inventory = repo_image_inventory(image_base)
         results = [
             reimport_images_for_type(
-                dt, image_base, overwrite=overwrite, apply=not dry_run
+                dt, image_base, overwrite=overwrite, apply=not dry_run,
+                inventory=inventory,
             )
             for dt in qs
         ]

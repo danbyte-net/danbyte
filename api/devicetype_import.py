@@ -687,13 +687,90 @@ def _face_missing(dt, face: str) -> bool:
         return True
 
 
-def _face_in_repo(manufacturer: str, slug: str, face: str, image_base: str) -> str:
+def repo_image_inventory(image_base: str) -> set[str] | None:
+    """Every image path under the repo's elevation-images dir, fetched in TWO
+    requests via GitHub's git-trees API — so matching a 1000-type catalog is
+    in-memory set lookups instead of ~20 sequential HEAD probes per type
+    (which is the difference between sub-second and the better part of an
+    hour).
+
+    Returns ``{"<Manufacturer>/<slug>.<face>.<ext>", ...}`` with REAL (un-URL-
+    quoted) names, or ``None`` when the base isn't a GitHub raw URL or the
+    listing fails (rate limit, private repo, network) — callers fall back to
+    per-image probing, which stays correct for arbitrary https mirrors."""
+    import json as _json
+
+    from core.ssrf import safe_get
+
+    m = re.match(
+        r"^https://raw\.githubusercontent\.com/([^/]+)/([^/]+)/([^/]+)/(.+)$",
+        image_base.rstrip("/"),
+    )
+    if not m:
+        return None
+    owner, repo, ref, subpath = m.groups()
+    try:
+        # Top-level tree (non-recursive) → the subtree's sha. Walk one level
+        # per path segment so bases like danbyte/elevation-images work too.
+        sha = ref
+        for segment in subpath.split("/"):
+            top = safe_get(
+                f"https://api.github.com/repos/{owner}/{repo}/git/trees/{sha}",
+                timeout=15,
+            )
+            if top.status_code != 200:
+                return None
+            entry = next(
+                (
+                    e
+                    for e in _json.loads(top.content).get("tree", [])
+                    if e.get("path") == segment and e.get("type") == "tree"
+                ),
+                None,
+            )
+            if entry is None:
+                return set()  # repo simply has no such dir — honest empty
+            sha = entry["sha"]
+        # The subtree, recursive: every image path in one response. The
+        # elevation-images subtree is far below GitHub's truncation limits
+        # even for the full community library.
+        sub = safe_get(
+            f"https://api.github.com/repos/{owner}/{repo}/git/trees/{sha}"
+            "?recursive=1",
+            timeout=30,
+        )
+        if sub.status_code != 200:
+            return None
+        body = _json.loads(sub.content)
+        if body.get("truncated"):
+            return None  # incomplete listing would fabricate no_match rows
+        return {
+            e["path"] for e in body.get("tree", []) if e.get("type") == "blob"
+        }
+    except Exception:  # noqa: BLE001 — any trouble → probe fallback
+        return None
+
+
+def _face_in_repo(
+    manufacturer: str,
+    slug: str,
+    face: str,
+    image_base: str,
+    inventory: set[str] | None = None,
+) -> str:
     """Does the repo have this face's image? ``"available"`` / ``"not_found"``
-    / ``"fetch_failed"``. HEAD requests — existence only, no body."""
+    / ``"fetch_failed"``. With an ``inventory`` (one-shot repo listing) this
+    is a set lookup; without one it degrades to HEAD probes — existence only,
+    no body."""
     from urllib.parse import quote
 
     from core.ssrf import safe_request
 
+    if inventory is not None:
+        for ext in ("png", "jpg"):
+            if f"{manufacturer}/{slug}.{face}.{ext}" in inventory:
+                return "available"
+        return "not_found"
     for ext in ("png", "jpg"):
         url = f"{image_base}/{quote(manufacturer)}/{quote(slug)}.{face}.{ext}"
         try:
@@ -706,7 +783,8 @@ def _face_in_repo(manufacturer: str, slug: str, face: str, image_base: str) -> s
 
 
 def reimport_images_for_type(dt, image_base: str, *, overwrite: bool = False,
-                             apply: bool = False) -> dict:
+                             apply: bool = False,
+                             inventory: set[str] | None = None) -> dict:
     """Match one EXISTING DeviceType against a library-layout repo and, when
     ``apply``, re-download its elevation images.
 
@@ -753,7 +831,9 @@ def reimport_images_for_type(dt, image_base: str, *, overwrite: bool = False,
     def probe(slug: str, face: str) -> str:
         key = (slug, face)
         if key not in probed:
-            probed[key] = _face_in_repo(mfr, slug, face, image_base)
+            probed[key] = _face_in_repo(
+                mfr, slug, face, image_base, inventory=inventory
+            )
         return probed[key]
 
     slug = None
