@@ -13,6 +13,7 @@ import {
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
+import { useDriftMap } from "@/components/monitoring/device-drift-badge"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -77,12 +78,14 @@ function DevicesPage() {
   const monitoring = monQuery.data?.statuses ?? EMPTY_MON
 
   const handleDelete = useCallback((d: Device) => setDeleting(d), [])
+  const driftMap = useDriftMap()
   const columns = useMemo<ColumnDef<Device>[]>(
     () =>
       buildDeviceColumns<Device>({
         selection: true,
         humanIds,
         violations: true,
+        drift: driftMap,
         monitoring,
         actions: {
           editTo: "/devices/$id/edit",

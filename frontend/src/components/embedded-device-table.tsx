@@ -4,6 +4,7 @@ import { type ColumnDef } from "@tanstack/react-table"
 
 import { api, type Device, type Paginated } from "@/lib/api"
 import { DataTable } from "@/components/data-table"
+import { useDriftMap } from "@/components/monitoring/device-drift-badge"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { QueryError } from "@/components/query-error"
 
@@ -34,13 +35,15 @@ export function EmbeddedDeviceTable({
   })
   const rows = q.data?.results ?? []
 
+  const driftMap = useDriftMap()
   const columns = useMemo<ColumnDef<Device>[]>(
     () =>
       buildDeviceColumns({
         include: ["name", "status", "role", "type", "site", "primary_ip"],
         violations: true,
+        drift: driftMap,
       }),
-    []
+    [driftMap]
   )
 
   if (q.isError) return <QueryError error={q.error} />
