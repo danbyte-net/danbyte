@@ -203,6 +203,29 @@ Rack and device tiles open the deep view; a tile linked to **another floor
 plan** navigates into it on click — use this to nest a cage or suite plan
 inside a hall plan.
 
+## Raised floors (Structure mode)
+
+The **Structure** tab models the room itself. Draw **raised-floor areas** —
+rectangles of tiles standing on pedestals with a cable plenum underneath —
+and give each one its **plenum depth** (default 300 mm). Rooms are rarely
+uniformly raised, so the raised floor is per-area: the DC pad is, the
+corridor isn't, and an L-shaped pad is simply two abutting rectangles
+(areas may share edges but never overlap, so the depth under any point is
+unambiguous).
+
+The plenum is data, not decoration:
+
+- **Underfloor trays** with no explicit elevation dive to the plenum of the
+  area beneath them (still 300 mm outside any area, as before).
+- **Route-length estimates** use the same depth for their vertical-drop
+  term, so a 600 mm plenum genuinely lengthens the cables that dive into it.
+- The **3D room** draws the finished floor and the void below; the **Lift
+  raised floor** toggle (View menu, 3D) turns the floor translucent so the
+  underfloor runs read through it.
+
+Areas are drawn with the same drag-a-rectangle gesture as tiles; select one
+in the left rail to edit its label, plenum depth and color, or delete it.
+
 ## Cable trays (Cables mode)
 
 The **Cables** tab (top-right toggle, next to Layout) turns the plan into a

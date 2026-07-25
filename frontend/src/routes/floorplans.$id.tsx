@@ -53,6 +53,7 @@ import type {
   FloorPlanTilesBulkPayload,
   FloorPlanTileWritePayload,
   FloorPlanTray,
+  RaisedFloorArea,
   FloorPlanTrayWritePayload,
   FloorTileStatus,
   FloorTileTypeOption,
@@ -142,6 +143,21 @@ import { useTheme } from "@/components/theme-provider"
 import { useMe } from "@/lib/use-me"
 import { cn } from "@/lib/utils"
 import { apiErrorToast } from "@/lib/api-toast"
+
+/** Arms the canvas's drag-rect painter while drawing a raised-floor area —
+ * the ghost rect reuses the palette machinery, nothing else reads this. */
+const AREA_PSEUDO_ENTRY = {
+  key: "structure:raised-floor",
+  kind: "tile_type",
+  id: "raised-floor",
+  name: "Raised floor",
+  color: "#71717a",
+  icon: "",
+  defaultWidth: 4,
+  defaultHeight: 3,
+  isZone: false,
+  hasFov: false,
+} as const satisfies import("@/components/floorplan/floor-canvas").PaletteEntry
 
 export const Route = createFileRoute("/floorplans/$id")({
   component: FloorPlanPage,
@@ -251,6 +267,15 @@ function FloorPlanPage() {
       ),
   })
   const trays = traysQuery.data?.results ?? []
+  // Raised-floor areas (Structure mode) — rectangles with a plenum depth.
+  const areasQuery = useQuery({
+    queryKey: ["floor-plan-raised-floors", id],
+    queryFn: () =>
+      api<Paginated<RaisedFloorArea>>(
+        `/api/floor-plan-raised-floors/?floor_plan=${id}&page_size=500`
+      ),
+  })
+  const areas = areasQuery.data?.results ?? []
   const cablePathsQuery = useQuery({
     queryKey: ["floor-plan-cable-paths", id],
     queryFn: () =>
@@ -269,6 +294,9 @@ function FloorPlanPage() {
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set())
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [armed, setArmed] = useState<PaletteEntry | null>(null)
+  // Structure mode: arm-to-draw a raised-floor rectangle + selection.
+  const [areaArmed, setAreaArmed] = useState(false)
+  const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null)
   const [paletteTab, setPaletteTab] = useState<"tiles" | "zones">("tiles")
   const [showGrid, setShowGrid] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -292,6 +320,7 @@ function FloorPlanPage() {
   const [show3dAirflowLocal, setShow3dAirflowLocal] = useState<boolean | null>(
     null
   )
+  const [floorPeekLocal, setFloorPeekLocal] = useState<boolean | null>(null)
   const [highlightCableIds, setHighlightCableIds] = useState<string[]>([])
   // Tile popover: hover-preview (delayed) + click-to-pin.
   const popover = useTilePopover()
@@ -307,7 +336,7 @@ function FloorPlanPage() {
   // Tray edit mode: hide cables + let every tray be reshaped. A toggle.
   const [trayEditMode, setTrayEditMode] = useState(false)
   // Editor mode: layout (tiles) vs cable (trays).
-  const [mode, setMode] = useState<"layout" | "cable">("layout")
+  const [mode, setMode] = useState<"layout" | "cable" | "structure">("layout")
   const [selectedTrayId, setSelectedTrayId] = useState<string | null>(null)
   // Tray drawing: null when idle, else the in-progress vertex list.
   const [drawPoints, setDrawPoints] = useState<[number, number][] | null>(null)
@@ -508,6 +537,10 @@ function FloorPlanPage() {
     show3dAirflowLocal ??
     (plan?.state.show_3d_airflow as boolean | undefined) ??
     false
+  const floorPeek =
+    floorPeekLocal ??
+    (plan?.state.show_3d_floor_peek as boolean | undefined) ??
+    false
 
   // ?trace=<cableId> → highlight that cable + fit the view to its route, so a
   // "trace on map" link from a cable/rack lands on the run without any clicks.
@@ -535,7 +568,8 @@ function FloorPlanPage() {
       | "show_3d_u"
       | "show_3d_names"
       | "show_3d_cables"
-      | "show_3d_airflow",
+      | "show_3d_airflow"
+      | "show_3d_floor_peek",
     value: boolean
   ) => {
     if (key === "label_fit") setLabelFitLocal(value)
@@ -547,10 +581,70 @@ function FloorPlanPage() {
     else if (key === "show_3d_names") setShow3dNamesLocal(value)
     else if (key === "show_3d_cables") setShow3dCablesLocal(value)
     else if (key === "show_3d_airflow") setShow3dAirflowLocal(value)
+    else if (key === "show_3d_floor_peek") setFloorPeekLocal(value)
     else setShowLinksLocal(value)
     if (canEdit && plan)
       patchPlan.mutate({ state: { ...plan.state, [key]: value } })
   }
+
+  const invalidateAreas = () => {
+    qc.invalidateQueries({ queryKey: ["floor-plan-raised-floors", id] })
+    qc.invalidateQueries({ queryKey: ["floor-plan-scene", id] })
+  }
+  const createArea = useMutation({
+    mutationFn: (rect: { x: number; y: number; w: number; h: number }) =>
+      api<RaisedFloorArea>("/api/floor-plan-raised-floors/", {
+        method: "POST",
+        body: JSON.stringify({
+          floor_plan_id: id,
+          x: rect.x,
+          y: rect.y,
+          width: rect.w,
+          height: rect.h,
+        }),
+      }),
+    onSuccess: (a) => {
+      invalidateAreas()
+      setSelectedAreaId(a.id)
+      setAreaArmed(false)
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  const patchArea = useMutation({
+    mutationFn: ({
+      areaId,
+      body,
+    }: {
+      areaId: string
+      body: Partial<RaisedFloorArea>
+    }) =>
+      api<RaisedFloorArea>(`/api/floor-plan-raised-floors/${areaId}/`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: invalidateAreas,
+    onError: (e) => apiErrorToast(e),
+  })
+  const deleteArea = useMutation({
+    mutationFn: (areaId: string) =>
+      api<void>(`/api/floor-plan-raised-floors/${areaId}/`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      invalidateAreas()
+      setSelectedAreaId(null)
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  /** Structure mode: a completed drag-rect becomes a raised-floor area. */
+  const createAreaAt = useCallback(
+    (rect: { x: number; y: number; w: number; h: number }) => {
+      if (!areaArmed || !plan) return
+      createArea.mutate(rect)
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [areaArmed, plan, id]
+  )
 
   const createAt = useCallback(
     (rect: { x: number; y: number; w: number; h: number }) => {
@@ -720,6 +814,10 @@ function FloorPlanPage() {
         return
       }
       // Cable mode: Enter finishes an in-progress tray.
+      if (e.key === "Escape" && areaArmed) {
+        setAreaArmed(false)
+        return
+      }
       if (mode === "cable" && drawPoints !== null && e.key === "Enter") {
         e.preventDefault()
         finishDraw()
@@ -759,6 +857,7 @@ function FloorPlanPage() {
     traceParam,
     nav,
     view3d,
+    areaArmed,
   ])
 
   // ── Save (explicit, one bulk transaction) ──────────────────────────────
@@ -1004,7 +1103,7 @@ function FloorPlanPage() {
             ]}
           />
           {canEdit && !view3d && (
-            <SegmentedTabs<"layout" | "cable">
+            <SegmentedTabs<"layout" | "cable" | "structure">
               value={mode}
               onValueChange={(m) => {
                 setMode(m)
@@ -1012,12 +1111,15 @@ function FloorPlanPage() {
                 setSelectedTrayId(null)
                 setArmed(null)
                 setDrawPoints(null)
+                setSelectedAreaId(null)
+                setAreaArmed(false)
                 // Leaving Cables mode must exit tray-edit — otherwise Layout
                 // mode stays frozen (tiles unselectable, cables hidden).
                 setTrayEditMode(false)
               }}
               items={[
                 { value: "layout", label: "Layout" },
+                { value: "structure", label: "Structure" },
                 { value: "cable", label: "Cables" },
               ]}
             />
@@ -1124,6 +1226,12 @@ function FloorPlanPage() {
                     label="Airflow"
                     checked={show3dAirflow}
                     onChange={(v) => setViewPref("show_3d_airflow", v)}
+                    className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+                  />
+                  <FormCheckbox
+                    label="Lift raised floor"
+                    checked={floorPeek}
+                    onChange={(v) => setViewPref("show_3d_floor_peek", v)}
                     className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
                   />
                 </>
@@ -1242,6 +1350,19 @@ function FloorPlanPage() {
             onCancelDraw={() => setDrawPoints(null)}
           />
         )}
+        {canEdit && mode === "structure" && (
+          <StructureRail
+            areas={areas}
+            selectedAreaId={selectedAreaId}
+            drawing={areaArmed}
+            onSelectArea={setSelectedAreaId}
+            onStartDraw={() => {
+              setSelectedAreaId(null)
+              setAreaArmed(true)
+            }}
+            onCancelDraw={() => setAreaArmed(false)}
+          />
+        )}
         {canEdit && mode === "layout" && (
           <aside className="flex w-56 shrink-0 flex-col border-r border-border">
             <div className="flex items-center justify-between px-3 pt-3 pb-1">
@@ -1349,6 +1470,7 @@ function FloorPlanPage() {
                   showNames={show3dNames}
                   showCables={show3dCables}
                   showAirflow={show3dAirflow}
+                  floorPeek={floorPeek}
                 />
               </Suspense>
               {show3dHint && (
@@ -1374,7 +1496,13 @@ function FloorPlanPage() {
                 selectedId={selectedId}
                 editable={canEdit}
                 showGrid={showGrid}
-                armed={armed}
+                armed={
+                  mode === "structure"
+                    ? areaArmed
+                      ? AREA_PSEUDO_ENTRY
+                      : null
+                    : armed
+                }
                 onSelect={(id) => {
                   setSelectedId(id)
                   // Clicking a tile pins its popover (the pointer is already over
@@ -1384,7 +1512,10 @@ function FloorPlanPage() {
                 }}
                 onHoverTile={popover.onHover}
                 onChangeTile={changeTileGuarded}
-                onCreateRect={createAt}
+                onCreateRect={mode === "structure" ? createAreaAt : createAt}
+                raisedFloors={areas}
+                selectedAreaId={selectedAreaId}
+                onSelectArea={setSelectedAreaId}
                 onOpenTile={openTile}
                 exportRef={exportRef}
                 liveState={liveState.data ?? null}
@@ -1514,6 +1645,20 @@ function FloorPlanPage() {
             onDelete={() => deleteTray.mutate(selectedTray.id)}
           />
         )}
+        {canEdit &&
+          mode === "structure" &&
+          (() => {
+            const area = areas.find((a) => a.id === selectedAreaId)
+            if (!area) return null
+            return (
+              <AreaInspector
+                key={area.id}
+                area={area}
+                onPatch={(body) => patchArea.mutate({ areaId: area.id, body })}
+                onDelete={() => deleteArea.mutate(area.id)}
+              />
+            )
+          })()}
         {/* Outermost right aside, so it coexists with whichever inspector is
             open rather than fighting it for the gutter. */}
         {showObjects && (
@@ -2392,6 +2537,149 @@ function TileSearch({
         })}
       </PopoverContent>
     </Popover>
+  )
+}
+
+/** Structure-mode left rail — draw control + the raised-floor area list. */
+function StructureRail({
+  areas,
+  selectedAreaId,
+  drawing,
+  onSelectArea,
+  onStartDraw,
+  onCancelDraw,
+}: {
+  areas: RaisedFloorArea[]
+  selectedAreaId: string | null
+  drawing: boolean
+  onSelectArea: (id: string | null) => void
+  onStartDraw: () => void
+  onCancelDraw: () => void
+}) {
+  return (
+    <aside className="flex w-56 shrink-0 flex-col border-r border-border">
+      <div className="flex items-center justify-between px-3 pt-3 pb-2">
+        <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+          Raised floors
+        </span>
+      </div>
+      <div className="px-3 pb-2">
+        {drawing ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-full"
+            onClick={onCancelDraw}
+          >
+            Drag a rectangle… (Esc to cancel)
+          </Button>
+        ) : (
+          <Button size="sm" className="w-full" onClick={onStartDraw}>
+            Draw area
+          </Button>
+        )}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
+        {areas.length === 0 && !drawing && (
+          <p className="px-1.5 py-2 text-xs text-muted-foreground">
+            No raised floors yet. Draw one — underfloor trays and cables will
+            dive as deep as its plenum, and the 3D room shows the void.
+          </p>
+        )}
+        {areas.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            onClick={() => onSelectArea(a.id === selectedAreaId ? null : a.id)}
+            className={cn(
+              "flex w-full items-center gap-2 rounded px-1.5 py-1.5 text-left text-xs hover:bg-muted/60",
+              a.id === selectedAreaId && "bg-muted"
+            )}
+          >
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-[3px] border border-dashed"
+              style={{ borderColor: a.color || "#71717a" }}
+            />
+            <span className="min-w-0 flex-1 truncate">
+              {a.label || "Raised floor"}
+            </span>
+            <span className="num text-[10px] text-muted-foreground">
+              {a.width}×{a.height} · {a.plenum_mm} mm
+            </span>
+          </button>
+        ))}
+      </div>
+    </aside>
+  )
+}
+
+/** Structure-mode right panel: edit the selected raised-floor area. */
+function AreaInspector({
+  area,
+  onPatch,
+  onDelete,
+}: {
+  area: RaisedFloorArea
+  onPatch: (body: Partial<RaisedFloorArea>) => void
+  onDelete: () => void
+}) {
+  const [label, setLabel] = useState(area.label)
+  const [plenum, setPlenum] = useState(String(area.plenum_mm))
+  return (
+    <aside className="flex w-64 shrink-0 flex-col gap-3 overflow-y-auto border-l border-border p-3">
+      <div className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+        Raised floor
+      </div>
+      <label className="grid gap-1 text-xs">
+        <span className="text-muted-foreground">Label</span>
+        <Input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          onBlur={() => label !== area.label && onPatch({ label })}
+          placeholder="DC pad"
+          className="h-8"
+        />
+      </label>
+      <label className="grid gap-1 text-xs">
+        <span className="text-muted-foreground">Plenum depth (mm)</span>
+        <Input
+          type="number"
+          min={50}
+          max={2000}
+          value={plenum}
+          onChange={(e) => setPlenum(e.target.value)}
+          onBlur={() => {
+            const v = Number(plenum)
+            if (Number.isFinite(v) && v !== area.plenum_mm)
+              onPatch({ plenum_mm: v })
+          }}
+          className="h-8"
+        />
+        <span className="text-[10px] text-muted-foreground">
+          Underfloor trays and cable-length drops in this area use this depth.
+        </span>
+      </label>
+      <div className="grid gap-1 text-xs">
+        <span className="text-muted-foreground">Color</span>
+        <ColorPicker
+          value={area.color}
+          onChange={(color) => onPatch({ color })}
+        />
+      </div>
+      <div className="num text-[11px] text-muted-foreground">
+        {area.width}×{area.height} cells at ({area.x}, {area.y})
+      </div>
+      <div className="mt-auto">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="w-full text-destructive hover:text-destructive"
+          onClick={onDelete}
+        >
+          <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete area
+        </Button>
+      </div>
+    </aside>
   )
 }
 

@@ -41,11 +41,12 @@ function deviceSites(scene: ScenePayload): Map<string, DeviceSite> {
 type Vec3 = [number, number, number]
 
 /**
- * How a cable LEAVES one end: out of the port quad, a short stub off the face,
- * then across to the rack's nearest SIDE RAIL — where real vertical cable
- * management lives — so runs hug the cabinet edge instead of crossing the
- * faceplates. `entry` is ordered port → rail; `railAt(y)` continues the riser
- * along that rail column.
+ * How a cable LEAVES one end: out of the port quad, a short stub straight off
+ * the face, then a vertical rise/dive RIGHT THERE, in front of the cabinet at
+ * the port's own x — like a patch lead dropping down the front. (An earlier
+ * side-rail jog ran horizontally across the faceplate at port height and
+ * sliced every panel it passed.) `entry` is ordered port → stub; `railAt(y)`
+ * continues the riser in that column.
  */
 interface EndRun {
   entry: Vec3[]
@@ -99,11 +100,12 @@ function portEndRun(
 }
 
 /**
- * A cable's 3D run: port quad → stub off the face → riser up the rack's side
- * rail → the assigned trays (the same 2D route the flat canvas draws) → down
- * the far rail → the far port. Same-rack cables skip the room trip entirely
- * and run port → rail → rail → port. Ends fall back to a drop at the endpoint
- * tile when the port can't be anchored (no marker / device not placed).
+ * A cable's 3D run: port quad → stub off the face → vertical riser in front
+ * of the port → the assigned trays (the same 2D route the flat canvas draws)
+ * → down the far riser → the far port. Same-rack cables skip the room trip
+ * entirely: stub → stub. Ends fall back to a drop at the endpoint tile when
+ * the port can't be anchored (no marker / device not placed). Underfloor
+ * rides derive their depth from the raised-floor area beneath the run.
  */
 export function cableRunPoints(
   scene: ScenePayload,
@@ -130,7 +132,11 @@ export function cableRunPoints(
     // Fallback: a plain drop at the endpoint tile's centre.
     const t = scene.tiles.find((x) => x.id === tileId)
     const y = t?.rack ? rackFootprintM(t.rack).height * 0.7 : 0.8
-    const [x, z] = cellToWorld(plan, t ? t.x + t.w / 2 : 0, t ? t.y + t.h / 2 : 0)
+    const [x, z] = cellToWorld(
+      plan,
+      t ? t.x + t.w / 2 : 0,
+      t ? t.y + t.h / 2 : 0
+    )
     return { entry: [[x, y, z]], railAt: (ry) => [x, ry, z] }
   }
 
@@ -143,11 +149,17 @@ export function cableRunPoints(
   }
 
   const trays = scene.trays.filter((t) => cp.tray_ids.includes(t.id))
-  const route = routeCable(a, b, trays.map((t) => t.points))
+  const areas = scene.raised_floors
+  const route = routeCable(
+    a,
+    b,
+    trays.map((t) => t.points)
+  )
   // Ride at the assigned trays' (average) elevation; straight runs with no
   // tray fly at 2/3 room height so they read as an abstract link.
   const rideY = trays.length
-    ? trays.reduce((s, t) => s + trayElevationM(plan, t), 0) / trays.length
+    ? trays.reduce((s, t) => s + trayElevationM(plan, t, areas), 0) /
+      trays.length
     : (plan.ceiling_mm / 1000) * 0.66
 
   const pts: Vec3[] = []
@@ -223,8 +235,13 @@ export function CablesLayer({
     const cables = paths.data?.cables ?? []
     return cables
       .map((cp) => ({ cp, points: cableRunPoints(scene, sites, cp) }))
-      .filter((r): r is { cp: FloorPlanCablePath; points: [number, number, number][] } =>
-        Boolean(r.points)
+      .filter(
+        (
+          r
+        ): r is {
+          cp: FloorPlanCablePath
+          points: [number, number, number][]
+        } => Boolean(r.points)
       )
   }, [paths.data, scene, sites])
 

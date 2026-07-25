@@ -37,6 +37,7 @@ import { CablesLayer, CableTrace3D } from "./cable-trace-3d"
 import { CameraRig, type FlyToRequest } from "./camera-rig"
 import { Room } from "./room"
 import { RackMesh, type Sel } from "./rack-mesh"
+import { RaisedFloorMesh } from "./raised-floor-mesh"
 import { TrayMesh } from "./tray-mesh"
 import { useScene } from "./use-scene"
 import {
@@ -64,6 +65,7 @@ export default function FloorScene3D({
   showUNumbers = false,
   showNames = false,
   showAirflow = false,
+  floorPeek = false,
   showCables = false,
 }: {
   planId: string
@@ -73,6 +75,9 @@ export default function FloorScene3D({
   showUNumbers?: boolean
   showNames?: boolean
   showAirflow?: boolean
+  /** Lift the raised floor: translucent finished-floor slabs so underfloor
+   * trays and cable runs read through the plenum. */
+  floorPeek?: boolean
   showCables?: boolean
 }) {
   const scene = useScene(planId)
@@ -316,7 +321,15 @@ export default function FloorScene3D({
           />
         ))}
         {data.trays.map((tr) => (
-          <TrayMesh key={tr.id} plan={plan} tray={tr} />
+          <TrayMesh
+            key={tr.id}
+            plan={plan}
+            tray={tr}
+            areas={scene.data.raised_floors}
+          />
+        ))}
+        {(scene.data.raised_floors ?? []).map((a) => (
+          <RaisedFloorMesh key={a.id} plan={plan} area={a} peek={floorPeek} />
         ))}
         {showCables && (
           <CablesLayer

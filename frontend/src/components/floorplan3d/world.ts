@@ -75,6 +75,17 @@ export interface SceneTray {
   cable_count: number
 }
 
+export interface SceneRaisedFloor {
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
+  plenum_mm: number
+  label: string
+  color: string
+}
+
 export interface ScenePayload {
   plan: {
     id: string
@@ -88,6 +99,8 @@ export interface ScenePayload {
   }
   tiles: SceneTile[]
   trays: SceneTray[]
+  /** Raised-floor rectangles; optional so older cached payloads stay valid. */
+  raised_floors?: SceneRaisedFloor[]
   as_of: string
 }
 
@@ -102,7 +115,9 @@ export const RACK_DEPTH_DEFAULT_M = 1.0
 /** Tray cross-section (ladder tray look). */
 export const TRAY_W_M = 0.2
 export const TRAY_H_M = 0.08
-/** Derived tray elevation offsets (mm) when elevation_mm is blank. */
+/** Derived tray elevation offsets (mm) when elevation_mm is blank.
+ * UNDERFLOOR_MM is the FALLBACK plenum — a raised-floor area under the run
+ * overrides it (api/pathfinding.py's DEFAULT_PLENUM_MM is the same 300). */
 export const OVERHEAD_DROP_MM = 300
 export const UNDERFLOOR_MM = -300
 
@@ -121,13 +136,33 @@ export function cellToWorld(
   return [x * c, y * c]
 }
 
-/** A tray's resolved elevation (m) from its level when not set explicitly. */
+/** The plenum depth (mm, positive) under a tray run: the deepest raised-floor
+ * area any of its points sits in, else the 300 fallback — the twin of
+ * api/pathfinding.py's underfloor_plenum_mm, so 3D depth and route-length
+ * drops can't disagree. */
+export function underfloorMM(
+  areas: SceneRaisedFloor[] | undefined,
+  points: [number, number][]
+): number {
+  let best = 0
+  for (const [px, py] of points) {
+    for (const a of areas ?? []) {
+      if (a.x <= px && px <= a.x + a.w && a.y <= py && py <= a.y + a.h)
+        if (a.plenum_mm > best) best = a.plenum_mm
+    }
+  }
+  return best || -UNDERFLOOR_MM
+}
+
+/** A tray's resolved elevation (m) from its level when not set explicitly.
+ * Omit `areas` and underfloor derives the historical −300. */
 export function trayElevationM(
   plan: ScenePayload["plan"],
-  tray: SceneTray
+  tray: SceneTray,
+  areas?: SceneRaisedFloor[]
 ): number {
   if (tray.elevation_mm != null) return mm(tray.elevation_mm)
-  if (tray.level === "underfloor") return mm(UNDERFLOOR_MM)
+  if (tray.level === "underfloor") return -mm(underfloorMM(areas, tray.points))
   if (tray.level === "floor") return 0
   return mm(plan.ceiling_mm - OVERHEAD_DROP_MM)
 }

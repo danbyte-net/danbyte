@@ -5672,6 +5672,31 @@ export interface FloorPlanTray {
   updated_at: string
 }
 
+export interface RaisedFloorArea {
+  id: string
+  x: number
+  y: number
+  width: number
+  height: number
+  /** Void depth under the finished floor (mm). */
+  plenum_mm: number
+  label: string
+  color: string
+  created_at: string
+  updated_at: string
+}
+
+export interface RaisedFloorAreaWritePayload {
+  floor_plan_id?: string
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  plenum_mm?: number
+  label?: string
+  color?: string
+}
+
 export interface FloorPlanTrayWritePayload {
   floor_plan_id?: string
   name?: string

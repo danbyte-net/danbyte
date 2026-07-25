@@ -23,8 +23,15 @@ Pt = tuple[float, float]
 SNAP_CELLS = 0.75
 #: Extra length allowance for service loops, dressing and termination waste.
 SLACK_FACTOR = 0.10
-#: Fallback drop when an endpoint's rack height is unknown (mm).
-DEFAULT_DROP_MM = 2000
+#: Plenum depth under a raised floor when no area records one (mm). The
+#: single source for the old hardcoded −300; world.ts mirrors it.
+DEFAULT_PLENUM_MM = 300
+#: Overhead trays hang this far below the ceiling when elevation is blank.
+OVERHEAD_DROP_MM = 300
+#: Rack-top math for vertical drops: U pitch + plinth height (mm) — the same
+#: constants world.ts renders cabinets with (PANEL_MM.uPitch, RACK_BASE_M).
+U_PITCH_MM = 44.45
+RACK_PLINTH_MM = 100.0
 #: How far (cells) an endpoint may sit from the tray network and still count
 #: as routable. The 2D renderer projects unbounded (it draws already-assigned
 #: trays); the router DECIDES routability, so a rack 30 cells from any tray
@@ -256,14 +263,58 @@ def estimate_length_m(
     return round(run_mm * (1 + slack) / 1000, 1)
 
 
-def tray_elevation_mm(level: str, elevation_mm: int | None, ceiling_mm: int) -> float:
+def tray_elevation_mm(
+    level: str,
+    elevation_mm: int | None,
+    ceiling_mm: int,
+    plenum_mm: float = DEFAULT_PLENUM_MM,
+) -> float:
     """A tray's resolved elevation — the Python twin of world.ts's
-    ``trayElevationM`` derivation (overhead → ceiling−300, underfloor → −300,
-    floor → 0)."""
+    ``trayElevationM`` derivation (overhead → ceiling−300, underfloor →
+    −plenum, floor → 0). ``plenum_mm`` comes from the raised-floor area the
+    run sits in; callers with no area data get the historical 300."""
     if elevation_mm is not None:
         return float(elevation_mm)
     if level == "underfloor":
-        return -300.0
+        return -float(plenum_mm)
     if level == "floor":
         return 0.0
-    return float(ceiling_mm - 300)
+    return float(ceiling_mm - OVERHEAD_DROP_MM)
+
+
+def underfloor_plenum_mm(
+    areas: list[tuple[float, float, float, float, int]],
+    points: list,
+) -> float:
+    """The plenum depth under a tray run: the deepest raised-floor area any
+    of its points sits in, else the default. ``areas`` are
+    ``(x, y, width, height, plenum_mm)`` rects in cell units; the max wins
+    when a run crosses areas because a cable dressed to the deeper void
+    needs the longer drop."""
+    best = 0.0
+    for px, py in points or []:
+        for ax, ay, aw, ah, plenum in areas:
+            if ax <= px <= ax + aw and ay <= py <= ay + ah:
+                if plenum > best:
+                    best = float(plenum)
+    return best or float(DEFAULT_PLENUM_MM)
+
+
+def rack_drop_mm(
+    rack_u_height: int | None,
+    level: str,
+    elevation_mm: int | None,
+    ceiling_mm: int,
+    plenum_mm: float = DEFAULT_PLENUM_MM,
+) -> float:
+    """Vertical run between a rack's top and a tray's elevation (mm) — the
+    drop term in length estimation. Replaces two identical inline closures
+    that each hardcoded the U pitch and plinth. ``abs()`` makes underfloor
+    work unchanged: the run goes down instead of up."""
+    top = (
+        rack_u_height * U_PITCH_MM + RACK_PLINTH_MM
+        if rack_u_height is not None
+        else 0.0
+    )
+    elev = tray_elevation_mm(level, elevation_mm, ceiling_mm, plenum_mm)
+    return abs(elev - top)

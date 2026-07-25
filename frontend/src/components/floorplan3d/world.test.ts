@@ -8,6 +8,7 @@ import {
   deviceYM,
   rackFootprintM,
   trayElevationM,
+  underfloorMM,
   type SceneRack,
   type SceneTray,
   type ScenePayload,
@@ -194,5 +195,78 @@ describe("airflowGlyphPlacements", () => {
     const b = box()
     for (const x of airflowGlyphPlacements("front-to-rear", b))
       expect(x.pos[1]).toBeCloseTo(b.y + b.h / 2)
+  })
+})
+
+describe("underfloorMM + area-aware trayElevationM", () => {
+  const tray = (over: Partial<SceneTray>): SceneTray => ({
+    id: "t",
+    name: "T",
+    kind: "",
+    color: "",
+    level: "overhead",
+    elevation_mm: null,
+    points: [],
+    cable_count: 0,
+    ...over,
+  })
+  const area = (
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    plenum: number
+  ) => ({
+    id: `a${x}`,
+    x,
+    y,
+    w,
+    h,
+    plenum_mm: plenum,
+    label: "",
+    color: "",
+  })
+
+  it("falls back to 300 outside every area (the historical constant)", () => {
+    expect(underfloorMM(undefined, [[1, 1]])).toBe(300)
+    expect(underfloorMM([area(10, 10, 4, 4, 600)], [[1, 1]])).toBe(300)
+  })
+
+  it("takes the deepest plenum a run crosses", () => {
+    const areas = [area(0, 0, 10, 10, 400), area(10, 0, 10, 10, 700)]
+    expect(
+      underfloorMM(areas, [
+        [2, 2],
+        [8, 2],
+      ])
+    ).toBe(400)
+    expect(
+      underfloorMM(areas, [
+        [8, 2],
+        [12, 2],
+      ])
+    ).toBe(700)
+  })
+
+  it("trayElevationM derives −plenum for underfloor runs in an area", () => {
+    const areas = [area(0, 0, 20, 16, 600)]
+    const t = tray({
+      level: "underfloor",
+      points: [
+        [2, 2],
+        [6, 2],
+      ],
+    })
+    expect(trayElevationM(plan, t, areas)).toBeCloseTo(-0.6)
+    // Back-compat: omitted areas keep the historical −0.3.
+    expect(trayElevationM(plan, t)).toBeCloseTo(-0.3)
+    // Explicit elevation still always wins.
+    expect(
+      trayElevationM(
+        plan,
+        tray({ level: "underfloor", elevation_mm: -450 }),
+        areas
+      )
+    ).toBeCloseTo(-0.45)
   })
 })
