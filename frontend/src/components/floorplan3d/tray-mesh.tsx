@@ -5,6 +5,7 @@ import {
   TRAY_W_M,
   cellToWorld,
   trayElevationM,
+  type SceneRaisedFloor,
   type ScenePayload,
   type SceneTray,
 } from "./world"
@@ -17,11 +18,15 @@ const TRAY_FALLBACK = "#f59e0b"
 export function TrayMesh({
   plan,
   tray,
+  areas,
 }: {
   plan: ScenePayload["plan"]
   tray: SceneTray
+  /** Raised-floor areas — underfloor runs derive their depth from the void
+   * they sit in rather than a constant. */
+  areas?: SceneRaisedFloor[]
 }) {
-  const y = trayElevationM(plan, tray)
+  const y = trayElevationM(plan, tray, areas)
   const color = tray.color || TRAY_FALLBACK
 
   const segments = useMemo(() => {

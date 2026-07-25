@@ -30,7 +30,8 @@ from .models import (
     Contact, ContactAssignment, ContactGroup, ContactRole, Device, DeviceType,
     FHRPGroup, FHRPGroupAssignment,
     FiberSettings,
-    FloorPlan, FloorPlanTile, FloorPlanTray, FloorTileType, SiteMarker,
+    FloorPlan, FloorPlanRaisedFloorArea, FloorPlanTile, FloorPlanTray,
+    FloorTileType, SiteMarker,
     FrontPort, FrontPortTemplate,
     InterfaceTemplate, DeviceTypeService,
     IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
@@ -55,6 +56,7 @@ from .serializers import (
     CableSerializer,
     FiberSettingsSerializer,
     FloorPlanMiniSerializer,
+    FloorPlanRaisedFloorAreaSerializer,
     FloorPlanTraySerializer,
     FloorPlanSerializer,
     FloorPlanTileSerializer,
@@ -3359,7 +3361,8 @@ class CableViewSet(TenantScopedViewSet):
         replaces a recorded one). Body: ``{"floor_plan": id, "overwrite"?}``."""
         from .models import FloorPlan
         from .pathfinding import (
-            estimate_length_m, route_through_trays, tray_elevation_mm,
+            estimate_length_m, rack_drop_mm, route_through_trays,
+            underfloor_plenum_mm,
         )
 
         cable = self.get_object()
@@ -3398,13 +3401,24 @@ class CableViewSet(TenantScopedViewSet):
             })
         used = [trays[i] for i in result.tray_indexes]
 
-        def drop_mm(rack, tray):
-            top = (rack.u_height * 44.45 + 100) if rack is not None else 0.0
-            elev = tray_elevation_mm(tray.level, tray.elevation_mm, plan.ceiling_mm)
-            return abs(elev - top)
+        # Plenum-aware drops: an underfloor run dives as deep as the raised
+        # floor beneath it, not a constant.
+        area_rects = [
+            (a.x, a.y, a.width, a.height, a.plenum_mm)
+            for a in plan.raised_floor_areas.all()
+        ]
 
-        drop_a = drop_mm(rack_a, used[0]) if used else 0.0
-        drop_b = drop_mm(rack_b, used[-1]) if used else 0.0
+        def _drop(rack, tray):
+            if tray is None:
+                return 0.0
+            plenum = underfloor_plenum_mm(area_rects, tray.points)
+            return rack_drop_mm(
+                rack.u_height if rack is not None else None,
+                tray.level, tray.elevation_mm, plan.ceiling_mm, plenum,
+            )
+
+        drop_a = _drop(rack_a, used[0]) if used else 0.0
+        drop_b = _drop(rack_b, used[-1]) if used else 0.0
         length_m = estimate_length_m(result.run_cells, plan.cell_mm, drop_a, drop_b)
 
         overwrite = bool((request.data or {}).get("overwrite"))
@@ -5847,7 +5861,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
         trays it rides, and the estimated physical length (run + vertical
         drops + slack)."""
         from .pathfinding import (
-            estimate_length_m, route_through_trays, tray_elevation_mm,
+            estimate_length_m, rack_drop_mm, route_through_trays,
+            underfloor_plenum_mm,
         )
 
         plan = self.get_object()
@@ -5860,18 +5875,24 @@ class FloorPlanViewSet(TenantScopedViewSet):
         result = route_through_trays(a, b, [t.points for t in trays])
         used = [trays[i] for i in result.tray_indexes]
 
-        def drop_mm(rack, tray):
+        # Plenum-aware drops: an underfloor run dives as deep as the raised
+        # floor beneath it, not a constant.
+        area_rects = [
+            (a.x, a.y, a.width, a.height, a.plenum_mm)
+            for a in plan.raised_floor_areas.all()
+        ]
+
+        def _drop(rack, tray):
             if tray is None:
                 return 0.0
-            top = (
-                rack.u_height * 44.45 + 100 if rack is not None
-                else 0.0
-            ) or 0.0
-            elev = tray_elevation_mm(tray.level, tray.elevation_mm, plan.ceiling_mm)
-            return abs(elev - top)
+            plenum = underfloor_plenum_mm(area_rects, tray.points)
+            return rack_drop_mm(
+                rack.u_height if rack is not None else None,
+                tray.level, tray.elevation_mm, plan.ceiling_mm, plenum,
+            )
 
-        drop_a = drop_mm(rack_a, used[0] if used else None)
-        drop_b = drop_mm(rack_b, used[-1] if used else None)
+        drop_a = _drop(rack_a, used[0] if used else None)
+        drop_b = _drop(rack_b, used[-1] if used else None)
         length_m = estimate_length_m(
             result.run_cells, plan.cell_mm, drop_a, drop_b
         )
@@ -5992,6 +6013,15 @@ class FloorPlanViewSet(TenantScopedViewSet):
             }
             for tr in plan.trays.prefetch_related("cables")
         ]
+        raised_floors = [
+            {
+                "id": str(a.id),
+                "x": a.x, "y": a.y, "w": a.width, "h": a.height,
+                "plenum_mm": a.plenum_mm,
+                "label": a.label, "color": a.color,
+            }
+            for a in plan.raised_floor_areas.all()
+        ]
         return Response({
             "plan": {
                 "id": str(plan.id),
@@ -6005,6 +6035,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
             },
             "tiles": tiles,
             "trays": trays,
+            "raised_floors": raised_floors,
             "as_of": timezone.now().isoformat(),
         })
 
@@ -6214,22 +6245,6 @@ class FloorPlanTileViewSet(TenantScopedViewSet):
         serializer.save()
 
 
-class CableRouteViewSet(TenantScopedViewSet):
-    """Geographic duct/aerial/trench runs on the site map."""
-
-    queryset = CableRoute.objects.prefetch_related("cables").order_by(NATURAL_NAME)
-    serializer_class = CableRouteSerializer
-    pagination_class = StandardPagination
-
-    def get_queryset(self):
-        qs = super().get_queryset()
-        if self.request:
-            cable = self.request.query_params.get("cable")
-            if cable:
-                qs = qs.filter(cables__id=cable)
-        return qs
-
-
 class FloorPlanTrayViewSet(TenantScopedViewSet):
     """Tray/conduit runs — scoped through their plan's tenant, like tiles."""
 
@@ -6237,6 +6252,33 @@ class FloorPlanTrayViewSet(TenantScopedViewSet):
         "cables"
     ).order_by(NATURAL_NAME)
     serializer_class = FloorPlanTraySerializer
+    pagination_class = StandardPagination
+    tenant_field = None
+
+    def get_queryset(self):
+        tenant = _get_active_tenant(self.request)
+        if tenant is None:
+            return self.queryset.none()
+        qs = self.queryset.filter(floor_plan__tenant=tenant)
+        if self.request:
+            fp = self.request.query_params.get("floor_plan")
+            if fp:
+                qs = qs.filter(floor_plan_id=fp)
+        return restrict_for_view(self, qs)
+
+    def perform_create(self, serializer):
+        if serializer.validated_data.get("floor_plan") is None:
+            raise ValidationError({"floor_plan_id": "This field is required."})
+        serializer.save()
+
+
+class FloorPlanRaisedFloorAreaViewSet(TenantScopedViewSet):
+    """Raised-floor rectangles — scoped through their plan's tenant, like
+    trays. The plenum depth they carry feeds underfloor tray elevation in the
+    3D room and the vertical-drop term in route-length estimation."""
+
+    queryset = FloorPlanRaisedFloorArea.objects.select_related("floor_plan")
+    serializer_class = FloorPlanRaisedFloorAreaSerializer
     pagination_class = StandardPagination
     tenant_field = None
 

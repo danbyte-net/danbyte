@@ -160,9 +160,24 @@ export interface FloorCanvasProps {
   showFov?: boolean
   /** Draw the name label on background zone tiles (Cold aisle, Hot aisle…). */
   showZoneLabels?: boolean
+  // ── Raised-floor areas (Structure mode) ────────────────────────────────
+  /** Raised-floor rectangles, drawn UNDER every tile in all modes. */
+  raisedFloors?: {
+    id: string
+    x: number
+    y: number
+    width: number
+    height: number
+    plenum_mm: number
+    label: string
+    color: string
+  }[]
+  selectedAreaId?: string | null
+  /** Structure mode: an area outline was clicked. */
+  onSelectArea?: (id: string | null) => void
   // ── Cable trays ────────────────────────────────────────────────────────
   /** "layout" edits tiles; "cable" draws/selects trays. */
-  mode?: "layout" | "cable"
+  mode?: "layout" | "cable" | "structure"
   trays?: FloorPlanTray[]
   showTrays?: boolean
   selectedTrayId?: string | null
@@ -223,6 +238,9 @@ export function FloorCanvas({
   editable,
   showGrid,
   armed,
+  raisedFloors,
+  selectedAreaId,
+  onSelectArea,
   onSelect,
   onChangeTile,
   onCreateRect,
@@ -416,8 +434,8 @@ export function FloorCanvas({
 
   const handleTileDown = (tile: FloorPlanTile, e: React.PointerEvent) => {
     if (e.button !== 0) return
-    // In cable mode (or while editing a tray) tiles are inert.
-    if (mode === "cable" || editing) return
+    // In cable/structure mode (or while editing a tray) tiles are inert.
+    if (mode === "cable" || mode === "structure" || editing) return
     e.stopPropagation()
     if (!editable) {
       onOpenTile?.(tile)
@@ -739,6 +757,51 @@ export function FloorCanvas({
             rx={4}
             pointerEvents="none"
           />
+
+          {/* Raised-floor areas — construction context under everything.
+              Interactive (selectable) only in Structure mode. */}
+          {(raisedFloors ?? []).map((a) => (
+            <g
+              key={a.id}
+              onPointerDown={
+                mode === "structure"
+                  ? (e) => {
+                      e.stopPropagation()
+                      onSelectArea?.(a.id)
+                    }
+                  : undefined
+              }
+              style={{
+                cursor: mode === "structure" ? "pointer" : undefined,
+                pointerEvents: mode === "structure" ? "auto" : "none",
+              }}
+            >
+              <rect
+                x={a.x * CELL}
+                y={a.y * CELL}
+                width={a.width * CELL}
+                height={a.height * CELL}
+                fill={a.color || "#71717a"}
+                fillOpacity={0.1}
+                stroke={a.color || "#71717a"}
+                strokeOpacity={a.id === selectedAreaId ? 0.9 : 0.35}
+                strokeWidth={a.id === selectedAreaId ? 2.5 : 1.5}
+                strokeDasharray="7 4"
+                rx={3}
+              />
+              {(a.label || a.id === selectedAreaId) && (
+                <text
+                  x={a.x * CELL + 6}
+                  y={a.y * CELL + 14}
+                  className="fill-muted-foreground"
+                  fontSize={10}
+                  pointerEvents="none"
+                >
+                  {a.label || "Raised floor"} · {a.plenum_mm} mm
+                </text>
+              )}
+            </g>
+          ))}
 
           {/* Zones first (background), then normal tiles, then FOV cones. */}
           {[

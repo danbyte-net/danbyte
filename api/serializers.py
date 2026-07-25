@@ -23,7 +23,8 @@ from .models import (
     Device, DeviceRole, DeviceType, FHRPGroup, FHRPGroupAssignment,
     ImageAttachment,
     FiberSettings,
-    FloorPlan, FloorPlanTile, FloorPlanTray, FloorTileType, FrontPort,
+    FloorPlan, FloorPlanRaisedFloorArea, FloorPlanTile, FloorPlanTray,
+    FloorTileType, FrontPort,
     FrontPortTemplate, InterfaceTemplate,
     IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
     DeviceBay, DeviceBayTemplate, InventoryItem, InventoryItemTemplate,
@@ -5351,6 +5352,51 @@ class FloorPlanTraySerializer(NumIdModelSerializer):
                   "description", "cables", "cable_ids",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "cables", "created_at", "updated_at"]
+
+
+class FloorPlanRaisedFloorAreaSerializer(NumIdModelSerializer):
+    """A raised-floor rectangle on a plan. Areas may not overlap — the plenum
+    under any grid point must be unambiguous, because it drives underfloor
+    tray depth in the 3D room and the drop term in route-length estimates."""
+
+    floor_plan_id = TenantScopedPrimaryKeyRelatedField(
+        source="floor_plan", queryset=FloorPlan.objects.all(),
+        write_only=True, required=False,
+    )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        plan = attrs.get("floor_plan") or (
+            self.instance.floor_plan if self.instance else None
+        )
+        if plan is None:
+            return attrs
+        get = lambda k: attrs.get(  # noqa: E731 — tiny create-or-update getter
+            k, getattr(self.instance, k, None) if self.instance else None
+        )
+        x, y = get("x") or 0, get("y") or 0
+        w, h = get("width") or 1, get("height") or 1
+        if x + w > plan.grid_width or y + h > plan.grid_height:
+            raise serializers.ValidationError(
+                "The area must fit inside the plan grid."
+            )
+        siblings = plan.raised_floor_areas.all()
+        if self.instance:
+            siblings = siblings.exclude(pk=self.instance.pk)
+        for s in siblings:
+            if x < s.x + s.width and s.x < x + w and y < s.y + s.height and s.y < y + h:
+                raise serializers.ValidationError(
+                    f"Overlaps {s.label or 'another raised-floor area'} — "
+                    "areas must not overlap so the plenum depth under any "
+                    "point stays unambiguous."
+                )
+        return attrs
+
+    class Meta:
+        model = FloorPlanRaisedFloorArea
+        fields = ["id", "floor_plan_id", "x", "y", "width", "height",
+                  "plenum_mm", "label", "color", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class CableRouteSerializer(NumIdModelSerializer):

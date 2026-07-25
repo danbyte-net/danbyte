@@ -5114,7 +5114,8 @@ class FloorPlanTray(TimestampedModel):
         validators=[MinValueValidator(-2000), MaxValueValidator(20000)],
         help_text="Height above finished floor in millimetres (negative = "
         "below the raised floor). Blank derives from the level: overhead → "
-        "ceiling − 300, underfloor → −300, floor → 0.",
+        "ceiling − 300, underfloor → the plenum of the raised-floor area "
+        "beneath the run (default 300), floor → 0.",
     )
     # [[x, y], …] in cell-corner coordinates (integers along grid lines).
     points = models.JSONField(default=list)
@@ -5130,6 +5131,46 @@ class FloorPlanTray(TimestampedModel):
 
     def __str__(self) -> str:
         return self.name
+
+
+class FloorPlanRaisedFloorArea(TimestampedModel):
+    """A raised-floor region of a plan: a rectangle of grid cells standing on
+    pedestals with a cable plenum underneath. Rooms are rarely uniformly
+    raised — the DC pad is, the adjoining corridor isn't — so the raised
+    floor is per-area, and an L-shaped pad is simply two rectangles.
+
+    The plenum depth drives two things: how deep underfloor trays/cables sit
+    (in the 3D room and in route-length estimation's vertical-drop term), and
+    the plenum volume the 3D view draws below the finished floor. Areas may
+    not overlap, so the plenum under any point is unambiguous."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    floor_plan = models.ForeignKey(
+        FloorPlan, on_delete=models.CASCADE, related_name="raised_floor_areas"
+    )
+    x = models.PositiveSmallIntegerField()
+    y = models.PositiveSmallIntegerField()
+    width = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1)]
+    )
+    height = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1)]
+    )
+    plenum_mm = models.PositiveSmallIntegerField(
+        default=300,
+        validators=[MinValueValidator(50), MaxValueValidator(2000)],
+        help_text="Void depth under the finished floor — how far below 0 the "
+        "structural slab sits here.",
+    )
+    label = models.CharField(max_length=64, blank=True, default="")
+    color = models.CharField(max_length=7, blank=True, default="")
+
+    class Meta:
+        ordering = ["y", "x"]
+        indexes = [models.Index(fields=["floor_plan"])]
+
+    def __str__(self) -> str:
+        return self.label or f"raised floor @ ({self.x},{self.y})"
 
 
 class CableRoute(TimestampedModel):
