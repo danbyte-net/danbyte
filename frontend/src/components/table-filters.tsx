@@ -51,6 +51,12 @@ interface EnumFacet<TRow> {
     value: string,
     sampleRow: TRow
   ) => { label: string; color?: string; textColor?: string }
+  /** Hide the group when every row lands in the same bucket. A derived facet
+   * ("is this catalog entry site-local?", "has this type been laid out?") is
+   * only worth rail space where the data actually splits — ticking its one
+   * option would select every row. Off by default: a facet over real catalog
+   * objects still reads as a list of what exists. */
+  hideWhenSingle?: boolean
 }
 
 interface TagsFacet<TRow> {
@@ -291,12 +297,17 @@ export function useTableFilters<TRow>(
               />
             )
           }
+          const opts = options[id] ?? []
+          // A single-bucket enum filters nothing — drop it rather than spend a
+          // rail row on it. (FacetGroup already hides an empty one.)
+          if (def.kind === "enum" && def.hideWhenSingle && opts.length < 2)
+            return null
           const cur = (state[id] as Set<string>) ?? new Set<string>()
           return (
             <FacetGroup
               key={id}
               label={label}
-              options={options[id] ?? []}
+              options={opts}
               selected={cur}
               onToggle={(v) => toggleInSet(cur, v, (next) => setEnum(id, next))}
             />

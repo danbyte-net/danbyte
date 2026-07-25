@@ -2,6 +2,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 
 import type { DeviceType } from "@/lib/api"
+import { Badge } from "@/components/ui/badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { LocalityBadge } from "@/components/locality-badge"
 import { dash } from "@/components/cells/dash"
@@ -30,6 +31,8 @@ export type DeviceTypeColumnId =
   | "model"
   | "part_number"
   | "u_height"
+  | "images"
+  | "faceplate"
   | "devices"
   | "lifecycle"
   | "description"
@@ -44,6 +47,8 @@ const CANONICAL_ORDER: DeviceTypeColumnId[] = [
   "model",
   "part_number",
   "u_height",
+  "images",
+  "faceplate",
   "devices",
   "lifecycle",
   "description",
@@ -51,6 +56,33 @@ const CANONICAL_ORDER: DeviceTypeColumnId[] = [
   "tags",
   "updated",
 ]
+
+/** Which rack-face photos the type carries, in face order. */
+function imageFaces(d: DeviceType): string[] {
+  const faces: string[] = []
+  if (d.front_image) faces.push("Front")
+  if (d.rear_image) faces.push("Rear")
+  return faces
+}
+
+type PanelLayout = "photo" | "custom" | "auto"
+
+const PANEL_LABELS: Record<PanelLayout, string> = {
+  photo: "Photo ports",
+  custom: "Custom",
+  auto: "Auto",
+}
+
+/** What a device of this type draws as its panel — one value, because the panel
+ * itself picks one (`useHasImagePorts`): photo markers win, but only when there
+ * is a photo under them; otherwise a saved faceplate layout; otherwise the
+ * automatic one. So "Auto" is the not-yet-laid-out queue. */
+function panelLayout(d: DeviceType): PanelLayout {
+  const ports = d.image_ports
+  const placed = !!ports && (ports.front.length > 0 || ports.rear.length > 0)
+  if (placed && (d.front_image || d.rear_image)) return "photo"
+  return d.faceplate ? "custom" : "auto"
+}
 
 export interface DeviceTypeColumnOpts<T extends DeviceType = DeviceType> {
   /** Drop columns. */
@@ -64,6 +96,11 @@ export interface DeviceTypeColumnOpts<T extends DeviceType = DeviceType> {
   /** Header for the rack-units column: "U" where the row is dense, "Height"
    * where the embedded table has room to spell it out. */
   heightHeader?: string
+  /** Facet treatment for the Devices count. The list page filters on the
+   * in-use / unused split (the question a long catalog asks: which entries is
+   * nothing built from?); the monitoring configuration tab filters by numeric
+   * range. Same knob, same meaning, as `buildDeviceRoleColumns`. */
+  countFacets?: "usage" | "range"
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
   tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }
   /** Trailing RowActions column. */
@@ -78,6 +115,7 @@ export function buildDeviceTypeColumns<T extends DeviceType = DeviceType>(
   if (!opts.humanIds) omit.add("numid")
   const keep = (id: DeviceTypeColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
+  const ranges = opts.countFacets === "range"
 
   const byId: Record<DeviceTypeColumnId, () => ColumnDef<T, unknown>> = {
     numid: () => numidColumn<T>({ get: (r) => r.numid }),
@@ -137,6 +175,68 @@ export function buildDeviceTypeColumns<T extends DeviceType = DeviceType>(
         },
       },
     }),
+    images: () => ({
+      id: "images",
+      // Which faces exist is the detail (and what exports); whether any does is
+      // the filter.
+      accessorFn: (r) => imageFaces(r).join(", "),
+      header: "Images",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const faces = imageFaces(row.original)
+        if (faces.length === 0) return dash
+        return (
+          <span className="flex items-center gap-1">
+            {faces.map((face) => (
+              <Badge
+                key={face}
+                variant="secondary"
+                className="h-4 px-1.5 text-[10px] font-normal"
+              >
+                {face}
+              </Badge>
+            ))}
+          </span>
+        )
+      },
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Images",
+          get: (r: T) => (r.front_image || r.rear_image ? "yes" : "no"),
+          formatValue: (v) => ({ label: v === "yes" ? "Yes" : "No" }),
+        },
+      },
+    }),
+    faceplate: () => ({
+      id: "faceplate",
+      accessorFn: (r) => PANEL_LABELS[panelLayout(r)],
+      header: "Faceplate",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const layout = panelLayout(row.original)
+        return (
+          <span
+            className={
+              layout === "auto" ? "text-xs text-muted-foreground" : "text-xs"
+            }
+          >
+            {PANEL_LABELS[layout]}
+          </span>
+        )
+      },
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Faceplate",
+          get: (r: T) => panelLayout(r),
+          formatValue: (v) => ({ label: PANEL_LABELS[v as PanelLayout] }),
+          // Nothing laid out yet (or everything) — the split is the only
+          // reason this facet is interesting.
+          hideWhenSingle: true,
+        },
+      },
+    }),
     devices: () => ({
       id: "devices",
       accessorKey: "device_count",
@@ -144,14 +244,25 @@ export function buildDeviceTypeColumns<T extends DeviceType = DeviceType>(
       cell: ({ row }) => (
         <span className="num text-xs">{row.original.device_count}</span>
       ),
-      meta: {
-        facet: {
-          kind: "range",
-          label: "Devices",
-          get: (r: T) => r.device_count,
-          min: 0,
-        },
-      },
+      meta: ranges
+        ? {
+            facet: {
+              kind: "range",
+              label: "Devices",
+              get: (r: T) => r.device_count,
+              min: 0,
+            },
+          }
+        : {
+            facet: {
+              kind: "enum",
+              label: "Usage",
+              get: (r: T) => (r.device_count > 0 ? "in" : "out"),
+              formatValue: (v) => ({
+                label: v === "in" ? "In use" : "Unused",
+              }),
+            },
+          },
     }),
     lifecycle: () => lifecycleColumn<T>({ get: (r) => r }),
     description: () => ({
@@ -171,6 +282,19 @@ export function buildDeviceTypeColumns<T extends DeviceType = DeviceType>(
       cell: ({ row }) => (
         <LocalityBadge owningSite={row.original.owning_site} />
       ),
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Scope",
+          get: (r: T) => r.owning_site?.id ?? "__global__",
+          formatValue: (_v, sample) => ({
+            label: sample.owning_site?.name ?? "Global",
+          }),
+          // Every entry is tenant-wide unless the deployment runs site-scoped
+          // catalogs, and "Global (everything)" is not a filter.
+          hideWhenSingle: true,
+        },
+      },
     }),
     tags: () =>
       tagsColumn<T>({
