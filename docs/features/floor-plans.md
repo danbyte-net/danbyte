@@ -86,11 +86,10 @@ uploaded blueprint textures it.
 - Arriving with a **cable trace** (`?trace=<cable>` — e.g. "Show on floor
   plan" from a cable) draws the run as an animated line riding its assigned
   trays and dropping into both end racks.
-- The **key** in the top-right corner explains only the colours actually on
-  screen: walk up to a shelf of disk bays and it lists those statuses, not the
-  whole FE→400G+ speed ramp. It disappears entirely when nothing photo-anchored
-  is in view. Same behaviour under the 2D panels — see
-  [Front panel](../dcim/devices.md#front-panel).
+- The **key** in the top-right corner appears only once something photo-anchored
+  is in view, and lists the hardware statuses actually on screen. The speed ramp
+  itself is always the full FE→400G+ scale, so it reads the same here as under a
+  2D panel — see [The panel's key](../dcim/devices.md#the-panels-key).
 - The view is **read-only** in v1 — layout editing stays in 2D.
 - Everything is drawn from the same millimetre constants as the 2D elevation
   and faceplates, so proportions match reality (EIA-310 rack opening, 44.45 mm
