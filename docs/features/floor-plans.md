@@ -149,6 +149,11 @@ Edits are local until you press **Save** — one transactional bulk call writes
 all creates, moves, and deletes together, and the change log records each
 tile individually.
 
+While there are unsaved edits an **unsaved** badge sits in the header, the
+floor switcher asks before discarding them, and closing the tab or reloading
+raises the browser's own leave-site prompt. Navigating to another *page* inside
+the app is not guarded yet — save first.
+
 Under **View**: **Fit labels to tiles** auto-sizes each tile's text to its
 footprint (so single-cell tiles keep readable names) — the preference is
 saved on the plan; and **Camera FOV cones** shows/hides the camera wedges.

@@ -10,7 +10,11 @@ import { TagList } from "@/components/cells/tag-list"
 import { QueryError } from "@/components/query-error"
 import { DeviceTypeDeleteDialog } from "@/components/device-type-delete-dialog"
 import { DeviceTypeImages } from "@/components/device-type-images"
-import { DeviceTypeComponentsPane } from "@/components/device-type-components-pane"
+import {
+  DEVICE_TYPE_COMPONENT_SUBS,
+  DeviceTypeComponentsPane,
+} from "@/components/device-type-components-pane"
+import type { SectionKind } from "@/components/device-type-components-pane"
 import { DeviceTypeFaceplatePane } from "@/components/device-type-faceplate-pane"
 import { DeviceSensorsCard } from "@/components/device-sensors-card"
 import { ExportBundleButton } from "@/components/device-bundle"
@@ -30,7 +34,36 @@ import { CustomFieldValues } from "@/components/custom-field-display"
 import { SnmpBindingControl } from "@/components/snmp-binding-control"
 import { useMe } from "@/lib/use-me"
 
+const DEVICE_TYPE_TABS = [
+  "overview",
+  "components",
+  "faceplate",
+  "photo-ports",
+  "sensors",
+  "devices",
+  "journal",
+  "history",
+] as const
+type DeviceTypeTab = (typeof DEVICE_TYPE_TABS)[number]
+
 export const Route = createFileRoute("/device-types/$id")({
+  // `?tab=components&sub=power-port` deep-links a component section. Both are
+  // allow-listed here, so an unknown value never becomes part of the route's
+  // search and the page falls back to its default instead of an empty pane.
+  // Declaring them also puts both in the route's typed contract, so a `Link`
+  // elsewhere can deep-link a section.
+  validateSearch: (
+    s: Record<string, unknown>
+  ): { tab?: DeviceTypeTab; sub?: SectionKind } => ({
+    ...(typeof s.tab === "string" &&
+    DEVICE_TYPE_TABS.includes(s.tab as DeviceTypeTab)
+      ? { tab: s.tab as DeviceTypeTab }
+      : {}),
+    ...(typeof s.sub === "string" &&
+    DEVICE_TYPE_COMPONENT_SUBS.includes(s.sub as SectionKind)
+      ? { sub: s.sub as SectionKind }
+      : {}),
+  }),
   component: DeviceTypeDetail,
 })
 
@@ -53,16 +86,11 @@ function DeviceTypeDetail() {
 }
 
 function Body({ deviceType: d }: { deviceType: DeviceType }) {
-  const [tab, setTab] = useUrlTab<
-    | "overview"
-    | "components"
-    | "faceplate"
-    | "photo-ports"
-    | "sensors"
-    | "devices"
-    | "journal"
-    | "history"
-  >("overview")
+  const [tab, setTab] = useUrlTab<DeviceTypeTab>(
+    "overview",
+    "tab",
+    DEVICE_TYPE_TABS
+  )
   const { canDo, editableSites } = useMe()
   const nav = useNavigate()
   const canPromote =

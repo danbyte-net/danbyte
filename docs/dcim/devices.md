@@ -67,6 +67,13 @@ a switch stack, a **Stack** badge in the header (name, position, master) links
 to its [virtual chassis](virtual-chassis.md) — membership is set in the
 **Stack membership** section of the device's edit form.
 
+The tab you're on is part of the URL (`?tab=components`), and so is the
+**sub-tab** inside the Components tab (`?sub=power`). So
+`/devices/<id>?tab=components&sub=power` links a colleague straight at a
+device's power ports, and a reload, browser back/forward, or a trip through
+another tab and back all keep your place. An unknown value in either param
+falls back to the default tab instead of showing an empty pane.
+
 ### Overview tab
 
 The default tab lays the device's facts out in four cards:
@@ -144,9 +151,8 @@ the same defaults.
 | Tab            | What's there                                                                                    |
 | -------------- | ----------------------------------------------------------------------------------------------- |
 | **IPs**        | Every IP address assigned to this device.                                                       |
-| **Interfaces** | The device's ports — add, edit, and nest them, and attach IPs. See [Interfaces](interfaces.md). |
+| **Components** | Four sub-tabs: **Interfaces** (add, edit, and nest ports and attach IPs — see [Interfaces](interfaces.md)), **Console**, **Power**, and **Hardware** (device bays for child devices, module bays for line cards, serial-tracked inventory items, and patch-panel front/rear ports). |
 | **Services**   | Application services running on the device.                                                     |
-| **Hardware**   | Device bays (install child devices), module bays (install/remove line cards), inventory items (serial-tracked parts) and patch-panel front/rear ports.                                                                   |
 | **Contacts**   | People responsible for the device.                                                              |
 | **Config**     | Configuration context and rendered config.                                                      |
 | **Journal**    | Free-form notes and a running log you write.                                                    |

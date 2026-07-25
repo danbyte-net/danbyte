@@ -162,10 +162,14 @@ hand-typing ports per device.
 Manage them on the device type's **Components** tab, which splits the component
 kinds — Interfaces, Console ports, Console server ports, Power ports, Power
 outlets, Rear ports, Front ports, **Aux ports**, and **Services** — into
-sub-tabs with counts. **Aux ports** are the catch-all for connectors the other
-kinds don't cover: USB (A/B/C/mini/micro), video outputs (HDMI, VGA, DVI,
-DisplayPort), SD/microSD slots, RJ11, audio jacks, and grounding lugs — so a
-device type can model *everything* on its panel. Template names support
+sub-tabs with counts. The open sub-tab is part of the URL
+(`?tab=components&sub=power-port`), so you can link someone straight at one
+kind, and reload or back/forward without losing your place.
+
+**Aux ports** are the catch-all for connectors the other kinds don't cover: USB
+(A/B/C/mini/micro), video outputs (HDMI, VGA, DVI, DisplayPort), SD/microSD
+slots, RJ11, audio jacks, and grounding lugs — so a device type can model
+*everything* on its panel. Template names support
 two shorthands: a **`[1-24]` range** creates one template per port in a single
 add, and a **`{position}` token** resolves to the device's stack member number
 when components are stamped (and renames ports when a device changes stack

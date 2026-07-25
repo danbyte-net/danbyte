@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { useUrlTab } from "@/lib/use-url-tab"
+import { useUrlSubTab, useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
 import { ShowOnSiteMap } from "@/components/show-on-site-map"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -151,12 +151,33 @@ const DEVICE_TABS = [
 ] as const
 type DeviceTab = (typeof DEVICE_TABS)[number]
 
+// The sub-tab strip inside the Components tab. Declared here (not just where
+// the strip renders) so the route can validate `?sub=` and a typed `Link`
+// elsewhere can deep-link one.
+const DEVICE_COMPONENT_SUBS = [
+  "interfaces",
+  "console",
+  "power",
+  "hardware",
+] as const
+type DeviceComponentSub = (typeof DEVICE_COMPONENT_SUBS)[number]
+
 export const Route = createFileRoute("/devices/$id")({
-  // `?tab=ports` deep-links a tab (e.g. a trace's front/rear port → Hardware).
-  validateSearch: (s: Record<string, unknown>): { tab?: DeviceTab } =>
-    typeof s.tab === "string" && DEVICE_TABS.includes(s.tab as DeviceTab)
+  // `?tab=components` deep-links a tab, `?sub=power` the sub-tab inside it
+  // (e.g. a trace's front/rear port → Components → Hardware). Both are
+  // allow-listed here, so an unknown value never becomes part of the route's
+  // search and the page falls back to its default instead of an empty pane.
+  validateSearch: (
+    s: Record<string, unknown>
+  ): { tab?: DeviceTab; sub?: DeviceComponentSub } => ({
+    ...(typeof s.tab === "string" && DEVICE_TABS.includes(s.tab as DeviceTab)
       ? { tab: s.tab as DeviceTab }
-      : {},
+      : {}),
+    ...(typeof s.sub === "string" &&
+    DEVICE_COMPONENT_SUBS.includes(s.sub as DeviceComponentSub)
+      ? { sub: s.sub as DeviceComponentSub }
+      : {}),
+  }),
   component: DeviceDetail,
 })
 
@@ -186,8 +207,9 @@ function Body({ device: d }: { device: Device }) {
   const canDelete = objCan(d, "delete", canDo("device", "delete"))
   const [deleting, setDeleting] = useState<Device | null>(null)
   const [syncingType, setSyncingType] = useState(false)
-  const { tab: tabFromUrl } = Route.useSearch()
-  const [tab, setTab] = useUrlTab<DeviceTab>(tabFromUrl ?? "overview")
+  // The hook reads `?tab=` itself; seeding the *default* from the URL made
+  // re-clicking the active tab clear the param and bounce you to Overview.
+  const [tab, setTab] = useUrlTab<DeviceTab>("overview", "tab", DEVICE_TABS)
   // Shared with the header badge and the drift inbox — one request, and the
   // tab markers can never disagree with what the inbox lists.
   const deviceDrift = useDeviceDrift(d.id)
@@ -451,9 +473,12 @@ function DeviceComponents({
   canAddIp: boolean
   canAssignIp: boolean
 }) {
-  const [sub, setSub] = useState<
-    "interfaces" | "console" | "power" | "hardware"
-  >("interfaces")
+  // In the URL (`?sub=power`), so a sub-tab is linkable and survives a reload,
+  // back/forward, and leaving the Components tab and coming back.
+  const [sub, setSub] = useUrlSubTab<DeviceComponentSub>(
+    "interfaces",
+    DEVICE_COMPONENT_SUBS
+  )
   // Adds published by the mounted sub-pane(s), surfaced right-aligned in the bar.
   const [addMap, setAddMap] = useState<Record<string, AddAction[]>>({})
   const registerAdd = useCallback<(key: string, actions: AddAction[]) => void>(
@@ -483,7 +508,7 @@ function DeviceComponents({
         <div className="flex h-10 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--border)] lg:px-6">
           <SegmentedTabs
             value={sub}
-            onValueChange={(v) => setSub(v as typeof sub)}
+            onValueChange={setSub}
             items={[
               {
                 value: "interfaces",

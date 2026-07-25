@@ -7,6 +7,14 @@ import type {
   FloorPlanTile,
   FloorPlanTray,
 } from "@/lib/api"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 
 import { routeCable } from "./cable-route"
@@ -871,87 +879,102 @@ export function FloorCanvas({
         </g>
       </svg>
 
-      {/* Right-click menu — a small, extensible action list. */}
+      {/* Right-click menu — a small, extensible action list.
+          The trigger is a zero-size anchor parked at the pointer (the same trick
+          the tile popover's anchor uses) and the menu itself is the shared
+          DropdownMenu, so it portals out of this wrapper and flips on collision.
+          Hand-rolled, it was an absolute div inside `overflow-hidden` and got
+          cut off — unreachably — on a right-click near the canvas edge.
+          Non-modal: a click on the plan must still pan/select while dismissing,
+          and the wheel must keep zooming. Keyed by position so a second
+          right-click re-anchors even if the first menu never closed. */}
       {ctxMenu && (
-        <div
-          className="absolute z-20 min-w-40 overflow-hidden rounded-md border border-border bg-popover py-1 text-[13px] shadow-md"
-          style={{ left: ctxMenu.x, top: ctxMenu.y }}
-          onPointerDown={(e) => e.stopPropagation()}
+        <DropdownMenu
+          key={`${ctxMenu.x},${ctxMenu.y}`}
+          open
+          onOpenChange={(open) => {
+            if (!open) setCtxMenu(null)
+          }}
+          modal={false}
         >
-          {ctxMenu.vertex && (
-            <button
-              type="button"
-              className="block w-full px-3 py-1.5 text-left hover:bg-muted/60"
-              onClick={() => {
-                removeVertex(ctxMenu.vertex!.trayId, ctxMenu.vertex!.index)
-                setCtxMenu(null)
-              }}
-            >
-              Remove bend
-            </button>
-          )}
-          {ctxMenu.tile && (
-            <>
-              <div className="truncate px-3 py-1 text-[11px] text-muted-foreground">
-                {tileName(ctxMenu.tile) ||
-                  ctxMenu.tile.tile_type?.name ||
-                  ctxMenu.tile.role_type?.name ||
-                  "Tile"}
-              </div>
-              {onHighlightCables &&
-                cablesTouching(ctxMenu.tile.id).length > 0 && (
-                  <button
-                    type="button"
-                    className="block w-full px-3 py-1.5 text-left hover:bg-muted/60"
-                    onClick={() => {
-                      onHighlightCables(cablesTouching(ctxMenu.tile!.id))
+          <DropdownMenuTrigger asChild>
+            <div
+              aria-hidden
+              className="pointer-events-none absolute"
+              style={{ left: ctxMenu.x, top: ctxMenu.y }}
+            />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            side="bottom"
+            sideOffset={0}
+            className="w-auto min-w-40"
+          >
+            {ctxMenu.vertex && (
+              <DropdownMenuItem
+                onSelect={() => {
+                  removeVertex(ctxMenu.vertex!.trayId, ctxMenu.vertex!.index)
+                  setCtxMenu(null)
+                }}
+              >
+                Remove bend
+              </DropdownMenuItem>
+            )}
+            {ctxMenu.tile && (
+              <>
+                <DropdownMenuLabel className="truncate">
+                  {tileName(ctxMenu.tile) ||
+                    ctxMenu.tile.tile_type?.name ||
+                    ctxMenu.tile.role_type?.name ||
+                    "Tile"}
+                </DropdownMenuLabel>
+                {onHighlightCables &&
+                  cablesTouching(ctxMenu.tile.id).length > 0 && (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        onHighlightCables(cablesTouching(ctxMenu.tile!.id))
+                        setCtxMenu(null)
+                      }}
+                    >
+                      Trace cables here
+                    </DropdownMenuItem>
+                  )}
+                {ctxMenu.tile.linked && onOpenTile && (
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      onOpenTile(ctxMenu.tile!)
                       setCtxMenu(null)
                     }}
                   >
-                    Trace cables here
-                  </button>
+                    Open{" "}
+                    {ctxMenu.tile.linked.kind === "floorplan"
+                      ? "plan"
+                      : ctxMenu.tile.linked.kind}
+                  </DropdownMenuItem>
                 )}
-              {ctxMenu.tile.linked && onOpenTile && (
-                <button
-                  type="button"
-                  className="block w-full px-3 py-1.5 text-left hover:bg-muted/60"
-                  onClick={() => {
-                    onOpenTile(ctxMenu.tile!)
-                    setCtxMenu(null)
-                  }}
-                >
-                  Open{" "}
-                  {ctxMenu.tile.linked.kind === "floorplan"
-                    ? "plan"
-                    : ctxMenu.tile.linked.kind}
-                </button>
-              )}
-              <div className="my-1 h-px bg-border" />
-            </>
-          )}
-          <button
-            type="button"
-            className="block w-full px-3 py-1.5 text-left hover:bg-muted/60"
-            onClick={() => {
-              fitTo(svgRef.current, gw, gh)
-              setCtxMenu(null)
-            }}
-          >
-            Fit to view
-          </button>
-          {highlightCableIds.length > 0 && (
-            <button
-              type="button"
-              className="block w-full px-3 py-1.5 text-left hover:bg-muted/60"
-              onClick={() => {
-                onSelectCable?.(null)
+                <DropdownMenuSeparator />
+              </>
+            )}
+            <DropdownMenuItem
+              onSelect={() => {
+                fitTo(svgRef.current, gw, gh)
                 setCtxMenu(null)
               }}
             >
-              Clear trace
-            </button>
-          )}
-        </div>
+              Fit to view
+            </DropdownMenuItem>
+            {highlightCableIds.length > 0 && (
+              <DropdownMenuItem
+                onSelect={() => {
+                  onSelectCable?.(null)
+                  setCtxMenu(null)
+                }}
+              >
+                Clear trace
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
     </div>
   )
