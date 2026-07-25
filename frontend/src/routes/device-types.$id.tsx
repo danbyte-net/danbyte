@@ -13,6 +13,7 @@ import { DeviceTypeImages } from "@/components/device-type-images"
 import { DeviceTypeComponentsPane } from "@/components/device-type-components-pane"
 import { DeviceTypeFaceplatePane } from "@/components/device-type-faceplate-pane"
 import { DeviceSensorsCard } from "@/components/device-sensors-card"
+import { ExportBundleButton } from "@/components/device-bundle"
 import { DeviceTypeImagePortsPane } from "@/components/device-type-image-ports-pane"
 import { DetailShell, DetailStat, DetailTab } from "@/components/detail-shell"
 import {
@@ -77,6 +78,8 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
       presence={{ type: "devicetype", id: d.id }}
       actions={
         <>
+          {/* Everything that makes this model work, as one shareable file. */}
+          <ExportBundleButton deviceTypeId={d.id} name={d.name} />
           {canDo("devicetype", "change") && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/device-types/$id/edit" params={{ id: d.id }}>

@@ -8,6 +8,7 @@ import { api, type DeviceType, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
+import { ImportBundleDialog } from "@/components/device-bundle"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { numidColumn } from "@/components/cells/numid"
@@ -38,6 +39,7 @@ function DeviceTypesPage() {
   const [mfrFilter, setMfrFilter] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState<DeviceType | null>(null)
   const [importing, setImporting] = useState(false)
+  const [importingBundle, setImportingBundle] = useState(false)
 
   const query = useQuery({
     queryKey: ["device-types", q],
@@ -111,7 +113,16 @@ function DeviceTypesPage() {
                 variant="outline"
                 onClick={() => setImporting(true)}
               >
-                Import
+                Import CSV
+              </Button>
+              {/* A bundle is a whole configured model — templates, faceplate,
+                  photo ports, sensors — not just catalog rows. */}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setImportingBundle(true)}
+              >
+                Import bundle
               </Button>
               <Button size="sm" asChild>
                 <Link to="/device-types/new">Add device type</Link>
@@ -133,6 +144,10 @@ function DeviceTypesPage() {
         onOpenChange={(o) => !o && setDeleting(null)}
       />
       <DeviceTypeImportDialog open={importing} onOpenChange={setImporting} />
+      <ImportBundleDialog
+        open={importingBundle}
+        onOpenChange={setImportingBundle}
+      />
     </ListPageShell>
   )
 }
