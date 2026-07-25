@@ -12,6 +12,7 @@ import type {
   InventoryItemRow,
   Paginated,
   SnmpDriftItem,
+  TerminationKind,
 } from "@/lib/api"
 import {
   CONNECTOR_MM,
@@ -41,10 +42,19 @@ import {
   type LegendReporter,
 } from "@/components/speed-scale"
 import { InventoryItemDialog } from "@/components/device-inventory-pane"
+import { InstallModuleDialog } from "@/components/device-modules-pane"
+import { CableForm } from "@/components/cable-form"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { useMe } from "@/lib/use-me"
 import {
   autoLayout,
   composeModuleFaceplates,
+  markerTerminationKind,
   resolveLayout,
   type FaceplateDoc,
   type FaceplateSide,
@@ -859,11 +869,25 @@ export function ImagePortsFaceplate({
 }) {
   const { canDo } = useMe()
   // Editing a bay writes to the device's parts, so it needs the same permission
-  // the Hardware tab does — and a device to write them to.
+  // the Hardware tab does — and a device to write them to. Module bays install
+  // through the same gate (matching the Modules pane).
   const canEditParts = !!deviceId && canDo("device", "change")
+  // Cabling a free power/console/aux/panel port from its marker.
+  const canConnect = !!deviceId && canDo("cable", "add")
   const [partDialog, setPartDialog] = useState<{
     item: InventoryItemRow | null
     /** The marker's rendered name — the bay being filled, when creating. */
+    name: string
+  } | null>(null)
+  // An empty module-bay marker was clicked — install into it.
+  const [installBay, setInstallBay] = useState<{
+    id: string
+    name: string
+  } | null>(null)
+  // A free non-interface port marker was clicked — connect a cable from it.
+  const [connect, setConnect] = useState<{
+    id: string
+    kind: TerminationKind
     name: string
   } | null>(null)
   const dt = useQuery({
@@ -876,6 +900,9 @@ export function ImagePortsFaceplate({
     () => new Map(interfaces.map((i) => [normalizePortName(i.name), i])),
     [interfaces]
   )
+  // For the connect dialog's title — callers pass this device's own
+  // interfaces, so any row names the device.
+  const deviceName = interfaces.at(0)?.device.name ?? ""
 
   const image = side === "front" ? dt.data?.front_image : dt.data?.rear_image
   // Memoized: the legend derives from these, and a fresh `[]` every render
@@ -1200,17 +1227,32 @@ export function ImagePortsFaceplate({
             )
           const mod = fp?.module ?? null
           const hex = bayHex(!!mod)
+          // An EMPTY bay on a real device is the install affordance — click to
+          // seat a module, exactly like an empty disk bay installs hardware.
+          // (Removal stays on the Modules pane; occupied bays just report.)
+          const installable = !mod && !!fp?.id && canEditParts
+          const bayStyle = mod
+            ? { ...style, ...portOverlayStyle(hex) }
+            : { ...style, borderColor: `${hex}59` }
           return (
             <HoverCard key={`${m.name}-${idx}`} openDelay={100} closeDelay={80}>
               <HoverCardTrigger asChild>
-                <span
-                  style={
-                    mod
-                      ? { ...style, ...portOverlayStyle(hex) }
-                      : { ...style, borderColor: `${hex}59` }
-                  }
-                  className="absolute rounded-[2px] border-2"
-                />
+                {installable ? (
+                  <button
+                    type="button"
+                    style={bayStyle}
+                    title={`${name} — empty, click to install a module`}
+                    onClick={() =>
+                      fp.id && setInstallBay({ id: fp.id, name: fp.name })
+                    }
+                    className="absolute cursor-pointer rounded-[2px] border-2 hover:ring-2 hover:ring-primary/40"
+                  />
+                ) : (
+                  <span
+                    style={bayStyle}
+                    className="absolute rounded-[2px] border-2"
+                  />
+                )}
               </HoverCardTrigger>
               <HoverCardContent
                 side="top"
@@ -1229,6 +1271,11 @@ export function ImagePortsFaceplate({
                   </>
                 ) : (
                   <div>Empty</div>
+                )}
+                {installable && (
+                  <div className="pt-0.5 font-sans text-[10px] text-muted-foreground">
+                    Click to install a module
+                  </div>
                 )}
               </HoverCardContent>
             </HoverCard>
@@ -1249,21 +1296,39 @@ export function ImagePortsFaceplate({
               />
             )
           const hex = fp.connected ? PORT_NEUTRAL.cabled : PORT_NEUTRAL.free
+          // A FREE port is the connect affordance — click opens the cable
+          // maker in place with this end already on side A. Cabled markers
+          // keep the plain hovercard; unknown marker kinds stay inert.
+          const termKind = markerTerminationKind(kind)
+          const connectable = !fp.connected && !!termKind && canConnect
+          const portStyle = fp.connected
+            ? { ...style, ...portOverlayStyle(hex) }
+            : { ...style, borderColor: `${hex}59` }
+          const portClass = cn(
+            "absolute rounded-[2px] border-2",
+            fp.drift &&
+              "ring-2 ring-amber-500 ring-offset-1 ring-offset-background"
+          )
           return (
             <HoverCard key={`${m.name}-${idx}`} openDelay={100} closeDelay={80}>
               <HoverCardTrigger asChild>
-                <span
-                  style={
-                    fp.connected
-                      ? { ...style, ...portOverlayStyle(hex) }
-                      : { ...style, borderColor: `${hex}59` }
-                  }
-                  className={cn(
-                    "absolute rounded-[2px] border-2",
-                    fp.drift &&
-                      "ring-2 ring-amber-500 ring-offset-1 ring-offset-background"
-                  )}
-                />
+                {connectable ? (
+                  <button
+                    type="button"
+                    style={portStyle}
+                    title={`${fp.name} — free, click to connect a cable`}
+                    onClick={() =>
+                      fp.id &&
+                      setConnect({ id: fp.id, kind: termKind, name: fp.name })
+                    }
+                    className={cn(
+                      portClass,
+                      "cursor-pointer hover:ring-2 hover:ring-primary/40"
+                    )}
+                  />
+                ) : (
+                  <span style={portStyle} className={portClass} />
+                )}
               </HoverCardTrigger>
               <HoverCardContent
                 side="top"
@@ -1279,6 +1344,11 @@ export function ImagePortsFaceplate({
                 {fp.drift && (
                   <div className="font-sans text-[10px] text-amber-600 dark:text-amber-400">
                     drift · {fp.drift}
+                  </div>
+                )}
+                {connectable && (
+                  <div className="pt-0.5 font-sans text-[10px] text-muted-foreground">
+                    Click to connect a cable
                   </div>
                 )}
               </HoverCardContent>
@@ -1386,6 +1456,39 @@ export function ImagePortsFaceplate({
           }}
         />
       )}
+      {/* Same deal for module bays: the Modules pane's install dialog, not a
+          copy — the write, the toast, and the cache invalidations are shared,
+          so the bay marker flips to occupied on save. */}
+      {canEditParts && deviceId && installBay && (
+        <InstallModuleDialog
+          deviceId={deviceId}
+          bay={installBay}
+          onOpenChange={(o) => {
+            if (!o) setInstallBay(null)
+          }}
+        />
+      )}
+      {/* In-place cable maker for a clicked free port. Conditionally mounted
+          AND keyed: CableForm seeds initialA at mount only, so a stale mount
+          would keep the previous port. */}
+      <Dialog open={!!connect} onOpenChange={(o) => !o && setConnect(null)}>
+        <DialogContent size="2xl" className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Connect a cable from {deviceName ? `${deviceName}:` : ""}
+              {connect?.name}
+            </DialogTitle>
+          </DialogHeader>
+          {connect && (
+            <CableForm
+              key={connect.id}
+              initialA={[{ kind: connect.kind, id: connect.id }]}
+              onSaved={() => setConnect(null)}
+              onCancel={() => setConnect(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

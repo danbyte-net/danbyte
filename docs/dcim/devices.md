@@ -203,6 +203,19 @@ drag-and-drop builder), the panel follows that instead — including console,
 power, and aux ports placed on it. Layouts with a **rear side** add a
 **Front / Rear** toggle above the panel.
 
+On a **photo faceplate** (a type with
+[photo ports](device-catalog.md#photo-ports)), the markers are work surfaces
+too, permissions allowing. An **empty module bay** takes a click to seat a
+module — the same install dialog as Components → Hardware, stamping the module
+type's interfaces onto the device — and the bay marker flips to occupied on
+save. The same works in the
+[3D room](../features/floor-plans.md#the-3d-room-view): the port card offers
+**Install module** on an empty bay and **Edit part** on a hardware marker (the
+same part editor the 2D faceplate opens for disk bays and PSUs). A **free**
+power / console / aux / front / rear marker connects a cable in place — see
+[Cabling](cabling.md#connecting-from-a-port). Removing a module stays on the
+Hardware tab.
+
 Racked devices also show a **Rack** card — the whole rack drawn with this
 device highlighted, linking to the [rack page](racks.md).
 

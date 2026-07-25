@@ -1,4 +1,4 @@
-import type { Interface } from "@/lib/api"
+import type { Interface, TerminationKind } from "@/lib/api"
 import {
   CONNECTOR_MM,
   PANEL_MM,
@@ -29,6 +29,32 @@ export type SlotKind =
   | "front-port"
   | "rear-port"
   | "aux-port"
+
+/** Photo/faceplate marker kind → cable-termination kind, for every port
+ * marker that can host a cable end. Interfaces are deliberately absent (their
+ * markers link to the interface page, and connect flows pass "interface"
+ * explicitly); inventory items and module bays aren't cable-able at all. One
+ * map, shared by the 2D photo faceplate and the 3D room's port HUD. */
+export const MARKER_TERMINATION_KIND: Record<
+  Exclude<SlotKind, "interface">,
+  TerminationKind
+> = {
+  "power-port": "power_port",
+  "power-outlet": "power_outlet",
+  "console-port": "console_port",
+  "console-server-port": "console_server_port",
+  "aux-port": "aux_port",
+  "front-port": "front_port",
+  "rear-port": "rear_port",
+}
+
+/** The termination kind for a raw marker-kind string, or null when the marker
+ * isn't a cable-able port (interface, inventory-item, module-bay, unknown). */
+export function markerTerminationKind(kind: string): TerminationKind | null {
+  return kind in MARKER_TERMINATION_KIND
+    ? MARKER_TERMINATION_KIND[kind as keyof typeof MARKER_TERMINATION_KIND]
+    : null
+}
 
 export type FaceplateSlot =
   | { t: "port"; kind?: SlotKind; name: string }
@@ -260,7 +286,9 @@ export function composeModuleFaceplates(
         ...g,
         id: `mod:${m.id}:${g.id}`,
         bay: undefined,
-        label: g.label ? `${m.module_bay.name} · ${g.label}` : m.module_bay.name,
+        label: g.label
+          ? `${m.module_bay.name} · ${g.label}`
+          : m.module_bay.name,
         slots: g.slots.map((sl) =>
           sl.t === "port" ? { ...sl, name: renderModuleName(sl.name, pos) } : sl
         ),

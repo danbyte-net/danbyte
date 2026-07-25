@@ -5,17 +5,21 @@ import { Link } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type Cable,
-  type FacePorts,
-  type FloorPlanLiveState,
-  type TerminationInput,
+import { api } from "@/lib/api"
+import type {
+  Cable,
+  FacePorts,
+  FloorPlanLiveState,
+  InventoryItemRow,
+  Paginated,
+  TerminationInput,
 } from "@/lib/api"
 import { renderTemplateName } from "@/lib/faceplate-geometry"
 import { bayHex, legendIsEmpty } from "@/lib/faceplate-colors"
 import { useLegendCollector } from "@/components/speed-scale"
 import { FaceplateLegend } from "@/components/device-faceplate"
+import { InventoryItemDialog } from "@/components/device-inventory-pane"
+import { InstallModuleDialog } from "@/components/device-modules-pane"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -27,6 +31,7 @@ import {
 } from "@/components/ui/dialog"
 import { CableForm } from "@/components/cable-form"
 import { QueryError } from "@/components/query-error"
+import { useMe } from "@/lib/use-me"
 
 import { CablesLayer, CableTrace3D } from "./cable-trace-3d"
 import { CameraRig, type FlyToRequest } from "./camera-rig"
@@ -92,6 +97,34 @@ export default function FloorScene3D({
   // a cross-rack run can be assigned to ducts (trays) right here.
   const [routing, setRouting] = useState<"p2p" | "trays">("p2p")
   const [routeTrayIds, setRouteTrayIds] = useState<string[]>([])
+
+  // ── Module install / part edit from a marker ──────────────────────────────
+  // The same dialogs the 2D faceplate opens, hosted as plain DOM overlays
+  // beside the cable modal (never inside the <Canvas>).
+  const [installBay, setInstallBay] = useState<{
+    deviceId: string
+    id: string
+    name: string
+  } | null>(null)
+  const [partEdit, setPartEdit] = useState<{
+    deviceId: string
+    id: string
+    name: string
+  } | null>(null)
+  // Parts list for the editor — fetched only while it's open, on the Hardware
+  // tab's cache key so an edit lands in both places.
+  const partInventory = useQuery({
+    queryKey: ["device-inventory", partEdit?.deviceId],
+    queryFn: () =>
+      api<Paginated<InventoryItemRow>>(
+        `/api/inventory-items/?device=${partEdit!.deviceId}&page_size=500`
+      ),
+    enabled: !!partEdit,
+  })
+  const partItem = partEdit
+    ? ((partInventory.data?.results ?? []).find((i) => i.id === partEdit.id) ??
+      null)
+    : null
 
   const resolvePort = async (sel: Sel) => {
     if (!sel.deviceId || !sel.portName) return null
@@ -315,6 +348,10 @@ export default function FloorScene3D({
           dev={selDevice}
           selection={selection}
           onConnect={(path) => void startConnect(selection, path)}
+          onInstall={(bay) => setInstallBay({ deviceId: selDevice.id, ...bay })}
+          onEditPart={(part) =>
+            setPartEdit({ deviceId: selDevice.id, ...part })
+          }
         />
       )}
       {cableSel && <CableHud planId={planId} cableId={cableSel} />}
@@ -417,11 +454,12 @@ export default function FloorScene3D({
                 initialB={modal.initialB}
                 onSaved={(saved) => {
                   setModal(null)
+                  // Port markers refresh via CableForm's own face-ports
+                  // invalidation; the room's drawn runs are ours to re-ask.
                   const finish = () => {
                     qc.invalidateQueries({
                       queryKey: ["floor-plan-cable-paths", planId],
                     })
-                    qc.invalidateQueries({ queryKey: ["device-face-ports"] })
                   }
                   if (routing === "trays" && routeTrayIds.length) {
                     void assignTrays(saved.id).then(finish)
@@ -435,6 +473,30 @@ export default function FloorScene3D({
           )}
         </DialogContent>
       </Dialog>
+      {/* Module install / part editor for marker clicks — the same dialogs the
+          2D faceplate opens (shared writes, toasts, and invalidations), so the
+          clicked marker re-reads its occupancy/status on save. */}
+      {installBay && (
+        <InstallModuleDialog
+          deviceId={installBay.deviceId}
+          bay={installBay}
+          onOpenChange={(o) => {
+            if (!o) setInstallBay(null)
+          }}
+        />
+      )}
+      {partEdit && partInventory.isSuccess && (
+        <InventoryItemDialog
+          deviceId={partEdit.deviceId}
+          item={partItem}
+          initialName={partEdit.name}
+          siblings={partInventory.data.results}
+          open
+          onOpenChange={(o) => {
+            if (!o) setPartEdit(null)
+          }}
+        />
+      )}
       {/* The SAME legend the 2D faceplate uses, keyed to what the near-tier
           devices actually draw — so it's absent until a photo panel with real
           ports is in view, and then explains only those colours. The overlay
@@ -572,13 +634,23 @@ function PortHud({
   dev,
   selection,
   onConnect,
+  onInstall,
+  onEditPart,
 }: {
   planId: string
   tile: SceneTile
   dev: SceneDevice
   selection: Sel
   onConnect: (path: "maker" | "3d") => void
+  /** An empty module bay was clicked — open the install dialog for it. */
+  onInstall: (bay: { id: string; name: string }) => void
+  /** A hardware marker (disk bay, PSU…) was clicked — open its part editor. */
+  onEditPart: (part: { id: string; name: string }) => void
 }) {
+  const { canDo } = useMe()
+  // Installing a module / editing a part writes to the device — the same gate
+  // the Modules pane and the 2D faceplate use.
+  const canEditParts = canDo("device", "change")
   const [choosing, setChoosing] = useState(false)
   const rack = tile.rack!
   // The saved marker name is a template ("Ethernet{position}/1"); render it the
@@ -836,6 +908,26 @@ function PortHud({
             </Button>
           )}
         </>
+      )}
+      {/* ── Empty BAY: seat a module right here (2D-faceplate parity) ──── */}
+      {fp && bay && !fp.module && canEditParts && (
+        <Button
+          size="sm"
+          className="mt-2 h-7 w-full"
+          onClick={() => fp.id && onInstall({ id: fp.id, name: fp.name })}
+        >
+          Install module
+        </Button>
+      )}
+      {/* ── Hardware part: the same editor the 2D faceplate opens ──────── */}
+      {fp && hardware && canEditParts && (
+        <Button
+          size="sm"
+          className="mt-2 h-7 w-full"
+          onClick={() => fp.id && onEditPart({ id: fp.id, name: fp.name })}
+        >
+          Edit part
+        </Button>
       )}
       {fp && !fp.id && (
         <p className="mt-2 text-[11px] text-muted-foreground">
