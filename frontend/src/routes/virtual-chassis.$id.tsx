@@ -38,6 +38,7 @@ import { QueryError } from "@/components/query-error"
 import { StatusBadge } from "@/components/status-badge"
 import { VirtualChassisDeleteDialog } from "@/components/virtual-chassis-delete-dialog"
 import { FaceplateLegend } from "@/components/device-faceplate"
+import { useLegendCollector } from "@/components/speed-scale"
 import { StackElevation } from "@/components/stack-elevation"
 import {
   StackInterfacesTable,
@@ -251,6 +252,8 @@ function Overview({
   ifacesByMember: Map<string, Interface[]>
 }) {
   const { humanIds } = useMe()
+  // One legend under the stack, keyed to what the members actually drew.
+  const { content: legend, report: onLegend } = useLegendCollector()
 
   const attributes: KvRow[] = [
     ...(humanIds && vc.numid != null
@@ -306,8 +309,9 @@ function Overview({
             members={members}
             masterId={vc.master?.id ?? null}
             interfacesByMember={ifacesByMember}
+            onLegend={onLegend}
           />
-          <FaceplateLegend className="mt-2" />
+          <FaceplateLegend className="mt-2" content={legend} />
           <p className="mt-2 text-[11px] text-muted-foreground">
             {vc.member_count} member{vc.member_count === 1 ? "" : "s"}
             {vc.master ? <> · master {vc.master.name}</> : null}

@@ -7,6 +7,7 @@ these tests pin the contract the drag-and-drop builder saves against.
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from core.models import Organization, Tenant
@@ -334,6 +335,43 @@ class FacePortsResolveTests(APITestCase):
         self.assertIsNotNone(front[0]["id"])
         self.assertIsNone(front[0]["kind"])  # not cable-able
         self.assertEqual(front[0]["status"]["name"], "Failed")
+        # The id joins the marker to the tenant's Status catalog — the legend
+        # keys hardware by it, since StatusMini carries no slug.
+        self.assertEqual(front[0]["status"]["id"], str(failed.id))
+
+    def test_drift_rides_along_for_hardware(self):
+        """A part whose observed health disagrees with its set status carries a
+        drift line, so the 3D room can flag it without a second request."""
+        from api.models import InventoryItem, Status
+        from api.status_registry import seed_builtin_statuses
+        from monitoring.models import DeviceSnmp
+
+        seed_builtin_statuses(self.tenant)
+        active = Status.objects.get(tenant=self.tenant, slug="active")
+        self.dt.image_ports = {
+            "front": [{"kind": "inventory-item", "name": "disk0",
+                       "x": 0.3, "y": 0.5, "w": 0.02, "h": 0.6}],
+            "rear": [],
+        }
+        self.dt.save(update_fields=["image_ports"])
+        part = InventoryItem.objects.create(
+            device=self.dev, name="disk0", kind="disk", status=active
+        )
+        DeviceSnmp.objects.create(
+            device=self.dev, tenant=self.tenant, polled_at=timezone.now(),
+            sensors=[{"name": "disk0", "status": "failed", "raw": "Critical",
+                      "kind": "disk", "sensor": "Drive health"}],
+        )
+        front = self._get().json()["front"]
+        self.assertEqual(front[0]["id"], str(part.id))
+        # Intent is untouched — the status still reads Active, drift sits beside.
+        self.assertEqual(front[0]["status"]["name"], "Active")
+        self.assertEqual(front[0]["drift"], "SNMP says failed")
+
+    def test_drift_is_null_when_they_agree(self):
+        front = self._get().json()["front"]
+        self.assertIsNone(front[0]["drift"])
+        self.assertIsNone(front[1]["drift"])
 
     def test_connected_flag_and_cable_id(self):
         peer = Device.objects.create(

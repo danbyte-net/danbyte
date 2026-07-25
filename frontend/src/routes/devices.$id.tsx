@@ -79,11 +79,11 @@ import {
   DeviceFaceplate,
   FaceplateLegend,
   ImagePortsFaceplate,
-  useHasHardwareMarkers,
   useHasImagePorts,
   useObservedPorts,
   useSavedFaceplate,
 } from "@/components/device-faceplate"
+import { useLegendCollector } from "@/components/speed-scale"
 import { DeviceBaysPane } from "@/components/device-bays-pane"
 import { DeviceInventoryPane } from "@/components/device-inventory-pane"
 import { DeviceModulesPane } from "@/components/device-modules-pane"
@@ -949,7 +949,9 @@ function DeviceFrontPanel({ device }: { device: Device }) {
   // Photo faceplate wins when the type has an image + placed port markers;
   // else the schematic (mm-true) faceplate.
   const usePhoto = useHasImagePorts(device.device_type?.id)
-  const hasHardwareMarkers = useHasHardwareMarkers(device.device_type?.id)
+  // The panel tells the legend which colours it drew — a disk-bay photo panel
+  // keys Active/Empty, not the whole FE→400G ramp.
+  const { content: legend, report: onLegend } = useLegendCollector()
   const hasRear = usePhoto
     ? !!device.device_type?.rear_image
     : (savedDoc?.rear?.length ?? 0) > 0
@@ -984,11 +986,12 @@ function DeviceFrontPanel({ device }: { device: Device }) {
               vcPosition={device.vc_position}
               side={side}
               observed={observed}
+              onLegend={onLegend}
             />
             <FaceplateLegend
               className="mt-2"
               observed={!!observed}
-              hardware={hasHardwareMarkers}
+              content={legend}
             />
           </>
         ) : (
@@ -1001,8 +1004,13 @@ function DeviceFrontPanel({ device }: { device: Device }) {
               side={side}
               fit="container"
               observed={observed}
+              onLegend={onLegend}
             />
-            <FaceplateLegend className="mt-2" observed={!!observed} />
+            <FaceplateLegend
+              className="mt-2"
+              observed={!!observed}
+              content={legend}
+            />
           </>
         )}
       </div>

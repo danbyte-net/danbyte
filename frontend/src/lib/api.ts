@@ -1484,6 +1484,9 @@ export interface FacePort {
   type: string
   /** Hardware markers (inventory items): lifecycle status; null for ports. */
   status: StatusMini | null
+  /** One line naming what SNMP saw differently, or null when they agree. The
+   * fields above stay the source of truth — this is drawn beside them. */
+  drift: string | null
 }
 
 export interface FacePorts {

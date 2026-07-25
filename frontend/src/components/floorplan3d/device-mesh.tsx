@@ -3,13 +3,26 @@ import { useThree } from "@react-three/fiber"
 import { useQuery } from "@tanstack/react-query"
 import * as THREE from "three"
 
-import { api, type FacePort, type FacePorts, type ImagePortMarker } from "@/lib/api"
-import { liveHex, portCapabilityHex, portHex } from "@/lib/faceplate-colors"
+import {
+  api,
+  type FacePort,
+  type FacePorts,
+  type ImagePortMarker,
+} from "@/lib/api"
+import {
+  EMPTY_LEGEND,
+  legendContent,
+  liveHex,
+  portCapabilityHex,
+  portHex,
+} from "@/lib/faceplate-colors"
 import {
   normalizePortName,
   useObservedPorts,
 } from "@/components/device-faceplate"
+import { useReportLegend, type LegendReporter } from "@/components/speed-scale"
 
+import { useMaxAnisotropy } from "./texture-quality"
 import { deviceBoxM, type SceneDevice, type SceneRack } from "./world"
 
 const DEVICE_FALLBACK = "#52525b"
@@ -21,6 +34,13 @@ const DEVICE_SELECTED = "#0ea5e9"
 // is "undefined" (dim grey); a selected/armed port is amber.
 const PORT_UNDEFINED = "#3f3f46" // zinc-700 · marker with no real port here
 const PORT_SELECTED = "#fbbf24" // amber-400 · picked for cabling
+// Observed reality disagrees with the record. Outlined, NOT recoloured: the
+// marker keeps showing the source of truth and the drift reads as a separate
+// signal — same contract as the 2D faceplate's amber ring.
+const PORT_DRIFT = "#f59e0b" // amber-500
+/** How far the drift halo sticks out past the marker (metres) — ~2mm each side,
+ * visible at rack distance without swallowing a small disk bay. */
+const DRIFT_HALO_M = 0.004
 
 // ─── Face-texture cache ──────────────────────────────────────────────────────
 // One texture per device-type image URL, shared across every device box that
@@ -31,7 +51,11 @@ const PORT_SELECTED = "#fbbf24" // amber-400 · picked for cabling
 const MAX_TEXTURES = 256
 const cache = new Map<string, THREE.Texture>()
 
-function getTexture(url: string, onLoad: () => void): THREE.Texture | null {
+function getTexture(
+  url: string,
+  anisotropy: number,
+  onLoad: () => void
+): THREE.Texture | null {
   const hit = cache.get(url)
   if (hit) {
     // Refresh LRU position.
@@ -41,7 +65,7 @@ function getTexture(url: string, onLoad: () => void): THREE.Texture | null {
   }
   new THREE.TextureLoader().load(url, (t) => {
     t.colorSpace = THREE.SRGBColorSpace
-    t.anisotropy = 4
+    t.anisotropy = anisotropy
     if (cache.size >= MAX_TEXTURES) {
       const oldest = cache.keys().next().value
       if (oldest) {
@@ -59,15 +83,16 @@ function getTexture(url: string, onLoad: () => void): THREE.Texture | null {
  * canvas) when it lands. */
 function useFaceTexture(url: string | null): THREE.Texture | null {
   const invalidate = useThree((s) => s.invalidate)
+  const anisotropy = useMaxAnisotropy()
   const [, bump] = useState(0)
   const tex = url ? (cache.get(url) ?? null) : null
   useEffect(() => {
     if (!url || cache.has(url)) return
-    getTexture(url, () => {
+    getTexture(url, anisotropy, () => {
       bump((n) => n + 1)
       invalidate()
     })
-  }, [url, invalidate])
+  }, [url, anisotropy, invalidate])
   return tex
 }
 
@@ -87,6 +112,7 @@ export function DeviceMesh({
   showTexture,
   onSelect,
   onSelectPort,
+  onLegend,
 }: {
   rack: SceneRack
   dev: SceneDevice
@@ -105,6 +131,9 @@ export function DeviceMesh({
     marker: ImagePortMarker,
     side: "front" | "rear"
   ) => void
+  /** Report the colours this face puts on screen, so the room's legend keys
+   * only those. Near tier only — a far cabinet draws no port colours. */
+  onLegend?: LegendReporter
 }) {
   const [hovered, setHovered] = useState(false)
   const [hoveredPort, setHoveredPort] = useState<number | null>(null)
@@ -125,7 +154,9 @@ export function DeviceMesh({
   // quads can be lit by connection status, not just drawn. Lazy: only near
   // (showTexture) devices that actually carry markers on the shown face.
   const side = mountedRear ? "rear" : "front"
-  const markers = dev.image_ports?.[side] ?? []
+  // Memoized: the legend derives from these, and a fresh `[]` every render
+  // would make it recompute (and re-report) forever.
+  const markers = useMemo(() => dev.image_ports?.[side] ?? [], [dev, side])
   const wantPorts = showTexture && markers.length > 0
   const facePorts = useQuery({
     queryKey: ["device-face-ports", dev.id],
@@ -147,6 +178,35 @@ export function DeviceMesh({
   useEffect(() => {
     invalidate()
   }, [resolved, observed, invalidate])
+
+  // Which colours this face actually uses — walked exactly like the quads
+  // below, so the room's legend can't claim a tier nothing on screen wears.
+  const legend = useMemo(() => {
+    if (!wantPorts) return EMPTY_LEGEND
+    const ports: Parameters<typeof legendContent>[0]["ports"] = []
+    const parts: { status?: { id: string } | null }[] = []
+    const obs = new Map<string, { oper_status: string; admin_status: string }>()
+    for (const m of markers) {
+      const fp = resolved.get(m.name)
+      if (!fp?.id) continue
+      // kind === null is a hardware marker: status colour, not a speed tier.
+      if (fp.kind === null) {
+        parts.push({ status: fp.status })
+        continue
+      }
+      ports.push({
+        enabled: fp.enabled,
+        cable: fp.connected,
+        speed: fp.speed,
+        type: fp.type,
+      })
+      const key = normalizePortName(fp.name)
+      const live = observed?.get(key)
+      if (live) obs.set(key, live)
+    }
+    return legendContent({ ports, observed: obs, parts })
+  }, [wantPorts, markers, resolved, observed])
+  useReportLegend(onLegend, dev.id, legend)
 
   const bodyColor = selected
     ? DEVICE_SELECTED
@@ -196,57 +256,80 @@ export function DeviceMesh({
             <planeGeometry args={[dw, boxH]} />
             <meshBasicMaterial map={texture} toneMapped={false} />
           </mesh>
-          {(dev.image_ports?.[mountedRear ? "rear" : "front"] ?? []).map(
-            (m, i) => {
-              // image (mx,my): x right, y DOWN from top-left → plane-local X
-              // right, Y up, so flip y. Each quad owns its pointer events and
-              // stops propagation, so a port is hoverable/clickable on its own
-              // rather than folding into the whole device's click.
-              const isSel = selectedPort != null && m.name === selectedPort
-              const isHot = hoveredPort === i
-              const fp = resolved.get(m.name)
-              const defined = !!fp?.id
-              // Same colouring as the 2D faceplate: live SNMP wins when present,
-              // else the speed/cable/enabled tint (with the type's max speed as
-              // fallback). Free ports show their capability tier, faded.
-              const obs = defined
-                ? observed?.get(normalizePortName(fp!.name))
-                : undefined
-              const tint = defined
-                ? {
-                    enabled: fp!.enabled,
-                    cable: fp!.connected,
-                    speed: fp!.speed,
-                    type: fp!.type,
-                  }
-                : null
-              const capability = tint ? portCapabilityHex(tint) : null
-              // Hardware markers (disk bays…): the PART's status colour
-              // (failed = red), same as the 2D photo faceplate.
-              const hardware = defined && fp!.kind === null
-              const color = isSel
-                ? PORT_SELECTED
+          {markers.map((m, i) => {
+            // image (mx,my): x right, y DOWN from top-left → plane-local X
+            // right, Y up, so flip y. Each quad owns its pointer events and
+            // stops propagation, so a port is hoverable/clickable on its own
+            // rather than folding into the whole device's click.
+            const isSel = selectedPort != null && m.name === selectedPort
+            const isHot = hoveredPort === i
+            const fp = resolved.get(m.name)
+            const defined = !!fp?.id
+            // Same colouring as the 2D faceplate: live SNMP wins when present,
+            // else the speed/cable/enabled tint (with the type's max speed as
+            // fallback). Free ports show their capability tier, faded.
+            const obs = defined
+              ? observed?.get(normalizePortName(fp!.name))
+              : undefined
+            const tint = defined
+              ? {
+                  enabled: fp!.enabled,
+                  cable: fp!.connected,
+                  speed: fp!.speed,
+                  type: fp!.type,
+                }
+              : null
+            const capability = tint ? portCapabilityHex(tint) : null
+            // Hardware markers (disk bays…): the PART's status colour
+            // (failed = red), same as the 2D photo faceplate.
+            const hardware = defined && fp!.kind === null
+            const color = isSel
+              ? PORT_SELECTED
+              : !defined
+                ? PORT_UNDEFINED
+                : hardware
+                  ? fp!.status?.color || "#64748b"
+                  : obs
+                    ? liveHex(obs)
+                    : (capability ?? portHex(tint!))
+            // Undefined markers sit dim in the back; idle ports faint (the
+            // photo stays the star — mirrors the 2D ~35% outline); lit
+            // ports and hardware solid.
+            const opacity =
+              isSel || isHot
+                ? 0.9
                 : !defined
-                  ? PORT_UNDEFINED
-                  : hardware
-                    ? fp!.status?.color || "#64748b"
-                    : obs
-                      ? liveHex(obs)
-                      : (capability ?? portHex(tint!))
-              // Undefined markers sit dim in the back; idle ports faint (the
-              // photo stays the star — mirrors the 2D ~35% outline); lit
-              // ports and hardware solid.
-              const opacity =
-                isSel || isHot
-                  ? 0.9
-                  : !defined
-                    ? 0.2
-                    : !hardware && capability
-                      ? 0.32
-                      : 0.66
-              return (
+                  ? 0.2
+                  : !hardware && capability
+                    ? 0.32
+                    : 0.66
+            return (
+              <group key={i}>
+                {/* Drift halo: an amber quad a touch larger, sitting just
+                    BEHIND the marker so only its border shows — the 3D reading
+                    of the 2D ring. Declarative <planeGeometry> so r3f owns
+                    (and disposes) it; raycast off so it never eats a click. */}
+                {defined && fp!.drift && !isSel && (
+                  <mesh
+                    raycast={() => null}
+                    position={[(m.x - 0.5) * dw, (0.5 - m.y) * boxH, 0.001]}
+                  >
+                    <planeGeometry
+                      args={[
+                        m.w * dw + DRIFT_HALO_M,
+                        m.h * boxH + DRIFT_HALO_M,
+                      ]}
+                    />
+                    <meshBasicMaterial
+                      color={PORT_DRIFT}
+                      transparent
+                      opacity={0.95}
+                      toneMapped={false}
+                      depthWrite={false}
+                    />
+                  </mesh>
+                )}
                 <mesh
-                  key={i}
                   name={m.name}
                   position={[(m.x - 0.5) * dw, (0.5 - m.y) * boxH, 0.0015]}
                   onClick={(e) => {
@@ -273,9 +356,9 @@ export function DeviceMesh({
                     depthWrite={false}
                   />
                 </mesh>
-              )
-            }
-          )}
+              </group>
+            )
+          })}
         </group>
       )}
       {selected && edges && (

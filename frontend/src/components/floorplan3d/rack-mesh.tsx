@@ -4,6 +4,8 @@ import * as THREE from "three"
 
 import type { FloorTileCheck } from "@/lib/api"
 
+import type { LegendReporter } from "@/components/speed-scale"
+
 import { DeviceMesh } from "./device-mesh"
 import { RackRuler } from "./rack-ruler"
 import { FaceLabel } from "./text-sprite"
@@ -54,6 +56,7 @@ export function RackMesh({
   showNames,
   onSelect,
   onFlyTo,
+  onLegend,
 }: {
   plan: ScenePayload["plan"]
   tile: SceneTile
@@ -63,6 +66,8 @@ export function RackMesh({
   showNames: boolean
   onSelect: (sel: Sel) => void
   onFlyTo: (target: THREE.Vector3, position: THREE.Vector3) => void
+  /** Forwarded to each device so the room's legend keys what's on screen. */
+  onLegend?: LegendReporter
 }) {
   const rack = tile.rack!
   const { width, depth, height } = rackFootprintM(rack)
@@ -100,7 +105,8 @@ export function RackMesh({
     }
   })
 
-  const rackSelected = selection?.tileId === tile.id && selection.kind === "rack"
+  const rackSelected =
+    selection?.tileId === tile.id && selection.kind === "rack"
   const frameColor = rackSelected
     ? FRAME_SELECTED
     : hovered
@@ -115,7 +121,10 @@ export function RackMesh({
       .applyEuler(new THREE.Euler(0, rotY, 0))
       .multiplyScalar(Math.max(height * 1.3, 2.2))
     const target = new THREE.Vector3(cx, height * 0.55, cz)
-    const position = target.clone().add(front).setY(height * 0.62)
+    const position = target
+      .clone()
+      .add(front)
+      .setY(height * 0.62)
     onFlyTo(target, position)
   }
 
@@ -163,6 +172,7 @@ export function RackMesh({
                   : null
               }
               showTexture
+              onLegend={onLegend}
               onSelect={(deviceId) =>
                 onSelect({ kind: "device", tileId: tile.id, deviceId })
               }

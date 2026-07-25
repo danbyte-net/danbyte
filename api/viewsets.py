@@ -2407,19 +2407,54 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
         "inventory-item": ("inventory_items", None),
     }
 
+    # Observed-vs-intent difference → the one-line label a marker wears. Keeps
+    # the phrasing in one place so 2D hovercards and the 3D HUD agree.
+    @staticmethod
+    def _face_drift_label(item: dict) -> str:
+        kind = item.get("kind")
+        if kind == "part_status":
+            return f"SNMP says {item.get('observed')}"
+        if kind == "interface_mismatch":
+            return f"{item.get('field')}: SNMP says {item.get('observed')}"
+        if kind == "ip_missing":
+            return f"SNMP reports {item.get('ip')}, not recorded"
+        if kind == "interface_stale":
+            return "not reported by SNMP"
+        return "differs from SNMP"
+
+    def _face_drift(self, device) -> dict[str, str]:
+        """Drift labels for this device's components, keyed by component id.
+
+        Imported inside the method: ``monitoring`` imports ``api``, so a
+        module-level import would close the cycle.
+        """
+        from monitoring.snmp_drift import compute_device_drift
+
+        out: dict[str, str] = {}
+        for item in compute_device_drift(device, device.tenant):
+            cid = item.get("part_id") or item.get("interface_id")
+            # First difference wins — the marker only has room for one line, and
+            # its job is "look here", not "here is the full report".
+            if cid and cid not in out:
+                out[cid] = self._face_drift_label(item)
+        return out
+
     @action(detail=True, methods=["get"], url_path="face-ports")
     def face_ports(self, request, pk=None):
         """Resolve this device's photo-port markers (from its device type's
         ``image_ports``) to the device's REAL components: the port id, its
-        cable-termination kind, and whether it's already cabled. The 3D room
-        view needs this to turn a clicked marker into a termination it can
-        cable — the marker itself only carries a template name."""
+        cable-termination kind, whether it's already cabled, and whether SNMP
+        sees it differently than the record does. The 3D room view needs this to
+        turn a clicked marker into a termination it can cable — the marker
+        itself only carries a template name — and to flag drift without a
+        second request per device in the rack."""
         from .models import render_component_name
 
         device = self.get_object()
         dt = device.device_type
         image_ports = (dt.image_ports if dt else None) or {}
         pos = device.vc_position
+        drift = self._face_drift(device)
 
         # Load each component relation we actually need exactly once, keyed by
         # rendered name, with terminations prefetched for the cabled check.
@@ -2451,17 +2486,23 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
                     "enabled": True, "speed": "", "type": "",
                     # Hardware markers (inventory items): lifecycle status.
                     "status": None,
+                    # What SNMP saw differently, or null when they agree. The
+                    # status/speed above stay the SOURCE OF TRUTH either way —
+                    # drift is drawn beside intent, never over it.
+                    "drift": None,
                 }
                 mapping = self._FACE_PORT_KINDS.get(kind)
                 if mapping:
                     relation, term_kind = mapping
                     comp = name_map(relation, cabled=term_kind is not None).get(name)
+                    if comp is not None:
+                        entry["drift"] = drift.get(str(comp.id))
                     if comp is not None and term_kind is None:
                         # Inventory item — status-coloured, never cable-able.
                         s = comp.status
                         entry.update({
                             "id": str(comp.id),
-                            "status": {"name": s.name, "color": s.color}
+                            "status": {"id": str(s.id), "name": s.name, "color": s.color}
                             if s else None,
                         })
                     elif comp is not None:

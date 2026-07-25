@@ -1,6 +1,8 @@
 import { useEffect, useMemo } from "react"
 import * as THREE from "three"
 
+import { useMaxAnisotropy } from "./texture-quality"
+
 /** Render text to a canvas texture (system font — no network fetch, so it's
  * airgap/CSP-safe, unlike drei's troika `<Text>`). Returns the texture plus
  * its pixel width/height so callers can size a plane to the text aspect. */
@@ -12,28 +14,37 @@ function textTexture(
     fontPx = 44,
     align = "left" as CanvasTextAlign,
     pad = 12,
+    anisotropy = 4,
+    /** Canvas pixels per texture pixel. Labels are small on screen but read at
+     * a steep angle, where an undersampled canvas is exactly what makes a rack
+     * name plate mushy — draw it at 2x and let mipmaps take it down. */
+    scale = 2,
   } = {}
 ): { texture: THREE.CanvasTexture; w: number; h: number } {
-  const font = `600 ${fontPx}px ui-monospace, ui-sans-serif, system-ui, sans-serif`
+  const font = `600 ${fontPx * scale}px ui-monospace, ui-sans-serif, system-ui, sans-serif`
   const canvas = document.createElement("canvas")
   const ctx = canvas.getContext("2d")!
   ctx.font = font
-  const w = Math.ceil(ctx.measureText(text).width) + pad * 2
-  const h = fontPx + pad * 2
+  const w = Math.ceil(ctx.measureText(text).width) + pad * scale * 2
+  const h = (fontPx + pad * 2) * scale
   canvas.width = w
   canvas.height = h
   ctx.font = font // reset (canvas resize clears state)
   ctx.fillStyle = background
   ctx.beginPath()
-  ctx.roundRect(0, 0, w, h, 8)
+  ctx.roundRect(0, 0, w, h, 8 * scale)
   ctx.fill()
   ctx.fillStyle = color
   ctx.textBaseline = "middle"
   ctx.textAlign = align
-  ctx.fillText(text, align === "center" ? w / 2 : pad, h / 2 + 2)
+  ctx.fillText(
+    text,
+    align === "center" ? w / 2 : pad * scale,
+    h / 2 + 2 * scale
+  )
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
-  texture.anisotropy = 4
+  texture.anisotropy = anisotropy
   return { texture, w, h }
 }
 
@@ -63,10 +74,11 @@ export function FaceLabel({
   color?: string
   background?: string
 }) {
+  const anisotropy = useMaxAnisotropy()
   const { texture, aspect } = useMemo(() => {
-    const t = textTexture(text, { align, color, background })
+    const t = textTexture(text, { align, color, background, anisotropy })
     return { texture: t.texture, aspect: t.w / t.h }
-  }, [text, align, color, background])
+  }, [text, align, color, background, anisotropy])
   useEffect(() => () => texture.dispose(), [texture])
   return (
     <mesh position={position} rotation={rotation} raycast={() => null}>
@@ -98,30 +110,14 @@ export function TextSprite({
   color?: string
   background?: string
 }) {
+  // Same canvas painter as FaceLabel — one place that decides how crisp text
+  // in the room is.
+  const anisotropy = useMaxAnisotropy()
   const { texture, aspect } = useMemo(() => {
-    const pad = 12
-    const fontPx = 44
-    const canvas = document.createElement("canvas")
-    const ctx = canvas.getContext("2d")!
-    ctx.font = `600 ${fontPx}px ui-sans-serif, system-ui, sans-serif`
-    const w = Math.ceil(ctx.measureText(text).width) + pad * 2
-    const h = fontPx + pad * 2
-    canvas.width = w
-    canvas.height = h
-    // Re-set after resize (canvas resets state).
-    ctx.font = `600 ${fontPx}px ui-sans-serif, system-ui, sans-serif`
-    ctx.fillStyle = background
-    ctx.beginPath()
-    ctx.roundRect(0, 0, w, h, 10)
-    ctx.fill()
-    ctx.fillStyle = color
-    ctx.textBaseline = "middle"
-    ctx.fillText(text, pad, h / 2 + 2)
-    const texture = new THREE.CanvasTexture(canvas)
-    texture.colorSpace = THREE.SRGBColorSpace
-    texture.anisotropy = 4
-    return { texture, aspect: w / h }
-  }, [text, color, background])
+    const t = textTexture(text, { color, background, anisotropy })
+    return { texture: t.texture, aspect: t.w / t.h }
+  }, [text, color, background, anisotropy])
+  useEffect(() => () => texture.dispose(), [texture])
 
   return (
     // raycast disabled: the label floats above the cabinet and would otherwise

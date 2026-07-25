@@ -19,14 +19,22 @@ import {
   renderTemplateName,
 } from "@/lib/faceplate-geometry"
 import {
+  EMPTY_LEGEND,
+  legendContent,
   portCapabilityHex,
   portHex,
   portOverlayStyle,
   portState,
   portTintStyle,
+  type LegendContent,
   type PortState,
 } from "@/lib/faceplate-colors"
-import { HardwareStatusKey, SpeedScale } from "@/components/speed-scale"
+import {
+  HardwareStatusKey,
+  SpeedScale,
+  useReportLegend,
+  type LegendReporter,
+} from "@/components/speed-scale"
 import { InventoryItemDialog } from "@/components/device-inventory-pane"
 import { useMe } from "@/lib/use-me"
 import {
@@ -498,6 +506,8 @@ export function DeviceFaceplate({
   fit,
   className,
   observed,
+  onLegend,
+  legendKey = "panel",
 }: {
   interfaces: Interface[]
   /** Enables resolving non-interface components a saved layout places. */
@@ -516,6 +526,11 @@ export function DeviceFaceplate({
    * status dot per port + a "live:" tooltip line — decoration only; the
    * source-of-truth styling is untouched. */
   observed?: Map<string, ObservedPort> | null
+  /** Report the colours this panel actually uses (see `useLegendCollector`). */
+  onLegend?: LegendReporter
+  /** Identifies this panel to the collector — a stack passes one key per
+   * member so the legend unions them. */
+  legendKey?: string
 }) {
   const physical = useMemo(
     () => interfaces.filter((i) => !i.virtual),
@@ -596,6 +611,29 @@ export function DeviceFaceplate({
     kindsNeeded,
     ...kindQueries.map((q) => q.data),
   ])
+
+  // The cages this panel actually drew — a saved layout places a subset of the
+  // device's ports, so the device's interface list is the wrong source.
+  const legend = useMemo(() => {
+    const drawn = resolved.groups.flatMap((g) => g.resolved)
+    const obs = new Map<string, ObservedPort>()
+    const ports: Parameters<typeof legendContent>[0]["ports"] = []
+    for (const s of drawn) {
+      if (!s.iface) continue
+      ports.push({
+        enabled: s.iface.enabled,
+        cable: s.iface.cable,
+        speed: s.iface.speed,
+        type: s.iface.type_display || s.iface.type,
+        mode: s.iface.mode,
+      })
+      const key = normalizePortName(s.iface.name)
+      const live = observed?.get(key)
+      if (live) obs.set(key, live)
+    }
+    return legendContent({ ports, observed: obs })
+  }, [resolved, observed])
+  useReportLegend(onLegend, legendKey, legend)
 
   const [wrapRef, containerWidth] = useContainerWidth()
   // "Full width" layouts render the whole blade even when sparsely populated
@@ -795,6 +833,8 @@ export function ImagePortsFaceplate({
   vcPosition,
   side,
   observed,
+  onLegend,
+  legendKey = "panel",
   className,
 }: {
   deviceTypeId: string
@@ -805,6 +845,11 @@ export function ImagePortsFaceplate({
   vcPosition?: number | null
   side: FaceplateSide
   observed?: Map<string, ObservedPort> | null
+  /** Report the colours this panel actually uses, so a legend can key just
+   * those — a shelf of disk bays shouldn't explain 400G. */
+  onLegend?: LegendReporter
+  /** Identifies this panel to the collector; default fits one panel per page. */
+  legendKey?: string
   className?: string
 }) {
   const { canDo } = useMe()
@@ -828,7 +873,12 @@ export function ImagePortsFaceplate({
   )
 
   const image = side === "front" ? dt.data?.front_image : dt.data?.rear_image
-  const markers = dt.data?.image_ports?.[side] ?? []
+  // Memoized: the legend derives from these, and a fresh `[]` every render
+  // would make it recompute (and re-report) forever.
+  const markers = useMemo(
+    () => dt.data?.image_ports?.[side] ?? [],
+    [dt.data, side]
+  )
   const wantsInventory =
     !!deviceId && markers.some((m) => m.kind === "inventory-item")
   const inventory = useQuery({
@@ -886,6 +936,43 @@ export function ImagePortsFaceplate({
       ),
     [inventory.data]
   )
+
+  // What this panel puts on screen, walked exactly like the markers below:
+  // only a marker that RESOLVED to something on this device is coloured, so
+  // only it earns a legend entry. Unmatched markers draw as dashed ghosts and
+  // carry no colour, hence no key.
+  const legend = useMemo(() => {
+    if (!image) return EMPTY_LEGEND
+    const ports: Parameters<typeof legendContent>[0]["ports"] = []
+    const parts: { status?: { id: string } | null }[] = []
+    const obs = new Map<string, ObservedPort>()
+    for (const m of markers) {
+      const kind = m.kind || "interface"
+      const key = normalizePortName(
+        renderTemplateName(m.name, vcPosition ?? null)
+      )
+      if (kind === "inventory-item") {
+        const item = itemByName.get(key)
+        if (item) parts.push(item)
+        continue
+      }
+      if (kind !== "interface") continue
+      const iface = ifaceByName.get(key)
+      if (!iface) continue
+      ports.push({
+        enabled: iface.enabled,
+        cable: iface.cable,
+        speed: iface.speed,
+        type: iface.type_display || iface.type,
+        mode: iface.mode,
+      })
+      const live = observed?.get(key)
+      if (live) obs.set(key, live)
+    }
+    return legendContent({ ports, observed: obs, parts })
+  }, [image, markers, vcPosition, ifaceByName, itemByName, observed])
+  useReportLegend(onLegend, legendKey, legend)
+
   if (!image) return null
 
   return (
@@ -1172,42 +1259,37 @@ export function FaceplateLegend({
   className,
   observed,
   hardware,
+  content,
 }: {
   className?: string
   /** Also explain the live SNMP dot. */
   observed?: boolean
-  /** The faceplate carries hardware markers → add the status key. */
+  /** The faceplate carries hardware markers → add the status key. Ignored when
+   * `content` is given, which knows this for itself. */
   hardware?: boolean
+  /** What the panel(s) below actually drew, from `useLegendCollector`. Given,
+   * the legend keys only those colours; omitted, it shows everything. */
+  content?: LegendContent
 }) {
+  const hasHardware = content ? content.partStatusIds.size > 0 : !!hardware
   return (
     <div className={cn("grid gap-1.5", className)}>
       <SpeedScale
         live={observed}
+        tiers={content?.tiers}
+        states={content?.states}
         extras={
-          <span className="inline-flex items-center gap-1">
-            <span className="relative h-2.5 w-3 rounded-[2px] border border-border bg-muted/40">
-              <span className="absolute inset-x-0.5 top-0 h-[2px] rounded-b bg-foreground/60" />
+          (!content || content.trunk) && (
+            <span className="inline-flex items-center gap-1">
+              <span className="relative h-2.5 w-3 rounded-[2px] border border-border bg-muted/40">
+                <span className="absolute inset-x-0.5 top-0 h-[2px] rounded-b bg-foreground/60" />
+              </span>
+              trunk
             </span>
-            trunk
-          </span>
+          )
         }
       />
-      {hardware && <HardwareStatusKey />}
+      {hasHardware && <HardwareStatusKey statusIds={content?.partStatusIds} />}
     </div>
-  )
-}
-
-/** True when the type's photo markers include hardware (inventory items) —
- * drives the hardware status key. Shares the ["device-type", id] cache. */
-export function useHasHardwareMarkers(deviceTypeId?: string | null): boolean {
-  const dt = useQuery({
-    queryKey: ["device-type", deviceTypeId],
-    queryFn: () => api<DeviceType>(`/api/device-types/${deviceTypeId}/`),
-    enabled: !!deviceTypeId,
-    staleTime: 5 * 60_000,
-  })
-  const ip = dt.data?.image_ports
-  return (
-    !!ip && [...ip.front, ...ip.rear].some((m) => m.kind === "inventory-item")
   )
 }

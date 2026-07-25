@@ -78,13 +78,42 @@ uploaded blueprint textures it.
   devices wear their device-type **front/rear images**. Monitoring state
   lights a beacon on top of each cabinet — the same worst-status rollup the
   2D overlays use.
+- Up close, a device whose type has **photo-anchored ports** wears its port
+  markers on the image, coloured exactly as on the device page — speed tier
+  for cabled ports, the part's status for hardware bays. Click one for a card
+  with its cable, far end and, when SNMP disagrees with the record, the
+  **difference** (see [drift in the room](#drift-in-the-room)).
 - Arriving with a **cable trace** (`?trace=<cable>` — e.g. "Show on floor
   plan" from a cable) draws the run as an animated line riding its assigned
   trays and dropping into both end racks.
+- The **key** in the top-right corner explains only the colours actually on
+  screen: walk up to a shelf of disk bays and it lists those statuses, not the
+  whole FE→400G+ speed ramp. It disappears entirely when nothing photo-anchored
+  is in view. Same behaviour under the 2D panels — see
+  [Front panel](../dcim/devices.md#front-panel).
 - The view is **read-only** in v1 — layout editing stays in 2D.
 - Everything is drawn from the same millimetre constants as the 2D elevation
   and faceplates, so proportions match reality (EIA-310 rack opening, 44.45 mm
   U pitch). Browsers without WebGL fall back to a notice; 2D is unaffected.
+
+Face images and text labels are filtered at the GPU's best anisotropy and the
+canvas renders at the display's pixel ratio, so a cabinet read at an angle
+stays sharp. What that can't fix is a low-resolution source photo — a 600 px
+device image stretched across a 19″ face is soft at close range in any view.
+Upload the largest faceplate photo you have.
+
+### Drift in the room
+
+A port or hardware bay whose observed SNMP state disagrees with the record
+wears an **amber outline** — the 3D reading of the same ring the 2D faceplate
+uses. The marker keeps showing your **source of truth**; the outline is a
+separate signal saying "look here". Click it and the card names the difference
+("SNMP says failed", "speed: SNMP says 1 Gbps"). Nothing changes until you
+accept it on the device's Monitoring tab — see
+[SNMP discovery](snmp-discovery.md#drift).
+
+Drift rides along in the same per-device request the port markers already use,
+so a rack of cabinets costs no extra round trips.
 
 ## Floors
 

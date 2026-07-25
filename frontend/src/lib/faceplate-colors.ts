@@ -172,7 +172,6 @@ export function portOverlayStyle(hex: string): CSSProperties {
   }
 }
 
-
 /** What a rendered panel actually contains, so its legend can show only that.
  *
  * A legend is a key to the picture, not a catalogue of everything Danbyte can
@@ -187,10 +186,53 @@ export interface LegendContent {
   states: Set<string>
   /** A trunk port is drawn. */
   trunk: boolean
-  /** Status slugs of the hardware parts drawn. */
-  partSlugs: Set<string>
+  /** Status ids of the hardware parts drawn. Ids, not slugs: a part serializes
+   * its status as StatusMini (id/name/color), and the id is what joins it to
+   * the tenant's Status catalog the key is drawn from. */
+  partStatusIds: Set<string>
 }
 
+/** Nothing drawn — a panel that resolved no markers at all. */
+export const EMPTY_LEGEND: LegendContent = {
+  tiers: new Set(),
+  states: new Set(),
+  trunk: false,
+  partStatusIds: new Set(),
+}
+
+/** True when nothing on screen needs a key — hide the legend entirely. */
+export function legendIsEmpty(c: LegendContent): boolean {
+  return (
+    c.tiers.size === 0 &&
+    c.states.size === 0 &&
+    !c.trunk &&
+    c.partStatusIds.size === 0
+  )
+}
+
+/** Union of several panels' content, for one legend under several faceplates
+ * (a virtual chassis' members, every rack in a 3D room). */
+export function mergeLegend(parts: LegendContent[]): LegendContent {
+  const out: LegendContent = {
+    tiers: new Set(),
+    states: new Set(),
+    trunk: false,
+    partStatusIds: new Set(),
+  }
+  for (const p of parts) {
+    for (const t of p.tiers) out.tiers.add(t)
+    for (const s of p.states) out.states.add(s)
+    for (const s of p.partStatusIds) out.partStatusIds.add(s)
+    out.trunk = out.trunk || p.trunk
+  }
+  return out
+}
+
+/** Derive a panel's legend from the components it DREW.
+ *
+ * `observed` must hold only the rows for those same components — passing a
+ * whole device's SNMP map would claim a "down" swatch for a port that isn't on
+ * this panel. */
 export function legendContent(input: {
   ports?: {
     enabled: boolean
@@ -200,7 +242,7 @@ export function legendContent(input: {
     mode?: string | null
   }[]
   observed?: Map<string, { oper_status: string; admin_status: string }> | null
-  parts?: { status?: { slug: string } | null }[]
+  parts?: { status?: { id: string } | null }[]
 }): LegendContent {
   const tiers = new Set<string>()
   const states = new Set<string>()
@@ -216,13 +258,12 @@ export function legendContent(input: {
       // cage type is capable of.
       const mbps = speedMbps(p.speed ?? "") ?? typeMaxMbps(p.type) ?? 0
       tiers.add(speedTier(mbps).label)
-    }
-    else states.add("idle")
+    } else states.add("idle")
   }
   for (const o of (input.observed ?? new Map()).values())
     if (o.admin_status !== "down" && o.oper_status !== "up") states.add("down")
-  const partSlugs = new Set<string>()
+  const partStatusIds = new Set<string>()
   for (const it of input.parts ?? [])
-    if (it.status?.slug) partSlugs.add(it.status.slug)
-  return { tiers, states, trunk, partSlugs }
+    if (it.status?.id) partStatusIds.add(it.status.id)
+  return { tiers, states, trunk, partStatusIds }
 }
