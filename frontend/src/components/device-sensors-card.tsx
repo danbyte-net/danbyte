@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Section } from "@/components/ui/section"
+import { EmptyState } from "@/components/empty-state"
 import {
   Dialog,
   DialogContent,
@@ -145,13 +146,21 @@ export function DeviceSensorsCard({
         ) : undefined
       }
     >
-      <div className="grid gap-3 p-4">
+      {/* No `p-4`: Section draws no box, so padding here only indented the body
+          away from its own heading. The tab shell owns the page padding. */}
+      <div className="grid gap-3">
         {rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <EmptyState
+            title={
+              typeScoped
+                ? "No sensors on this device type yet"
+                : "No sensors apply to this device"
+            }
+          >
             {typeScoped
-              ? "No sensors on this device type yet. Define one — an OID plus a value→status map — and every device of this model reads hardware health from it."
-              : "No sensors apply to this device. Define one — an OID plus a value→status map — to read hardware health over vendor SNMP."}
-          </p>
+              ? "Define one — an OID plus a value→status map — and every device of this model reads hardware health from it."
+              : "Define one — an OID plus a value→status map — to read hardware health over vendor SNMP."}
+          </EmptyState>
         ) : (
           <div className="grid gap-1">
             {rows.map((s) => (
