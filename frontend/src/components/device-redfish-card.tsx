@@ -157,7 +157,9 @@ export function DeviceRedfishCard({ deviceId }: { deviceId: string }) {
         ) : undefined
       }
     >
-      <div className="grid gap-3 p-4">
+      {/* No `p-4` — matches the sensors card it sits beside. Section draws no
+          box, so the inset only misaligned the body from its own heading. */}
+      <div className="grid gap-3">
         {configured && (
           <div className="grid gap-1 text-[13px]">
             <div className="flex items-center gap-2">

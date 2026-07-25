@@ -239,7 +239,11 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
       <DetailTab value="photo-ports">
         <DeviceTypeImagePortsPane deviceType={d} />
       </DetailTab>
-      <DetailTab value="sensors" bare>
+      {/* Not `bare`: that mode is for panes that fill the tab edge-to-edge and
+          bring their own scroll region (Components). A Section-based card needs
+          the shell's standard p-4/lg:p-6 like every other tab, or its heading
+          sits flush against the tab strip. */}
+      <DetailTab value="sensors">
         {/* Sensors belong to the MODEL, not one box: an OID that reads drive
             health on this chassis reads it on every one you own. Defined here,
             every device of this type inherits them. */}
