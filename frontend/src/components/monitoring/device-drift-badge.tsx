@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { TriangleAlert } from "lucide-react"
+import { GitCompareArrows } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type { SnmpDriftItem } from "@/lib/api"
@@ -53,10 +53,14 @@ export function hasDriftOfKind(
 }
 
 /**
- * A small amber marker saying "observed reality disagrees with this record" —
- * the drift counterpart to the compliance ViolationBadge, and deliberately its
- * twin in shape so the two read as the same class of signal. Renders nothing
- * when the device is in sync, so it can sit anywhere unconditionally.
+ * A small amber marker saying "observed reality disagrees with this record".
+ *
+ * Deliberately NOT a lookalike of the compliance ViolationBadge, which sits
+ * right beside it on a device hero: that one is a warning triangle ("a rule you
+ * wrote isn't satisfied"), this one is compare-arrows plus the word "drift"
+ * ("the device reports something else"). They were once the same amber triangle
+ * with a count and were impossible to tell apart. Renders nothing when the
+ * device is in sync, so it can sit anywhere unconditionally.
  */
 export function DeviceDriftBadge({
   deviceId,
@@ -88,12 +92,18 @@ export function DeviceDriftBadge({
             className
           )}
         >
-          <TriangleAlert className="h-3.5 w-3.5" />
-          {prominent && <span className="num">{n}</span>}
+          <GitCompareArrows className="h-3.5 w-3.5" />
+          {prominent && (
+            <>
+              <span className="num">{n}</span>
+              <span>drift</span>
+            </>
+          )}
         </a>
       </TooltipTrigger>
       <TooltipContent
         side="top"
+        variant="panel"
         className="max-w-md flex-col items-start gap-1"
       >
         <span className="font-medium">

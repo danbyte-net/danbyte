@@ -20,6 +20,8 @@ This page is organised by task. Jump to:
 - [Scheduled polling & utilisation](#scheduled-polling) — the sparkline series
 - [Drift & reconciliation](#drift-and-reconciliation) — accept observed into intent
 - [Topology: LLDP & ARP](#topology) — neighbours and the ARP table
+- [Custom SNMP sensors](#sensors) — vendor health OIDs, and
+  [sharing them as a pack](#sensor-packs)
 - [Permissions](#permissions)
 
 ## Observed vs intended {#observed-vs-intended}
@@ -391,9 +393,50 @@ Exploring reads from the device and writes nothing, but it does make the server
 query arbitrary operator-supplied OIDs on that host, so it takes the same
 **device change** permission as the rest of the SNMP tooling.
 
+### Where sensors live {#sensor-catalog}
+
+A sensor is a property of the **hardware model**, not of one box: an OID that
+reads drive health on one chassis reads it on every one you own. So there are
+three places to work with them, all editing the same records:
+
+| Where | For |
+|---|---|
+| **Device → SNMP tab** | Explore a live device's OIDs, define a sensor from what you find, poll it, read the last values. |
+| **Device type → Sensors tab** | The definitions this model carries. Every device of the type inherits them. |
+| **Settings → SNMP sensors** | The whole catalog: search, duplicate, delete, and export/import packs. |
+
+A sensor bound to a device type applies only to that model; one left unbound
+applies to **all** types. The device-type tab deliberately lists only its own,
+so you can't edit a shared definition by accident while looking at one model.
+
+### Sharing sensors as a pack {#sensor-packs}
+
+Working out that a Lenovo chassis reports drive health at
+`1.3.6.1.4.1.2.3.51.3.1.12.2.1.3` is real work, and it's the same answer for
+everyone with that chassis. **Settings → SNMP sensors → Export pack** writes the
+tenant's sensors to a JSON file; **Import pack** reads one back.
+
+A pack contains only definitions — OID, walk/scalar, value map, naming rule,
+apply mode. **No credentials**: sensors poll with the device's own
+[SNMP profile](#snmp-profiles), so there is nothing secret to leak.
+
+- Device types travel as their **name**, not their id (ids are per-deployment).
+  A sensor naming a type you don't have is still imported, just **unbound** —
+  the import tells you which, so you can bind it in one click.
+- Sensors are matched by **slug**. Re-importing updates in place instead of
+  piling up duplicates, and by default an existing slug is **skipped** so an
+  import can't quietly rewrite a sensor someone tuned. Tick *Overwrite* to
+  replace (that needs `change` access, not just `add`).
+- The envelope is versioned (`danbyte_snmp_sensor_pack: 1`), so a file from a
+  future Danbyte is rejected with a clear message rather than half-applied.
+
+API: `GET /api/monitoring/snmp-sensors/export/` and
+`POST /api/monitoring/snmp-sensors/import/?replace=0|1`.
+
 ### Defining a sensor by hand
 
-On the device's **SNMP tab → Custom SNMP sensors** card, **Add sensor**:
+On a device's **SNMP tab → Custom SNMP sensors** card (or the device type's
+**Sensors** tab), **Add sensor**:
 
 - **OID** — the numeric OID. A **walk** reads a table column (one value per
   component, e.g. per drive); a **scalar** reads one value.

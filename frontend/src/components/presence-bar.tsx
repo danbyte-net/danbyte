@@ -56,7 +56,7 @@ export function PresenceBar({
                 </AvatarFallback>
               </Avatar>
             </TooltipTrigger>
-            <TooltipContent side="bottom">
+            <TooltipContent side="bottom" variant="panel">
               <span className="font-medium">{p.name}</span>
               <span className="text-muted-foreground">
                 {" "}

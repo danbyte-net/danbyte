@@ -49,6 +49,7 @@ const SECTIONS: NavSection[] = [
       { to: "/settings/tenant-email", label: "Email" },
       { to: "/settings/tenant-ldap", label: "Directory (LDAP)" },
       { to: "/settings/snmp", label: "SNMP profiles" },
+      { to: "/settings/snmp-sensors", label: "SNMP sensors" },
     ],
   },
   {

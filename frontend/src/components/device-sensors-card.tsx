@@ -33,16 +33,25 @@ interface SensorReading {
 }
 
 /**
- * Custom SNMP sensors for a device — define an OID + value map once, poll it
- * with the device's SNMP profile, and watch inventory-item statuses flip.
- * The escape hatch for BMCs / gear that expose health only over vendor OIDs.
+ * Custom SNMP sensors — define an OID + value map once, poll it with the
+ * device's SNMP profile, and watch inventory-item statuses flip. The escape
+ * hatch for BMCs / gear that expose health only over vendor OIDs.
+ *
+ * Serves both surfaces from one component: on a DEVICE it also explores OIDs,
+ * polls, and shows the last readings; on a device TYPE (no `deviceId`) it edits
+ * the definitions the whole model inherits, which is where they belong — a
+ * sensor is a property of the hardware, not of one box.
  */
 export function DeviceSensorsCard({
   deviceId,
   deviceTypeId,
+  /** Manage only sensors bound to THIS type, and title the card accordingly. */
+  typeScoped,
 }: {
-  deviceId: string
+  /** Omit on the device-type page: no live device to walk or poll. */
+  deviceId?: string
   deviceTypeId?: string | null
+  typeScoped?: boolean
 }) {
   const { canDo } = useMe()
   const canWrite = canDo("device", "change")
@@ -56,21 +65,27 @@ export function DeviceSensorsCard({
   const [prefill, setPrefill] = useState<SensorPrefill | null>(null)
 
   const sensors = useQuery({
-    queryKey: ["snmp-sensors", deviceTypeId],
+    queryKey: ["snmp-sensors", deviceTypeId, typeScoped ?? false],
     queryFn: () =>
       api<Paginated<SnmpSensor>>(
         `/api/monitoring/snmp-sensors/${
-          deviceTypeId ? `?device_type=${deviceTypeId}` : ""
+          deviceTypeId
+            ? typeScoped
+              ? `?device_type_only=${deviceTypeId}`
+              : `?device_type=${deviceTypeId}`
+            : ""
         }`
       ),
   })
-  // Last readings live on the device's SNMP state (shared cache).
+  // Last readings live on the device's SNMP state (shared cache). Only a real
+  // device has any.
   const snmp = useQuery({
     queryKey: ["device-snmp", deviceId],
     queryFn: () =>
       api<{ sensors: SensorReading[] }>(
         `/api/monitoring/devices/${deviceId}/snmp/`
       ),
+    enabled: !!deviceId,
   })
   const readings = snmp.data?.sensors ?? []
 
@@ -103,17 +118,19 @@ export function DeviceSensorsCard({
         canWrite ? (
           // Three buttons in a half-width card: wrap instead of overflowing.
           <div className="flex flex-wrap justify-end gap-1.5">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setExploring(true)}
-            >
-              <Search className="h-3.5 w-3.5" /> Explore OIDs
-            </Button>
+            {deviceId && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setExploring(true)}
+              >
+                <Search className="h-3.5 w-3.5" /> Explore OIDs
+              </Button>
+            )}
             <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
               <Plus className="h-3.5 w-3.5" /> Sensor
             </Button>
-            {rows.length > 0 && (
+            {deviceId && rows.length > 0 && (
               <Button
                 size="sm"
                 variant="outline"
@@ -131,8 +148,9 @@ export function DeviceSensorsCard({
       <div className="grid gap-3 p-4">
         {rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No sensors apply to this device. Define one — an OID plus a
-            value→status map — to read hardware health over vendor SNMP.
+            {typeScoped
+              ? "No sensors on this device type yet. Define one — an OID plus a value→status map — and every device of this model reads hardware health from it."
+              : "No sensors apply to this device. Define one — an OID plus a value→status map — to read hardware health over vendor SNMP."}
           </p>
         ) : (
           <div className="grid gap-1">
@@ -193,16 +211,18 @@ export function DeviceSensorsCard({
         )}
       </div>
 
-      <OidExplorer
-        deviceId={deviceId}
-        open={exploring}
-        onOpenChange={setExploring}
-        onPickColumn={(oid, values) => {
-          setPrefill({ oid, values })
-          setExploring(false)
-          setAdding(true)
-        }}
-      />
+      {deviceId && (
+        <OidExplorer
+          deviceId={deviceId}
+          open={exploring}
+          onOpenChange={setExploring}
+          onPickColumn={(oid, values) => {
+            setPrefill({ oid, values })
+            setExploring(false)
+            setAdding(true)
+          }}
+        />
+      )}
 
       <SensorDialog
         deviceTypeId={deviceTypeId}
@@ -234,7 +254,7 @@ export interface SensorPrefill {
   values: string[]
 }
 
-function SensorDialog({
+export function SensorDialog({
   deviceTypeId,
   sensor,
   prefill,

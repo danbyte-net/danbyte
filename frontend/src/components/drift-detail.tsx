@@ -1,4 +1,4 @@
-import { ArrowRight, TriangleAlert } from "lucide-react"
+import { ArrowRight, GitCompareArrows } from "lucide-react"
 
 import type { SnmpDriftItem } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
@@ -154,13 +154,13 @@ export function DriftBadge({ items }: { items: SnmpDriftItem[] }) {
           title="Config drift — click for details"
           className="inline-flex h-4 items-center gap-1 rounded-[5px] bg-amber-500/15 px-1.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-500/30 ring-inset hover:bg-amber-500/25 dark:text-amber-400"
         >
-          <TriangleAlert className="h-2.5 w-2.5" />
+          <GitCompareArrows className="h-2.5 w-2.5" />
           drift
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-80" align="start" onClick={(e) => e.stopPropagation()}>
         <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold">
-          <TriangleAlert className="h-3.5 w-3.5 text-amber-500" />
+          <GitCompareArrows className="h-3.5 w-3.5 text-amber-500" />
           Config drift
         </div>
         <p className="mb-2 text-[11px] text-muted-foreground">

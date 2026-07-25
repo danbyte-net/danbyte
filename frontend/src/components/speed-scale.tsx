@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import { api, type Paginated, type Status } from "@/lib/api"
 import {
+  legendSignature,
   mergeLegend,
   PORT_NEUTRAL,
   SPEED_TIERS,
@@ -40,9 +41,12 @@ export function useLegendCollector(): {
         delete next[key]
         return next
       }
-      // Reporters memoize their content, so a repeat report of the same object
-      // is a no-op — this is what keeps report → render → report from looping.
-      if (prev[key] === content) return prev
+      // Compared BY VALUE, never by identity. Identity would make this loop
+      // (report → setState → render → new object → report) the moment a caller
+      // handed a renderer an array it rebuilt each render — which is most
+      // callers, and froze the device page once.
+      const cur = prev[key]
+      if (cur && legendSignature(cur) === legendSignature(content)) return prev
       return { ...prev, [key]: content }
     })
   }, [])
@@ -52,19 +56,26 @@ export function useLegendCollector(): {
 
 /**
  * The renderer side of the collector: publish `content` while mounted, retract
- * it on unmount. `content` MUST be memoized by the caller — an object rebuilt
- * every render would report in a loop.
+ * it on unmount.
+ *
+ * Keyed on the content's VALUE, so an unmemoized (or imperfectly memoized)
+ * `content` costs a signature comparison rather than an infinite loop. Callers
+ * should still memoize — this is the floor, not the goal.
  */
 export function useReportLegend(
   report: LegendReporter | undefined,
   key: string,
   content: LegendContent
 ) {
+  const sig = legendSignature(content)
   useEffect(() => {
     if (!report) return
     report(key, content)
     return () => report(key, null)
-  }, [report, key, content])
+    // `content` is deliberately not a dep: it is 1:1 with `sig`, so a closure
+    // held across an identity-only change reports the same thing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [report, key, sig])
 }
 
 /**
