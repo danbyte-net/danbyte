@@ -204,7 +204,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
-        { value: "components", label: "Components" },
+        { value: "components", label: "Components", count: d.component_count },
         { value: "faceplate", label: "Faceplate" },
         ...(d.front_image || d.rear_image
           ? [{ value: "photo-ports", label: "Photo ports" }]
