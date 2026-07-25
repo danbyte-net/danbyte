@@ -1,0 +1,64 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
+
+import { api, type Service } from "@/lib/api"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { apiErrorToast } from "@/lib/api-toast"
+
+export interface ServiceDeleteDialogProps {
+  service: Service | null
+  onOpenChange: (open: boolean) => void
+  onDeleted?: () => void
+}
+
+export function ServiceDeleteDialog({
+  service,
+  onOpenChange,
+  onDeleted,
+}: ServiceDeleteDialogProps) {
+  const qc = useQueryClient()
+  const m = useMutation({
+    mutationFn: () =>
+      api<void>(`/api/services/${service!.id}/`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast.success(`Deleted ${service!.name}`)
+      qc.invalidateQueries({ queryKey: ["services-list"] })
+      qc.invalidateQueries({ queryKey: ["services"] })
+      onOpenChange(false)
+      onDeleted?.()
+    },
+    onError: (err) => apiErrorToast(err),
+  })
+  return (
+    <AlertDialog open={!!service} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete {service?.name}?</AlertDialogTitle>
+          <AlertDialogDescription>This can't be undone.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={m.isPending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={m.isPending}
+            onClick={(e) => {
+              e.preventDefault()
+              m.mutate()
+            }}
+          >
+            {m.isPending ? "Deleting…" : "Delete"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}

@@ -1,29 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
-import { toast } from "sonner"
 
 import { api, type Paginated, type Service } from "@/lib/api"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { numidColumn } from "@/components/cells/numid"
 import { timeAgoColumn } from "@/components/cells/time-ago"
+import { ServiceDeleteDialog } from "@/components/service-delete-dialog"
 import { ListPageShell } from "@/components/list-page-shell"
 import { useTableFilters } from "@/components/table-filters"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { apiErrorToast } from "@/lib/api-toast"
 
 export const Route = createFileRoute("/services/")({ component: ServicesPage })
 
@@ -193,49 +182,4 @@ function buildColumns({
       ),
     },
   ]
-}
-
-function ServiceDeleteDialog({
-  service,
-  onOpenChange,
-}: {
-  service: Service | null
-  onOpenChange: (open: boolean) => void
-}) {
-  const qc = useQueryClient()
-  const m = useMutation({
-    mutationFn: () =>
-      api<void>(`/api/services/${service!.id}/`, { method: "DELETE" }),
-    onSuccess: () => {
-      toast.success(`Deleted ${service!.name}`)
-      onOpenChange(false)
-      qc.invalidateQueries({ queryKey: ["services-list"] })
-    },
-    onError: (err) => apiErrorToast(err),
-  })
-  return (
-    <AlertDialog open={!!service} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete {service?.name}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            This action can&apos;t be undone.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={m.isPending}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={m.isPending}
-            onClick={(e) => {
-              e.preventDefault()
-              m.mutate()
-            }}
-          >
-            {m.isPending ? "Deleting…" : "Delete"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  )
 }

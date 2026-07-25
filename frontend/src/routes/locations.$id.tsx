@@ -1,9 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Pencil, Plus } from "lucide-react"
-import { useMemo } from "react"
+import { Pencil, Plus, Trash2 } from "lucide-react"
+import { useCallback, useMemo, useState } from "react"
 
 import {
   api,
@@ -18,6 +18,7 @@ import { StatusBadge } from "@/components/status-badge"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { QueryError } from "@/components/query-error"
+import { LocationDeleteDialog } from "@/components/location-delete-dialog"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { ObjectImages } from "@/components/object-images"
 import { DetailShell, DetailTab } from "@/components/detail-shell"
@@ -51,6 +52,9 @@ function LocationDetail() {
 
 function Body({ location: l }: { location: Location }) {
   const { canDo, humanIds } = useMe()
+  const nav = useNavigate()
+  const [deleting, setDeleting] = useState<Location | null>(null)
+  const goBack = useCallback(() => nav({ to: "/locations" }), [nav])
   const prefixes = useQuery({
     queryKey: ["location-prefixes", l.id],
     queryFn: () => api<Paginated<Prefix>>(`/api/prefixes/?location=${l.id}`),
@@ -100,6 +104,16 @@ function Body({ location: l }: { location: Location }) {
               <Link to="/locations/$id/edit" params={{ id: l.id }}>
                 <Pencil className="h-3.5 w-3.5" /> Edit
               </Link>
+            </Button>
+          )}
+          {canDo("location", "delete") && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setDeleting(l)}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete
             </Button>
           )}
         </>
@@ -196,6 +210,12 @@ function Body({ location: l }: { location: Location }) {
       <DetailTab value="history">
         <ChangeLogPanel objectType="api.location" objectId={l.id} />
       </DetailTab>
+
+      <LocationDeleteDialog
+        item={deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        onDeleted={goBack}
+      />
     </DetailShell>
   )
 }
@@ -272,10 +292,7 @@ function LocationOverview({
       <div className="grid gap-6 lg:grid-cols-2">
         <KvCard title="Details" rows={details} />
       </div>
-      <ObjectImages
-        apiBase={`/api/locations/${l.id}`}
-        objectType="location"
-      />
+      <ObjectImages apiBase={`/api/locations/${l.id}`} objectType="location" />
     </div>
   )
 }

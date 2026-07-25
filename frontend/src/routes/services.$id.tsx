@@ -1,7 +1,8 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { Activity } from "lucide-react"
+import { Activity, Trash2 } from "lucide-react"
+import { useCallback, useState } from "react"
 import { toast } from "sonner"
 
 import {
@@ -17,6 +18,7 @@ import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { TagList } from "@/components/cells/tag-list"
 import { TimeCell } from "@/components/cells/time-ago"
 import { QueryError } from "@/components/query-error"
+import { ServiceDeleteDialog } from "@/components/service-delete-dialog"
 import { DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -53,8 +55,13 @@ function ServiceDetail() {
 }
 
 function ServiceDetailBody({ service: s }: { service: Service }) {
-  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">("overview")
-  const { humanIds } = useMe()
+  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">(
+    "overview"
+  )
+  const { canDo, humanIds } = useMe()
+  const nav = useNavigate()
+  const [deleting, setDeleting] = useState<Service | null>(null)
+  const goBack = useCallback(() => nav({ to: "/services" }), [nav])
 
   // The monitor endpoint resolves the target IP as: the service's own IP,
   // else the parent device/VM's primary IP. The Service payload only carries
@@ -181,16 +188,28 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
       title={s.name}
       presence={{ type: "service", id: s.id }}
       actions={
-        <MonitorButton
-          pending={monitor.isPending}
-          busy={resolvingParent}
-          disabledReason={
-            canMonitor || resolvingParent
-              ? undefined
-              : "No IP to monitor — set the service's IP or a primary IP on its device / VM."
-          }
-          onClick={() => monitor.mutate()}
-        />
+        <>
+          <MonitorButton
+            pending={monitor.isPending}
+            busy={resolvingParent}
+            disabledReason={
+              canMonitor || resolvingParent
+                ? undefined
+                : "No IP to monitor — set the service's IP or a primary IP on its device / VM."
+            }
+            onClick={() => monitor.mutate()}
+          />
+          {canDo("service", "delete") && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setDeleting(s)}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </Button>
+          )}
+        </>
       }
       hero={
         <>
@@ -250,6 +269,12 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
       <DetailTab value="history">
         <ChangeLogPanel objectType="api.service" objectId={s.id} />
       </DetailTab>
+
+      <ServiceDeleteDialog
+        service={deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        onDeleted={goBack}
+      />
     </DetailShell>
   )
 }

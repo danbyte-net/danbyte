@@ -67,6 +67,16 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -252,6 +262,9 @@ function FloorPlanPage() {
   const [paletteTab, setPaletteTab] = useState<"tiles" | "zones">("tiles")
   const [showGrid, setShowGrid] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // Floor the switcher wants to go to while there are unsaved edits — held
+  // until the confirm dialog resolves (null = no pending switch).
+  const [pendingFloorId, setPendingFloorId] = useState<string | null>(null)
   // Deep view: the rack/device contents + end-to-end trace side sheet.
   const [deepTile, setDeepTile] = useState<FloorPlanTile | null>(null)
   // View prefs — seeded from plan.state, persisted back for editors.
@@ -310,6 +323,7 @@ function FloorPlanPage() {
     setSelectedId(null)
     setArmed(null)
     setDeepTile(null)
+    setPendingFloorId(null)
     setLabelFitLocal(null)
     setShowFovLocal(null)
     setMode("layout")
@@ -329,6 +343,21 @@ function FloorPlanPage() {
       setTiles(tilesQuery.data.results)
     }
   }, [tilesQuery.data])
+
+  // Closing the tab, reloading, or leaving for another origin would drop
+  // unsaved tile edits without a word — the browser's own leave-site prompt is
+  // the only guard that covers those. Registered only while dirty, and it reads
+  // the ref so a stale closure can never make the guard lie.
+  useEffect(() => {
+    if (!isDirty) return
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!isDirtyRef.current) return
+      e.preventDefault()
+      e.returnValue = ""
+    }
+    window.addEventListener("beforeunload", onBeforeUnload)
+    return () => window.removeEventListener("beforeunload", onBeforeUnload)
+  }, [isDirty])
 
   const selected = tiles.find((t) => t.id === selectedId) ?? null
   const selectedTray = trays.find((t) => t.id === selectedTrayId) ?? null
@@ -877,11 +906,12 @@ function FloorPlanPage() {
               value={plan.id}
               onValueChange={(pid) => {
                 if (pid === plan.id) return
-                if (
-                  isDirty &&
-                  !window.confirm("Unsaved changes — switch floor anyway?")
-                )
+                // Unsaved edits don't survive the switch — confirm in the
+                // themed dialog below rather than a native prompt.
+                if (isDirty) {
+                  setPendingFloorId(pid)
                   return
+                }
                 nav({ to: "/floorplans/$id", params: { id: pid } })
               }}
               items={(floors.data?.results ?? []).map((p) => ({
@@ -1472,6 +1502,40 @@ function FloorPlanPage() {
           />
         </DialogContent>
       </Dialog>
+
+      {/* Floor switcher guard. Switching re-mounts the editor and drops every
+          unsaved tile edit, so it's a destructive confirm — and a themed one:
+          a native window.confirm can't be styled and reads as a browser error. */}
+      <AlertDialog
+        open={pendingFloorId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingFloorId(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard unsaved edits?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This plan has unsaved changes. Switching floors leaves them behind
+              — save first to keep them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                const target = pendingFloorId
+                setPendingFloorId(null)
+                if (target)
+                  nav({ to: "/floorplans/$id", params: { id: target } })
+              }}
+            >
+              Discard and switch
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

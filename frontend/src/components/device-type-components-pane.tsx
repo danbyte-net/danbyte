@@ -49,6 +49,7 @@ import {
   type TemplateKind,
 } from "@/components/component-template-dialog"
 import { useMe } from "@/lib/use-me"
+import { useUrlSubTab } from "@/lib/use-url-tab"
 import { apiErrorToast } from "@/lib/api-toast"
 import { DeviceTypeServicesSection } from "@/components/device-type-services-section"
 
@@ -87,7 +88,7 @@ const TEMPLATE_BULK_FIELDS: Record<string, BulkFieldSpec[]> = {
 // Services aren't a generic component template (they carry protocol/ports/
 // monitor, not a port `type`), so they get their own tab + section rather than
 // being squeezed into the shared ComponentTemplateDialog.
-type SectionKind = TemplateKind | "service"
+export type SectionKind = TemplateKind | "service"
 
 const typeCol: ColumnDef<AnyTemplate> = {
   id: "type",
@@ -306,6 +307,13 @@ const SECTIONS: { kind: TemplateKind; title: string; empty: string }[] = [
   },
 ]
 
+/** Every sub-tab value this pane accepts in `?sub=`. The route that renders the
+ * pane imports it to validate the param at its own boundary too. */
+export const DEVICE_TYPE_COMPONENT_SUBS: readonly SectionKind[] = [
+  ...SECTIONS.map((s) => s.kind),
+  "service",
+]
+
 /** The nine component-template tables on a device-type detail page — one per
  * sub-tab so you don't scroll past eight sections to reach the ninth. */
 export function DeviceTypeComponentsPane({
@@ -315,7 +323,12 @@ export function DeviceTypeComponentsPane({
 }) {
   const { canDo } = useMe()
   const canWrite = canDo("devicetype", "change")
-  const [kind, setKind] = useState<SectionKind>("interface")
+  // In the URL (`?sub=power-port`), so a section is linkable and survives a
+  // reload, back/forward, and leaving the Components tab and coming back.
+  const [kind, setKind] = useUrlSubTab<SectionKind>(
+    "interface",
+    DEVICE_TYPE_COMPONENT_SUBS
+  )
 
   // Fetch every kind's list up front — cheap, and it gives the tab counts plus
   // instant switching. The keys/endpoints match TemplateSection's own query,
