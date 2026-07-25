@@ -1589,7 +1589,10 @@ function TileShape({
         strokeWidth={selected ? 2.5 : checkColor ? 2 : 1.25}
         strokeDasharray={dashed ? "6 3" : undefined}
       />
-      {tile.linked?.kind === "rack" && (
+      {/* Facing is the tile's own property (build-in-advance): every
+          non-zone tile shows its front edge, linked or not — otherwise the
+          bulk facing arrows change unlinked tiles invisibly. */}
+      {!tileIsZone(tile) && (
         <FacingEdge w={w} h={h} orientation={tile.orientation} color={fill} />
       )}
       {/* Icons live in the palette rail only — tiles stay clean: color,

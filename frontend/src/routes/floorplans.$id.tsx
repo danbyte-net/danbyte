@@ -1529,11 +1529,14 @@ function FloorPlanPage() {
                 }}
                 multiSelectedIds={multiSel}
                 onToggleSelect={(tid) => {
-                  setSelectedId(null)
                   setMultiSel((prev) => {
                     const next = new Set(prev)
                     if (next.has(tid)) next.delete(tid)
                     else next.add(tid)
+                    // Exactly one tile selected → open the full inspector
+                    // (Linked object, facing, label…); the bulk bar alone
+                    // is a dead end for per-tile work like linking.
+                    setSelectedId(next.size === 1 ? [...next][0] : null)
                     return next
                   })
                 }}
