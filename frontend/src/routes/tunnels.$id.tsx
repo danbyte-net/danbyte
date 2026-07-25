@@ -421,7 +421,7 @@ function TerminationsTab({
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
-              className="text-destructive-foreground bg-destructive hover:bg-destructive/90"
+              variant="destructive"
               disabled={del.isPending}
               onClick={(e) => {
                 e.preventDefault()

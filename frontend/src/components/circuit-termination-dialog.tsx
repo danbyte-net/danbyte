@@ -158,7 +158,7 @@ export function CircuitTerminationDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent size="xl">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? `Edit ${side} side termination` : "Add termination"}

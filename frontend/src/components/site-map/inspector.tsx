@@ -581,7 +581,7 @@ function DevicePortsSection({
         open={connect !== null}
         onOpenChange={(o) => !o && setConnect(null)}
       >
-        <DialogContent className="max-w-2xl">
+        <DialogContent size="2xl">
           <DialogHeader>
             <DialogTitle>
               Connect a cable from {d.name}:{connect?.name}

@@ -37,7 +37,7 @@ export function CableTraceDialog({
 
   return (
     <Dialog open={!!target} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent size="2xl">
         <DialogHeader>
           <DialogTitle>
             Trace · <span className="font-mono">{target?.label}</span>

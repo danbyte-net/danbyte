@@ -309,7 +309,7 @@ function BulkDeleteAction({
   })
   return (
     <AlertDialogAction
-      className="bg-destructive text-white hover:bg-destructive/90"
+      variant="destructive"
       onClick={(e) => {
         e.preventDefault()
         del.mutate()
@@ -417,7 +417,10 @@ function BulkEditDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-auto sm:max-w-md">
+      <DialogContent
+        size="lg"
+        className="max-h-[85vh] overflow-auto sm:max-w-md"
+      >
         <DialogHeader>
           <DialogTitle>
             Edit {ids.length} {kindLabel}
@@ -770,7 +773,7 @@ function RenameCloneDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-auto sm:max-w-lg">
+      <DialogContent className="max-h-[85vh] overflow-auto">
         <DialogHeader>
           <DialogTitle>
             {mode === "rename" ? "Rename" : "Clone"} {selected.length}{" "}

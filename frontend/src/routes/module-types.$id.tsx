@@ -369,7 +369,7 @@ function ModuleInterfaceTemplateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>
             {editing ? "Edit interface template" : "Add interface template"}

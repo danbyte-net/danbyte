@@ -98,7 +98,7 @@ export function QuickAddDialog({
           <span className="sr-only">{title}</span>
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>

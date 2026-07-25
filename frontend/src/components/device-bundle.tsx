@@ -149,7 +149,7 @@ export function ImportBundleDialog({
         onOpenChange(o)
       }}
     >
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent size="xl">
         <DialogHeader>
           <DialogTitle>Import a device bundle</DialogTitle>
         </DialogHeader>

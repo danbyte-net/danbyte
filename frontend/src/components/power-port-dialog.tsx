@@ -104,7 +104,7 @@ export function PowerPortDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? "Edit power port" : "Add power port"}

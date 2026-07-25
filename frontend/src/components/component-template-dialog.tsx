@@ -383,7 +383,7 @@ export function ComponentTemplateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent size="2xl">
         <DialogHeader>
           <DialogTitle>{editing ? `Edit ${noun}` : `Add ${noun}`}</DialogTitle>
         </DialogHeader>

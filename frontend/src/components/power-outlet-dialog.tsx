@@ -124,7 +124,7 @@ export function PowerOutletDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? "Edit power outlet" : "Add power outlet"}

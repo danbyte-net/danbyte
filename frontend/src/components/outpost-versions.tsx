@@ -175,7 +175,7 @@ export function OutpostVersions() {
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/20 p-3">
           <span className="text-[13px] font-medium">From your repo</span>
           <Select value={pickedTag} onValueChange={setPickedTag}>
-            <SelectTrigger size="sm" className="h-8 min-w-48 text-[13px]">
+            <SelectTrigger size="sm" className="h-8 w-48 shrink-0 text-[13px]">
               <SelectValue placeholder="Select a version…" />
             </SelectTrigger>
             <SelectContent>

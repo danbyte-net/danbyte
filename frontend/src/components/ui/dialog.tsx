@@ -50,23 +50,40 @@ function DialogContent({
   children,
   showCloseButton = true,
   overlayClassName,
+  size = "md",
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
   /** Extra classes for the backdrop overlay — e.g. inset it past the sidebar. */
   overlayClassName?: string
+  /**
+   * How wide the dialog gets. **Set this instead of passing a width class.**
+   *
+   * A `className` width override is unreliable here by construction: `cn()` is
+   * tailwind-merge, which only dedupes classes carrying the *same* modifier, so
+   * an unprefixed `max-w-lg` does NOT cancel a `sm:max-w-*` default — both land,
+   * equal specificity, and Tailwind emits the variant later, so the default
+   * wins on every desktop. Six dialogs shipped believing they were wide and
+   * weren't. Keying off `data-size` can't be clobbered that way.
+   *
+   * sm 24rem · md 28rem (default) · lg 32rem · xl 36rem · 2xl 42rem · 3xl 48rem
+   */
+  size?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl"
 }) {
   return (
     <DialogPortal>
       <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        data-size={size}
         className={cn(
           // max-h + overflow so a form taller than the viewport scrolls instead
           // of spilling off-screen unreachably (the generic "modal won't
           // scroll" bug). Callers that manage their own scroll region (flex
           // column with an inner overflow area) override via className.
-          "fixed top-1/2 left-1/2 z-50 grid max-h-[90dvh] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-6 overflow-y-auto overscroll-contain rounded-xl bg-popover p-6 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-md data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 grid max-h-[90dvh] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-6 overflow-y-auto overscroll-contain rounded-xl bg-popover p-6 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          // Width by data-size, mirroring AlertDialogContent's existing pattern.
+          "data-[size=2xl]:sm:max-w-2xl data-[size=3xl]:sm:max-w-3xl data-[size=lg]:sm:max-w-lg data-[size=md]:sm:max-w-md data-[size=sm]:sm:max-w-sm data-[size=xl]:sm:max-w-xl",
           className
         )}
         {...props}

@@ -176,7 +176,7 @@ export function AssignIpDialog({
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent size="xl">
         <DialogHeader>
           <DialogTitle>Assign existing IP</DialogTitle>
           <DialogDescription>

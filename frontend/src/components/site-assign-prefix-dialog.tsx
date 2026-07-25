@@ -70,7 +70,7 @@ export function SiteAssignPrefixDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>Assign an existing prefix</DialogTitle>
           <DialogDescription>

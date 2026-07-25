@@ -386,7 +386,7 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
           }
         }}
       >
-        <DialogContent>
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>
               {editRear ? "Edit rear port" : "Add rear port"}

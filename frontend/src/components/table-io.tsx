@@ -208,7 +208,7 @@ function TableIODialog({
         onOpenChange(o)
       }}
     >
-      <DialogContent className="max-w-lg">
+      <DialogContent size="2xl">
         <DialogHeader>
           <DialogTitle>Import {name ?? slug}</DialogTitle>
           <DialogDescription>

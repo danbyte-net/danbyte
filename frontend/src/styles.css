@@ -384,3 +384,20 @@
     opacity: 0.45;
   }
 }
+
+/* Tabular figures. Applied at ~370 call sites — every counter, percentage,
+   timestamp, latency and byte total — so digits keep their column as data
+   updates instead of jittering (docs/design/visual-language.md).
+   This lived in the archived reference/design/tokens.css and was deleted with
+   it in 9ba017d ("Prep repo to go public"), silently breaking every one of
+   those sites. It belongs here, in the only stylesheet the app actually
+   loads. The same commit took `.ck` (since fixed) and
+   `--destructive-foreground` (fixed in this pass). */
+/* Deliberately a plain rule, not `@utility`: prettier-plugin-tailwindcss reads
+   this stylesheet, so registering `num` as a utility makes it sortable and
+   re-orders the class across all ~370 call sites — 218 files of churn mixed
+   into a one-line fix. Same runtime result. Promote it to `@utility` later in a
+   dedicated formatting commit if variants (`sm:num`) are ever wanted. */
+.num {
+  font-variant-numeric: tabular-nums;
+}

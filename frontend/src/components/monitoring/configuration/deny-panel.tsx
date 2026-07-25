@@ -116,7 +116,7 @@ export function DenySubnetsPanel() {
           placeholder="10.0.9.0/24"
         />
         <Select value={vrf} onValueChange={setVrf}>
-          <SelectTrigger size="sm" className="min-w-36">
+          <SelectTrigger size="sm" className="w-36 shrink-0">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

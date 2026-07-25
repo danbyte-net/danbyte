@@ -467,7 +467,7 @@ export function InventoryItemDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent size="xl">
         <DialogHeader>
           <DialogTitle>{editing ? "Edit part" : "Add part"}</DialogTitle>
         </DialogHeader>

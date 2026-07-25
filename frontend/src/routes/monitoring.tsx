@@ -463,50 +463,50 @@ function MonitoringPage() {
               </Card>
 
               {flaps.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-amber-500" />
-                    Flapping a lot — maybe check on these
-                  </CardTitle>
-                  <CardDescription>
-                    IPs bouncing repeatedly over the flap window. Tune the
-                    threshold or exclude expected-churn statuses in settings.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ul className="-my-1 divide-y divide-border">
-                    {flaps.map((f) => (
-                      <li
-                        key={`${f.ip_id}:${f.template_id}`}
-                        className="flex items-center gap-2 py-2 text-[13px]"
-                      >
-                        <Link
-                          to="/ips/$id"
-                          params={{ id: f.ip_id }}
-                          className="truncate font-mono font-medium hover:underline"
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-500" />
+                      Flapping a lot — maybe check on these
+                    </CardTitle>
+                    <CardDescription>
+                      IPs bouncing repeatedly over the flap window. Tune the
+                      threshold or exclude expected-churn statuses in settings.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="-my-1 divide-y divide-border">
+                      {flaps.map((f) => (
+                        <li
+                          key={`${f.ip_id}:${f.template_id}`}
+                          className="flex items-center gap-2 py-2 text-[13px]"
                         >
-                          {f.ip_address}
-                        </Link>
-                        {f.dns_name && (
+                          <Link
+                            to="/ips/$id"
+                            params={{ id: f.ip_id }}
+                            className="truncate font-mono font-medium hover:underline"
+                          >
+                            {f.ip_address}
+                          </Link>
+                          {f.dns_name && (
+                            <span className="truncate text-muted-foreground">
+                              {f.dns_name}
+                            </span>
+                          )}
                           <span className="truncate text-muted-foreground">
-                            {f.dns_name}
+                            {f.template_name ?? f.kind}
                           </span>
-                        )}
-                        <span className="truncate text-muted-foreground">
-                          {f.template_name ?? f.kind}
-                        </span>
-                        <span className="ml-auto shrink-0">
-                          <Badge variant="warning">
-                            <span className="num">{f.flap_count}</span> flaps /{" "}
-                            {f.window_minutes}m
-                          </Badge>
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
+                          <span className="ml-auto shrink-0">
+                            <Badge variant="warning">
+                              <span className="num">{f.flap_count}</span> flaps
+                              / {f.window_minutes}m
+                            </Badge>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
               )}
             </div>
 
