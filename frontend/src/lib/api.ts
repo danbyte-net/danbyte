@@ -1505,6 +1505,9 @@ export interface SnmpSensor {
   name_template: string
   /** Raw SNMP value → status slug, e.g. {"3":"active","4":"failed"}. */
   value_map: Record<string, string>
+  /** Status slug for covered parts the agent never reports (empty bays); ""
+   * leaves them alone. */
+  absent_status: string
   enabled: boolean
   created_at: string
   updated_at: string

@@ -395,6 +395,8 @@ On the device's **SNMP tab → Custom SNMP sensors** card, **Add sensor**:
   the walk row, `{kind}` the kind (e.g. `Disk {index}` → `Disk 1`, `Disk 2`).
 - **Value → status** — map each raw SNMP value to a status slug, e.g.
   `3 → active`, `4 → failed`. Unmapped values leave the item untouched.
+- **Never reported** — status for parts the sensor covers that the agent never
+  lists. See [empty bays](#absent-bays).
 - **Scope** — limit the sensor to this device type, or apply it to all types
   (define once, reuse across every server of that model).
 
@@ -403,6 +405,52 @@ then reconciles: matching items are created if missing and their **status is
 flipped** — so a failing disk turns red on the Hardware tab, the photo
 faceplate and the 3D rack, exactly like the Redfish path. Flips are journaled;
 the last raw readings show on the card.
+
+### How a reading finds its part {#sensor-matching}
+
+By **name, and only by name**. The template renders one name per reading and
+that string must equal the inventory item's name exactly — `disk{index}` on a
+walk whose rows are `0…6` produces `disk0 … disk6`, which matches parts called
+exactly that.
+
+There is no stored link here. Unlike an interface, which records the
+[SNMP name](#interface-linking) the agent uses for it, a part carries nothing
+that says "this reading is mine". Two consequences worth knowing before you
+rename anything:
+
+- **Rename a part and the sensor stops finding it.** It doesn't error — it
+  creates a *second* item under the templated name, and the renamed one keeps
+  its last status forever. Change the template alongside the name, or don't
+  rename monitored parts.
+- **The template has to match how the agent indexes**, not how you'd label the
+  bay. A 0-based walk with a `Disk {index}` template produces `Disk 0`, so
+  parts named `Disk 1 … Disk n` will all be missed and duplicated. Use
+  [Explore OIDs](#oid-explorer) to see the real row indexes first.
+
+The safest order is: read the table, note its indexes, then write a template
+that lands on the names you already have.
+
+### Empty bays {#absent-bays}
+
+A device type's [inventory templates](../dcim/device-catalog.md#component-templates)
+stamp every bay a chassis *has* — 16 disk bays on a 16-bay server — while the
+agent only reports the bays that are *populated*. Without help, the nine empty
+bays on a 7-disk machine keep claiming to hold healthy hardware, on the
+Hardware tab and on the faceplate.
+
+Set **Never reported** on the sensor to a status like *Empty*, and after each
+poll any part the sensor covers (same kind, same scope) that the agent didn't
+list flips to it. A bay that later gets a disk is picked up and marked healthy
+again on the next poll.
+
+!!! note "Only ever applied after a poll that returned something"
+    An agent that answers with nothing — blocked column, wrong community, a
+    subtree that moved — looks exactly like "every bay is empty". Acting on that
+    would mark real disks missing, so a poll with no readings, or one that
+    errored, changes nothing. Silence is never evidence.
+
+Only the sensor's own **kind** is touched: a disk sensor can't mark the power
+supplies empty.
 
 To find your vendor's OIDs, walk the BMC's enterprise tree
 (`snmpwalk -v2c -c <community> <bmc> 1.3.6.1.4.1`) and consult its MIB — the

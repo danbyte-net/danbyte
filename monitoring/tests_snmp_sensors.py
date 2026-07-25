@@ -125,6 +125,105 @@ class SensorReconcileTests(_Base):
         self.assertEqual(self.device.inventory_items.count(), 0)
 
 
+class SensorAbsentStatusTests(_Base):
+    """A chassis template stamps every bay; the agent only reports the populated
+    ones. Without this, the empty bays keep claiming to hold healthy hardware.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.sensor.absent_status = "empty"
+        self.sensor.save(update_fields=["absent_status"])
+        # Four bays stamped from the type; the agent will report two.
+        from api.models import InventoryItem
+        from api.status_registry import resolve_status
+
+        active = resolve_status(self.tenant, "active", "inventoryitem")
+        self.bays = {
+            n: InventoryItem.objects.create(
+                device=self.device, name=n, kind="disk", status=active
+            )
+            for n in ("Disk 1", "Disk 2", "Disk 3", "Disk 4")
+        }
+
+    def _poll(self, raw):
+        from .snmp_sensors import poll_device_sensors
+
+        with mock.patch(
+            "monitoring.snmp_sensors.fetch_oid_sync", return_value=raw
+        ):
+            return poll_device_sensors(self.device, self.tenant)
+
+    def _slugs(self):
+        return {
+            i.name: (i.status.slug if i.status_id else None)
+            for i in self.device.inventory_items.all()
+        }
+
+    def test_unreported_bays_flip_to_the_absent_status(self):
+        self._poll({"1": "3", "2": "3"})
+        self.assertEqual(
+            self._slugs(),
+            {"Disk 1": "active", "Disk 2": "active",
+             "Disk 3": "empty", "Disk 4": "empty"},
+        )
+
+    def test_a_bay_that_comes_back_is_marked_healthy_again(self):
+        self._poll({"1": "3"})
+        self.assertEqual(self._slugs()["Disk 2"], "empty")
+        self._poll({"1": "3", "2": "3"})
+        self.assertEqual(self._slugs()["Disk 2"], "active")
+
+    def test_an_empty_reading_set_marks_nothing(self):
+        """The guard that matters: an agent answering with nothing looks exactly
+        like "every bay is empty", and acting on it would wipe real hardware."""
+        self._poll({})
+        self.assertEqual(
+            set(self._slugs().values()), {"active"}, "a silent agent wiped the bays"
+        )
+
+    def test_a_failed_poll_marks_nothing(self):
+        from danbyte_checks.snmp_facts import SnmpFactsError
+        from .snmp_sensors import poll_device_sensors
+
+        with mock.patch(
+            "monitoring.snmp_sensors.fetch_oid_sync",
+            side_effect=SnmpFactsError("snmp error: timed out"),
+        ):
+            result = poll_device_sensors(self.device, self.tenant)
+        self.assertIn("timed out", result["error"])
+        self.assertEqual(set(self._slugs().values()), {"active"})
+
+    def test_only_the_sensors_own_kind_is_touched(self):
+        """A disk sensor must not mark the PSUs empty."""
+        from api.models import InventoryItem
+        from api.status_registry import resolve_status
+
+        psu = InventoryItem.objects.create(
+            device=self.device, name="PSU 1", kind="psu",
+            status=resolve_status(self.tenant, "active", "inventoryitem"),
+        )
+        self._poll({"1": "3"})
+        psu.refresh_from_db()
+        self.assertEqual(psu.status.slug, "active")
+
+    def test_blank_absent_status_leaves_everything_alone(self):
+        self.sensor.absent_status = ""
+        self.sensor.save(update_fields=["absent_status"])
+        self._poll({"1": "3"})
+        self.assertEqual(self._slugs()["Disk 4"], "active")
+
+    def test_the_flip_is_journaled(self):
+        from audit.models import JournalEntry
+
+        self._poll({"1": "3", "2": "3"})
+        entry = JournalEntry.objects.filter(
+            object_id=str(self.device.id), author_name="SNMP sensors"
+        ).first()
+        self.assertIsNotNone(entry)
+        self.assertIn("Disk 3", entry.comments)
+
+
 class SensorApiTests(_Base):
     def test_crud_and_type_filter(self):
         resp = self.client.get(

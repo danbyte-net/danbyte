@@ -257,6 +257,7 @@ function SensorDialog({
   const [kind, setKind] = useState<InventoryItemKind>("disk")
   const [nameTemplate, setNameTemplate] = useState("{kind} {index}")
   const [scopeThisType, setScopeThisType] = useState(true)
+  const [absentStatus, setAbsentStatus] = useState("")
   const [rows, setRows] = useState<{ raw: string; slug: string }[]>([
     { raw: "", slug: "" },
   ])
@@ -269,6 +270,7 @@ function SensorDialog({
     setKind(sensor?.item_kind ?? "disk")
     setNameTemplate(sensor?.name_template ?? "{kind} {index}")
     setScopeThisType(sensor ? !!sensor.device_type : true)
+    setAbsentStatus(sensor?.absent_status ?? "")
     const vm = sensor?.value_map ?? {}
     const entries = Object.entries(vm).map(([raw, slug]) => ({ raw, slug }))
     if (entries.length) setRows(entries)
@@ -309,6 +311,7 @@ function SensorDialog({
         item_kind: kind,
         name_template: nameTemplate.trim() || "{kind} {index}",
         value_map,
+        absent_status: absentStatus,
         device_type: scopeThisType ? (deviceTypeId ?? null) : null,
       }
       const base = "/api/monitoring/snmp-sensors/"
@@ -465,6 +468,16 @@ function SensorDialog({
               </Button>
             </div>
           </Field>
+
+          <FormSelect
+            label="Never reported"
+            hint="status for parts this sensor covers that the agent doesn't list — the empty bays a chassis template stamped. Only applied after a poll that returned readings."
+            value={absentStatus || null}
+            onChange={(v) => setAbsentStatus(v ?? "")}
+            options={statusOptions}
+            noneLabel="Leave alone"
+            placeholder="Leave alone"
+          />
 
           {deviceTypeId && (
             <FormCheckbox
