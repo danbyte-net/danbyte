@@ -114,11 +114,16 @@ def expand_github_dir(url: str, get, *, exts=(".yaml", ".yml")) -> list[str]:
     SSRF-guarded fetcher (``core.ssrf.safe_get``) so the API host is validated
     like any other outbound call. Raises ``ValueError`` with a readable message
     on an unusable response."""
+    from urllib.parse import quote, unquote
+
     m = _GITHUB_DIR_RE.match(url.strip())
     if not m:
         raise ValueError("Not a GitHub directory URL.")
     owner, repo, ref, path = m.group(1), m.group(2), m.group(3), (m.group(4) or "")
-    prefix = path.rstrip("/")
+    # Address-bar URLs arrive percent-encoded ("Palo%20Alto%20Networks"), but
+    # the trees API returns REAL names with spaces — compare like with like,
+    # or a pasted manufacturer folder matches zero files and imports nothing.
+    prefix = unquote(path).rstrip("/")
     api = (
         f"https://api.github.com/repos/{owner}/{repo}/git/trees/"
         f"{ref}?recursive=1"
@@ -140,7 +145,13 @@ def expand_github_dir(url: str, get, *, exts=(".yaml", ".yml")) -> list[str]:
             continue
         if prefix and not (p == prefix or p.startswith(prefix + "/")):
             continue
-        out.append(raw_base + p)
+        # Real names → valid URL (spaces and friends percent-encoded).
+        out.append(raw_base + quote(p))
+    if not out:
+        raise ValueError(
+            f"No YAML files found under {prefix or 'the repository root'!r} — "
+            "check the folder URL (the folder may be empty or renamed)."
+        )
     return out
 
 # Leading slot digit of a slash-numbered component name. Only 0 or 1 qualify —
@@ -733,8 +744,12 @@ def repo_image_inventory(image_base: str) -> set[str] | None:
     try:
         # Top-level tree (non-recursive) → the subtree's sha. Walk one level
         # per path segment so bases like danbyte/elevation-images work too.
+        # Segments are unquoted first: a pasted URL carries %20 where the
+        # tree API answers with real spaces.
+        from urllib.parse import unquote as _unquote
+
         sha = ref
-        for segment in subpath.split("/"):
+        for segment in _unquote(subpath).split("/"):
             top = safe_get(
                 f"https://api.github.com/repos/{owner}/{repo}/git/trees/{sha}",
                 timeout=15,
