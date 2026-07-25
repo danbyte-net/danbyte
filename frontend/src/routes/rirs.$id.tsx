@@ -8,8 +8,9 @@ import { useCallback, useMemo, useState } from "react"
 import { api, type Aggregate, type Paginated, type RIR } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
-import { TimeCell, timeAgoColumn } from "@/components/cells/time-ago"
+import { DataTable } from "@/components/data-table"
+import { buildAggregateColumns } from "@/components/columns/aggregate-columns"
+import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
@@ -180,38 +181,10 @@ function RirAggregatesTable({ rirId }: { rirId: string }) {
       api<Paginated<Aggregate>>(`/api/aggregates/?rir=${rirId}&page_size=500`),
   })
   const columns = useMemo<ColumnDef<Aggregate>[]>(
-    () => [
-      {
-        id: "prefix",
-        accessorKey: "prefix",
-        header: ({ column }) => <SortHeader column={column} label="Prefix" />,
-        cell: ({ row }) => (
-          <Link
-            to="/aggregates/$id"
-            params={{ id: row.original.id }}
-            className="font-mono font-medium hover:underline"
-          >
-            {row.original.prefix}
-          </Link>
-        ),
-      },
-      {
-        id: "description",
-        accessorKey: "description",
-        header: "Description",
-        cell: ({ row }) => (
-          <span className="line-clamp-1 block text-muted-foreground">
-            {row.original.description || "—"}
-          </span>
-        ),
-      },
-      timeAgoColumn<Aggregate>({
-        id: "updated",
-        header: "Updated",
-        get: (r) => r.updated_at,
-        align: "right",
+    () =>
+      buildAggregateColumns({
+        include: ["prefix", "description", "updated"],
       }),
-    ],
     []
   )
 

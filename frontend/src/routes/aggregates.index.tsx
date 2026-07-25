@@ -6,10 +6,8 @@ import { useCallback, useMemo, useState } from "react"
 
 import { api, type Aggregate, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
-import { tagsColumn } from "@/components/cells/tag-list"
-import { timeAgoColumn } from "@/components/cells/time-ago"
-import { numidColumn } from "@/components/cells/numid"
+import { DataTable } from "@/components/data-table"
+import { buildAggregateColumns } from "@/components/columns/aggregate-columns"
 import {
   FilterRail,
   FacetGroup,
@@ -18,8 +16,6 @@ import {
 } from "@/components/filter-rail"
 import { ListPageShell } from "@/components/list-page-shell"
 import { AggregateDeleteDialog } from "@/components/aggregate-delete-dialog"
-import { UtilCell } from "@/components/cells/util-cell"
-import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/aggregates/")({
@@ -101,7 +97,21 @@ function AggregatesPage() {
   const handleDelete = useCallback((a: Aggregate) => setDeleting(a), [])
   const columns = useMemo<ColumnDef<Aggregate>[]>(
     () =>
-      buildColumns({ onDelete: handleDelete, canEdit, canDelete, humanIds }),
+      buildAggregateColumns({
+        selection: true,
+        humanIds,
+        prefixClass: "text-[13px]",
+        // The rail above owns tag filtering, so the chips stay clickable-looking
+        // but inert here.
+        tagFilter: { activeSlugs: new Set<string>(), onToggle: () => {} },
+        actions: {
+          editTo: "/aggregates/$id/edit",
+          editParams: (a) => ({ id: a.id }),
+          canEdit: () => canEdit,
+          onDelete: handleDelete,
+          canDelete: () => canDelete,
+        },
+      }),
     [handleDelete, canEdit, canDelete, humanIds]
   )
 
@@ -154,97 +164,4 @@ function AggregatesPage() {
       />
     </ListPageShell>
   )
-}
-
-function buildColumns({
-  onDelete,
-  canEdit,
-  canDelete,
-  humanIds,
-}: {
-  onDelete: (a: Aggregate) => void
-  canEdit: boolean
-  canDelete: boolean
-  humanIds: boolean
-}): ColumnDef<Aggregate>[] {
-  return [
-    selectionColumn<Aggregate>(),
-    ...(humanIds ? [numidColumn<Aggregate>({ get: (r) => r.numid })] : []),
-    {
-      id: "prefix",
-      accessorKey: "prefix",
-      header: ({ column }) => <SortHeader column={column} label="Prefix" />,
-      cell: ({ row }) => (
-        <Link
-          to="/aggregates/$id"
-          params={{ id: row.original.id }}
-          className="font-mono text-[13px] font-medium hover:underline"
-        >
-          {row.original.prefix}
-        </Link>
-      ),
-    },
-    {
-      id: "rir",
-      accessorFn: (a) => a.rir?.name ?? "",
-      header: "RIR",
-      cell: ({ row }) =>
-        row.original.rir ? (
-          <span className="text-xs">{row.original.rir.name}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      id: "utilisation",
-      accessorKey: "utilisation_pct",
-      header: ({ column }) => (
-        <SortHeader column={column} label="Utilisation" />
-      ),
-      cell: ({ row }) => <UtilCell pct={row.original.utilisation_pct} />,
-    },
-    {
-      id: "date_added",
-      accessorKey: "date_added",
-      header: "Added",
-      cell: ({ row }) =>
-        row.original.date_added ? (
-          <span className="num text-xs">{row.original.date_added}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      id: "description",
-      accessorKey: "description",
-      header: "Description",
-      cell: ({ row }) => (
-        <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
-        </span>
-      ),
-    },
-    tagsColumn<Aggregate>({
-      getTags: (r) => r.tags,
-      activeSlugs: new Set<string>(),
-      onToggle: () => {},
-    }),
-    timeAgoColumn<Aggregate>({
-      id: "updated",
-      header: "Updated",
-      get: (r) => r.updated_at,
-      align: "right",
-    }),
-    {
-      id: "actions",
-      enableHiding: false,
-      cell: ({ row }) => (
-        <RowActions
-          editTo={canEdit ? "/aggregates/$id/edit" : undefined}
-          editParams={{ id: row.original.id }}
-          onDelete={canDelete ? () => onDelete(row.original) : undefined}
-        />
-      ),
-    },
-  ]
 }

@@ -6,12 +6,9 @@ import { useCallback, useMemo, useState } from "react"
 
 import { api, type Paginated, type VRF } from "@/lib/api"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
-import { ColorBadge } from "@/components/cells/color-badge"
-import { numidColumn } from "@/components/cells/numid"
-import { tagsColumn } from "@/components/cells/tag-list"
-import { timeAgoColumn } from "@/components/cells/time-ago"
+import { buildVrfColumns } from "@/components/columns/vrf-columns"
 import {
   FilterRail,
   FacetGroup,
@@ -19,8 +16,6 @@ import {
   type FacetOption,
 } from "@/components/filter-rail"
 import { VrfDeleteDialog } from "@/components/vrf-delete-dialog"
-import { ViolationBadge } from "@/components/compliance/violation-badge"
-import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/vrfs/")({ component: VrfsPage })
@@ -119,7 +114,18 @@ function VrfsPage() {
 
   const columns = useMemo<ColumnDef<VRF>[]>(
     () =>
-      buildColumns({ onDelete: handleDelete, canEdit, canDelete, humanIds }),
+      buildVrfColumns<VRF>({
+        selection: true,
+        humanIds,
+        violations: true,
+        actions: {
+          editTo: "/vrfs/$id/edit",
+          editParams: (v) => ({ id: v.id }),
+          canEdit: () => canEdit,
+          onDelete: handleDelete,
+          canDelete: () => canDelete,
+        },
+      }),
     [handleDelete, canEdit, canDelete, humanIds]
   )
 
@@ -177,137 +183,5 @@ function VrfsPage() {
         onOpenChange={(o) => !o && setDeleting(null)}
       />
     </ListPageShell>
-  )
-}
-
-interface ColumnOpts {
-  onDelete: (v: VRF) => void
-  canEdit: boolean
-  canDelete: boolean
-  humanIds: boolean
-}
-
-function buildColumns({
-  onDelete,
-  canEdit,
-  canDelete,
-  humanIds,
-}: ColumnOpts): ColumnDef<VRF>[] {
-  return [
-    selectionColumn<VRF>(),
-    ...(humanIds ? [numidColumn<VRF>({ get: (r) => r.numid })] : []),
-    {
-      id: "name",
-      accessorKey: "name",
-      header: ({ column }) => <SortHeader column={column} label="Name" />,
-      cell: ({ row }) => (
-        <span className="inline-flex items-center gap-1.5">
-          <Link
-            to="/vrfs/$id"
-            params={{ id: row.original.id }}
-            className="hover:opacity-90"
-          >
-            <ColorBadge
-              name={row.original.name}
-              color={row.original.color || undefined}
-            />
-          </Link>
-          <ViolationBadge objectId={row.original.id} />
-        </span>
-      ),
-    },
-    {
-      id: "rd",
-      accessorKey: "rd",
-      header: ({ column }) => <SortHeader column={column} label="RD" />,
-      cell: ({ row }) =>
-        row.original.rd ? (
-          <span className="font-mono text-xs">{row.original.rd}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      id: "import_targets",
-      header: "Import",
-      enableSorting: false,
-      cell: ({ row }) => <RtCell rts={row.original.import_targets} />,
-    },
-    {
-      id: "export_targets",
-      header: "Export",
-      enableSorting: false,
-      cell: ({ row }) => <RtCell rts={row.original.export_targets} />,
-    },
-    {
-      id: "prefixes",
-      accessorKey: "prefix_count",
-      header: ({ column }) => <SortHeader column={column} label="Prefixes" />,
-      cell: ({ row }) =>
-        row.original.prefix_count > 0 ? (
-          <span className="num text-xs">{row.original.prefix_count}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      id: "ips",
-      accessorKey: "ip_count",
-      header: ({ column }) => <SortHeader column={column} label="IPs" />,
-      cell: ({ row }) =>
-        row.original.ip_count > 0 ? (
-          <span className="num text-xs">{row.original.ip_count}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      id: "description",
-      accessorKey: "description",
-      header: "Description",
-      cell: ({ row }) => (
-        <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
-        </span>
-      ),
-    },
-    tagsColumn<VRF>({
-      getTags: (r) => r.tags,
-      activeSlugs: new Set<string>(),
-      onToggle: () => {},
-    }),
-    timeAgoColumn<VRF>({
-      id: "updated",
-      header: "Updated",
-      get: (r) => r.updated_at,
-      align: "right",
-    }),
-    {
-      id: "actions",
-      enableHiding: false,
-      cell: ({ row }) => (
-        <RowActions
-          editTo={canEdit ? "/vrfs/$id/edit" : undefined}
-          editParams={{ id: row.original.id }}
-          onDelete={canDelete ? () => onDelete(row.original) : undefined}
-        />
-      ),
-    },
-  ]
-}
-
-function RtCell({ rts }: { rts: { id: string; name: string }[] }) {
-  if (rts.length === 0) return <span className="text-muted-foreground">—</span>
-  return (
-    <div className="flex flex-nowrap items-center gap-1 overflow-hidden">
-      {rts.map((rt) => (
-        <span
-          key={rt.id}
-          className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground"
-        >
-          {rt.name}
-        </span>
-      ))}
-    </div>
   )
 }

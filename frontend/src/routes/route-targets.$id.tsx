@@ -8,8 +8,8 @@ import { useCallback, useMemo, useState } from "react"
 import { api, type Paginated, type RouteTarget, type VRF } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
-import { ColorBadge } from "@/components/cells/color-badge"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { buildVrfColumns } from "@/components/columns/vrf-columns"
+import { DataTable } from "@/components/data-table"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
@@ -125,36 +125,18 @@ function RtVrfsTable({ rtId }: { rtId: string }) {
     queryKey: ["rt-vrfs", rtId],
     queryFn: () => api<Paginated<VRF>>(`/api/vrfs/?rt=${rtId}&page_size=500`),
   })
-  const columns = useMemo<ColumnDef<VRF>[]>(
-    () => [
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="VRF" />,
-        cell: ({ row }) => (
-          <Link
-            to="/vrfs/$id"
-            params={{ id: row.original.id }}
-            className="hover:opacity-90"
-          >
-            <ColorBadge
-              name={row.original.name}
-              color={row.original.color || undefined}
-            />
-          </Link>
-        ),
-      },
-      {
-        id: "rd",
-        accessorKey: "rd",
-        header: "RD",
-        cell: ({ row }) =>
-          row.original.rd ? (
-            <span className="font-mono text-xs">{row.original.rd}</span>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          ),
-      },
+  const columns = useMemo<ColumnDef<VRF>[]>(() => {
+    // The shared VRF columns; the import/export direction relative to *this*
+    // route target is this pane's own and sits between RD and Prefixes.
+    const [name, rd, prefixes, description] = buildVrfColumns<VRF>({
+      include: ["name", "rd", "prefixes", "description"],
+      nameHeader: "VRF",
+      plainHeaders: ["rd", "prefixes"],
+      zeroCounts: "number",
+    })
+    return [
+      name,
+      rd,
       {
         id: "direction",
         header: "Direction",
@@ -178,27 +160,10 @@ function RtVrfsTable({ rtId }: { rtId: string }) {
           )
         },
       },
-      {
-        id: "prefixes",
-        accessorKey: "prefix_count",
-        header: "Prefixes",
-        cell: ({ row }) => (
-          <span className="num text-xs">{row.original.prefix_count}</span>
-        ),
-      },
-      {
-        id: "description",
-        accessorKey: "description",
-        header: "Description",
-        cell: ({ row }) => (
-          <span className="line-clamp-1 block text-muted-foreground">
-            {row.original.description || "—"}
-          </span>
-        ),
-      },
-    ],
-    [rtId]
-  )
+      prefixes,
+      description,
+    ]
+  }, [rtId])
 
   if (q.isLoading)
     return <p className="text-sm text-muted-foreground">Loading VRFs…</p>

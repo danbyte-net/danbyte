@@ -6,14 +6,10 @@ import { useCallback, useMemo, useState } from "react"
 
 import { api, type DeviceType, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { ImportBundleDialog } from "@/components/device-bundle"
-import { tagsColumn } from "@/components/cells/tag-list"
-import { timeAgoColumn } from "@/components/cells/time-ago"
-import { numidColumn } from "@/components/cells/numid"
-import { manufacturerColumn } from "@/components/cells/manufacturer-cell"
-import { lifecycleColumn } from "@/components/cells/lifecycle-cell"
+import { buildDeviceTypeColumns } from "@/components/columns/device-type-columns"
 import {
   FilterRail,
   FacetGroup,
@@ -22,8 +18,6 @@ import {
 } from "@/components/filter-rail"
 import { DeviceTypeDeleteDialog } from "@/components/device-type-delete-dialog"
 import { DeviceTypeImportDialog } from "@/components/device-type-import-dialog"
-import { LocalityBadge } from "@/components/locality-badge"
-import { RowActions } from "@/components/row-actions"
 import { useMe, objCan } from "@/lib/use-me"
 
 export const Route = createFileRoute("/device-types/")({
@@ -80,7 +74,18 @@ function DeviceTypesPage() {
   const handleDelete = useCallback((d: DeviceType) => setDeleting(d), [])
   const columns = useMemo<ColumnDef<DeviceType>[]>(
     () =>
-      buildColumns({ onDelete: handleDelete, canEdit, canDelete, humanIds }),
+      buildDeviceTypeColumns<DeviceType>({
+        selection: true,
+        humanIds,
+        omit: ["part_number"],
+        actions: {
+          editTo: "/device-types/$id/edit",
+          editParams: (d) => ({ id: d.id }),
+          canEdit: (d) => objCan(d, "change", canEdit),
+          onDelete: handleDelete,
+          canDelete: (d) => objCan(d, "delete", canDelete),
+        },
+      }),
     [handleDelete, canEdit, canDelete, humanIds]
   )
 
@@ -150,112 +155,4 @@ function DeviceTypesPage() {
       />
     </ListPageShell>
   )
-}
-
-function buildColumns({
-  onDelete,
-  canEdit,
-  canDelete,
-  humanIds,
-}: {
-  onDelete: (d: DeviceType) => void
-  canEdit: boolean
-  canDelete: boolean
-  humanIds: boolean
-}): ColumnDef<DeviceType>[] {
-  return [
-    selectionColumn<DeviceType>(),
-    ...(humanIds ? [numidColumn<DeviceType>({ get: (r) => r.numid })] : []),
-    {
-      id: "name",
-      accessorKey: "name",
-      header: ({ column }) => <SortHeader column={column} label="Name" />,
-      cell: ({ row }) => (
-        <Link
-          to="/device-types/$id"
-          params={{ id: row.original.id }}
-          className="font-medium hover:underline"
-        >
-          {row.original.name}
-        </Link>
-      ),
-    },
-    manufacturerColumn<DeviceType>({ get: (r) => r.manufacturer }),
-    {
-      id: "model",
-      accessorKey: "model",
-      header: "Model",
-      cell: ({ row }) =>
-        row.original.model ? (
-          <span className="font-mono text-xs">{row.original.model}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      id: "u_height",
-      accessorKey: "u_height",
-      header: ({ column }) => <SortHeader column={column} label="U" />,
-      cell: ({ row }) => (
-        <span className="num text-xs">{row.original.u_height}U</span>
-      ),
-    },
-    {
-      id: "devices",
-      accessorKey: "device_count",
-      header: ({ column }) => <SortHeader column={column} label="Devices" />,
-      cell: ({ row }) => (
-        <span className="num text-xs">{row.original.device_count}</span>
-      ),
-    },
-    lifecycleColumn<DeviceType>({ get: (r) => r }),
-    {
-      id: "description",
-      accessorKey: "description",
-      header: "Description",
-      cell: ({ row }) => (
-        <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
-        </span>
-      ),
-    },
-    {
-      id: "scope",
-      accessorFn: (r) => r.owning_site?.name ?? "",
-      header: "Scope",
-      cell: ({ row }) => (
-        <LocalityBadge owningSite={row.original.owning_site} />
-      ),
-    },
-    tagsColumn<DeviceType>({
-      getTags: (r) => r.tags,
-      activeSlugs: new Set<string>(),
-      onToggle: () => {},
-    }),
-    timeAgoColumn<DeviceType>({
-      id: "updated",
-      header: "Updated",
-      get: (r) => r.updated_at,
-      align: "right",
-    }),
-    {
-      id: "actions",
-      enableHiding: false,
-      cell: ({ row }) => (
-        <RowActions
-          editTo={
-            objCan(row.original, "change", canEdit)
-              ? "/device-types/$id/edit"
-              : undefined
-          }
-          editParams={{ id: row.original.id }}
-          onDelete={
-            objCan(row.original, "delete", canDelete)
-              ? () => onDelete(row.original)
-              : undefined
-          }
-        />
-      ),
-    },
-  ]
 }

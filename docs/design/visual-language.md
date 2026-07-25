@@ -174,6 +174,16 @@ the next.
 | Device | `buildDeviceColumns()` |
 | Interface | `buildInterfaceColumns()` (+ `DEVICE_INTERFACE_COLUMNS` preset) |
 | VLAN | `buildVlanColumns()` |
+| Rack | `buildRackColumns()` |
+| Cluster | `buildClusterColumns()` |
+| Virtual machine | `buildVmColumns()` |
+| Aggregate | `buildAggregateColumns()` |
+| Cable | `buildCableColumns()` |
+| VRF | `buildVrfColumns()` |
+| Site | `buildSiteColumns()` |
+| Device type | `buildDeviceTypeColumns()` |
+| Device role | `buildDeviceRoleColumns()` |
+| Service | `buildServiceColumns()` |
 
 Each takes options — never per-caller branches inside the factory:
 
@@ -186,9 +196,23 @@ Each takes options — never per-caller branches inside the factory:
 - `violations` adds the compliance marker, `monitoring` the roll-up status
   column, `tagFilter` wires tag chips to a page filter (omit it and the chips
   are static rather than falsely clickable), `cfDefs` adds custom-field columns.
+- A handful carry a named presentation knob where an embedded pane genuinely
+  renders a column differently from the list — `siteVariant` (linked vs muted
+  plain text), `buildClusterColumns`' `typeVariant`, `buildCableColumns`'
+  `labelVariant` / `terminationsLinked` / `statusEditable`,
+  `buildServiceColumns`' `linked` (the device / VM pane renders the name and IP
+  as plain text), and the header labels `vidHeader` / `nameHeader` /
+  `heightHeader`. Prefer one of these over a second `ColumnDef[]`; the point is
+  that the variant is declared at the call site instead of hidden in a copied
+  column.
+- `plainHeaders`, `zeroCounts` and `countFacets` keep an older surface reading
+  exactly as it did: a read-only or embedded table that never offered sorting on
+  a column, one that prints `0` rather than `—` for an empty count, or a tab that
+  filters counts by range instead of the list page's in-use / unused split.
 - A page's own columns are **spliced around** the factory's output (rack
-  position, monitoring bindings, a virtual-chassis Member column) — see
-  `routes/locations.$id.tsx` and `routes/racks.$id.tsx`.
+  position, monitoring bindings, a virtual-chassis Member column, the cables
+  list's trace-plus-row-actions pair) — see `routes/locations.$id.tsx`,
+  `routes/racks.$id.tsx`, and `routes/cables.index.tsx`.
 
 Object references inside a cell come from `components/cells/`: `siteColumn` /
 `SiteCell`, `deviceColumn` / `DeviceCell`, plus `locationColumn`,
