@@ -26,6 +26,8 @@ import {
   type PortState,
 } from "@/lib/faceplate-colors"
 import { HardwareStatusKey, SpeedScale } from "@/components/speed-scale"
+import { InventoryItemDialog } from "@/components/device-inventory-pane"
+import { useMe } from "@/lib/use-me"
 import {
   autoLayout,
   composeModuleFaceplates,
@@ -804,6 +806,15 @@ export function ImagePortsFaceplate({
   observed?: Map<string, ObservedPort> | null
   className?: string
 }) {
+  const { canDo } = useMe()
+  // Editing a bay writes to the device's parts, so it needs the same permission
+  // the Hardware tab does — and a device to write them to.
+  const canEditParts = !!deviceId && canDo("device", "change")
+  const [partDialog, setPartDialog] = useState<{
+    item: InventoryItemRow | null
+    /** The marker's rendered name — the bay being filled, when creating. */
+    name: string
+  } | null>(null)
   const dt = useQuery({
     queryKey: ["device-type", deviceTypeId],
     queryFn: () => api<DeviceType>(`/api/device-types/${deviceTypeId}/`),
@@ -815,8 +826,7 @@ export function ImagePortsFaceplate({
     [interfaces]
   )
 
-  const image =
-    side === "front" ? dt.data?.front_image : dt.data?.rear_image
+  const image = side === "front" ? dt.data?.front_image : dt.data?.rear_image
   const markers = dt.data?.image_ports?.[side] ?? []
   const wantsInventory =
     !!deviceId && markers.some((m) => m.kind === "inventory-item")
@@ -828,6 +838,27 @@ export function ImagePortsFaceplate({
       ),
     enabled: wantsInventory,
   })
+  // Last raw sensor readings, so a bay's popover can show what the agent
+  // actually returned ("Normal", "4") rather than only the derived status.
+  const sensorReadings = useQuery({
+    queryKey: ["device-snmp", deviceId],
+    queryFn: () =>
+      api<{ sensors: { name: string; raw: string }[] }>(
+        `/api/monitoring/devices/${deviceId}/snmp/`
+      ),
+    enabled: wantsInventory,
+    staleTime: 60_000,
+  })
+  const sensorByName = useMemo(
+    () =>
+      new Map(
+        (sensorReadings.data?.sensors ?? []).map((s) => [
+          normalizePortName(s.name),
+          s.raw,
+        ])
+      ),
+    [sensorReadings.data]
+  )
   const itemByName = useMemo(
     () =>
       new Map(
@@ -875,8 +906,20 @@ export function ImagePortsFaceplate({
         if (kind === "inventory-item") {
           const item = itemByName.get(normalizePortName(name))
           const hex = item?.status?.color || "#64748b"
+          // An empty bay: the marker is drawn but no part fills it. With write
+          // access it's the install affordance — click to fit hardware here,
+          // named after the bay so a sensor keyed on that name picks it up.
           if (!item)
-            return (
+            return canEditParts ? (
+              <button
+                key={`${m.name}-${idx}`}
+                type="button"
+                style={style}
+                title={`${name} — empty, click to install hardware`}
+                onClick={() => setPartDialog({ item: null, name })}
+                className="absolute cursor-pointer rounded-[2px] border border-dashed border-border/70 bg-background/20 hover:border-primary hover:bg-primary/10"
+              />
+            ) : (
               <span
                 key={`${m.name}-${idx}`}
                 style={style}
@@ -887,14 +930,28 @@ export function ImagePortsFaceplate({
           return (
             <HoverCard key={`${m.name}-${idx}`} openDelay={100} closeDelay={80}>
               <HoverCardTrigger asChild>
-                <span
-                  style={{
-                    ...style,
-                    borderColor: hex,
-                    backgroundColor: `${hex}40`,
-                  }}
-                  className="absolute rounded-[2px] border-2 transition-opacity hover:opacity-100"
-                />
+                {canEditParts ? (
+                  <button
+                    type="button"
+                    style={{
+                      ...style,
+                      borderColor: hex,
+                      backgroundColor: `${hex}40`,
+                    }}
+                    title={`${item.name} — click to edit`}
+                    onClick={() => setPartDialog({ item, name })}
+                    className="absolute cursor-pointer rounded-[2px] border-2 transition-opacity hover:opacity-100 hover:ring-2 hover:ring-primary/40"
+                  />
+                ) : (
+                  <span
+                    style={{
+                      ...style,
+                      borderColor: hex,
+                      backgroundColor: `${hex}40`,
+                    }}
+                    className="absolute rounded-[2px] border-2 transition-opacity hover:opacity-100"
+                  />
+                )}
               </HoverCardTrigger>
               <HoverCardContent
                 side="top"
@@ -916,9 +973,37 @@ export function ImagePortsFaceplate({
                     {item.status.name}
                   </div>
                 )}
+                {item.manufacturer?.name && (
+                  <div className="text-muted-foreground">
+                    {item.manufacturer.name}
+                    {item.part_id ? ` · ${item.part_id}` : ""}
+                  </div>
+                )}
                 {item.serial_number && (
                   <div className="text-muted-foreground">
                     SN {item.serial_number}
+                  </div>
+                )}
+                {item.asset_tag && (
+                  <div className="text-muted-foreground">
+                    Asset {item.asset_tag}
+                  </div>
+                )}
+                {item.parent?.name && (
+                  <div className="text-muted-foreground">
+                    in {item.parent.name}
+                  </div>
+                )}
+                {/* The last thing the sensors read for this part, so a red bay
+                    says what the agent actually returned, not just "failed". */}
+                {sensorByName.get(normalizePortName(name)) && (
+                  <div className="text-muted-foreground">
+                    SNMP {sensorByName.get(normalizePortName(name))}
+                  </div>
+                )}
+                {canEditParts && (
+                  <div className="pt-0.5 font-sans text-[10px] text-muted-foreground">
+                    Click to edit
                   </div>
                 )}
               </HoverCardContent>
@@ -1010,6 +1095,22 @@ export function ImagePortsFaceplate({
           </HoverCard>
         )
       })}
+      {/* The real part editor, not a copy of it — so changing a disk's status
+          from the faceplate is the same write (and the same audit trail) as
+          editing it on the Hardware tab. Shares its query key, so the bay
+          recolours on save. */}
+      {canEditParts && partDialog && (
+        <InventoryItemDialog
+          deviceId={deviceId!}
+          item={partDialog.item}
+          initialName={partDialog.name}
+          siblings={inventory.data?.results ?? []}
+          open
+          onOpenChange={(o) => {
+            if (!o) setPartDialog(null)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -1071,6 +1172,7 @@ export function useHasHardwareMarkers(deviceTypeId?: string | null): boolean {
     staleTime: 5 * 60_000,
   })
   const ip = dt.data?.image_ports
-  return !!ip &&
-    [...ip.front, ...ip.rear].some((m) => m.kind === "inventory-item")
+  return (
+    !!ip && [...ip.front, ...ip.rear].some((m) => m.kind === "inventory-item")
+  )
 }
