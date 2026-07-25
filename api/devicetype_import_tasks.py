@@ -42,6 +42,12 @@ def run_devicetype_import(run_id: str) -> None:
         run.progress = {"done": 0, "total": total, "created": 0, "failed": 0}
         run.save(update_fields=["progress", "updated_at"])
 
+        # One image-repo listing for the whole run: the importer then fetches
+        # only images that exist, at their known extension — instead of up to
+        # four guess-probes per type, which made big folders look stuck.
+        from .devicetype_import import _IMAGE_BASE, repo_image_inventory
+
+        image_inventory = repo_image_inventory(_IMAGE_BASE)
         for url in files:
             try:
                 resp = safe_get(url, timeout=15)
@@ -50,6 +56,7 @@ def run_devicetype_import(run_id: str) -> None:
                     run.tenant, resp.text,
                     stack_positions=run.stack_positions,
                     owning_site=run.owning_site,
+                    image_inventory=image_inventory,
                 )
                 if report.get("ok"):
                     created += 1

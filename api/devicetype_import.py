@@ -234,7 +234,8 @@ def _get_or_create_manufacturer(tenant, name: str, owning_site=None):
 
 
 def import_devicetype_yaml(
-    tenant, text: str, *, stack_positions: bool = False, owning_site=None
+    tenant, text: str, *, stack_positions: bool = False, owning_site=None,
+    image_inventory: set[str] | None = None,
 ) -> dict:
     """Create a DeviceType (+ templates) from one devicetype-library YAML doc.
 
@@ -308,7 +309,9 @@ def import_devicetype_yaml(
     for face in ("front", "rear"):
         if not data.get(f"{face}_image") or not slug:
             continue
-        if _fetch_elevation_image(dt, manufacturer_name, slug, face):
+        if _fetch_elevation_image(
+            dt, manufacturer_name, slug, face, inventory=image_inventory
+        ):
             skipped.append(f"{face}_image: downloaded from devicetype-library")
         else:
             skipped.append(f"{face}_image: not found in devicetype-library")
@@ -461,7 +464,8 @@ def import_devicetype_yaml(
 
 
 def import_yaml_auto(
-    tenant, text: str, *, stack_positions: bool = False, owning_site=None
+    tenant, text: str, *, stack_positions: bool = False, owning_site=None,
+    image_inventory: set[str] | None = None,
 ) -> dict:
     """Import one library YAML doc, auto-detecting its kind: device-type
     files carry ``u_height``/``slug``; module-type files don't. The result
@@ -477,7 +481,8 @@ def import_yaml_auto(
         }
     return {
         **import_devicetype_yaml(
-            tenant, text, stack_positions=stack_positions, owning_site=owning_site
+            tenant, text, stack_positions=stack_positions,
+            owning_site=owning_site, image_inventory=image_inventory,
         ),
         "kind": "device-type",
     }
@@ -546,15 +551,20 @@ def import_moduletype_yaml(tenant, text: str, *, owning_site=None) -> dict:
 
 
 def _fetch_elevation_image(
-    dt, manufacturer: str, slug: str, face: str, image_base: str = _IMAGE_BASE
+    dt, manufacturer: str, slug: str, face: str, image_base: str = _IMAGE_BASE,
+    inventory: set[str] | None = None,
 ) -> bool:
     """Try to download <slug>.<face>.png|jpg from the devicetype-library and
     attach it to the DeviceType. Returns True on success."""
-    return _pull_elevation_image(dt, manufacturer, slug, face, image_base) == "saved"
+    return (
+        _pull_elevation_image(dt, manufacturer, slug, face, image_base, inventory)
+        == "saved"
+    )
 
 
 def _pull_elevation_image(
-    dt, manufacturer: str, slug: str, face: str, image_base: str
+    dt, manufacturer: str, slug: str, face: str, image_base: str,
+    inventory: set[str] | None = None,
 ) -> str:
     """Download one face's image and attach it. ``"saved"`` on success,
     ``"not_found"`` when the repo simply doesn't have it, ``"fetch_failed"``
@@ -568,7 +578,18 @@ def _pull_elevation_image(
 
     from core.ssrf import safe_get
 
-    for ext in ("png", "jpg"):
+    exts: tuple[str, ...] = ("png", "jpg")
+    if inventory is not None:
+        # One-shot repo listing: fetch the KNOWN extension directly, and skip
+        # absent images without a single request — extension guessing was up
+        # to 4 sequential round-trips per type on the bulk import path.
+        exts = tuple(
+            ext for ext in exts
+            if f"{manufacturer}/{slug}.{face}.{ext}" in inventory
+        )
+        if not exts:
+            return "not_found"
+    for ext in exts:
         # Manufacturer dirs can contain spaces ("Palo Alto") — quote segments.
         url = f"{image_base}/{quote(manufacturer)}/{quote(slug)}.{face}.{ext}"
         try:
