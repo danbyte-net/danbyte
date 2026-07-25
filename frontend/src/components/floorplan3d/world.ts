@@ -62,6 +62,8 @@ export interface SceneTile {
   color: string
   is_zone: boolean
   rack: SceneRack | null
+  /** The tile type's / role's name — labels unlinked planning tiles. */
+  type_name?: string
 }
 
 export interface SceneTray {

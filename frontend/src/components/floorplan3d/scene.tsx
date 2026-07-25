@@ -38,6 +38,7 @@ import { CameraRig, type FlyToRequest } from "./camera-rig"
 import { Room } from "./room"
 import { RackMesh, type Sel } from "./rack-mesh"
 import { RaisedFloorMesh } from "./raised-floor-mesh"
+import { TileGhostMesh } from "./tile-ghost-mesh"
 import { TrayMesh } from "./tray-mesh"
 import { useScene } from "./use-scene"
 import {
@@ -331,6 +332,13 @@ export default function FloorScene3D({
         {(scene.data.raised_floors ?? []).map((a) => (
           <RaisedFloorMesh key={a.id} plan={plan} area={a} peek={floorPeek} />
         ))}
+        {/* Unlinked / non-rack tiles as ghost massing — a typed tile holds
+            its ground before any object is linked ("build in advance"). */}
+        {scene.data.tiles
+          .filter((t) => !t.is_zone && !t.rack)
+          .map((t) => (
+            <TileGhostMesh key={`ghost-${t.id}`} plan={plan} tile={t} />
+          ))}
         {showCables && (
           <CablesLayer
             planId={planId}

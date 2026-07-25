@@ -85,6 +85,13 @@ uploaded blueprint textures it.
   devices wear their device-type **front/rear images**. Monitoring state
   lights a beacon on top of each cabinet — the same worst-status rollup the
   2D overlays use.
+- **Build in advance**: a typed tile needs no linked object — paint the
+  future rack row now (bulk *Set type* makes this one sweep) and link real
+  racks as they land. In 3D, unlinked non-zone tiles render as translucent
+  ghost boxes with their type name, so the planned room reads as a room
+  rather than empty floor. Scroll-zoom dollies **toward the pointer**, so
+  getting close to a far corner of a big hall is one scroll, not a slow
+  W-key flight.
 - **Airflow** (View menu, 3D): draws each device's cooling direction as
   small cones — blue where air is drawn in, red where it is exhausted —
   from the device's effective airflow (its own setting, else its type's).

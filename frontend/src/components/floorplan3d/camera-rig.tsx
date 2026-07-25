@@ -198,6 +198,9 @@ export function CameraRig({
       ref={controls}
       makeDefault
       target={target}
+      // Dolly toward the pointer, not the (possibly distant) orbit target —
+      // on a hall-sized plan, plain dolly could never reach a far corner.
+      zoomToCursor
       maxPolarAngle={Math.PI - 0.05}
       minDistance={0.5}
       maxDistance={maxDistance}

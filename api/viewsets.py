@@ -5989,6 +5989,12 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "label": t.label or "",
                 "kind": "rack" if t.rack_id else
                         "device" if t.device_id else "other",
+                # The type's name, so the 3D room can label unlinked tiles
+                # ("build in advance": planned massing before objects exist).
+                "type_name": (
+                    t.tile_type.name if t.tile_type_id
+                    else t.role_type.name if t.role_type_id else ""
+                ),
                 "color": (
                     (t.tile_type.color if t.tile_type_id else "")
                     or (t.role_type.color if t.role_type_id else "")
