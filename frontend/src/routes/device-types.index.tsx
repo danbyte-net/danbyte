@@ -14,6 +14,7 @@ import { useTableFilters } from "@/components/table-filters"
 import { DeviceTypeBulkBar } from "@/components/device-type-bulk-bar"
 import { DeviceTypeDeleteDialog } from "@/components/device-type-delete-dialog"
 import { DeviceTypeImportDialog } from "@/components/device-type-import-dialog"
+import { DeviceTypeReimportImagesDialog } from "@/components/device-type-reimport-images-dialog"
 import { useMe, objCan } from "@/lib/use-me"
 
 export const Route = createFileRoute("/device-types/")({
@@ -30,6 +31,7 @@ function DeviceTypesPage() {
   const [selectedRows, setSelectedRows] = useState<DeviceType[]>([])
   const [importing, setImporting] = useState(false)
   const [importingBundle, setImportingBundle] = useState(false)
+  const [reimportingImages, setReimportingImages] = useState(false)
 
   const query = useQuery({
     queryKey: ["device-types", q],
@@ -90,6 +92,17 @@ function DeviceTypesPage() {
       actions={
         <>
           <TableActions ioType="devicetype" />
+          {/* Recovery tool — rewrites image fields on EXISTING types, so it
+              rides the `change` grant, not `add`. */}
+          {canEdit && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setReimportingImages(true)}
+            >
+              Reimport images
+            </Button>
+          )}
           {canAdd && (
             <>
               <Button
@@ -141,6 +154,10 @@ function DeviceTypesPage() {
       <ImportBundleDialog
         open={importingBundle}
         onOpenChange={setImportingBundle}
+      />
+      <DeviceTypeReimportImagesDialog
+        open={reimportingImages}
+        onOpenChange={setReimportingImages}
       />
     </ListPageShell>
   )

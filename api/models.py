@@ -3007,7 +3007,12 @@ class DeviceTypeImportRun(TimestampedModel):
     """A background bulk import from the NetBox devicetype-library — one folder
     (e.g. a whole manufacturer, or the entire device-types dir) pulled off the
     RQ ``low`` queue so the UI can poll its progress. The synchronous
-    import-yaml endpoint handles small pastes; this handles the thousands."""
+    import-yaml endpoint handles small pastes; this handles the thousands.
+
+    ``kind`` distinguishes the two jobs sharing this machinery: ``library``
+    (the original YAML import — creates types) and ``image_reimport``
+    (re-downloading elevation images for EXISTING types after media loss —
+    touches only the two image fields)."""
 
     STATUS_CHOICES = [
         ("queued", "Queued"),
@@ -3015,14 +3020,24 @@ class DeviceTypeImportRun(TimestampedModel):
         ("success", "Success"),
         ("failed", "Failed"),
     ]
+    KIND_CHOICES = [
+        ("library", "Library import"),
+        ("image_reimport", "Image reimport"),
+    ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
         Tenant, on_delete=models.CASCADE, related_name="devicetype_imports"
     )
-    #: The github.com /tree/ folder URL being imported.
+    kind = models.CharField(
+        max_length=16, choices=KIND_CHOICES, default="library"
+    )
+    #: library: the github.com /tree/ folder URL being imported.
+    #: image_reimport: the normalised elevation-images base URL.
     source_url = models.CharField(max_length=512)
     stack_positions = models.BooleanField(default=False)
+    #: Kind-specific knobs. image_reimport: {"overwrite": bool, "dry_run": bool}.
+    options = models.JSONField(default=dict, blank=True)
     status = models.CharField(
         max_length=16, choices=STATUS_CHOICES, default="queued"
     )
