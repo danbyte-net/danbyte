@@ -89,7 +89,7 @@ export function StrandTraceDialog({
 
   return (
     <Dialog open={position != null} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent size="3xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {position != null && (

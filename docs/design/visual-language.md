@@ -65,10 +65,54 @@ Radix controls report changes differently from DOM ones — `Checkbox` uses
 `onChange(event)`. A Radix `SelectItem` also cannot carry `value=""`; give an
 "any" row a sentinel value and map it at both ends.
 
-> Historical note: an old `.ck` checkbox class from the archived htmx/Tailwind
-> pipeline was copied into SPA markup long after the stylesheet defining it was
-> removed. Those controls silently rendered as browser defaults. If you find a
-> class with no definition behind it, delete the markup and use a primitive.
+> **Dead classes have bitten this codebase three times.** The archived
+> `reference/design/tokens.css` was deleted in `9ba017d` while 450+ call sites
+> still referenced its classes:
+>
+> | class | sites | found |
+> |---|---|---|
+> | `.ck` (checkboxes → browser defaults) | ~40 | 2026 |
+> | `.num` (tabular figures) | 367 | 2026-07 |
+> | `text-destructive-foreground` (delete buttons) | 89 | 2026-07 |
+>
+> All three are fixed, `.num` now lives in `src/styles.css`, and destructive
+> confirms use `variant="destructive"`. The lesson stands: **if you find a class
+> with no definition behind it, delete the markup and use a primitive.** Grep
+> `styles.css` before trusting a bare class name.
+
+## Widths and truncation are the primitive's job
+
+A control must declare *one* width contract, and the shared primitives do:
+
+| primitive | contract |
+|---|---|
+| `Input`, `Textarea`, `SelectTrigger`, `Combobox` | `w-full min-w-0` — fill the slot, and stay shrinkable |
+| compact toolbar control | an explicit `w-*` **plus `shrink-0`** at the call site |
+
+Never let a control size itself to its *content*. `SelectTrigger` shipped with
+upstream shadcn's `w-fit`, so it was narrow when empty and grew when a value was
+picked — a labelled field in a grid row changed width and shoved its neighbours.
+
+Long values **ellipsise**, they don't clip. Watch for one trap: `truncate` and
+`line-clamp-*` both set `display`, so they lose to a sibling `flex` on the same
+element. If a value span needs `flex` (icon + text), put the truncation on the
+inner text node instead.
+
+## Dialog width: use `size`, never a class
+
+`DialogContent` and `AlertDialogContent` take a `size` prop
+(`sm | md | lg | xl | 2xl | 3xl`, default `md` = 28rem) which is keyed off
+`data-size`.
+
+**Do not pass a width class.** `cn()` is tailwind-merge, which only dedupes
+classes carrying the *same* modifier — so an unprefixed `max-w-lg` does **not**
+cancel the primitive's `sm:max-w-*`. Both land, specificity ties, and Tailwind
+emits the variant later, so the default wins on every desktop. Six dialogs
+shipped believing they were wide and weren't. `data-size` can't be clobbered
+that way.
+
+Pick by content, not by taste: `md` for 2–4 fields, `lg` for 5–7, `xl` for 8+ or
+any 2-column grid, `2xl`/`3xl` for tables, trees and traces.
 
 ## Detail-page tabs
 

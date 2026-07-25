@@ -1098,7 +1098,7 @@ function FavoritesSection() {
         </SidebarMenu>
       </SidebarGroupContent>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>Manage favorites</DialogTitle>
           </DialogHeader>

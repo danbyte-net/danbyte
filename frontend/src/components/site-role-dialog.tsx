@@ -133,7 +133,7 @@ export function SiteRoleDialog({
         onOpenChange(o)
       }}
     >
-      <DialogContent className="max-w-lg">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>
             {viewerOnly ? "Invite a viewer" : "Site role"}

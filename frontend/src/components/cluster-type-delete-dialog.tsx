@@ -55,7 +55,7 @@ export function ClusterTypeDeleteDialog({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={m.isPending}>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            className="text-destructive-foreground bg-destructive hover:bg-destructive/90"
+            variant="destructive"
             disabled={m.isPending || inUse}
             onClick={(e) => {
               e.preventDefault()

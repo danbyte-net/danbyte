@@ -289,7 +289,7 @@ function VMInterfaceFormDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto">
+      <DialogContent size="xl" className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {iface ? `Edit ${iface.name}` : "Add interface"}
@@ -532,7 +532,7 @@ function VMInterfaceDeleteDialog({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={m.isPending}>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            className="text-destructive-foreground bg-destructive hover:bg-destructive/90"
+            variant="destructive"
             disabled={m.isPending}
             onClick={(e) => {
               e.preventDefault()

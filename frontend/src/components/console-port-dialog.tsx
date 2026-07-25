@@ -115,7 +115,7 @@ export function ConsolePortDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? `Edit ${NOUN[kind]}` : `Add ${NOUN[kind]}`}

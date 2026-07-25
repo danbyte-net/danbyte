@@ -215,7 +215,7 @@ export function TenantGroupsSection() {
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
-              className="text-destructive-foreground bg-destructive hover:bg-destructive/90"
+              variant="destructive"
               disabled={deleteMutation.isPending}
               onClick={(e) => {
                 e.preventDefault()
@@ -299,7 +299,7 @@ function TenantGroupDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? `Edit ${group!.name}` : "Add tenant group"}

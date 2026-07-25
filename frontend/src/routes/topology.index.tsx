@@ -1054,7 +1054,7 @@ function SaveAsDialog({
         onOpenChange(o)
       }}
     >
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>Save view</DialogTitle>
         </DialogHeader>

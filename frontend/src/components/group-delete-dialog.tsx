@@ -50,7 +50,7 @@ export function GroupDeleteDialog({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={m.isPending}>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            className="text-destructive-foreground bg-destructive hover:bg-destructive/90"
+            variant="destructive"
             disabled={m.isPending || blocked}
             onClick={(e) => {
               e.preventDefault()

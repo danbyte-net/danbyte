@@ -192,7 +192,7 @@ export function DeviceTypeImportDialog({
         if (!o) reset()
       }}
     >
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent size="2xl">
         <DialogHeader>
           <DialogTitle>Import device types</DialogTitle>
           <DialogDescription>

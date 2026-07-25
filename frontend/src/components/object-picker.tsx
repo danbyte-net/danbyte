@@ -366,8 +366,9 @@ function ObjectSearchDialog<T extends { id: string }>({
       {/* Inset to the page view (right of the fixed w-60 sidebar) on lg+ so
           the modal and its backdrop don't cover the sidebar. */}
       <DialogContent
+        size="3xl"
         overlayClassName="lg:left-60"
-        className="flex max-h-[85vh] w-full flex-col gap-4 overflow-hidden sm:max-w-3xl lg:left-[calc(50%+7.5rem)]"
+        className="flex max-h-[85vh] w-full flex-col gap-4 overflow-hidden lg:left-[calc(50%+7.5rem)]"
       >
         <DialogHeader>
           <DialogTitle>Find a {spec.noun}</DialogTitle>

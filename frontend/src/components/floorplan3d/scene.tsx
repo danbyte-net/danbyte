@@ -341,7 +341,7 @@ export default function FloorScene3D({
       {/* Cable creator — seeded with the picked end(s); on save we just close
           and stay in the room view (occupancy + paths re-fetch). */}
       <Dialog open={!!modal} onOpenChange={(o) => !o && setModal(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent size="xl" className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Connect cable</DialogTitle>
           </DialogHeader>

@@ -134,7 +134,10 @@ function EnginesCard({ engines }: { engines: EngineHeartbeat[] }) {
       </header>
       <div className="divide-y divide-border">
         {engines.map((e) => (
-          <div key={e.id} className="flex items-center gap-2 px-3 py-2 text-[13px]">
+          <div
+            key={e.id}
+            className="flex items-center gap-2 px-3 py-2 text-[13px]"
+          >
             <span className="font-medium">{e.name}</span>
             <Badge variant={e.kind === "local" ? "secondary" : "info"}>
               {e.kind === "local" ? "Local" : "Outpost"}
@@ -473,69 +476,28 @@ function JobsPage() {
       )}
 
       {tab === "queue" && (
-      <div className="flex min-h-0 flex-1">
-        {/* Filter rail — state + queue are single-select and *server-side*
+        <div className="flex min-h-0 flex-1">
+          {/* Filter rail — state + queue are single-select and *server-side*
             (query params → paginated API; facet counts come from server
             aggregates, not the visible page). That's why this can't use the
             client-side `useTableFilters`/`FacetGroup` (multi-select over an
             in-memory row set) — only the shared `FilterRail` container chrome
             is reused; the single-select buttons stay bespoke. */}
-        <FilterRail>
-          <div>
-            <h3 className="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-              Status
-            </h3>
-            <ul className="space-y-0.5">
-              {statusFacets.map((opt) => {
-                const active = state === opt.value
-                const variant = STATE_META[opt.value]?.variant
-                return (
-                  <li key={opt.value}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setState(opt.value)
-                        setOffset(0)
-                      }}
-                      className={
-                        "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted/50 " +
-                        (active ? "bg-muted font-medium text-foreground" : "")
-                      }
-                    >
-                      <span
-                        className={
-                          "inline-block h-1.5 w-1.5 shrink-0 rounded-full " +
-                          (variant ? STATE_DOT[variant] : "bg-muted-foreground")
-                        }
-                      />
-                      <span className="flex-1 truncate">{opt.label}</span>
-                      <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">
-                        {opt.count.toLocaleString()}
-                      </span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-
-          {queues.length > 0 && (
+          <FilterRail>
             <div>
               <h3 className="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-                Queue
+                Status
               </h3>
               <ul className="space-y-0.5">
-                {[
-                  { value: "all", label: "Any queue" },
-                  ...queues.map((qn) => ({ value: qn, label: qn })),
-                ].map((opt) => {
-                  const active = queue === opt.value
+                {statusFacets.map((opt) => {
+                  const active = state === opt.value
+                  const variant = STATE_META[opt.value]?.variant
                   return (
                     <li key={opt.value}>
                       <button
                         type="button"
                         onClick={() => {
-                          setQueue(opt.value)
+                          setState(opt.value)
                           setOffset(0)
                         }}
                         className={
@@ -543,8 +505,17 @@ function JobsPage() {
                           (active ? "bg-muted font-medium text-foreground" : "")
                         }
                       >
-                        <span className="flex-1 truncate font-mono">
-                          {opt.label}
+                        <span
+                          className={
+                            "inline-block h-1.5 w-1.5 shrink-0 rounded-full " +
+                            (variant
+                              ? STATE_DOT[variant]
+                              : "bg-muted-foreground")
+                          }
+                        />
+                        <span className="flex-1 truncate">{opt.label}</span>
+                        <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">
+                          {opt.count.toLocaleString()}
                         </span>
                       </button>
                     </li>
@@ -552,73 +523,109 @@ function JobsPage() {
                 })}
               </ul>
             </div>
-          )}
-        </FilterRail>
 
-        {/* Main column — alerts + table + pagination. */}
-        <div className="flex min-w-0 flex-1 flex-col overflow-auto p-4 lg:p-6">
-          <div className="space-y-3">
-            {/* Self-upgrade progress / next auto-update countdown. */}
-            {data?.system && <SystemUpgradeCard system={data.system} />}
+            {queues.length > 0 && (
+              <div>
+                <h3 className="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+                  Queue
+                </h3>
+                <ul className="space-y-0.5">
+                  {[
+                    { value: "all", label: "Any queue" },
+                    ...queues.map((qn) => ({ value: qn, label: qn })),
+                  ].map((opt) => {
+                    const active = queue === opt.value
+                    return (
+                      <li key={opt.value}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQueue(opt.value)
+                            setOffset(0)
+                          }}
+                          className={
+                            "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted/50 " +
+                            (active
+                              ? "bg-muted font-medium text-foreground"
+                              : "")
+                          }
+                        >
+                          <span className="flex-1 truncate font-mono">
+                            {opt.label}
+                          </span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            )}
+          </FilterRail>
 
-            {/* No-workers diagnostic — the exact failure mode this page exists for. */}
-            {stalled && (
-              <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-[13px] text-destructive">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <div>
-                  <span className="font-medium">No workers are running.</span>{" "}
-                  {queued.toLocaleString()} job{queued === 1 ? "" : "s"} are
-                  queued and won't be processed until a worker comes online (
-                  <code className="font-mono">
-                    systemctl --user start danbyte-workers
-                  </code>
-                  ).
+          {/* Main column — alerts + table + pagination. */}
+          <div className="flex min-w-0 flex-1 flex-col overflow-auto p-4 lg:p-6">
+            <div className="space-y-3">
+              {/* Self-upgrade progress / next auto-update countdown. */}
+              {data?.system && <SystemUpgradeCard system={data.system} />}
+
+              {/* No-workers diagnostic — the exact failure mode this page exists for. */}
+              {stalled && (
+                <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-[13px] text-destructive">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <span className="font-medium">No workers are running.</span>{" "}
+                    {queued.toLocaleString()} job{queued === 1 ? "" : "s"} are
+                    queued and won't be processed until a worker comes online (
+                    <code className="font-mono">
+                      systemctl --user start danbyte-workers
+                    </code>
+                    ).
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {data?.truncated && (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[13px] text-amber-800 dark:text-amber-300">
-                Showing the first {data.total.toLocaleString()} jobs — narrow by
-                state or queue to see the rest.
-              </div>
-            )}
+              {data?.truncated && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[13px] text-amber-800 dark:text-amber-300">
+                  Showing the first {data.total.toLocaleString()} jobs — narrow
+                  by state or queue to see the rest.
+                </div>
+              )}
 
-            {q.isError && <QueryError error={q.error} />}
+              {q.isError && <QueryError error={q.error} />}
 
-            <DataTable
-              data={rows}
-              columns={columns}
-              flexColumn="job"
-              stickyHeader
-              tableId="jobs"
-              enableExport={false}
-            />
+              <DataTable
+                data={rows}
+                columns={columns}
+                flexColumn="job"
+                stickyHeader
+                tableId="jobs"
+                enableExport={false}
+              />
 
-            {pages > 1 && (
-              <div className="flex items-center justify-end gap-2 text-[13px]">
-                <button
-                  disabled={offset <= 0}
-                  onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
-                  className="rounded-md border border-border px-2.5 py-1 disabled:opacity-40"
-                >
-                  Prev
-                </button>
-                <span className="text-muted-foreground">
-                  {page} / {pages}
-                </span>
-                <button
-                  disabled={page >= pages}
-                  onClick={() => setOffset((o) => o + PAGE_SIZE)}
-                  className="rounded-md border border-border px-2.5 py-1 disabled:opacity-40"
-                >
-                  Next
-                </button>
-              </div>
-            )}
+              {pages > 1 && (
+                <div className="flex items-center justify-end gap-2 text-[13px]">
+                  <button
+                    disabled={offset <= 0}
+                    onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
+                    className="rounded-md border border-border px-2.5 py-1 disabled:opacity-40"
+                  >
+                    Prev
+                  </button>
+                  <span className="text-muted-foreground">
+                    {page} / {pages}
+                  </span>
+                  <button
+                    disabled={page >= pages}
+                    onClick={() => setOffset((o) => o + PAGE_SIZE)}
+                    className="rounded-md border border-border px-2.5 py-1 disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
       )}
     </div>
   )

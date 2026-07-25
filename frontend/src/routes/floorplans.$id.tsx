@@ -257,9 +257,9 @@ function FloorPlanPage() {
   // View prefs — seeded from plan.state, persisted back for editors.
   const [labelFitLocal, setLabelFitLocal] = useState<boolean | null>(null)
   const [showFovLocal, setShowFovLocal] = useState<boolean | null>(null)
-  const [showZoneLabelsLocal, setShowZoneLabelsLocal] = useState<boolean | null>(
-    null
-  )
+  const [showZoneLabelsLocal, setShowZoneLabelsLocal] = useState<
+    boolean | null
+  >(null)
   const [showTraysLocal, setShowTraysLocal] = useState<boolean | null>(null)
   const [showLinksLocal, setShowLinksLocal] = useState<boolean | null>(null)
   const [showObjectsLocal, setShowObjectsLocal] = useState<boolean | null>(null)
@@ -577,11 +577,7 @@ function FloorPlanPage() {
         x: Math.min(tile.x, Math.max(0, plan.grid_width - width)),
         y: Math.min(tile.y, Math.max(0, plan.grid_height - height)),
       }
-      if (
-        quarter &&
-        !tileIsZone(tile) &&
-        findCollision(tiles, rect, tile.id)
-      ) {
+      if (quarter && !tileIsZone(tile) && findCollision(tiles, rect, tile.id)) {
         toast.error("No room to rotate — a neighbour is in the way.")
         return
       }
@@ -627,7 +623,10 @@ function FloorPlanPage() {
         if (traceParam) {
           void nav({
             to: ".",
-            search: (s: Record<string, unknown>) => ({ ...s, trace: undefined }),
+            search: (s: Record<string, unknown>) => ({
+              ...s,
+              trace: undefined,
+            }),
             replace: true,
           })
           setHighlightCableIds([])
@@ -1285,111 +1284,114 @@ function FloorPlanPage() {
           )}
           {!view3d && (
             <>
-          <FloorCanvas
-            plan={plan}
-            tiles={tiles}
-            selectedId={selectedId}
-            editable={canEdit}
-            showGrid={showGrid}
-            armed={armed}
-            onSelect={(id) => {
-              setSelectedId(id)
-              // Clicking a tile pins its popover (the pointer is already over
-              // it, so the hook has the anchor point); clicking the background
-              // dismisses.
-              if (!id || !popover.pinCurrent()) popover.close()
-            }}
-            onHoverTile={popover.onHover}
-            onChangeTile={changeTileGuarded}
-            onCreateRect={createAt}
-            onOpenTile={openTile}
-            exportRef={exportRef}
-            liveState={liveState.data ?? null}
-            labelFit={labelFit}
-            showFov={showFov}
-            showZoneLabels={showZoneLabels}
-            mode={mode}
-            trays={trays}
-            showTrays={showTrays}
-            selectedTrayId={selectedTrayId}
-            onSelectTray={setSelectedTrayId}
-            drawPoints={drawPoints ?? undefined}
-            onAddDrawPoint={addDrawPoint}
-            onFinishDraw={finishDraw}
-            onMoveTray={(trayId, points) =>
-              patchTray.mutate({ trayId, patch: { points } })
-            }
-            trayEditMode={trayEditMode}
-            cablePaths={cablePaths}
-            showCableLinks={showCableLinks}
-            highlightCableIds={highlightCableIds}
-            onSelectCable={(cid) => setHighlightCableIds(cid ? [cid] : [])}
-            onHighlightCables={(ids) => {
-              setHighlightCableIds(ids)
-              if (ids.length && !showCableLinks)
-                setViewPref("show_cable_links", true)
-            }}
-            apiRef={canvasApi}
-          />
-          {mode === "cable" && drawPoints !== null && (
-            <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full border border-border bg-background px-4 py-1.5 text-xs shadow-sm">
-              Click corners to route the tray · double-click to finish · Esc to
-              cancel ({drawPoints.length})
-            </div>
-          )}
-          {trayEditMode && (
-            <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-full border border-border bg-background px-4 py-1.5 text-xs shadow-sm">
-              <span>
-                <span className="font-medium">Editing trays</span> — cables
-                hidden. Click a tray, drag its points, click{" "}
-                <span className="font-medium">＋</span> to add a bend,
-                right-click a point to remove.
-              </span>
-              <Button
-                size="sm"
-                className="h-6 px-2"
-                onClick={() => setTrayEditMode(false)}
-              >
-                Done
-              </Button>
-            </div>
-          )}
-          {/* Replaces the SVG <title> the browser used to draw: anchored to the
+              <FloorCanvas
+                plan={plan}
+                tiles={tiles}
+                selectedId={selectedId}
+                editable={canEdit}
+                showGrid={showGrid}
+                armed={armed}
+                onSelect={(id) => {
+                  setSelectedId(id)
+                  // Clicking a tile pins its popover (the pointer is already over
+                  // it, so the hook has the anchor point); clicking the background
+                  // dismisses.
+                  if (!id || !popover.pinCurrent()) popover.close()
+                }}
+                onHoverTile={popover.onHover}
+                onChangeTile={changeTileGuarded}
+                onCreateRect={createAt}
+                onOpenTile={openTile}
+                exportRef={exportRef}
+                liveState={liveState.data ?? null}
+                labelFit={labelFit}
+                showFov={showFov}
+                showZoneLabels={showZoneLabels}
+                mode={mode}
+                trays={trays}
+                showTrays={showTrays}
+                selectedTrayId={selectedTrayId}
+                onSelectTray={setSelectedTrayId}
+                drawPoints={drawPoints ?? undefined}
+                onAddDrawPoint={addDrawPoint}
+                onFinishDraw={finishDraw}
+                onMoveTray={(trayId, points) =>
+                  patchTray.mutate({ trayId, patch: { points } })
+                }
+                trayEditMode={trayEditMode}
+                cablePaths={cablePaths}
+                showCableLinks={showCableLinks}
+                highlightCableIds={highlightCableIds}
+                onSelectCable={(cid) => setHighlightCableIds(cid ? [cid] : [])}
+                onHighlightCables={(ids) => {
+                  setHighlightCableIds(ids)
+                  if (ids.length && !showCableLinks)
+                    setViewPref("show_cable_links", true)
+                }}
+                apiRef={canvasApi}
+              />
+              {mode === "cable" && drawPoints !== null && (
+                <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full border border-border bg-background px-4 py-1.5 text-xs shadow-sm">
+                  Click corners to route the tray · double-click to finish · Esc
+                  to cancel ({drawPoints.length})
+                </div>
+              )}
+              {trayEditMode && (
+                <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-full border border-border bg-background px-4 py-1.5 text-xs shadow-sm">
+                  <span>
+                    <span className="font-medium">Editing trays</span> — cables
+                    hidden. Click a tray, drag its points, click{" "}
+                    <span className="font-medium">＋</span> to add a bend,
+                    right-click a point to remove.
+                  </span>
+                  <Button
+                    size="sm"
+                    className="h-6 px-2"
+                    onClick={() => setTrayEditMode(false)}
+                  >
+                    Done
+                  </Button>
+                </div>
+              )}
+              {/* Replaces the SVG <title> the browser used to draw: anchored to the
               tile, styled, links out, and pinnable so it can actually be read. */}
-          <TilePopover
-            target={popover.target}
-            live={
-              popover.target
-                ? liveState.data?.tiles[popover.target.tile.id]
-                : undefined
-            }
-            fields={popoverFields}
-            onOpenChange={(open) => !open && popover.close()}
-            renderLinked={(tile) =>
-              tile.linked ? <LinkedObjectLink linked={tile.linked} /> : null
-            }
-            renderActions={(tile) =>
-              tile.linked?.kind === "rack" || tile.linked?.kind === "device" ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-3 w-full"
-                  onClick={() => {
-                    popover.close()
-                    setDeepTile(tile)
-                  }}
-                >
-                  {tile.linked.kind === "rack" ? (
-                    <PanelRight className="h-3.5 w-3.5" />
-                  ) : (
-                    <Waypoints className="h-3.5 w-3.5" />
-                  )}
-                  {tile.linked.kind === "rack" ? "Contents & trace" : "Trace"}
-                </Button>
-              ) : null
-            }
-          />
-          </>
+              <TilePopover
+                target={popover.target}
+                live={
+                  popover.target
+                    ? liveState.data?.tiles[popover.target.tile.id]
+                    : undefined
+                }
+                fields={popoverFields}
+                onOpenChange={(open) => !open && popover.close()}
+                renderLinked={(tile) =>
+                  tile.linked ? <LinkedObjectLink linked={tile.linked} /> : null
+                }
+                renderActions={(tile) =>
+                  tile.linked?.kind === "rack" ||
+                  tile.linked?.kind === "device" ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3 w-full"
+                      onClick={() => {
+                        popover.close()
+                        setDeepTile(tile)
+                      }}
+                    >
+                      {tile.linked.kind === "rack" ? (
+                        <PanelRight className="h-3.5 w-3.5" />
+                      ) : (
+                        <Waypoints className="h-3.5 w-3.5" />
+                      )}
+                      {tile.linked.kind === "rack"
+                        ? "Contents & trace"
+                        : "Trace"}
+                    </Button>
+                  ) : null
+                }
+              />
+            </>
           )}
         </div>
 
@@ -1459,7 +1461,7 @@ function FloorPlanPage() {
       />
 
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent>
+        <DialogContent size="xl">
           <DialogHeader>
             <DialogTitle>Floor plan settings</DialogTitle>
           </DialogHeader>

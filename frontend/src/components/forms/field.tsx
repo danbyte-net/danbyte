@@ -8,15 +8,37 @@ export interface FieldProps {
   label: string
   hint?: string
   error?: string
+  /** Mark the label. Field components forward their own `required` here — until
+   * this existed, 111 `required` props across 82 files rendered NOTHING, so the
+   * only signal a user got was the browser's native validation bubble on
+   * submit. That absence is why so many fields say `hint="optional"`: the
+   * codebase was signalling the inverse because the direct signal was dead. */
+  required?: boolean
   className?: string
   children: React.ReactNode
 }
 
-export function Field({ label, hint, error, className, children }: FieldProps) {
+export function Field({
+  label,
+  hint,
+  error,
+  required,
+  className,
+  children,
+}: FieldProps) {
   return (
     <div className={cn("grid gap-1.5", className)}>
       <div className="flex items-baseline justify-between">
-        <Label className="text-xs">{label}</Label>
+        <Label className="text-xs">
+          {label}
+          {required && (
+            // Not `text-destructive`: an untouched required field isn't an
+            // error, and colouring it red on load reads as one.
+            <span aria-hidden className="ml-0.5 text-muted-foreground">
+              *
+            </span>
+          )}
+        </Label>
         {hint && (
           <span className="text-[10px] text-muted-foreground">{hint}</span>
         )}

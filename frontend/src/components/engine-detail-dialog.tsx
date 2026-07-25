@@ -98,7 +98,7 @@ export function EngineDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent size="2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {engine?.name}

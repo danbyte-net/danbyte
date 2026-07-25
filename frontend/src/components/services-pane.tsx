@@ -309,7 +309,7 @@ function ServiceFormDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto">
+      <DialogContent size="lg" className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {service ? `Edit ${service.name}` : "Add service"}
@@ -528,7 +528,7 @@ function ServiceDeleteDialog({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={m.isPending}>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            className="text-destructive-foreground bg-destructive hover:bg-destructive/90"
+            variant="destructive"
             disabled={m.isPending}
             onClick={(e) => {
               e.preventDefault()

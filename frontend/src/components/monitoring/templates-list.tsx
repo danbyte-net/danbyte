@@ -178,7 +178,7 @@ function DeleteTemplate({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={m.isPending}>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            className="text-destructive-foreground bg-destructive hover:bg-destructive/90"
+            variant="destructive"
             disabled={m.isPending}
             onClick={(e) => {
               e.preventDefault()

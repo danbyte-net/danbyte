@@ -128,7 +128,7 @@ export function MacObjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? "Edit MAC object" : "Add MAC object"}

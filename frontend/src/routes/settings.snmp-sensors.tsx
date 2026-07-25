@@ -369,7 +369,7 @@ function ImportDialog({
         onOpenChange(o)
       }}
     >
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent size="xl">
         <DialogHeader>
           <DialogTitle>Import a sensor pack</DialogTitle>
         </DialogHeader>
