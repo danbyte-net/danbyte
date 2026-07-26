@@ -4,7 +4,6 @@
 # WebSockets are served by danbyte-ws (daphne), not here.
 Description=Danbyte web (gunicorn WSGI, 127.0.0.1:8000)
 After=network.target
-Wants=danbyte-infra.service
 StartLimitIntervalSec=0
 
 [Service]
