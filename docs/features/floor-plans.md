@@ -152,6 +152,13 @@ uploaded blueprint textures it.
 - Arriving with a **cable trace** (`?trace=<cable>` — e.g. "Show on floor
   plan" from a cable) draws the run as an animated line riding its assigned
   trays and dropping into both end racks.
+- **Cables are real geometry**: each run renders as a lit tube whose jacket
+  thickness follows its kind (power fatter than copper, copper fatter than
+  fibre), leaves its port with a rounded bend into the cabinet's front-corner
+  channel — never straight down across the faceplates — and rides its trays
+  in a **lane of its own**, so ten runs in one duct read as ten parallel
+  runs. Hover glows; click opens the cable card. Past a couple hundred runs
+  the layer falls back to simple lines for performance.
 - The **key** in the top-right corner appears only once something photo-anchored
   is in view, and lists the hardware statuses actually on screen. The speed ramp
   itself is always the full FE→400G+ scale, so it reads the same here as under a

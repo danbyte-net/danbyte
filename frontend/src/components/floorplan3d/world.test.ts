@@ -4,12 +4,18 @@ import {
   APPLIANCE_D_FRAC,
   APPLIANCE_H_U,
   APPLIANCE_W_FRAC,
+  CABLE_LANES,
+  CABLE_LANE_SPACING_M,
   DOOR_DEFAULT_MM,
   RACK_BASE_M,
   airflowGlyphPlacements,
+  cableLane,
+  cableRadiusM,
   cellToWorld,
   deviceBoxM,
   deviceYM,
+  filletPath,
+  offsetPolyline,
   rackFootprintM,
   rackViewpoint,
   trayElevationM,
@@ -462,6 +468,124 @@ describe("rackViewpoint — one math for double-click fly-to and the rear flip",
     expect(
       Math.hypot(position[0] - target[0], position[2] - target[2])
     ).toBeCloseTo(2.2)
+  })
+})
+
+describe("filletPath — no installer bends a cable at 90°", () => {
+  it("keeps endpoints exactly and passes collinear vertices through", () => {
+    const straight: [number, number, number][] = [
+      [0, 0, 0],
+      [1, 0, 0],
+      [2, 0, 0],
+    ]
+    expect(filletPath(straight, 0.1)).toEqual(straight)
+    const two: [number, number, number][] = [
+      [0, 0, 0],
+      [3, 1, 2],
+    ]
+    expect(filletPath(two)).toEqual(two)
+  })
+
+  it("rounds an L-corner: the hard vertex disappears, samples hug it", () => {
+    const L: [number, number, number][] = [
+      [0, 0, 0],
+      [1, 0, 0],
+      [1, 0, 1],
+    ]
+    const out = filletPath(L, 0.1, 4)
+    expect(out[0]).toEqual([0, 0, 0])
+    expect(out[out.length - 1]).toEqual([1, 0, 1])
+    // The exact corner is gone…
+    expect(out.some((p) => p[0] === 1 && p[2] === 0)).toBe(false)
+    // …and every bend sample stays within the fillet's reach of it.
+    for (const p of out.slice(1, -1)) {
+      const d = Math.hypot(p[0] - 1, p[1], p[2])
+      expect(d).toBeLessThanOrEqual(0.1 + 1e-9)
+    }
+  })
+
+  it("clamps the fillet on short segments instead of overshooting", () => {
+    const tight: [number, number, number][] = [
+      [0, 0, 0],
+      [0.05, 0, 0],
+      [0.05, 0, 0.05],
+    ]
+    const out = filletPath(tight, 0.5, 2)
+    // Pull-back is half the shortest leg (0.025) — start stays first.
+    expect(out[0]).toEqual([0, 0, 0])
+    expect(out[1][0]).toBeCloseTo(0.025)
+  })
+})
+
+describe("offsetPolyline — tray lanes stay parallel", () => {
+  it("offsets a straight run along its normal", () => {
+    const out = offsetPolyline(
+      [
+        [0, 0],
+        [4, 0],
+      ],
+      0.5
+    )
+    expect(out[0][1]).toBeCloseTo(0.5)
+    expect(out[1][1]).toBeCloseTo(0.5)
+    expect(out[0][0]).toBeCloseTo(0)
+  })
+
+  it("averages normals at a joint so the corner stays tight", () => {
+    const out = offsetPolyline(
+      [
+        [0, 0],
+        [2, 0],
+        [2, 2],
+      ],
+      0.1
+    )
+    // Joint normal is the 45° average of (0,1) and (-1,0).
+    expect(out[1][0]).toBeCloseTo(2 - 0.1 / Math.SQRT2)
+    expect(out[1][1]).toBeCloseTo(0.1 / Math.SQRT2)
+  })
+
+  it("zero offset and short inputs pass through", () => {
+    expect(offsetPolyline([[1, 1]], 0.3)).toEqual([[1, 1]])
+    expect(
+      offsetPolyline(
+        [
+          [0, 0],
+          [1, 0],
+        ],
+        0
+      )
+    ).toEqual([
+      [0, 0],
+      [1, 0],
+    ])
+  })
+})
+
+describe("cableLane + cableRadiusM", () => {
+  it("is deterministic and bounded to the tray width", () => {
+    const a = cableLane("cable-aaaa")
+    expect(cableLane("cable-aaaa")).toEqual(a)
+    const half = ((CABLE_LANES - 1) / 2) * CABLE_LANE_SPACING_M
+    for (const id of ["x", "y", "z", "cable-1", "cable-2", "0f3a"]) {
+      const { across, lift } = cableLane(id)
+      expect(Math.abs(across)).toBeLessThanOrEqual(half + 1e-9)
+      expect(lift).toBeGreaterThanOrEqual(0)
+      expect(lift).toBeLessThan(0.05)
+    }
+  })
+
+  it("spreads different ids over different lanes", () => {
+    const lanes = new Set(
+      ["a", "b", "c", "d", "e", "f", "g", "h"].map((id) => cableLane(id).across)
+    )
+    expect(lanes.size).toBeGreaterThan(2)
+  })
+
+  it("sizes the jacket by kind: power > copper > fibre", () => {
+    expect(cableRadiusM("power")).toBeGreaterThan(cableRadiusM("cat6"))
+    expect(cableRadiusM("cat6")).toBeGreaterThan(cableRadiusM("smf-os2"))
+    expect(cableRadiusM(null)).toBe(cableRadiusM("cat6"))
   })
 })
 
