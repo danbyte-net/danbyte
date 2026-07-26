@@ -965,8 +965,8 @@ describe("wallDoorSpans — 2D gaps from the same clamp rules", () => {
 describe("tierFor", () => {
   it("promotes to detail only within a few metres", () => {
     expect(tierFor(3, "far")).toBe("detail")
-    expect(tierFor(6.9, "far")).toBe("detail")
-    expect(tierFor(7.1, "far")).toBe("mid")
+    expect(tierFor(9.9, "far")).toBe("detail")
+    expect(tierFor(10.1, "far")).toBe("mid")
   })
 
   it("keeps the room populated well past the detail range", () => {
@@ -977,8 +977,8 @@ describe("tierFor", () => {
   it("holds each tier a little longer on the way out", () => {
     // Sitting at 8 m: whichever tier you arrived in, you keep it. This is the
     // whole point of the hysteresis — orbiting on a boundary must not strobe.
-    expect(tierFor(8, "detail")).toBe("detail")
-    expect(tierFor(8, "mid")).toBe("mid")
+    expect(tierFor(11.5, "detail")).toBe("detail")
+    expect(tierFor(11.5, "mid")).toBe("mid")
     expect(tierFor(28, "mid")).toBe("mid")
     expect(tierFor(28, "far")).toBe("far")
   })

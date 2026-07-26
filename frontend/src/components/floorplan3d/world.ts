@@ -743,8 +743,8 @@ export type Tier = "detail" | "mid" | "far"
 
 /** Metres (surface distance, not centre) at which each tier takes over, with
  * hysteresis so orbiting on a boundary can't strobe. */
-const TIER_IN = { detail: 7, mid: 26 }
-const TIER_OUT = { detail: 9, mid: 30 }
+const TIER_IN = { detail: 10, mid: 26 }
+const TIER_OUT = { detail: 13, mid: 30 }
 
 /**
  * Pick a cabinet's detail tier from its distance to the eye.

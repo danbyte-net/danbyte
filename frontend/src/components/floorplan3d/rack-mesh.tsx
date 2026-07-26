@@ -183,7 +183,12 @@ export function RackMesh({
     }
     // Auto-ghost: when another rack is selected and this one blocks the line
     // of sight to it, fade this one out of the way. Same settle gating as the
-    // tier swap, so it never churns React while the camera moves.
+    // tier swap, so it never churns React while the camera moves. Hysteresis
+    // on the sight-line radius (engage tight, release loose) so a rack near
+    // the edge of the line can't flap dim/undim as you orbit — which read as
+    // the faceplates popping in and out.
+    const half = Math.max(width, depth) / 2
+    const r = autoDimRef.current ? half + 0.35 : half * 0.6
     const blocking =
       attention != null &&
       selection?.tileId !== tile.id &&
@@ -191,7 +196,7 @@ export function RackMesh({
         [camera.position.x, camera.position.y, camera.position.z],
         attention,
         [centre.x, centre.y, centre.z],
-        Math.max(width, depth) * 0.75 + 0.25
+        r
       )
     if (blocking !== autoDimRef.current) {
       autoDimRef.current = blocking
