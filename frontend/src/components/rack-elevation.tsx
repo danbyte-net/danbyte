@@ -130,9 +130,17 @@ export function RackElevation({
 
   const devices = q.data?.results ?? []
   // Side-mounted 0U strips (vertical PDUs) — they live in the rail lanes
-  // flanking the U grid, not in it.
-  const mountedLeft = devices.filter((d) => d.mount === "side_left")
-  const mountedRight = devices.filter((d) => d.mount === "side_right")
+  // flanking the U grid, not in it. A strip's `face` says which CHANNEL it
+  // bolts into, so it only shows on that elevation; blank means unspecified
+  // and shows on both (how everything mounted before the field existed
+  // behaves, and honest — we don't know which channel it's in).
+  const onThisFace = (d: Device) => !d.face || d.face === face
+  const mountedLeft = devices.filter(
+    (d) => d.mount === "side_left" && onThisFace(d)
+  )
+  const mountedRight = devices.filter(
+    (d) => d.mount === "side_right" && onThisFace(d)
+  )
   // Mounting semantics: a device mounts on ONE face (face "" ≈ front); when its
   // type is full-depth it *occupies* the opposite face too — drawn hatched
   // there, so the rear view shows what's blocking the space.

@@ -39,7 +39,8 @@ source of truth, so a one-off odd cabinet just overrides a value).
 A rack type can also carry **accessories**: the factory-fitted 0U gear the
 model ships with — typically a pair of vertical PDU strips. Each accessory
 names a **0U device type**, a **label** (`PDU-A`), a **rail** (left/right),
-and the optional offset/span of a [side mount](#zero-u-side-mounting-vertical-pdus).
+a **channel** (front/rear), and the optional offset/span of a
+[side mount](#zero-u-side-mounting-vertical-pdus).
 When you create a rack with a type picked, tick **Create accessories** and
 Danbyte stamps one side-mounted device per accessory, named
 `{rack}-{label}` (deduped `-2`, `-3`… if taken), with the device type's
@@ -85,8 +86,14 @@ A vertical PDU strip bolts to a rack **rail** instead of occupying units.
 Give it a **0U device type**, then on the device pick **Side mount** — left
 or right rail — plus an optional **offset from the base** (mm) and a
 **span** in U (blank draws about three quarters of the rack). Side mounting
-replaces U placement: no position, face or half-width side, and Danbyte
-enforces all of it.
+replaces U placement: no position and no half-width side.
+
+A side-mounted strip also picks a **channel** — front or rear — which is
+the face it's reachable from. The elevation then draws it on **that
+elevation only**, and the 3D room seats it at that depth in the cabinet.
+Leave the channel blank and the strip shows on **both** elevations, which
+is what strips mounted before this field existed do: we genuinely don't
+know which channel they're in, so neither view claims otherwise.
 
 The elevation grows a slim **rail lane on each side** of the U grid listing
 that rail's strips (click one to open it; **+** hangs a new one with the

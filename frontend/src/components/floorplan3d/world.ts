@@ -641,11 +641,20 @@ export function sideStripBoxM(
     Math.max(RACK_BASE_M, rackTop - h)
   )
   const sign = dev.mount === "side_left" ? -1 : 1
+  // `face` names the CHANNEL the strip bolts into: rear sits back in the
+  // cabinet (where a vertical PDU actually lives), front sits forward.
+  // Blank stays mid-depth — we genuinely don't know which channel it's in.
+  const z =
+    dev.face === "rear"
+      ? rackDepthM * 0.32
+      : dev.face === "front"
+        ? -rackDepthM * 0.28
+        : rackDepthM * 0.2
   return {
     x: sign * (rackWidthM / 2 + STRIP_GAP_M + STRIP_W_M / 2),
     y,
     h,
-    z: rackDepthM * 0.2,
+    z,
   }
 }
 

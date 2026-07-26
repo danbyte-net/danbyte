@@ -305,10 +305,12 @@ export function DeviceForm({
   }, [isZeroU, mount])
   useEffect(() => {
     if (mount === "") return
+    // A side-mounted strip has no U position and no half-width side. `face`
+    // SURVIVES: on a 0U strip it names the channel it bolts into, and the
+    // elevation uses it to draw the strip on that face only.
     if (position !== "") setPosition("")
-    if (face !== "") setFace("")
     if (side !== "") setSide("")
-  }, [mount, position, face, side])
+  }, [mount, position, side])
 
   // One option per possible *lowest* unit, in the rack's visual order (top
   // first). Units where the device would collide render disabled with the
@@ -774,22 +776,38 @@ export function DeviceForm({
               error={fieldErrors.mount}
             />
             {mount !== "" && (
-              <div className="grid grid-cols-2 gap-3">
-                <FormText
-                  label="Offset from base (mm)"
-                  value={mountOffset}
-                  onChange={setMountOffset}
-                  placeholder="0"
-                  error={fieldErrors.mount_offset_mm}
+              <>
+                <FormSelect
+                  label="Channel"
+                  hint="Which face the strip is reachable from — blank shows it on both elevations"
+                  value={face === "" ? null : face}
+                  onChange={(v) =>
+                    setFace(v === "front" || v === "rear" ? v : "")
+                  }
+                  noneLabel="Unspecified (both)"
+                  options={[
+                    { value: "front", label: "Front channel" },
+                    { value: "rear", label: "Rear channel" },
+                  ]}
+                  error={fieldErrors.face}
                 />
-                <FormText
-                  label="Span (U)"
-                  value={mountSpan}
-                  onChange={setMountSpan}
-                  placeholder="auto (~¾ rack)"
-                  error={fieldErrors.mount_span_u}
-                />
-              </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormText
+                    label="Offset from base (mm)"
+                    value={mountOffset}
+                    onChange={setMountOffset}
+                    placeholder="0"
+                    error={fieldErrors.mount_offset_mm}
+                  />
+                  <FormText
+                    label="Span (U)"
+                    value={mountSpan}
+                    onChange={setMountSpan}
+                    placeholder="auto (~¾ rack)"
+                    error={fieldErrors.mount_span_u}
+                  />
+                </div>
+              </>
             )}
           </div>
         )}

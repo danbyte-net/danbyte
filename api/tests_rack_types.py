@@ -254,6 +254,23 @@ class RackTypeCatalogTests(APITestCase):
         )
         self.assertEqual(r.status_code, 201, r.content)
 
+    def test_accessory_face_stamps_onto_the_device(self):
+        # The channel an accessory names must reach the stamped device —
+        # otherwise every factory PDU lands face-blank and draws on both
+        # elevations, which is the thing this field exists to stop.
+        rt_id = self._rack_type().json()["id"]
+        self._accessory(rt_id, label="PDU-A", mount="side_left", face="rear")
+        self._post_rack("rack-face", rt_id, True)
+        dev = Device.objects.get(name="rack-face-PDU-A")
+        self.assertEqual(dev.face, "rear")
+        self.assertEqual(dev.mount, "side_left")
+
+    def test_accessory_face_defaults_to_unspecified(self):
+        rt_id = self._rack_type().json()["id"]
+        r = self._accessory(rt_id)
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["face"], "")
+
     def test_accessory_audit_entries_carry_the_owning_tenant(self):
         # RackTypeAccessory has no tenant column; the audit trail stamps
         # instance.tenant_id, so the model resolves it through the parent —

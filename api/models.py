@@ -1274,8 +1274,10 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     mount = models.CharField(
         max_length=12, choices=MOUNT_CHOICES, blank=True, default="",
         help_text=("Zero-U side mounting: the rack rail this device bolts "
-                   "to instead of occupying units. Requires a rack, a 0U "
-                   "device type, and no U position/face/side."),
+                   "to instead of occupying units. Requires a rack and a 0U "
+                   "device type, and no U position or half-width side. "
+                   "``face`` stays meaningful — it says which channel "
+                   "(front/rear) the strip lives in; blank shows it on both."),
     )
     mount_offset_mm = models.PositiveSmallIntegerField(
         null=True, blank=True,
@@ -3283,6 +3285,11 @@ class RackTypeAccessory(TimestampedModel):
         max_length=64, help_text="Suffix for stamped devices (e.g. PDU-A)."
     )
     mount = models.CharField(max_length=12, choices=Device.MOUNT_CHOICES)
+    face = models.CharField(
+        max_length=5, choices=Device.FACE_CHOICES, blank=True, default="",
+        help_text=("Which channel the strip bolts into. Blank draws it on "
+                   "both elevations, which is rarely what a real PDU does."),
+    )
     mount_offset_mm = models.PositiveSmallIntegerField(null=True, blank=True)
     mount_span_u = models.PositiveSmallIntegerField(
         null=True, blank=True,
