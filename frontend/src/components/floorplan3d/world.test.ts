@@ -23,11 +23,15 @@ import {
   rackViewpoint,
   segmentCrossing,
   sideStripBoxM,
+  STRIP_W_M,
+  fitsInChannel,
   tallestRackTopM,
   TRAY_H_M,
   trayElevationM,
   trayJunctions,
   trayRideY,
+  turnsAt,
+  zeroUChannelM,
   underfloorMM,
   wallDoorSpans,
   wallSegmentsWithOpenings,
@@ -488,13 +492,38 @@ describe("sideStripBoxM — vertical 0U strips hang on the rail", () => {
     const b = sideStripBoxM(rack(), pdu(), 0.6, 1.0)
     expect(b.h).toBeCloseTo(Math.round(42 * 0.75) * 0.04445)
     expect(b.y).toBeCloseTo(RACK_BASE_M)
-    expect(b.x).toBeGreaterThan(0.3) // right rail, outside the panel
     expect(b.z).toBeCloseTo(0.2) // rear half of the depth
+  })
+
+  it("sits INSIDE the cabinet, not out in the aisle beside it", () => {
+    // v1 hung the strip off the outside of the side panel, so every PDU
+    // floated next to its rack and collided with the neighbour in a bayed
+    // row. A vertical PDU bolts into the zero-U channel, inside the frame.
+    const half = 0.6 / 2
+    for (const mount of ["side_left", "side_right"] as const) {
+      const b = sideStripBoxM(rack(), pdu({ mount }), 0.6, 1.0)
+      expect(Math.abs(b.x) + STRIP_W_M / 2).toBeLessThanOrEqual(half + 1e-9)
+    }
   })
 
   it("left rail mirrors to −x", () => {
     const b = sideStripBoxM(rack(), pdu({ mount: "side_left" }), 0.6, 1.0)
-    expect(b.x).toBeLessThan(-0.3)
+    const right = sideStripBoxM(rack(), pdu({ mount: "side_right" }), 0.6, 1.0)
+    expect(b.x).toBeLessThan(0)
+    expect(b.x).toBeCloseTo(-right.x)
+  })
+
+  it("cabinet width IS the zero-U channel", () => {
+    // The 19″ rail opening is a fixed 450 mm, so every extra millimetre of
+    // cabinet width becomes channel — the whole reason 750/800 mm cabinets
+    // are sold. A 600 mm cabinet takes a slim strip and nothing more; a
+    // genuinely narrow one takes none.
+    const wide = zeroUChannelM(rack({ outer_width_mm: 800 }))
+    const plain = zeroUChannelM(rack({ outer_width_mm: 600 }))
+    expect(wide).toBeGreaterThan(plain + 0.09)
+    expect(wide).toBeGreaterThan(0.15)
+    expect(fitsInChannel(rack({ outer_width_mm: 800 }))).toBe(true)
+    expect(fitsInChannel(rack({ outer_width_mm: 500 }))).toBe(false)
   })
 
   it("honours span + offset, but never pokes past the rack top", () => {
@@ -718,6 +747,50 @@ describe("segmentCrossing + trayJunctions — where tray runs actually meet", ()
     ])
     expect(js).toHaveLength(1)
     expect(js[0].trayIds.sort()).toEqual(["a", "b"])
+  })
+
+  it("joins a CLOSED loop at its shared first/last vertex", () => {
+    // The real stress-test plan: a rectangular ring. That corner is neither
+    // an interior vertex nor a free end, so it was skipped entirely and its
+    // two rails ran straight through each other.
+    const js = trayJunctions(plan, [
+      tray("ring", [
+        [2, 2.5],
+        [26.5, 2.5],
+        [26.5, 5.5],
+        [2, 5.5],
+        [2, 2.5],
+      ]),
+    ])
+    expect(js).toHaveLength(4)
+    const closing = cellToWorld(plan, 2, 2.5)
+    expect(
+      js.some(
+        (j) =>
+          Math.abs(j.at[0] - closing[0]) < 1e-9 &&
+          Math.abs(j.at[1] - closing[1]) < 1e-9
+      )
+    ).toBe(true)
+  })
+
+  it("ignores a redundant collinear vertex on a straight run", () => {
+    // (9, 2.5) in the real plan sits mid-way along a straight leg. Treating
+    // it as a corner trimmed both rails back and plated a fake joint into
+    // the middle of an unbroken tray.
+    const js = trayJunctions(plan, [
+      tray("straight", [
+        [2, 2.5],
+        [9, 2.5],
+        [26.5, 2.5],
+      ]),
+    ])
+    expect(js).toEqual([])
+  })
+
+  it("turnsAt tells a real corner from a collinear point", () => {
+    expect(turnsAt([0, 0], [5, 0], [10, 0])).toBe(false)
+    expect(turnsAt([0, 0], [5, 0], [5, 5])).toBe(true)
+    expect(turnsAt([0, 0], [5, 0], [5, 0])).toBe(false) // zero-length leg
   })
 
   it("finds nothing when runs never meet", () => {
