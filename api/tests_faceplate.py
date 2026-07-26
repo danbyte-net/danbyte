@@ -468,6 +468,65 @@ class FacePortsResolveTests(APITestCase):
         self.assertIsNone(front[0]["id"])
         self.assertIsNone(front[0]["module"])
 
+    def test_marker_matches_component_name_case_insensitively(self):
+        """Imported photo markers routinely disagree with the live component
+        names by case alone ("Psu 1" vs "PSU 1"). Exact wins when it exists;
+        the tolerant pass keeps the marker resolvable instead of grey."""
+        from api.models import PowerPort
+
+        self.dt.image_ports = {
+            "front": [],
+            "rear": [{"kind": "power-port", "name": "Psu 1",
+                      "x": 0.8, "y": 0.5, "w": 0.05, "h": 0.3}],
+        }
+        self.dt.save(update_fields=["image_ports"])
+        port = PowerPort.objects.create(device=self.dev, name="PSU 1")
+        rear = self._get().json()["rear"]
+        marked = next(e for e in rear if e["marker"] == "Psu 1")
+        self.assertEqual(marked["id"], str(port.id))
+        self.assertEqual(marked["kind"], "power_port")
+
+    def test_unmarked_power_components_resolve_synthetically(self):
+        """Power ports/outlets no marker covers come back as synthetic REAR
+        entries (marker == the component's own name) — the 3D room draws
+        deterministic quads for them, and a quad that face-ports can't
+        resolve could never start a connection."""
+        from api.models import PowerOutlet, PowerPort
+
+        p1 = PowerPort.objects.create(device=self.dev, name="PSU 1")
+        p2 = PowerPort.objects.create(device=self.dev, name="PSU 2")
+        out = PowerOutlet.objects.create(device=self.dev, name="C13-01")
+        cable = Cable.objects.create(tenant=self.tenant)
+        CableTermination.objects.create(cable=cable, end="A", power_port=p1)
+        body = self._get().json()
+        rear = {e["marker"]: e for e in body["rear"]}
+        self.assertEqual(rear["PSU 1"]["id"], str(p1.id))
+        self.assertEqual(rear["PSU 1"]["kind"], "power_port")
+        self.assertTrue(rear["PSU 1"]["connected"])
+        self.assertEqual(rear["PSU 1"]["cable_id"], str(cable.id))
+        self.assertFalse(rear["PSU 2"]["connected"])
+        self.assertEqual(rear["C13-01"]["kind"], "power_outlet")
+        self.assertEqual(rear["C13-01"]["id"], str(out.id))
+        # Interfaces are NOT synthesized — the front markers still carry them.
+        self.assertNotIn("Gi1/0/1", rear)
+
+    def test_marked_power_ports_are_not_duplicated_synthetically(self):
+        """A component a marker claims (even via the tolerant match) must not
+        come back a second time as a synthetic entry."""
+        from api.models import PowerPort
+
+        self.dt.image_ports = {
+            "front": [],
+            "rear": [{"kind": "power-port", "name": "Psu 1",
+                      "x": 0.8, "y": 0.5, "w": 0.05, "h": 0.3}],
+        }
+        self.dt.save(update_fields=["image_ports"])
+        PowerPort.objects.create(device=self.dev, name="PSU 1")
+        p2 = PowerPort.objects.create(device=self.dev, name="PSU 2")
+        rear = self._get().json()["rear"]
+        self.assertEqual([e["marker"] for e in rear], ["Psu 1", "PSU 2"])
+        self.assertEqual(rear[1]["id"], str(p2.id))
+
     def test_connected_flag_and_cable_id(self):
         peer = Device.objects.create(
             tenant=self.tenant, name="sw2", device_type=self.dt

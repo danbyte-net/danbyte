@@ -17,6 +17,7 @@ import type {
 import {
   CONNECTOR_MM,
   MIN_LABEL_PX,
+  normalizePortName,
   PANEL_MM,
   PX_PER_MM,
   renderTemplateName,
@@ -91,10 +92,9 @@ export interface ObservedPort {
   speed_mbps: string
 }
 
-/** Same case-insensitive matching the drift engine uses (ifName ↔ intent). */
-export function normalizePortName(name: string): string {
-  return name.trim().toLowerCase()
-}
+// normalizePortName moved to the pure-geometry lib so the 3D world math (and
+// its tests) can share it; re-exported because consumers import it from here.
+export { normalizePortName }
 
 /** Observed per-port facts from the device's last SNMP poll — shares the
  * ["device-snmp", id] cache with the SNMP tab, so no extra polling. Returns

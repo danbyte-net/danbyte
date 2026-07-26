@@ -27,6 +27,7 @@ import { useMaxAnisotropy } from "./texture-quality"
 import {
   TRANSPARENT_ORDER,
   deviceBoxM,
+  syntheticPortMarkers,
   type SceneDevice,
   type SceneRack,
 } from "./world"
@@ -209,8 +210,9 @@ export function DeviceMesh({
    * device, so the caller grants it only for the engaged cabinet. */
   livePorts: boolean
   onSelect: (deviceId: string) => void
-  /** A photo port was clicked — anchor for HUD + cable building. `side` is the
-   * face the marker lives on (the device's mounted face). */
+  /** A photo port was clicked — anchor for HUD + cable building. `side` is
+   * the device PANEL the marker lives on (image_ports front vs rear) — the
+   * key face-ports resolves it under. */
   onSelectPort: (
     deviceId: string,
     marker: ImagePortMarker,
@@ -251,7 +253,20 @@ export function DeviceMesh({
   const side = showingFront ? "front" : "rear"
   // Memoized: the legend derives from these, and a fresh `[]` every render
   // would make it recompute (and re-report) forever.
-  const markers = useMemo(() => dev.image_ports?.[side] ?? [], [dev, side])
+  //
+  // Power components with no photo marker get SYNTHETIC quads on the rear
+  // panel — laid out by world.syntheticPortMarkers, the same function the
+  // cable layer anchors runs with, then rendered/clicked through the exact
+  // same path as photo markers. Without them a PSU inlet that no photo marks
+  // simply could not be clicked to start a connection.
+  const synthetic = useMemo(
+    () => (side === "rear" ? syntheticPortMarkers(dev) : []),
+    [dev, side]
+  )
+  const markers = useMemo(() => {
+    const real = dev.image_ports?.[side] ?? []
+    return synthetic.length ? [...real, ...synthetic] : real
+  }, [dev, side, synthetic])
   // Markers still DRAW without this (they ride in the scene payload); what it
   // gates is resolving them to real ports and polling live SNMP, which is two
   // requests per device. See the caller for why that has to stay bounded.
@@ -380,20 +395,23 @@ export function DeviceMesh({
           />
         )}
       </mesh>
-      {texture && (
+      {(texture || synthetic.length > 0) && (
         // The exposed face, textured with the device-type photo, plus any
         // photo-anchored port markers on top of it. Both share one frame
         // (a hair off the box to dodge z-fighting). It sits on the side the
         // camera is on, not the side the box is bolted to: the rack's front
-        // plane faces −Z, its rear +Z.
+        // plane faces −Z, its rear +Z. Synthetic power quads don't need the
+        // photo, so the frame mounts for them even with no face image.
         <group
           position={[0, 0, (dd / 2 + 0.002) * (viewRear ? 1 : -1)]}
           rotation={[0, viewRear ? 0 : Math.PI, 0]}
         >
-          <mesh
-            geometry={sharedPlane(dw, boxH)}
-            material={sharedFaceMaterial(texture)}
-          />
+          {texture && (
+            <mesh
+              geometry={sharedPlane(dw, boxH)}
+              material={sharedFaceMaterial(texture)}
+            />
+          )}
           {markers.map((m, i) => {
             // image (mx,my): x right, y DOWN from top-left → plane-local X
             // right, Y up, so flip y. Each quad owns its pointer events and
@@ -484,7 +502,12 @@ export function DeviceMesh({
                   position={[(m.x - 0.5) * dw, (0.5 - m.y) * boxH, 0.0015]}
                   onClick={(e) => {
                     e.stopPropagation()
-                    onSelectPort(dev.id, m, mountedRear ? "rear" : "front")
+                    // The panel this marker is ON (the shown side), not the
+                    // face the box is bolted to: a front-mounted server's PSU
+                    // markers live in image_ports.rear, and face-ports
+                    // resolves per panel — passing the mount face made every
+                    // rear-panel port unresolvable from the HUD.
+                    onSelectPort(dev.id, m, side)
                   }}
                   onPointerOver={(e) => {
                     e.stopPropagation()

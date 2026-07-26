@@ -34,6 +34,14 @@ export const OPENING_MM: Record<number, number> = {
   23: 551,
 }
 
+/** Same case-insensitive matching the drift engine uses (ifName ↔ intent).
+ * Lives here (not in the faceplate component) so pure geometry modules — the
+ * 3D world math and its tests — can share the ONE normalization that decides
+ * whether a marker, a component and an SNMP row name the same port. */
+export function normalizePortName(name: string): string {
+  return name.trim().toLowerCase()
+}
+
 export type ConnectorFamily =
   | "rj45"
   | "sfp"

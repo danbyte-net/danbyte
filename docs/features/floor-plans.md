@@ -132,8 +132,11 @@ uploaded blueprint textures it.
 - **Side-mounted 0U strips** (vertical PDUs with a
   [rail mount](../dcim/racks.md#zero-u-side-mounting-vertical-pdus)) hang on
   their cabinet's flank as slim vertical strips in both detail tiers —
-  click one for its device card. Outlet-level markers on the strip arrive
-  with the bulk-placement phase.
+  click one for its device card. Up close, the strip's end face carries one
+  small quad per **outlet** (spread down the strip at a real C13 pitch, by
+  the trailing number in the outlet's name) plus its inlet at the foot.
+  Each quad is clickable like a photo port — card, connect flow — and power
+  cords land exactly on them.
 - **Build in advance**: a typed tile needs no linked object — paint the
   future rack row now (bulk *Set type* makes this one sweep) and link real
   racks as they land. In 3D, unlinked non-zone tiles render as translucent
@@ -153,7 +156,14 @@ uploaded blueprint textures it.
   markers on the image, coloured exactly as on the device page — speed tier
   for cabled ports, the part's status for hardware bays. Click one for a card
   with its cable, far end and, when SNMP disagrees with the record, the
-  **difference** (see [drift in the room](#drift-in-the-room)).
+  **difference** (see [drift in the room](#drift-in-the-room)). Marker names
+  match their components case-insensitively, so a photo marked `Psu 1` still
+  resolves a port named `PSU 1`.
+- **Power ports the photo doesn't mark still exist**: any power port or
+  outlet without a photo marker gets a small synthetic quad along the bottom
+  edge of the device's rear panel, ordered by name. It clicks, cards and
+  cables exactly like a photo port, and power cords anchor on it instead of
+  the middle of the face.
 - Arriving with a **cable trace** (`?trace=<cable>` — e.g. "Show on floor
   plan" from a cable) draws the run as an animated line riding its assigned
   trays and dropping into both end racks.

@@ -1,5 +1,10 @@
-import type { ImagePorts } from "@/lib/api"
-import { OPENING_MM, PANEL_MM } from "@/lib/faceplate-geometry"
+import type { ImagePortMarker, ImagePorts } from "@/lib/api"
+import {
+  normalizePortName,
+  OPENING_MM,
+  PANEL_MM,
+  renderTemplateName,
+} from "@/lib/faceplate-geometry"
 
 /**
  * World-space conventions for the 3D room view.
@@ -40,6 +45,11 @@ export interface SceneDevice {
   /** Effective airflow (device override, else type default). Optional so
    * older cached payloads stay type-valid; "" = unknown. */
   airflow?: string
+  /** The device's REAL power port / outlet names — what synthetic port quads
+   * are laid out from when a component has no photo marker. Optional so older
+   * cached payloads stay type-valid. */
+  power_ports?: string[]
+  power_outlets?: string[]
 }
 
 export interface SceneRack {
@@ -321,19 +331,85 @@ export function deviceBoxM(
 export function portLocalM(
   box: ReturnType<typeof deviceBoxM>,
   m: { x: number; y: number },
-  /** Which of the device's own panels the marker is on. Defaults to the mount
-   * face, which is what callers drawing the visible faceplate want; the cable
-   * layer passes the port's real panel, since a front-mounted server's ports
-   * are on its rear. */
-  onRear?: boolean
+  /** Which of the device's own panels the marker is on (image_ports front vs
+   * rear). Defaults to the front panel — the faceplate. Which SIDE of the
+   * rack that panel faces depends on the mounting: a front-mounted server's
+   * rear panel faces the hot aisle (+Z), but a REAR-mounted box is turned
+   * around, so its rear panel faces the cold aisle (−Z). Keying the ±Z pick
+   * off the panel alone put every rear-mounted device's ports on the wrong
+   * side of the cabinet.
+   */
+  onRear = false
 ): [number, number, number] {
   const mx = (m.x - 0.5) * box.dw
   const my = (0.5 - m.y) * box.boxH
-  // Front faces −Z via a π turn about Y (mirrors X); rear faces +Z unturned.
-  const rear = onRear ?? box.mountedRear
-  return rear
+  // Rack-space side this panel faces: +Z (rear aisle) when panel and mounting
+  // disagree, −Z when they agree — truth table of the two flips.
+  const plusZ = onRear !== box.mountedRear
+  // The −Z face is drawn via a π turn about Y (mirrors X); +Z is unturned.
+  return plusZ
     ? [box.dx + mx, box.y + box.h / 2 + my, box.dz + box.dd / 2 + 0.004]
     : [box.dx - mx, box.y + box.h / 2 + my, box.dz - box.dd / 2 - 0.004]
+}
+
+// ─── Synthetic port markers ──────────────────────────────────────────────────
+
+/** Row placement for synthesized quads, in the marker's fraction coordinates
+ * (x right, y down from the panel's top-left; centres). */
+const SYNTH_ROW_Y = 0.8
+const SYNTH_H = 0.28
+const SYNTH_MARGIN = 0.04
+const SYNTH_MAX_W = 0.06
+
+/** Numeric-aware, locale-stable ordering: "PSU 2" before "PSU 10". */
+const byPortName = (a: string, b: string) =>
+  a.localeCompare(b, "en", { numeric: true, sensitivity: "base" }) ||
+  a.localeCompare(b, "en")
+
+/**
+ * Deterministic markers for power components that have NO photo marker: a
+ * small row of quads along the bottom edge of the device's REAR panel (where
+ * inlets physically live), ordered by name — power ports first, then outlets.
+ *
+ * Marker-shaped on purpose. DeviceMesh renders these through the exact same
+ * quad path as photo markers, and the cable layer anchors runs through the
+ * same `portLocalM` — ONE layout, so what you can click and where a cable
+ * lands can never disagree. Before this, a power port whose name matched no
+ * photo marker anchored its cable in the middle of the face and could not be
+ * clicked to start a connection at all.
+ *
+ * Ports already covered by a photo marker (matched via the shared
+ * `normalizePortName`, template names rendered first) are skipped, so gear
+ * with a marked-up rear photo keeps exactly its photographed anchors.
+ */
+export function syntheticPortMarkers(dev: SceneDevice): ImagePortMarker[] {
+  const ports = dev.power_ports ?? []
+  const outlets = dev.power_outlets ?? []
+  if (ports.length + outlets.length === 0) return []
+  const claimed = new Set<string>()
+  for (const panel of ["front", "rear"] as const)
+    for (const mk of dev.image_ports?.[panel] ?? [])
+      claimed.add(normalizePortName(renderTemplateName(mk.name, null)))
+  const unmarked = (names: string[], kind: string) =>
+    names
+      .filter((n) => !claimed.has(normalizePortName(n)))
+      .sort(byPortName)
+      .map((name) => ({ name, kind }))
+  const entries = [
+    ...unmarked(ports, "power-port"),
+    ...unmarked(outlets, "power-outlet"),
+  ]
+  const n = entries.length
+  if (n === 0) return []
+  const slot = (1 - 2 * SYNTH_MARGIN) / n
+  const w = Math.min(SYNTH_MAX_W, slot * 0.8)
+  return entries.map((e, i) => ({
+    ...e,
+    x: SYNTH_MARGIN + slot * (i + 0.5),
+    y: SYNTH_ROW_Y,
+    w,
+    h: SYNTH_H,
+  }))
 }
 
 // ─── Airflow glyphs ──────────────────────────────────────────────────────────
@@ -730,6 +806,48 @@ export function sideStripBoxM(
   const x =
     sign * Math.max(STRIP_W_M / 2, panel - STRIP_CLEARANCE_M - STRIP_W_M / 2)
   return { x, y, h, z }
+}
+
+/** Outlet spacing down a vertical strip (m) — about a real C13 pitch, so 24
+ * outlets cover roughly the strip's outlet field. */
+export const STRIP_PORT_PITCH_M = 0.05
+/** Port quad side (m) on the strip's end face. */
+export const STRIP_PORT_QUAD_M = 0.03
+
+/**
+ * Where one port of a side-mounted 0U strip sits, local to the RACK group —
+ * on the strip's exposed END face (rear-facing for a rear-channel strip), the
+ * side an operator in that aisle actually sees.
+ *
+ * Outlets are named with a trailing index (`C13-01`…), so an indexed name
+ * spreads down from the strip's top at a real C13 pitch, clamped inside it;
+ * a non-indexed name (the inlet) sits at the strip's foot, where the supply
+ * cord physically enters. `out` is the ±Z the face looks along — the stub
+ * direction for cables, the quad turn for the render.
+ *
+ * ONE function on purpose: SideStripMesh draws its clickable quads here and
+ * the cable layer anchors runs here, so a power cord and the outlet it lands
+ * on can never disagree. Before this the strip drew NO port quads at all and
+ * the cable layer invented its own positions on the strip's side face.
+ */
+export function stripPortLocalM(
+  strip: { x: number; y: number; h: number; z: number },
+  dev: SceneDevice,
+  portName: string
+): { x: number; y: number; z: number; out: 1 | -1 } {
+  const idx = Number(/(\d+)\s*$/.exec(portName)?.[1] ?? 0)
+  const top = strip.y + strip.h
+  const y =
+    idx > 0
+      ? Math.max(
+          strip.y + STRIP_PORT_QUAD_M / 2,
+          top - (idx - 0.5) * STRIP_PORT_PITCH_M
+        )
+      : strip.y + STRIP_PORT_QUAD_M * 1.5
+  // `face` names the channel the strip bolts into; its ports look out the
+  // matching end. Blank (unknown channel) keeps the rear-facing default.
+  const out = dev.face === "front" ? -1 : 1
+  return { x: strip.x, y, z: strip.z + out * (STRIP_D_M / 2 + 0.002), out }
 }
 
 // ─── Cable-run geometry (P8) ─────────────────────────────────────────────────

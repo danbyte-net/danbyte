@@ -339,8 +339,25 @@ export function RackMesh({
               (selection?.kind === "device" || selection?.kind === "port") &&
               selection.deviceId === d.id
             }
+            selectedPort={
+              selection?.kind === "port" && selection.deviceId === d.id
+                ? selection.portName
+                : null
+            }
+            // Outlet quads are a near-range affordance, like every overlay.
+            showPorts={tier === "detail"}
             onSelect={() =>
               onSelect({ kind: "device", tileId: tile.id, deviceId: d.id })
+            }
+            onSelectPort={(marker, side) =>
+              onSelect({
+                kind: "port",
+                tileId: tile.id,
+                deviceId: d.id,
+                portName: marker.name,
+                portKind: marker.kind,
+                portSide: side,
+              })
             }
           />
         ))}

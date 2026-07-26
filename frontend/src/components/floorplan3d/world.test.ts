@@ -19,11 +19,17 @@ import {
   filletPath,
   freeAirRideY,
   offsetPolyline,
+  portLocalM,
   rackFootprintM,
   rackViewpoint,
   segmentCrossing,
   sideStripBoxM,
+  stripPortLocalM,
+  STRIP_D_M,
+  STRIP_PORT_PITCH_M,
+  STRIP_PORT_QUAD_M,
   STRIP_W_M,
+  syntheticPortMarkers,
   fitsInChannel,
   tallestRackTopM,
   TRAY_H_M,
@@ -979,5 +985,168 @@ describe("tierFor", () => {
     // a legal tier for that distance, not an interpolated one.
     expect(tierFor(200, "detail")).toBe("far")
     expect(tierFor(0.5, "far")).toBe("detail")
+  })
+})
+
+describe("portLocalM — a marker lands on the side its panel actually faces", () => {
+  const m = { x: 0.25, y: 0.5 }
+
+  it("front-mounted: front panel −Z (cold aisle), rear panel +Z (hot aisle)", () => {
+    const box = deviceBoxM(rack(), dev(20), 0.6, 1.0)
+    const front = portLocalM(box, m, false)
+    const rear = portLocalM(box, m, true)
+    expect(front[2]).toBeCloseTo(box.dz - box.dd / 2 - 0.004)
+    expect(rear[2]).toBeCloseTo(box.dz + box.dd / 2 + 0.004)
+  })
+
+  it("REAR-mounted gear is turned around: its rear panel faces −Z", () => {
+    // A rear-mounted box shows its faceplate to the hot aisle, so its power
+    // inlets (its rear panel) look at the COLD aisle. Keying the side off the
+    // panel alone put those anchors through the box, out the wrong side.
+    const box = deviceBoxM(rack(), dev(20, 1, { face: "rear" }), 0.6, 1.0)
+    expect(box.mountedRear).toBe(true)
+    const front = portLocalM(box, m, false)
+    const rear = portLocalM(box, m, true)
+    expect(front[2]).toBeCloseTo(box.dz + box.dd / 2 + 0.004)
+    expect(rear[2]).toBeCloseTo(box.dz - box.dd / 2 - 0.004)
+  })
+
+  it("the −Z face mirrors X (drawn via a π turn); +Z does not", () => {
+    const box = deviceBoxM(rack(), dev(20), 0.6, 1.0)
+    const mx = (m.x - 0.5) * box.dw
+    expect(portLocalM(box, m, false)[0]).toBeCloseTo(box.dx - mx)
+    expect(portLocalM(box, m, true)[0]).toBeCloseTo(box.dx + mx)
+  })
+
+  it("defaults to the front panel — the faceplate side either way", () => {
+    const front = deviceBoxM(rack(), dev(20), 0.6, 1.0)
+    const rearMounted = deviceBoxM(
+      rack(),
+      dev(20, 1, { face: "rear" }),
+      0.6,
+      1.0
+    )
+    expect(portLocalM(front, m)).toEqual(portLocalM(front, m, false))
+    expect(portLocalM(rearMounted, m)).toEqual(
+      portLocalM(rearMounted, m, false)
+    )
+  })
+})
+
+describe("syntheticPortMarkers — unmarked power gear still gets clickable quads", () => {
+  const srv = (over = {}) =>
+    dev(10, 2, { power_ports: ["PSU 1", "PSU 2"], ...over })
+  const mark = (name: string, kind = "power-port") => ({
+    name,
+    kind,
+    x: 0.8,
+    y: 0.5,
+    w: 0.05,
+    h: 0.3,
+  })
+
+  it("lays one row near the bottom edge, ordered by name, inside the face", () => {
+    const ms = syntheticPortMarkers(srv())
+    expect(ms.map((x) => x.name)).toEqual(["PSU 1", "PSU 2"])
+    expect(ms.every((x) => x.kind === "power-port")).toBe(true)
+    expect(ms[0].x).toBeLessThan(ms[1].x)
+    for (const q of ms) {
+      expect(q.y).toBeGreaterThan(0.5) // lower half — off the port field
+      expect(q.x - q.w / 2).toBeGreaterThan(0)
+      expect(q.x + q.w / 2).toBeLessThan(1)
+      expect(q.y + q.h / 2).toBeLessThan(1)
+    }
+  })
+
+  it("orders numerically, not lexically", () => {
+    const ms = syntheticPortMarkers(srv({ power_ports: ["PSU 10", "PSU 2"] }))
+    expect(ms.map((x) => x.name)).toEqual(["PSU 2", "PSU 10"])
+  })
+
+  it("skips ports a photo marker already covers — matching is case-tolerant", () => {
+    // The real DC-TEST case: markers say "Psu 1", the ports say "PSU 1".
+    const ms = syntheticPortMarkers(
+      srv({ image_ports: { front: [], rear: [mark("Psu 1")] } })
+    )
+    expect(ms.map((x) => x.name)).toEqual(["PSU 2"])
+  })
+
+  it("renders marker template names before comparing", () => {
+    const ms = syntheticPortMarkers(
+      srv({
+        power_ports: ["psu1"],
+        image_ports: { front: [], rear: [mark("psu{position}")] },
+      })
+    )
+    expect(ms).toEqual([])
+  })
+
+  it("a 24-outlet rack PDU keeps its whole row on the face, no overlaps", () => {
+    const names = Array.from(
+      { length: 24 },
+      (_, i) => `C13-${String(i + 1).padStart(2, "0")}`
+    )
+    const ms = syntheticPortMarkers(dev(10, 2, { power_outlets: names }))
+    expect(ms).toHaveLength(24)
+    expect(ms.every((x) => x.kind === "power-outlet")).toBe(true)
+    expect(ms[0].x - ms[0].w / 2).toBeGreaterThan(0)
+    expect(ms[23].x + ms[23].w / 2).toBeLessThan(1)
+    for (let i = 1; i < ms.length; i++)
+      expect(ms[i].x - ms[i - 1].x).toBeGreaterThanOrEqual(ms[i].w - 1e-9)
+  })
+
+  it("nothing to synthesize → empty", () => {
+    expect(syntheticPortMarkers(dev(10))).toEqual([])
+    expect(
+      syntheticPortMarkers(
+        srv({
+          image_ports: { front: [], rear: [mark("PSU 1"), mark("PSU 2")] },
+        })
+      )
+    ).toEqual([])
+  })
+})
+
+describe("stripPortLocalM — one layout for strip quads AND cable anchors", () => {
+  const pdu = (over = {}) =>
+    dev(1, 0, { position: null, mount: "side_right", face: "rear", ...over })
+  const stripOf = (d: ReturnType<typeof pdu>) =>
+    sideStripBoxM(rack(), d, 0.6, 1.0)
+
+  it("indexed outlets pitch down from the strip's top, on its centre line", () => {
+    const d = pdu()
+    const s = stripOf(d)
+    const p1 = stripPortLocalM(s, d, "C13-01")
+    const p2 = stripPortLocalM(s, d, "C13-02")
+    expect(p1.y).toBeCloseTo(s.y + s.h - 0.5 * STRIP_PORT_PITCH_M)
+    expect(p1.y - p2.y).toBeCloseTo(STRIP_PORT_PITCH_M)
+    expect(p1.x).toBe(s.x)
+    expect(p2.x).toBe(s.x)
+  })
+
+  it("an index past the strip's length clamps inside it", () => {
+    const d = pdu()
+    const short = { ...stripOf(d), h: 0.3 }
+    const p = stripPortLocalM(short, d, "C13-24")
+    expect(p.y).toBeGreaterThanOrEqual(short.y)
+    expect(p.y).toBeLessThanOrEqual(short.y + short.h)
+  })
+
+  it("a non-indexed port (the inlet) sits at the strip's foot", () => {
+    const d = pdu()
+    const s = stripOf(d)
+    const p = stripPortLocalM(s, d, "inlet")
+    expect(p.y).toBeCloseTo(s.y + STRIP_PORT_QUAD_M * 1.5)
+  })
+
+  it("rear-channel strips face the hot aisle, front-channel the cold", () => {
+    const rear = pdu()
+    const rearP = stripPortLocalM(stripOf(rear), rear, "C13-01")
+    expect(rearP.out).toBe(1)
+    expect(rearP.z).toBeCloseTo(stripOf(rear).z + STRIP_D_M / 2 + 0.002)
+    const front = pdu({ face: "front" })
+    const frontP = stripPortLocalM(stripOf(front), front, "C13-01")
+    expect(frontP.out).toBe(-1)
+    expect(frontP.z).toBeCloseTo(stripOf(front).z - STRIP_D_M / 2 - 0.002)
   })
 })

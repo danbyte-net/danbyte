@@ -666,6 +666,34 @@ class SceneTests(_Base):
         ):
             self.assertIn(key, devs["inherits"])
 
+    def test_scene_carries_power_component_names(self):
+        """power_ports / power_outlets ride device_geo so the 3D room can lay
+        out synthetic port quads (and strip outlets) for power components no
+        photo marker covers — the same names cable terminations carry."""
+        from .models import DeviceType, PowerOutlet, PowerPort
+
+        dt = DeviceType.objects.create(
+            tenant=self.tenant, name="Strip PDU", u_height=0,
+        )
+        strip = Device.objects.create(
+            tenant=self.tenant, name="pdu-a", device_type=dt,
+            rack=self.rack, mount="side_left", face="rear",
+        )
+        PowerPort.objects.create(device=strip, name="inlet")
+        for i in (1, 2):
+            PowerOutlet.objects.create(device=strip, name=f"C13-0{i}")
+        FloorPlanTile.objects.create(
+            floor_plan=self.plan, tile_type=self.tt, x=0, y=0,
+            rack=self.rack, link_kind="rack",
+        )
+        body = self.client.get(f"/api/floor-plans/{self.plan.id}/scene/").json()
+        dev = next(
+            d for d in body["tiles"][0]["rack"]["devices"]
+            if d["name"] == "pdu-a"
+        )
+        self.assertEqual(dev["power_ports"], ["inlet"])
+        self.assertEqual(dev["power_outlets"], ["C13-01", "C13-02"])
+
     def test_effective_airflow_on_the_device_serializer(self):
         from .models import DeviceType
 

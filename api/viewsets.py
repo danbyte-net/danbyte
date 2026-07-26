@@ -2645,7 +2645,12 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
         sees it differently than the record does. The 3D room view needs this to
         turn a clicked marker into a termination it can cable — the marker
         itself only carries a template name — and to flag drift without a
-        second request per device in the rack."""
+        second request per device in the rack.
+
+        Power ports/outlets no marker covers are appended to ``rear`` as
+        synthetic entries (marker == the component's own name): the room draws
+        deterministic quads for them, and those must resolve here like any
+        photo port or they could never start a connection."""
         from .models import render_component_name
 
         device = self.get_object()
@@ -2657,6 +2662,7 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
         # Load each component relation we actually need exactly once, keyed by
         # rendered name, with terminations prefetched for the cabled check.
         name_maps: dict[str, dict[str, object]] = {}
+        norm_maps: dict[str, dict[str, object]] = {}
 
         def name_map(relation, cabled: bool):
             if relation not in name_maps:
@@ -2670,8 +2676,25 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
                     comps = comps.select_related("module__module_type")
                 else:
                     comps = comps.select_related("status")
+                comps = list(comps)
                 name_maps[relation] = {c.name: c for c in comps}
+                # Case/whitespace-insensitive twin (first name wins) — the
+                # same normalization the frontend's normalizePortName applies.
+                norm = {}
+                for c in comps:
+                    norm.setdefault(c.name.strip().lower(), c)
+                norm_maps[relation] = norm
             return name_maps[relation]
+
+        def find_component(relation, cabled: bool, name: str):
+            """Exact rendered-name match first, then tolerant: imported photo
+            markers routinely disagree with the live component names by case
+            alone ("Psu 1" vs "PSU 1"), and an exact-only match silently left
+            those markers unresolved — grey, unclickable, uncable-able."""
+            comp = name_map(relation, cabled=cabled).get(name)
+            if comp is None:
+                comp = norm_maps[relation].get(name.strip().lower())
+            return comp
 
         def resolve(markers):
             out = []
@@ -2700,7 +2723,7 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
                 mapping = self._FACE_PORT_KINDS.get(kind)
                 if mapping:
                     relation, term_kind = mapping
-                    comp = name_map(relation, cabled=term_kind is not None).get(name)
+                    comp = find_component(relation, term_kind is not None, name)
                     if comp is not None:
                         entry["drift"] = drift.get(str(comp.id))
                     if comp is not None and kind == "module-bay":
@@ -2745,10 +2768,34 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
                 out.append(entry)
             return out
 
-        return Response({
-            "front": resolve(image_ports.get("front")),
-            "rear": resolve(image_ports.get("rear")),
-        })
+        front = resolve(image_ports.get("front"))
+        rear = resolve(image_ports.get("rear"))
+        # Power components no photo marker covers still have to be clickable
+        # and cable-able in the 3D room (a PDU strip has no photo at all, and
+        # many rear photos never got their inlets marked). Emit them as
+        # SYNTHETIC entries under "rear" — power lives on the back — keyed by
+        # the component's own name, which is exactly the name the room's
+        # synthetic quads carry. Component ids already claimed by a marker
+        # (exact or tolerant) are skipped, so nothing resolves twice.
+        claimed = {e["id"] for e in front + rear if e["id"]}
+        for marker_kind in ("power-port", "power-outlet"):
+            relation, term_kind = self._FACE_PORT_KINDS[marker_kind]
+            for comp in name_map(relation, cabled=True).values():
+                if str(comp.id) in claimed:
+                    continue
+                term = next(iter(comp.terminations.all()), None)
+                ctype = getattr(comp, "type", "")
+                rear.append({
+                    "marker": comp.name, "name": comp.name,
+                    "kind": term_kind, "id": str(comp.id),
+                    "connected": term is not None,
+                    "cable_id": str(term.cable_id) if term else None,
+                    "enabled": True, "speed": "",
+                    "type": ctype if isinstance(ctype, str) else "",
+                    "status": None, "module": None,
+                    "drift": drift.get(str(comp.id)),
+                })
+        return Response({"front": front, "rear": rear})
 
     @action(detail=True, methods=["get"])
     def render(self, request, pk=None):
@@ -6132,6 +6179,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
             for r in Rack.objects.filter(id__in=rack_ids).prefetch_related(
                 "devices__device_type", "devices__role",
                 "devices__status", "devices__primary_ip",
+                "devices__power_ports", "devices__power_outlets",
             )
         }
 
@@ -6171,6 +6219,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 # Photo-anchored port markers (per device type; denormalized
                 # here like front_image so the 3D face can overlay them).
                 "image_ports": (dt.image_ports if dt else None) or None,
+                # The device's REAL power component names — the room lays out
+                # deterministic clickable quads (and cable anchors) for any of
+                # these that no photo marker covers, incl. PDU strip outlets.
+                "power_ports": [p.name for p in d.power_ports.all()],
+                "power_outlets": [o.name for o in d.power_outlets.all()],
             }
 
         def rack_geo(r):

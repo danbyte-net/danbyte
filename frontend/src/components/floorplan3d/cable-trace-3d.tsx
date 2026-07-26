@@ -6,7 +6,7 @@ import type { Line2 } from "three-stdlib"
 import { useQuery } from "@tanstack/react-query"
 
 import { api, type FloorPlanCablePath } from "@/lib/api"
-import { renderTemplateName } from "@/lib/faceplate-geometry"
+import { normalizePortName, renderTemplateName } from "@/lib/faceplate-geometry"
 import { routeCable, type Pt } from "@/components/floorplan/cable-route"
 
 import {
@@ -19,6 +19,8 @@ import {
   offsetPolyline,
   portLocalM,
   sideStripBoxM,
+  stripPortLocalM,
+  syntheticPortMarkers,
   rackFootprintM,
   trayElevationM,
   trayRideY,
@@ -66,11 +68,6 @@ interface EndRun {
  * that TRANSPARENT_ORDER sequences, so nothing in the room can hide it. */
 const TRACE_ORDER = 10
 
-/** Outlet spacing down a vertical PDU strip (m) — about a real C13 pitch, so
- * 24 outlets cover roughly the strip's outlet field. Replace with per-outlet
- * markers once the scene payload carries them. */
-const OUTLET_PITCH_M = 0.05
-
 /** Rack-local (x, y, z) → world, applying the tile's centre and orientation.
  * Same transform RackMesh puts on its group. */
 function worldOf(
@@ -104,34 +101,27 @@ function portEndRun(
   const { tile } = site
   const rack = tile.rack!
   const dev = rack.devices[site.devIndex]
-  // Side-mounted strips have no U position — deviceBoxM geometry would be
-  // nonsense. Fall back to the tile drop; strip-anchored runs come with the
-  // outlet-marker phase.
   const { width, depth } = rackFootprintM(rack)
 
   // ── Side-mounted 0U strip (a vertical PDU). No U, so deviceBoxM geometry
-  // would be nonsense — anchor on the STRIP instead. Outlets are named with a
-  // trailing index (C13-01 …), so spread them down the strip at a real C13
-  // pitch from the top, clamped inside it. Before this, every power cable in
-  // the room resolved to null and simply was not drawn.
+  // would be nonsense — anchor on the STRIP instead, at the SAME spot
+  // SideStripMesh draws that port's clickable quad (stripPortLocalM is the
+  // one layout both consume). Before this, every power cable in the room
+  // resolved to null and simply was not drawn.
   if (dev.position == null) {
     if (!dev.mount) return null
     const strip = sideStripBoxM(rack, dev, width, depth)
-    const idx = Number(/(\d+)\s*$/.exec(point.port)?.[1] ?? 0)
-    const top = strip.y + strip.h
-    const py =
-      idx > 0
-        ? Math.max(strip.y, top - (idx - 0.5) * OUTLET_PITCH_M)
-        : strip.y + strip.h / 2
+    const p = stripPortLocalM(strip, dev, point.port)
     const outward = dev.mount === "side_left" ? -1 : 1
-    const sx = strip.x + outward * 0.02
     const chanX = outward * (width / 2 + 0.04)
+    const stubZ = p.z + p.out * 0.05
     return {
       entry: [
-        [...worldOf(scene, tile, sx, py, strip.z)],
-        [...worldOf(scene, tile, chanX, py, strip.z)],
-      ] as Vec3[],
-      railAt: (y) => worldOf(scene, tile, chanX, y, strip.z),
+        worldOf(scene, tile, p.x, p.y, p.z),
+        worldOf(scene, tile, p.x, p.y, stubZ),
+        worldOf(scene, tile, chanX, p.y, stubZ),
+      ],
+      railAt: (y) => worldOf(scene, tile, chanX, y, stubZ),
     }
   }
 
@@ -140,40 +130,57 @@ function portEndRun(
   // NICs and PSU inlets on its REAR, which is the whole reason hot aisles are
   // where the cabling lives. Keying this off dev.face sent every run to the
   // cold aisle regardless of where the port physically is.
-  const find = (panel: "front" | "rear") =>
-    (dev.image_ports?.[panel] ?? []).find(
-      (mk) => renderTemplateName(mk.name, null) === point.port
+  //
+  // Exact name first, then the shared case/spacing-tolerant normalization:
+  // imported photo markers routinely disagree with the live component names
+  // by case alone ("Psu 1" vs "PSU 1"), and exact-only matching silently
+  // dropped those anchors to the middle of the face.
+  const wantNorm = normalizePortName(point.port)
+  const find = (panel: "front" | "rear") => {
+    const marks = dev.image_ports?.[panel] ?? []
+    return (
+      marks.find((mk) => renderTemplateName(mk.name, null) === point.port) ??
+      marks.find(
+        (mk) =>
+          normalizePortName(renderTemplateName(mk.name, null)) === wantNorm
+      )
     )
+  }
   const onFront = find("front")
   const m = onFront ?? find("rear")
-  // Which panel we resolved it to. With no marker at all we cannot know, so
-  // fall back to the REAR for full-depth gear: that is where a rack server's
-  // data and power land. (Carrying the port's side in the scene payload would
-  // make this data-driven instead of a convention — see the note in the PR.)
+  // Which of the device's OWN panels we resolved it to. With no marker at all
+  // we cannot know, so fall back to the REAR for full-depth gear: that is
+  // where a rack server's data and power land. (portLocalM converts the panel
+  // to the rack-space side, so rear-mounted gear comes out right too.)
   const portRear = onFront ? false : m != null || dev.is_full_depth
   const box = deviceBoxM(rack, dev, width, depth)
-  // A matched marker gives the exact port. WITHOUT one, anchor on the middle
-  // of the device's exposed FACE — not nothing. Returning null here sent the
-  // run to a drop at the tile centre, i.e. inside the cabinet, which is why
-  // in-rack cables looked like they dived into the middle of the rack and
-  // could not be traced. A port whose name doesn't match a marker (or a device
-  // type with no markers at all) still has a known U and a known face, and
-  // landing on the right unit's face is far more use than a hole in the middle.
-  const [lx, ly, lz] = m
-    ? portLocalM(box, m, portRear)
-    : [
-        box.dx,
-        box.y + box.h / 2,
-        portRear ? box.dz + box.dd / 2 + 0.004 : box.dz - box.dd / 2 - 0.004,
-      ]
+  // A matched marker gives the exact port. Without one, a POWER component
+  // still has its synthetic quad — the same row DeviceMesh renders, from the
+  // same layout function — so the anchor is a spot you can actually click.
+  // Anything else anchors on the middle of the device's panel: not nothing.
+  // Returning null here sent the run to a drop at the tile centre, i.e.
+  // inside the cabinet, which is why in-rack cables looked like they dived
+  // into the middle of the rack and could not be traced.
+  const synth = m
+    ? undefined
+    : syntheticPortMarkers(dev).find(
+        (s) => normalizePortName(s.name) === wantNorm
+      )
+  const panelRear = synth ? true : portRear
+  const [lx, ly, lz] = portLocalM(
+    box,
+    m ?? synth ?? { x: 0.5, y: 0.5 },
+    panelRear
+  )
 
   const world = (x: number, y: number, z: number): Vec3 =>
     worldOf(scene, tile, x, y, z)
 
-  // Stub OUT of the face (local ±Z), then sweep sideways at stub depth —
-  // clear of every faceplate — to the nearest cabinet edge, and rise there:
-  // the front-corner channel, like a vertical manager bolted to the rail.
-  const outZ = portRear ? 0.12 : -0.12
+  // Stub OUT of the face (toward the rack-space side portLocalM resolved the
+  // panel to), then sweep sideways at stub depth — clear of every faceplate —
+  // to the nearest cabinet edge, and rise there: the front-corner channel,
+  // like a vertical manager bolted to the rail.
+  const outZ = panelRear !== box.mountedRear ? 0.12 : -0.12
   const chanX = (lx >= 0 ? 1 : -1) * (width / 2 + 0.04)
   const chanZ = lz + outZ * 0.75 // riser tucks a hair closer to the face
   return {

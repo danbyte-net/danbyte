@@ -1250,7 +1250,11 @@ function PortHud({
               {selection.portKind.replace(/-/g, " ")}
             </span>
           )}
-        {row("Position", `${rack.name} · U${dev.position}`)}
+        {/* Side-mounted strips have no U — the rack alone locates them. */}
+        {row(
+          "Position",
+          dev.position != null ? `${rack.name} · U${dev.position}` : rack.name
+        )}
         {fp?.speed && row("Speed", <span className="num">{fp.speed}</span>)}
         {bay &&
           row(
