@@ -1,7 +1,6 @@
 [Unit]
 Description=Danbyte RQ worker pool (default, high, low queues)
 After=network.target
-Wants=danbyte-infra.service
 
 [Service]
 Type=simple
