@@ -41,6 +41,7 @@ export function FloorTileTypeForm({
   )
   const [isZone, setIsZone] = useState(tileType?.is_zone ?? false)
   const [hasFov, setHasFov] = useState(tileType?.has_fov ?? false)
+  const [perforated, setPerforated] = useState(tileType?.perforated ?? false)
   const [description, setDescription] = useState(tileType?.description ?? "")
 
   const mutation = useMutation({
@@ -53,6 +54,7 @@ export function FloorTileTypeForm({
         default_height: Math.max(1, parseInt(defaultHeight, 10) || 1),
         is_zone: isZone,
         has_fov: hasFov,
+        perforated,
         description,
       }
       if (isEdit)
@@ -141,6 +143,12 @@ export function FloorTileTypeForm({
         hint="Tiles of this type get a direction / angle / reach cone on the canvas"
         checked={hasFov}
         onChange={setHasFov}
+      />
+      <FormCheckbox
+        label="Perforated floor (3D)"
+        hint="Zone tiles of this type render as grate/supply tiles in the 3D room — the cold-aisle read"
+        checked={perforated}
+        onChange={setPerforated}
       />
       <FormTextarea
         label="Description"

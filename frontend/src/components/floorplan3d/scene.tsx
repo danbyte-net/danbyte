@@ -79,6 +79,7 @@ export default function FloorScene3D({
   floorPeek = false,
   showCables = false,
   showWalls = true,
+  showCeiling = false,
   shellMode = "cutaway",
   quality = "auto",
 }: {
@@ -96,6 +97,8 @@ export default function FloorScene3D({
   /** Walls default ON — a drawn wall that silently didn't render would read
    * as a bug; hiding the room shell is the opt-in. */
   showWalls?: boolean
+  /** Ceiling plane — default OFF; it only reads from inside the room. */
+  showCeiling?: boolean
   /** Cabinet shell: solid (doors on) / cutaway (open frame) / x-ray. */
   shellMode?: ShellMode
   /** Effects budget (shadows, AO, dpr) — per-device, "auto" probes the GPU. */
@@ -118,6 +121,9 @@ export default function FloorScene3D({
   // Which face the camera last framed for the selected rack — the HUD's
   // front↔rear flip toggles it.
   const [viewSide, setViewSide] = useState<"front" | "rear">("front")
+  // Per-area raised-floor lifts (click an area's edge skirt) — the global
+  // "Lift raised floor" toggle and x-ray still lift everything.
+  const [liftedIds, setLiftedIds] = useState<Set<string>>(new Set())
   // invalidate() bridge for HUD-triggered camera moves: DOM buttons live
   // outside the <Canvas>, and with frameloop="demand" a bare flyToRef
   // mutation would sit unnoticed until something else rendered a frame.
@@ -486,7 +492,7 @@ export default function FloorScene3D({
             />
           </EffectComposer>
         )}
-        <Room scene={data} xray={shellMode === "xray"} />
+        <Room scene={data} xray={shellMode === "xray"} ceiling={showCeiling} />
         {shownRacks.map((t) => (
           <RackMesh
             key={t.id}
@@ -526,7 +532,15 @@ export default function FloorScene3D({
             plan={plan}
             area={a}
             // X-ray lifts every raised floor — the plenum is half the point.
-            peek={floorPeek || shellMode === "xray"}
+            peek={floorPeek || shellMode === "xray" || liftedIds.has(a.id)}
+            onToggleLift={(id) =>
+              setLiftedIds((prev) => {
+                const next = new Set(prev)
+                if (next.has(id)) next.delete(id)
+                else next.add(id)
+                return next
+              })
+            }
           />
         ))}
         {showWalls &&

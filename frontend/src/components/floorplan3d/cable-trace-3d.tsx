@@ -281,9 +281,9 @@ function CableLine({
     <Line
       points={points}
       color={color}
-      lineWidth={hovered ? 3 : 1.5}
+      lineWidth={hovered ? 5 : 3.5}
       transparent
-      opacity={hovered ? 1 : 0.7}
+      opacity={hovered ? 1 : 0.8}
       onClick={(e) => {
         e.stopPropagation()
         onClick()
@@ -322,7 +322,7 @@ function MarchingLine({
       ref={ref}
       points={points}
       color={color}
-      lineWidth={3}
+      lineWidth={5}
       dashed
       dashSize={0.25}
       gapSize={0.12}

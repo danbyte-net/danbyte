@@ -6002,6 +6002,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     or t.color or ""
                 ),
                 "is_zone": bool(t.tile_type_id and t.tile_type.is_zone),
+                # Perforated zone types render as grate floor in 3D — the
+                # cold-aisle supply-tile read.
+                "perforated": bool(
+                    t.tile_type_id and t.tile_type.perforated
+                ),
                 "rack": rack_geo(racks[t.rack_id])
                 if t.rack_id and t.rack_id in racks else None,
             }
