@@ -3,7 +3,8 @@ import { Link } from "@tanstack/react-router"
 import type { Interface, VirtualChassisMember } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
-import { DeviceFaceplate } from "@/components/device-faceplate"
+import { FaceplateView } from "@/components/device-faceplate"
+import type { FaceplateMode } from "@/components/device-faceplate"
 import type { LegendReporter } from "@/components/speed-scale"
 import { cn } from "@/lib/utils"
 
@@ -16,11 +17,14 @@ export function StackElevation({
   masterId,
   highlightId,
   interfacesByMember,
+  mode = "image",
   onLegend,
 }: {
   members: VirtualChassisMember[]
   masterId: string | null
   highlightId?: string
+  /** Photo faceplate where a member's type has one, else the schematic. */
+  mode?: FaceplateMode
   /** Per-member interface lists — when provided, each member renders its
    * front panel (the "switch builder") inside the bar. */
   interfacesByMember?: Map<string, Interface[]>
@@ -62,6 +66,7 @@ export function StackElevation({
           )
         return (
           <MemberBar
+            mode={mode}
             key={pos}
             member={m}
             pos={pos}
@@ -74,6 +79,7 @@ export function StackElevation({
       })}
       {unpositioned.map((m) => (
         <MemberBar
+          mode={mode}
           key={m.id}
           member={m}
           pos={null}
@@ -108,6 +114,7 @@ function MemberBar({
   isMaster,
   highlight,
   interfaces,
+  mode,
   onLegend,
 }: {
   member: VirtualChassisMember
@@ -115,6 +122,7 @@ function MemberBar({
   isMaster: boolean
   highlight: boolean
   interfaces?: Interface[]
+  mode: FaceplateMode
   onLegend?: LegendReporter
 }) {
   const hasPanel = !!interfaces && interfaces.some((i) => !i.virtual)
@@ -154,11 +162,13 @@ function MemberBar({
           </span>
         </div>
         {hasPanel && (
-          <DeviceFaceplate
+          <FaceplateView
+            mode={mode}
             interfaces={interfaces!}
             deviceId={m.id}
             deviceTypeId={m.device_type_id}
             vcPosition={m.vc_position}
+            side="front"
             fit="container"
             className="mt-1 mb-1 border-0 bg-transparent p-0"
             onLegend={onLegend}

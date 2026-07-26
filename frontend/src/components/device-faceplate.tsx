@@ -817,6 +817,72 @@ export function TypeFaceplate({
   )
 }
 
+export type FaceplateMode = "image" | "rendered"
+
+/**
+ * One faceplate, either way. `mode="image"` draws the device type's PHOTO with
+ * ports marked on it when the type actually has a photo + markers; otherwise —
+ * and for `mode="rendered"` — it draws the schematic faceplate. So a caller
+ * can offer an Image/Rendered toggle and default to the photo without having
+ * to branch, and a type with no photo silently falls back to the schematic.
+ */
+export function FaceplateView({
+  mode = "image",
+  deviceTypeId,
+  deviceId,
+  interfaces,
+  vcPosition,
+  side = "front",
+  observed,
+  onLegend,
+  legendKey = "panel",
+  className,
+  fit,
+}: {
+  mode?: FaceplateMode
+  deviceTypeId?: string | null
+  deviceId?: string
+  interfaces: Interface[]
+  vcPosition?: number | null
+  side?: FaceplateSide
+  observed?: Map<string, ObservedPort> | null
+  onLegend?: LegendReporter
+  legendKey?: string
+  className?: string
+  fit?: "container" | number
+}) {
+  const hasImage = useHasImagePorts(deviceTypeId)
+  if (mode === "image" && hasImage && deviceTypeId) {
+    return (
+      <ImagePortsFaceplate
+        deviceTypeId={deviceTypeId}
+        deviceId={deviceId}
+        interfaces={interfaces}
+        vcPosition={vcPosition}
+        side={side}
+        observed={observed}
+        onLegend={onLegend}
+        legendKey={legendKey}
+        className={className}
+      />
+    )
+  }
+  return (
+    <DeviceFaceplate
+      interfaces={interfaces}
+      deviceId={deviceId}
+      deviceTypeId={deviceTypeId}
+      vcPosition={vcPosition}
+      side={side}
+      fit={fit}
+      observed={observed}
+      onLegend={onLegend}
+      legendKey={legendKey}
+      className={className}
+    />
+  )
+}
+
 // ─── image-anchored ports (photo faceplate) ─────────────────────────────────
 
 /** True when a device type has a photo + at least one placed port marker on

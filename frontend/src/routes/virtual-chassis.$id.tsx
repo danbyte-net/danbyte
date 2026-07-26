@@ -40,6 +40,7 @@ import { VirtualChassisDeleteDialog } from "@/components/virtual-chassis-delete-
 import { FaceplateLegend } from "@/components/device-faceplate"
 import { useLegendCollector } from "@/components/speed-scale"
 import { StackElevation } from "@/components/stack-elevation"
+import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
   StackInterfacesTable,
   useStackInterfaces,
@@ -247,6 +248,8 @@ function Overview({
   ifacesByMember: Map<string, Interface[]>
 }) {
   const { humanIds } = useMe()
+  // Photo faceplates by default; the toggle forces the schematic.
+  const [renderMode, setRenderMode] = useState(false)
   // One legend under the stack, keyed to what the members actually drew.
   const { content: legend, report: onLegend } = useLegendCollector()
 
@@ -297,13 +300,24 @@ function Overview({
     <div className="grid gap-6">
       <div className="grid gap-6 lg:grid-cols-2">
         <section>
-          <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
-            Stack
-          </h2>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="text-[11px] font-semibold tracking-wide text-foreground uppercase">
+              Stack
+            </h2>
+            <SegmentedTabs
+              value={renderMode ? "rendered" : "image"}
+              onValueChange={(v) => setRenderMode(v === "rendered")}
+              items={[
+                { value: "image", label: "Photo" },
+                { value: "rendered", label: "Rendered" },
+              ]}
+            />
+          </div>
           <StackElevation
             members={members}
             masterId={vc.master?.id ?? null}
             interfacesByMember={ifacesByMember}
+            mode={renderMode ? "rendered" : "image"}
             onLegend={onLegend}
           />
           <FaceplateLegend className="mt-2" content={legend} />

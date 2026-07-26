@@ -81,9 +81,9 @@ import { DeviceDriftPanel } from "@/components/device-drift-panel"
 import { DeviceInventoryPanel } from "@/components/device-inventory-panel"
 import { DeviceHardwareHealth } from "@/components/device-hardware-health"
 import {
-  DeviceFaceplate,
   FaceplateLegend,
-  ImagePortsFaceplate,
+  FaceplateView,
+  type FaceplateMode,
   useHasImagePorts,
   useObservedPorts,
   useSavedFaceplate,
@@ -965,6 +965,8 @@ function DeviceRackCard({ device }: { device: Device }) {
 function DeviceFrontPanel({ device }: { device: Device }) {
   const deviceId = device.id
   const [side, setSide] = useState<"front" | "rear">("front")
+  // Operator override: force the schematic even when a photo exists.
+  const [renderMode, setRenderMode] = useState(false)
   const q = useQuery({
     queryKey: ["device-interfaces", deviceId],
     queryFn: () =>
@@ -990,18 +992,33 @@ function DeviceFrontPanel({ device }: { device: Device }) {
   )
   if (physical.length === 0) return null
   const showRear = side === "rear"
+  // Photo when the type has one, unless the operator flips to the schematic.
+  const mode: FaceplateMode = usePhoto && !renderMode ? "image" : "rendered"
   return (
     <Section
       title="Panel"
       actions={
-        <SegmentedTabs
-          value={side}
-          onValueChange={setSide}
-          items={[
-            { value: "front", label: "Front" },
-            { value: "rear", label: "Rear" },
-          ]}
-        />
+        <div className="flex items-center gap-2">
+          {/* Photo vs schematic — only offered when a photo exists to show. */}
+          {usePhoto && (
+            <SegmentedTabs
+              value={renderMode ? "rendered" : "image"}
+              onValueChange={(v) => setRenderMode(v === "rendered")}
+              items={[
+                { value: "image", label: "Photo" },
+                { value: "rendered", label: "Rendered" },
+              ]}
+            />
+          )}
+          <SegmentedTabs
+            value={side}
+            onValueChange={setSide}
+            items={[
+              { value: "front", label: "Front" },
+              { value: "rear", label: "Rear" },
+            ]}
+          />
+        </div>
       }
     >
       <div className="rounded-lg border border-border bg-card p-4 lg:p-5">
@@ -1009,29 +1026,13 @@ function DeviceFrontPanel({ device }: { device: Device }) {
           <p className="py-6 text-center text-sm text-muted-foreground">
             No rear panel defined for this device type.
           </p>
-        ) : usePhoto && device.device_type ? (
-          <>
-            <ImagePortsFaceplate
-              deviceTypeId={device.device_type.id}
-              deviceId={deviceId}
-              interfaces={physical}
-              vcPosition={device.vc_position}
-              side={side}
-              observed={observed}
-              onLegend={onLegend}
-            />
-            <FaceplateLegend
-              className="mt-2"
-              observed={!!observed}
-              content={legend}
-            />
-          </>
         ) : (
           <>
-            <DeviceFaceplate
-              interfaces={physical}
-              deviceId={deviceId}
+            <FaceplateView
+              mode={mode}
               deviceTypeId={device.device_type?.id}
+              deviceId={deviceId}
+              interfaces={physical}
               vcPosition={device.vc_position}
               side={side}
               fit="container"
