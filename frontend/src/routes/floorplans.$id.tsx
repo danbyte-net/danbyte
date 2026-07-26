@@ -162,6 +162,11 @@ const AREA_PSEUDO_ENTRY = {
   hasFov: false,
 } as const satisfies import("@/components/floorplan/floor-canvas").PaletteEntry
 
+/** 3D cabinet-shell modes — persisted in plan.state.shell_3d; anything else
+ * stored there falls back to cutaway. */
+const SHELL_MODES_3D = ["solid", "cutaway", "xray"] as const
+type ShellMode3D = (typeof SHELL_MODES_3D)[number]
+
 export const Route = createFileRoute("/floorplans/$id")({
   component: FloorPlanPage,
   // ?trace=<cableId> — arrive with a cable's route highlighted + fitted,
@@ -340,6 +345,8 @@ function FloorPlanPage() {
   )
   const [floorPeekLocal, setFloorPeekLocal] = useState<boolean | null>(null)
   const [show3dWallsLocal, setShow3dWallsLocal] = useState<boolean | null>(null)
+  // Cabinet shell (3D): solid / cutaway / x-ray — a mode, not a checkbox.
+  const [shell3dLocal, setShell3dLocal] = useState<ShellMode3D | null>(null)
   const [highlightCableIds, setHighlightCableIds] = useState<string[]>([])
   // Tile popover: hover-preview (delayed) + click-to-pin.
   const popover = useTilePopover()
@@ -425,6 +432,7 @@ function FloorPlanPage() {
     setSelectedAreaId(null)
     setSelectedWallId(null)
     setDoorArmed(false)
+    setShell3dLocal(null)
   }, [id])
 
   // Hydrate local tiles from the server whenever fresh data lands and we
@@ -570,6 +578,18 @@ function FloorPlanPage() {
     show3dWallsLocal ??
     (plan?.state.show_3d_walls as boolean | undefined) ??
     true
+  const shell3dRaw =
+    shell3dLocal ?? (plan?.state.shell_3d as string | undefined) ?? "cutaway"
+  const shell3d: ShellMode3D = SHELL_MODES_3D.includes(
+    shell3dRaw as ShellMode3D
+  )
+    ? (shell3dRaw as ShellMode3D)
+    : "cutaway"
+  const setShellMode = (v: ShellMode3D) => {
+    setShell3dLocal(v)
+    if (canEdit && plan)
+      patchPlan.mutate({ state: { ...plan.state, shell_3d: v } })
+  }
 
   // ?trace=<cableId> → highlight that cable + fit the view to its route, so a
   // "trace on map" link from a cable/rack lands on the run without any clicks.
@@ -1376,6 +1396,20 @@ function FloorPlanPage() {
                     onChange={(v) => setViewPref("show_3d_walls", v)}
                     className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
                   />
+                  <div className="px-2 pt-1.5 pb-1">
+                    <span className="mb-1 block text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+                      Cabinet shell
+                    </span>
+                    <SegmentedTabs<ShellMode3D>
+                      value={shell3d}
+                      onValueChange={setShellMode}
+                      items={[
+                        { value: "solid", label: "Solid" },
+                        { value: "cutaway", label: "Cutaway" },
+                        { value: "xray", label: "X-ray" },
+                      ]}
+                    />
+                  </div>
                 </>
               )}
             </PopoverContent>
@@ -1635,12 +1669,14 @@ function FloorPlanPage() {
                   showAirflow={show3dAirflow}
                   floorPeek={floorPeek}
                   showWalls={show3dWalls}
+                  shellMode={shell3d}
                 />
               </Suspense>
               {show3dHint && (
                 <div className="absolute right-3 bottom-3 flex items-center gap-2 rounded-md border border-border bg-popover/90 px-2.5 py-1.5 text-[11px] text-muted-foreground shadow backdrop-blur">
                   Drag to orbit · scroll to zoom · right-drag to pan · arrows /
-                  WASD move · Space/C up-down · Shift sprint · click a rack
+                  WASD move · Space/C up-down · Shift sprint · F focus · click a
+                  rack
                   <button
                     onClick={() => setShow3dHint(false)}
                     aria-label="Dismiss"

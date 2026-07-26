@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { TriangleAlert } from "lucide-react"
-import { Canvas } from "@react-three/fiber"
+import { Canvas, useThree } from "@react-three/fiber"
+import * as THREE from "three"
 import { Link } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -36,7 +37,8 @@ import { useMe } from "@/lib/use-me"
 import { CablesLayer, CableTrace3D } from "./cable-trace-3d"
 import { CameraRig, type FlyToRequest } from "./camera-rig"
 import { Room } from "./room"
-import { RackMesh, type Sel } from "./rack-mesh"
+import { RackMesh } from "./rack-mesh"
+import type { Sel, ShellMode } from "./rack-mesh"
 import { RaisedFloorMesh } from "./raised-floor-mesh"
 import { TileGhostMesh } from "./tile-ghost-mesh"
 import { TrayMesh } from "./tray-mesh"
@@ -44,6 +46,8 @@ import { WallMesh } from "./wall-mesh"
 import { useScene } from "./use-scene"
 import {
   cellToWorld,
+  rackFootprintM,
+  rackViewpoint,
   webglSupported,
   type SceneDevice,
   type SceneTile,
@@ -70,6 +74,7 @@ export default function FloorScene3D({
   floorPeek = false,
   showCables = false,
   showWalls = true,
+  shellMode = "cutaway",
 }: {
   planId: string
   liveState: FloorPlanLiveState | null
@@ -85,12 +90,30 @@ export default function FloorScene3D({
   /** Walls default ON — a drawn wall that silently didn't render would read
    * as a bug; hiding the room shell is the opt-in. */
   showWalls?: boolean
+  /** Cabinet shell: solid (doors on) / cutaway (open frame) / x-ray. */
+  shellMode?: ShellMode
 }) {
   const scene = useScene(planId)
   const qc = useQueryClient()
   const [selection, setSelection] = useState<Sel | null>(null)
   const [cableSel, setCableSel] = useState<string | null>(null)
   const flyToRef = useRef<FlyToRequest | null>(null)
+  // Focus (F): the selected rack/device stays lit, the rest of the room
+  // ghosts. Session state, deliberately not persisted — it is a look, not a
+  // preference.
+  const [focusOn, setFocusOn] = useState(false)
+  // Isolation: only these tile ids render (zone click or "Isolate row").
+  const [isolation, setIsolation] = useState<{
+    label: string
+    ids: Set<string>
+  } | null>(null)
+  // Which face the camera last framed for the selected rack — the HUD's
+  // front↔rear flip toggles it.
+  const [viewSide, setViewSide] = useState<"front" | "rear">("front")
+  // invalidate() bridge for HUD-triggered camera moves: DOM buttons live
+  // outside the <Canvas>, and with frameloop="demand" a bare flyToRef
+  // mutation would sit unnoticed until something else rendered a frame.
+  const invalidateRef = useRef<(() => void) | null>(null)
 
   // ── Cable building ─────────────────────────────────────────────────────────
   // `connecting` holds the resolved A end while the user picks the far end in
@@ -233,7 +256,11 @@ export default function FloorScene3D({
       return
     }
     setCableSel(null)
-    setSelection(sel)
+    setSelection((prev) => {
+      // A different cabinet resets the flip — you arrive at its front.
+      if (prev?.tileId !== sel.tileId) setViewSide("front")
+      return sel
+    })
   }
 
   // Esc cancels an in-flight connect.
@@ -245,6 +272,29 @@ export default function FloorScene3D({
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [connecting])
+
+  // F toggles focus on the current selection; Escape unwinds focus first,
+  // then isolation (the connect flow's own Esc wins while it is arming).
+  useEffect(() => {
+    const editable = (t: EventTarget | null) =>
+      t instanceof Element &&
+      t.closest('input, textarea, select, [contenteditable="true"]') !== null
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (editable(e.target)) return
+      if (e.key === "f" || e.key === "F") {
+        if (selection) setFocusOn((v) => !v)
+        return
+      }
+      if (e.key === "Escape") {
+        if (connecting) return
+        if (focusOn) setFocusOn(false)
+        else if (isolation) setIsolation(null)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [selection, focusOn, isolation, connecting])
 
   // Every near-tier device reports the colours it draws; the HUD legend keys
   // their union (and hides when nothing photo-anchored is in view). Above the
@@ -285,6 +335,72 @@ export default function FloorScene3D({
       ? (selTile.rack!.devices.find((x) => x.id === selection.deviceId) ?? null)
       : null
 
+  // ── Isolation ──────────────────────────────────────────────────────────
+  // Pure client state: a set of tile ids that stay mounted, everything else
+  // unmounts (hidden racks can't be raycast, so nothing invisible eats
+  // clicks). Zones and the room shell always stay — they are the context.
+  const nonZoneTiles = data.tiles.filter((t) => !t.is_zone)
+  const isolateZone = (zone: SceneTile) => {
+    const ids = new Set(
+      nonZoneTiles
+        .filter(
+          (t) =>
+            t.x < zone.x + zone.w &&
+            zone.x < t.x + t.w &&
+            t.y < zone.y + zone.h &&
+            zone.y < t.y + t.h
+        )
+        .map((t) => t.id)
+    )
+    if (ids.size === 0) {
+      toast.info("Nothing stands in that zone yet.")
+      return
+    }
+    setSelection(null)
+    setFocusOn(false)
+    setIsolation({
+      label: zone.label || zone.type_name || "zone",
+      ids,
+    })
+  }
+  const isolateRow = (anchor: SceneTile) => {
+    // A row is whichever axis the hall actually runs: the alignment
+    // (same-y vs same-x) that catches more racks wins.
+    const sameY = rackTiles.filter((t) => t.y === anchor.y).length
+    const sameX = rackTiles.filter((t) => t.x === anchor.x).length
+    const ids = new Set(
+      nonZoneTiles
+        .filter((t) => (sameY >= sameX ? t.y === anchor.y : t.x === anchor.x))
+        .map((t) => t.id)
+    )
+    setIsolation({
+      label: `${anchor.label || anchor.rack?.name || "rack"} row`,
+      ids,
+    })
+  }
+  const shownRacks = isolation
+    ? rackTiles.filter((t) => isolation.ids.has(t.id))
+    : rackTiles
+
+  // HUD front↔rear flip — same viewpoint math as the double-click fly-to.
+  const flipView = () => {
+    if (!selTile?.rack) return
+    const side = viewSide === "front" ? "rear" : "front"
+    const { height } = rackFootprintM(selTile.rack)
+    const vp = rackViewpoint(plan, selTile, height, side)
+    flyToRef.current = {
+      target: new THREE.Vector3(vp.target[0], vp.target[1], vp.target[2]),
+      position: new THREE.Vector3(
+        vp.position[0],
+        vp.position[1],
+        vp.position[2]
+      ),
+    }
+    setViewSide(side)
+    // DOM button, demand frameloop: kick a frame so the rig sees the request.
+    invalidateRef.current?.()
+  }
+
   return (
     <div className="relative h-full min-h-0 w-full">
       <Canvas
@@ -305,13 +421,20 @@ export default function FloorScene3D({
           setSelection(null)
           setConnecting(null)
           setCableSel(null)
+          // Focus follows the selection — a click into nothing ends both.
+          setFocusOn(false)
         }}
       >
+        <InvalidatorBridge apiRef={invalidateRef} />
         <ambientLight intensity={0.7} />
         <directionalLight position={[w * 0.3, 12, d * 0.2]} intensity={1.1} />
         <directionalLight position={[w, 8, d]} intensity={0.4} />
-        <Room scene={data} />
-        {rackTiles.map((t) => (
+        <Room
+          scene={data}
+          xray={shellMode === "xray"}
+          onZoneClick={isolateZone}
+        />
+        {shownRacks.map((t) => (
           <RackMesh
             key={t.id}
             plan={plan}
@@ -321,10 +444,18 @@ export default function FloorScene3D({
             showUNumbers={showUNumbers}
             showNames={showNames}
             showAirflow={showAirflow}
+            shellMode={shellMode}
+            ghosted={focusOn && !!selection && selection.tileId !== t.id}
+            focusDeviceId={
+              focusOn && selection?.tileId === t.id
+                ? (selection.deviceId ?? null)
+                : null
+            }
             onSelect={handleSelect}
             onLegend={onLegend}
             onFlyTo={(target, position) => {
               flyToRef.current = { target, position }
+              setViewSide("front")
             }}
           />
         ))}
@@ -337,16 +468,36 @@ export default function FloorScene3D({
           />
         ))}
         {(scene.data.raised_floors ?? []).map((a) => (
-          <RaisedFloorMesh key={a.id} plan={plan} area={a} peek={floorPeek} />
+          <RaisedFloorMesh
+            key={a.id}
+            plan={plan}
+            area={a}
+            // X-ray lifts every raised floor — the plenum is half the point.
+            peek={floorPeek || shellMode === "xray"}
+          />
         ))}
         {showWalls &&
           (scene.data.walls ?? []).map((wl) => (
-            <WallMesh key={wl.id} plan={plan} wall={wl} />
+            <WallMesh
+              key={wl.id}
+              plan={plan}
+              wall={wl}
+              mode={
+                shellMode === "xray"
+                  ? "ghost"
+                  : shellMode === "cutaway"
+                    ? "knee"
+                    : "solid"
+              }
+            />
           ))}
         {/* Unlinked / non-rack tiles as ghost massing — a typed tile holds
             its ground before any object is linked ("build in advance"). */}
         {scene.data.tiles
-          .filter((t) => !t.is_zone && !t.rack)
+          .filter(
+            (t) =>
+              !t.is_zone && !t.rack && (!isolation || isolation.ids.has(t.id))
+          )
           .map((t) => (
             <TileGhostMesh key={`ghost-${t.id}`} plan={plan} tile={t} />
           ))}
@@ -372,10 +523,44 @@ export default function FloorScene3D({
         />
       </Canvas>
       {selTile && selection?.kind === "rack" && (
-        <RackHud tile={selTile} liveState={liveState} />
+        <RackHud
+          tile={selTile}
+          liveState={liveState}
+          focused={focusOn}
+          viewSide={viewSide}
+          onToggleFocus={() => setFocusOn((v) => !v)}
+          onFlip={flipView}
+          onIsolateRow={() => isolateRow(selTile)}
+        />
       )}
       {selTile && selDevice && selection?.kind === "device" && (
-        <DeviceHud tile={selTile} dev={selDevice} />
+        <DeviceHud
+          tile={selTile}
+          dev={selDevice}
+          focused={focusOn}
+          onToggleFocus={() => setFocusOn((v) => !v)}
+        />
+      )}
+      {/* Isolation pill — hidden racks must read as "isolated", never as
+          "my racks vanished". */}
+      {isolation && (
+        <div
+          className={`absolute ${connecting ? "bottom-16" : "bottom-4"} left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-popover/95 px-3 py-1.5 text-[12px] text-popover-foreground shadow-lg backdrop-blur`}
+        >
+          <span>
+            Isolated: <span className="font-medium">{isolation.label}</span> ·{" "}
+            <span className="num">{isolation.ids.size}</span> tile
+            {isolation.ids.size === 1 ? "" : "s"}
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2"
+            onClick={() => setIsolation(null)}
+          >
+            Show all · Esc
+          </Button>
+        </div>
       )}
       {selTile && selDevice && selection?.kind === "port" && (
         <PortHud
@@ -546,13 +731,41 @@ export default function FloorScene3D({
   )
 }
 
-/** Overlay card for the selected rack — name, live rollup, jump-off. */
+/** invalidate() escape hatch for DOM overlays: with `frameloop="demand"`, a
+ * HUD button that mutates a ref (fly-to) must kick a frame itself. */
+function InvalidatorBridge({
+  apiRef,
+}: {
+  apiRef: React.MutableRefObject<(() => void) | null>
+}) {
+  const invalidate = useThree((s) => s.invalidate)
+  useEffect(() => {
+    apiRef.current = invalidate
+    return () => {
+      apiRef.current = null
+    }
+  }, [apiRef, invalidate])
+  return null
+}
+
+/** Overlay card for the selected rack — name, live rollup, the operator's
+ * focus/isolate/flip controls, jump-off. */
 function RackHud({
   tile,
   liveState,
+  focused,
+  viewSide,
+  onToggleFocus,
+  onFlip,
+  onIsolateRow,
 }: {
   tile: SceneTile
   liveState: FloorPlanLiveState | null
+  focused: boolean
+  viewSide: "front" | "rear"
+  onToggleFocus: () => void
+  onFlip: () => void
+  onIsolateRow: () => void
 }) {
   const rack = tile.rack!
   const live = liveState?.tiles[tile.id]
@@ -578,7 +791,30 @@ function RackHud({
         )}
         <span className="text-[11px]">double-click to zoom in</span>
       </div>
-      <Button size="sm" variant="outline" asChild className="mt-2 h-7 w-full">
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        <Button
+          size="sm"
+          variant={focused ? "default" : "outline"}
+          className="h-7"
+          onClick={onToggleFocus}
+          title="Ghost everything except this rack (F)"
+        >
+          Focus · F
+        </Button>
+        <Button size="sm" variant="outline" className="h-7" onClick={onFlip}>
+          {viewSide === "front" ? "View rear" : "View front"}
+        </Button>
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        className="mt-1.5 h-7 w-full"
+        onClick={onIsolateRow}
+        title="Hide everything outside this rack's row (Esc restores)"
+      >
+        Isolate row
+      </Button>
+      <Button size="sm" variant="outline" asChild className="mt-1.5 h-7 w-full">
         <Link to="/racks/$id" params={{ id: rack.id }}>
           Open rack →
         </Link>
@@ -588,7 +824,17 @@ function RackHud({
 }
 
 /** Overlay card for a selected device — identity, status, where it sits. */
-function DeviceHud({ tile, dev }: { tile: SceneTile; dev: SceneDevice }) {
+function DeviceHud({
+  tile,
+  dev,
+  focused,
+  onToggleFocus,
+}: {
+  tile: SceneTile
+  dev: SceneDevice
+  focused: boolean
+  onToggleFocus: () => void
+}) {
   const rack = tile.rack!
   const row = (label: string, value: React.ReactNode) => (
     <div className="flex items-baseline justify-between gap-3">
@@ -648,7 +894,16 @@ function DeviceHud({ tile, dev }: { tile: SceneTile; dev: SceneDevice }) {
         {dev.serial_number &&
           row("Serial", <span className="font-mono">{dev.serial_number}</span>)}
       </div>
-      <Button size="sm" variant="outline" asChild className="mt-2 h-7 w-full">
+      <Button
+        size="sm"
+        variant={focused ? "default" : "outline"}
+        className="mt-2 h-7 w-full"
+        onClick={onToggleFocus}
+        title="Ghost everything except this device (F)"
+      >
+        Focus · F
+      </Button>
+      <Button size="sm" variant="outline" asChild className="mt-1.5 h-7 w-full">
         <Link to="/devices/$id" params={{ id: dev.id }}>
           Open device →
         </Link>

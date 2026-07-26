@@ -458,6 +458,44 @@ export function wallSegmentsWithOpenings(
   return out
 }
 
+/**
+ * Camera viewpoint that frames one face of a rack: orbit target at chest
+ * height on the cabinet, eye backed off along the face normal. The SAME math
+ * drives the double-click fly-to (front) and the HUD's front↔rear flip, so
+ * the two can never frame differently. Pure tuples — unit-testable.
+ */
+export function rackViewpoint(
+  plan: ScenePayload["plan"],
+  tile: SceneTile,
+  heightM: number,
+  side: "front" | "rear"
+): { target: [number, number, number]; position: [number, number, number] } {
+  const [cx, cz] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
+  const rotY = (-tile.orientation * Math.PI) / 180
+  // Local −Z is the rack's front; +Z its rear. Rotate about Y by rotY.
+  const sign = side === "front" ? -1 : 1
+  const dist = Math.max(heightM * 1.3, 2.2)
+  const dx = sign * Math.sin(rotY) * dist
+  const dz = sign * Math.cos(rotY) * dist
+  return {
+    target: [cx, heightM * 0.55, cz],
+    position: [cx + dx, heightM * 0.62, cz + dz],
+  }
+}
+
+/**
+ * Clamp wall boxes to a height cap — Cutaway mode's knee-high walls. Spans
+ * shrink to the cap; anything entirely above it (door lintels) disappears.
+ */
+export function capWallBoxes(boxes: WallBox[], capM: number): WallBox[] {
+  const out: WallBox[] = []
+  for (const b of boxes) {
+    if (b.y0 >= capM) continue
+    out.push(b.y1 <= capM ? b : { ...b, y1: capM })
+  }
+  return out
+}
+
 /** The door/passage gaps of a wall in plan view: one span per valid opening,
  * clamped exactly like wallSegmentsWithOpenings — so the 2D canvas's gaps and
  * the 3D boxes can never disagree about where a doorway sits. */

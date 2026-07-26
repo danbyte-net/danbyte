@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
 
@@ -11,12 +11,13 @@ import { DeviceMesh } from "./device-mesh"
 import { RackRuler } from "./rack-ruler"
 import { FaceLabel } from "./text-sprite"
 import {
+  RACK_BASE_M,
   cellToWorld,
   deviceYM,
   rackFootprintM,
-  type ScenePayload,
-  type SceneTile,
+  rackViewpoint,
 } from "./world"
+import type { ScenePayload, SceneTile } from "./world"
 
 /** Monitoring worst-status → beacon color (same semantics as the 2D rings). */
 const CHECK_COLOR: Record<string, string> = {
@@ -28,6 +29,16 @@ const CHECK_COLOR: Record<string, string> = {
 
 const FRAME_COLOR = "#18181b"
 const FRAME_SELECTED = "#0ea5e9"
+
+/** X-ray shell opacity — the tin fades, the gear stays the subject. */
+const XRAY_SHELL_OPACITY = 0.12
+/** A focus-ghosted rack (everything that is NOT the focused one). */
+const FOCUS_GHOST_OPACITY = 0.08
+
+/** The operator's shell control: closed cabinet, open frame, or see-through.
+ * ORTHOGONAL to the LOD tier — the mode owns opacity/what panels exist, the
+ * tier owns geometry detail. */
+export type ShellMode = "solid" | "cutaway" | "xray"
 
 export interface Sel {
   kind: "rack" | "device" | "port"
@@ -42,11 +53,13 @@ export interface Sel {
 /**
  * One rack cabinet at its tile position. Two LOD tiers:
  *  - far: a single frame box + name plate (cheap — scales to large rooms)
- *  - near: open shell + one clickable box per racked device at true U
- *    position/size, wearing its device-type face image
- * The `check` beacon bar on top wears the rack's worst monitoring status,
- * fed from the same /state/ poll the 2D canvas uses. Double-click flies the
- * camera to frame the cabinet's front.
+ *  - near: shell per `shellMode` + one clickable box per racked device at
+ *    true U position/size, wearing its device-type face image
+ * `shellMode` decides what the shell is (solid = sides + perforated doors,
+ * cutaway = open frame, xray = ghosted shell and ghosted devices except the
+ * selected one); `ghosted` dims the whole cabinet when the operator focuses
+ * a different one. The `check` beacon bar on top wears the rack's worst
+ * monitoring status. Double-click flies the camera to frame the front.
  */
 export function RackMesh({
   plan,
@@ -56,6 +69,9 @@ export function RackMesh({
   showUNumbers,
   showNames,
   showAirflow,
+  shellMode = "cutaway",
+  ghosted = false,
+  focusDeviceId = null,
   onSelect,
   onFlyTo,
   onLegend,
@@ -68,6 +84,11 @@ export function RackMesh({
   showNames: boolean
   /** Draw intake/exhaust cones per device (near tier only). */
   showAirflow?: boolean
+  shellMode?: ShellMode
+  /** Focus mode is on and THIS rack is not the focused one. */
+  ghosted?: boolean
+  /** Focus is on one device in THIS rack — its siblings ghost. */
+  focusDeviceId?: string | null
   onSelect: (sel: Sel) => void
   onFlyTo: (target: THREE.Vector3, position: THREE.Vector3) => void
   /** Forwarded to each device so the room's legend keys what's on screen. */
@@ -78,6 +99,7 @@ export function RackMesh({
   const [cx, cz] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
   const rotY = (-tile.orientation * Math.PI) / 180
   const [hovered, setHovered] = useState(false)
+  const xray = shellMode === "xray"
 
   // Manual LOD (NOT drei <Detailed>/THREE.LOD): the raycaster ignores
   // `visible`, so an invisible far-tier solid box would sit in front of the
@@ -113,24 +135,24 @@ export function RackMesh({
     selection?.tileId === tile.id && selection.kind === "rack"
   const frameColor = rackSelected
     ? FRAME_SELECTED
-    : hovered
+    : hovered && !ghosted
       ? "#3f3f46"
       : FRAME_COLOR
   const beacon = check ? (CHECK_COLOR[check] ?? null) : null
 
   const flyTo = () => {
-    // Frame the front face: out along the rack's local −Z (front), eye at a
-    // comfortable ~60% of cabinet height.
-    const front = new THREE.Vector3(0, 0, -1)
-      .applyEuler(new THREE.Euler(0, rotY, 0))
-      .multiplyScalar(Math.max(height * 1.3, 2.2))
-    const target = new THREE.Vector3(cx, height * 0.55, cz)
-    const position = target
-      .clone()
-      .add(front)
-      .setY(height * 0.62)
-    onFlyTo(target, position)
+    // Same math as the HUD's front↔rear flip (world.rackViewpoint), so
+    // double-click and flip can never frame the cabinet differently.
+    const vp = rackViewpoint(plan, tile, height, "front")
+    onFlyTo(
+      new THREE.Vector3(vp.target[0], vp.target[1], vp.target[2]),
+      new THREE.Vector3(vp.position[0], vp.position[1], vp.position[2])
+    )
   }
+
+  // Focus-ghosted cabinets drop their overlays (labels on a ghost read as
+  // noise); x-ray keeps them — it is still the room, just see-through.
+  const showOverlays = near && !ghosted
 
   return (
     <group
@@ -154,59 +176,83 @@ export function RackMesh({
         document.body.style.cursor = ""
       }}
     >
-      {/* LOD: open shell + clickable devices when the camera is close,
-          one solid box beyond — only ever ONE tier mounted (see above). */}
+      {/* LOD: shell + clickable devices when the camera is close, one solid
+          box beyond — only ever ONE tier mounted (see above). */}
       {near ? (
         <group>
-          <Frame w={width} h={height} d={depth} color={frameColor} shell />
-          {rack.devices.map((d) => (
-            <DeviceMesh
-              key={d.id}
-              rack={rack}
-              dev={d}
-              rackWidthM={width}
-              rackDepthM={depth}
-              selected={
-                (selection?.kind === "device" || selection?.kind === "port") &&
-                selection.deviceId === d.id
-              }
-              selectedPort={
-                selection?.kind === "port" && selection.deviceId === d.id
-                  ? selection.portName
-                  : null
-              }
-              showTexture
-              onLegend={onLegend}
-              onSelect={(deviceId) =>
-                onSelect({ kind: "device", tileId: tile.id, deviceId })
-              }
-              onSelectPort={(deviceId, marker, side) =>
-                onSelect({
-                  kind: "port",
-                  tileId: tile.id,
-                  deviceId,
-                  portName: marker.name,
-                  portKind: marker.kind,
-                  portSide: side,
-                })
-              }
-            />
-          ))}
+          <Shell
+            w={width}
+            h={height}
+            d={depth}
+            color={frameColor}
+            mode={shellMode}
+            ghosted={ghosted}
+          />
+          {rack.devices.map((d) => {
+            const isSel =
+              (selection?.kind === "device" || selection?.kind === "port") &&
+              selection.deviceId === d.id
+            // X-ray ghosts every device except the selected one; focus on a
+            // device ghosts its rack siblings; a focus-ghosted rack ghosts
+            // everything it holds.
+            const devGhost =
+              !isSel &&
+              (ghosted ||
+                xray ||
+                (focusDeviceId != null && d.id !== focusDeviceId))
+            return (
+              <DeviceMesh
+                key={d.id}
+                rack={rack}
+                dev={d}
+                rackWidthM={width}
+                rackDepthM={depth}
+                selected={isSel}
+                ghosted={devGhost}
+                selectedPort={
+                  selection?.kind === "port" && selection.deviceId === d.id
+                    ? selection.portName
+                    : null
+                }
+                showTexture={!devGhost}
+                onLegend={onLegend}
+                onSelect={(deviceId) =>
+                  onSelect({ kind: "device", tileId: tile.id, deviceId })
+                }
+                onSelectPort={(deviceId, marker, side) =>
+                  onSelect({
+                    kind: "port",
+                    tileId: tile.id,
+                    deviceId,
+                    portName: marker.name,
+                    portKind: marker.kind,
+                    portSide: side,
+                  })
+                }
+              />
+            )
+          })}
         </group>
       ) : (
-        <Frame w={width} h={height} d={depth} color={frameColor} />
+        <Frame
+          w={width}
+          h={height}
+          d={depth}
+          color={frameColor}
+          ghostOpacity={ghosted ? FOCUS_GHOST_OPACITY : xray ? 0.15 : 0}
+        />
       )}
       {/* Airflow cues — near tier only, like every overlay; the glyph layer
           reports its legend content and retracts it on unmount. */}
-      {near && showAirflow && (
+      {showOverlays && showAirflow && (
         <AirflowGlyphs rack={rack} legendKey={tile.id} onLegend={onLegend} />
       )}
       {/* Overlays — near tier only, and drawn FLAT on the front face so they
           stay anchored (billboards piled up in the aisle). */}
-      {near && showUNumbers && (
+      {showOverlays && showUNumbers && (
         <RackRuler rack={rack} width={width} depth={depth} />
       )}
-      {near &&
+      {showOverlays &&
         showNames &&
         rack.devices.map((dev) => {
           const { y, h } = deviceYM(rack, dev)
@@ -226,7 +272,7 @@ export function RackMesh({
             />
           )
         })}
-      {beacon && (
+      {beacon && !ghosted && (
         // raycast disabled — decoration must never steal the rack's clicks.
         <mesh position={[0, height + 0.03, 0]} raycast={() => null}>
           <boxGeometry args={[width * 0.6, 0.05, 0.06]} />
@@ -239,60 +285,204 @@ export function RackMesh({
       )}
       {/* Rack name plate — flat on the front, above the top U, facing the
           aisle. Flat (not billboard) so neighbours don't overlap. */}
-      <FaceLabel
-        text={tile.label || rack.name}
-        heightM={0.11}
-        align="center"
-        position={[0, height + 0.09, -depth / 2 - 0.01]}
-      />
+      {!ghosted && (
+        <FaceLabel
+          text={tile.label || rack.name}
+          heightM={0.11}
+          align="center"
+          position={[0, height + 0.09, -depth / 2 - 0.01]}
+        />
+      )}
     </group>
   )
 }
 
-/** The cabinet body. `shell` mode hollows the front/rear (open faces) by
- * drawing side panels + top/bottom instead of one solid box. */
+/** Far-tier cabinet body: one solid box (ghosted in x-ray / focus). */
 function Frame({
   w,
   h,
   d,
   color,
-  shell = false,
+  ghostOpacity = 0,
 }: {
   w: number
   h: number
   d: number
   color: string
-  shell?: boolean
+  ghostOpacity?: number
 }) {
-  if (!shell) {
-    return (
-      <mesh position={[0, h / 2, 0]}>
-        <boxGeometry args={[w, h, d]} />
+  return (
+    <mesh position={[0, h / 2, 0]}>
+      <boxGeometry args={[w, h, d]} />
+      {ghostOpacity > 0 ? (
+        <meshStandardMaterial
+          color={color}
+          roughness={0.85}
+          transparent
+          opacity={ghostOpacity}
+          depthWrite={false}
+        />
+      ) : (
         <meshStandardMaterial color={color} roughness={0.85} />
-      </mesh>
-    )
-  }
+      )}
+    </mesh>
+  )
+}
+
+/**
+ * Near-tier cabinet shell, per mode:
+ *  - solid:   corner posts + top/base + side panels + perforated doors
+ *  - cutaway: corner posts + top/base (open frame — see through the row)
+ *  - xray:    the solid geometry minus doors, every panel ghosted
+ * Ghosting is the room's one transparency convention: `transparent` +
+ * `depthWrite={false}` (raised-floor peek uses the same).
+ */
+function Shell({
+  w,
+  h,
+  d,
+  color,
+  mode,
+  ghosted,
+}: {
+  w: number
+  h: number
+  d: number
+  color: string
+  mode: ShellMode
+  ghosted: boolean
+}) {
   const t = 0.03 // panel thickness
+  const post = 0.05
+  const ghost = ghosted || mode === "xray"
+  const opacity = ghosted ? FOCUS_GHOST_OPACITY : XRAY_SHELL_OPACITY
+  const panel = (
+    key: string,
+    pos: [number, number, number],
+    size: [number, number, number]
+  ) => (
+    <mesh key={key} position={pos}>
+      <boxGeometry args={size} />
+      {ghost ? (
+        <meshStandardMaterial
+          color={color}
+          roughness={0.85}
+          transparent
+          opacity={opacity}
+          depthWrite={false}
+        />
+      ) : (
+        <meshStandardMaterial color={color} roughness={0.85} />
+      )}
+    </mesh>
+  )
+  const sides = mode !== "cutaway"
   return (
     <group>
-      {/* left / right side panels */}
-      <mesh position={[-w / 2 + t / 2, h / 2, 0]}>
-        <boxGeometry args={[t, h, d]} />
-        <meshStandardMaterial color={color} roughness={0.85} />
-      </mesh>
-      <mesh position={[w / 2 - t / 2, h / 2, 0]}>
-        <boxGeometry args={[t, h, d]} />
-        <meshStandardMaterial color={color} roughness={0.85} />
-      </mesh>
+      {/* Four corner posts — the frame that keeps a cutaway reading as a
+          cabinet rather than floating plates. */}
+      {panel(
+        "p1",
+        [-w / 2 + post / 2, h / 2, -d / 2 + post / 2],
+        [post, h, post]
+      )}
+      {panel(
+        "p2",
+        [w / 2 - post / 2, h / 2, -d / 2 + post / 2],
+        [post, h, post]
+      )}
+      {panel(
+        "p3",
+        [-w / 2 + post / 2, h / 2, d / 2 - post / 2],
+        [post, h, post]
+      )}
+      {panel(
+        "p4",
+        [w / 2 - post / 2, h / 2, d / 2 - post / 2],
+        [post, h, post]
+      )}
       {/* top + base */}
-      <mesh position={[0, h - t / 2, 0]}>
-        <boxGeometry args={[w, t, d]} />
-        <meshStandardMaterial color={color} roughness={0.85} />
-      </mesh>
-      <mesh position={[0, 0.05, 0]}>
-        <boxGeometry args={[w, 0.1, d]} />
-        <meshStandardMaterial color={color} roughness={0.85} />
-      </mesh>
+      {panel("top", [0, h - t / 2, 0], [w, t, d])}
+      {panel("base", [0, RACK_BASE_M / 2, 0], [w, RACK_BASE_M, d])}
+      {/* side panels — solid and x-ray keep the silhouette; cutaway drops
+          them so a row reads through from the side. */}
+      {sides && panel("left", [-w / 2 + t / 2, h / 2, 0], [t, h, d])}
+      {sides && panel("right", [w / 2 - t / 2, h / 2, 0], [t, h, d])}
+      {/* Perforated front + rear doors — solid mode only: the closed
+          cabinet, with something real to take off in the other modes. */}
+      {mode === "solid" && (
+        <>
+          <Door w={w} h={h} z={-d / 2 - 0.008} ghosted={ghosted} />
+          <Door w={w} h={h} z={d / 2 + 0.008} ghosted={ghosted} />
+        </>
+      )}
     </group>
+  )
+}
+
+// One tiny canvas of staggered perforation holes, shared by every door (the
+// clone per door only re-uploads the repeat, not the image). Module-level —
+// racks come and go, the pattern never changes. Canvas-drawn, so it is
+// CSP/airgap-safe like every other texture in this room.
+let perfBase: THREE.CanvasTexture | null = null
+function perforationTexture(): THREE.CanvasTexture {
+  if (perfBase) return perfBase
+  const c = document.createElement("canvas")
+  c.width = c.height = 64
+  const g = c.getContext("2d")!
+  g.fillStyle = "#1f1f23"
+  g.fillRect(0, 0, 64, 64)
+  g.fillStyle = "#0b0b0d"
+  for (let row = 0; row < 8; row++)
+    for (let col = 0; col < 8; col++) {
+      g.beginPath()
+      g.arc(col * 8 + 4 + (row % 2 ? 2 : 0), row * 8 + 4, 2.4, 0, Math.PI * 2)
+      g.fill()
+    }
+  perfBase = new THREE.CanvasTexture(c)
+  perfBase.wrapS = perfBase.wrapT = THREE.RepeatWrapping
+  perfBase.colorSpace = THREE.SRGBColorSpace
+  return perfBase
+}
+
+/** One mesh door: a thin box over the rail opening, wearing the perforation
+ * pattern at a fixed ~160 mm repeat so hole size stays physical. */
+function Door({
+  w,
+  h,
+  z,
+  ghosted,
+}: {
+  w: number
+  h: number
+  z: number
+  ghosted: boolean
+}) {
+  const doorH = h - RACK_BASE_M
+  const tex = useMemo(() => {
+    const map = perforationTexture().clone()
+    map.needsUpdate = true
+    map.repeat.set(
+      Math.max(1, Math.round(w / 0.16)),
+      Math.max(1, Math.round(doorH / 0.16))
+    )
+    return map
+  }, [w, doorH])
+  useEffect(() => () => tex.dispose(), [tex])
+  return (
+    <mesh position={[0, RACK_BASE_M + doorH / 2, z]}>
+      <boxGeometry args={[w, doorH, 0.015]} />
+      {ghosted ? (
+        <meshStandardMaterial
+          map={tex}
+          roughness={0.7}
+          transparent
+          opacity={FOCUS_GHOST_OPACITY}
+          depthWrite={false}
+        />
+      ) : (
+        <meshStandardMaterial map={tex} roughness={0.7} />
+      )}
+    </mesh>
   )
 }

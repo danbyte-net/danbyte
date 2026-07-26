@@ -2,15 +2,18 @@ import { useMemo } from "react"
 
 import {
   WALL_THICKNESS_M,
+  capWallBoxes,
   cellToWorld,
   mm,
   wallSegmentsWithOpenings,
-  type ScenePayload,
-  type SceneWall,
 } from "./world"
+import type { ScenePayload, SceneWall } from "./world"
 
 /** Neutral zinc, the rack-frame family — walls are structure, not signal. */
 const WALL_COLOR = "#27272a"
+
+/** Cutaway mode's knee-high walls: the room's bounds without the box. */
+const KNEE_M = 0.6
 
 /**
  * One wall polyline as solid boxes with door gaps and lintels — the 3D read
@@ -18,20 +21,28 @@ const WALL_COLOR = "#27272a"
  * in 3D): no pointer handlers, nothing raycastable, no animation, so the
  * demand frameloop never ticks for a wall. Spans extend half a thickness at
  * each end to close the corner joints of a multi-segment run.
+ *
+ * `mode` follows the shell control: full height when solid, capped at knee
+ * height in cutaway (bounds stay legible, the room stops being a box), and
+ * ghosted in x-ray — the same transparent + depthWrite=false convention the
+ * rest of the room uses.
  */
 export function WallMesh({
   plan,
   wall,
+  mode = "solid",
 }: {
   plan: ScenePayload["plan"]
   wall: SceneWall
+  mode?: "solid" | "knee" | "ghost"
 }) {
   const heightM = mm(wall.height_mm ?? plan.ceiling_mm)
-  const boxes = useMemo(
-    () => wallSegmentsWithOpenings(wall.points, wall.openings ?? [], heightM),
-    [wall.points, wall.openings, heightM]
-  )
+  const boxes = useMemo(() => {
+    const all = wallSegmentsWithOpenings(wall.points, wall.openings, heightM)
+    return mode === "knee" ? capWallBoxes(all, KNEE_M) : all
+  }, [wall.points, wall.openings, heightM, mode])
   const tint = wall.color || WALL_COLOR
+  const ghost = mode === "ghost"
   return (
     <group>
       {boxes.map((b, i) => {
@@ -50,7 +61,17 @@ export function WallMesh({
             <boxGeometry
               args={[len + WALL_THICKNESS_M, b.y1 - b.y0, WALL_THICKNESS_M]}
             />
-            <meshStandardMaterial color={tint} roughness={0.92} />
+            {ghost ? (
+              <meshStandardMaterial
+                color={tint}
+                roughness={0.92}
+                transparent
+                opacity={0.15}
+                depthWrite={false}
+              />
+            ) : (
+              <meshStandardMaterial color={tint} roughness={0.92} />
+            )}
           </mesh>
         )
       })}
