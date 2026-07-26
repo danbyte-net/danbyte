@@ -174,14 +174,18 @@ class Command(BaseCommand):
         Cable.objects.filter(
             tenant=self.t, label__startswith="DCT"
         ).delete()
-        FloorPlan.objects.filter(tenant=self.t, name=PLAN_NAME).delete()
+        # Keep the FloorPlan, Location and Site ROWS so the plan's URL is
+        # stable across re-seeds — deleting and recreating them minted a fresh
+        # id every time and 404'd whatever tab was open on the old one. Clear
+        # only the contents; `_plan`'s update_or_create then reuses the row.
+        for plan in FloorPlan.objects.filter(tenant=self.t, name=PLAN_NAME):
+            plan.tiles.all().delete()
+            plan.trays.all().delete()
         Device.objects.filter(site=site).delete()
         PowerFeed.objects.filter(power_panel__site=site).delete()
         PowerPanel.objects.filter(site=site).delete()
         Rack.objects.filter(site=site).delete()
-        Location.objects.filter(site=site).delete()
-        site.delete()
-        self.stdout.write("wiped the previous DC-TEST hall")
+        self.stdout.write("cleared the previous DC-TEST hall (URL preserved)")
 
     # ── catalog + place ──────────────────────────────────────────────────
     def _place(self):

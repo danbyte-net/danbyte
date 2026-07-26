@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useFrame, useThree } from "@react-three/fiber"
 import { Line } from "@react-three/drei"
 import * as THREE from "three"
+
+import { isCameraMoving } from "./camera-motion"
 import type { Line2 } from "three-stdlib"
 import { useQuery } from "@tanstack/react-query"
 
@@ -357,34 +359,60 @@ export function CablesLayer({
       )
   }, [paths.data, scene, sites])
 
+  // Each run is its own Line2/tube draw call, so a big hall is well over a
+  // thousand per frame — the dominant cost while orbiting. Hide the bulk layer
+  // WHILE THE CAMERA MOVES (large plans only) and show it again on settle: you
+  // can't read an individual cable mid-orbit anyway. group.visible skips the
+  // draw without unmounting, so there's nothing to rebuild when it returns.
+  // The selected/traced run is exempt — it stays up so a trace never blinks.
+  const group = useRef<THREE.Group>(null)
+  const shown = useRef(true)
+  const invalidate = useThree((s) => s.invalidate)
+  const cull = runs.length > MOTION_CULL_LIMIT
+  useFrame(() => {
+    if (!cull) return
+    const want = !isCameraMoving()
+    if (want !== shown.current && group.current) {
+      shown.current = want
+      group.current.visible = want
+      invalidate()
+    }
+  })
+
   return (
     <>
-      {runs.map(({ cp, points }) =>
-        cp.id === selectedId ? (
-          <MarchingLine
-            key={cp.id}
-            points={points}
-            color={cp.color || "#0ea5e9"}
-          />
-        ) : runs.length <= TUBE_LIMIT ? (
-          <CableTube
-            key={cp.id}
-            points={points}
-            color={cp.color || CABLE_FALLBACK}
-            radius={cableRadiusM(cp.type)}
-            xray={xray}
-            onClick={() => onSelect(cp.id)}
-          />
-        ) : (
-          <CableLine
-            key={cp.id}
-            points={points}
-            color={cp.color || CABLE_FALLBACK}
-            xray={xray}
-            onClick={() => onSelect(cp.id)}
-          />
-        )
-      )}
+      {selectedId != null &&
+        runs
+          .filter((r) => r.cp.id === selectedId)
+          .map(({ cp, points }) => (
+            <MarchingLine
+              key={cp.id}
+              points={points}
+              color={cp.color || "#0ea5e9"}
+            />
+          ))}
+      <group ref={group}>
+        {runs.map(({ cp, points }) =>
+          cp.id === selectedId ? null : runs.length <= TUBE_LIMIT ? (
+            <CableTube
+              key={cp.id}
+              points={points}
+              color={cp.color || CABLE_FALLBACK}
+              radius={cableRadiusM(cp.type)}
+              xray={xray}
+              onClick={() => onSelect(cp.id)}
+            />
+          ) : (
+            <CableLine
+              key={cp.id}
+              points={points}
+              color={cp.color || CABLE_FALLBACK}
+              xray={xray}
+              onClick={() => onSelect(cp.id)}
+            />
+          )
+        )}
+      </group>
     </>
   )
 }
@@ -393,6 +421,10 @@ export function CablesLayer({
  * thousand-cable hall is a loom problem (roadmap P8 follow-up), not a
  * per-cable-mesh problem. */
 const TUBE_LIMIT = 200
+
+/** Above this run count, the bulk cable layer hides while the camera moves —
+ * each run is its own draw call, so a full hall is the per-frame bottleneck. */
+const MOTION_CULL_LIMIT = 300
 
 /**
  * One cable as REAL geometry: a tube with a millimetre jacket radius by kind

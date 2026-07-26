@@ -515,8 +515,13 @@ function OutlineShell({ w, h, d }: { w: number; h: number; d: number }) {
   )
 }
 
-/** Corner-post size and how far posts sit in from the outer planes. */
-const POST = 0.05
+/** Corner-post size and how far posts sit in from the outer planes.
+ *
+ * Slim on purpose (was 50 mm): a fat front post stood over the outer ~20 mm
+ * of every faceplate, so in cutaway and x-ray the "big pillars" hid the edges
+ * of the gear. A real 19" upright is a thin channel; 18 mm reads as a frame
+ * without covering a single port. */
+const POST = 0.018
 const POST_INSET = 0.006
 /**
  * Top/base overhang past the panel planes — on the DEPTH axis only.
