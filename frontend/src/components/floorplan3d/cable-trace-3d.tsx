@@ -131,12 +131,22 @@ function portEndRun(
     }
   }
 
-  const side = dev.face === "rear" ? "rear" : "front"
-  const markers = dev.image_ports?.[side] ?? []
-  // Markers carry template names; terminations carry rendered ones.
-  const m = markers.find(
-    (mk) => renderTemplateName(mk.name, null) === point.port
-  )
+  // Search BOTH panels. The port's own panel decides where the cable lands,
+  // not the face the chassis is bolted to — a front-mounted server has its
+  // NICs and PSU inlets on its REAR, which is the whole reason hot aisles are
+  // where the cabling lives. Keying this off dev.face sent every run to the
+  // cold aisle regardless of where the port physically is.
+  const find = (panel: "front" | "rear") =>
+    (dev.image_ports?.[panel] ?? []).find(
+      (mk) => renderTemplateName(mk.name, null) === point.port
+    )
+  const onFront = find("front")
+  const m = onFront ?? find("rear")
+  // Which panel we resolved it to. With no marker at all we cannot know, so
+  // fall back to the REAR for full-depth gear: that is where a rack server's
+  // data and power land. (Carrying the port's side in the scene payload would
+  // make this data-driven instead of a convention — see the note in the PR.)
+  const portRear = onFront ? false : m != null || dev.is_full_depth
   const box = deviceBoxM(rack, dev, width, depth)
   // A matched marker gives the exact port. WITHOUT one, anchor on the middle
   // of the device's exposed FACE — not nothing. Returning null here sent the
@@ -146,13 +156,11 @@ function portEndRun(
   // type with no markers at all) still has a known U and a known face, and
   // landing on the right unit's face is far more use than a hole in the middle.
   const [lx, ly, lz] = m
-    ? portLocalM(box, m)
+    ? portLocalM(box, m, portRear)
     : [
         box.dx,
         box.y + box.h / 2,
-        box.mountedRear
-          ? box.dz + box.dd / 2 + 0.004
-          : box.dz - box.dd / 2 - 0.004,
+        portRear ? box.dz + box.dd / 2 + 0.004 : box.dz - box.dd / 2 - 0.004,
       ]
 
   const world = (x: number, y: number, z: number): Vec3 =>
@@ -161,7 +169,7 @@ function portEndRun(
   // Stub OUT of the face (local ±Z), then sweep sideways at stub depth —
   // clear of every faceplate — to the nearest cabinet edge, and rise there:
   // the front-corner channel, like a vertical manager bolted to the rail.
-  const outZ = box.mountedRear ? 0.12 : -0.12
+  const outZ = portRear ? 0.12 : -0.12
   const chanX = (lx >= 0 ? 1 : -1) * (width / 2 + 0.04)
   const chanZ = lz + outZ * 0.75 // riser tucks a hair closer to the face
   return {

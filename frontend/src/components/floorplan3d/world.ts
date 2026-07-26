@@ -320,12 +320,18 @@ export function deviceBoxM(
  */
 export function portLocalM(
   box: ReturnType<typeof deviceBoxM>,
-  m: { x: number; y: number }
+  m: { x: number; y: number },
+  /** Which of the device's own panels the marker is on. Defaults to the mount
+   * face, which is what callers drawing the visible faceplate want; the cable
+   * layer passes the port's real panel, since a front-mounted server's ports
+   * are on its rear. */
+  onRear?: boolean
 ): [number, number, number] {
   const mx = (m.x - 0.5) * box.dw
   const my = (0.5 - m.y) * box.boxH
   // Front faces −Z via a π turn about Y (mirrors X); rear faces +Z unturned.
-  return box.mountedRear
+  const rear = onRear ?? box.mountedRear
+  return rear
     ? [box.dx + mx, box.y + box.h / 2 + my, box.dz + box.dd / 2 + 0.004]
     : [box.dx - mx, box.y + box.h / 2 + my, box.dz - box.dd / 2 - 0.004]
 }
