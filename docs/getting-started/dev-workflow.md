@@ -25,6 +25,11 @@ make backend-restart
 # Re-seed demo data after a model change
 .venv/bin/python manage.py seed_demo --wipe
 
+# Build the DC-TEST hall for exercising the 3D room view: ten rows of ten
+# cabinets in hot/cold pairs, A/B vertical PDUs stamped from a rack type,
+# photo-faceplate gear, ~1100 cables, power feeds and overhead tray.
+.venv/bin/python manage.py seed_dc_test --wipe
+
 # Tail backend logs
 make backend-logs
 
