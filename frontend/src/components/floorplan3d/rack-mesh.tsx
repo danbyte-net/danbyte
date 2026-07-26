@@ -30,14 +30,16 @@ const CHECK_COLOR: Record<string, string> = {
 const FRAME_COLOR = "#18181b"
 const FRAME_SELECTED = "#0ea5e9"
 
-/** X-ray shell opacity — the tin fades, the gear stays the subject. */
-const XRAY_SHELL_OPACITY = 0.12
 /** A focus-ghosted rack (everything that is NOT the focused one). */
 const FOCUS_GHOST_OPACITY = 0.08
 
+/** Painted rack steel — slight sheen so the studio environment reads on it. */
+const STEEL_ROUGHNESS = 0.6
+const STEEL_METALNESS = 0.35
+
 /** The operator's shell control: closed cabinet, open frame, or see-through.
- * ORTHOGONAL to the LOD tier — the mode owns opacity/what panels exist, the
- * tier owns geometry detail. */
+ * ORTHOGONAL to the LOD tier — the mode owns what panels exist, the tier
+ * owns geometry detail. */
 export type ShellMode = "solid" | "cutaway" | "xray"
 
 export interface Sel {
@@ -55,11 +57,16 @@ export interface Sel {
  *  - far: a single frame box + name plate (cheap — scales to large rooms)
  *  - near: shell per `shellMode` + one clickable box per racked device at
  *    true U position/size, wearing its device-type face image
- * `shellMode` decides what the shell is (solid = sides + perforated doors,
- * cutaway = open frame, xray = ghosted shell and ghosted devices except the
- * selected one); `ghosted` dims the whole cabinet when the operator focuses
- * a different one. The `check` beacon bar on top wears the rack's worst
- * monitoring status. Double-click flies the camera to frame the front.
+ *
+ * Shell modes: solid = side panels + smoked-glass doors; cutaway = open
+ * post frame; x-ray = the open frame up close and a bare cabinet OUTLINE at
+ * distance, with devices ghosted except the selected one. Lines and solid
+ * frames on purpose — the first x-ray ghosted every shell box and the
+ * per-frame transparency sort flickered like a broken sign.
+ *
+ * `ghosted` (focus on another cabinet) collapses the WHOLE rack to one
+ * low-opacity box: full ghost geometry across a hall churned the same sort
+ * and fetched textures nobody could see. Still clickable to move the focus.
  */
 export function RackMesh({
   plan,
@@ -151,7 +158,7 @@ export function RackMesh({
   }
 
   // Focus-ghosted cabinets drop their overlays (labels on a ghost read as
-  // noise); x-ray keeps them — it is still the room, just see-through.
+  // noise); x-ray keeps them — it is still the room, just opened up.
   const showOverlays = near && !ghosted
 
   return (
@@ -176,30 +183,35 @@ export function RackMesh({
         document.body.style.cursor = ""
       }}
     >
-      {/* LOD: shell + clickable devices when the camera is close, one solid
-          box beyond — only ever ONE tier mounted (see above). */}
-      {near ? (
+      {ghosted ? (
+        // Focus context: one ghost box, no devices, no overlays.
+        <Frame
+          w={width}
+          h={height}
+          d={depth}
+          color={frameColor}
+          ghostOpacity={FOCUS_GHOST_OPACITY}
+        />
+      ) : near ? (
         <group>
+          {/* X-ray up close = the open cutaway frame; the see-through story
+              is told by the ghosted DEVICES, not by transparent tin. */}
           <Shell
             w={width}
             h={height}
             d={depth}
             color={frameColor}
-            mode={shellMode}
-            ghosted={ghosted}
+            mode={xray ? "cutaway" : shellMode}
           />
           {rack.devices.map((d) => {
             const isSel =
               (selection?.kind === "device" || selection?.kind === "port") &&
               selection.deviceId === d.id
             // X-ray ghosts every device except the selected one; focus on a
-            // device ghosts its rack siblings; a focus-ghosted rack ghosts
-            // everything it holds.
+            // device ghosts its rack siblings.
             const devGhost =
               !isSel &&
-              (ghosted ||
-                xray ||
-                (focusDeviceId != null && d.id !== focusDeviceId))
+              (xray || (focusDeviceId != null && d.id !== focusDeviceId))
             return (
               <DeviceMesh
                 key={d.id}
@@ -233,14 +245,10 @@ export function RackMesh({
             )
           })}
         </group>
+      ) : xray ? (
+        <OutlineShell w={width} h={height} d={depth} />
       ) : (
-        <Frame
-          w={width}
-          h={height}
-          d={depth}
-          color={frameColor}
-          ghostOpacity={ghosted ? FOCUS_GHOST_OPACITY : xray ? 0.15 : 0}
-        />
+        <Frame w={width} h={height} d={depth} color={frameColor} />
       )}
       {/* Airflow cues — near tier only, like every overlay; the glyph layer
           reports its legend content and retracts it on unmount. */}
@@ -297,11 +305,7 @@ export function RackMesh({
   )
 }
 
-/** Painted rack steel — slight sheen so the studio environment reads on it. */
-const STEEL_ROUGHNESS = 0.6
-const STEEL_METALNESS = 0.35
-
-/** Far-tier cabinet body: one solid box (ghosted in x-ray / focus). */
+/** Far-tier cabinet body: one solid box (ghosted while focus is elsewhere). */
 function Frame({
   w,
   h,
@@ -342,12 +346,48 @@ function Frame({
 }
 
 /**
- * Near-tier cabinet shell, per mode:
- *  - solid:   corner posts + top/base + side panels + perforated doors
- *  - cutaway: corner posts + top/base (open frame — see through the row)
- *  - xray:    the solid geometry minus doors, every panel ghosted
- * Ghosting is the room's one transparency convention: `transparent` +
- * `depthWrite={false}` (raised-floor peek uses the same).
+ * Far-tier x-ray: the cabinet as a bare edge outline. Lines have no
+ * transparency-sort order to lose, which is the whole reason this replaced
+ * ghost boxes. The invisible box underneath keeps the cabinet clickable
+ * (colorWrite/depthWrite off — raycastable, never drawn).
+ */
+function OutlineShell({ w, h, d }: { w: number; h: number; d: number }) {
+  const edges = useMemo(
+    () => new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d)),
+    [w, h, d]
+  )
+  useEffect(() => () => edges.dispose(), [edges])
+  return (
+    <group>
+      <mesh position={[0, h / 2, 0]}>
+        <boxGeometry args={[w, h, d]} />
+        <meshBasicMaterial colorWrite={false} depthWrite={false} />
+      </mesh>
+      <lineSegments
+        geometry={edges}
+        position={[0, h / 2, 0]}
+        raycast={() => null}
+      >
+        <lineBasicMaterial color="#71717a" transparent opacity={0.9} />
+      </lineSegments>
+    </group>
+  )
+}
+
+/** Corner-post size and how far posts sit in from the outer planes. */
+const POST = 0.05
+const POST_INSET = 0.006
+/** Top/base overhang past the panel planes. */
+const CAP_LIP = 0.012
+
+/**
+ * Near-tier cabinet shell:
+ *  - cutaway: overhung top + plinth on four inset corner posts
+ *  - solid:   overhung top + plinth, side panels, smoked-glass doors
+ * Every piece is strictly inset or outset from its neighbours — the first
+ * version ended posts, panels and caps on the SAME planes, which was
+ * invisible under flat light and shimmered the moment shadows, AO and the
+ * dynamic near-plane landed (classic coplanar z-fighting).
  */
 function Shell({
   w,
@@ -355,152 +395,87 @@ function Shell({
   d,
   color,
   mode,
-  ghosted,
 }: {
   w: number
   h: number
   d: number
   color: string
-  mode: ShellMode
-  ghosted: boolean
+  mode: "solid" | "cutaway"
 }) {
   const t = 0.03 // panel thickness
-  const post = 0.05
-  const ghost = ghosted || mode === "xray"
-  const opacity = ghosted ? FOCUS_GHOST_OPACITY : XRAY_SHELL_OPACITY
-  const panel = (
+  const steel = (
     key: string,
     pos: [number, number, number],
     size: [number, number, number]
   ) => (
-    <mesh key={key} position={pos} castShadow={!ghost} receiveShadow={!ghost}>
+    <mesh key={key} position={pos} castShadow receiveShadow>
       <boxGeometry args={size} />
-      {ghost ? (
-        <meshStandardMaterial
-          color={color}
-          roughness={STEEL_ROUGHNESS}
-          metalness={STEEL_METALNESS}
-          transparent
-          opacity={opacity}
-          depthWrite={false}
-        />
-      ) : (
-        <meshStandardMaterial
-          color={color}
-          roughness={STEEL_ROUGHNESS}
-          metalness={STEEL_METALNESS}
-        />
-      )}
+      <meshStandardMaterial
+        color={color}
+        roughness={STEEL_ROUGHNESS}
+        metalness={STEEL_METALNESS}
+      />
     </mesh>
   )
-  const sides = mode !== "cutaway"
+  const px = w / 2 - POST / 2 - POST_INSET
+  const pz = d / 2 - POST / 2 - POST_INSET
+  const sideH = h - RACK_BASE_M - t
   return (
     <group>
-      {/* Four corner posts — the frame that keeps a cutaway reading as a
-          cabinet rather than floating plates. */}
-      {panel(
-        "p1",
-        [-w / 2 + post / 2, h / 2, -d / 2 + post / 2],
-        [post, h, post]
+      {/* Top cap + plinth overhang everything below them. */}
+      {steel("top", [0, h - t / 2, 0], [w + CAP_LIP, t, d + CAP_LIP])}
+      {steel(
+        "base",
+        [0, RACK_BASE_M / 2, 0],
+        [w + CAP_LIP, RACK_BASE_M, d + CAP_LIP]
       )}
-      {panel(
-        "p2",
-        [w / 2 - post / 2, h / 2, -d / 2 + post / 2],
-        [post, h, post]
-      )}
-      {panel(
-        "p3",
-        [-w / 2 + post / 2, h / 2, d / 2 - post / 2],
-        [post, h, post]
-      )}
-      {panel(
-        "p4",
-        [w / 2 - post / 2, h / 2, d / 2 - post / 2],
-        [post, h, post]
-      )}
-      {/* top + base */}
-      {panel("top", [0, h - t / 2, 0], [w, t, d])}
-      {panel("base", [0, RACK_BASE_M / 2, 0], [w, RACK_BASE_M, d])}
-      {/* side panels — solid and x-ray keep the silhouette; cutaway drops
-          them so a row reads through from the side. */}
-      {sides && panel("left", [-w / 2 + t / 2, h / 2, 0], [t, h, d])}
-      {sides && panel("right", [w / 2 - t / 2, h / 2, 0], [t, h, d])}
-      {/* Perforated front + rear doors — solid mode only: the closed
-          cabinet, with something real to take off in the other modes. */}
-      {mode === "solid" && (
+      {mode === "cutaway" ? (
         <>
-          <Door w={w} h={h} z={-d / 2 - 0.008} ghosted={ghosted} />
-          <Door w={w} h={h} z={d / 2 + 0.008} ghosted={ghosted} />
+          {steel("p1", [-px, h / 2, -pz], [POST, h - t, POST])}
+          {steel("p2", [px, h / 2, -pz], [POST, h - t, POST])}
+          {steel("p3", [-px, h / 2, pz], [POST, h - t, POST])}
+          {steel("p4", [px, h / 2, pz], [POST, h - t, POST])}
+        </>
+      ) : (
+        <>
+          {steel(
+            "left",
+            [-w / 2 + t / 2, RACK_BASE_M + sideH / 2, 0],
+            [t, sideH, d]
+          )}
+          {steel(
+            "right",
+            [w / 2 - t / 2, RACK_BASE_M + sideH / 2, 0],
+            [t, sideH, d]
+          )}
+          <GlassDoor w={w} h={h} z={-(d / 2 + 0.006)} />
+          <GlassDoor w={w} h={h} z={d / 2 + 0.006} />
         </>
       )}
     </group>
   )
 }
 
-// One tiny canvas of staggered perforation holes, shared by every door (the
-// clone per door only re-uploads the repeat, not the image). Module-level —
-// racks come and go, the pattern never changes. Canvas-drawn, so it is
-// CSP/airgap-safe like every other texture in this room.
-let perfBase: THREE.CanvasTexture | null = null
-function perforationTexture(): THREE.CanvasTexture {
-  if (perfBase) return perfBase
-  const c = document.createElement("canvas")
-  c.width = c.height = 64
-  const g = c.getContext("2d")!
-  g.fillStyle = "#1f1f23"
-  g.fillRect(0, 0, 64, 64)
-  g.fillStyle = "#0b0b0d"
-  for (let row = 0; row < 8; row++)
-    for (let col = 0; col < 8; col++) {
-      g.beginPath()
-      g.arc(col * 8 + 4 + (row % 2 ? 2 : 0), row * 8 + 4, 2.4, 0, Math.PI * 2)
-      g.fill()
-    }
-  perfBase = new THREE.CanvasTexture(c)
-  perfBase.wrapS = perfBase.wrapT = THREE.RepeatWrapping
-  perfBase.colorSpace = THREE.SRGBColorSpace
-  return perfBase
-}
+/** Door clearance under the top cap (panel thickness plus a hair). */
+const DOOR_HEADROOM = 0.034
 
-/** One mesh door: a thin box over the rail opening, wearing the perforation
- * pattern at a fixed ~160 mm repeat so hole size stays physical. */
-function Door({
-  w,
-  h,
-  z,
-  ghosted,
-}: {
-  w: number
-  h: number
-  z: number
-  ghosted: boolean
-}) {
-  const doorH = h - RACK_BASE_M
-  const tex = useMemo(() => {
-    const map = perforationTexture().clone()
-    map.needsUpdate = true
-    map.repeat.set(
-      Math.max(1, Math.round(w / 0.16)),
-      Math.max(1, Math.round(doorH / 0.16))
-    )
-    return map
-  }, [w, doorH])
-  useEffect(() => () => tex.dispose(), [tex])
+/**
+ * Solid mode's door: one smoked-glass pane — gear silhouettes read through,
+ * and no busy texture. Casts no shadow (a solid shadow from glass lies).
+ */
+function GlassDoor({ w, h, z }: { w: number; h: number; z: number }) {
+  const doorH = h - RACK_BASE_M - DOOR_HEADROOM
   return (
-    <mesh position={[0, RACK_BASE_M + doorH / 2, z]} castShadow={!ghosted}>
-      <boxGeometry args={[w, doorH, 0.015]} />
-      {ghosted ? (
-        <meshStandardMaterial
-          map={tex}
-          roughness={0.55}
-          metalness={0.4}
-          transparent
-          opacity={FOCUS_GHOST_OPACITY}
-          depthWrite={false}
-        />
-      ) : (
-        <meshStandardMaterial map={tex} roughness={0.55} metalness={0.4} />
-      )}
+    <mesh position={[0, RACK_BASE_M + doorH / 2, z]}>
+      <boxGeometry args={[w - 0.02, doorH, 0.008]} />
+      <meshStandardMaterial
+        color="#0b0b0e"
+        roughness={0.15}
+        metalness={0.1}
+        transparent
+        opacity={0.35}
+        depthWrite={false}
+      />
     </mesh>
   )
 }

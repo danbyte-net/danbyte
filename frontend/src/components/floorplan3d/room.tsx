@@ -5,16 +5,16 @@ import { cellToWorld, cellM, type ScenePayload, type SceneTile } from "./world"
 
 /** The room shell: floor slab, grid lines, optional blueprint texture, and
  * zone tiles painted flat on the floor. Everything static — one draw each.
- * `xray` ghosts the slab so underfloor runs read through; `onZoneClick`
- * makes zone patches clickable (the isolate-a-zone entry point). */
+ * `xray` ghosts the slab so underfloor runs read through. Zone patches are
+ * deliberately inert: a first version made them clickable (isolate), and
+ * every empty-floor click inside a zone hid the room instead of
+ * deselecting — isolation lives on the rack HUD now. */
 export function Room({
   scene,
   xray = false,
-  onZoneClick,
 }: {
   scene: ScenePayload
   xray?: boolean
-  onZoneClick?: (tile: SceneTile) => void
 }) {
   const { plan } = scene
   const [w, d] = cellToWorld(plan, plan.grid_width, plan.grid_height)
@@ -69,7 +69,7 @@ export function Room({
       {scene.tiles
         .filter((t) => t.is_zone)
         .map((t) => (
-          <ZonePatch key={t.id} plan={plan} tile={t} onClick={onZoneClick} />
+          <ZonePatch key={t.id} plan={plan} tile={t} />
         ))}
     </group>
   )
@@ -78,46 +78,16 @@ export function Room({
 function ZonePatch({
   plan,
   tile,
-  onClick,
 }: {
   plan: ScenePayload["plan"]
   tile: SceneTile
-  onClick?: (tile: SceneTile) => void
 }) {
   const [x, z] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
   const [w, d] = cellToWorld(plan, tile.w, tile.h)
   // 0.015 sits ABOVE a raised-floor slab top (0.012): a cold aisle drawn on
   // a raised pad must tint the pad, not vanish inside it.
   return (
-    <mesh
-      rotation={[-Math.PI / 2, 0, 0]}
-      position={[x, 0.015, z]}
-      // Zone click = isolate that zone. Racks sit above and stop
-      // propagation, so only genuine aisle-floor clicks land here.
-      onClick={
-        onClick
-          ? (e) => {
-              e.stopPropagation()
-              onClick(tile)
-            }
-          : undefined
-      }
-      onPointerOver={
-        onClick
-          ? (e) => {
-              e.stopPropagation()
-              document.body.style.cursor = "pointer"
-            }
-          : undefined
-      }
-      onPointerOut={
-        onClick
-          ? () => {
-              document.body.style.cursor = ""
-            }
-          : undefined
-      }
-    >
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.015, z]}>
       <planeGeometry args={[w, d]} />
       <meshBasicMaterial
         color={tile.color || "#52525b"}

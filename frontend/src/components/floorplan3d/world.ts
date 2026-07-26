@@ -483,19 +483,6 @@ export function rackViewpoint(
   }
 }
 
-/**
- * Clamp wall boxes to a height cap — Cutaway mode's knee-high walls. Spans
- * shrink to the cap; anything entirely above it (door lintels) disappears.
- */
-export function capWallBoxes(boxes: WallBox[], capM: number): WallBox[] {
-  const out: WallBox[] = []
-  for (const b of boxes) {
-    if (b.y0 >= capM) continue
-    out.push(b.y1 <= capM ? b : { ...b, y1: capM })
-  }
-  return out
-}
-
 /** The door/passage gaps of a wall in plan view: one span per valid opening,
  * clamped exactly like wallSegmentsWithOpenings — so the 2D canvas's gaps and
  * the 3D boxes can never disagree about where a doorway sits. */
