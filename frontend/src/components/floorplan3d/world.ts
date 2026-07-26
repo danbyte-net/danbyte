@@ -212,6 +212,10 @@ export function trayElevationM(
   return mm(plan.ceiling_mm - OVERHEAD_DROP_MM)
 }
 
+/** Top panel thickness. Shared with the rack shell so the cabinet's height
+ * and the cap that closes it can never disagree. */
+export const RACK_CAP_M = 0.03
+
 /** Cabinet outer footprint (m) — recorded, or derived like the docs promise. */
 export function rackFootprintM(rack: SceneRack): {
   width: number
@@ -222,7 +226,11 @@ export function rackFootprintM(rack: SceneRack): {
   const width = mm(rack.outer_width_mm ?? opening + RACK_FRAME_MM)
   const depth =
     rack.outer_depth_mm != null ? mm(rack.outer_depth_mm) : RACK_DEPTH_DEFAULT_M
-  const height = mm(rack.u_height * PANEL_MM.uPitch) + RACK_BASE_M
+  // The cap sits ABOVE the rail space, not in it. Without this term the U
+  // space filled the whole cabinet and the 30 mm top panel was drawn inside
+  // the highest U — burying two thirds of whatever was installed there. A real
+  // 42U cabinet is taller than 42U of rail, for exactly this reason.
+  const height = mm(rack.u_height * PANEL_MM.uPitch) + RACK_BASE_M + RACK_CAP_M
   return { width, depth, height }
 }
 
