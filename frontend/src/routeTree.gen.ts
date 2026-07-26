@@ -32,6 +32,7 @@ import { Route as SearchRouteImport } from './routes/search'
 import { Route as RouteTargetsRouteImport } from './routes/route-targets'
 import { Route as RirsRouteImport } from './routes/rirs'
 import { Route as RegionsRouteImport } from './routes/regions'
+import { Route as RackTypesRouteImport } from './routes/rack-types'
 import { Route as ProvidersRouteImport } from './routes/providers'
 import { Route as ProviderNetworksRouteImport } from './routes/provider-networks'
 import { Route as PrefixesRouteImport } from './routes/prefixes'
@@ -103,6 +104,7 @@ import { Route as RouteTargetsIndexRouteImport } from './routes/route-targets.in
 import { Route as RirsIndexRouteImport } from './routes/rirs.index'
 import { Route as RegionsIndexRouteImport } from './routes/regions.index'
 import { Route as RacksIndexRouteImport } from './routes/racks.index'
+import { Route as RackTypesIndexRouteImport } from './routes/rack-types.index'
 import { Route as RackRolesIndexRouteImport } from './routes/rack-roles.index'
 import { Route as ProvidersIndexRouteImport } from './routes/providers.index'
 import { Route as ProviderNetworksIndexRouteImport } from './routes/provider-networks.index'
@@ -201,6 +203,8 @@ import { Route as RegionsNewRouteImport } from './routes/regions.new'
 import { Route as RacksNewRouteImport } from './routes/racks.new'
 import { Route as RacksElevationsRouteImport } from './routes/racks.elevations'
 import { Route as RacksIdRouteImport } from './routes/racks.$id'
+import { Route as RackTypesNewRouteImport } from './routes/rack-types.new'
+import { Route as RackTypesIdRouteImport } from './routes/rack-types.$id'
 import { Route as RackRolesNewRouteImport } from './routes/rack-roles.new'
 import { Route as RackRolesIdRouteImport } from './routes/rack-roles.$id'
 import { Route as ProvidersNewRouteImport } from './routes/providers.new'
@@ -302,6 +306,7 @@ import { Route as RouteTargetsIdEditRouteImport } from './routes/route-targets.$
 import { Route as RirsIdEditRouteImport } from './routes/rirs.$id_.edit'
 import { Route as RegionsIdEditRouteImport } from './routes/regions.$id_.edit'
 import { Route as RacksIdEditRouteImport } from './routes/racks.$id_.edit'
+import { Route as RackTypesIdEditRouteImport } from './routes/rack-types.$id_.edit'
 import { Route as RackRolesIdEditRouteImport } from './routes/rack-roles.$id_.edit'
 import { Route as ProvidersIdEditRouteImport } from './routes/providers.$id_.edit'
 import { Route as ProviderNetworksIdEditRouteImport } from './routes/provider-networks.$id_.edit'
@@ -461,6 +466,11 @@ const RirsRoute = RirsRouteImport.update({
 const RegionsRoute = RegionsRouteImport.update({
   id: '/regions',
   path: '/regions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RackTypesRoute = RackTypesRouteImport.update({
+  id: '/rack-types',
+  path: '/rack-types',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProvidersRoute = ProvidersRouteImport.update({
@@ -817,6 +827,11 @@ const RacksIndexRoute = RacksIndexRouteImport.update({
   id: '/racks/',
   path: '/racks/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const RackTypesIndexRoute = RackTypesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => RackTypesRoute,
 } as any)
 const RackRolesIndexRoute = RackRolesIndexRouteImport.update({
   id: '/rack-roles/',
@@ -1307,6 +1322,16 @@ const RacksIdRoute = RacksIdRouteImport.update({
   id: '/racks/$id',
   path: '/racks/$id',
   getParentRoute: () => rootRouteImport,
+} as any)
+const RackTypesNewRoute = RackTypesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => RackTypesRoute,
+} as any)
+const RackTypesIdRoute = RackTypesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => RackTypesRoute,
 } as any)
 const RackRolesNewRoute = RackRolesNewRouteImport.update({
   id: '/rack-roles/new',
@@ -1813,6 +1838,11 @@ const RacksIdEditRoute = RacksIdEditRouteImport.update({
   path: '/racks/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RackTypesIdEditRoute = RackTypesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => RackTypesRoute,
+} as any)
 const RackRolesIdEditRoute = RackRolesIdEditRouteImport.update({
   id: '/rack-roles/$id_/edit',
   path: '/rack-roles/$id/edit',
@@ -2087,6 +2117,7 @@ export interface FileRoutesByFullPath {
   '/prefixes': typeof PrefixesRouteWithChildren
   '/provider-networks': typeof ProviderNetworksRouteWithChildren
   '/providers': typeof ProvidersRouteWithChildren
+  '/rack-types': typeof RackTypesRouteWithChildren
   '/regions': typeof RegionsRouteWithChildren
   '/rirs': typeof RirsRouteWithChildren
   '/route-targets': typeof RouteTargetsRouteWithChildren
@@ -2189,6 +2220,8 @@ export interface FileRoutesByFullPath {
   '/providers/new': typeof ProvidersNewRoute
   '/rack-roles/$id': typeof RackRolesIdRoute
   '/rack-roles/new': typeof RackRolesNewRoute
+  '/rack-types/$id': typeof RackTypesIdRoute
+  '/rack-types/new': typeof RackTypesNewRoute
   '/racks/$id': typeof RacksIdRoute
   '/racks/elevations': typeof RacksElevationsRoute
   '/racks/new': typeof RacksNewRoute
@@ -2287,6 +2320,7 @@ export interface FileRoutesByFullPath {
   '/provider-networks/': typeof ProviderNetworksIndexRoute
   '/providers/': typeof ProvidersIndexRoute
   '/rack-roles/': typeof RackRolesIndexRoute
+  '/rack-types/': typeof RackTypesIndexRoute
   '/racks/': typeof RacksIndexRoute
   '/regions/': typeof RegionsIndexRoute
   '/rirs/': typeof RirsIndexRoute
@@ -2356,6 +2390,7 @@ export interface FileRoutesByFullPath {
   '/provider-networks/$id/edit': typeof ProviderNetworksIdEditRoute
   '/providers/$id/edit': typeof ProvidersIdEditRoute
   '/rack-roles/$id/edit': typeof RackRolesIdEditRoute
+  '/rack-types/$id/edit': typeof RackTypesIdEditRoute
   '/racks/$id/edit': typeof RacksIdEditRoute
   '/regions/$id/edit': typeof RegionsIdEditRoute
   '/rirs/$id/edit': typeof RirsIdEditRoute
@@ -2474,6 +2509,8 @@ export interface FileRoutesByTo {
   '/providers/new': typeof ProvidersNewRoute
   '/rack-roles/$id': typeof RackRolesIdRoute
   '/rack-roles/new': typeof RackRolesNewRoute
+  '/rack-types/$id': typeof RackTypesIdRoute
+  '/rack-types/new': typeof RackTypesNewRoute
   '/racks/$id': typeof RacksIdRoute
   '/racks/elevations': typeof RacksElevationsRoute
   '/racks/new': typeof RacksNewRoute
@@ -2572,6 +2609,7 @@ export interface FileRoutesByTo {
   '/provider-networks': typeof ProviderNetworksIndexRoute
   '/providers': typeof ProvidersIndexRoute
   '/rack-roles': typeof RackRolesIndexRoute
+  '/rack-types': typeof RackTypesIndexRoute
   '/racks': typeof RacksIndexRoute
   '/regions': typeof RegionsIndexRoute
   '/rirs': typeof RirsIndexRoute
@@ -2641,6 +2679,7 @@ export interface FileRoutesByTo {
   '/provider-networks/$id/edit': typeof ProviderNetworksIdEditRoute
   '/providers/$id/edit': typeof ProvidersIdEditRoute
   '/rack-roles/$id/edit': typeof RackRolesIdEditRoute
+  '/rack-types/$id/edit': typeof RackTypesIdEditRoute
   '/racks/$id/edit': typeof RacksIdEditRoute
   '/regions/$id/edit': typeof RegionsIdEditRoute
   '/rirs/$id/edit': typeof RirsIdEditRoute
@@ -2713,6 +2752,7 @@ export interface FileRoutesById {
   '/prefixes': typeof PrefixesRouteWithChildren
   '/provider-networks': typeof ProviderNetworksRouteWithChildren
   '/providers': typeof ProvidersRouteWithChildren
+  '/rack-types': typeof RackTypesRouteWithChildren
   '/regions': typeof RegionsRouteWithChildren
   '/rirs': typeof RirsRouteWithChildren
   '/route-targets': typeof RouteTargetsRouteWithChildren
@@ -2815,6 +2855,8 @@ export interface FileRoutesById {
   '/providers/new': typeof ProvidersNewRoute
   '/rack-roles/$id': typeof RackRolesIdRoute
   '/rack-roles/new': typeof RackRolesNewRoute
+  '/rack-types/$id': typeof RackTypesIdRoute
+  '/rack-types/new': typeof RackTypesNewRoute
   '/racks/$id': typeof RacksIdRoute
   '/racks/elevations': typeof RacksElevationsRoute
   '/racks/new': typeof RacksNewRoute
@@ -2913,6 +2955,7 @@ export interface FileRoutesById {
   '/provider-networks/': typeof ProviderNetworksIndexRoute
   '/providers/': typeof ProvidersIndexRoute
   '/rack-roles/': typeof RackRolesIndexRoute
+  '/rack-types/': typeof RackTypesIndexRoute
   '/racks/': typeof RacksIndexRoute
   '/regions/': typeof RegionsIndexRoute
   '/rirs/': typeof RirsIndexRoute
@@ -2982,6 +3025,7 @@ export interface FileRoutesById {
   '/provider-networks/$id_/edit': typeof ProviderNetworksIdEditRoute
   '/providers/$id_/edit': typeof ProvidersIdEditRoute
   '/rack-roles/$id_/edit': typeof RackRolesIdEditRoute
+  '/rack-types/$id_/edit': typeof RackTypesIdEditRoute
   '/racks/$id_/edit': typeof RacksIdEditRoute
   '/regions/$id_/edit': typeof RegionsIdEditRoute
   '/rirs/$id_/edit': typeof RirsIdEditRoute
@@ -3055,6 +3099,7 @@ export interface FileRouteTypes {
     | '/prefixes'
     | '/provider-networks'
     | '/providers'
+    | '/rack-types'
     | '/regions'
     | '/rirs'
     | '/route-targets'
@@ -3157,6 +3202,8 @@ export interface FileRouteTypes {
     | '/providers/new'
     | '/rack-roles/$id'
     | '/rack-roles/new'
+    | '/rack-types/$id'
+    | '/rack-types/new'
     | '/racks/$id'
     | '/racks/elevations'
     | '/racks/new'
@@ -3255,6 +3302,7 @@ export interface FileRouteTypes {
     | '/provider-networks/'
     | '/providers/'
     | '/rack-roles/'
+    | '/rack-types/'
     | '/racks/'
     | '/regions/'
     | '/rirs/'
@@ -3324,6 +3372,7 @@ export interface FileRouteTypes {
     | '/provider-networks/$id/edit'
     | '/providers/$id/edit'
     | '/rack-roles/$id/edit'
+    | '/rack-types/$id/edit'
     | '/racks/$id/edit'
     | '/regions/$id/edit'
     | '/rirs/$id/edit'
@@ -3442,6 +3491,8 @@ export interface FileRouteTypes {
     | '/providers/new'
     | '/rack-roles/$id'
     | '/rack-roles/new'
+    | '/rack-types/$id'
+    | '/rack-types/new'
     | '/racks/$id'
     | '/racks/elevations'
     | '/racks/new'
@@ -3540,6 +3591,7 @@ export interface FileRouteTypes {
     | '/provider-networks'
     | '/providers'
     | '/rack-roles'
+    | '/rack-types'
     | '/racks'
     | '/regions'
     | '/rirs'
@@ -3609,6 +3661,7 @@ export interface FileRouteTypes {
     | '/provider-networks/$id/edit'
     | '/providers/$id/edit'
     | '/rack-roles/$id/edit'
+    | '/rack-types/$id/edit'
     | '/racks/$id/edit'
     | '/regions/$id/edit'
     | '/rirs/$id/edit'
@@ -3680,6 +3733,7 @@ export interface FileRouteTypes {
     | '/prefixes'
     | '/provider-networks'
     | '/providers'
+    | '/rack-types'
     | '/regions'
     | '/rirs'
     | '/route-targets'
@@ -3782,6 +3836,8 @@ export interface FileRouteTypes {
     | '/providers/new'
     | '/rack-roles/$id'
     | '/rack-roles/new'
+    | '/rack-types/$id'
+    | '/rack-types/new'
     | '/racks/$id'
     | '/racks/elevations'
     | '/racks/new'
@@ -3880,6 +3936,7 @@ export interface FileRouteTypes {
     | '/provider-networks/'
     | '/providers/'
     | '/rack-roles/'
+    | '/rack-types/'
     | '/racks/'
     | '/regions/'
     | '/rirs/'
@@ -3949,6 +4006,7 @@ export interface FileRouteTypes {
     | '/provider-networks/$id_/edit'
     | '/providers/$id_/edit'
     | '/rack-roles/$id_/edit'
+    | '/rack-types/$id_/edit'
     | '/racks/$id_/edit'
     | '/regions/$id_/edit'
     | '/rirs/$id_/edit'
@@ -4021,6 +4079,7 @@ export interface RootRouteChildren {
   PrefixesRoute: typeof PrefixesRouteWithChildren
   ProviderNetworksRoute: typeof ProviderNetworksRouteWithChildren
   ProvidersRoute: typeof ProvidersRouteWithChildren
+  RackTypesRoute: typeof RackTypesRouteWithChildren
   RegionsRoute: typeof RegionsRouteWithChildren
   RirsRoute: typeof RirsRouteWithChildren
   RouteTargetsRoute: typeof RouteTargetsRouteWithChildren
@@ -4266,6 +4325,13 @@ declare module '@tanstack/react-router' {
       path: '/regions'
       fullPath: '/regions'
       preLoaderRoute: typeof RegionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rack-types': {
+      id: '/rack-types'
+      path: '/rack-types'
+      fullPath: '/rack-types'
+      preLoaderRoute: typeof RackTypesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/providers': {
@@ -4764,6 +4830,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/racks/'
       preLoaderRoute: typeof RacksIndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/rack-types/': {
+      id: '/rack-types/'
+      path: '/'
+      fullPath: '/rack-types/'
+      preLoaderRoute: typeof RackTypesIndexRouteImport
+      parentRoute: typeof RackTypesRoute
     }
     '/rack-roles/': {
       id: '/rack-roles/'
@@ -5450,6 +5523,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/racks/$id'
       preLoaderRoute: typeof RacksIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/rack-types/new': {
+      id: '/rack-types/new'
+      path: '/new'
+      fullPath: '/rack-types/new'
+      preLoaderRoute: typeof RackTypesNewRouteImport
+      parentRoute: typeof RackTypesRoute
+    }
+    '/rack-types/$id': {
+      id: '/rack-types/$id'
+      path: '/$id'
+      fullPath: '/rack-types/$id'
+      preLoaderRoute: typeof RackTypesIdRouteImport
+      parentRoute: typeof RackTypesRoute
     }
     '/rack-roles/new': {
       id: '/rack-roles/new'
@@ -6157,6 +6244,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/racks/$id/edit'
       preLoaderRoute: typeof RacksIdEditRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/rack-types/$id_/edit': {
+      id: '/rack-types/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/rack-types/$id/edit'
+      preLoaderRoute: typeof RackTypesIdEditRouteImport
+      parentRoute: typeof RackTypesRoute
     }
     '/rack-roles/$id_/edit': {
       id: '/rack-roles/$id_/edit'
@@ -7061,6 +7155,24 @@ const ProvidersRouteWithChildren = ProvidersRoute._addFileChildren(
   ProvidersRouteChildren,
 )
 
+interface RackTypesRouteChildren {
+  RackTypesIdRoute: typeof RackTypesIdRoute
+  RackTypesNewRoute: typeof RackTypesNewRoute
+  RackTypesIndexRoute: typeof RackTypesIndexRoute
+  RackTypesIdEditRoute: typeof RackTypesIdEditRoute
+}
+
+const RackTypesRouteChildren: RackTypesRouteChildren = {
+  RackTypesIdRoute: RackTypesIdRoute,
+  RackTypesNewRoute: RackTypesNewRoute,
+  RackTypesIndexRoute: RackTypesIndexRoute,
+  RackTypesIdEditRoute: RackTypesIdEditRoute,
+}
+
+const RackTypesRouteWithChildren = RackTypesRoute._addFileChildren(
+  RackTypesRouteChildren,
+)
+
 interface RegionsRouteChildren {
   RegionsNewRoute: typeof RegionsNewRoute
   RegionsIndexRoute: typeof RegionsIndexRoute
@@ -7470,6 +7582,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrefixesRoute: PrefixesRouteWithChildren,
   ProviderNetworksRoute: ProviderNetworksRouteWithChildren,
   ProvidersRoute: ProvidersRouteWithChildren,
+  RackTypesRoute: RackTypesRouteWithChildren,
   RegionsRoute: RegionsRouteWithChildren,
   RirsRoute: RirsRouteWithChildren,
   RouteTargetsRoute: RouteTargetsRouteWithChildren,

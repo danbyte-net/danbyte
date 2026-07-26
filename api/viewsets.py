@@ -42,7 +42,7 @@ from .models import (
     PowerFeed, PowerOutlet, PowerOutletTemplate, PowerPanel, PowerPort,
     PowerPortTemplate, Prefix, Provider, ProviderNetwork, RearPort,
     RearPortTemplate,
-    DeviceRole, Platform, PlatformGroup, Rack, RackRole, RIR, RouteTarget, Service, ServiceTemplate, Site, VirtualMachine, VMInterface, VLAN, VLANGroup, VRF, Zone,
+    DeviceRole, Platform, PlatformGroup, Rack, RackRole, RackType, RackTypeAccessory, RIR, RouteTarget, Service, ServiceTemplate, Site, VirtualMachine, VMInterface, VLAN, VLANGroup, VRF, Zone,
     WirelessLAN, WirelessLANGroup,
     Tunnel, TunnelGroup, TunnelTermination, IPSecProfile,
     L2VPN, L2VPNTermination, VirtualChassis,
@@ -130,6 +130,9 @@ from .serializers import (
     RackSerializer,
     RackRoleSerializer,
     RackRoleMiniSerializer,
+    RackTypeSerializer,
+    RackTypeMiniSerializer,
+    RackTypeAccessorySerializer,
     DeviceRoleSerializer,
     PlatformGroupMiniSerializer,
     PlatformGroupSerializer,
@@ -4168,6 +4171,84 @@ class RackRoleViewSet(_SlugCatalogViewSet):
         return TenantScopedViewSet.destroy(self, request, *args, **kwargs)
 
 
+class RackTypeViewSet(TenantScopedViewSet):
+    """Rack model catalog — manufacturer/model profiles whose dims pre-fill
+    the rack form and whose accessories can stamp 0U strips onto new racks."""
+
+    queryset = RackType.objects.select_related("manufacturer").prefetch_related(
+        "tags", "accessories__device_type__manufacturer"
+    ).order_by(NATURAL_NAME)
+    serializer_class = RackTypeSerializer
+    pagination_class = StandardPagination
+
+    def get_queryset(self):
+        qs = TenantScopedViewSet.get_queryset(self)
+        if self.request:
+            s = self.request.query_params.get("search", "").strip()
+            if s:
+                qs = qs.filter(name__icontains=s) \
+                    | qs.filter(manufacturer__name__icontains=s)
+            m = self.request.query_params.get("manufacturer")
+            if m:
+                qs = qs.filter(manufacturer_id=m)
+        from django.db.models import Count as _C
+        return qs.annotate(rack_count_annotated=_C("racks", distinct=True)) \
+            .order_by(NATURAL_NAME)
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return RackTypeMiniSerializer
+        return RackTypeSerializer
+
+    def perform_create(self, serializer):
+        tenant = self._tenant_or_403()
+        _check_unique_name(RackType, serializer, tenant, "rack type")
+        serializer.save(tenant=tenant)
+
+    def perform_update(self, serializer):
+        _check_unique_name(RackType, serializer, self._tenant_or_403(), "rack type")
+        serializer.save()
+
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        n = obj.racks.count()
+        if n:
+            return Response(
+                {"detail": f"{n} rack{'s' if n != 1 else ''} use this type."},
+                status=drf_status.HTTP_409_CONFLICT,
+            )
+        return TenantScopedViewSet.destroy(self, request, *args, **kwargs)
+
+
+class RackTypeAccessoryViewSet(TenantScopedViewSet):
+    """Accessory strips on a rack type — scoped through the type's tenant,
+    like floor-plan trays through their plan."""
+
+    queryset = RackTypeAccessory.objects.select_related(
+        "rack_type", "device_type__manufacturer"
+    ).order_by("order", "label")
+    serializer_class = RackTypeAccessorySerializer
+    pagination_class = StandardPagination
+    tenant_field = None
+
+    def get_queryset(self):
+        tenant = _get_active_tenant(self.request)
+        if tenant is None:
+            return self.queryset.none()
+        qs = self.queryset.filter(rack_type__tenant=tenant)
+        if self.request:
+            rt = self.request.query_params.get("rack_type")
+            if rt:
+                qs = qs.filter(rack_type_id=rt)
+        return restrict_for_view(self, qs)
+
+    def perform_create(self, serializer):
+        if serializer.validated_data.get("rack_type") is None:
+            raise ValidationError({"rack_type_id": "This field is required."})
+        serializer.save()
+
+
 class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
     queryset = Rack.objects.all().order_by("site__name", "name")
     serializer_class = RackSerializer
@@ -4183,7 +4264,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
     def get_queryset(self):
         qs = (
             super().get_queryset()
-            .select_related("site", "role", "location")
+            .select_related("site", "role", "location", "rack_type__manufacturer")
             .prefetch_related(
                 "tags", "devices__device_type",
                 "devices__power_ports", "power_feeds",
@@ -4202,6 +4283,9 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             role = self.request.query_params.get("role")
             if role:
                 qs = qs.filter(role_id=role)
+            rack_type = self.request.query_params.get("rack_type")
+            if rack_type:
+                qs = qs.filter(rack_type_id=rack_type)
         return qs
 
     def destroy(self, request, *args, **kwargs):

@@ -33,7 +33,8 @@ from .models import (
     NumIdMixin, Platform, PlatformGroup, weight_kg,
     ConfigContext, ExportTemplate, Location, PowerFeed, PowerOutlet,
     PowerOutletTemplate, PowerPanel, PowerPort, PowerPortTemplate,
-    Prefix, Provider, ProviderNetwork, Rack, RackRole, RearPort,
+    Prefix, Provider, ProviderNetwork, Rack, RackRole, RackType,
+    RackTypeAccessory, RearPort,
     RearPortTemplate, Region, RIR, RouteTarget, Service, ServiceTemplate,
     SiteMarker,
     DeviceTypeService, Site,
@@ -41,7 +42,7 @@ from .models import (
     WirelessLAN, WirelessLANGroup,
     Tunnel, TunnelGroup, TunnelTermination, IPSecProfile,
     L2VPN, L2VPNTermination, VirtualChassis,
-    render_component_name, render_module_name,
+    materialize_device_components, render_component_name, render_module_name,
 )
 
 
@@ -3433,6 +3434,93 @@ class RackRoleSerializer(NumIdModelSerializer):
         read_only_fields = ["id", "rack_count", "created_at", "updated_at"]
 
 
+class RackTypeAccessorySerializer(serializers.ModelSerializer):
+    """Factory-fitted 0U gear on a rack model (vertical PDU strips). The
+    device type must be 0U — accessories side-mount, they never take units."""
+
+    rack_type_id = TenantScopedPrimaryKeyRelatedField(
+        source="rack_type", queryset=RackType.objects.all(), write_only=True
+    )
+    device_type = serializers.SerializerMethodField()
+    device_type_id = TenantScopedPrimaryKeyRelatedField(
+        source="device_type", queryset=DeviceType.objects.all(), write_only=True
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_device_type(self, obj):
+        dt = obj.device_type
+        return {
+            "id": str(dt.id),
+            "name": dt.name,
+            "manufacturer": dt.manufacturer.name if dt.manufacturer else None,
+            "u_height": dt.u_height,
+        }
+
+    def validate(self, attrs):
+        dt = attrs.get("device_type", getattr(self.instance, "device_type", None))
+        if dt is not None and dt.u_height != 0:
+            raise serializers.ValidationError(
+                {"device_type_id":
+                 "Accessories side-mount on a rail: pick a 0U device type."}
+            )
+        return attrs
+
+    class Meta:
+        model = RackTypeAccessory
+        fields = ["id", "rack_type_id", "device_type", "device_type_id",
+                  "label", "mount", "mount_offset_mm", "mount_span_u", "order",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class RackTypeMiniSerializer(NumIdModelSerializer):
+    """Picker/embed shape. Carries the full dimension set so the rack form
+    can pre-fill client-side — the rack stays the source of truth."""
+
+    manufacturer = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_manufacturer(self, obj):
+        m = obj.manufacturer
+        return {"id": str(m.id), "name": m.name} if m else None
+
+    class Meta:
+        model = RackType
+        fields = ["id", "name", "manufacturer", "width", "u_height",
+                  "starting_unit", "desc_units", "outer_width_mm",
+                  "outer_depth_mm", "max_weight", "max_weight_unit"]
+
+
+class RackTypeSerializer(TaggableSerializerMixin, NumIdModelSerializer):
+    manufacturer = ManufacturerMiniSerializer(read_only=True)
+    manufacturer_id = TenantScopedPrimaryKeyRelatedField(
+        source="manufacturer", queryset=Manufacturer.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+    accessories = RackTypeAccessorySerializer(many=True, read_only=True)
+    rack_count = serializers.SerializerMethodField()
+
+    def get_rack_count(self, obj) -> int:
+        v = getattr(obj, "rack_count_annotated", None)
+        return v if v is not None else obj.racks.count()
+
+    class Meta:
+        model = RackType
+        fields = ["id", "name", "manufacturer", "manufacturer_id",
+                  "width", "u_height", "starting_unit", "desc_units",
+                  "outer_width_mm", "outer_depth_mm",
+                  "max_weight", "max_weight_unit", "description",
+                  "accessories", "rack_count",
+                  "tags", "tag_ids", "created_at", "updated_at"]
+        read_only_fields = ["id", "accessories", "rack_count",
+                            "created_at", "updated_at"]
+
+
 class RackMiniSerializer(NumIdModelSerializer):
     class Meta:
         model = Rack
@@ -3448,6 +3536,17 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
     role_id = TenantScopedPrimaryKeyRelatedField(
         source="role", queryset=RackRole.objects.all(),
         write_only=True, required=False, allow_null=True,
+    )
+    rack_type = RackTypeMiniSerializer(read_only=True)
+    rack_type_id = TenantScopedPrimaryKeyRelatedField(
+        source="rack_type", queryset=RackType.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    # Create-only opt-in: stamp the rack type's accessories as side-mounted
+    # devices named "{rack}-{label}". Ignored on update (re-stamping an
+    # existing rack would duplicate its strips).
+    create_accessories = serializers.BooleanField(
+        write_only=True, required=False, default=False
     )
     location = serializers.SerializerMethodField()
     location_id = TenantScopedPrimaryKeyRelatedField(
@@ -3477,6 +3576,73 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
                 {"location_id": "Pick a location within the rack's site."}
             )
         return attrs
+
+    def create(self, validated_data):
+        stamp = validated_data.pop("create_accessories", False)
+        rack_type = validated_data.get("rack_type")
+        if stamp and rack_type is not None:
+            # Authorize BEFORE creating anything: stamping writes Devices, so
+            # a caller without device-add scope at the rack's site must get a
+            # clean 403 with no partial rack left behind.
+            self._assert_can_stamp_devices(validated_data.get("site"))
+        with transaction.atomic():
+            rack = super().create(validated_data)
+            if stamp and rack.rack_type_id:
+                self._stamp_accessories(rack)
+        return rack
+
+    def update(self, instance, validated_data):
+        validated_data.pop("create_accessories", None)
+        return super().update(instance, validated_data)
+
+    def _assert_can_stamp_devices(self, site):
+        from rest_framework.exceptions import PermissionDenied
+
+        from auth_api import rbac
+
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request else None
+        if user is None or not getattr(user, "is_authenticated", False):
+            raise PermissionDenied("Authentication required.")
+        if user.is_superuser:
+            return
+        from api.views import _get_active_tenant
+
+        tenant = _get_active_tenant(request)
+        # None = unrestricted; set() = no device-add grant at all;
+        # {ids} = site-scoped — the rack's site must be inside the scope.
+        scope = rbac.site_scope(user, tenant, "device", "add")
+        if scope is None:
+            return
+        if site is not None and site.pk in scope:
+            return
+        raise PermissionDenied(
+            "Stamping accessories requires permission to add devices "
+            "at the rack's site."
+        )
+
+    def _stamp_accessories(self, rack):
+        """One side-mounted 0U device per accessory, named {rack}-{label}
+        (deduped with -2/-3… against the tenant's device names). Components
+        materialise from the type's templates — a PDU gets its outlets."""
+        for acc in rack.rack_type.accessories.select_related("device_type").all():
+            base = f"{rack.name}-{acc.label}"
+            name, n = base, 2
+            while Device.objects.filter(tenant=rack.tenant, name=name).exists():
+                name = f"{base}-{n}"
+                n += 1
+            device = Device.objects.create(
+                tenant=rack.tenant,
+                name=name,
+                site=rack.site,
+                location=rack.location,
+                rack=rack,
+                device_type=acc.device_type,
+                mount=acc.mount,
+                mount_offset_mm=acc.mount_offset_mm,
+                mount_span_u=acc.mount_span_u,
+            )
+            materialize_device_components(device)
 
     def get_device_count(self, obj) -> int:
         return obj.devices.count()
@@ -3551,7 +3717,8 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
     class Meta:
         model = Rack
         fields = ["id", "numid", "name", "facility_id", "site", "site_id", "role",
-                  "role_id", "status", "status_id", "location", "location_id",
+                  "role_id", "rack_type", "rack_type_id", "create_accessories",
+                  "status", "status_id", "location", "location_id",
                   "width", "u_height",
                   "outer_width_mm", "outer_depth_mm",
                   "max_weight", "max_weight_unit",

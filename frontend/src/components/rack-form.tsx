@@ -3,16 +3,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSiteOptions } from "@/lib/use-site-options"
 import { toast } from "sonner"
 
-import {
-  api,
-  type Paginated,
-  type Rack,
-  type RackRoleOption,
-  type RackWidth,
-  type RackWritePayload,
-  type LocationOption,
-  type Status,
+import { api } from "@/lib/api"
+import type {
+  LocationOption,
+  Paginated,
+  Rack,
+  RackRoleOption,
+  RackType,
+  RackWidth,
+  RackWritePayload,
+  Status,
 } from "@/lib/api"
+import { useMe } from "@/lib/use-me"
 import {
   FormCheckbox,
   FormCombobox,
@@ -48,6 +50,10 @@ export function RackForm({ rack, onSaved, onCancel }: RackFormProps) {
   const [facilityId, setFacilityId] = useState(rack?.facility_id ?? "")
   const [siteId, setSiteId] = useState<string | null>(rack?.site?.id ?? null)
   const [roleId, setRoleId] = useState<string | null>(rack?.role?.id ?? null)
+  const [rackTypeId, setRackTypeId] = useState<string | null>(
+    rack?.rack_type?.id ?? null
+  )
+  const [createAccessories, setCreateAccessories] = useState(false)
   const [locationId, setLocationId] = useState<string | null>(
     rack?.location?.id ?? null
   )
@@ -84,14 +90,19 @@ export function RackForm({ rack, onSaved, onCancel }: RackFormProps) {
     setFacilityId(rack.facility_id)
     setSiteId(rack.site?.id ?? null)
     setRoleId(rack.role?.id ?? null)
+    setRackTypeId(rack.rack_type?.id ?? null)
     setLocationId(rack.location?.id ?? null)
     setStatusId(rack.status?.id ?? null)
     setWidth(rack.width)
     setUHeight(String(rack.u_height))
     setStartingUnit(String(rack.starting_unit))
     setDescUnits(rack.desc_units)
-    setOuterWidth(rack.outer_width_mm != null ? String(rack.outer_width_mm) : "")
-    setOuterDepth(rack.outer_depth_mm != null ? String(rack.outer_depth_mm) : "")
+    setOuterWidth(
+      rack.outer_width_mm != null ? String(rack.outer_width_mm) : ""
+    )
+    setOuterDepth(
+      rack.outer_depth_mm != null ? String(rack.outer_depth_mm) : ""
+    )
     setMaxWeight(rack.max_weight ?? "")
     setMaxWeightUnit(rack.max_weight_unit || "kg")
     setDescription(rack.description)
@@ -112,6 +123,31 @@ export function RackForm({ rack, onSaved, onCancel }: RackFormProps) {
     queryFn: () => api<Paginated<RackRoleOption>>("/api/rack-roles/?picker=1"),
     staleTime: 10 * 60_000,
   })
+  // Full shape (not ?picker=1): the accessory list drives the stamping
+  // checkbox, and the dims drive the client-side prefill.
+  const rackTypes = useQuery({
+    queryKey: ["rack-types", "form"],
+    queryFn: () => api<Paginated<RackType>>("/api/rack-types/"),
+    staleTime: 5 * 60_000,
+  })
+  const chosenType =
+    (rackTypes.data?.results ?? []).find((t) => t.id === rackTypeId) ?? null
+  const { canDo } = useMe()
+  const canStamp = canDo("device", "add")
+
+  // Picking a cabinet model copies its profile into the editable dim
+  // fields — the rack stays the source of truth and every value can still
+  // be adjusted before saving.
+  const applyTypeProfile = (t: RackType) => {
+    setWidth(t.width)
+    setUHeight(String(t.u_height))
+    setStartingUnit(String(t.starting_unit))
+    setDescUnits(t.desc_units)
+    setOuterWidth(t.outer_width_mm != null ? String(t.outer_width_mm) : "")
+    setOuterDepth(t.outer_depth_mm != null ? String(t.outer_depth_mm) : "")
+    setMaxWeight(t.max_weight ?? "")
+    setMaxWeightUnit(t.max_weight_unit || "kg")
+  }
   const statuses = useQuery({
     queryKey: ["statuses", "rack"],
     queryFn: () =>
@@ -134,6 +170,9 @@ export function RackForm({ rack, onSaved, onCancel }: RackFormProps) {
         facility_id: facilityId.trim(),
         site_id: siteId ?? "",
         role_id: roleId,
+        rack_type_id: rackTypeId,
+        create_accessories:
+          !isEdit && createAccessories && !!rackTypeId && canStamp,
         location_id: locationId,
         status_id: statusId,
         width,
@@ -274,6 +313,43 @@ export function RackForm({ rack, onSaved, onCancel }: RackFormProps) {
           />
         }
       />
+
+      <FormCombobox
+        label="Rack type"
+        hint="optional · cabinet model — picking one fills the dims below"
+        value={rackTypeId}
+        onChange={(v) => {
+          setRackTypeId(v)
+          if (!v) setCreateAccessories(false)
+          const t = (rackTypes.data?.results ?? []).find((x) => x.id === v)
+          if (t) applyTypeProfile(t)
+        }}
+        options={(rackTypes.data?.results ?? []).map((t) => ({
+          value: t.id,
+          label: t.manufacturer ? `${t.manufacturer.name} ${t.name}` : t.name,
+        }))}
+        noneLabel="No rack type"
+        placeholder="Select a rack type…"
+        searchPlaceholder="Search rack types…"
+        emptyText="No rack types."
+        error={fieldErrors.rack_type_id}
+      />
+
+      {!isEdit && chosenType && chosenType.accessories.length > 0 && (
+        <FormCheckbox
+          label={`Create ${chosenType.accessories.length} accessor${
+            chosenType.accessories.length === 1 ? "y" : "ies"
+          } (${chosenType.accessories.map((a) => a.label).join(", ")})`}
+          hint={
+            canStamp
+              ? "Stamps each strip as a side-mounted device named {rack}-{label}"
+              : "Requires permission to add devices"
+          }
+          checked={createAccessories && canStamp}
+          onChange={(v) => setCreateAccessories(v && canStamp)}
+          disabled={!canStamp}
+        />
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         <FormCombobox

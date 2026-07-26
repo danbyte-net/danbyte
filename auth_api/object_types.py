@@ -78,6 +78,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.Manufacturer", "Manufacturers", "DCIM"),
     ("api.Rack", "Racks", "DCIM"),
     ("api.RackRole", "Rack roles", "DCIM"),
+    ("api.RackType", "Rack types", "DCIM"),
+    ("api.RackTypeAccessory", "Rack type accessories", "DCIM"),
     ("api.Interface", "Interfaces", "DCIM"),
     ("api.MACAddress", "MAC addresses", "DCIM"),
     ("api.FrontPort", "Front ports", "DCIM"),

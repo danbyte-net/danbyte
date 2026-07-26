@@ -81,6 +81,8 @@ AUDITED_MODELS = [
     "api.VirtualMachine",
     "api.VMInterface",
     "api.RackRole",
+    "api.RackType",
+    "api.RackTypeAccessory",
     "api.Rack",
     "api.DeviceRole",
     "api.PlatformGroup",

@@ -397,6 +397,12 @@ const sections: NavSection[] = [
             objectType: "rack",
           },
           {
+            title: "Rack types",
+            url: "/rack-types",
+            icon: SquareStack,
+            objectType: "racktype",
+          },
+          {
             title: "Rack roles",
             url: "/rack-roles",
             icon: Rows3,

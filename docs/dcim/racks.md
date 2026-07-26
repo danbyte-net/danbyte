@@ -18,11 +18,39 @@ familiar front/rear diagram showing what's mounted in each rack unit.
    drawings; left blank, plausible defaults are used (depth 1000 mm, width
    derived from the rail width plus a 150 mm frame).
 
+Picking a [**rack type**](#rack-types) fills the height, width, outer
+dimensions and weight budget from the cabinet model in one go.
+
 ### Rack roles
 
 A **rack role** classifies a rack's purpose (e.g. *network*, *compute*,
 *storage*) with a color, so racks group visually. Define them on the **Rack
 roles** page — like everything else, none ship by default.
+
+### Rack types
+
+A **rack type** is a cabinet *model* — "APC NetShelter SX 42U 600mm" — with
+the dimensions a cabinet of that model always has: rail width, height in U,
+starting unit and numbering direction, outer width/depth (mm), and the load
+rating. Define them on **DCIM → Rack types**; picking one on the rack form
+**pre-fills all of those fields** (each stays editable — the rack remains the
+source of truth, so a one-off odd cabinet just overrides a value).
+
+A rack type can also carry **accessories**: the factory-fitted 0U gear the
+model ships with — typically a pair of vertical PDU strips. Each accessory
+names a **0U device type**, a **label** (`PDU-A`), a **rail** (left/right),
+and the optional offset/span of a [side mount](#zero-u-side-mounting-vertical-pdus).
+When you create a rack with a type picked, tick **Create accessories** and
+Danbyte stamps one side-mounted device per accessory, named
+`{rack}-{label}` (deduped `-2`, `-3`… if taken), with the device type's
+component templates materialised — so a stamped PDU arrives with its real
+outlets, ready for power cabling.
+
+Stamping writes devices, so the checkbox requires permission to **add
+devices at the rack's site** — without it the rack is refused wholly (no
+half-created rack). The stamp is create-only: re-saving a rack never
+duplicates its strips. Deleting a rack type never touches racks or devices
+(and is refused with a conflict while racks still use it).
 
 ## Mount a device in a rack
 
