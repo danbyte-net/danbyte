@@ -65,6 +65,13 @@ before touching anything:
   picking a type), so this reports rather than nags.
 - **Accessories to add** — strips the type defines that this rack hasn't
   got, stamped exactly as they would be at creation.
+- **Strips to bring in line** — a strip that *exists* but no longer agrees
+  with its accessory: the model's device type was swapped, the rail moved,
+  a channel was set. Applying re-points the existing device rather than
+  creating a second one. A changed **device type** adds the new type's
+  components and leaves the ones already there — pruning those is the
+  *device's* own Sync from type, which is the only place that knows what
+  the cabling depends on.
 - **Not on the type** — stamped-looking strips the type no longer defines.
   These are listed and **left alone**: a strip in a live rack is real,
   probably cabled hardware, so syncing never deletes one.

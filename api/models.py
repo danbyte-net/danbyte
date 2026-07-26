@@ -1167,10 +1167,17 @@ def diff_rack_from_type(rack) -> dict:
     * ``dims`` — ``{field: {"rack": v, "type": v}}`` for every dimension that
       drifted. Picking a type pre-fills these and then lets you edit them, so
       drift is legitimate; this only reports it.
-    * ``accessories`` — ``{"add": [labels], "extra": [device names]}``.
+    * ``accessories`` — ``{"add": [...], "update": [...], "extra": [...]}``.
       *add* = accessories on the type with no side-mounted device carrying
-      that label on this rack; *extra* = side-mounted devices whose name
-      looks stamped (``{rack}-{label}``) but matches no current accessory.
+      that label; *update* = a strip that EXISTS but no longer matches its
+      accessory (the type's device type was swapped, the rail moved, a
+      channel was set); *extra* = side-mounted devices whose name looks
+      stamped (``{rack}-{label}``) but matches no current accessory.
+
+    Matching on the label alone is what makes *update* necessary: presence
+    is not agreement, and a first pass that only asked "is a strip with this
+    label here?" answered "nothing to apply" after the model's PDU had been
+    changed to a different device type entirely.
 
     Empty dict when the rack has no type.
     """
@@ -1183,27 +1190,50 @@ def diff_rack_from_type(rack) -> dict:
         if have != want:
             dims[f] = {"rack": have, "type": want}
 
-    accessories = list(rt.accessories.all())
+    accessories = list(rt.accessories.select_related("device_type"))
     # A stamped strip is named "{rack}-{label}"; match on that suffix so a
     # renamed rack (or a hand-added strip) doesn't read as a missing one.
-    mounted = [d for d in rack.devices.all() if d.mount]
-    have_labels = set()
+    prefix = f"{rack.name}-"
+    mounted = [d for d in rack.devices.select_related("device_type") if d.mount]
+    by_label: dict[str, object] = {}
     for d in mounted:
-        prefix = f"{rack.name}-"
         if d.name.startswith(prefix):
-            have_labels.add(d.name[len(prefix):])
+            by_label.setdefault(d.name[len(prefix):], d)
     want_labels = {a.label for a in accessories}
-    add = sorted(want_labels - have_labels)
+
+    add = sorted(want_labels - set(by_label))
+    update = []
+    for acc in accessories:
+        d = by_label.get(acc.label)
+        if d is None:
+            continue
+        changes: dict = {}
+        if d.device_type_id != acc.device_type_id:
+            changes["device_type"] = {
+                "device": d.device_type.name if d.device_type else None,
+                "type": acc.device_type.name,
+            }
+        for f in ("mount", "face", "mount_offset_mm", "mount_span_u"):
+            have, want = getattr(d, f), getattr(acc, f)
+            if have != want:
+                changes[f] = {"device": have, "type": want}
+        if changes:
+            update.append(
+                {"name": d.name, "label": acc.label, "changes": changes}
+            )
     extra = sorted(
-        d.name for d in mounted
-        if d.name.startswith(f"{rack.name}-")
-        and d.name[len(rack.name) + 1:] not in want_labels
+        label for label in by_label if label not in want_labels
     )
+
     out: dict = {}
     if dims:
         out["dims"] = dims
-    if add or extra:
-        out["accessories"] = {"add": add, "extra": extra}
+    if add or update or extra:
+        out["accessories"] = {
+            "add": add,
+            "update": update,
+            "extra": [f"{prefix}{label}" for label in extra],
+        }
     return out
 
 
@@ -1212,13 +1242,18 @@ def sync_rack_from_type(rack, *, dims: bool = True, accessories: bool = True):
     """Bring a rack back in line with its type.
 
     ``dims`` copies the model's dimensions onto the rack. ``accessories``
-    stamps the strips the type defines that this rack is missing — the same
-    naming and component materialisation the create-time stamp uses, so a
-    type that gains a PDU can be rolled out to racks already built from it.
+    stamps the strips the type defines that this rack is missing AND brings
+    existing strips back in line with their accessory — the same naming and
+    component materialisation the create-time stamp uses, so a type that
+    gains a PDU (or swaps to a different one) can be rolled out to racks
+    already built from it.
 
-    NEVER deletes: an "extra" strip is somebody's real, cabled PDU. The diff
-    reports extras so a human can decide; this function only adds.
-    Returns ``{"dims": [fields], "accessories": [device names]}``.
+    NEVER deletes: an "extra" strip is somebody's real, cabled PDU, and a
+    re-pointed device type keeps the components it already had (the new
+    type's are added alongside — the DEVICE's own sync-from-type is where
+    stale components get pruned, because only that action knows what the
+    cabling depends on). The diff reports extras so a human can decide.
+    Returns ``{"dims": [...], "accessories": [...], "updated": [...]}``.
     """
     diff = diff_rack_from_type(rack)
     changed_dims: list[str] = []
@@ -1227,6 +1262,29 @@ def sync_rack_from_type(rack, *, dims: bool = True, accessories: bool = True):
             setattr(rack, f, getattr(rack.rack_type, f))
             changed_dims.append(f)
         rack.save(update_fields=changed_dims)
+
+    updated: list[str] = []
+    if accessories and diff.get("accessories", {}).get("update"):
+        by_label = {a.label: a for a in rack.rack_type.accessories.all()}
+        for entry in diff["accessories"]["update"]:
+            acc = by_label.get(entry["label"])
+            device = rack.devices.filter(name=entry["name"]).first()
+            if acc is None or device is None:
+                continue
+            retyped = "device_type" in entry["changes"]
+            device.device_type = acc.device_type
+            device.mount = acc.mount
+            device.face = acc.face
+            device.mount_offset_mm = acc.mount_offset_mm
+            device.mount_span_u = acc.mount_span_u
+            device.save(update_fields=[
+                "device_type", "mount", "face",
+                "mount_offset_mm", "mount_span_u",
+            ])
+            if retyped:
+                # The new type's components; the old ones stay put.
+                materialize_device_components(device)
+            updated.append(device.name)
 
     stamped: list[str] = []
     if accessories and diff.get("accessories", {}).get("add"):
@@ -1253,7 +1311,11 @@ def sync_rack_from_type(rack, *, dims: bool = True, accessories: bool = True):
             )
             materialize_device_components(device)
             stamped.append(name)
-    return {"dims": changed_dims, "accessories": stamped}
+    return {
+        "dims": changed_dims,
+        "accessories": stamped,
+        "updated": updated,
+    }
 
 
 def _module_interface_names(module) -> list[str]:
