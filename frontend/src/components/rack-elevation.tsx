@@ -75,6 +75,9 @@ export function RackElevation({
   const [modeState, setMode] = useState<RackDisplayMode>("names")
   const [labelsState, setLabels] = useState(true)
   const [assignUnit, setAssignUnit] = useState<number | null>(null)
+  const [assignSide, setAssignSide] = useState<
+    "side_left" | "side_right" | null
+  >(null)
   const { canDo } = useMe()
   const canAddDevice = canDo("device", "add")
   const canMoveDevice = canDo("device", "change")
@@ -279,6 +282,9 @@ export function RackElevation({
                   devices={mountedLeft}
                   rackId={rack.id}
                   canAdd={canAddDevice}
+                  onAssign={
+                    canMoveDevice ? () => setAssignSide("side_left") : undefined
+                  }
                 />
               )}
               <div
@@ -370,6 +376,11 @@ export function RackElevation({
                   devices={mountedRight}
                   rackId={rack.id}
                   canAdd={canAddDevice}
+                  onAssign={
+                    canMoveDevice
+                      ? () => setAssignSide("side_right")
+                      : undefined
+                  }
                 />
               )}
             </div>
@@ -388,6 +399,11 @@ export function RackElevation({
         <p className="mt-2 text-xs text-muted-foreground">Loading devices…</p>
       )}
 
+      <SideAssignDialog
+        rack={rack}
+        side={assignSide}
+        onOpenChange={(o) => !o && setAssignSide(null)}
+      />
       <AssignDeviceDialog
         rack={rack}
         unit={assignUnit}
@@ -409,11 +425,14 @@ function SideLane({
   devices,
   rackId,
   canAdd,
+  onAssign,
 }: {
   side: "side_left" | "side_right"
   devices: Device[]
   rackId: string
   canAdd: boolean
+  /** Opens the "assign an existing 0U device" dialog for this rail. */
+  onAssign?: () => void
 }) {
   const railName = side === "side_left" ? "left" : "right"
   return (
@@ -441,6 +460,16 @@ function SideLane({
         >
           +
         </Link>
+      )}
+      {onAssign && (
+        <button
+          type="button"
+          onClick={onAssign}
+          title={`Assign an existing 0U device (${railName} rail)`}
+          className="flex h-7 items-center justify-center rounded border border-dashed border-border text-[10px] text-muted-foreground hover:border-primary hover:text-primary"
+        >
+          ⇥
+        </button>
       )}
     </div>
   )
@@ -472,6 +501,73 @@ function UnitBand({
     >
       {children}
     </div>
+  )
+}
+
+/** Hang an existing 0U device on a rail — the "assign" affordance in the side
+ * lane. PATCHes the device's rack + mount (clearing any U position), the
+ * mirror of AssignDeviceDialog for the zero-U case. */
+function SideAssignDialog({
+  rack,
+  side,
+  onOpenChange,
+}: {
+  rack: Rack
+  side: "side_left" | "side_right" | null
+  onOpenChange: (open: boolean) => void
+}) {
+  const qc = useQueryClient()
+  const [deviceId, setDeviceId] = useState<string | null>(null)
+  const railName = side === "side_left" ? "left" : "right"
+
+  const assign = useMutation({
+    mutationFn: () =>
+      api<Device>(`/api/devices/${deviceId}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ rack_id: rack.id, mount: side, position: null }),
+      }),
+    onSuccess: (d) => {
+      qc.invalidateQueries({ queryKey: ["rack-devices", rack.id] })
+      qc.invalidateQueries({ queryKey: ["rack", rack.id] })
+      qc.invalidateQueries({ queryKey: ["devices"] })
+      qc.invalidateQueries({ queryKey: ["device", d.id] })
+      toast.success(`${d.name} hung on the ${railName} rail`)
+      setDeviceId(null)
+      onOpenChange(false)
+    },
+    onError: (err) => apiErrorToast(err),
+  })
+
+  return (
+    <Dialog
+      open={side != null}
+      onOpenChange={(o) => {
+        if (!o) setDeviceId(null)
+        onOpenChange(o)
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Assign a 0U device to the {railName} rail</DialogTitle>
+          <DialogDescription>
+            Hangs an existing zero-U device (a vertical PDU or the like) on this
+            rail of {rack.name}. Only zero-U device types can side-mount.
+          </DialogDescription>
+        </DialogHeader>
+        <DevicePicker value={deviceId} onChange={setDeviceId} />
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => assign.mutate()}
+            disabled={!deviceId || assign.isPending}
+          >
+            {assign.isPending ? "Assigning…" : "Assign"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
