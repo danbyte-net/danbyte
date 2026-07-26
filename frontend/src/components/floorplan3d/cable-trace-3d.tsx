@@ -67,6 +67,10 @@ interface EndRun {
   /** Which face the lead exits — true = rear. Two same-face ends on one rack
    * patch directly; opposite faces must wrap the side, not cut through. */
   rear: boolean
+  /** Rack-LOCAL anchor + tile, so a same-rack run can be routed in local
+   * coords (rotation-safe) and transformed once. `chanX` is this end's side
+   * channel; `stubZ` is the depth the lead exits to. */
+  local: { tile: SceneTile; x: number; y: number; z: number; stubZ: number; chanX: number }
 }
 
 /** The traced run draws last and ignores depth — above the glass and ghosts
@@ -131,6 +135,7 @@ function portEndRun(
       ],
       railAt: (y) => worldOf(scene, tile, chanX, y, stubZ),
       rear: p.out === 1,
+      local: { tile, x: p.x, y: p.y, z: p.z, stubZ, chanX },
     }
   }
 
@@ -200,6 +205,7 @@ function portEndRun(
     ],
     railAt: (y) => world(chanX, y, chanZ),
     rear: panelRear,
+    local: { tile, x: lx, y: ly, z: lz, stubZ: lz + outZ, chanX },
   }
 }
 
@@ -241,7 +247,12 @@ export function cableRunPoints(
       t ? t.x + t.w / 2 : 0,
       t ? t.y + t.h / 2 : 0
     )
-    return { entry: [[x, y, z]], railAt: (ry) => [x, ry, z], rear: true }
+    return {
+      entry: [[x, y, z]],
+      railAt: (ry) => [x, ry, z],
+      rear: true,
+      local: { tile: t ?? scene.tiles[0], x: 0, y, z: 0, stubZ: 0, chanX: 0 },
+    }
   }
 
   const A = endRun(cp.a_points, cp.a_tiles[0])
@@ -257,16 +268,39 @@ export function cableRunPoints(
   //    same-side corner (rear depth) → stub → port. Forcing both to ONE side
   //    (A's) keeps it hugging that edge instead of crossing the cabinet.
   if (cp.a_tiles[0] === cp.b_tiles[0]) {
+    const la = A.local
+    const lb = B.local
+    const w = (x: number, y: number, z: number) =>
+      worldOf(scene, la.tile, x, y, z)
     if (A.rear === B.rear) {
-      const aShort = A.entry.slice(0, 2)
-      const bShort = B.entry.slice(0, 2)
-      return filletPath([...aShort, ...[...bShort].reverse()], 0.05)
+      // Same face — a short direct patch, port → stub → stub → port, hugging
+      // the gear. No corner channels (outside the rack edges, they looped the
+      // lead across the whole cabinet).
+      return filletPath(
+        [
+          w(la.x, la.y, la.z),
+          w(la.x, la.y, la.stubZ),
+          w(lb.x, lb.y, lb.stubZ),
+          w(lb.x, lb.y, lb.z),
+        ],
+        0.05
+      )
     }
-    // A's side corner is entry[2]; run B's face down to that same X.
-    const aCorner = A.entry[2] ?? A.entry[A.entry.length - 1]
-    const bCorner: Vec3 = [aCorner[0], B.entry[0][1], A.entry[1][2]]
+    // Opposite faces — wrap ONE side edge (A's channel), so the lead never
+    // crosses the cabinet interior: out A's face, over to A's side, along that
+    // edge to B's depth, in to B. Built in local coords so a rotated rack
+    // can't turn "the side" into a diagonal through the gear.
+    const side = la.chanX
     return filletPath(
-      [...A.entry, bCorner, ...[...B.entry.slice(0, 2)].reverse()],
+      [
+        w(la.x, la.y, la.z),
+        w(la.x, la.y, la.stubZ),
+        w(side, la.y, la.stubZ),
+        w(side, lb.y, la.stubZ),
+        w(side, lb.y, lb.stubZ),
+        w(lb.x, lb.y, lb.stubZ),
+        w(lb.x, lb.y, lb.z),
+      ],
       0.06
     )
   }
