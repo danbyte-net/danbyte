@@ -15,6 +15,7 @@ import { RackRuler } from "./rack-ruler"
 import { FaceLabel } from "./text-sprite"
 import {
   RACK_BASE_M,
+  RACK_CAP_M,
   TRANSPARENT_ORDER,
   cellToWorld,
   deviceBoxM,
@@ -508,7 +509,7 @@ function Shell({
   color: string
   mode: "solid" | "cutaway"
 }) {
-  const t = 0.03 // panel thickness
+  const t = RACK_CAP_M // panel thickness — also the cap headroom in rackFootprintM
   const steel = (
     key: string,
     pos: [number, number, number],
