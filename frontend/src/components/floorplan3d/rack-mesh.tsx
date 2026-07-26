@@ -297,6 +297,10 @@ export function RackMesh({
   )
 }
 
+/** Painted rack steel — slight sheen so the studio environment reads on it. */
+const STEEL_ROUGHNESS = 0.6
+const STEEL_METALNESS = 0.35
+
 /** Far-tier cabinet body: one solid box (ghosted in x-ray / focus). */
 function Frame({
   w,
@@ -311,19 +315,27 @@ function Frame({
   color: string
   ghostOpacity?: number
 }) {
+  // Ghosts neither cast nor catch shadows — a see-through box with a solid
+  // shadow reads as a bug.
+  const ghost = ghostOpacity > 0
   return (
-    <mesh position={[0, h / 2, 0]}>
+    <mesh position={[0, h / 2, 0]} castShadow={!ghost} receiveShadow={!ghost}>
       <boxGeometry args={[w, h, d]} />
-      {ghostOpacity > 0 ? (
+      {ghost ? (
         <meshStandardMaterial
           color={color}
-          roughness={0.85}
+          roughness={STEEL_ROUGHNESS}
+          metalness={STEEL_METALNESS}
           transparent
           opacity={ghostOpacity}
           depthWrite={false}
         />
       ) : (
-        <meshStandardMaterial color={color} roughness={0.85} />
+        <meshStandardMaterial
+          color={color}
+          roughness={STEEL_ROUGHNESS}
+          metalness={STEEL_METALNESS}
+        />
       )}
     </mesh>
   )
@@ -361,18 +373,23 @@ function Shell({
     pos: [number, number, number],
     size: [number, number, number]
   ) => (
-    <mesh key={key} position={pos}>
+    <mesh key={key} position={pos} castShadow={!ghost} receiveShadow={!ghost}>
       <boxGeometry args={size} />
       {ghost ? (
         <meshStandardMaterial
           color={color}
-          roughness={0.85}
+          roughness={STEEL_ROUGHNESS}
+          metalness={STEEL_METALNESS}
           transparent
           opacity={opacity}
           depthWrite={false}
         />
       ) : (
-        <meshStandardMaterial color={color} roughness={0.85} />
+        <meshStandardMaterial
+          color={color}
+          roughness={STEEL_ROUGHNESS}
+          metalness={STEEL_METALNESS}
+        />
       )}
     </mesh>
   )
@@ -470,18 +487,19 @@ function Door({
   }, [w, doorH])
   useEffect(() => () => tex.dispose(), [tex])
   return (
-    <mesh position={[0, RACK_BASE_M + doorH / 2, z]}>
+    <mesh position={[0, RACK_BASE_M + doorH / 2, z]} castShadow={!ghosted}>
       <boxGeometry args={[w, doorH, 0.015]} />
       {ghosted ? (
         <meshStandardMaterial
           map={tex}
-          roughness={0.7}
+          roughness={0.55}
+          metalness={0.4}
           transparent
           opacity={FOCUS_GHOST_OPACITY}
           depthWrite={false}
         />
       ) : (
-        <meshStandardMaterial map={tex} roughness={0.7} />
+        <meshStandardMaterial map={tex} roughness={0.55} metalness={0.4} />
       )}
     </mesh>
   )

@@ -146,6 +146,8 @@ import { useTheme } from "@/components/theme-provider"
 import { useMe } from "@/lib/use-me"
 import { cn } from "@/lib/utils"
 import { apiErrorToast } from "@/lib/api-toast"
+import { storedQualitySetting, storeQualitySetting } from "@/lib/render-quality"
+import type { RenderQualitySetting } from "@/lib/render-quality"
 
 /** Arms the canvas's drag-rect painter while drawing a raised-floor area —
  * the ghost rect reuses the palette machinery, nothing else reads this. */
@@ -347,6 +349,15 @@ function FloorPlanPage() {
   const [show3dWallsLocal, setShow3dWallsLocal] = useState<boolean | null>(null)
   // Cabinet shell (3D): solid / cutaway / x-ray — a mode, not a checkbox.
   const [shell3dLocal, setShell3dLocal] = useState<ShellMode3D | null>(null)
+  // 3D effects budget — PER-DEVICE (localStorage), not a plan pref: the
+  // workstation's High must not follow the plan onto a weak laptop.
+  const [quality3d, setQuality3dState] = useState<RenderQualitySetting>(() =>
+    storedQualitySetting()
+  )
+  const setQuality3d = (v: RenderQualitySetting) => {
+    setQuality3dState(v)
+    storeQualitySetting(v)
+  }
   const [highlightCableIds, setHighlightCableIds] = useState<string[]>([])
   // Tile popover: hover-preview (delayed) + click-to-pin.
   const popover = useTilePopover()
@@ -1410,6 +1421,25 @@ function FloorPlanPage() {
                       ]}
                     />
                   </div>
+                  <div className="px-2 pt-1.5 pb-1">
+                    <span className="mb-1 block text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+                      Quality — this device
+                    </span>
+                    <SegmentedTabs<RenderQualitySetting>
+                      value={quality3d}
+                      onValueChange={setQuality3d}
+                      items={[
+                        { value: "auto", label: "Auto" },
+                        { value: "low", label: "Low" },
+                        { value: "medium", label: "Med" },
+                        { value: "high", label: "High" },
+                      ]}
+                    />
+                    <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
+                      Shadows and ambient occlusion. Saved per device, not on
+                      the plan — Auto probes the GPU.
+                    </p>
+                  </div>
                 </>
               )}
             </PopoverContent>
@@ -1670,6 +1700,7 @@ function FloorPlanPage() {
                   floorPeek={floorPeek}
                   showWalls={show3dWalls}
                   shellMode={shell3d}
+                  quality={quality3d}
                 />
               </Suspense>
               {show3dHint && (

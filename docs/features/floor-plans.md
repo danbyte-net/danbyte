@@ -110,6 +110,18 @@ uploaded blueprint textures it.
 - **View rear** on a rack's card flips the camera to the cabinet's other
   face — the same framing as a double-click fly-to, mirrored through the
   rack — and flips back with **View front**.
+- **Light that grounds the room**: one shadow-casting key light plus a
+  procedural studio environment (no downloaded assets — it works
+  airgapped), so cabinets stand *on* the floor instead of floating in
+  front of it, and painted steel and galvanised tray read as material
+  rather than flat grey. On High quality, screen-space ambient occlusion
+  adds the interior depth that makes an open cabinet look hollow.
+- **Quality** (View menu, 3D): Auto / Low / Medium / High — how much the
+  effects may cost. Low drops shadows and caps resolution (software
+  rendering survives), Medium adds shadows, High adds ambient occlusion.
+  Saved **per device** in the browser, not on the plan: your workstation's
+  High never follows the plan onto a weak laptop. Auto probes the GPU once
+  and picks a tier.
 - **Click a rack** for a summary card (space used, monitoring rollup) and a
   jump to the rack page; **click a device** inside an open cabinet for its
   own card (U position, size, face) and a jump to the device page. Up close,

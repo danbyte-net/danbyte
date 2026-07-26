@@ -252,19 +252,24 @@ export function DeviceMesh({
         document.body.style.cursor = ""
       }}
     >
-      <mesh>
+      <mesh castShadow={!ghosted}>
         <boxGeometry args={[dw, boxH, dd]} />
         {/* Ghosting = the room's one transparency convention. */}
         {ghosted ? (
           <meshStandardMaterial
             color={bodyColor}
-            roughness={0.7}
+            roughness={0.55}
+            metalness={0.2}
             transparent
             opacity={0.12}
             depthWrite={false}
           />
         ) : (
-          <meshStandardMaterial color={bodyColor} roughness={0.7} />
+          <meshStandardMaterial
+            color={bodyColor}
+            roughness={0.55}
+            metalness={0.2}
+          />
         )}
       </mesh>
       {texture && (

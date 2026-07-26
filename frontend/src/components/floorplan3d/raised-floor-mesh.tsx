@@ -39,7 +39,7 @@ export function RaisedFloorMesh({
           peek so the plenum contents show. depthWrite stays ON when solid so
           underfloor geometry is genuinely hidden — that's the honest render
           of a closed floor. */}
-      <mesh position={[cx, TOP_Y, cz]} raycast={() => null}>
+      <mesh position={[cx, TOP_Y, cz]} raycast={() => null} receiveShadow>
         <boxGeometry args={[w, TOP_THICKNESS, d]} />
         <meshStandardMaterial
           color={tint}

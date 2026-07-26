@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { TriangleAlert } from "lucide-react"
 import { Canvas, useThree } from "@react-three/fiber"
+import { EffectComposer, N8AO } from "@react-three/postprocessing"
 import * as THREE from "three"
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js"
+
+import { detectRenderQuality } from "@/lib/render-quality"
+import type { RenderQuality, RenderQualitySetting } from "@/lib/render-quality"
 import { Link } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -75,6 +80,7 @@ export default function FloorScene3D({
   showCables = false,
   showWalls = true,
   shellMode = "cutaway",
+  quality = "auto",
 }: {
   planId: string
   liveState: FloorPlanLiveState | null
@@ -92,6 +98,8 @@ export default function FloorScene3D({
   showWalls?: boolean
   /** Cabinet shell: solid (doors on) / cutaway (open frame) / x-ray. */
   shellMode?: ShellMode
+  /** Effects budget (shadows, AO, dpr) — per-device, "auto" probes the GPU. */
+  quality?: RenderQualitySetting
 }) {
   const scene = useScene(planId)
   const qc = useQueryClient()
@@ -326,6 +334,9 @@ export default function FloorScene3D({
   const [w, d] = cellToWorld(plan, plan.grid_width, plan.grid_height)
   const rackTiles = data.tiles.filter((t) => t.kind === "rack" && t.rack)
   const diag = Math.max(w, d)
+  // Effects budget: Low = no shadows/AO and a capped dpr, Medium = shadows,
+  // High = shadows + ambient occlusion. "auto" asks the GPU once.
+  const rq: RenderQuality = quality === "auto" ? detectRenderQuality() : quality
 
   const selTile = selection
     ? (rackTiles.find((t) => t.id === selection.tileId) ?? null)
@@ -405,10 +416,13 @@ export default function FloorScene3D({
     <div className="relative h-full min-h-0 w-full">
       <Canvas
         frameloop="demand"
+        // `shadows` costs nothing until a light casts — the quality tier
+        // gates that per light, so Low never pays the shadow pass.
+        shadows
         // Render at the display's real pixel ratio (capped at 2): 1.75 left a
         // HiDPI canvas rendering below native and reading softer than the 2D
-        // faceplate beside it.
-        dpr={[1, 2]}
+        // faceplate beside it. Low quality caps at 1.5 instead.
+        dpr={rq === "low" ? [1, 1.5] : [1, 2]}
         camera={{
           position: [w / 2 + diag * 0.55, diag * 0.6, d + diag * 0.45],
           fov: 45,
@@ -426,9 +440,36 @@ export default function FloorScene3D({
         }}
       >
         <InvalidatorBridge apiRef={invalidateRef} />
-        <ambientLight intensity={0.7} />
-        <directionalLight position={[w * 0.3, 12, d * 0.2]} intensity={1.1} />
-        <directionalLight position={[w, 8, d]} intensity={0.4} />
+        {/* Light rig: soft ambient + one shadow-casting key light + a dim
+            fill, over a procedural studio environment (PMREM'd
+            RoomEnvironment — zero assets, so airgap/CSP-safe). Intensities
+            re-balanced for the environment's contribution; tone mapping is
+            r3f's default ACESFilmic (that's why photo faceplates opt out
+            with toneMapped={false}). */}
+        <ambientLight intensity={0.4} />
+        <KeyLight
+          w={w}
+          d={d}
+          diag={diag}
+          castShadow={rq !== "low"}
+          shadowRes={rq === "high" ? 2048 : 1024}
+        />
+        <directionalLight position={[w, 8, d]} intensity={0.25} />
+        <StudioEnvironment />
+        {/* Ambient occlusion (High only): the interior depth that makes an
+            open cabinet look deep rather than printed. Screen-space, so the
+            depthWrite=false ghosts never smudge it. */}
+        {rq === "high" && (
+          <EffectComposer multisampling={4}>
+            <N8AO
+              aoRadius={0.5}
+              intensity={3}
+              distanceFalloff={0.6}
+              quality="performance"
+              halfRes
+            />
+          </EffectComposer>
+        )}
         <Room
           scene={data}
           xray={shellMode === "xray"}
@@ -729,6 +770,78 @@ export default function FloorScene3D({
       )}
     </div>
   )
+}
+
+/**
+ * The shadow-casting key light, aimed at the room's centre with an
+ * orthographic frustum fitted to the room — one shadow pass, paid only on
+ * frames the demand loop already renders. Keyed by its shadow config so a
+ * quality change rebuilds the map cleanly instead of resizing it in place.
+ */
+function KeyLight({
+  w,
+  d,
+  diag,
+  castShadow,
+  shadowRes,
+}: {
+  w: number
+  d: number
+  diag: number
+  castShadow: boolean
+  shadowRes: number
+}) {
+  const target = useMemo(() => new THREE.Object3D(), [])
+  const frustum = diag * 0.75 + 5
+  return (
+    <>
+      <primitive object={target} position={[w / 2, 0, d / 2]} />
+      <directionalLight
+        key={`${castShadow}-${shadowRes}`}
+        position={[w * 0.25, Math.max(10, diag * 0.6), d * 0.15]}
+        intensity={0.95}
+        target={target}
+        castShadow={castShadow}
+        shadow-mapSize-width={shadowRes}
+        shadow-mapSize-height={shadowRes}
+        // Bias pair against acne on the big flat slab without peter-panning
+        // the rack feet off the floor.
+        shadow-bias={-0.0003}
+        shadow-normalBias={0.03}
+        shadow-camera-near={1}
+        shadow-camera-far={diag * 2 + 40}
+        shadow-camera-left={-frustum}
+        shadow-camera-right={frustum}
+        shadow-camera-top={frustum}
+        shadow-camera-bottom={-frustum}
+      />
+    </>
+  )
+}
+
+/**
+ * Procedural studio IBL: three's RoomEnvironment baked through PMREM once
+ * per mount. Zero external assets (no HDRI fetch — CSP/airgap-safe), and it
+ * is what gives painted steel and rails something to reflect; without an
+ * environment, metalness only darkens.
+ */
+function StudioEnvironment() {
+  const gl = useThree((s) => s.gl)
+  const scene = useThree((s) => s.scene)
+  const invalidate = useThree((s) => s.invalidate)
+  useEffect(() => {
+    const pmrem = new THREE.PMREMGenerator(gl)
+    const rt = pmrem.fromScene(new RoomEnvironment(), 0.04)
+    pmrem.dispose()
+    scene.environment = rt.texture
+    scene.environmentIntensity = 0.35
+    invalidate()
+    return () => {
+      scene.environment = null
+      rt.dispose()
+    }
+  }, [gl, scene, invalidate])
+  return null
 }
 
 /** invalidate() escape hatch for DOM overlays: with `frameloop="demand"`, a

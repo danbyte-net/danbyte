@@ -57,6 +57,8 @@ export function WallMesh({
             position={[(x0 + x1) / 2, (b.y0 + b.y1) / 2, (z0 + z1) / 2]}
             rotation={[0, rot, 0]}
             raycast={() => null}
+            castShadow={!ghost}
+            receiveShadow={!ghost}
           >
             <boxGeometry
               args={[len + WALL_THICKNESS_M, b.y1 - b.y0, WALL_THICKNESS_M]}
