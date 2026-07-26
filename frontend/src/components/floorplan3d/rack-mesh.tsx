@@ -7,6 +7,7 @@ import type { FloorTileCheck } from "@/lib/api"
 import type { LegendReporter } from "@/components/speed-scale"
 
 import { AirflowGlyphs } from "./airflow-glyphs"
+import { isCameraMoving } from "./camera-motion"
 import { DeviceInstances } from "./device-instances"
 import { DeviceMesh } from "./device-mesh"
 import { SideStripMesh } from "./side-strip-mesh"
@@ -143,6 +144,13 @@ export function RackMesh({
     [width, height, depth]
   )
   useFrame(({ camera }) => {
+    // Both swaps below go through useState, so each one re-renders this rack —
+    // and a detail-tier rack re-renders two dozen DeviceMesh subtrees with
+    // their queries and memos. While the camera is moving, dozens of racks
+    // cross a threshold every frame, and the resulting React cascade is what
+    // made every nav keypress cost 130–800 ms. Motion draws; settling
+    // re-tiers. See camera-motion.ts.
+    if (isCameraMoving()) return
     const dist = camera.position.distanceTo(centre) - halfDiag
     const next = tierFor(dist, tierRef.current)
     if (next !== tierRef.current) {

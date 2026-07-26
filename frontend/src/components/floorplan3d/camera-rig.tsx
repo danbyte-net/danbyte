@@ -4,6 +4,7 @@ import { OrbitControls } from "@react-three/drei"
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib"
 import * as THREE from "three"
 
+import { markCameraMoving, settleDelayMs } from "./camera-motion"
 import {
   MIN_DISTANCE_M,
   NAV_KEYS,
@@ -117,6 +118,11 @@ export function CameraRig({
       // No guards on release: a key that went down must always come back up,
       // even if focus moved into a field or a modifier joined mid-hold.
       pressed.current.delete(normalizeKey(e.key))
+      // Racks defer their LOD swap while the camera moves; the demand loop
+      // stops on release, so without this trailing frame the pending swaps
+      // would never run and the room would stay coarse until you nudged it.
+      if (pressed.current.size === 0)
+        window.setTimeout(invalidate, settleDelayMs() + 32)
     }
     const onBlur = () => {
       // Alt-tab with a key held must not pan forever.
@@ -166,6 +172,7 @@ export function CameraRig({
       // Walking overrides an in-flight fly-to, same as a nav keypress.
       anim.current = null
       requestRef.current = null
+      markCameraMoving()
       c.update()
       invalidate()
     }
@@ -211,6 +218,7 @@ export function CameraRig({
       const k = a.t < 0.5 ? 4 * a.t ** 3 : 1 - (-2 * a.t + 2) ** 3 / 2
       state.camera.position.lerpVectors(a.fromPos, a.to.position, k)
       c.target.lerpVectors(a.fromTarget, a.to.target, k)
+      markCameraMoving()
       c.update()
       if (a.t >= 1) anim.current = null
       else invalidate()
@@ -245,6 +253,7 @@ export function CameraRig({
       if (state.camera.position.y < CAMERA_MIN_Y)
         state.camera.position.y = CAMERA_MIN_Y
       if (c.target.y < TARGET_MIN_Y) c.target.y = TARGET_MIN_Y
+      markCameraMoving()
       c.update()
     }
     // Demand frameloop: keep frames coming while any nav key is held —
