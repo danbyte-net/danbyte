@@ -63,12 +63,19 @@ export function TrayMesh({
   return (
     <group>
       {segments.map((s) => (
-        <mesh key={s.key} position={[s.cx, y, s.cz]} rotation={[0, s.rot, 0]}>
+        <mesh
+          key={s.key}
+          position={[s.cx, y, s.cz]}
+          rotation={[0, s.rot, 0]}
+          castShadow
+        >
           {/* Slight overlong so corner joints close visually. */}
           <boxGeometry args={[s.len + TRAY_W_M * 0.5, TRAY_H_M, TRAY_W_M]} />
+          {/* Galvanised: metal that actually reflects the studio env. */}
           <meshStandardMaterial
             color={color}
-            roughness={0.6}
+            roughness={0.5}
+            metalness={0.55}
             transparent
             opacity={0.9}
           />
