@@ -517,6 +517,127 @@ export function wallDoorSpans(
   return out
 }
 
+// ─── Cable-run geometry (P8) ─────────────────────────────────────────────────
+
+type V3 = [number, number, number]
+
+/**
+ * Replace every interior corner of a polyline with a rounded bend: pull back
+ * up to `radius` along both edges and sample a quadratic Bézier through the
+ * corner. No installer bends a cable at 90° — and neither should the room.
+ * Endpoints are preserved exactly (a run still starts ON its port quad);
+ * collinear vertices pass through untouched. Pure and unit-tested.
+ */
+export function filletPath(points: V3[], radius = 0.1, steps = 4): V3[] {
+  if (points.length < 3) return points
+  const out: V3[] = [points[0]]
+  for (let i = 1; i < points.length - 1; i++) {
+    const [ax, ay, az] = points[i - 1]
+    const [bx, by, bz] = points[i]
+    const [cx, cy, cz] = points[i + 1]
+    const inV: V3 = [bx - ax, by - ay, bz - az]
+    const outV: V3 = [cx - bx, cy - by, cz - bz]
+    const inLen = Math.hypot(...inV)
+    const outLen = Math.hypot(...outV)
+    if (inLen < 1e-9 || outLen < 1e-9) continue
+    // Collinear (or nearly): keep the vertex as-is.
+    const dot =
+      (inV[0] * outV[0] + inV[1] * outV[1] + inV[2] * outV[2]) /
+      (inLen * outLen)
+    if (dot > 0.999) {
+      out.push(points[i])
+      continue
+    }
+    const t = Math.min(radius, inLen / 2, outLen / 2)
+    const p1: V3 = [
+      bx - (inV[0] / inLen) * t,
+      by - (inV[1] / inLen) * t,
+      bz - (inV[2] / inLen) * t,
+    ]
+    const p2: V3 = [
+      bx + (outV[0] / outLen) * t,
+      by + (outV[1] / outLen) * t,
+      bz + (outV[2] / outLen) * t,
+    ]
+    // Quadratic Bézier p1 → (corner) → p2.
+    for (let s = 0; s <= steps; s++) {
+      const u = s / steps
+      const w0 = (1 - u) * (1 - u)
+      const w1 = 2 * (1 - u) * u
+      const w2 = u * u
+      out.push([
+        w0 * p1[0] + w1 * bx + w2 * p2[0],
+        w0 * p1[1] + w1 * by + w2 * p2[1],
+        w0 * p1[2] + w1 * bz + w2 * p2[2],
+      ])
+    }
+  }
+  out.push(points[points.length - 1])
+  return out
+}
+
+/**
+ * Offset a 2D polyline sideways by `offset` (metres, +left of travel), with
+ * averaged normals at the joints — how ten cables in one tray become ten
+ * PARALLEL runs instead of one overdrawn line.
+ */
+export function offsetPolyline(
+  points: [number, number][],
+  offset: number
+): [number, number][] {
+  if (points.length < 2 || offset === 0) return points.map((p) => [p[0], p[1]])
+  const normals: [number, number][] = []
+  for (let i = 0; i < points.length - 1; i++) {
+    const dx = points[i + 1][0] - points[i][0]
+    const dz = points[i + 1][1] - points[i][1]
+    const len = Math.hypot(dx, dz) || 1
+    normals.push([-dz / len, dx / len])
+  }
+  return points.map((p, i) => {
+    const n0 = normals[Math.max(0, i - 1)]
+    const n1 = normals[Math.min(normals.length - 1, i)]
+    let nx = n0[0] + n1[0]
+    let nz = n0[1] + n1[1]
+    const len = Math.hypot(nx, nz)
+    if (len < 1e-9) {
+      nx = n1[0]
+      nz = n1[1]
+    } else {
+      nx /= len
+      nz /= len
+    }
+    return [p[0] + nx * offset, p[1] + nz * offset]
+  })
+}
+
+/** Lanes across a tray and a little vertical stagger. */
+export const CABLE_LANES = 7
+export const CABLE_LANE_SPACING_M = 0.028
+
+/**
+ * A cable's deterministic tray lane: same cable, same lane, every frame and
+ * every reload — no flicker, no reshuffling. `across` spreads runs over the
+ * tray width, `lift` staggers heights so crossing lanes don't z-fight.
+ */
+export function cableLane(cableId: string): { across: number; lift: number } {
+  // djb2 — tiny, stable, good enough spread for a handful of lanes.
+  let h = 5381
+  for (let i = 0; i < cableId.length; i++)
+    h = ((h << 5) + h + cableId.charCodeAt(i)) >>> 0
+  const lane = h % CABLE_LANES
+  const across = (lane - (CABLE_LANES - 1) / 2) * CABLE_LANE_SPACING_M
+  const lift = ((h >>> 3) % 3) * 0.014
+  return { across, lift }
+}
+
+/** Cable jacket radius (m) by kind — power reads fatter than fibre. */
+export function cableRadiusM(type: string | null | undefined): number {
+  const t = (type ?? "").toLowerCase()
+  if (t.includes("power")) return 0.012
+  if (/smf|mmf|fib|os[12]|om[1-5]|aoc/.test(t)) return 0.005
+  return 0.008
+}
+
 /** True when this browser can do WebGL at all (feature gate for the view). */
 export function webglSupported(): boolean {
   try {

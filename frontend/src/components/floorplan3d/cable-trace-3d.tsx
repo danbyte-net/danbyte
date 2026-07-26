@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useFrame, useThree } from "@react-three/fiber"
 import { Line } from "@react-three/drei"
+import * as THREE from "three"
 import type { Line2 } from "three-stdlib"
 import { useQuery } from "@tanstack/react-query"
 
@@ -9,14 +10,17 @@ import { renderTemplateName } from "@/lib/faceplate-geometry"
 import { routeCable, type Pt } from "@/components/floorplan/cable-route"
 
 import {
+  cableLane,
+  cableRadiusM,
   cellToWorld,
   deviceBoxM,
+  filletPath,
+  offsetPolyline,
   portLocalM,
   rackFootprintM,
   trayElevationM,
-  type ScenePayload,
-  type SceneTile,
 } from "./world"
+import type { ScenePayload, SceneTile } from "./world"
 
 /** Fallback tint for cables with no recorded colour. */
 const CABLE_FALLBACK = "#64748b"
@@ -41,12 +45,14 @@ function deviceSites(scene: ScenePayload): Map<string, DeviceSite> {
 type Vec3 = [number, number, number]
 
 /**
- * How a cable LEAVES one end: out of the port quad, a short stub straight off
- * the face, then a vertical rise/dive RIGHT THERE, in front of the cabinet at
- * the port's own x — like a patch lead dropping down the front. (An earlier
- * side-rail jog ran horizontally across the faceplate at port height and
- * sliced every panel it passed.) `entry` is ordered port → stub; `railAt(y)`
- * continues the riser in that column.
+ * How a cable LEAVES one end: out of the port quad, a short stub off the
+ * face, then a sideways sweep — clear of the faceplates, at stub depth — to
+ * the cabinet's NEAREST front corner, where the riser runs like a vertical
+ * cable manager hugging the rack edge. (History: v1 jogged across the
+ * faceplate AT the face plane and sliced panels; v2 dropped straight down
+ * in front of the port and curtained every faceplate below it. The corner
+ * channel is how an installer actually dresses a lead.) `entry` is ordered
+ * port → stub → corner; `railAt(y)` continues the riser in that column.
  */
 interface EndRun {
   entry: Vec3[]
@@ -88,14 +94,19 @@ function portEndRun(
     cz - x * Math.sin(th) + z * Math.cos(th),
   ]
 
-  // Stub straight OUT of the face (local ±Z), then rise/dive vertically right
-  // there, in front of the cabinet at the port's own x — like a patch lead
-  // dropping down the front. (An earlier side-rail jog ran horizontally
-  // across the faceplate at port height and sliced every panel it passed.)
-  const outZ = box.mountedRear ? 0.18 : -0.18
+  // Stub OUT of the face (local ±Z), then sweep sideways at stub depth —
+  // clear of every faceplate — to the nearest cabinet edge, and rise there:
+  // the front-corner channel, like a vertical manager bolted to the rail.
+  const outZ = box.mountedRear ? 0.12 : -0.12
+  const chanX = (lx >= 0 ? 1 : -1) * (width / 2 + 0.04)
+  const chanZ = lz + outZ * 0.75 // riser tucks a hair closer to the face
   return {
-    entry: [world(lx, ly, lz), world(lx, ly, lz + outZ)],
-    railAt: (y) => world(lx, y, lz + outZ),
+    entry: [
+      world(lx, ly, lz),
+      world(lx, ly, lz + outZ),
+      world(chanX, ly, chanZ),
+    ],
+    railAt: (y) => world(chanX, y, chanZ),
   }
 }
 
@@ -143,9 +154,10 @@ export function cableRunPoints(
   const A = endRun(cp.a_points, cp.a_tiles[0])
   const B = endRun(cp.b_points, cp.b_tiles[0])
 
-  // Same rack (or same tile): port → rail → rail → port, no room trip.
+  // Same rack (or same tile): port → corner → corner → port, no room trip —
+  // filleted so the patch lead droops like a lead, not a wire sculpture.
   if (cp.a_tiles[0] === cp.b_tiles[0]) {
-    return [...A.entry, ...[...B.entry].reverse()]
+    return filletPath([...A.entry, ...[...B.entry].reverse()], 0.08)
   }
 
   const trays = scene.trays.filter((t) => cp.tray_ids.includes(t.id))
@@ -156,20 +168,26 @@ export function cableRunPoints(
     trays.map((t) => t.points)
   )
   // Ride at the assigned trays' (average) elevation; straight runs with no
-  // tray fly at 2/3 room height so they read as an abstract link.
-  const rideY = trays.length
-    ? trays.reduce((s, t) => s + trayElevationM(plan, t, areas), 0) /
-      trays.length
-    : (plan.ceiling_mm / 1000) * 0.66
+  // tray fly at 2/3 room height so they read as an abstract link. Each cable
+  // gets a deterministic LANE across the tray and a small height stagger, so
+  // ten runs in one duct render as ten parallel runs, not one overdrawn line.
+  const lane = cableLane(cp.id)
+  const rideY =
+    (trays.length
+      ? trays.reduce((s, t) => s + trayElevationM(plan, t, areas), 0) /
+        trays.length
+      : (plan.ceiling_mm / 1000) * 0.66) + lane.lift
 
+  const rideWorld = offsetPolyline(
+    route.map((p) => cellToWorld(plan, p[0], p[1])),
+    lane.across
+  )
   const pts: Vec3[] = []
-  pts.push(...A.entry, A.railAt(rideY)) // leave the A port, rise the rail…
-  for (const p of route) {
-    const [x, z] = cellToWorld(plan, p[0], p[1])
-    pts.push([x, rideY, z]) // …ride the trays…
-  }
+  pts.push(...A.entry, A.railAt(rideY)) // leave the A port, rise the corner…
+  for (const [x, z] of rideWorld) pts.push([x, rideY, z]) // …ride the lane…
   pts.push(B.railAt(rideY), ...[...B.entry].reverse()) // …drop to the B port.
-  return pts
+  // Hard corners become bends — nobody installs cable at 90°.
+  return filletPath(pts, 0.12)
 }
 
 /** Shared cable-paths fetch — same endpoint + query key as the 2D canvas. */
@@ -254,6 +272,14 @@ export function CablesLayer({
             points={points}
             color={cp.color || "#0ea5e9"}
           />
+        ) : runs.length <= TUBE_LIMIT ? (
+          <CableTube
+            key={cp.id}
+            points={points}
+            color={cp.color || CABLE_FALLBACK}
+            radius={cableRadiusM(cp.type)}
+            onClick={() => onSelect(cp.id)}
+          />
         ) : (
           <CableLine
             key={cp.id}
@@ -264,6 +290,68 @@ export function CablesLayer({
         )
       )}
     </>
+  )
+}
+
+/** Above this many runs, tubes fall back to cheap lines — geometry for a
+ * thousand-cable hall is a loom problem (roadmap P8 follow-up), not a
+ * per-cable-mesh problem. */
+const TUBE_LIMIT = 200
+
+/**
+ * One cable as REAL geometry: a tube with a millimetre jacket radius by kind
+ * (power > copper > fibre), lit and AO'd like everything else in the room —
+ * a screen-space line neither thickens up close nor sits in the light.
+ * Static geometry, demand-frameloop safe; hover glows instead of re-widening.
+ */
+function CableTube({
+  points,
+  color,
+  radius,
+  onClick,
+}: {
+  points: [number, number, number][]
+  color: string
+  radius: number
+  onClick: () => void
+}) {
+  const [hovered, setHovered] = useState(false)
+  const geometry = useMemo(() => {
+    const v = points.map((p) => new THREE.Vector3(p[0], p[1], p[2]))
+    const path = new THREE.CurvePath<THREE.Vector3>()
+    for (let i = 0; i < v.length - 1; i++)
+      path.add(new THREE.LineCurve3(v[i], v[i + 1]))
+    let len = 0
+    for (let i = 0; i < v.length - 1; i++) len += v[i].distanceTo(v[i + 1])
+    // The path is already filleted — segments only need to keep up with it.
+    const segments = Math.min(400, Math.max(24, Math.round(len / 0.06)))
+    return new THREE.TubeGeometry(path, segments, radius, 6, false)
+  }, [points, radius])
+  useEffect(() => () => geometry.dispose(), [geometry])
+  return (
+    <mesh
+      geometry={geometry}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      onPointerOver={(e) => {
+        e.stopPropagation()
+        setHovered(true)
+        document.body.style.cursor = "pointer"
+      }}
+      onPointerOut={() => {
+        setHovered(false)
+        document.body.style.cursor = ""
+      }}
+    >
+      <meshStandardMaterial
+        color={color}
+        roughness={0.55}
+        emissive={color}
+        emissiveIntensity={hovered ? 0.5 : 0}
+      />
+    </mesh>
   )
 }
 
