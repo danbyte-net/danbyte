@@ -1821,6 +1821,43 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             # Full-width devices never carry a side — keep stale values out.
             side = ""
             attrs["rack_side"] = ""
+
+        # ── Zero-U side mounting (vertical PDU strips) ───────────────────
+        mount = attrs.get("mount", getattr(self.instance, "mount", ""))
+        if mount:
+            if rack is None:
+                raise serializers.ValidationError(
+                    {"mount": "Side mounting needs a rack to bolt to."}
+                )
+            if dt is not None and dt.u_height > 0:
+                raise serializers.ValidationError(
+                    {"mount": "Only 0U device types side-mount — this type "
+                              f"is {dt.u_height}U and takes a U position."}
+                )
+            if position is not None:
+                raise serializers.ValidationError(
+                    {"position": "A side-mounted device hangs on a rail — "
+                                 "it can't also occupy a U position."}
+                )
+            if face or side:
+                raise serializers.ValidationError(
+                    {"mount": "Side mounting replaces face/side placement — "
+                              "clear those first."}
+                )
+            span = attrs.get(
+                "mount_span_u", getattr(self.instance, "mount_span_u", None)
+            )
+            if span is not None and span > rack.u_height:
+                raise serializers.ValidationError(
+                    {"mount_span_u": f"Longer than the rack ({rack.u_height}U)."}
+                )
+        else:
+            # No mount → the mount extras must not linger.
+            if attrs.get("mount_offset_mm") or attrs.get("mount_span_u"):
+                raise serializers.ValidationError(
+                    {"mount": "Set a mount side before offset/span."}
+                )
+
         if rack is None or position is None:
             return attrs
         if width == "half" and not side:
@@ -1900,6 +1937,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "role", "role_id", "platform", "platform_id",
                   "effective_platform",
                   "rack", "rack_id", "position", "face", "rack_side",
+                  "mount", "mount_offset_mm", "mount_span_u",
                   "u_height", "rack_width",
                   "location", "location_id", "cluster", "cluster_id",
                   "virtual_chassis", "virtual_chassis_id",
@@ -3452,7 +3490,11 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
                 continue
             if d.device_type and d.device_type.exclude_from_utilization:
                 continue  # blanking panels / cable management don't count
-            h = (d.device_type.u_height if d.device_type else 1) or 1
+            h = d.device_type.u_height if d.device_type else 1
+            if h <= 0:
+                # 0U gear (vertical strips, shelf appliances) occupies no
+                # units — the old `or 1` here charged each one a full U.
+                continue
             units.update(range(d.position, d.position + h))
         return len(units)
 
@@ -3491,6 +3533,12 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
             available += watts
         allocated = maximum = 0
         for d in obj.devices.all():
+            # A device WITH outlets is a distributor (a PDU): its inlet draw
+            # restates its children's draws, so counting both doubled the
+            # rack's demand. Distributors contribute supply topology, not
+            # demand.
+            if d.power_outlets.exists():
+                continue
             for pp in d.power_ports.all():
                 allocated += pp.allocated_draw or 0
                 maximum += pp.maximum_draw or 0

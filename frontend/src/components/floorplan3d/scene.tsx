@@ -1031,8 +1031,12 @@ function DeviceHud({
           )}
         {row(
           "Position",
-          `${rack.name} · U${dev.position}` +
-            (dev.u_height > 1 ? `–${dev.position + dev.u_height - 1}` : "")
+          dev.position != null
+            ? `${rack.name} · U${dev.position}` +
+                (dev.u_height > 1 ? `–${dev.position + dev.u_height - 1}` : "")
+            : `${rack.name} · ${
+                dev.mount === "side_left" ? "left" : "right"
+              } side rail`
         )}
         {row(
           "Size",

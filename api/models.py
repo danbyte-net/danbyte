@@ -1269,6 +1269,24 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
                    "device type's rack_width must be 'half'). Blank for "
                    "full-width devices."),
     )
+    # ── Zero-U side mounting (vertical PDU strips and the like) ─────────
+    MOUNT_CHOICES = [("side_left", "Left rail"), ("side_right", "Right rail")]
+    mount = models.CharField(
+        max_length=12, choices=MOUNT_CHOICES, blank=True, default="",
+        help_text=("Zero-U side mounting: the rack rail this device bolts "
+                   "to instead of occupying units. Requires a rack, a 0U "
+                   "device type, and no U position/face/side."),
+    )
+    mount_offset_mm = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="Bottom of the side-mounted strip above the base plate.",
+    )
+    mount_span_u = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(60)],
+        help_text=("Vertical extent of the side-mounted strip, in U. Blank "
+                   "draws ~three quarters of the rack."),
+    )
     status = models.ForeignKey(
         "Status", on_delete=models.PROTECT, null=True, blank=True,
         related_name="devices",

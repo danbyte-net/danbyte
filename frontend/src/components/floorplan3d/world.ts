@@ -15,9 +15,14 @@ import { OPENING_MM, PANEL_MM } from "@/lib/faceplate-geometry"
 export interface SceneDevice {
   id: string
   name: string
-  position: number
+  /** Lowest occupied U — null for side-mounted 0U strips. */
+  position: number | null
   face: "" | "front" | "rear"
   rack_side: "" | "left" | "right"
+  /** Zero-U side mounting (vertical PDU strips); ""/absent = racked. */
+  mount?: "" | "side_left" | "side_right"
+  mount_offset_mm?: number | null
+  mount_span_u?: number | null
   u_height: number
   rack_width: "full" | "half"
   is_full_depth: boolean
@@ -224,12 +229,15 @@ export function deviceYM(
   dev: SceneDevice
 ): { y: number; h: number } {
   const pitch = mm(PANEL_MM.uPitch)
+  // Side-mounted strips never reach this math (they render via
+  // sideStripBoxM); the fallback keeps the function total for TypeScript.
+  const position = dev.position ?? rack.starting_unit
   // A 0U appliance still occupies its position's slot (the 2D elevation's
   // Math.max(1, …) clamp), it just renders shorter than the slot.
   const units = Math.max(dev.u_height, 1)
   const slotFromBottom = rack.desc_units
-    ? rack.u_height - (dev.position - rack.starting_unit) - units
-    : dev.position - rack.starting_unit
+    ? rack.u_height - (position - rack.starting_unit) - units
+    : position - rack.starting_unit
   return {
     y: RACK_BASE_M + slotFromBottom * pitch,
     h: (dev.u_height > 0 ? dev.u_height : APPLIANCE_H_U) * pitch,
@@ -515,6 +523,45 @@ export function wallDoorSpans(
     }
   }
   return out
+}
+
+// ─── Zero-U side strips ──────────────────────────────────────────────────────
+
+/** Strip cross-section + the gap it hangs off the side panel. */
+export const STRIP_W_M = 0.05
+export const STRIP_D_M = 0.11
+const STRIP_GAP_M = 0.035
+
+/**
+ * Where a side-mounted 0U strip (a vertical PDU) hangs, local to its rack
+ * group: on the named rail just outside the panel, rear half of the depth,
+ * spanning `mount_span_u` (default ~¾ of the rack) above its offset — and
+ * never poking past the rack's top. Pure — unit-tested.
+ */
+export function sideStripBoxM(
+  rack: SceneRack,
+  dev: SceneDevice,
+  rackWidthM: number,
+  rackDepthM: number
+): { x: number; y: number; h: number; z: number } {
+  const pitch = mm(PANEL_MM.uPitch)
+  const spanU = Math.min(
+    dev.mount_span_u ?? Math.round(rack.u_height * 0.75),
+    rack.u_height
+  )
+  const h = spanU * pitch
+  const rackTop = RACK_BASE_M + rack.u_height * pitch
+  const y = Math.min(
+    RACK_BASE_M + mm(dev.mount_offset_mm ?? 0),
+    Math.max(RACK_BASE_M, rackTop - h)
+  )
+  const sign = dev.mount === "side_left" ? -1 : 1
+  return {
+    x: sign * (rackWidthM / 2 + STRIP_GAP_M + STRIP_W_M / 2),
+    y,
+    h,
+    z: rackDepthM * 0.2,
+  }
 }
 
 // ─── Cable-run geometry (P8) ─────────────────────────────────────────────────

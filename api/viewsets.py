@@ -5941,6 +5941,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "position": d.position,
                 "face": d.face or "",
                 "rack_side": d.rack_side or "",
+                # Zero-U side mounting — position is None for these; the 3D
+                # room draws them as vertical strips on the named rail.
+                "mount": d.mount or "",
+                "mount_offset_mm": d.mount_offset_mm,
+                "mount_span_u": d.mount_span_u,
                 "u_height": dt.u_height if dt else 1,
                 "rack_width": (dt.rack_width if dt else "full") or "full",
                 "is_full_depth": dt.is_full_depth if dt else True,
@@ -5976,7 +5981,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "devices": [
                     device_geo(d)
                     for d in r.devices.all()
-                    if d.position is not None
+                    # Positioned gear AND side-mounted 0U strips — a mounted
+                    # PDU has no U position but very much exists in the room.
+                    if d.position is not None or d.mount
                 ],
             }
 

@@ -51,6 +51,21 @@ they're on opposite sides; a full-width device still claims the whole U. The
 elevation draws the halves side by side, and a shared U counts once in the
 rack's used-units figure.
 
+### Zero-U side mounting (vertical PDUs)
+
+A vertical PDU strip bolts to a rack **rail** instead of occupying units.
+Give it a **0U device type**, then on the device pick **Side mount** — left
+or right rail — plus an optional **offset from the base** (mm) and a
+**span** in U (blank draws about three quarters of the rack). Side mounting
+replaces U placement: no position, face or half-width side, and Danbyte
+enforces all of it.
+
+The elevation grows a slim **rail lane on each side** of the U grid listing
+that rail's strips (click one to open it; **+** hangs a new one with the
+rack and rail pre-picked), and the 3D room draws the strip on the cabinet's
+flank. **0U gear never counts against used units** — including 0U types
+parked at a U position, which previously (and wrongly) charged a full unit.
+
 ## Rack elevations
 
 The rack's **Overview** draws paired elevations — **front and
@@ -89,6 +104,13 @@ feed delivered to the rack (volts × amps × max-utilisation%,
 three-phase × √3), demand is the racked devices' power-port draws —
 allocated where you've recorded it, otherwise the nameplate sum (labelled as
 such). The rack page shows **demand / supply W** and turns red when over.
+
+!!! note "Power numbers changed with the PDU fix"
+    Devices that **have power outlets** (PDUs — distributors) no longer
+    contribute their inlet draw to the rack's demand: a PDU's inlet
+    restates its children's draws, so counting both **double-counted**
+    every rack that recorded its PDU. If a rack's demand dropped after
+    upgrading, this fix is why — the new number is the honest one.
 
 Racks can carry a **weight budget** (max weight + unit on the rack form —
 the floor or rack load rating). Every racked device's *type* weight sums

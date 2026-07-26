@@ -62,6 +62,8 @@ export interface DeviceFormProps {
     face?: "" | "front" | "rear"
     /** Pre-pick the hardware model — "Add device" from a device type's page. */
     deviceTypeId?: string
+    /** Pre-pick a 0U side mount — "+ side device" from a rack's side lane. */
+    mount?: "" | "side_left" | "side_right"
   }
   /** Clone seed (create only): the source's carried-over fields from
    * GET /api/devices/<id>/clone/. Identity/placement (name, serial, rack) are
@@ -121,6 +123,16 @@ export function DeviceForm({
   const [side, setSide] = useState<"" | "left" | "right">(
     device?.rack_side ?? ""
   )
+  // Zero-U side mounting (vertical PDU strips).
+  const [mount, setMount] = useState<"" | "side_left" | "side_right">(
+    device?.mount ?? initial?.mount ?? ""
+  )
+  const [mountOffset, setMountOffset] = useState(
+    device?.mount_offset_mm != null ? String(device.mount_offset_mm) : ""
+  )
+  const [mountSpan, setMountSpan] = useState(
+    device?.mount_span_u != null ? String(device.mount_span_u) : ""
+  )
   const [tagIds, setTagIds] = useState<number[]>(
     seed?.tags?.map((t) => t.id) ?? []
   )
@@ -165,6 +177,11 @@ export function DeviceForm({
     setPosition(device.position != null ? String(device.position) : "")
     setFace(device.face ?? "")
     setSide(device.rack_side)
+    setMount(device.mount ?? "")
+    setMountOffset(
+      device.mount_offset_mm != null ? String(device.mount_offset_mm) : ""
+    )
+    setMountSpan(device.mount_span_u != null ? String(device.mount_span_u) : "")
     setTagIds(device.tags.map((t) => t.id))
     setCustomFields(device.custom_fields ?? {})
     setComments(device.comments ?? "")
@@ -276,6 +293,23 @@ export function DeviceForm({
     if (rackWidth === "full" && side !== "") setSide("")
   }, [rackWidth, side])
 
+  // Side mounting is a 0U-only concept, and it replaces U placement — the
+  // backend enforces both; the form just keeps the fields from fighting.
+  const isZeroU = selectedType != null && selectedType.u_height === 0
+  useEffect(() => {
+    if (!isZeroU && mount !== "") {
+      setMount("")
+      setMountOffset("")
+      setMountSpan("")
+    }
+  }, [isZeroU, mount])
+  useEffect(() => {
+    if (mount === "") return
+    if (position !== "") setPosition("")
+    if (face !== "") setFace("")
+    if (side !== "") setSide("")
+  }, [mount, position, face, side])
+
   // One option per possible *lowest* unit, in the rack's visual order (top
   // first). Units where the device would collide render disabled with the
   // blocking device as hint — mirrors the backend overlap validation.
@@ -357,6 +391,15 @@ export function DeviceForm({
         position: rackId && position.trim() !== "" ? Number(position) : null,
         face: rackId ? face : "",
         rack_side: rackId && rackWidth === "half" ? side : "",
+        mount: rackId && isZeroU ? mount : "",
+        mount_offset_mm:
+          rackId && mount !== "" && mountOffset.trim() !== ""
+            ? Number(mountOffset)
+            : null,
+        mount_span_u:
+          rackId && mount !== "" && mountSpan.trim() !== ""
+            ? Number(mountSpan)
+            : null,
         comments: comments.trim(),
         airflow,
         latitude: latitude.trim() !== "" ? latitude.trim() : null,
@@ -714,6 +757,42 @@ export function DeviceForm({
             />
           )}
         </div>
+        {isZeroU && rackId && (
+          <div className="grid gap-3">
+            <FormSelect
+              label="Side mount (0U)"
+              hint="Vertical strips (PDUs) bolt to a rail instead of taking units"
+              value={mount === "" ? null : mount}
+              onChange={(v) =>
+                setMount(v === "side_left" || v === "side_right" ? v : "")
+              }
+              noneLabel="Not side-mounted"
+              options={[
+                { value: "side_left", label: "Left rail" },
+                { value: "side_right", label: "Right rail" },
+              ]}
+              error={fieldErrors.mount}
+            />
+            {mount !== "" && (
+              <div className="grid grid-cols-2 gap-3">
+                <FormText
+                  label="Offset from base (mm)"
+                  value={mountOffset}
+                  onChange={setMountOffset}
+                  placeholder="0"
+                  error={fieldErrors.mount_offset_mm}
+                />
+                <FormText
+                  label="Span (U)"
+                  value={mountSpan}
+                  onChange={setMountSpan}
+                  placeholder="auto (~¾ rack)"
+                  error={fieldErrors.mount_span_u}
+                />
+              </div>
+            )}
+          </div>
+        )}
       </fieldset>
 
       <fieldset className="grid gap-3 rounded-lg border border-border p-3">

@@ -1141,6 +1141,12 @@ export interface Device {
   face: "front" | "rear" | ""
   /** Which half of the U a half-width device sits in; "" for full-width. */
   rack_side: "left" | "right" | ""
+  /** Zero-U side mounting: the rail a vertical strip (PDU) bolts to. */
+  mount: "side_left" | "side_right" | ""
+  /** Bottom of the side-mounted strip above the base plate (mm). */
+  mount_offset_mm: number | null
+  /** Vertical extent of the strip in U; null draws ~¾ of the rack. */
+  mount_span_u: number | null
   /** Read-only, derived from the device type. */
   u_height: number
   /** Read-only, derived from the device type ("full" when untyped). */
@@ -1173,6 +1179,9 @@ export interface DeviceWritePayload {
   position?: number | null
   face?: "front" | "rear" | ""
   rack_side?: "left" | "right" | ""
+  mount?: "side_left" | "side_right" | ""
+  mount_offset_mm?: number | null
+  mount_span_u?: number | null
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   comments?: string
   airflow?: string

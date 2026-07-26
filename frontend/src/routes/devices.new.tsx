@@ -16,10 +16,14 @@ export const Route = createFileRoute("/devices/new")({
     rack?: string
     position?: number
     face?: "front" | "rear"
+    mount?: "side_left" | "side_right"
     device_type?: string
     clone?: string
   } => ({
     ...(typeof s.rack === "string" ? { rack: s.rack } : {}),
+    ...(s.mount === "side_left" || s.mount === "side_right"
+      ? { mount: s.mount }
+      : {}),
     ...(typeof s.device_type === "string"
       ? { device_type: s.device_type }
       : {}),
@@ -33,7 +37,7 @@ export const Route = createFileRoute("/devices/new")({
 
 function NewDevicePage() {
   const nav = useNavigate()
-  const { rack, position, face, device_type, clone } = Route.useSearch()
+  const { rack, position, face, mount, device_type, clone } = Route.useSearch()
   const cloneQ = useCloneSeed<Partial<Device>>("devices", clone)
   const cloning = !!clone
 
@@ -58,7 +62,13 @@ function NewDevicePage() {
         <DeviceForm
           initial={
             rack || device_type
-              ? { rackId: rack, position, face, deviceTypeId: device_type }
+              ? {
+                  rackId: rack,
+                  position,
+                  face,
+                  mount,
+                  deviceTypeId: device_type,
+                }
               : undefined
           }
           clone={cloning ? cloneQ.data?.initial : undefined}
