@@ -5,11 +5,15 @@ import type { OrbitControls as OrbitControlsImpl } from "three-stdlib"
 import * as THREE from "three"
 
 import {
+  MIN_DISTANCE_M,
   NAV_KEYS,
   PAGE_SCROLL_KEYS,
+  dollyThroughStep,
+  nearForDistance,
   normalizeKey,
   panVector,
   pullInTarget,
+  zoomSpeedForRoom,
 } from "./camera-math"
 
 export interface FlyToRequest {
@@ -46,23 +50,27 @@ const _fwd = new THREE.Vector3()
  *
  * Also owns keyboard navigation: arrows / WASD pan the camera AND the orbit
  * target parallel to the ground plane (forward = camera→target projected to
- * XZ), Space rises and Shift descends (PageUp/PageDown too). Speed scales
- * with the orbit distance (see `camera-math.ts`). A nav keypress cancels an
- * in-flight fly-to. Listeners live on `window` but the rig only exists while
- * the 3D view is mounted, so 2D editing never sees them.
+ * XZ), Space rises, C descends (PageUp/PageDown too), Shift sprints ×4.
+ * Speed scales with the orbit distance (see `camera-math.ts`). A nav keypress
+ * cancels an in-flight fly-to. Listeners live on `window` but the rig only
+ * exists while the 3D view is mounted, so 2D editing never sees them.
  */
 export function CameraRig({
   target,
   maxDistance,
+  roomDiag,
   requestRef,
 }: {
   target: [number, number, number]
   maxDistance: number
+  /** Larger room side (m) — scales the wheel so hall size doesn't change feel. */
+  roomDiag: number
   requestRef: React.MutableRefObject<FlyToRequest | null>
 }) {
   const controls = useRef<OrbitControlsImpl>(null)
   const invalidate = useThree((s) => s.invalidate)
   const camera = useThree((s) => s.camera)
+  const gl = useThree((s) => s.gl)
   const anim = useRef<{
     fromPos: THREE.Vector3
     fromTarget: THREE.Vector3
@@ -78,8 +86,8 @@ export function CameraRig({
       if (isEditableTarget(e.target)) return
       const key = normalizeKey(e.key)
       if (!NAV_KEYS.has(key)) return
-      // Only keys whose default scrolls the page; w/a/s/d/q/e stay untouched
-      // (and Escape is never ours — the connect/trace flows own it).
+      // Only keys whose default scrolls the page; w/a/s/d/c/Shift stay
+      // untouched (and Escape is never ours — connect/trace flows own it).
       if (PAGE_SCROLL_KEYS.has(key)) e.preventDefault()
       // First nav key of a session: pull the orbit pivot to ~3 m ahead so
       // drag-look feels first-person while walking (fly-to re-anchors it on
@@ -124,6 +132,47 @@ export function CameraRig({
     }
   }, [invalidate, requestRef, camera])
 
+  // Dolly-through: OrbitControls' multiplicative dolly collapses to nothing
+  // at minDistance — the "zoom just stops" wall. At the wall, a wheel-in
+  // stops shortening the arm and instead walks camera + target forward along
+  // the sight line (orbit becomes fly — through the rack, into the aisle
+  // behind it). Capture phase on the canvas's PARENT: capture on an ancestor
+  // fires before OrbitControls' own target-phase listener, and a same-element
+  // listener would lose the registration-order race. When the walk claims the
+  // event, OrbitControls never sees it.
+  useEffect(() => {
+    const el = gl.domElement.parentElement
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      const c = controls.current
+      if (!c) return
+      const step = dollyThroughStep(
+        [camera.position.x, camera.position.y, camera.position.z],
+        [c.target.x, c.target.y, c.target.z],
+        e.deltaY,
+        c.getDistance()
+      )
+      if (!step) return
+      e.preventDefault()
+      e.stopPropagation()
+      camera.position.x += step[0]
+      camera.position.y += step[1]
+      camera.position.z += step[2]
+      c.target.x += step[0]
+      c.target.y += step[1]
+      c.target.z += step[2]
+      if (camera.position.y < CAMERA_MIN_Y) camera.position.y = CAMERA_MIN_Y
+      if (c.target.y < TARGET_MIN_Y) c.target.y = TARGET_MIN_Y
+      // Walking overrides an in-flight fly-to, same as a nav keypress.
+      anim.current = null
+      requestRef.current = null
+      c.update()
+      invalidate()
+    }
+    el.addEventListener("wheel", onWheel, { capture: true, passive: false })
+    return () => el.removeEventListener("wheel", onWheel, { capture: true })
+  }, [gl, camera, invalidate, requestRef])
+
   useFrame((state, delta) => {
     const c = controls.current
     if (!c) return
@@ -133,6 +182,17 @@ export function CameraRig({
     if (state.camera.position.y < CAMERA_MIN_Y) {
       state.camera.position.y = CAMERA_MIN_Y
       c.update()
+    }
+    // Dynamic near-plane: 1 cm nose-on, 0.5 m across the hall — a fixed near
+    // small enough for faceplates would shimmer the 3 mm floor overlays from
+    // a distance (depth precision). Re-fit only past 20% drift so the
+    // projection isn't rebuilt every frame; runs only on frames something
+    // else already rendered, so it adds no invalidation source of its own.
+    const cam = state.camera as THREE.PerspectiveCamera
+    const near = nearForDistance(c.getDistance())
+    if (Math.abs(near - cam.near) / cam.near > 0.2) {
+      cam.near = near
+      cam.updateProjectionMatrix()
     }
     // Pick up a new request.
     if (requestRef.current) {
@@ -202,8 +262,9 @@ export function CameraRig({
       // on a hall-sized plan, plain dolly could never reach a far corner.
       zoomToCursor
       maxPolarAngle={Math.PI - 0.05}
-      minDistance={0.5}
+      minDistance={MIN_DISTANCE_M}
       maxDistance={maxDistance}
+      zoomSpeed={zoomSpeedForRoom(roomDiag)}
     />
   )
 }

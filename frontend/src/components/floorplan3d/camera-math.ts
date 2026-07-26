@@ -9,7 +9,7 @@
 
 /**
  * Every key that drives the camera. Forward/back/strafe pan parallel to the
- * ground plane; PageUp/PageDown and Q/E change height.
+ * ground plane; Space/PageUp rise, C/PageDown descend, Shift sprints.
  */
 export const NAV_KEYS: ReadonlySet<string> = new Set([
   "ArrowUp",
@@ -23,6 +23,7 @@ export const NAV_KEYS: ReadonlySet<string> = new Set([
   "PageUp",
   " ",
   "PageDown",
+  "c",
   "Shift",
 ])
 
@@ -64,9 +65,13 @@ const MIN_SPEED = 1.5
 const MAX_SPEED = 40
 
 /** Holding Shift multiplies the speed — a sprint through the aisles. */
+export const SPRINT_FACTOR = 4
+
+/** Absolute ceiling with sprint applied — a zoomed-out sprint stays sane. */
+const SPRINT_MAX_SPEED = 80
 
 /**
- * Vertical motion (PageUp/PageDown, Q/E) runs at this fraction of the
+ * Vertical motion (Space/C, PageUp/PageDown) runs at this fraction of the
  * horizontal speed — the room is far wider than it is tall.
  */
 const VERTICAL_FACTOR = 0.6
@@ -102,7 +107,7 @@ export function panVector(
     (pressed.has("ArrowLeft") || pressed.has("a") ? 1 : 0)
   const lift =
     (pressed.has("PageUp") || pressed.has(" ") ? 1 : 0) -
-    (pressed.has("PageDown") || pressed.has("Shift") ? 1 : 0)
+    (pressed.has("PageDown") || pressed.has("c") ? 1 : 0)
   if (ahead === 0 && strafe === 0 && lift === 0) return [0, 0, 0]
 
   const [fx, fz] = forward
@@ -120,13 +125,76 @@ export function panVector(
     hz = 0
   }
 
-  const speed = Math.min(
+  const base = Math.min(
     MAX_SPEED,
     Math.max(MIN_SPEED, distance * SPEED_PER_DISTANCE)
   )
+  const speed = pressed.has("Shift")
+    ? Math.min(SPRINT_MAX_SPEED, base * SPRINT_FACTOR)
+    : base
   const horizontal = speed * dt
   const vertical = speed * VERTICAL_FACTOR * dt
   return [hx * horizontal, lift * vertical, hz * horizontal]
+}
+
+// ─── Zoom freedom ────────────────────────────────────────────────────────────
+
+/** Closest the orbit arm may get (m) — inside this, wheel becomes a walk. */
+export const MIN_DISTANCE_M = 0.05
+
+/** One full wheel tick at the wall walks the camera this far forward (m). */
+export const DOLLY_THROUGH_STEP_M = 0.35
+
+/** Wheel-in within this multiple of MIN_DISTANCE_M converts to a walk. */
+const DOLLY_THROUGH_AT = 1.2
+
+/**
+ * The "zoom stops working" fix. OrbitControls' dolly is multiplicative — each
+ * tick scales the arm by ~0.95, so steps collapse to nothing near
+ * `minDistance` and then hit its hard wall. When a wheel-IN arrives with the
+ * arm already at that wall, this returns a world-space translation that walks
+ * camera AND target forward along the sight line instead (orbit becomes fly,
+ * straight through the rack and into the next aisle). `null` = not our event,
+ * let OrbitControls dolly normally.
+ *
+ * Step scales with |deltaY| so pixel-mode trackpads glide instead of leaping
+ * (a full 100-unit line-mode tick gets the whole step, floored at 5%).
+ */
+export function dollyThroughStep(
+  cam: readonly [number, number, number],
+  target: readonly [number, number, number],
+  deltaY: number,
+  distance: number,
+  threshold: number = MIN_DISTANCE_M * DOLLY_THROUGH_AT
+): [number, number, number] | null {
+  if (deltaY >= 0 || distance > threshold) return null
+  const dx = target[0] - cam[0]
+  const dy = target[1] - cam[1]
+  const dz = target[2] - cam[2]
+  const d = Math.hypot(dx, dy, dz)
+  if (d === 0) return null
+  const step =
+    DOLLY_THROUGH_STEP_M * Math.min(1, Math.max(0.05, Math.abs(deltaY) / 100))
+  const k = step / d
+  return [dx * k, dy * k, dz * k]
+}
+
+/**
+ * Near-plane for the current orbit distance: 1 cm when nose-on a faceplate,
+ * 0.5 m across the hall. A FIXED near that small would burn the depth buffer's
+ * far-field precision — the zone patches sit 3 mm above the slab and would
+ * shimmer from across the room. Scaling near with distance serves both ends.
+ */
+export function nearForDistance(distance: number): number {
+  return Math.min(0.5, Math.max(0.01, distance * 0.02))
+}
+
+/**
+ * OrbitControls zoomSpeed scaled by room size, so a 3-rack closet and a
+ * 400-rack hall take about the same number of wheel ticks end to end.
+ */
+export function zoomSpeedForRoom(diag: number): number {
+  return Math.min(2, Math.max(1, 1 + diag / 120))
 }
 
 // ─── FPS-feel pivot ──────────────────────────────────────────────────────────

@@ -1640,7 +1640,7 @@ function FloorPlanPage() {
               {show3dHint && (
                 <div className="absolute right-3 bottom-3 flex items-center gap-2 rounded-md border border-border bg-popover/90 px-2.5 py-1.5 text-[11px] text-muted-foreground shadow backdrop-blur">
                   Drag to orbit · scroll to zoom · right-drag to pan · arrows /
-                  WASD move · Space/Shift up-down · click a rack
+                  WASD move · Space/C up-down · Shift sprint · click a rack
                   <button
                     onClick={() => setShow3dHint(false)}
                     aria-label="Dismiss"
