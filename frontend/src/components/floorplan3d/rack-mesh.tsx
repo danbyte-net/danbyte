@@ -22,6 +22,7 @@ import {
   deviceViewpoint,
   deviceYM,
   rackFootprintM,
+  occludesSightLine,
   rackViewpoint,
   tierFor,
 } from "./world"
@@ -88,6 +89,7 @@ export function RackMesh({
   shellMode = "cutaway",
   ghosted = false,
   focusDeviceId = null,
+  attention = null,
   onSelect,
   onFlyTo,
   onLegend,
@@ -105,6 +107,9 @@ export function RackMesh({
   ghosted?: boolean
   /** Focus is on one device in THIS rack — its siblings ghost. */
   focusDeviceId?: string | null
+  /** World point the operator is looking at (the selected rack's centre);
+   * racks blocking the sight line to it auto-ghost. */
+  attention?: [number, number, number] | null
   onSelect: (sel: Sel) => void
   onFlyTo: (target: THREE.Vector3, position: THREE.Vector3) => void
   /** Forwarded to each device so the room's legend keys what's on screen. */
@@ -136,6 +141,9 @@ export function RackMesh({
   const tierRef = useRef<Tier>("far")
   const [viewRear, setViewRear] = useState(false)
   const viewRearRef = useRef(false)
+  // This cabinet stands between the eye and the selected one — fade it.
+  const [autoDim, setAutoDim] = useState(false)
+  const autoDimRef = useRef(false)
   const centre = useMemo(
     () => new THREE.Vector3(cx, height / 2, cz),
     [cx, cz, height]
@@ -173,6 +181,22 @@ export function RackMesh({
         setViewRear(rear)
       }
     }
+    // Auto-ghost: when another rack is selected and this one blocks the line
+    // of sight to it, fade this one out of the way. Same settle gating as the
+    // tier swap, so it never churns React while the camera moves.
+    const blocking =
+      attention != null &&
+      selection?.tileId !== tile.id &&
+      occludesSightLine(
+        [camera.position.x, camera.position.y, camera.position.z],
+        attention,
+        [centre.x, centre.y, centre.z],
+        Math.max(width, depth) * 0.75 + 0.25
+      )
+    if (blocking !== autoDimRef.current) {
+      autoDimRef.current = blocking
+      setAutoDim(blocking)
+    }
   })
 
   const rackSelected =
@@ -194,9 +218,10 @@ export function RackMesh({
     )
   }
 
+  const dimmed = ghosted || autoDim
   // Focus-ghosted cabinets drop their overlays (labels on a ghost read as
   // noise); x-ray keeps them — it is still the room, just opened up.
-  const showOverlays = tier === "detail" && !ghosted
+  const showOverlays = tier === "detail" && !dimmed
 
   // Live port + SNMP resolution is TWO fetches per device, and it used to fire
   // for every device in the detail tier. In a full hall that is ~1000 XHRs at
@@ -206,7 +231,7 @@ export function RackMesh({
   // selected, or holding the focused device — resolves it. That caps the
   // traffic at one rack's worth (~24 devices) no matter how big the room is.
   const engaged = selection?.tileId === tile.id || focusDeviceId != null
-  const liveData = tier === "detail" && !ghosted && engaged
+  const liveData = tier === "detail" && !dimmed && engaged
 
   return (
     <group
@@ -230,8 +255,8 @@ export function RackMesh({
         document.body.style.cursor = ""
       }}
     >
-      {ghosted ? (
-        // Focus context: one ghost box, no devices, no overlays.
+      {dimmed ? (
+        // Focus context or sight-line blocker: one ghost box, still clickable.
         <Frame
           w={width}
           h={height}
@@ -327,7 +352,7 @@ export function RackMesh({
           )}
         </group>
       )}
-      {!ghosted &&
+      {!dimmed &&
         mounted.map((d) => (
           <SideStripMesh
             key={d.id}
@@ -391,7 +416,7 @@ export function RackMesh({
             />
           )
         })}
-      {beacon && !ghosted && (
+      {beacon && !dimmed && (
         // raycast disabled — decoration must never steal the rack's clicks.
         <mesh position={[0, height + 0.03, 0]} raycast={() => null}>
           <boxGeometry args={[width * 0.6, 0.05, 0.06]} />
@@ -404,7 +429,7 @@ export function RackMesh({
       )}
       {/* Rack name plate — flat on the front, above the top U, facing the
           aisle. Flat (not billboard) so neighbours don't overlap. */}
-      {!ghosted && (
+      {!dimmed && (
         <FaceLabel
           text={tile.label || rack.name}
           heightM={0.11}

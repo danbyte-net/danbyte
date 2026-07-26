@@ -424,6 +424,16 @@ export default function FloorScene3D({
     ? rackTiles.filter((t) => isolation.ids.has(t.id))
     : rackTiles
 
+  // Where the operator is looking: the selected rack's centre. Racks standing
+  // between the camera and this point auto-ghost (see RackMesh).
+  const attention = useMemo<[number, number, number] | null>(() => {
+    if (!selection) return null
+    const t = rackTiles.find((x) => x.id === selection.tileId)
+    if (!t?.rack) return null
+    const [ax, az] = cellToWorld(plan, t.x + t.w / 2, t.y + t.h / 2)
+    return [ax, rackFootprintM(t.rack).height / 2, az]
+  }, [selection, rackTiles, plan])
+
   // HUD front↔rear flip — same viewpoint math as the double-click fly-to.
   const flipView = () => {
     if (!selTile?.rack) return
@@ -521,6 +531,7 @@ export default function FloorScene3D({
             tile={t}
             check={liveState?.tiles[t.id]?.check ?? null}
             selection={selection}
+            attention={attention}
             showUNumbers={showUNumbers}
             showNames={showNames}
             showAirflow={showAirflow}
@@ -608,6 +619,7 @@ export default function FloorScene3D({
           <CablesLayer
             planId={planId}
             scene={data}
+            xray={shellMode === "xray"}
             selectedId={cableSel}
             onSelect={(id) => {
               setSelection(null)

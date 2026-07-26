@@ -68,6 +68,9 @@ interface EndRun {
  * that TRANSPARENT_ORDER sequences, so nothing in the room can hide it. */
 const TRACE_ORDER = 10
 
+/** X-ray cables sit above the ghosts/glass but under the active trace. */
+const XRAY_CABLE_ORDER = 5
+
 /** Rack-local (x, y, z) → world, applying the tile's centre and orientation.
  * Same transform RackMesh puts on its group. */
 function worldOf(
@@ -326,11 +329,15 @@ export function CableTrace3D({
 export function CablesLayer({
   planId,
   scene,
+  xray = false,
   selectedId,
   onSelect,
 }: {
   planId: string
   scene: ScenePayload
+  /** X-ray shell mode: cables draw through racks — seeing the runs is the
+   * point of opening the room up. Solid/cutaway keep physical occlusion. */
+  xray?: boolean
   selectedId: string | null
   onSelect: (cableId: string) => void
 }) {
@@ -365,6 +372,7 @@ export function CablesLayer({
             points={points}
             color={cp.color || CABLE_FALLBACK}
             radius={cableRadiusM(cp.type)}
+            xray={xray}
             onClick={() => onSelect(cp.id)}
           />
         ) : (
@@ -372,6 +380,7 @@ export function CablesLayer({
             key={cp.id}
             points={points}
             color={cp.color || CABLE_FALLBACK}
+            xray={xray}
             onClick={() => onSelect(cp.id)}
           />
         )
@@ -395,11 +404,13 @@ function CableTube({
   points,
   color,
   radius,
+  xray = false,
   onClick,
 }: {
   points: [number, number, number][]
   color: string
   radius: number
+  xray?: boolean
   onClick: () => void
 }) {
   const [hovered, setHovered] = useState(false)
@@ -431,12 +442,16 @@ function CableTube({
         setHovered(false)
         document.body.style.cursor = ""
       }}
+      renderOrder={xray ? XRAY_CABLE_ORDER : 0}
     >
       <meshStandardMaterial
         color={color}
         roughness={0.55}
         emissive={color}
         emissiveIntensity={hovered ? 0.5 : 0}
+        depthTest={!xray}
+        transparent={xray}
+        opacity={xray ? 0.75 : 1}
       />
     </mesh>
   )
@@ -445,10 +460,12 @@ function CableTube({
 function CableLine({
   points,
   color,
+  xray = false,
   onClick,
 }: {
   points: [number, number, number][]
   color: string
+  xray?: boolean
   onClick: () => void
 }) {
   const [hovered, setHovered] = useState(false)
@@ -458,7 +475,9 @@ function CableLine({
       color={color}
       lineWidth={hovered ? 5 : 3.5}
       transparent
-      opacity={hovered ? 1 : 0.8}
+      opacity={xray ? 0.55 : hovered ? 1 : 0.8}
+      depthTest={!xray}
+      renderOrder={xray ? XRAY_CABLE_ORDER : 0}
       onClick={(e) => {
         e.stopPropagation()
         onClick()

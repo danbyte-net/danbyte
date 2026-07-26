@@ -44,6 +44,7 @@ import {
   type SceneRack,
   type SceneTray,
   type ScenePayload,
+  occludesSightLine,
   tierFor,
 } from "./world"
 
@@ -1148,5 +1149,30 @@ describe("stripPortLocalM — one layout for strip quads AND cable anchors", () 
     const frontP = stripPortLocalM(stripOf(front), front, "C13-01")
     expect(frontP.out).toBe(-1)
     expect(frontP.z).toBeCloseTo(stripOf(front).z - STRIP_D_M / 2 - 0.002)
+  })
+})
+
+describe("occludesSightLine", () => {
+  const cam: [number, number, number] = [0, 1.5, 10]
+  const target: [number, number, number] = [0, 1, 0]
+
+  it("a rack sitting on the sight line blocks", () => {
+    expect(occludesSightLine(cam, target, [0, 1.2, 5], 1)).toBe(true)
+  })
+
+  it("a rack beside the line does not", () => {
+    expect(occludesSightLine(cam, target, [3, 1.2, 5], 1)).toBe(false)
+  })
+
+  it("the target itself never counts as its own blocker", () => {
+    expect(occludesSightLine(cam, target, [0, 1, 0.1], 1)).toBe(false)
+  })
+
+  it("a rack behind the camera does not block", () => {
+    expect(occludesSightLine(cam, target, [0, 1.2, 12], 1)).toBe(false)
+  })
+
+  it("a rack beyond the target does not block", () => {
+    expect(occludesSightLine(cam, target, [0, 1.2, -5], 1)).toBe(false)
   })
 })

@@ -746,6 +746,36 @@ export function tierFor(distM: number, current: Tier): Tier {
   return distM < mid ? "mid" : "far"
 }
 
+/**
+ * Does a cabinet at `centre` stand between the eye and the point being looked
+ * at? True when its centre lies close to the camera→target segment and
+ * strictly between the two ends. Drives auto-ghosting: a rack that blocks the
+ * view of the selected rack fades instead of filling the screen.
+ */
+export function occludesSightLine(
+  cam: [number, number, number],
+  target: [number, number, number],
+  centre: [number, number, number],
+  radiusM: number
+): boolean {
+  const dx = target[0] - cam[0]
+  const dy = target[1] - cam[1]
+  const dz = target[2] - cam[2]
+  const len2 = dx * dx + dy * dy + dz * dz
+  if (len2 < 1e-6) return false
+  const t =
+    ((centre[0] - cam[0]) * dx +
+      (centre[1] - cam[1]) * dy +
+      (centre[2] - cam[2]) * dz) /
+    len2
+  // Strictly between: not the target itself (t≈1) and not behind the eye.
+  if (t <= 0.02 || t >= 0.94) return false
+  const px = cam[0] + t * dx - centre[0]
+  const py = cam[1] + t * dy - centre[1]
+  const pz = cam[2] + t * dz - centre[2]
+  return px * px + py * py + pz * pz < radiusM * radiusM
+}
+
 export function zeroUChannelM(rack: SceneRack): number {
   const opening = mm(OPENING_MM[rack.width] ?? PANEL_MM.opening)
   const { width } = rackFootprintM(rack)
