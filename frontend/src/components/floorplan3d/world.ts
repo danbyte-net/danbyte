@@ -725,6 +725,8 @@ export function wallDoorSpans(
 export const STRIP_W_M = 0.05
 export const STRIP_D_M = 0.11
 const STRIP_CLEARANCE_M = 0.008
+/** Air between the rail opening and the strip's inner face. */
+const STRIP_GAP_M = 0.012
 
 /**
  * The clear width, per side, between the mounting rails and the cabinet's
@@ -845,11 +847,15 @@ export function sideStripBoxM(
       : dev.face === "front"
         ? -rackDepthM * 0.28
         : rackDepthM * 0.2
-  // Centre of the zero-U channel: hard against the panel, clearance kept.
-  // Clamped so a narrow cabinet keeps the strip inside its own footprint.
-  const panel = rackWidthM / 2
-  const x =
-    sign * Math.max(STRIP_W_M / 2, panel - STRIP_CLEARANCE_M - STRIP_W_M / 2)
+  // The strip stands just OUTSIDE the rail opening, shoulder to shoulder
+  // with the gear — where a real vertical PDU bolts. It used to hug the far
+  // side panel instead, which in a wide cabinet left a dead gap between rails
+  // and PDU and read as "floating at the edge". Clamped inside the cabinet so
+  // narrow cabinets keep it in their own footprint.
+  const openHalf = mm(OPENING_MM[rack.width] ?? PANEL_MM.opening) / 2
+  const beside = openHalf + STRIP_GAP_M + STRIP_W_M / 2
+  const panelMax = rackWidthM / 2 - STRIP_CLEARANCE_M - STRIP_W_M / 2
+  const x = sign * Math.max(STRIP_W_M / 2, Math.min(beside, panelMax))
   return { x, y, h, z }
 }
 
