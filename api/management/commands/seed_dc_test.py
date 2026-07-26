@@ -40,6 +40,7 @@ from api.models import (
     Site,
     materialize_device_components,
 )
+from api.pathfinding import route_through_trays
 from core.models import Tenant
 
 TENANT_SLUG = "acme"
@@ -152,8 +153,11 @@ class Command(BaseCommand):
         racks = self._racks(site, loc, rack_type, plan)
         devices = self._devices(site, loc, racks)
         self._power(site, racks)
-        self._cable(racks, devices, full=opts['full_cabling'])
+        # Trays before cabling: a run can only be pinned to a tray that
+        # already exists, and the whole point of the overhead tray is that the
+        # cross-hall runs follow it instead of flying through the cabinets.
         self._trays(plan)
+        self._cable(plan, racks, devices, full=opts['full_cabling'])
 
         self.stdout.write(self.style.SUCCESS(
             f"DC-TEST ready — {len(racks)} racks, "
@@ -427,7 +431,7 @@ class Command(BaseCommand):
             )
         return cable
 
-    def _cable(self, racks, devices, full=False):
+    def _cable(self, plan, racks, devices, full=False):
         """Wire the hall.
 
         A full cabinet holds 22 devices, so cabling every port would mint
@@ -481,16 +485,45 @@ class Command(BaseCommand):
 
         # Data: chain each row rack-to-rack, so runs cross the hall and have
         # to follow the tray rather than hop straight through the cabinets.
+        trays = list(plan.trays.all())
+        cells = {
+            t.rack.name: (t.x + t.width / 2, t.y + t.height / 2)
+            for t in plan.tiles.select_related("rack").filter(
+                rack__isnull=False
+            )
+        }
+        routed = 0
         for row in ROWS:
             for i in range(PER_ROW - 1):
                 a = devices[f"DCT-{row}{i + 1:02d}"]["fw"][0]
                 b = devices[f"DCT-{row}{i + 2:02d}"]["fw"][0]
                 pa = a.interfaces.filter(name__endswith="/24").first()
                 pb = b.interfaces.filter(name__endswith="/23").first()
-                self._link(
+                cable = self._link(
                     f"DCT row {row} {i + 1}→{i + 2}", "smf-os2", "#facc15",
                     pa, pb,
                 )
+                if cable is not None:
+                    routed += self._route(
+                        cable,
+                        cells.get(f"DCT-{row}{i + 1:02d}"),
+                        cells.get(f"DCT-{row}{i + 2:02d}"),
+                        trays,
+                    )
+        self.stdout.write(f"  {routed} row runs pinned to the tray")
+
+    def _route(self, cable, a, b, trays):
+        """Pin a run to the trays it actually follows, through the SAME
+        Dijkstra the auto-route endpoint uses. Without this every seeded cable
+        is point-to-point and the 3D room draws it arcing over the cabinets in
+        free air, with the tray sitting there unused."""
+        if a is None or b is None or not trays:
+            return 0
+        result = route_through_trays(a, b, [t.points for t in trays])
+        if not result.reachable:
+            return 0
+        cable.trays.add(*[trays[i] for i in result.tray_indexes])
+        return 1
 
     # ── trays ────────────────────────────────────────────────────────────
     def _trays(self, plan):
