@@ -53,6 +53,28 @@ half-created rack). The stamp is create-only: re-saving a rack never
 duplicates its strips. Deleting a rack type never touches racks or devices
 (and is refused with a conflict while racks still use it).
 
+#### Syncing a rack with its type
+
+A model changes after its racks are built — the cabinet gains a second PDU,
+or its recorded depth was wrong. **Sync type** on a rack's page (the rack
+twin of a device's *Sync from type*) compares the two and shows a preview
+before touching anything:
+
+- **Dimensions to copy** — every dimension that drifted from the model, old
+  value and new. Drift is legitimate (you can edit a rack's dims after
+  picking a type), so this reports rather than nags.
+- **Accessories to add** — strips the type defines that this rack hasn't
+  got, stamped exactly as they would be at creation.
+- **Not on the type** — stamped-looking strips the type no longer defines.
+  These are listed and **left alone**: a strip in a live rack is real,
+  probably cabled hardware, so syncing never deletes one.
+
+Apply needs **change** on the rack, and the accessory half additionally
+needs device-add at its site. Syncing twice does nothing the second time.
+`POST /api/racks/{id}/sync-from-type/` is the same operation
+(`apply`, plus `dims` / `accessories` to narrow it); without `apply` it is
+a dry run that returns the diff.
+
 ## Mount a device in a rack
 
 On a device (or in the rack), set:

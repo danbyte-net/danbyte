@@ -4361,6 +4361,54 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 qs = qs.filter(rack_type_id=rack_type)
         return qs
 
+    @action(detail=True, methods=["post"], url_path="sync-from-type")
+    def sync_from_type(self, request, pk=None):
+        """Re-align this rack with its rack type — the rack twin of the
+        device action.
+
+        ``apply=false`` (default) → dry-run: the dimension drift and the
+        accessories this rack is missing, so the UI can preview.
+        ``apply=true`` → copy the dims and stamp the missing strips.
+        ``dims`` / ``accessories`` (both default true) narrow what applies.
+
+        Never deletes: an "extra" strip in the diff is somebody's real,
+        cabled PDU. Adding a strip creates a device, so that half needs
+        device-add scope at the rack's site.
+        """
+        from auth_api import rbac
+
+        from .models import diff_rack_from_type, sync_rack_from_type
+        from .views import _get_active_tenant
+
+        rack = self.get_object()
+        tenant = _get_active_tenant(request)
+        if not rbac.can_act_on(request.user, tenant, "rack", "change", rack):
+            raise PermissionDenied("rack.change required.")
+        if rack.rack_type_id is None:
+            return Response(
+                {"detail": "This rack has no rack type to sync from."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        diff = diff_rack_from_type(rack)
+        if not bool(request.data.get("apply")):
+            return Response({"applied": False, "diff": diff})
+
+        dims = bool(request.data.get("dims", True))
+        accessories = bool(request.data.get("accessories", True))
+        if accessories and diff.get("accessories", {}).get("add"):
+            # Stamping writes devices — same gate as the create-time stamp.
+            scope = rbac.site_scope(request.user, tenant, "device", "add")
+            if scope is not None and not (
+                rack.site_id is not None and rack.site_id in scope
+            ):
+                raise PermissionDenied(
+                    "Adding accessories requires permission to add devices "
+                    "at this rack's site."
+                )
+        result = sync_rack_from_type(rack, dims=dims, accessories=accessories)
+        return Response({"applied": True, "diff": diff, "result": result})
+
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
         n = obj.devices.count()

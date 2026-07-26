@@ -1512,6 +1512,22 @@ export interface RackWritePayload {
   custom_fields?: Record<string, unknown>
 }
 
+/** POST /api/racks/{id}/sync-from-type/ — dry-run unless `apply`. */
+export interface RackSyncResponse {
+  applied: boolean
+  diff: {
+    /** Dimensions that drifted from the model. */
+    dims?: Record<string, { rack: unknown; type: unknown }>
+    accessories?: {
+      /** Labels on the type with no strip on this rack. */
+      add: string[]
+      /** Stamped-looking strips the type no longer defines — never deleted. */
+      extra: string[]
+    }
+  }
+  result?: { dims: string[]; accessories: string[] }
+}
+
 /** Picker shape (?picker=1) — RackMiniSerializer, includes unit geometry. */
 export interface RackOption {
   id: string
