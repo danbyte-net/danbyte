@@ -311,6 +311,47 @@ class RackTypeCatalogTests(APITestCase):
         self.assertEqual(r.json()["result"]["accessories"], [])
         self.assertEqual(rack.devices.count(), 2)
 
+    def test_sync_retypes_a_strip_when_the_accessory_changed(self):
+        # The reported bug: swap the accessory's device type and sync said
+        # "already matches" — it only ever asked whether a strip with that
+        # label existed, never whether it still agreed with the accessory.
+        rt_id = self._rack_type().json()["id"]
+        acc_id = self._accessory(rt_id, label="PDU").json()["id"]
+        self._post_rack("rack-retype", rt_id, True)
+        dev = Device.objects.get(name="rack-retype-PDU")
+        self.assertEqual(dev.device_type_id, self.dt_pdu.id)
+
+        newer = DeviceType.objects.create(
+            tenant=self.tenant, manufacturer=self.mfr,
+            name="Rack PDU Advanced Gen 2", u_height=0,
+        )
+        self.client.patch(
+            f"/api/rack-type-accessories/{acc_id}/",
+            {"device_type_id": str(newer.id), "face": "rear"},
+            format="json",
+        )
+
+        rack = Rack.objects.get(name="rack-retype")
+        r = self.client.post(
+            f"/api/racks/{rack.id}/sync-from-type/", {}, format="json"
+        )
+        changes = r.json()["diff"]["accessories"]["update"][0]["changes"]
+        self.assertEqual(changes["device_type"]["type"],
+                         "Rack PDU Advanced Gen 2")
+        self.assertEqual(changes["face"]["type"], "rear")
+
+        r = self.client.post(
+            f"/api/racks/{rack.id}/sync-from-type/", {"apply": True},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["result"]["updated"], ["rack-retype-PDU"])
+        dev.refresh_from_db()
+        self.assertEqual(dev.device_type_id, newer.id)
+        self.assertEqual(dev.face, "rear")
+        # Re-pointing a type never duplicates the strip.
+        self.assertEqual(rack.devices.count(), 1)
+
     def test_sync_never_deletes_an_extra_strip(self):
         rt_id = self._typed()
         self._post_rack("rack-extra", rt_id, True)

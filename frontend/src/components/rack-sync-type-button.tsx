@@ -26,6 +26,16 @@ const DIM_LABEL: Record<string, string> = {
   max_weight_unit: "Budget unit",
 }
 
+/** Accessory-side field names, for the "bring in line" list. */
+const ACC_LABEL: Record<string, string> = {
+  ...DIM_LABEL,
+  device_type: "Device type",
+  mount: "Rail",
+  face: "Channel",
+  mount_offset_mm: "Offset (mm)",
+  mount_span_u: "Span (U)",
+}
+
 const show = (v: unknown) =>
   v === null || v === ""
     ? "—"
@@ -63,14 +73,16 @@ export function RackSyncTypeButton({ rack }: { rack: Rack }) {
       qc.invalidateQueries({ queryKey: ["rack", rack.id] })
       qc.invalidateQueries({ queryKey: ["rack-devices", rack.id] })
       qc.invalidateQueries({ queryKey: ["devices"] })
-      const dims = r.result?.dims.length ?? 0
+      const dimCount = r.result?.dims.length ?? 0
       const added = r.result?.accessories ?? []
+      const changed = r.result?.updated ?? []
+      const parts = [
+        added.length ? `added ${added.join(", ")}` : "",
+        changed.length ? `updated ${changed.join(", ")}` : "",
+        dimCount ? `${dimCount} dimension${dimCount === 1 ? "" : "s"}` : "",
+      ].filter(Boolean)
       toast.success(
-        added.length
-          ? `Synced — added ${added.join(", ")}`
-          : dims
-            ? `Synced ${dims} dimension${dims === 1 ? "" : "s"}`
-            : "Already in step with its type"
+        parts.length ? `Synced — ${parts.join(" · ")}` : "Nothing to change"
       )
       setPreview(null)
     },
@@ -82,8 +94,9 @@ export function RackSyncTypeButton({ rack }: { rack: Rack }) {
   const diff = preview?.diff
   const dims = Object.entries(diff?.dims ?? {})
   const add = diff?.accessories?.add ?? []
+  const update = diff?.accessories?.update ?? []
   const extra = diff?.accessories?.extra ?? []
-  const inStep = dims.length === 0 && add.length === 0
+  const inStep = dims.length === 0 && add.length === 0 && update.length === 0
 
   return (
     <>
@@ -138,6 +151,35 @@ export function RackSyncTypeButton({ rack }: { rack: Rack }) {
                     Each becomes a side-mounted device named{" "}
                     <span className="font-mono">{rack.name}-&lt;label&gt;</span>
                     , with its type's components.
+                  </span>
+                </div>
+              )}
+              {update.length > 0 && (
+                <div className="grid gap-1">
+                  <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+                    Strips to bring in line
+                  </span>
+                  {update.map((u) => (
+                    <div key={u.name} className="grid gap-0.5">
+                      <span className="font-mono">{u.name}</span>
+                      {Object.entries(u.changes).map(([field, v]) => (
+                        <span key={field} className="pl-3 text-[11px]">
+                          <span className="text-muted-foreground">
+                            {ACC_LABEL[field] ?? field}:{" "}
+                          </span>
+                          <span className="text-muted-foreground line-through">
+                            {show(v.device)}
+                          </span>{" "}
+                          → {show(v.type)}
+                        </span>
+                      ))}
+                    </div>
+                  ))}
+                  <span className="text-[11px] text-muted-foreground">
+                    A changed device type adds the new type's components; the
+                    ones already on the strip stay (use the device's own Sync
+                    from type to prune them, since only that knows what the
+                    cabling depends on).
                   </span>
                 </div>
               )}

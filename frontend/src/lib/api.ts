@@ -1521,11 +1521,17 @@ export interface RackSyncResponse {
     accessories?: {
       /** Labels on the type with no strip on this rack. */
       add: string[]
+      /** Strips that exist but no longer match their accessory. */
+      update: {
+        name: string
+        label: string
+        changes: Record<string, { device: unknown; type: unknown }>
+      }[]
       /** Stamped-looking strips the type no longer defines — never deleted. */
       extra: string[]
     }
   }
-  result?: { dims: string[]; accessories: string[] }
+  result?: { dims: string[]; accessories: string[]; updated: string[] }
 }
 
 /** Picker shape (?picker=1) — RackMiniSerializer, includes unit geometry. */
