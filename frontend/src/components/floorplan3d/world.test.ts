@@ -18,6 +18,7 @@ import {
   offsetPolyline,
   rackFootprintM,
   rackViewpoint,
+  sideStripBoxM,
   trayElevationM,
   underfloorMM,
   wallDoorSpans,
@@ -468,6 +469,43 @@ describe("rackViewpoint — one math for double-click fly-to and the rear flip",
     expect(
       Math.hypot(position[0] - target[0], position[2] - target[2])
     ).toBeCloseTo(2.2)
+  })
+})
+
+describe("sideStripBoxM — vertical 0U strips hang on the rail", () => {
+  const pdu = (over = {}) =>
+    dev(1, 0, { position: null, mount: "side_right", ...over })
+
+  it("defaults to ~¾ of the rack, sitting on the base plate", () => {
+    const b = sideStripBoxM(rack(), pdu(), 0.6, 1.0)
+    expect(b.h).toBeCloseTo(Math.round(42 * 0.75) * 0.04445)
+    expect(b.y).toBeCloseTo(RACK_BASE_M)
+    expect(b.x).toBeGreaterThan(0.3) // right rail, outside the panel
+    expect(b.z).toBeCloseTo(0.2) // rear half of the depth
+  })
+
+  it("left rail mirrors to −x", () => {
+    const b = sideStripBoxM(rack(), pdu({ mount: "side_left" }), 0.6, 1.0)
+    expect(b.x).toBeLessThan(-0.3)
+  })
+
+  it("honours span + offset, but never pokes past the rack top", () => {
+    const b = sideStripBoxM(
+      rack(),
+      pdu({ mount_span_u: 20, mount_offset_mm: 200 }),
+      0.6,
+      1.0
+    )
+    expect(b.h).toBeCloseTo(20 * 0.04445)
+    expect(b.y).toBeCloseTo(RACK_BASE_M + 0.2)
+    const clamped = sideStripBoxM(
+      rack(),
+      pdu({ mount_span_u: 40, mount_offset_mm: 1500 }),
+      0.6,
+      1.0
+    )
+    const rackTop = RACK_BASE_M + 42 * 0.04445
+    expect(clamped.y + clamped.h).toBeLessThanOrEqual(rackTop + 1e-9)
   })
 })
 

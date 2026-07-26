@@ -129,6 +129,11 @@ uploaded blueprint textures it.
   devices wear their device-type **front/rear images**. Monitoring state
   lights a beacon on top of each cabinet — the same worst-status rollup the
   2D overlays use.
+- **Side-mounted 0U strips** (vertical PDUs with a
+  [rail mount](../dcim/racks.md#zero-u-side-mounting-vertical-pdus)) hang on
+  their cabinet's flank as slim vertical strips in both detail tiers —
+  click one for its device card. Outlet-level markers on the strip arrive
+  with the bulk-placement phase.
 - **Build in advance**: a typed tile needs no linked object — paint the
   future rack row now (bulk *Set type* makes this one sweep) and link real
   racks as they land. In 3D, unlinked non-zone tiles render as translucent

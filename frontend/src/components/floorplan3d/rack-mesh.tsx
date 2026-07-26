@@ -8,6 +8,7 @@ import type { LegendReporter } from "@/components/speed-scale"
 
 import { AirflowGlyphs } from "./airflow-glyphs"
 import { DeviceMesh } from "./device-mesh"
+import { SideStripMesh } from "./side-strip-mesh"
 import { RackRuler } from "./rack-ruler"
 import { FaceLabel } from "./text-sprite"
 import {
@@ -103,6 +104,10 @@ export function RackMesh({
 }) {
   const rack = tile.rack!
   const { width, depth, height } = rackFootprintM(rack)
+  // U-positioned gear renders per tier; side-mounted 0U strips render in
+  // BOTH tiers (one box each — a PDU that pops in/out reads as a glitch).
+  const positioned = rack.devices.filter((d) => d.position != null)
+  const mounted = rack.devices.filter((d) => d.mount && d.position == null)
   const [cx, cz] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
   const rotY = (-tile.orientation * Math.PI) / 180
   const [hovered, setHovered] = useState(false)
@@ -203,7 +208,7 @@ export function RackMesh({
             color={frameColor}
             mode={xray ? "cutaway" : shellMode}
           />
-          {rack.devices.map((d) => {
+          {positioned.map((d) => {
             const isSel =
               (selection?.kind === "device" || selection?.kind === "port") &&
               selection.deviceId === d.id
@@ -252,6 +257,23 @@ export function RackMesh({
       ) : (
         <Frame w={width} h={height} d={depth} color={frameColor} />
       )}
+      {!ghosted &&
+        mounted.map((d) => (
+          <SideStripMesh
+            key={d.id}
+            rack={rack}
+            dev={d}
+            rackWidthM={width}
+            rackDepthM={depth}
+            selected={
+              (selection?.kind === "device" || selection?.kind === "port") &&
+              selection.deviceId === d.id
+            }
+            onSelect={() =>
+              onSelect({ kind: "device", tileId: tile.id, deviceId: d.id })
+            }
+          />
+        ))}
       {/* Airflow cues — near tier only, like every overlay; the glyph layer
           reports its legend content and retracts it on unmount. */}
       {showOverlays && showAirflow && (
@@ -264,7 +286,7 @@ export function RackMesh({
       )}
       {showOverlays &&
         showNames &&
-        rack.devices.map((dev) => {
+        positioned.map((dev) => {
           const { y, h } = deviceYM(rack, dev)
           return (
             <FaceLabel

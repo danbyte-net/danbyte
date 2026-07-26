@@ -42,7 +42,6 @@ import { apiErrorToast } from "@/lib/api-toast"
 const BASE_PX_PER_MM = 0.95
 const RENDER_PX_PER_MM = 1.35
 
-
 export type RackFace = "front" | "rear"
 export type RackDisplayMode = "names" | "images" | "render"
 
@@ -130,6 +129,10 @@ export function RackElevation({
       : rack.starting_unit + rack.u_height - 1 - unit + 1
 
   const devices = q.data?.results ?? []
+  // Side-mounted 0U strips (vertical PDUs) — they live in the rail lanes
+  // flanking the U grid, not in it.
+  const mountedLeft = devices.filter((d) => d.mount === "side_left")
+  const mountedRight = devices.filter((d) => d.mount === "side_right")
   // Mounting semantics: a device mounts on ONE face (face "" ≈ front); when its
   // type is full-depth it *occupies* the opposite face too — drawn hatched
   // there, so the rear view shows what's blocking the space.
@@ -261,88 +264,106 @@ export function RackElevation({
           onDragEnd={canDrag ? onDragEnd : undefined}
         >
           <div className="overflow-x-auto rounded-lg border border-border bg-card p-1.5">
-            <div
-              className="relative grid"
-              style={{
-                gridTemplateRows: `repeat(${rack.u_height}, ${rowHeight}px)`,
-                // Two columns so half-width devices (rack_width="half") can sit
-                // side by side in one U; full-width blocks span both.
-                gridTemplateColumns: "1fr 1fr",
-                minWidth: gridMinWidth,
-              }}
-            >
-              {/* Empty "available" bands — one per unit. Devices overlay on
+            <div className="flex gap-1.5">
+              {(mountedLeft.length > 0 || canAddDevice) && (
+                <SideLane
+                  side="side_left"
+                  devices={mountedLeft}
+                  rackId={rack.id}
+                  canAdd={canAddDevice}
+                />
+              )}
+              <div
+                className="relative grid flex-1"
+                style={{
+                  gridTemplateRows: `repeat(${rack.u_height}, ${rowHeight}px)`,
+                  // Two columns so half-width devices (rack_width="half") can
+                  // sit side by side in one U; full-width blocks span both.
+                  gridTemplateColumns: "1fr 1fr",
+                  minWidth: gridMinWidth,
+                }}
+              >
+                {/* Empty "available" bands — one per unit. Devices overlay on
                 top, so these hover affordances only surface on free space. */}
-              {units.map((unit, i) => (
-                <UnitBand
-                  key={unit}
-                  unit={unit}
-                  row={i + 1}
-                  droppable={canDrag}
-                >
-                  <span className="w-6 shrink-0 text-right font-mono text-[10px] text-muted-foreground tabular-nums">
-                    {unit}
-                  </span>
-                  {(canAddDevice || canMoveDevice) && (
-                    <span className="ml-auto hidden items-center gap-1.5 group-hover/unit:flex">
-                      {canAddDevice && (
-                        <Link
-                          to="/devices/new"
-                          search={{ rack: rack.id, position: unit, face }}
-                          className="rounded px-1 text-[10px] font-medium text-primary hover:underline"
-                        >
-                          + Add
-                        </Link>
-                      )}
-                      {canMoveDevice && (
-                        <button
-                          type="button"
-                          onClick={() => setAssignUnit(unit)}
-                          className="rounded px-1 text-[10px] font-medium text-primary hover:underline"
-                        >
-                          Assign
-                        </button>
-                      )}
+                {units.map((unit, i) => (
+                  <UnitBand
+                    key={unit}
+                    unit={unit}
+                    row={i + 1}
+                    droppable={canDrag}
+                  >
+                    <span className="w-6 shrink-0 text-right font-mono text-[10px] text-muted-foreground tabular-nums">
+                      {unit}
                     </span>
-                  )}
-                </UnitBand>
-              ))}
+                    {(canAddDevice || canMoveDevice) && (
+                      <span className="ml-auto hidden items-center gap-1.5 group-hover/unit:flex">
+                        {canAddDevice && (
+                          <Link
+                            to="/devices/new"
+                            search={{ rack: rack.id, position: unit, face }}
+                            className="rounded px-1 text-[10px] font-medium text-primary hover:underline"
+                          >
+                            + Add
+                          </Link>
+                        )}
+                        {canMoveDevice && (
+                          <button
+                            type="button"
+                            onClick={() => setAssignUnit(unit)}
+                            className="rounded px-1 text-[10px] font-medium text-primary hover:underline"
+                          >
+                            Assign
+                          </button>
+                        )}
+                      </span>
+                    )}
+                  </UnitBand>
+                ))}
 
-              {/* Device blocks spanning their u_height. */}
-              {visible.map(({ d, hatched }) => {
-                // When desc_units is false (highest at top), a device occupying
-                // positions p..p+h-1 starts visually at its *top-most* unit
-                // (p+h-1), so anchor on that row; ascending anchors on p.
-                const topUnit = rack.desc_units
-                  ? (d.position as number)
-                  : (d.position as number) + d.u_height - 1
-                const top = rowOf(topUnit)
-                // Half-width devices occupy one of the two grid columns;
-                // full-width spans both.
-                const column =
-                  d.rack_width === "half"
-                    ? d.rack_side === "right"
-                      ? "2"
-                      : "1"
-                    : "1 / -1"
-                return (
-                  <DeviceBlock
-                    key={d.id}
-                    device={d}
-                    face={face}
-                    mode={mode}
-                    hatched={hatched}
-                    dragEnabled={canDrag && !hatched}
-                    highlight={d.id === highlightDeviceId}
-                    showText={labels}
-                    startRow={top}
-                    // span clamps to the visible grid in case of overflow
-                    span={Math.max(1, d.u_height)}
-                    column={column}
-                    accent={rack.role?.color || undefined}
-                  />
-                )
-              })}
+                {/* Device blocks spanning their u_height. */}
+                {visible.map(({ d, hatched }) => {
+                  // When desc_units is false (highest at top), a device occupying
+                  // positions p..p+h-1 starts visually at its *top-most* unit
+                  // (p+h-1), so anchor on that row; ascending anchors on p.
+                  const topUnit = rack.desc_units
+                    ? (d.position as number)
+                    : (d.position as number) + d.u_height - 1
+                  const top = rowOf(topUnit)
+                  // Half-width devices occupy one of the two grid columns;
+                  // full-width spans both.
+                  const column =
+                    d.rack_width === "half"
+                      ? d.rack_side === "right"
+                        ? "2"
+                        : "1"
+                      : "1 / -1"
+                  return (
+                    <DeviceBlock
+                      key={d.id}
+                      device={d}
+                      face={face}
+                      mode={mode}
+                      hatched={hatched}
+                      dragEnabled={canDrag && !hatched}
+                      highlight={d.id === highlightDeviceId}
+                      showText={labels}
+                      startRow={top}
+                      // span clamps to the visible grid in case of overflow
+                      span={Math.max(1, d.u_height)}
+                      column={column}
+                      accent={rack.role?.color || undefined}
+                    />
+                  )
+                })}
+              </div>
+              {(mountedRight.length > 0 || canAddDevice) && (
+                <SideLane
+                  side="side_right"
+                  devices={mountedRight}
+                  rackId={rack.id}
+                  canAdd={canAddDevice}
+                />
+              )}
             </div>
           </div>
           <DragOverlay dropAnimation={null}>
@@ -372,6 +393,51 @@ export function RackElevation({
 /** One empty-unit band: hover Add/Assign affordances, and — when the
  * elevation is draggable — a drop target whose unit becomes the dragged
  * device's top row. */
+/** One rail lane flanking the U grid: the side-mounted 0U strips (vertical
+ * PDUs) that hang on that rail, plus "+" to hang a new one. Vertical text —
+ * the lane is a strip, and so is the gear on it. */
+function SideLane({
+  side,
+  devices,
+  rackId,
+  canAdd,
+}: {
+  side: "side_left" | "side_right"
+  devices: Device[]
+  rackId: string
+  canAdd: boolean
+}) {
+  const railName = side === "side_left" ? "left" : "right"
+  return (
+    <div className="flex w-7 shrink-0 flex-col gap-1">
+      {devices.map((d) => (
+        <Link
+          key={d.id}
+          to="/devices/$id"
+          params={{ id: d.id }}
+          title={`${d.name} — ${railName} rail (0U)`}
+          className="flex min-h-16 flex-1 items-center justify-center rounded border border-border bg-muted/60 hover:border-primary"
+          style={{ writingMode: "vertical-rl" }}
+        >
+          <span className="max-h-full truncate px-0.5 py-1 font-mono text-[10px]">
+            {d.name}
+          </span>
+        </Link>
+      ))}
+      {canAdd && (
+        <Link
+          to="/devices/new"
+          search={{ rack: rackId, mount: side }}
+          title={`Add a side-mounted 0U device (${railName} rail)`}
+          className="flex h-7 items-center justify-center rounded border border-dashed border-border text-[11px] text-muted-foreground hover:border-primary hover:text-primary"
+        >
+          +
+        </Link>
+      )}
+    </div>
+  )
+}
+
 function UnitBand({
   unit,
   row,

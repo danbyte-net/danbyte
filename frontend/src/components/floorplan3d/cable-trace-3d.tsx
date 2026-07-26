@@ -70,6 +70,10 @@ function portEndRun(
   const { tile } = site
   const rack = tile.rack!
   const dev = rack.devices[site.devIndex]
+  // Side-mounted strips have no U position — deviceBoxM geometry would be
+  // nonsense. Fall back to the tile drop; strip-anchored runs come with the
+  // outlet-marker phase.
+  if (dev.position == null) return null
   const side = dev.face === "rear" ? "rear" : "front"
   const markers = dev.image_ports?.[side] ?? []
   // Markers carry template names; terminations carry rendered ones.
