@@ -1840,11 +1840,15 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                     {"position": "A side-mounted device hangs on a rail — "
                                  "it can't also occupy a U position."}
                 )
-            if face or side:
+            if side:
                 raise serializers.ValidationError(
-                    {"mount": "Side mounting replaces face/side placement — "
-                              "clear those first."}
+                    {"rack_side": "Half-width sides are for gear in a U — a "
+                                  "side-mounted strip hangs on the rail."}
                 )
+            # `face` is NOT excluded: on a 0U strip it means which CHANNEL the
+            # thing bolts into (a vertical PDU usually lives in the rear), and
+            # the elevation draws it only on that face. Blank = visible from
+            # both, which is what everything mounted before this existed is.
             span = attrs.get(
                 "mount_span_u", getattr(self.instance, "mount_span_u", None)
             )
@@ -3468,8 +3472,8 @@ class RackTypeAccessorySerializer(serializers.ModelSerializer):
     class Meta:
         model = RackTypeAccessory
         fields = ["id", "rack_type_id", "device_type", "device_type_id",
-                  "label", "mount", "mount_offset_mm", "mount_span_u", "order",
-                  "created_at", "updated_at"]
+                  "label", "mount", "face", "mount_offset_mm", "mount_span_u",
+                  "order", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
@@ -3639,6 +3643,7 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
                 rack=rack,
                 device_type=acc.device_type,
                 mount=acc.mount,
+                face=acc.face,
                 mount_offset_mm=acc.mount_offset_mm,
                 mount_span_u=acc.mount_span_u,
             )

@@ -77,10 +77,22 @@ class ZeroUMountTests(APITestCase):
         self.assertEqual(r.status_code, 400)
         self.assertIn("position", r.json())
 
-    def test_mount_excludes_face(self):
-        r = self._post("pdu", self.dt_pdu, mount="side_left", face="front")
-        self.assertEqual(r.status_code, 400)
-        self.assertIn("mount", r.json())
+    def test_mount_keeps_face_as_the_channel(self):
+        # `face` is NOT exclusive with a mount: on a 0U strip it names which
+        # channel the thing bolts into, and the elevation draws it on that
+        # face only. (It used to be rejected, which is why every PDU showed
+        # up on both the front AND rear elevation.)
+        r = self._post("pdu", self.dt_pdu, mount="side_left", face="rear")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["face"], "rear")
+
+    def test_mount_never_keeps_a_half_width_side(self):
+        # A 0U strip is not half-width gear, so a stray rack_side is
+        # normalised away rather than rejected — the same rule that already
+        # keeps stale sides off every full-width device.
+        r = self._post("pdu", self.dt_pdu, mount="side_left", rack_side="left")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["rack_side"], "")
 
     def test_span_longer_than_the_rack_rejected(self):
         r = self._post(

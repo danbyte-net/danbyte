@@ -333,6 +333,7 @@ function AccessoryDialog({
   const [label, setLabel] = useState("")
   const [deviceTypeId, setDeviceTypeId] = useState<string | null>(null)
   const [mount, setMount] = useState<RackMount>("side_left")
+  const [face, setFace] = useState<"" | "front" | "rear">("")
   const [offset, setOffset] = useState("")
   const [span, setSpan] = useState("")
 
@@ -341,6 +342,7 @@ function AccessoryDialog({
     setLabel(accessory?.label ?? "")
     setDeviceTypeId(accessory?.device_type.id ?? null)
     setMount(accessory?.mount ?? "side_left")
+    setFace(accessory?.face ?? "")
     setOffset(
       accessory?.mount_offset_mm != null
         ? String(accessory.mount_offset_mm)
@@ -373,6 +375,7 @@ function AccessoryDialog({
         device_type_id: deviceTypeId ?? "",
         label: label.trim(),
         mount,
+        face,
         mount_offset_mm: offset.trim() === "" ? null : Number(offset),
         mount_span_u: span.trim() === "" ? null : Number(span),
       }
@@ -438,13 +441,25 @@ function AccessoryDialog({
             options={zeroU.map((dt) => ({ value: dt.id, label: dt.name }))}
             error={fieldErrors.device_type_id}
           />
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <FormSelect
               label="Rail"
               value={mount}
               onChange={(v) => v && setMount(v as RackMount)}
               options={MOUNTS.map((m) => ({ value: m.value, label: m.label }))}
               error={fieldErrors.mount}
+            />
+            <FormSelect
+              label="Channel"
+              hint="blank = both faces"
+              value={face === "" ? null : face}
+              onChange={(v) => setFace(v === "front" || v === "rear" ? v : "")}
+              noneLabel="Unspecified"
+              options={[
+                { value: "front", label: "Front" },
+                { value: "rear", label: "Rear" },
+              ]}
+              error={fieldErrors.face}
             />
             <FormText
               label="Offset (mm)"

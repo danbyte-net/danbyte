@@ -1395,6 +1395,8 @@ export interface RackTypeAccessory {
   }
   label: string
   mount: RackMount
+  /** Channel it bolts into; "" = unspecified, shown on both elevations. */
+  face: "" | "front" | "rear"
   mount_offset_mm: number | null
   mount_span_u: number | null
   order: number
