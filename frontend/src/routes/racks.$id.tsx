@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
+import { RackSyncTypeButton } from "@/components/rack-sync-type-button"
 import { useQuery } from "@tanstack/react-query"
 import { Camera, Minus, Pencil, Plus, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useRef, useState } from "react"
@@ -75,6 +76,7 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
       actions={
         <>
           <ShowOnFloorPlan rackId={r.id} />
+          <RackSyncTypeButton rack={r} />
           {canDo("rack", "change") && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/racks/$id/edit" params={{ id: r.id }}>

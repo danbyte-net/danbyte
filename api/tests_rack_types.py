@@ -254,6 +254,109 @@ class RackTypeCatalogTests(APITestCase):
         )
         self.assertEqual(r.status_code, 201, r.content)
 
+    # ── Re-syncing an existing rack with its type ────────────────────────
+
+    def test_sync_dry_run_reports_drift_without_touching_anything(self):
+        rt_id = self._typed()
+        self._post_rack("rack-sync", rt_id, False)
+        rack = Rack.objects.get(name="rack-sync")
+        rack.u_height = 24
+        rack.save(update_fields=["u_height"])
+
+        r = self.client.post(
+            f"/api/racks/{rack.id}/sync-from-type/", {}, format="json"
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        body = r.json()
+        self.assertFalse(body["applied"])
+        self.assertEqual(body["diff"]["dims"]["u_height"],
+                         {"rack": 24, "type": 42})
+        self.assertEqual(
+            sorted(body["diff"]["accessories"]["add"]), ["PDU-A", "PDU-B"]
+        )
+        rack.refresh_from_db()
+        self.assertEqual(rack.u_height, 24)      # dry run changed nothing
+        self.assertEqual(rack.devices.count(), 0)
+
+    def test_sync_applies_dims_and_stamps_missing_accessories(self):
+        rt_id = self._typed()
+        self._post_rack("rack-apply", rt_id, False)
+        rack = Rack.objects.get(name="rack-apply")
+        rack.u_height = 24
+        rack.save(update_fields=["u_height"])
+
+        r = self.client.post(
+            f"/api/racks/{rack.id}/sync-from-type/", {"apply": True},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.json()["applied"])
+        rack.refresh_from_db()
+        self.assertEqual(rack.u_height, 42)
+        self.assertEqual(
+            set(rack.devices.values_list("name", flat=True)),
+            {"rack-apply-PDU-A", "rack-apply-PDU-B"},
+        )
+
+    def test_sync_is_idempotent(self):
+        rt_id = self._typed()
+        self._post_rack("rack-twice", rt_id, True)
+        rack = Rack.objects.get(name="rack-twice")
+        r = self.client.post(
+            f"/api/racks/{rack.id}/sync-from-type/", {"apply": True},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        # Already stamped at create time — a second sync adds nothing.
+        self.assertEqual(r.json()["result"]["accessories"], [])
+        self.assertEqual(rack.devices.count(), 2)
+
+    def test_sync_never_deletes_an_extra_strip(self):
+        rt_id = self._typed()
+        self._post_rack("rack-extra", rt_id, True)
+        rack = Rack.objects.get(name="rack-extra")
+        # A strip nobody's type defines any more — real, possibly cabled gear.
+        Device.objects.create(
+            tenant=self.tenant, name="rack-extra-PDU-Z", site=self.site,
+            rack=rack, device_type=self.dt_pdu, mount="side_left",
+        )
+        r = self.client.post(
+            f"/api/racks/{rack.id}/sync-from-type/", {"apply": True},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(
+            r.json()["diff"]["accessories"]["extra"], ["rack-extra-PDU-Z"]
+        )
+        self.assertTrue(
+            Device.objects.filter(name="rack-extra-PDU-Z").exists()
+        )
+
+    def test_sync_can_take_dims_only(self):
+        rt_id = self._typed()
+        self._post_rack("rack-dims", rt_id, False)
+        rack = Rack.objects.get(name="rack-dims")
+        rack.u_height = 12
+        rack.save(update_fields=["u_height"])
+        r = self.client.post(
+            f"/api/racks/{rack.id}/sync-from-type/",
+            {"apply": True, "accessories": False},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        rack.refresh_from_db()
+        self.assertEqual(rack.u_height, 42)
+        self.assertEqual(rack.devices.count(), 0)
+
+    def test_sync_refused_without_a_type(self):
+        rack = Rack.objects.create(
+            tenant=self.tenant, site=self.site, name="rack-bare"
+        )
+        r = self.client.post(
+            f"/api/racks/{rack.id}/sync-from-type/", {}, format="json"
+        )
+        self.assertEqual(r.status_code, 400)
+
     def test_accessory_face_stamps_onto_the_device(self):
         # The channel an accessory names must reach the stamped device —
         # otherwise every factory PDU lands face-blank and draws on both
