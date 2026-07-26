@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSiteOptions } from "@/lib/use-site-options"
 import { toast } from "sonner"
@@ -37,11 +37,18 @@ const WIDTHS: { value: RackWidth; label: string }[] = [
 
 export interface RackFormProps {
   rack?: Rack
+  /** Pre-pick a cabinet model on a NEW rack — "Add rack" from a rack type. */
+  initialRackTypeId?: string
   onSaved: (saved: Rack) => void
   onCancel: () => void
 }
 
-export function RackForm({ rack, onSaved, onCancel }: RackFormProps) {
+export function RackForm({
+  rack,
+  initialRackTypeId,
+  onSaved,
+  onCancel,
+}: RackFormProps) {
   const isEdit = !!rack
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
@@ -51,7 +58,7 @@ export function RackForm({ rack, onSaved, onCancel }: RackFormProps) {
   const [siteId, setSiteId] = useState<string | null>(rack?.site?.id ?? null)
   const [roleId, setRoleId] = useState<string | null>(rack?.role?.id ?? null)
   const [rackTypeId, setRackTypeId] = useState<string | null>(
-    rack?.rack_type?.id ?? null
+    rack?.rack_type?.id ?? initialRackTypeId ?? null
   )
   const [createAccessories, setCreateAccessories] = useState(false)
   const [locationId, setLocationId] = useState<string | null>(
@@ -148,6 +155,19 @@ export function RackForm({ rack, onSaved, onCancel }: RackFormProps) {
     setMaxWeight(t.max_weight ?? "")
     setMaxWeightUnit(t.max_weight_unit || "kg")
   }
+  // Arriving from a rack type ("Add rack" on its page) pre-picks the model
+  // before its dims have loaded — apply the profile once they land, and only
+  // once, so it never clobbers edits the operator has already made.
+  const prefilled = useRef(false)
+  useEffect(() => {
+    if (isEdit || prefilled.current || !initialRackTypeId) return
+    const t = (rackTypes.data?.results ?? []).find(
+      (x) => x.id === initialRackTypeId
+    )
+    if (!t) return
+    prefilled.current = true
+    applyTypeProfile(t)
+  }, [isEdit, initialRackTypeId, rackTypes.data, applyTypeProfile])
   const statuses = useQuery({
     queryKey: ["statuses", "rack"],
     queryFn: () =>

@@ -29,6 +29,7 @@ export function TrayMesh({
   plan,
   tray,
   areas,
+  junctions,
   selected = false,
   onSelect,
 }: {
@@ -37,6 +38,10 @@ export function TrayMesh({
   /** Raised-floor areas — underfloor runs derive their depth from the void
    * they sit in rather than a constant. */
   areas?: SceneRaisedFloor[]
+  /** Every corner/tee/crossing in the room (world.trayJunctions). Rails stop
+   * half a basket short of one so a joint reads as fabricated tray rather
+   * than two runs shot through each other. */
+  junctions: [number, number][]
   /** Opened: near rail hidden, basket tinted, so the cables inside read. */
   selected?: boolean
   onSelect?: (trayId: string) => void
@@ -58,6 +63,12 @@ export function TrayMesh({
       rot: number
       rungs: number
     }[] = []
+    // How close a segment end must be to a junction to count as landing on
+    // it — half a basket, the same distance the rails are trimmed back.
+    const half = TRAY_W_M / 2
+    const atJunction = (x: number, z: number) =>
+      junctions.some((j) => Math.hypot(j[0] - x, j[1] - z) < 1e-3)
+
     for (let i = 0; i < tray.points.length - 1; i++) {
       const [ax, az] = cellToWorld(plan, tray.points[i][0], tray.points[i][1])
       const [bx, bz] = cellToWorld(
@@ -67,12 +78,23 @@ export function TrayMesh({
       )
       const dx = bx - ax
       const dz = bz - az
-      const len = Math.hypot(dx, dz)
-      if (len < 1e-6) continue
+      const raw = Math.hypot(dx, dz)
+      if (raw < 1e-6) continue
+      const ux = dx / raw
+      const uz = dz / raw
+      // Stop short of a joint at either end; the junction plate covers the
+      // gap. Never trim a run down to nothing — a stub shorter than the
+      // basket is all joint anyway.
+      const trimA = atJunction(ax, az) ? half : 0
+      const trimB = atJunction(bx, bz) ? half : 0
+      const len = raw - trimA - trimB
+      if (len < 0.02) continue
+      const sx = ax + ux * trimA
+      const sz = az + uz * trimA
       out.push({
         key: `${tray.id}:${i}`,
-        cx: (ax + bx) / 2,
-        cz: (az + bz) / 2,
+        cx: sx + (ux * len) / 2,
+        cz: sz + (uz * len) / 2,
         len,
         rot: -Math.atan2(dz, dx),
         // Capped: a 60 m run must not mint 200 rung meshes.
@@ -81,7 +103,7 @@ export function TrayMesh({
     }
     return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tray.points, plan.cell_mm])
+  }, [tray.points, plan.cell_mm, junctions])
 
   // Basket floor sits half a section below the tray datum; rails stand on it.
   const floorY = -TRAY_H_M / 2 + TRAY_RAIL_T_M / 2
@@ -160,5 +182,33 @@ export function TrayMesh({
         </group>
       ))}
     </group>
+  )
+}
+
+/**
+ * The plate that bridges a corner, tee or crossing. Rails stop half a basket
+ * short of the joint (see TrayMesh); this square of floor fills the gap and
+ * gives whatever turns the corner something to rest on — an open joint, the
+ * way a real basket corner looks once the rails are cut.
+ *
+ * Drawn once per joint at scene level rather than per tray, so a crossing
+ * between two runs gets ONE plate instead of two fighting for the same
+ * millimetre.
+ */
+export function TrayJunctionMesh({
+  at,
+  y,
+  color = TRAY_FALLBACK,
+}: {
+  at: [number, number]
+  y: number
+  color?: string
+}) {
+  const floorY = y - TRAY_H_M / 2 + TRAY_RAIL_T_M / 2
+  return (
+    <mesh position={[at[0], floorY, at[1]]} castShadow raycast={() => null}>
+      <boxGeometry args={[TRAY_W_M, TRAY_RAIL_T_M, TRAY_W_M]} />
+      <meshStandardMaterial color={color} roughness={0.5} metalness={0.55} />
+    </mesh>
   )
 }

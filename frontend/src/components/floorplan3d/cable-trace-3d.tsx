@@ -15,6 +15,7 @@ import {
   cellToWorld,
   deviceBoxM,
   filletPath,
+  freeAirRideY,
   offsetPolyline,
   portLocalM,
   rackFootprintM,
@@ -185,7 +186,7 @@ export function cableRunPoints(
           trays.length,
         lane.lift
       )
-    : (plan.ceiling_mm / 1000) * 0.66 + lane.lift
+    : freeAirRideY(scene, lane.lift)
 
   const rideWorld = offsetPolyline(
     route.map((p) => cellToWorld(plan, p[0], p[1])),
@@ -398,6 +399,17 @@ function CableLine({
   )
 }
 
+/**
+ * The dash crawl runs at this rate, not at display refresh.
+ *
+ * Every animated frame `invalidate()`s the whole demand-frameloop canvas — so
+ * a traced cable was re-rendering the entire room (shadows, AO, the lot) at
+ * 60–144 Hz. Up close on a High-quality device that tanked the frame rate for
+ * a decorative crawl. 30 Hz reads identically and halves the work; the offset
+ * still advances by real elapsed time, so the crawl speed is unchanged.
+ */
+const MARCH_HZ = 30
+
 function MarchingLine({
   points,
   color,
@@ -407,12 +419,16 @@ function MarchingLine({
 }) {
   const ref = useRef<Line2>(null)
   const invalidate = useThree((s) => s.invalidate)
+  const since = useRef(0)
   useFrame((_, delta) => {
+    since.current += delta
+    if (since.current < 1 / MARCH_HZ) return
     const mat = ref.current?.material
     if (mat && "dashOffset" in mat) {
-      ;(mat as { dashOffset: number }).dashOffset -= delta * 0.6
+      ;(mat as { dashOffset: number }).dashOffset -= since.current * 0.6
       invalidate()
     }
+    since.current = 0
   })
   return (
     <Line

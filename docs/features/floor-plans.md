@@ -168,7 +168,11 @@ uploaded blueprint textures it.
   runs ride *inside* them, resting on the rungs. **Click a tray to open it**:
   the near rail drops away, the basket tints, and a card lists every cable
   routed through it (click one to select that run). Click it again, or
-  **Close tray**, to shut it.
+  **Close tray**, to shut it. Where runs corner, tee or cross, the rails stop
+  short and a **junction plate** bridges the joint, so a crossing reads as
+  fabricated tray instead of two baskets shot through each other.
+- A run with **no tray** flies over the cabinets rather than through them —
+  it clears the tallest rack in the room and stays under the ceiling.
 - The cable card names what the run **follows** — the trays in order, or
   *point-to-point* when it follows none. A cable that ignores an obvious duct
   is almost always set to point-to-point; change it on the cable's own page
