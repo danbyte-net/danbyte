@@ -93,8 +93,9 @@ uploaded blueprint textures it.
   sees it. **Cutaway** (the default) strips doors and side panels down to
   the corner-post frame so whole rows read through. **X-ray** keeps the
   open frame up close and draws distant cabinets as bare outlines, ghosts
-  the walls and floor, lifts every raised floor, and fades all devices
-  except the selected one — the view for following copper through tin.
+  the walls and floor, and lifts every raised floor — the tin goes, the
+  equipment stays: faceplate photos and ports render (and click) exactly
+  as in the other modes.
   The shell mode is independent of draw distance: how much detail a far
   cabinet gets is still the renderer's business.
 - **Focus** (++f++, or the button on a selected rack/device card): the
