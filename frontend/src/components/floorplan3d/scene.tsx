@@ -321,6 +321,18 @@ export default function FloorScene3D({
   // WebGL/loading early returns — hook order has to be unconditional.
   const { content: legend, report: onLegend } = useLegendCollector()
   const supported = useMemo(webglSupported, [])
+  // Where the operator is looking: the selected rack's centre. Racks between
+  // the camera and this point auto-ghost (see RackMesh). Above the early
+  // returns — hook order must be unconditional.
+  const attention = useMemo<[number, number, number] | null>(() => {
+    const d = scene.data
+    if (!selection || !d) return null
+    const t = d.tiles.find((x) => x.id === selection.tileId)
+    if (!t?.rack) return null
+    const [ax, az] = cellToWorld(d.plan, t.x + t.w / 2, t.y + t.h / 2)
+    return [ax, rackFootprintM(t.rack).height / 2, az]
+  }, [selection, scene.data])
+
   if (!supported)
     return (
       <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">
@@ -423,16 +435,6 @@ export default function FloorScene3D({
   const shownRacks = isolation
     ? rackTiles.filter((t) => isolation.ids.has(t.id))
     : rackTiles
-
-  // Where the operator is looking: the selected rack's centre. Racks standing
-  // between the camera and this point auto-ghost (see RackMesh).
-  const attention = useMemo<[number, number, number] | null>(() => {
-    if (!selection) return null
-    const t = rackTiles.find((x) => x.id === selection.tileId)
-    if (!t?.rack) return null
-    const [ax, az] = cellToWorld(plan, t.x + t.w / 2, t.y + t.h / 2)
-    return [ax, rackFootprintM(t.rack).height / 2, az]
-  }, [selection, rackTiles, plan])
 
   // HUD front↔rear flip — same viewpoint math as the double-click fly-to.
   const flipView = () => {
