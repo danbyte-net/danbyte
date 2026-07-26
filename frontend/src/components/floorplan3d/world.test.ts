@@ -149,7 +149,9 @@ describe("0U appliances — non-rack-format gear renders as a shelf box, not a p
 
   it("boxes to appliance fractions, centred, flush with the front plane", () => {
     const b = deviceBoxM(rack(), dev(5, 0), 0.6, 1.0)
-    expect(b.dw).toBeCloseTo(0.6 * APPLIANCE_W_FRAC)
+    // Width is off the 19" opening (0.45 m), not the 0.6 m cabinet — the
+    // extra cabinet width is the zero-U bay, not device.
+    expect(b.dw).toBeCloseTo(0.45 * APPLIANCE_W_FRAC)
     expect(b.dd).toBeCloseTo(1.0 * APPLIANCE_D_FRAC)
     expect(b.dx).toBe(0)
     // Front face on the rack's front plane (−0.45 × depth), like other gear.
@@ -158,7 +160,7 @@ describe("0U appliances — non-rack-format gear renders as a shelf box, not a p
 
   it("regression: 1U+ geometry is untouched by the appliance path", () => {
     const b = deviceBoxM(rack(), dev(10, 2), 0.6, 1.0)
-    expect(b.dw).toBeCloseTo(0.6 * 0.92)
+    expect(b.dw).toBeCloseTo(0.45 * 0.98)
     expect(b.dd).toBeCloseTo(0.9)
     expect(b.h).toBeCloseTo(2 * 0.04445)
   })

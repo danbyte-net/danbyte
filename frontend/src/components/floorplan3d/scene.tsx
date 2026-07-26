@@ -364,7 +364,17 @@ export default function FloorScene3D({
   const trayJointPoints = trayJoints.map((j) => j.at)
   // Effects budget: Low = no shadows/AO and a capped dpr, Medium = shadows,
   // High = shadows + ambient occlusion. "auto" asks the GPU once.
-  const rq: RenderQuality = quality === "auto" ? detectRenderQuality() : quality
+  const detected: RenderQuality =
+    quality === "auto" ? detectRenderQuality() : quality
+  // Big-hall guard: the shadow pass re-renders the whole scene from the light
+  // every frame, so a hundred cabinets of gear shadow-cast is the dominant
+  // per-frame cost. Above this many racks, Auto/High fall back to "low" (no
+  // shadows, no AO) — the room stays readable and the frame rate holds. An
+  // explicit Flat pick is already the cheapest and is left alone; an explicit
+  // Low/Medium is the operator's call and is respected.
+  const BIG_HALL_RACKS = 40
+  const rq: RenderQuality =
+    quality === "auto" && rackTiles.length > BIG_HALL_RACKS ? "low" : detected
 
   const selTile = selection
     ? (rackTiles.find((t) => t.id === selection.tileId) ?? null)

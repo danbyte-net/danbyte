@@ -100,12 +100,12 @@ GRID_W = RACK_X0 + PER_ROW + MARGIN
 PDU_NAME = "DC-TEST Vertical PDU 24×C13"
 PDU_OUTLETS = 24
 RACK_TYPE_NAME = "DC-TEST 42U"
-# 600 mm wide = EXACTLY one grid cell, so cabinets bay flush the way they do
-# in a real row. The 800 mm variant of the first pass overhung its 600 mm
-# tile by 100 mm a side, which collided every neighbour by 200 mm — the same
-# mistake as the depth one, on the other axis. A 600 mm cabinet still leaves
-# ~63 mm of zero-U channel each side, enough for the 50 mm PDU strips.
-OUTER_W_MM = 600
+# Cabinet width = EXACTLY one grid cell (cell_mm below matches), so cabinets
+# still bay flush the way they do in a real row — no overhang, no collision.
+# 750 mm holds the 450 mm 19" rail opening plus a 150 mm zero-U bay each side:
+# the visible white space a vertical PDU stands in (devices render at the
+# opening, not the cabinet width, so the bays don't get swallowed).
+OUTER_W_MM = 750
 OUTER_D_MM = 1200
 
 FW_TYPE = "PA-3420"   # 1U, photo faceplate
@@ -288,7 +288,7 @@ class Command(BaseCommand):
             defaults={
                 "grid_width": GRID_W,
                 "grid_height": height,
-                "cell_mm": 600,
+                "cell_mm": 750,  # cabinets are 750 mm now — one wide cell bays flush
                 "ceiling_mm": 3200,
             },
         )

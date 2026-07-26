@@ -292,7 +292,10 @@ export function deviceYM(
 export function deviceBoxM(
   rack: SceneRack,
   dev: SceneDevice,
-  rackWidthM: number,
+  // Gear is sized to the rail opening, not the cabinet, so the outer width is
+  // no longer read here — kept in the signature so every caller stays
+  // uniform (rack, dev, width, depth).
+  _rackWidthM: number,
   rackDepthM: number
 ): {
   y: number
@@ -306,16 +309,22 @@ export function deviceBoxM(
 } {
   const { y, h } = deviceYM(rack, dev)
   const appliance = dev.u_height <= 0
+  // Gear is sized to the 19" RAIL OPENING (a fixed 450 mm), NOT the cabinet
+  // width. That is what makes a wider cabinet show zero-U side bays: the extra
+  // outer width beyond the opening is empty channel where PDUs and cabling
+  // live, exactly as a real rack elevation reads. Sizing devices to the
+  // cabinet made them grow with it and swallow the bay every time.
+  const openM = mm(OPENING_MM[rack.width] ?? PANEL_MM.opening)
   const dw = appliance
-    ? rackWidthM * APPLIANCE_W_FRAC
+    ? openM * APPLIANCE_W_FRAC
     : dev.rack_width === "half"
-      ? rackWidthM * 0.44
-      : rackWidthM * 0.92
+      ? openM * 0.48
+      : openM * 0.98
   const dx =
     dev.rack_side === "left"
-      ? -rackWidthM * 0.23
+      ? -openM * 0.25
       : dev.rack_side === "right"
-        ? rackWidthM * 0.23
+        ? openM * 0.25
         : 0
   const dd = appliance
     ? rackDepthM * APPLIANCE_D_FRAC
