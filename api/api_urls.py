@@ -95,6 +95,8 @@ from .viewsets import (
     MACAddressViewSet,
     RackViewSet,
     RackRoleViewSet,
+    RackTypeViewSet,
+    RackTypeAccessoryViewSet,
     DeviceRoleViewSet,
     PlatformGroupViewSet,
     PlatformViewSet,
@@ -242,6 +244,9 @@ router.register(r"virtual-machines", VirtualMachineViewSet, basename="virtual-ma
 router.register(r"vm-interfaces",  VMInterfaceViewSet, basename="vm-interface")
 router.register(r"racks",         RackViewSet,        basename="rack")
 router.register(r"rack-roles",    RackRoleViewSet,    basename="rack-role")
+router.register(r"rack-types",    RackTypeViewSet,    basename="rack-type")
+router.register(r"rack-type-accessories", RackTypeAccessoryViewSet,
+                basename="rack-type-accessory")
 router.register(r"device-roles",  DeviceRoleViewSet,  basename="device-role")
 router.register(r"platform-groups", PlatformGroupViewSet, basename="platform-group")
 router.register(r"platforms",     PlatformViewSet,    basename="platform")

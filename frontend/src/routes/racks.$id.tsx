@@ -286,6 +286,22 @@ function RackOverview({ rack: r }: { rack: Rack }) {
         dash
       ),
     },
+    {
+      label: "Rack type",
+      value: r.rack_type ? (
+        <Link
+          to="/rack-types/$id"
+          params={{ id: r.rack_type.id }}
+          className="text-primary hover:underline"
+        >
+          {r.rack_type.manufacturer
+            ? `${r.rack_type.manufacturer.name} ${r.rack_type.name}`
+            : r.rack_type.name}
+        </Link>
+      ) : (
+        dash
+      ),
+    },
     { label: "Facility ID", value: mono(r.facility_id) },
     {
       label: "Location",

@@ -1382,6 +1382,77 @@ export type RackStatus =
 
 export type RackWidth = 10 | 19 | 21 | 23
 
+export type RackMount = "side_left" | "side_right"
+
+/** Factory-fitted 0U gear on a rack model — typically vertical PDU strips. */
+export interface RackTypeAccessory {
+  id: string
+  device_type: {
+    id: string
+    name: string
+    manufacturer: string | null
+    u_height: number
+  }
+  label: string
+  mount: RackMount
+  mount_offset_mm: number | null
+  mount_span_u: number | null
+  order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface RackTypeAccessoryWritePayload {
+  rack_type_id: string
+  device_type_id: string
+  label: string
+  mount: RackMount
+  mount_offset_mm?: number | null
+  mount_span_u?: number | null
+  order?: number
+}
+
+/** Picker shape (?picker=1) — carries the dims so the rack form can
+ * pre-fill client-side; the rack stays the source of truth. */
+export interface RackTypeOption {
+  id: string
+  name: string
+  manufacturer: { id: string; name: string } | null
+  width: RackWidth
+  u_height: number
+  starting_unit: number
+  desc_units: boolean
+  outer_width_mm: number | null
+  outer_depth_mm: number | null
+  max_weight: string | null
+  max_weight_unit: string
+}
+
+export interface RackType extends RackTypeOption {
+  numid: number | null
+  description: string
+  accessories: RackTypeAccessory[]
+  rack_count: number
+  tags: Tag[]
+  created_at: string
+  updated_at: string
+}
+
+export interface RackTypeWritePayload {
+  name: string
+  manufacturer_id?: string | null
+  width?: RackWidth
+  u_height?: number
+  starting_unit?: number
+  desc_units?: boolean
+  outer_width_mm?: number | null
+  outer_depth_mm?: number | null
+  max_weight?: string | null
+  max_weight_unit?: string
+  description?: string
+  tag_ids?: number[]
+}
+
 export interface Rack {
   id: string
   numid: number | null
@@ -1389,6 +1460,7 @@ export interface Rack {
   facility_id: string
   site: { id: string; name: string }
   role: { id: string; name: string; slug: string; color: string } | null
+  rack_type: RackTypeOption | null
   status: StatusMini | null
   location: { id: string; name: string } | null
   width: RackWidth
@@ -1421,6 +1493,9 @@ export interface RackWritePayload {
   max_weight_unit?: string
   site_id: string
   role_id?: string | null
+  rack_type_id?: string | null
+  /** Create-only: stamp the type's accessories as side-mounted devices. */
+  create_accessories?: boolean
   name: string
   facility_id?: string
   status_id?: string | null

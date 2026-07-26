@@ -3143,6 +3143,11 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         RackRole, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="racks",
     )
+    rack_type = models.ForeignKey(
+        "RackType", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="racks",
+        help_text="The cabinet model this rack is an instance of.",
+    )
     status = models.ForeignKey(
         "Status", on_delete=models.PROTECT, null=True, blank=True,
         related_name="racks",
@@ -3198,6 +3203,117 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     def __str__(self) -> str:
         return self.name
+
+
+class RackType(NumIdMixin, TimestampedModel, TaggableMixin):
+    """A reusable rack profile — manufacturer/model plus the physical
+    dimensions a cabinet of that model always has. Picking one on a rack
+    pre-fills the dims (client-side; the rack stays the source of truth),
+    and its accessories can stamp side-mounted 0U gear onto new racks."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="rack_types"
+    )
+    manufacturer = models.ForeignKey(
+        Manufacturer, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="rack_types",
+    )
+    name = models.CharField(max_length=128)
+    width = models.PositiveSmallIntegerField(
+        choices=Rack.WIDTH_CHOICES, default=19,
+        help_text="Rail-to-rail width, inches.",
+    )
+    u_height = models.PositiveSmallIntegerField(
+        default=42, help_text="Height in rack units (U)."
+    )
+    starting_unit = models.PositiveSmallIntegerField(
+        default=1, help_text="Number of the bottom unit."
+    )
+    desc_units = models.BooleanField(
+        default=False,
+        help_text="Number units top-to-bottom instead of bottom-up.",
+    )
+    outer_width_mm = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(100), MaxValueValidator(2000)],
+        help_text="Cabinet outer width in millimetres (blank = derived).",
+    )
+    outer_depth_mm = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(100), MaxValueValidator(3000)],
+        help_text="Cabinet outer depth in millimetres (blank = 1000).",
+    )
+    max_weight = models.DecimalField(
+        max_digits=8, decimal_places=2, null=True, blank=True,
+        help_text="Load budget this cabinet model is rated for.",
+    )
+    max_weight_unit = models.CharField(
+        max_length=8, choices=DeviceType.WEIGHT_UNIT_CHOICES,
+        blank=True, default="",
+    )
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_racktype_tenant_name"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class RackTypeAccessory(TimestampedModel):
+    """Factory-fitted 0U gear on a rack model — typically vertical PDU
+    strips. On rack creation the accessories can (opt-in) stamp one
+    side-mounted device each, named ``{rack}-{label}``."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    rack_type = models.ForeignKey(
+        RackType, on_delete=models.CASCADE, related_name="accessories"
+    )
+    device_type = models.ForeignKey(
+        DeviceType, on_delete=models.PROTECT, related_name="+",
+        help_text="Must be a 0U device type (vertical strips side-mount).",
+    )
+    label = models.CharField(
+        max_length=64, help_text="Suffix for stamped devices (e.g. PDU-A)."
+    )
+    mount = models.CharField(max_length=12, choices=Device.MOUNT_CHOICES)
+    mount_offset_mm = models.PositiveSmallIntegerField(null=True, blank=True)
+    mount_span_u = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(60)],
+    )
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "label"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["rack_type", "label"],
+                name="uniq_racktypeaccessory_type_label",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.rack_type.name}:{self.label}"
+
+    @property
+    def tenant_id(self):
+        """Owning tenant through the parent type. The audit trail stamps
+        ``instance.tenant_id`` on every entry; without this the accessory
+        (tenant-less AND site-less) would log NULL/NULL and fail closed out
+        of its own tenant's history."""
+        from django.core.exceptions import ObjectDoesNotExist
+
+        try:
+            return self.rack_type.tenant_id
+        except ObjectDoesNotExist:
+            return None
 
 
 # ─── Device roles + platforms (shared by Device + VirtualMachine) ────────────

@@ -25,6 +25,7 @@ export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
   "api.prefix": "/prefixes/$id",
   "api.rack": "/racks/$id",
   "api.rackrole": "/rack-roles/$id",
+  "api.racktype": "/rack-types/$id",
   "api.rir": "/rirs/$id",
   "api.routetarget": "/route-targets/$id",
   "api.service": "/services/$id",
