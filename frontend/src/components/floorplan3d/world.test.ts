@@ -38,6 +38,7 @@ import {
   type SceneRack,
   type SceneTray,
   type ScenePayload,
+  tierFor,
 } from "./world"
 
 const plan: ScenePayload["plan"] = {
@@ -943,5 +944,34 @@ describe("wallDoorSpans — 2D gaps from the same clamp rules", () => {
       ]
     )
     expect(spans).toEqual([])
+  })
+})
+
+describe("tierFor", () => {
+  it("promotes to detail only within a few metres", () => {
+    expect(tierFor(3, "far")).toBe("detail")
+    expect(tierFor(6.9, "far")).toBe("detail")
+    expect(tierFor(7.1, "far")).toBe("mid")
+  })
+
+  it("keeps the room populated well past the detail range", () => {
+    expect(tierFor(20, "far")).toBe("mid")
+    expect(tierFor(40, "far")).toBe("far")
+  })
+
+  it("holds each tier a little longer on the way out", () => {
+    // Sitting at 8 m: whichever tier you arrived in, you keep it. This is the
+    // whole point of the hysteresis — orbiting on a boundary must not strobe.
+    expect(tierFor(8, "detail")).toBe("detail")
+    expect(tierFor(8, "mid")).toBe("mid")
+    expect(tierFor(28, "mid")).toBe("mid")
+    expect(tierFor(28, "far")).toBe("far")
+  })
+
+  it("never skips a tier when the distance jumps", () => {
+    // A fly-to can move the camera far in one frame; the result must still be
+    // a legal tier for that distance, not an interpolated one.
+    expect(tierFor(200, "detail")).toBe("far")
+    expect(tierFor(0.5, "far")).toBe("detail")
   })
 })
