@@ -431,9 +431,12 @@ class Command(BaseCommand):
                     tenant=self.t, power_panel=panels[side],
                     name=f"{name}-{side}",
                     defaults={
-                        "rack": rack, "type": "primary", "supply": "ac",
-                        "phase": "single", "voltage": 230, "amperage": 32,
-                        "max_utilization": 80,
+                        # A = primary, B = redundant: the two-feed A/B story the
+                        # 3D room tints the PDU strips by (blue vs red).
+                        "rack": rack,
+                        "type": "primary" if side == "A" else "redundant",
+                        "supply": "ac", "phase": "single",
+                        "voltage": 230, "amperage": 32, "max_utilization": 80,
                     },
                 )
 

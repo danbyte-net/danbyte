@@ -109,6 +109,16 @@ they're on opposite sides; a full-width device still claims the whole U. The
 elevation draws the halves side by side, and a shared U counts once in the
 rack's used-units figure.
 
+### Zero-U space (room for PDUs and cabling)
+
+The mounting rails are a fixed width (450 mm at 19″); anything you add to a
+cabinet's **outer width** beyond that becomes the **zero-U space** — the
+channel down each side of the rails where vertical PDUs and cable management
+live. Widen a rack's **Outer width (mm)** past the rails and the form tells
+you how much zero-U space that opens per side; the 3D room seats the vertical
+strips in it. A cabinet with no extra width has no zero-U space, so a strip
+sits hard against the rail.
+
 ### Zero-U side mounting (vertical PDUs)
 
 A vertical PDU strip bolts to a rack **rail** instead of occupying units.

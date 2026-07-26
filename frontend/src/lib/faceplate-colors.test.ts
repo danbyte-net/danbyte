@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   EMPTY_LEGEND,
+  feedTint,
   legendContent,
   legendIsEmpty,
   legendSignature,
@@ -224,5 +225,24 @@ describe("legend airflow field", () => {
     expect([...merged.airflow].sort()).toEqual(["exhaust", "intake"])
     expect(legendIsEmpty(merged)).toBe(false)
     expect(legendIsEmpty({ ...EMPTY_LEGEND, airflow: new Set() })).toBe(true)
+  })
+})
+
+describe("feedTint", () => {
+  it("colours by phase leg first", () => {
+    expect(feedTint("A", "")).toBe("#3b82f6")
+    expect(feedTint("B", "")).toBe("#ef4444")
+    expect(feedTint("C", "")).toBe("#f59e0b")
+    expect(feedTint("b", "")).toBe("#ef4444") // case-insensitive
+  })
+  it("falls back to the feed redundancy side", () => {
+    expect(feedTint("", "primary")).toBe("#3b82f6")
+    expect(feedTint("", "redundant")).toBe("#ef4444")
+  })
+  it("leg wins over feed type", () => {
+    expect(feedTint("A", "redundant")).toBe("#3b82f6")
+  })
+  it("neutral when nothing is known", () => {
+    expect(feedTint("", "")).toBe("#52525b")
   })
 })

@@ -6168,6 +6168,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
         view polls exactly what the 2D canvas polls."""
         from django.utils import timezone
 
+        from .models import CableTermination
+
         plan = self.get_object()
         tiles_qs = plan.tiles.select_related(
             "tile_type", "role_type", "rack", "device__role",
@@ -6182,6 +6184,31 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "devices__power_ports", "devices__power_outlets",
             )
         }
+
+        # Which redundant feed powers each PDU — the data-driven A/B signal the
+        # 3D room tints vertical strips by (primary vs redundant), instead of
+        # guessing from a name. One query: every inlet power-port in these racks
+        # → the feed on the far end of its cable. `""` when the inlet isn't
+        # cabled to a feed.
+        inlet_ids = [
+            p.id
+            for r in racks.values()
+            for d in r.devices.all()
+            for p in d.power_ports.all()
+        ]
+        feed_type_by_port: dict = {}
+        if inlet_ids:
+            for term in CableTermination.objects.filter(
+                power_port_id__in=inlet_ids, cable__isnull=False
+            ).select_related("cable"):
+                far = (
+                    CableTermination.objects.filter(cable=term.cable)
+                    .exclude(id=term.id)
+                    .select_related("power_feed")
+                    .first()
+                )
+                if far and far.power_feed_id:
+                    feed_type_by_port[term.power_port_id] = far.power_feed.type
 
         def img(f):
             return request.build_absolute_uri(f.url) if f else None
@@ -6224,6 +6251,24 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 # these that no photo marker covers, incl. PDU strip outlets.
                 "power_ports": [p.name for p in d.power_ports.all()],
                 "power_outlets": [o.name for o in d.power_outlets.all()],
+                # Per-outlet/-port phase leg (A/B/C, "" if unset) — the vertical
+                # PDU strip colours its cells by this. Keyed by name so the
+                # existing name-list consumers are untouched.
+                # feed_leg lives on outlets (which leg of the feed each socket
+                # carries); inlets have no leg, so only outlets contribute.
+                "power_legs": {
+                    o.name: o.feed_leg for o in d.power_outlets.all()
+                },
+                # "primary" | "redundant" | "" — which redundant feed powers
+                # this PDU (its whole strip tints by it: the A/B story).
+                "power_feed_type": next(
+                    (
+                        feed_type_by_port[p.id]
+                        for p in d.power_ports.all()
+                        if p.id in feed_type_by_port
+                    ),
+                    "",
+                ),
             }
 
         def rack_geo(r):

@@ -76,6 +76,20 @@ export function RackForm({
   const [outerWidth, setOuterWidth] = useState(
     rack?.outer_width_mm != null ? String(rack.outer_width_mm) : ""
   )
+  // The mounting rail opening is fixed (450 mm at 19"); any outer width beyond
+  // it is the ZERO-U SPACE — the channel each side of the rails where vertical
+  // PDUs and cable management live. Name it so widening the cabinet reads as
+  // "make room for cable management", not a vanity dimension.
+  const railOpeningMm = width === 23 ? 546 : 450
+  const outerW = Number(outerWidth)
+  const zeroUPerSideMm =
+    outerWidth.trim() !== "" && outerW > railOpeningMm
+      ? Math.round((outerW - railOpeningMm) / 2)
+      : 0
+  const zeroUHint =
+    zeroUPerSideMm > 0
+      ? `zero-U space: ${zeroUPerSideMm} mm each side for vertical PDUs & cable management`
+      : "optional — widen past the rails to open zero-U space for vertical PDUs & cabling"
   const [outerDepth, setOuterDepth] = useState(
     rack?.outer_depth_mm != null ? String(rack.outer_depth_mm) : ""
   )
@@ -414,7 +428,7 @@ export function RackForm({
         />
         <FormText
           label="Outer width (mm)"
-          hint="optional — cabinet footprint, for 3D & drawings"
+          hint={zeroUHint}
           type="number"
           min={100}
           max={2000}

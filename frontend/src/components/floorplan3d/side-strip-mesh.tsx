@@ -1,6 +1,7 @@
 import { useState } from "react"
 
 import type { ImagePortMarker } from "@/lib/api"
+import { feedTint } from "@/lib/faceplate-colors"
 
 import {
   STRIP_D_M,
@@ -11,23 +12,25 @@ import {
 } from "./world"
 import type { SceneDevice, SceneRack } from "./world"
 
-const STRIP_FALLBACK = "#3f3f46"
+/** Real rack PDUs are near-black extruded aluminium — dark so the outlet
+ * cells and the feed spine read against it. */
+const STRIP_BODY = "#17171b"
 const STRIP_SELECTED = "#0ea5e9"
 /** Same selection amber as the photo-port quads on device faces. */
 const PORT_SELECTED = "#fbbf24"
-/** Idle outlet quad — dim, the strip stays the star. */
-const PORT_IDLE = "#a1a1aa"
 
 /**
- * A side-mounted 0U strip (vertical PDU) hanging on its rack rail — the
- * render the shelf-appliance box could never be for a 42U power strip.
- * Clickable like any device (HUD + Open device); rendered in BOTH LOD tiers
- * (one box is cheap and a PDU that pops in and out reads as a glitch).
+ * A side-mounted 0U strip (vertical PDU) standing in the cabinet's zero-U
+ * space — the render the shelf-appliance box could never be for a 42U power
+ * strip. Clickable like any device (HUD + Open device); rendered in BOTH LOD
+ * tiers (one box is cheap and a PDU that pops in and out reads as a glitch).
  *
- * `showPorts` (detail tier) adds one clickable quad per power outlet/port on
- * the strip's end face, laid out by world.stripPortLocalM — the SAME function
- * the cable layer anchors runs with, so a cord and its outlet can't disagree.
- * Clicking one selects it exactly like a photo port (HUD + connect flow).
+ * It looks like a PDU: a dark extruded body, a coloured spine down its face
+ * showing which redundant feed powers it (blue = primary/A, red =
+ * redundant/B — see `feedTint`), and a column of outlet cells each tinted by
+ * its own phase leg. `showPorts` (detail tier) makes those cells clickable —
+ * laid out by `world.stripPortLocalM`, the SAME function the cable layer
+ * anchors runs with, so a cord and its outlet can't disagree.
  */
 export function SideStripMesh({
   rack,
@@ -57,11 +60,17 @@ export function SideStripMesh({
   const [hoveredPort, setHoveredPort] = useState<string | null>(null)
   const box = sideStripBoxM(rack, dev, rackWidthM, rackDepthM)
   const { x, y, h, z } = box
-  const color = selected
-    ? STRIP_SELECTED
-    : hovered
-      ? "#71717a"
-      : dev.role_color || STRIP_FALLBACK
+  const feedType = dev.power_feed_type ?? ""
+  const legs = dev.power_legs ?? {}
+  // Which face the outlets look out of, so the spine sits on the same side.
+  const out = dev.face === "front" ? -1 : 1
+
+  const bodyColor = selected ? STRIP_SELECTED : hovered ? "#3f3f46" : STRIP_BODY
+  // The strip's feed at a glance: a thin coloured spine down the outlet face.
+  // Only drawn when a feed is actually known, so an unwired PDU stays neutral.
+  const spine = feedTint("", feedType)
+  const showSpine = feedType === "primary" || feedType === "redundant"
+
   const ports: { name: string; kind: string }[] = showPorts
     ? [
         ...(dev.power_ports ?? []).map((name) => ({
@@ -74,6 +83,7 @@ export function SideStripMesh({
         })),
       ]
     : []
+
   return (
     <group>
       <mesh
@@ -94,12 +104,35 @@ export function SideStripMesh({
         }}
       >
         <boxGeometry args={[STRIP_W_M, h, STRIP_D_M]} />
-        <meshStandardMaterial color={color} roughness={0.5} metalness={0.3} />
+        <meshStandardMaterial
+          color={bodyColor}
+          roughness={0.4}
+          metalness={0.5}
+        />
       </mesh>
+      {/* Feed spine — a slim bar down the outlet face in the feed's colour. */}
+      {showSpine && (
+        <mesh
+          position={[x, y + h / 2, z + out * (STRIP_D_M / 2 + 0.001)]}
+          raycast={() => null}
+        >
+          <boxGeometry args={[STRIP_W_M * 0.28, h * 0.98, 0.004]} />
+          <meshStandardMaterial
+            color={spine}
+            emissive={spine}
+            emissiveIntensity={0.35}
+            toneMapped={false}
+          />
+        </mesh>
+      )}
       {ports.map((p) => {
         const at = stripPortLocalM(box, dev, p.name)
         const isSel = selectedPort != null && p.name === selectedPort
         const isHot = hoveredPort === p.name
+        // Outlet colour is its own phase leg, else the PDU's feed side.
+        const cell = isSel
+          ? PORT_SELECTED
+          : feedTint(legs[p.name] ?? "", feedType)
         return (
           <mesh
             key={p.name}
@@ -124,12 +157,12 @@ export function SideStripMesh({
             }}
           >
             <planeGeometry args={[STRIP_PORT_QUAD_M, STRIP_PORT_QUAD_M]} />
-            <meshBasicMaterial
-              color={isSel ? PORT_SELECTED : PORT_IDLE}
-              transparent
-              opacity={isSel || isHot ? 0.9 : 0.45}
+            <meshStandardMaterial
+              color={cell}
+              emissive={cell}
+              emissiveIntensity={isSel || isHot ? 0.6 : 0.25}
+              roughness={0.5}
               toneMapped={false}
-              depthWrite={false}
             />
           </mesh>
         )

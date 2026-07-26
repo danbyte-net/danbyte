@@ -50,6 +50,12 @@ export interface SceneDevice {
    * cached payloads stay type-valid. */
   power_ports?: string[]
   power_outlets?: string[]
+  /** Phase leg (A/B/C, "" unset) per power port/outlet name — the vertical PDU
+   * strip tints each outlet cell by it. Optional for old cached payloads. */
+  power_legs?: Record<string, string>
+  /** Which redundant feed powers this PDU: "primary" | "redundant" | "". The
+   * whole strip tints by it — the A/B story — when no per-outlet leg is set. */
+  power_feed_type?: string
 }
 
 export interface SceneRack {

@@ -325,3 +325,21 @@ export function legendContent(input: {
   // 2D faceplates never draw airflow glyphs; only the 3D room reports them.
   return { tiers, states, trunk, partStatusIds, bays, airflow: new Set() }
 }
+
+/**
+ * Colour for a power feed leg / redundancy side — the vertical PDU strip's
+ * outlet cells and body. Derived from data (the outlet's `feed_leg` or the
+ * PDU's upstream feed `type`), never from a name, per the house rule.
+ *
+ * A / primary → blue, B / redundant → red, C → amber. Anything unknown →
+ * neutral zinc, so an unwired strip reads as "no feed known", not a false A.
+ */
+export function feedTint(leg: string, feedType: string): string {
+  const k = (leg || "").toUpperCase()
+  if (k === "A") return "#3b82f6"
+  if (k === "B") return "#ef4444"
+  if (k === "C") return "#f59e0b"
+  if (feedType === "primary") return "#3b82f6"
+  if (feedType === "redundant") return "#ef4444"
+  return "#52525b"
+}
