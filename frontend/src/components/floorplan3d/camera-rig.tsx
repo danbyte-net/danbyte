@@ -261,6 +261,11 @@ export function CameraRig({
       // Dolly toward the pointer, not the (possibly distant) orbit target —
       // on a hall-sized plan, plain dolly could never reach a far corner.
       zoomToCursor
+      // The camera STOPS when the mouse stops. Drei enables damping by
+      // default, which keeps easing the orbit for a while after you let go —
+      // it reads as the room sliding out from under you, and on a hall-sized
+      // plan you overshoot whatever you were trying to look at.
+      enableDamping={false}
       maxPolarAngle={Math.PI - 0.05}
       minDistance={MIN_DISTANCE_M}
       maxDistance={maxDistance}

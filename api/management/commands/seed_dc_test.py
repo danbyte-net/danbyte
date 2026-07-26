@@ -50,17 +50,51 @@ PLAN_NAME = "DC-TEST"
 ROWS = "ABCDEFGHIJ"
 PER_ROW = 10
 RACK_X0 = 2  # first rack column
-# Rows sit in facing PAIRS: fronts look at each other across a COLD aisle,
-# backs vent into the HOT aisle between pairs. Five pairs of two rows.
-ROW_Y = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
-GRID_W = RACK_X0 + PER_ROW + 2
-GRID_H = ROW_Y[-1] + 3
+MARGIN = 2   # perimeter walkway, 1200 mm
 
-# A rack is "front faces −Z" at orientation 0, and grid +y is +Z, so an
-# even-indexed row (the top of a pair) turns 180° to face down into the cold
-# aisle below it, and its partner faces up into the same aisle.
+# A rack is "front faces −Z" at orientation 0, and grid +y is +Z, so a row
+# turns 180° to face DOWN the plan and 0° to face up.
 FRONT_DOWN = 180
 FRONT_UP = 0
+
+# Everything below is in 600 mm grid cells, and every distance is a REAL one.
+#
+# The first pass put rows one cell apart, which looked fine on the flat plan
+# and was nonsense in the room: a 1200 mm-deep cabinet centred on a 600 mm
+# tile overhangs 300 mm each side, so two rows a single cell apart TOUCH and
+# the hall had no aisles at all. A rack tile is therefore two cells deep, and
+# aisles get the widths they need to be walked:
+RACK_CELLS = 2   # 1200 mm — the cabinet's actual depth
+COLD_CELLS = 3   # 1800 mm — people install gear from the front here
+HOT_CELLS = 2    # 1200 mm — access only, so the tighter standard minimum
+
+
+def _layout():
+    """Rack rows and aisles down the hall, in facing pairs.
+
+    Fronts look at each other across a COLD aisle; the backs of adjacent
+    pairs vent into a shared HOT aisle. Returns (rows, colds, hots, height)
+    where rows is [(row letter, y, orientation)].
+    """
+    rows, colds, hots = [], [], []
+    y = MARGIN
+    pairs = len(ROWS) // 2
+    for p in range(pairs):
+        # Top of the pair looks DOWN (+y) into the cold aisle beneath it…
+        rows.append((ROWS[p * 2], y, FRONT_DOWN))
+        y += RACK_CELLS
+        colds.append(y)
+        y += COLD_CELLS
+        # …and its partner looks UP (−y) into the same aisle.
+        rows.append((ROWS[p * 2 + 1], y, FRONT_UP))
+        y += RACK_CELLS
+        if p < pairs - 1:
+            hots.append(y)
+            y += HOT_CELLS
+    return rows, colds, hots, y + MARGIN
+
+
+GRID_W = RACK_X0 + PER_ROW + MARGIN
 
 PDU_NAME = "DC-TEST Vertical PDU 24×C13"
 PDU_OUTLETS = 24
@@ -68,10 +102,14 @@ RACK_TYPE_NAME = "DC-TEST 42U 800mm"
 OUTER_W_MM = 800  # 800 mm gives a real zero-U channel for the PDUs
 OUTER_D_MM = 1200
 
-FW_TYPE = "PA-3420"
-SRV_TYPE = "System x3650 M5"
-FW_U = 42
-SRV_US = (2, 5)  # two 2U servers low in the rack
+FW_TYPE = "PA-3420"   # 1U, photo faceplate
+SRV_TYPE = "System x3650 M5"  # 2U, photo faceplate
+
+# A FULL cabinet, because half-empty racks tell you nothing about the room:
+# a redundant pair of 1U firewalls on top, then 2U servers all the way down.
+# 42U = 2×1U + 20×2U with nothing left over.
+FW_US = (42, 41)
+SRV_US = tuple(range(39, 0, -2))  # 39, 37 … 1 — twenty 2U servers
 
 
 class Command(BaseCommand):
@@ -83,6 +121,12 @@ class Command(BaseCommand):
             action="store_true",
             help="Delete the existing DC-TEST hall first (site, racks, "
                  "devices, plan) so the run starts clean.",
+        )
+        parser.add_argument(
+            "--full-cabling",
+            action="store_true",
+            help="Cable EVERY device (~4500 cables) instead of a "
+                 "representative set — for stressing the cables layer.",
         )
         parser.add_argument("--tenant", default=TENANT_SLUG)
 
@@ -103,7 +147,7 @@ class Command(BaseCommand):
         racks = self._racks(site, loc, rack_type, plan)
         devices = self._devices(site, loc, racks)
         self._power(site, racks)
-        self._cable(racks, devices)
+        self._cable(racks, devices, full=opts['full_cabling'])
         self._trays(plan)
 
         self.stdout.write(self.style.SUCCESS(
@@ -199,11 +243,12 @@ class Command(BaseCommand):
         return rt
 
     def _plan(self, loc):
+        *_, height = _layout()
         plan, _ = FloorPlan.objects.update_or_create(
             tenant=self.t, location=loc, name=PLAN_NAME,
             defaults={
                 "grid_width": GRID_W,
-                "grid_height": GRID_H,
+                "grid_height": height,
                 "cell_mm": 600,
                 "ceiling_mm": 3200,
             },
@@ -234,11 +279,8 @@ class Command(BaseCommand):
         plan.tiles.all().delete()
         racks: dict[str, Rack] = {}
 
-        for r, row in enumerate(ROWS):
-            y = ROW_Y[r]
-            # Even index = top of a facing pair → look down into the cold
-            # aisle beneath; odd index = bottom of the pair → look up.
-            facing = FRONT_DOWN if r % 2 == 0 else FRONT_UP
+        rows, colds, hots, _ = _layout()
+        for row, y, facing in rows:
             for i in range(PER_ROW):
                 name = f"DCT-{row}{i + 1:02d}"
                 rack, _ = Rack.objects.update_or_create(
@@ -260,23 +302,26 @@ class Command(BaseCommand):
                 racks[name] = rack
                 FloorPlanTile.objects.create(
                     floor_plan=plan, tile_type=rack_tt,
-                    x=RACK_X0 + i, y=y, width=1, height=1,
+                    # Two cells deep: the tile has to match the 1200 mm
+                    # cabinet, or the rack overhangs into the aisle.
+                    x=RACK_X0 + i, y=y, width=1, height=RACK_CELLS,
                     orientation=facing, rack=rack, link_kind="rack",
                     label=name,
                 )
 
-        # Aisles: a cold aisle inside each facing pair, hot between pairs.
-        for r in range(0, len(ROW_Y), 2):
+        # Aisles at their real widths: cold inside each facing pair, hot
+        # between pairs. These are walkable spans, not one-cell slivers.
+        for n, y in enumerate(colds):
             FloorPlanTile.objects.create(
                 floor_plan=plan, tile_type=cold,
-                x=RACK_X0, y=ROW_Y[r] + 1, width=PER_ROW, height=1,
-                label=f"Cold {ROWS[r]}/{ROWS[r + 1]}",
+                x=RACK_X0, y=y, width=PER_ROW, height=COLD_CELLS,
+                label=f"Cold {ROWS[n * 2]}/{ROWS[n * 2 + 1]}",
             )
-        for r in range(1, len(ROW_Y) - 1, 2):
+        for n, y in enumerate(hots):
             FloorPlanTile.objects.create(
                 floor_plan=plan, tile_type=hot,
-                x=RACK_X0, y=ROW_Y[r] + 1, width=PER_ROW, height=1,
-                label=f"Hot {ROWS[r]}/{ROWS[r + 1]}",
+                x=RACK_X0, y=y, width=PER_ROW, height=HOT_CELLS,
+                label=f"Hot {ROWS[n * 2 + 1]}/{ROWS[n * 2 + 2]}",
             )
         return racks
 
@@ -296,17 +341,18 @@ class Command(BaseCommand):
 
         out: dict[str, dict] = {}
         for name, rack in racks.items():
-            made = {"fw": None, "srv": [], "pdu": []}
-            fw, _ = Device.objects.update_or_create(
-                tenant=self.t, name=f"{name}-fw",
-                defaults={
-                    "site": site, "location": loc, "rack": rack,
-                    "device_type": fw_type, "role": fw_role,
-                    "position": FW_U, "face": "front",
-                },
-            )
-            materialize_device_components(fw)
-            made["fw"] = fw
+            made = {"fw": [], "srv": [], "pdu": []}
+            for n, u in enumerate(FW_US, start=1):
+                fw, _ = Device.objects.update_or_create(
+                    tenant=self.t, name=f"{name}-fw{n}",
+                    defaults={
+                        "site": site, "location": loc, "rack": rack,
+                        "device_type": fw_type, "role": fw_role,
+                        "position": u, "face": "front",
+                    },
+                )
+                materialize_device_components(fw)
+                made["fw"].append(fw)
             for n, u in enumerate(SRV_US, start=1):
                 srv, _ = Device.objects.update_or_create(
                     tenant=self.t, name=f"{name}-srv{n}",
@@ -376,30 +422,41 @@ class Command(BaseCommand):
             )
         return cable
 
-    def _cable(self, racks, devices):
-        names = sorted(racks)
-        for name in names:
-            d = devices[name]
-            fw, srvs, pdus = d["fw"], d["srv"], d["pdu"]
-            fw_ifaces = list(fw.interfaces.order_by("name"))
+    def _cable(self, racks, devices, full=False):
+        """Wire the hall.
 
-            # Data: the firewall down to each server in its own cabinet.
-            for n, srv in enumerate(srvs):
+        A full cabinet holds 22 devices, so cabling every port would mint
+        ~4500 cables — past the point where the room draws tubes at all and
+        slow to resolve. The default is a REPRESENTATIVE set: both firewalls
+        and two servers powered A+B, four data drops, both feeds, plus the
+        row chains. `--full-cabling` wires every device for stress testing.
+        """
+        for name in sorted(racks):
+            d = devices[name]
+            fws, srvs, pdus = d["fw"], d["srv"], d["pdu"]
+            banks = [list(p.power_outlets.order_by("name")) for p in pdus]
+
+            # Data: firewalls down into the servers below them.
+            drops = srvs if full else srvs[:4]
+            fw_ports = [
+                list(fw.interfaces.order_by("name")) for fw in fws
+            ]
+            for n, srv in enumerate(drops):
+                fw_i = n % len(fws)
                 port = srv.interfaces.filter(name="Ethernet 1").first()
-                if n < len(fw_ifaces):
+                ports = fw_ports[fw_i]
+                slot = n // len(fws)
+                if slot < len(ports):
                     self._link(
-                        f"DCT {name} fw→srv{n + 1}", "cat6", "#0ea5e9",
-                        fw_ifaces[n], port,
+                        f"DCT {srv.name} uplink", "cat6", "#0ea5e9",
+                        ports[slot], port,
                     )
 
-            # Power: every device takes A and B, split across the two strips.
-            # Bank order comes from the list, not the name — a device called
-            # "DCT-A01-PDU-A" splits on "-" to "A", which matched nothing and
-            # silently left every server unpowered.
-            banks = [list(p.power_outlets.order_by("name")) for p in pdus]
-            for slot, dev in enumerate([fw, *srvs]):
-                ports = list(dev.power_ports.order_by("name"))
-                for j, port in enumerate(ports[:2]):
+            # Power: A and B cords, so each device has real redundancy.
+            powered = [*fws, *(srvs if full else srvs[:2])]
+            for slot, dev in enumerate(powered):
+                dev_ports = list(dev.power_ports.order_by("name"))
+                for j, port in enumerate(dev_ports[:2]):
                     bank = banks[j] if j < len(banks) else []
                     if slot < len(bank):
                         self._link(
@@ -407,7 +464,7 @@ class Command(BaseCommand):
                             port, bank[slot],
                         )
 
-            # Power: each strip's inlet back to its feed.
+            # Power: each strip's inlet back to its own feed.
             for side, pdu in zip(("A", "B"), pdus):
                 inlet = pdu.power_ports.filter(name="inlet").first()
                 feed = PowerFeed.objects.filter(
@@ -421,8 +478,8 @@ class Command(BaseCommand):
         # to follow the tray rather than hop straight through the cabinets.
         for row in ROWS:
             for i in range(PER_ROW - 1):
-                a = devices[f"DCT-{row}{i + 1:02d}"]["fw"]
-                b = devices[f"DCT-{row}{i + 2:02d}"]["fw"]
+                a = devices[f"DCT-{row}{i + 1:02d}"]["fw"][0]
+                b = devices[f"DCT-{row}{i + 2:02d}"]["fw"][0]
                 pa = a.interfaces.filter(name__endswith="/24").first()
                 pb = b.interfaces.filter(name__endswith="/23").first()
                 self._link(
@@ -433,16 +490,23 @@ class Command(BaseCommand):
     # ── trays ────────────────────────────────────────────────────────────
     def _trays(self, plan):
         plan.trays.all().delete()
-        x0, x1 = RACK_X0, RACK_X0 + PER_ROW - 1
-        # A spine down the west side, and a branch over every row of racks.
+        rows, _, _, _ = _layout()
+        x0, x1 = RACK_X0, RACK_X0 + PER_ROW
+        spine_x = x0 - 1
+        # A spine down the west margin, and a branch over the centre of every
+        # rack row (a rack tile is RACK_CELLS deep, so + half of that).
         FloorPlanTray.objects.create(
             floor_plan=plan, name="Spine", kind="ladder", color="#eab308",
-            level="overhead", elevation_mm=2800,
-            points=[[x0 - 1, ROW_Y[0]], [x0 - 1, ROW_Y[-1]]],
+            level="overhead", elevation_mm=2900,
+            points=[
+                [spine_x, rows[0][1]],
+                [spine_x, rows[-1][1] + RACK_CELLS / 2],
+            ],
         )
-        for r, row in enumerate(ROWS):
+        for row, y, _facing in rows:
+            mid = y + RACK_CELLS / 2
             FloorPlanTray.objects.create(
                 floor_plan=plan, name=f"Row {row}", kind="ladder",
-                color="#eab308", level="overhead", elevation_mm=2600,
-                points=[[x0 - 1, ROW_Y[r]], [x1, ROW_Y[r]]],
+                color="#eab308", level="overhead", elevation_mm=2700,
+                points=[[spine_x, mid], [x1, mid]],
             )
