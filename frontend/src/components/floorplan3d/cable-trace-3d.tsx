@@ -19,6 +19,7 @@ import {
   portLocalM,
   rackFootprintM,
   trayElevationM,
+  trayRideY,
 } from "./world"
 import type { ScenePayload, SceneTile } from "./world"
 
@@ -171,16 +172,20 @@ export function cableRunPoints(
     b,
     trays.map((t) => t.points)
   )
-  // Ride at the assigned trays' (average) elevation; straight runs with no
-  // tray fly at 2/3 room height so they read as an abstract link. Each cable
-  // gets a deterministic LANE across the tray and a small height stagger, so
-  // ten runs in one duct render as ten parallel runs, not one overdrawn line.
+  // Ride INSIDE the assigned trays — on the basket floor at their (average)
+  // elevation, not on the tray datum, which buried every run in the tin.
+  // Straight runs with no tray fly at 2/3 room height so they read as an
+  // abstract link. Each cable gets a deterministic LANE across the tray and a
+  // small height stagger, so ten runs in one duct render as ten parallel runs
+  // rather than one overdrawn line.
   const lane = cableLane(cp.id)
-  const rideY =
-    (trays.length
-      ? trays.reduce((s, t) => s + trayElevationM(plan, t, areas), 0) /
-        trays.length
-      : (plan.ceiling_mm / 1000) * 0.66) + lane.lift
+  const rideY = trays.length
+    ? trayRideY(
+        trays.reduce((s, t) => s + trayElevationM(plan, t, areas), 0) /
+          trays.length,
+        lane.lift
+      )
+    : (plan.ceiling_mm / 1000) * 0.66 + lane.lift
 
   const rideWorld = offsetPolyline(
     route.map((p) => cellToWorld(plan, p[0], p[1])),

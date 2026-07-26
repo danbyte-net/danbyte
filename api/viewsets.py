@@ -3445,6 +3445,79 @@ class CableViewSet(TenantScopedViewSet):
             "length_set": length_set,
         })
 
+    @action(detail=True, methods=["get", "put"], url_path="routing")
+    def routing(self, request, pk=None):
+        """Read or set how this cable is routed on one floor plan.
+
+        GET ``?floor_plan=<id>`` → ``{mode, trays: [{id, name, level,
+        elevation_mm}], available: [...]}`` — ``mode`` is ``"trays"`` when the
+        cable is assigned any tray on that plan, else ``"point-to-point"``.
+
+        PUT ``{floor_plan, tray_ids: [...]}`` replaces THIS plan's assignment
+        in the given order (other plans' assignments are untouched). An empty
+        list is point-to-point — a legitimate answer, not a no-op.
+
+        The auto-route action picks the trays for you; this is the manual
+        twin, so an operator can see what a run follows and name the exact
+        ducts it should take instead.
+        """
+        from auth_api import rbac
+
+        from .models import FloorPlan
+
+        cable = self.get_object()
+        tenant = _get_active_tenant(self.request)
+        plan_id = (
+            request.query_params.get("floor_plan")
+            if request.method == "GET"
+            else (request.data or {}).get("floor_plan")
+        )
+        plan = FloorPlan.objects.filter(id=plan_id, tenant=tenant).first()
+        if plan is None:
+            return Response({"detail": "Unknown floor plan."}, status=400)
+
+        def shape(trays):
+            return [
+                {
+                    "id": str(t.id),
+                    "name": t.name,
+                    "level": t.level,
+                    "elevation_mm": t.elevation_mm,
+                }
+                for t in trays
+            ]
+
+        if request.method == "PUT":
+            if not rbac.can_act_on(
+                request.user, tenant, "cable", "change", cable
+            ):
+                raise PermissionDenied("You may not re-route this cable.")
+            ids = (request.data or {}).get("tray_ids") or []
+            if not isinstance(ids, list):
+                return Response({"tray_ids": "Expected a list."}, status=400)
+            # Only trays on THIS plan (which is already tenant-scoped) may be
+            # named — an id from another plan or tenant is simply not found.
+            by_id = {str(t.id): t for t in plan.trays.all()}
+            unknown = [str(i) for i in ids if str(i) not in by_id]
+            if unknown:
+                return Response(
+                    {"tray_ids": f"Not a tray on this plan: {unknown[0]}"},
+                    status=400,
+                )
+            chosen = [by_id[str(i)] for i in ids]
+            with transaction.atomic():
+                cable.trays.remove(*cable.trays.filter(floor_plan=plan))
+                if chosen:
+                    cable.trays.add(*chosen)
+        else:
+            chosen = [t for t in cable.trays.all() if t.floor_plan_id == plan.id]
+
+        return Response({
+            "mode": "trays" if chosen else "point-to-point",
+            "trays": shape(chosen),
+            "available": shape(plan.trays.all()),
+        })
+
     @action(detail=True, methods=["get"], url_path="floor-plan")
     def floor_plan(self, request, pk=None):
         """The floor plan where this cable can be traced — a plan whose trays

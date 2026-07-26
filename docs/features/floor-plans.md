@@ -164,6 +164,18 @@ uploaded blueprint textures it.
   in a **lane of its own**, so ten runs in one duct read as ten parallel
   runs. Hover glows; click opens the cable card. Past a couple hundred runs
   the layer falls back to simple lines for performance.
+- **Trays are open baskets** — two side rails and a floor of rungs — and
+  runs ride *inside* them, resting on the rungs. **Click a tray to open it**:
+  the near rail drops away, the basket tints, and a card lists every cable
+  routed through it (click one to select that run). Click it again, or
+  **Close tray**, to shut it.
+- The cable card names what the run **follows** — the trays in order, or
+  *point-to-point* when it follows none. A cable that ignores an obvious duct
+  is almost always set to point-to-point; change it on the cable's own page
+  (see [routing a cable](#routing-a-cable)).
+- **Double-click** a cabinet to fly to its face; double-click a **device** to
+  fly to *that* device, framed for its height, from whichever aisle its face
+  is on.
 - The **key** in the top-right corner appears only once something photo-anchored
   is in view, and lists the hardware statuses actually on screen. The speed ramp
   itself is always the full FE→400G+ scale, so it reads the same here as under a
@@ -369,6 +381,24 @@ through each one. Hand the PNG to whoever's pulling cable.
   ~6 cells from any tray come back *unreachable* rather than pretending a
   20 m unsupported hop is a route. `POST /api/floor-plans/{id}/route/`
   previews the same computation without saving.
+
+#### Routing a cable
+
+Auto-route picks a path for you. The **Routing** card on a cable's own page is
+the manual twin — and the answer to "what is this run actually set to
+follow?", which nothing used to show:
+
+- **Point-to-point** — the cable follows no tray and draws as a direct A↔B
+  run. This is the default, and the usual reason a cable in the 3D room
+  ignores a tray it visibly passes.
+- **Through trays** — pick the ducts yourself, **as many as the run needs**,
+  and order them with the arrows so the path reads the way the cable
+  travels. Removing every tray puts it back to point-to-point.
+
+Changes take effect immediately in the 2D canvas and the 3D room. Routing is
+recorded **per floor plan**, so a cable that crosses plans keeps each plan's
+assignment separately. `GET`/`PUT /api/cables/{id}/routing/?floor_plan=<id>`
+is the same operation over the API; editing requires **change** on the cable.
 - **Level & elevation**: each tray records where it physically lives —
   **Overhead** (the default), **Underfloor**, or **Floor level** — plus an
   optional exact **elevation in mm**. Leave elevation blank and it derives

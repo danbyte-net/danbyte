@@ -5891,6 +5891,23 @@ export interface FloorPlanCablePath {
   tray_ids: string[]
 }
 
+/** A tray as the routing editor sees it. */
+export interface TrayRef {
+  id: string
+  name: string
+  level: string
+  elevation_mm: number | null
+}
+
+/** What a cable follows on one floor plan — GET/PUT /api/cables/{id}/routing/ */
+export interface CableRouting {
+  mode: "trays" | "point-to-point"
+  /** The trays it rides, in run order. Empty means point-to-point. */
+  trays: TrayRef[]
+  /** Every tray on the plan — the pick list. */
+  available: TrayRef[]
+}
+
 export interface FloorPlanWritePayload {
   name?: string
   location_id?: string

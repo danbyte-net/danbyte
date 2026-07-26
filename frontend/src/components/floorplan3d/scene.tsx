@@ -39,7 +39,7 @@ import { CableForm } from "@/components/cable-form"
 import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
 
-import { CablesLayer, CableTrace3D } from "./cable-trace-3d"
+import { CablesLayer, CableTrace3D, useCablePaths } from "./cable-trace-3d"
 import { CameraRig, type FlyToRequest } from "./camera-rig"
 import { Room } from "./room"
 import { RackMesh } from "./rack-mesh"
@@ -56,6 +56,7 @@ import {
   webglSupported,
   type SceneDevice,
   type SceneTile,
+  type SceneTray,
 } from "./world"
 
 /**
@@ -108,6 +109,8 @@ export default function FloorScene3D({
   const qc = useQueryClient()
   const [selection, setSelection] = useState<Sel | null>(null)
   const [cableSel, setCableSel] = useState<string | null>(null)
+  /** An opened tray: near rail dropped in 3D, contents listed in the HUD. */
+  const [traySel, setTraySel] = useState<string | null>(null)
   const flyToRef = useRef<FlyToRequest | null>(null)
   // Focus (F): the selected rack/device stays lit, the rest of the room
   // ghosts. Session state, deliberately not persisted — it is a look, not a
@@ -524,6 +527,12 @@ export default function FloorScene3D({
             plan={plan}
             tray={tr}
             areas={scene.data.raised_floors}
+            selected={traySel === tr.id}
+            onSelect={(id) => {
+              setSelection(null)
+              setCableSel(null)
+              setTraySel((cur) => (cur === id ? null : id))
+            }}
           />
         ))}
         {(scene.data.raised_floors ?? []).map((a) => (
@@ -569,6 +578,7 @@ export default function FloorScene3D({
             selectedId={cableSel}
             onSelect={(id) => {
               setSelection(null)
+              setTraySel(null)
               setCableSel(id)
             }}
           />
@@ -642,6 +652,17 @@ export default function FloorScene3D({
         />
       )}
       {cableSel && <CableHud planId={planId} cableId={cableSel} />}
+      {traySel && (
+        <TrayHud
+          planId={planId}
+          tray={data.trays.find((t) => t.id === traySel) ?? null}
+          onPickCable={(id) => {
+            setTraySel(null)
+            setCableSel(id)
+          }}
+          onClose={() => setTraySel(null)}
+        />
+      )}
       {/* Arming banner while the user picks the far end in 3D. */}
       {connecting && (
         <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-500/40 bg-popover/95 px-3 py-2 text-[12px] text-popover-foreground shadow-lg backdrop-blur">
@@ -1398,6 +1419,82 @@ function PortHud({
  * Overlay card for a cable clicked in the cables layer — identity, both ends
  * (device:port, each a jump-off), length, and the run trace.
  */
+/**
+ * An opened tray: what actually rides through it. Clicking a tray in the room
+ * is the natural "show me this duct's contents" gesture, and without this the
+ * basket was scenery — you could see runs pass through but never ask which.
+ */
+function TrayHud({
+  planId,
+  tray,
+  onPickCable,
+  onClose,
+}: {
+  planId: string
+  tray: SceneTray | null
+  onPickCable: (cableId: string) => void
+  onClose: () => void
+}) {
+  const paths = useCablePaths(planId)
+  const carried = (paths.data?.cables ?? []).filter((c) =>
+    tray ? c.tray_ids.includes(tray.id) : false
+  )
+  if (!tray) return null
+  return (
+    <div className="absolute top-3 left-3 w-72 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur">
+      <div className="flex items-center gap-2">
+        {tray.color && (
+          <span
+            className="h-2.5 w-2.5 shrink-0 rounded-sm"
+            style={{ backgroundColor: tray.color }}
+          />
+        )}
+        <span className="min-w-0 flex-1 text-[13px] font-semibold break-words">
+          {tray.name || "Cable tray"}
+        </span>
+        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+          {carried.length} {carried.length === 1 ? "cable" : "cables"}
+        </span>
+      </div>
+      <div className="mt-2 grid gap-0.5 text-[12px]">
+        {carried.length === 0 ? (
+          <span className="text-muted-foreground">
+            Nothing routed through this tray yet — a cable follows it once its
+            routing names it.
+          </span>
+        ) : (
+          carried.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => onPickCable(c.id)}
+              className="flex items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-muted/60"
+            >
+              {c.color && (
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: c.color }}
+                />
+              )}
+              <span className="min-w-0 flex-1 font-mono break-words">
+                {c.label || c.type || "Cable"}
+              </span>
+            </button>
+          ))
+        )}
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        className="mt-2 h-7 w-full"
+        onClick={onClose}
+      >
+        Close tray
+      </Button>
+    </div>
+  )
+}
+
 function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
   const cable = useQuery({
     queryKey: ["cable", cableId],
@@ -1405,6 +1502,15 @@ function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
     staleTime: 30_000,
   })
   const c = cable.data
+  // What this run is set to FOLLOW. Without it the room showed a cable
+  // ignoring an obvious tray with no way to tell whether that was the routing
+  // or a bug — the answer is almost always "it's point-to-point".
+  const scene = useScene(planId)
+  const paths = useCablePaths(planId)
+  const path = paths.data?.cables.find((p) => p.id === cableId)
+  const followed = (path?.tray_ids ?? [])
+    .map((id) => scene.data?.trays.find((t) => t.id === id))
+    .filter((t): t is SceneTray => Boolean(t))
   const side = (label: string, terms: Cable["a_terminations"]) => (
     <div className="grid gap-0.5">
       <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
@@ -1454,6 +1560,20 @@ function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
           <div className="mt-2 grid gap-2 text-[12px]">
             {side("A side", c.a_terminations)}
             {side("B side", c.b_terminations)}
+            <div className="grid gap-0.5">
+              <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+                Routing
+              </span>
+              {followed.length === 0 ? (
+                <span className="text-muted-foreground">
+                  Point-to-point — follows no tray
+                </span>
+              ) : (
+                <span className="break-words">
+                  {followed.map((t) => t.name || "tray").join(" → ")}
+                </span>
+              )}
+            </div>
             {c.length && (
               <span className="num text-[11px] text-muted-foreground">
                 {c.length} {c.length_unit}

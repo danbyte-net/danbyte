@@ -9,17 +9,21 @@ import {
   DOOR_DEFAULT_MM,
   RACK_BASE_M,
   airflowGlyphPlacements,
+  airflowGlyphSizeM,
   cableLane,
   cableRadiusM,
   cellToWorld,
   deviceBoxM,
+  deviceViewpoint,
   deviceYM,
   filletPath,
   offsetPolyline,
   rackFootprintM,
   rackViewpoint,
   sideStripBoxM,
+  TRAY_H_M,
   trayElevationM,
+  trayRideY,
   underfloorMM,
   wallDoorSpans,
   wallSegmentsWithOpenings,
@@ -624,6 +628,111 @@ describe("cableLane + cableRadiusM", () => {
     expect(cableRadiusM("power")).toBeGreaterThan(cableRadiusM("cat6"))
     expect(cableRadiusM("cat6")).toBeGreaterThan(cableRadiusM("smf-os2"))
     expect(cableRadiusM(null)).toBe(cableRadiusM("cat6"))
+  })
+
+  it("keeps every jacket under a centimetre of radius", () => {
+    // The first pass drew 8 mm-radius copper (16 mm of hose) and 12 mm power.
+    // Anything past ~7 mm reads as plumbing the moment you zoom to a face.
+    for (const t of ["power", "cat6", "cat5e", "smf-os2", "mmf-om4", null])
+      expect(cableRadiusM(t)).toBeLessThanOrEqual(0.007)
+  })
+})
+
+describe("trayRideY — cables ride IN the basket, not inside the tin", () => {
+  it("sits above the tray floor and below the rail top", () => {
+    const datum = 2.5
+    const y = trayRideY(datum)
+    expect(y).toBeGreaterThan(datum - TRAY_H_M / 2)
+    expect(y).toBeLessThan(datum + TRAY_H_M / 2)
+  })
+
+  it("never rides at the datum — that is what buried v1's runs", () => {
+    expect(trayRideY(2.5)).toBeLessThan(2.5)
+  })
+
+  it("stacks lanes upward without leaving the basket", () => {
+    const datum = 0
+    const low = trayRideY(datum, 0)
+    const high = trayRideY(datum, 0.02)
+    expect(high).toBeGreaterThan(low)
+    expect(high).toBeLessThan(datum + TRAY_H_M / 2)
+  })
+})
+
+describe("airflowGlyphSizeM — the cue must never outgrow the gear", () => {
+  it("keeps a 1U cone well under a rack unit", () => {
+    const oneU = deviceBoxM(rack(), dev(10, 1), 0.6, 1.0)
+    // The bug: a fixed 50 mm cone on a ~42 mm 1U box, drawn over the ports.
+    expect(airflowGlyphSizeM(oneU.boxH)).toBeLessThan(oneU.boxH)
+  })
+
+  it("grows with the device but stops at a sane ceiling", () => {
+    const oneU = deviceBoxM(rack(), dev(10, 1), 0.6, 1.0)
+    const tenU = deviceBoxM(rack(), dev(10, 10), 0.6, 1.0)
+    expect(airflowGlyphSizeM(tenU.boxH)).toBeGreaterThan(
+      airflowGlyphSizeM(oneU.boxH)
+    )
+    expect(airflowGlyphSizeM(tenU.boxH)).toBeLessThanOrEqual(0.05)
+  })
+
+  it("stays visible on 0U gear", () => {
+    expect(airflowGlyphSizeM(0)).toBeGreaterThan(0)
+  })
+
+  it("hands every placement a scale, and the cones clear the face", () => {
+    const box = deviceBoxM(rack(), dev(10, 1), 0.6, 1.0)
+    const glyphs = airflowGlyphPlacements("front-to-rear", box)
+    expect(glyphs.length).toBeGreaterThan(0)
+    const frontPlane = box.dz - box.dd / 2
+    for (const g of glyphs) {
+      expect(g.scale).toBeGreaterThan(0)
+      expect(g.scale).toBeLessThan(1) // never larger than the unit cone
+      // Intake cones sit OUTSIDE the front plane, not on the faceplate.
+      if (g.kind === "intake") expect(g.pos[2]).toBeLessThan(frontPlane)
+    }
+  })
+})
+
+describe("deviceViewpoint — double-click frames one device, not its rack", () => {
+  const tile = {
+    id: "t",
+    x: 4,
+    y: 6,
+    w: 1,
+    h: 1,
+    orientation: 0,
+    label: "",
+  } as unknown as Parameters<typeof deviceViewpoint>[1]
+
+  it("looks at the device's own height, from its face side", () => {
+    const box = deviceBoxM(rack(), dev(10, 1), 0.6, 1.0)
+    const vp = deviceViewpoint(plan, tile, box)
+    expect(vp.target[1]).toBeCloseTo(box.y + box.h / 2, 6)
+    expect(vp.position[1]).toBeCloseTo(vp.target[1], 6)
+    // orientation 0 → front faces −Z, so the camera stands in front of it.
+    expect(vp.position[2]).toBeLessThan(vp.target[2])
+  })
+
+  it("stands closer for a 1U than for a big chassis", () => {
+    const one = deviceViewpoint(
+      plan,
+      tile,
+      deviceBoxM(rack(), dev(10, 1), 0.6, 1.0)
+    )
+    const ten = deviceViewpoint(
+      plan,
+      tile,
+      deviceBoxM(rack(), dev(10, 10), 0.6, 1.0)
+    )
+    const dist = (v: ReturnType<typeof deviceViewpoint>) =>
+      Math.hypot(v.position[0] - v.target[0], v.position[2] - v.target[2])
+    expect(dist(one)).toBeLessThan(dist(ten))
+  })
+
+  it("frames rear-mounted gear from the rear aisle", () => {
+    const box = deviceBoxM(rack(), dev(10, 1, { face: "rear" }), 0.6, 1.0)
+    const vp = deviceViewpoint(plan, tile, box)
+    expect(vp.position[2]).toBeGreaterThan(vp.target[2])
   })
 })
 

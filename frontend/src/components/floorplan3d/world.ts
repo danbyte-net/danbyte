@@ -141,14 +141,30 @@ export const RACK_BASE_M = 0.1
 export const RACK_FRAME_MM = 150
 /** Render default when a rack has no recorded outer depth. */
 export const RACK_DEPTH_DEFAULT_M = 1.0
-/** Tray cross-section (ladder tray look). */
+/** Tray cross-section. Drawn as a real basket — two side rails and rungs —
+ * so the runs it carries are VISIBLE inside it. (v1 was one solid box, which
+ * swallowed every cable riding through it.) */
 export const TRAY_W_M = 0.2
 export const TRAY_H_M = 0.08
+/** Rail thickness and how deep the basket's floor sits below the datum. */
+export const TRAY_RAIL_T_M = 0.008
+/** Rung pitch along the run, and the rung's square section. */
+export const TRAY_RUNG_PITCH_M = 0.3
+export const TRAY_RUNG_T_M = 0.01
 /** Derived tray elevation offsets (mm) when elevation_mm is blank.
  * UNDERFLOOR_MM is the FALLBACK plenum — a raised-floor area under the run
  * overrides it (api/pathfinding.py's DEFAULT_PLENUM_MM is the same 300). */
 export const OVERHEAD_DROP_MM = 300
 export const UNDERFLOOR_MM = -300
+
+/**
+ * Draw order for the room's see-through pieces. three.js sorts transparent
+ * objects by depth every frame, so overlapping ghosts and cabinet glass
+ * reshuffled as the camera moved — the flicker that shows up when flipping
+ * between solid, cutaway and x-ray. A fixed order makes the stack
+ * deterministic: ghosts first, glass over them.
+ */
+export const TRANSPARENT_ORDER = { ghost: 1, glass: 2 } as const
 
 export const mm = (v: number) => v / 1000
 
@@ -314,10 +330,26 @@ export interface AirflowGlyph {
   pos: [number, number, number]
   /** Unit flow direction the cone points along. */
   dir: [number, number, number]
+  /** Multiplier on the unit cone, sized to the DEVICE. Fixed-size cones were
+   * 50 mm across on a 42 mm-tall 1U box — bigger than the gear they annotated,
+   * and up close they sat over the faceplate and hid the ports. */
+  scale: number
 }
 
-/** How far a cone centre sits off its face plane (m) — half pokes out. */
-const GLYPH_OFF_M = 0.05
+/** Cone size as a fraction of the device's box height, and the floor/ceiling
+ * that keeps a 0U strip's cue visible and a 10U chassis's cue sane. */
+const GLYPH_H_FRAC = 0.42
+const GLYPH_MIN_M = 0.012
+const GLYPH_MAX_M = 0.05
+
+/** Unit-cone height the scale multiplies (keep in step with the geometry in
+ * airflow-glyphs.tsx, which builds a cone of exactly this height). */
+export const GLYPH_UNIT_H_M = 0.06
+
+/** Cone height for a device box — the scale factor is this over the unit. */
+export function airflowGlyphSizeM(boxH: number): number {
+  return Math.min(GLYPH_MAX_M, Math.max(GLYPH_MIN_M, boxH * GLYPH_H_FRAC))
+}
 
 /**
  * Where a device's airflow cones go, in rack-local space. A direction CUE,
@@ -337,8 +369,13 @@ export function airflowGlyphPlacements(
 ): AirflowGlyph[] {
   if (!airflow || airflow === "passive") return []
   const midY = box.y + box.h / 2
-  const frontZ = box.dz - box.dd / 2 - GLYPH_OFF_M
-  const rearZ = box.dz + box.dd / 2 + GLYPH_OFF_M
+  // Cone size — and therefore its standoff — follow the device, so the cue
+  // never outgrows the gear or lands on top of the faceplate's ports.
+  const size = airflowGlyphSizeM(box.boxH)
+  const scale = size / GLYPH_UNIT_H_M
+  const off = size * 0.9
+  const frontZ = box.dz - box.dd / 2 - off
+  const rearZ = box.dz + box.dd / 2 + off
   // 3 across the width for wide gear, 2 for half-width — spread, not centred.
   const n = box.dw > 0.3 ? 3 : 2
   const xs = Array.from(
@@ -351,7 +388,7 @@ export function airflowGlyphPlacements(
     z: number,
     dir: [number, number, number]
   ) => {
-    for (const x of xs) out.push({ kind, pos: [x, midY, z], dir })
+    for (const x of xs) out.push({ kind, pos: [x, midY, z], dir, scale })
   }
   switch (airflow) {
     case "front-to-rear":
@@ -365,11 +402,21 @@ export function airflowGlyphPlacements(
     case "left-to-right":
     case "right-to-left": {
       const sign = airflow === "left-to-right" ? 1 : -1
-      const inX = box.dx - (sign * box.dw) / 2 - sign * GLYPH_OFF_M
-      const outX = box.dx + (sign * box.dw) / 2 + sign * GLYPH_OFF_M
+      const inX = box.dx - (sign * box.dw) / 2 - sign * off
+      const outX = box.dx + (sign * box.dw) / 2 + sign * off
       for (const z of [box.dz - box.dd / 4, box.dz + box.dd / 4]) {
-        out.push({ kind: "intake", pos: [inX, midY, z], dir: [sign, 0, 0] })
-        out.push({ kind: "exhaust", pos: [outX, midY, z], dir: [sign, 0, 0] })
+        out.push({
+          kind: "intake",
+          pos: [inX, midY, z],
+          dir: [sign, 0, 0],
+          scale,
+        })
+        out.push({
+          kind: "exhaust",
+          pos: [outX, midY, z],
+          dir: [sign, 0, 0],
+          scale,
+        })
       }
       break
     }
@@ -381,11 +428,13 @@ export function airflowGlyphPlacements(
         kind: "intake",
         pos: [box.dx - box.dw / 4, midY, z],
         dir: [0, 0, -outward],
+        scale,
       })
       out.push({
         kind: "exhaust",
         pos: [box.dx + box.dw / 4, midY, z],
         dir: [0, 0, outward],
+        scale,
       })
       break
     }
@@ -491,6 +540,42 @@ export function rackViewpoint(
   return {
     target: [cx, heightM * 0.55, cz],
     position: [cx + dx, heightM * 0.62, cz + dz],
+  }
+}
+
+/**
+ * Where to stand to read ONE device's face — the double-click framing, and
+ * the device-scale twin of {@link rackViewpoint}.
+ *
+ * Same rack-local convention (front is −Z), but the target is the device's
+ * own centre height and the standoff is driven by how tall the device is, so
+ * a 1U switch fills the frame instead of being a sliver in a rack-sized shot.
+ * `mountedRear` gear is framed from the rear aisle without the caller having
+ * to know which side it lives on.
+ */
+export function deviceViewpoint(
+  plan: ScenePayload["plan"],
+  tile: SceneTile,
+  box: Pick<ReturnType<typeof deviceBoxM>, "y" | "h" | "dx" | "boxH"> & {
+    mountedRear: boolean
+  }
+): { target: [number, number, number]; position: [number, number, number] } {
+  const [cx, cz] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
+  const rotY = (-tile.orientation * Math.PI) / 180
+  const sign = box.mountedRear ? 1 : -1
+  // Close enough to read port labels, far enough that a 10U chassis fits.
+  const dist = Math.min(2.4, Math.max(0.55, box.boxH * 9))
+  const eyeY = box.y + box.h / 2
+  // The device's own X offset (half-width gear) rotated into world space.
+  const ox = box.dx * Math.cos(rotY)
+  const oz = -box.dx * Math.sin(rotY)
+  return {
+    target: [cx + ox, eyeY, cz + oz],
+    position: [
+      cx + ox + sign * Math.sin(rotY) * dist,
+      eyeY,
+      cz + oz + sign * Math.cos(rotY) * dist,
+    ],
   }
 }
 
@@ -657,9 +742,11 @@ export function offsetPolyline(
   })
 }
 
-/** Lanes across a tray and a little vertical stagger. */
+/** Lanes across a tray and a little vertical stagger. Seven lanes at 26 mm
+ * span 156 mm — inside a 200 mm basket's clear width, so no run rides the
+ * rail or hangs over the edge. */
 export const CABLE_LANES = 7
-export const CABLE_LANE_SPACING_M = 0.028
+export const CABLE_LANE_SPACING_M = 0.026
 
 /**
  * A cable's deterministic tray lane: same cable, same lane, every frame and
@@ -673,16 +760,35 @@ export function cableLane(cableId: string): { across: number; lift: number } {
     h = ((h << 5) + h + cableId.charCodeAt(i)) >>> 0
   const lane = h % CABLE_LANES
   const across = (lane - (CABLE_LANES - 1) / 2) * CABLE_LANE_SPACING_M
-  const lift = ((h >>> 3) % 3) * 0.014
+  const lift = ((h >>> 3) % 3) * 0.01
   return { across, lift }
 }
 
-/** Cable jacket radius (m) by kind — power reads fatter than fibre. */
+/**
+ * The height a run rides at when it follows a tray: resting on the basket's
+ * FLOOR (plus its lane stagger), not on the tray's centre datum.
+ *
+ * `trayElevationM` returns the tray's datum — the middle of the old solid
+ * box — so riding there put every cable *inside* the tin and invisible.
+ * The basket's floor is half a section below the datum; a hair above it is
+ * where cable actually lies.
+ */
+export function trayRideY(trayY: number, lift = 0): number {
+  return trayY - TRAY_H_M / 2 + TRAY_RAIL_T_M + 0.006 + lift
+}
+
+/**
+ * Cable jacket radius (m) by kind — power reads fatter than fibre.
+ *
+ * These are deliberately a shade over life size (a real Cat6 is ~3 mm radius)
+ * so a run still reads from across the hall, but the first pass doubled that
+ * again and every patch lead came out looking like garden hose up close.
+ */
 export function cableRadiusM(type: string | null | undefined): number {
   const t = (type ?? "").toLowerCase()
-  if (t.includes("power")) return 0.012
-  if (/smf|mmf|fib|os[12]|om[1-5]|aoc/.test(t)) return 0.005
-  return 0.008
+  if (t.includes("power")) return 0.007
+  if (/smf|mmf|fib|os[12]|om[1-5]|aoc/.test(t)) return 0.003
+  return 0.0045
 }
 
 /** True when this browser can do WebGL at all (feature gate for the view). */

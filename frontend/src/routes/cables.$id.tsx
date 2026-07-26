@@ -18,6 +18,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { CableDeleteDialog } from "@/components/cable-delete-dialog"
+import { CableRoutingCard } from "@/components/cable-routing-card"
 import { CableTracePath } from "@/components/cable-trace-path"
 import { TraceSection } from "@/components/topology/trace-section"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
@@ -255,6 +256,7 @@ function CableOverview({ cable: c }: { cable: Cable }) {
         <KvCard title="Cable" rows={details} />
         <KvCard title="Physical" rows={physical} />
       </div>
+      <CableRoutingCard cableId={c.id} />
       {c.is_fiber && modelling !== "off" && <CableFibers cable={c} />}
     </div>
   )

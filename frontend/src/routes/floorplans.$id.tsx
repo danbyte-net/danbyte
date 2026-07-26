@@ -1342,41 +1342,52 @@ function FloorPlanPage() {
                 <SlidersHorizontal className="h-3.5 w-3.5" /> View
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-56 gap-1 p-2">
-              <FormCheckbox
-                label="Fit labels to tiles"
-                checked={labelFit}
-                onChange={(v) => setViewPref("label_fit", v)}
-                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
-              />
-              <FormCheckbox
-                label="Camera FOV cones"
-                checked={showFov}
-                onChange={(v) => setViewPref("show_fov", v)}
-                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
-              />
-              <FormCheckbox
-                label="Zone labels"
-                checked={showZoneLabels}
-                onChange={(v) => setViewPref("show_zone_labels", v)}
-                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
-              />
-              <div className="my-1 h-px bg-border" />
-              <FormCheckbox
-                label="Cable trays"
-                checked={showTrays}
-                onChange={(v) => setViewPref("show_trays", v)}
-                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
-              />
-              <FormCheckbox
-                label="Cable links (A↔B)"
-                checked={showCableLinks}
-                onChange={(v) => setViewPref("show_cable_links", v)}
-                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
-              />
+            {/* Two columns once the 3D block is in play. As one 224px stack
+                this ran past the bottom of a laptop viewport and had to be
+                scrolled inside; side by side it fits on screen. */}
+            <PopoverContent
+              align="end"
+              collisionPadding={12}
+              className={cn(
+                "gap-1 p-2",
+                view3d ? "grid w-[30rem] grid-cols-2 gap-x-3" : "w-56"
+              )}
+            >
+              <div className="grid content-start gap-1">
+                <FormCheckbox
+                  label="Fit labels to tiles"
+                  checked={labelFit}
+                  onChange={(v) => setViewPref("label_fit", v)}
+                  className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+                />
+                <FormCheckbox
+                  label="Camera FOV cones"
+                  checked={showFov}
+                  onChange={(v) => setViewPref("show_fov", v)}
+                  className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+                />
+                <FormCheckbox
+                  label="Zone labels"
+                  checked={showZoneLabels}
+                  onChange={(v) => setViewPref("show_zone_labels", v)}
+                  className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+                />
+                <div className="my-1 h-px bg-border" />
+                <FormCheckbox
+                  label="Cable trays"
+                  checked={showTrays}
+                  onChange={(v) => setViewPref("show_trays", v)}
+                  className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+                />
+                <FormCheckbox
+                  label="Cable links (A↔B)"
+                  checked={showCableLinks}
+                  onChange={(v) => setViewPref("show_cable_links", v)}
+                  className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+                />
+              </div>
               {view3d && (
-                <>
-                  <div className="my-1 h-px bg-border" />
+                <div className="grid content-start gap-1 border-l border-border pl-3">
                   <span className="px-2 text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
                     3D · shown up close
                   </span>
@@ -1455,7 +1466,7 @@ function FloorPlanPage() {
                       the plan — Auto probes the GPU.
                     </p>
                   </div>
-                </>
+                </div>
               )}
             </PopoverContent>
           </Popover>
