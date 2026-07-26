@@ -73,12 +73,20 @@ uploaded blueprint textures it.
 - **Navigate**: drag to orbit, scroll to zoom, right-drag to pan.
   **Keyboard**: the arrow keys or WASD glide the camera level with the floor
   in the direction it faces — the way to walk the aisles — while **Space**
-  rises and **Shift** descends (PageUp/PageDown work too). Speed tracks how
-  far you are zoomed out, so close-up moves are fine-grained and hall-scale
-  hops are quick. The first key press also pulls the orbit pivot
-  to a few metres ahead of the camera, so dragging looks around
-  first-person-style while you walk; **double-click a rack** to re-anchor
-  the pivot on it and orbit for inspection, flying the camera to its front.
+  rises, **C** descends (PageUp/PageDown work too) and holding **Shift**
+  sprints at 4× speed. Speed tracks how far you are zoomed out, so close-up
+  moves are fine-grained and hall-scale hops are quick. The first key press
+  also pulls the orbit pivot to a few metres ahead of the camera, so
+  dragging looks around first-person-style while you walk; **double-click a
+  rack** to re-anchor the pivot on it and orbit for inspection, flying the
+  camera to its front.
+- **Zoom has no wall**: the wheel zooms right down to a few centimetres from
+  a faceplate, and scrolling past that point *walks the camera forward* —
+  through the rack front and out into the aisle behind it — so orbit turns
+  into fly exactly when orbiting stops being useful. Zoom-out reaches far
+  enough to frame a campus-sized plan, and wheel speed scales with room
+  size, so a closet and a 400-rack hall take about the same number of ticks
+  end to end.
 - **Click a rack** for a summary card (space used, monitoring rollup) and a
   jump to the rack page; **click a device** inside an open cabinet for its
   own card (U position, size, face) and a jump to the device page. Up close,

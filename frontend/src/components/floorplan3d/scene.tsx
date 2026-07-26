@@ -296,7 +296,9 @@ export default function FloorScene3D({
         camera={{
           position: [w / 2 + diag * 0.55, diag * 0.6, d + diag * 0.45],
           fov: 45,
-          near: 0.1,
+          // Initial only — CameraRig re-fits `near` per frame to the orbit
+          // distance (1 cm nose-on, 0.5 m across the hall).
+          near: 0.05,
           far: diag * 10 + 50,
         }}
         onPointerMissed={() => {
@@ -364,7 +366,8 @@ export default function FloorScene3D({
         )}
         <CameraRig
           target={[w / 2, 0.8, d / 2]}
-          maxDistance={diag * 4 + 20}
+          maxDistance={diag * 8 + 20}
+          roomDiag={diag}
           requestRef={flyToRef}
         />
       </Canvas>
