@@ -64,6 +64,9 @@ export interface SceneTile {
   rack: SceneRack | null
   /** The tile type's / role's name — labels unlinked planning tiles. */
   type_name?: string
+  /** Zone tiles of a perforated type draw as grate floor in 3D. Optional so
+   * older cached payloads stay type-valid. */
+  perforated?: boolean
 }
 
 export interface SceneTray {

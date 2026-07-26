@@ -347,6 +347,9 @@ function FloorPlanPage() {
   )
   const [floorPeekLocal, setFloorPeekLocal] = useState<boolean | null>(null)
   const [show3dWallsLocal, setShow3dWallsLocal] = useState<boolean | null>(null)
+  const [show3dCeilingLocal, setShow3dCeilingLocal] = useState<boolean | null>(
+    null
+  )
   // Cabinet shell (3D): solid / cutaway / x-ray — a mode, not a checkbox.
   const [shell3dLocal, setShell3dLocal] = useState<ShellMode3D | null>(null)
   // 3D effects budget — PER-DEVICE (localStorage), not a plan pref: the
@@ -589,6 +592,10 @@ function FloorPlanPage() {
     show3dWallsLocal ??
     (plan?.state.show_3d_walls as boolean | undefined) ??
     true
+  const show3dCeiling =
+    show3dCeilingLocal ??
+    (plan?.state.show_3d_ceiling as boolean | undefined) ??
+    false
   const shell3dRaw =
     shell3dLocal ?? (plan?.state.shell_3d as string | undefined) ?? "cutaway"
   const shell3d: ShellMode3D = SHELL_MODES_3D.includes(
@@ -630,7 +637,8 @@ function FloorPlanPage() {
       | "show_3d_cables"
       | "show_3d_airflow"
       | "show_3d_floor_peek"
-      | "show_3d_walls",
+      | "show_3d_walls"
+      | "show_3d_ceiling",
     value: boolean
   ) => {
     if (key === "label_fit") setLabelFitLocal(value)
@@ -644,6 +652,7 @@ function FloorPlanPage() {
     else if (key === "show_3d_airflow") setShow3dAirflowLocal(value)
     else if (key === "show_3d_floor_peek") setFloorPeekLocal(value)
     else if (key === "show_3d_walls") setShow3dWallsLocal(value)
+    else if (key === "show_3d_ceiling") setShow3dCeilingLocal(value)
     else setShowLinksLocal(value)
     if (canEdit && plan)
       patchPlan.mutate({ state: { ...plan.state, [key]: value } })
@@ -1407,6 +1416,12 @@ function FloorPlanPage() {
                     onChange={(v) => setViewPref("show_3d_walls", v)}
                     className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
                   />
+                  <FormCheckbox
+                    label="Ceiling"
+                    checked={show3dCeiling}
+                    onChange={(v) => setViewPref("show_3d_ceiling", v)}
+                    className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+                  />
                   <div className="px-2 pt-1.5 pb-1">
                     <span className="mb-1 block text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
                       Cabinet shell
@@ -1699,6 +1714,7 @@ function FloorPlanPage() {
                   showAirflow={show3dAirflow}
                   floorPeek={floorPeek}
                   showWalls={show3dWalls}
+                  showCeiling={show3dCeiling}
                   shellMode={shell3d}
                   quality={quality3d}
                 />

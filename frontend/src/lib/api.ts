@@ -5499,6 +5499,8 @@ export interface FloorTileType {
   default_height: number
   is_zone: boolean
   has_fov: boolean
+  /** Zone tiles of this type render as perforated/grate floor in 3D. */
+  perforated: boolean
   description: string
   tile_count: number
   created_at: string
@@ -5527,6 +5529,7 @@ export interface FloorTileTypeWritePayload {
   default_height?: number
   is_zone?: boolean
   has_fov?: boolean
+  perforated?: boolean
   description?: string
 }
 

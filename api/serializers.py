@@ -5123,7 +5123,8 @@ class FloorTileTypeSerializer(NumIdModelSerializer):
         model = FloorTileType
         fields = ["id", "numid", "name", "slug", "color", "icon",
                   "default_width", "default_height", "is_zone", "has_fov",
-                  "description", "tile_count", "created_at", "updated_at"]
+                  "perforated", "description", "tile_count",
+                  "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "tile_count",
                             "created_at", "updated_at"]
 

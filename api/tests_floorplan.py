@@ -607,6 +607,28 @@ class SceneTests(_Base):
         self.assertIsNone(tile["rack"])
         self.assertEqual(tile["type_name"], "Rack")
 
+    def test_scene_carries_perforated_from_the_tile_type(self):
+        """A perforated zone type marks its scene tiles, so the 3D room can
+        draw grate floor where the cold-aisle supply tiles sit."""
+        grate = FloorTileType.objects.create(
+            tenant=self.tenant, name="Cold aisle grate", slug="cold-grate",
+            is_zone=True, perforated=True,
+        )
+        FloorPlanTile.objects.create(
+            floor_plan=self.plan, tile_type=grate, x=6, y=6, width=2,
+            label="supply",
+        )
+        FloorPlanTile.objects.create(
+            floor_plan=self.plan, tile_type=self.tt, x=0, y=9, label="plain",
+        )
+        body = self.client.get(f"/api/floor-plans/{self.plan.id}/scene/").json()
+        tile = next(t for t in body["tiles"] if t["label"] == "supply")
+        self.assertTrue(tile["is_zone"])
+        self.assertTrue(tile["perforated"])
+        # And the flag is additive: ordinary tiles carry it as False.
+        other = next(t for t in body["tiles"] if t["label"] == "plain")
+        self.assertFalse(other["perforated"])
+
     def test_scene_device_airflow_is_effective_and_additive(self):
         """The scene carries EFFECTIVE airflow (device override beats the
         type's default), added without disturbing the rest of device_geo —

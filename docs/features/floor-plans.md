@@ -273,6 +273,17 @@ corridor isn't, and an L-shaped pad is simply two abutting rectangles
 (areas may share edges but never overlap, so the depth under any point is
 unambiguous).
 
+In 3D the finished floor draws its **600 mm tile grid** (the grid every
+operator actually addresses), and each area can be **lifted on its own**:
+click an area's edge skirt and its floor fades out over a beat so the
+plenum contents read; click again to close it. The global **Lift raised
+floor** toggle (View menu) still lifts everything at once. Zone tile types
+marked **Perforated floor (3D)** (Customize → Floor tiles) render their
+zones as grate/supply tiles instead of a flat tint — the cold-aisle read,
+one repeat per 600 mm tile. An optional **Ceiling** (View menu, 3D,
+default off) closes the room from the inside without ever blocking the
+bird's-eye view.
+
 The plenum is data, not decoration:
 
 - **Underfloor trays** with no explicit elevation dive to the plenum of the

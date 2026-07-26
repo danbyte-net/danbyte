@@ -4749,6 +4749,11 @@ class FloorTileType(NumIdMixin, TimestampedModel):
         help_text="Tiles of this type get camera field-of-view controls "
                   "(direction / angle / distance cone).",
     )
+    perforated = models.BooleanField(
+        default=False,
+        help_text="Zone tiles of this type render as perforated/grate floor "
+                  "in the 3D room — the cold-aisle supply-tile read.",
+    )
     description = models.TextField(blank=True, default="")
 
     class Meta:

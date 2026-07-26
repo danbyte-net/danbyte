@@ -1,7 +1,37 @@
 import { useEffect, useMemo, useState } from "react"
 import * as THREE from "three"
 
-import { cellToWorld, cellM, type ScenePayload, type SceneTile } from "./world"
+import {
+  cellToWorld,
+  cellM,
+  mm,
+  type ScenePayload,
+  type SceneTile,
+} from "./world"
+
+// One tiny canvas of grate slots shared by every perforated zone (clones only
+// re-upload the repeat). Canvas-drawn — CSP/airgap-safe like every texture in
+// this room.
+let grateBase: THREE.CanvasTexture | null = null
+function grateTexture(): THREE.CanvasTexture {
+  if (grateBase) return grateBase
+  const c = document.createElement("canvas")
+  c.width = c.height = 64
+  const g = c.getContext("2d")!
+  g.fillStyle = "#3f3f46"
+  g.fillRect(0, 0, 64, 64)
+  g.fillStyle = "#131316"
+  // Two columns of vent slots per 600 mm tile — the supply-tile look.
+  for (const x of [10, 38]) {
+    for (let row = 0; row < 4; row++) {
+      g.fillRect(x, 6 + row * 15, 16, 9)
+    }
+  }
+  grateBase = new THREE.CanvasTexture(c)
+  grateBase.wrapS = grateBase.wrapT = THREE.RepeatWrapping
+  grateBase.colorSpace = THREE.SRGBColorSpace
+  return grateBase
+}
 
 /** The room shell: floor slab, grid lines, optional blueprint texture, and
  * zone tiles painted flat on the floor. Everything static — one draw each.
@@ -12,9 +42,14 @@ import { cellToWorld, cellM, type ScenePayload, type SceneTile } from "./world"
 export function Room({
   scene,
   xray = false,
+  ceiling = false,
 }: {
   scene: ScenePayload
   xray?: boolean
+  /** Draw the ceiling plane — single-sided facing DOWN, so it encloses the
+   * room from inside but never blocks the bird's-eye view (and it neither
+   * casts nor receives shadow: the key light sits above it). */
+  ceiling?: boolean
 }) {
   const { plan } = scene
   const [w, d] = cellToWorld(plan, plan.grid_width, plan.grid_height)
@@ -71,6 +106,16 @@ export function Room({
         .map((t) => (
           <ZonePatch key={t.id} plan={plan} tile={t} />
         ))}
+      {ceiling && !xray && (
+        <mesh
+          rotation={[Math.PI / 2, 0, 0]}
+          position={[w / 2, mm(plan.ceiling_mm), d / 2]}
+          raycast={() => null}
+        >
+          <planeGeometry args={[w, d]} />
+          <meshStandardMaterial color="#1c1c1f" roughness={0.95} />
+        </mesh>
+      )}
     </group>
   )
 }
@@ -84,16 +129,38 @@ function ZonePatch({
 }) {
   const [x, z] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
   const [w, d] = cellToWorld(plan, tile.w, tile.h)
+  // Perforated zones draw the grate pattern at one repeat per 600 mm tile —
+  // the cold-aisle supply floor, legible without a heat map.
+  const grate = useMemo(() => {
+    if (!tile.perforated) return null
+    const t = grateTexture().clone()
+    t.needsUpdate = true
+    t.repeat.set(
+      Math.max(1, Math.round(w / 0.6)),
+      Math.max(1, Math.round(d / 0.6))
+    )
+    return t
+  }, [tile.perforated, w, d])
+  useEffect(() => () => grate?.dispose(), [grate])
   // 0.015 sits ABOVE a raised-floor slab top (0.012): a cold aisle drawn on
   // a raised pad must tint the pad, not vanish inside it.
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.015, z]}>
       <planeGeometry args={[w, d]} />
-      <meshBasicMaterial
-        color={tile.color || "#52525b"}
-        transparent
-        opacity={0.18}
-      />
+      {grate ? (
+        <meshBasicMaterial
+          map={grate}
+          color={tile.color || "#a1a1aa"}
+          transparent
+          opacity={0.85}
+        />
+      ) : (
+        <meshBasicMaterial
+          color={tile.color || "#52525b"}
+          transparent
+          opacity={0.18}
+        />
+      )}
     </mesh>
   )
 }
