@@ -612,16 +612,47 @@ export function wallDoorSpans(
 
 // ─── Zero-U side strips ──────────────────────────────────────────────────────
 
-/** Strip cross-section + the gap it hangs off the side panel. */
+/** Strip cross-section, and the clearance it keeps off the side panel. */
 export const STRIP_W_M = 0.05
 export const STRIP_D_M = 0.11
-const STRIP_GAP_M = 0.035
+const STRIP_CLEARANCE_M = 0.008
 
 /**
- * Where a side-mounted 0U strip (a vertical PDU) hangs, local to its rack
- * group: on the named rail just outside the panel, rear half of the depth,
- * spanning `mount_span_u` (default ~¾ of the rack) above its offset — and
- * never poking past the rack's top. Pure — unit-tested.
+ * The clear width, per side, between the mounting rails and the cabinet's
+ * side panel — the **zero-U space** a vertical PDU actually lives in.
+ *
+ * This is why 750 mm and 800 mm cabinets exist: the 19″ rail opening is a
+ * fixed 450 mm, so every millimetre of extra cabinet width becomes zero-U
+ * channel. A plain 600 mm cabinet has almost none, which is exactly why you
+ * can't hang a PDU in one — and the render should say so rather than
+ * pretend.
+ */
+export function zeroUChannelM(rack: SceneRack): number {
+  const opening = mm(OPENING_MM[rack.width] ?? PANEL_MM.opening)
+  const { width } = rackFootprintM(rack)
+  // Frame/panel steel eats a little of each side before the clear channel.
+  return Math.max(0, (width - opening) / 2 - 0.012)
+}
+
+/** Whether this cabinet has room for a strip in its channel at all. */
+export function fitsInChannel(rack: SceneRack): boolean {
+  return zeroUChannelM(rack) >= STRIP_W_M + STRIP_CLEARANCE_M
+}
+
+/**
+ * Where a side-mounted 0U strip (a vertical PDU) sits, local to its rack
+ * group.
+ *
+ * INSIDE the cabinet, in the zero-U channel between the rail and the side
+ * panel — which is where one physically bolts. (v1 hung it off the outside
+ * of the panel, so PDUs floated in the aisle beside their rack and collided
+ * with the neighbouring cabinet in a bayed row.) A cabinet too narrow for a
+ * channel gets the strip tucked as far out as it goes, overlapping the rail
+ * line: honest about the squeeze rather than teleporting it outdoors.
+ *
+ * Spans `mount_span_u` (default ~¾ of the rack) above its offset, never
+ * poking past the rack's top. `face` picks the channel end. Pure —
+ * unit-tested.
  */
 export function sideStripBoxM(
   rack: SceneRack,
@@ -650,12 +681,12 @@ export function sideStripBoxM(
       : dev.face === "front"
         ? -rackDepthM * 0.28
         : rackDepthM * 0.2
-  return {
-    x: sign * (rackWidthM / 2 + STRIP_GAP_M + STRIP_W_M / 2),
-    y,
-    h,
-    z,
-  }
+  // Centre of the zero-U channel: hard against the panel, clearance kept.
+  // Clamped so a narrow cabinet keeps the strip inside its own footprint.
+  const panel = rackWidthM / 2
+  const x =
+    sign * Math.max(STRIP_W_M / 2, panel - STRIP_CLEARANCE_M - STRIP_W_M / 2)
+  return { x, y, h, z }
 }
 
 // ─── Cable-run geometry (P8) ─────────────────────────────────────────────────
@@ -830,6 +861,30 @@ export interface TrayJunction {
   trayIds: string[]
 }
 
+/**
+ * Whether a polyline actually TURNS at `at` — the cross product of the two
+ * edge directions is non-negligible.
+ *
+ * A redundant collinear vertex (drawn by clicking a couple of times along a
+ * straight run) is not a joint. Treating every interior vertex as a corner
+ * cut a fake gap into the middle of straight tray, complete with a junction
+ * plate bridging nothing.
+ */
+export function turnsAt(
+  prev: [number, number],
+  at: [number, number],
+  next: [number, number]
+): boolean {
+  const ax = at[0] - prev[0]
+  const az = at[1] - prev[1]
+  const bx = next[0] - at[0]
+  const bz = next[1] - at[1]
+  const la = Math.hypot(ax, az)
+  const lb = Math.hypot(bx, bz)
+  if (la < 1e-9 || lb < 1e-9) return false
+  return Math.abs((ax / la) * (bz / lb) - (az / la) * (bx / lb)) > 1e-6
+}
+
 export function trayJunctions(
   plan: ScenePayload["plan"],
   trays: SceneTray[]
@@ -852,9 +907,19 @@ export function trayJunctions(
   const world = trays.map((t) =>
     t.points.map((p) => cellToWorld(plan, p[0], p[1]))
   )
-  // A polyline's own interior vertices are corners by definition.
+  // A polyline's own vertices — but only where it genuinely turns.
   world.forEach((pts, t) => {
-    for (let i = 1; i < pts.length - 1; i++) add(pts[i], trays[t].id)
+    for (let i = 1; i < pts.length - 1; i++)
+      if (turnsAt(pts[i - 1], pts[i], pts[i + 1])) add(pts[i], trays[t].id)
+    // A CLOSED run (last point back on the first) turns at that shared
+    // vertex too, and it is neither an interior vertex nor a free end — so
+    // it was skipped entirely and its two rails ran through each other.
+    // Every rectangular ring drawn in the editor has exactly this corner.
+    const n = pts.length
+    const closed =
+      n > 3 &&
+      Math.hypot(pts[0][0] - pts[n - 1][0], pts[0][1] - pts[n - 1][1]) < 1e-9
+    if (closed && turnsAt(pts[n - 2], pts[0], pts[1])) add(pts[0], trays[t].id)
   })
   // …and every tee or crossing BETWEEN trays.
   for (let a = 0; a < world.length; a++) {
