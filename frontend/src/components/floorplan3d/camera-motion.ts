@@ -28,8 +28,12 @@ export function isCameraMoving(): boolean {
   return performance.now() < movingUntil
 }
 
-/** How long until the camera counts as settled (ms, 0 if already still) —
- * lets the rig schedule the one trailing frame that applies pending swaps. */
-export function settleDelayMs(): number {
-  return Math.max(0, movingUntil - performance.now())
+/** Still inside the settle window (motion plus a `tailMs` grace)? The rig
+ * keeps invalidating while this holds, so the frames that let racks apply
+ * their deferred tier/panel swaps ALWAYS arrive — whatever moved the camera.
+ * Key-release used to schedule that trailing frame itself (and nothing else
+ * did), which left every other motion source — wheel bursts, drags — able to
+ * end with pending swaps frozen until the next interaction. */
+export function isCameraSettling(tailMs = 200): boolean {
+  return performance.now() < movingUntil + tailMs
 }

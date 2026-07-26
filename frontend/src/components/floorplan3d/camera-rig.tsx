@@ -4,7 +4,7 @@ import { OrbitControls } from "@react-three/drei"
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib"
 import * as THREE from "three"
 
-import { markCameraMoving, settleDelayMs } from "./camera-motion"
+import { isCameraSettling, markCameraMoving } from "./camera-motion"
 import {
   MIN_DISTANCE_M,
   NAV_KEYS,
@@ -118,11 +118,8 @@ export function CameraRig({
       // No guards on release: a key that went down must always come back up,
       // even if focus moved into a field or a modifier joined mid-hold.
       pressed.current.delete(normalizeKey(e.key))
-      // Racks defer their LOD swap while the camera moves; the demand loop
-      // stops on release, so without this trailing frame the pending swaps
-      // would never run and the room would stay coarse until you nudged it.
-      if (pressed.current.size === 0)
-        window.setTimeout(invalidate, settleDelayMs() + 32)
+      // The trailing frames that apply deferred LOD swaps come from the
+      // settle loop in useFrame — for every motion source, not just keys.
     }
     const onBlur = () => {
       // Alt-tab with a key held must not pan forever.
@@ -183,6 +180,13 @@ export function CameraRig({
   useFrame((state, delta) => {
     const c = controls.current
     if (!c) return
+    // Settle loop: racks defer their LOD/panel swaps while the camera moves
+    // (see camera-motion.ts), and with frameloop="demand" nothing else
+    // promises a frame AFTER the motion window closes. Keep frames coming
+    // through the window plus its tail, so the swap-applying frame always
+    // arrives — a wheel burst or drag used to end with the room stuck coarse
+    // until the next interaction nudged it.
+    if (isCameraSettling()) invalidate()
     // Floor clamp: maxPolarAngle now allows looking up from below the pivot,
     // so an orbit drag could push the eye underground - catch it on any frame
     // that renders (drag frames do, via the controls' change -> invalidate).
@@ -267,6 +271,14 @@ export function CameraRig({
       ref={controls}
       makeDefault
       target={target}
+      // Every way OrbitControls itself moves the camera — mouse drags, its
+      // native wheel zoom — lands here. Marking motion from the change event
+      // is what actually defers the per-rack React swaps during a drag; the
+      // rig's own paths (keys, fly-to, dolly-through) mark explicitly, but
+      // drags never passed through them, so dragging still re-rendered
+      // dozens of racks per frame. Drei keeps its internal invalidate-on-
+      // change wiring alongside this handler.
+      onChange={() => markCameraMoving()}
       // Dolly toward the pointer, not the (possibly distant) orbit target —
       // on a hall-sized plan, plain dolly could never reach a far corner.
       zoomToCursor
