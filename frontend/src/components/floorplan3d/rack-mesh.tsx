@@ -207,11 +207,13 @@ export function RackMesh({
             const isSel =
               (selection?.kind === "device" || selection?.kind === "port") &&
               selection.deviceId === d.id
-            // X-ray ghosts every device except the selected one; focus on a
-            // device ghosts its rack siblings.
+            // Only FOCUS ghosts devices (spotlighting one, dimming its rack
+            // siblings). X-ray deliberately does not: x-ray removes the TIN,
+            // not the equipment — faceplates and ports stay rendered and
+            // clickable (owner override of the original ghost-except-
+            // selected spec).
             const devGhost =
-              !isSel &&
-              (xray || (focusDeviceId != null && d.id !== focusDeviceId))
+              !isSel && focusDeviceId != null && d.id !== focusDeviceId
             return (
               <DeviceMesh
                 key={d.id}
@@ -461,12 +463,15 @@ const DOOR_HEADROOM = 0.034
 
 /**
  * Solid mode's door: one smoked-glass pane — gear silhouettes read through,
- * and no busy texture. Casts no shadow (a solid shadow from glass lies).
+ * and no busy texture. Casts no shadow (a solid shadow from glass lies) and
+ * is raycast-INERT: glass that ate clicks made every photo port behind it
+ * unclickable in solid mode. Clicks pass through to devices and ports; the
+ * cabinet itself still catches via panels, caps and gear.
  */
 function GlassDoor({ w, h, z }: { w: number; h: number; z: number }) {
   const doorH = h - RACK_BASE_M - DOOR_HEADROOM
   return (
-    <mesh position={[0, RACK_BASE_M + doorH / 2, z]}>
+    <mesh position={[0, RACK_BASE_M + doorH / 2, z]} raycast={() => null}>
       <boxGeometry args={[w - 0.02, doorH, 0.008]} />
       <meshStandardMaterial
         color="#0b0b0e"
