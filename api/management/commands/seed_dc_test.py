@@ -220,6 +220,32 @@ class Command(BaseCommand):
             )
         return dt
 
+    def _fix_psu_names(self, dt):
+        """Rename 0-based PSU templates to the 1-based pair operators use.
+
+        The imported library types came in with `Psu 0 / Psu 1 / Psu 2` — a
+        name range expanded from zero, so a dual-PSU server claimed three
+        inlets and the first one was called PSU zero. Targeted on purpose: it
+        only rewrites a type whose names actually show the 0-based pattern, so
+        a hand-curated type is never clobbered. Runs before the devices are
+        stamped, so their power ports come out right the first time.
+        """
+        ports = list(dt.power_port_templates.order_by("name"))
+        if not any(p.name.strip().lower() in ("psu 0", "psu0") for p in ports):
+            return
+        keep = ports[0]
+        draw = keep.maximum_draw
+        alloc = keep.allocated_draw
+        dt.power_port_templates.all().delete()
+        PowerPortTemplate.objects.bulk_create([
+            PowerPortTemplate(
+                device_type=dt, name=f"PSU {i}",
+                maximum_draw=draw, allocated_draw=alloc,
+            )
+            for i in (1, 2)
+        ])
+        self.stdout.write(f"  {dt.name}: PSU templates renumbered to 1-2")
+
     def _rack_type(self):
         pdu = self._pdu_type()
         rt, _ = RackType.objects.update_or_create(
@@ -345,6 +371,8 @@ class Command(BaseCommand):
     def _devices(self, site, loc, racks):
         fw_type = DeviceType.objects.get(tenant=self.t, name=FW_TYPE)
         srv_type = DeviceType.objects.get(tenant=self.t, name=SRV_TYPE)
+        self._fix_psu_names(srv_type)
+        self._fix_psu_names(fw_type)
         fw_role = self._role("Firewall", "#ef4444")
         srv_role = self._role("Server", "#10b981")
 
