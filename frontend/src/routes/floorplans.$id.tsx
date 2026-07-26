@@ -1456,14 +1456,16 @@ function FloorPlanPage() {
                       onValueChange={setQuality3d}
                       items={[
                         { value: "auto", label: "Auto" },
+                        { value: "flat", label: "Flat" },
                         { value: "low", label: "Low" },
                         { value: "medium", label: "Med" },
                         { value: "high", label: "High" },
                       ]}
                     />
                     <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
-                      Shadows and ambient occlusion. Saved per device, not on
-                      the plan — Auto probes the GPU.
+                      Shadows and ambient occlusion. Flat turns the light rig
+                      off entirely. Saved per device, not on the plan — Auto
+                      probes the GPU.
                     </p>
                   </div>
                 </div>

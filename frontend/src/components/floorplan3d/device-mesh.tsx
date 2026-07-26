@@ -85,6 +85,34 @@ function sharedEdges(w: number, h: number, d: number): THREE.BufferGeometry {
   return g
 }
 
+/** Shared photo-plane geometry, same reasoning as the box cache. */
+const planeCache = new Map<string, THREE.PlaneGeometry>()
+
+function sharedPlane(w: number, h: number): THREE.PlaneGeometry {
+  const key = `${Math.round(w * 1000)}:${Math.round(h * 1000)}`
+  let g = planeCache.get(key)
+  if (!g) {
+    g = new THREE.PlaneGeometry(w, h)
+    planeCache.set(key, g)
+  }
+  return g
+}
+
+/** ONE material per image, not one per device wearing it. Twenty identical
+ * servers used to mint twenty MeshBasicMaterials around the same texture, and
+ * the renderer sorts by material — distinct materials mean re-binding the
+ * program and uniforms for every box instead of once for the whole batch. */
+const faceMaterialCache = new Map<THREE.Texture, THREE.MeshBasicMaterial>()
+
+function sharedFaceMaterial(t: THREE.Texture): THREE.MeshBasicMaterial {
+  let m = faceMaterialCache.get(t)
+  if (!m) {
+    m = new THREE.MeshBasicMaterial({ map: t, toneMapped: false })
+    faceMaterialCache.set(t, m)
+  }
+  return m
+}
+
 // ─── Face-texture cache ──────────────────────────────────────────────────────
 // One texture per device-type image URL, shared across every device box that
 // wears it (a rack of 20 identical switches loads one image). LRU-capped so a
@@ -155,6 +183,7 @@ export function DeviceMesh({
   selectedPort,
   showTexture,
   viewRear,
+  livePorts,
   onSelect,
   onSelectPort,
   onZoomTo,
@@ -176,6 +205,9 @@ export function DeviceMesh({
   /** True while the camera is behind the cabinet — picks which of the device's
    * own panels (and which photo) is the one you can see. */
   viewRear: boolean
+  /** Resolve markers to real ports and poll live SNMP. Costs two fetches per
+   * device, so the caller grants it only for the engaged cabinet. */
+  livePorts: boolean
   onSelect: (deviceId: string) => void
   /** A photo port was clicked — anchor for HUD + cable building. `side` is the
    * face the marker lives on (the device's mounted face). */
@@ -220,7 +252,10 @@ export function DeviceMesh({
   // Memoized: the legend derives from these, and a fresh `[]` every render
   // would make it recompute (and re-report) forever.
   const markers = useMemo(() => dev.image_ports?.[side] ?? [], [dev, side])
-  const wantPorts = showTexture && markers.length > 0
+  // Markers still DRAW without this (they ride in the scene payload); what it
+  // gates is resolving them to real ports and polling live SNMP, which is two
+  // requests per device. See the caller for why that has to stay bounded.
+  const wantPorts = showTexture && livePorts && markers.length > 0
   const facePorts = useQuery({
     queryKey: ["device-face-ports", dev.id],
     queryFn: () => api<FacePorts>(`/api/devices/${dev.id}/face-ports/`),
@@ -355,10 +390,10 @@ export function DeviceMesh({
           position={[0, 0, (dd / 2 + 0.002) * (viewRear ? 1 : -1)]}
           rotation={[0, viewRear ? 0 : Math.PI, 0]}
         >
-          <mesh>
-            <planeGeometry args={[dw, boxH]} />
-            <meshBasicMaterial map={texture} toneMapped={false} />
-          </mesh>
+          <mesh
+            geometry={sharedPlane(dw, boxH)}
+            material={sharedFaceMaterial(texture)}
+          />
           {markers.map((m, i) => {
             // image (mx,my): x right, y DOWN from top-left → plane-local X
             // right, Y up, so flip y. Each quad owns its pointer events and

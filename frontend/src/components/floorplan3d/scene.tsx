@@ -453,7 +453,7 @@ export default function FloorScene3D({
         // Render at the display's real pixel ratio (capped at 2): 1.75 left a
         // HiDPI canvas rendering below native and reading softer than the 2D
         // faceplate beside it. Low quality caps at 1.5 instead.
-        dpr={rq === "low" ? [1, 1.5] : [1, 2]}
+        dpr={rq === "low" || rq === "flat" ? [1, 1.5] : [1, 2]}
         camera={{
           position: [w / 2 + diag * 0.55, diag * 0.6, d + diag * 0.45],
           fov: 45,
@@ -477,16 +477,25 @@ export default function FloorScene3D({
             re-balanced for the environment's contribution; tone mapping is
             r3f's default ACESFilmic (that's why photo faceplates opt out
             with toneMapped={false}). */}
-        <ambientLight intensity={0.4} />
-        <KeyLight
-          w={w}
-          d={d}
-          diag={diag}
-          castShadow={rq !== "low"}
-          shadowRes={rq === "high" ? 2048 : 1024}
-        />
-        <directionalLight position={[w, 8, d]} intensity={0.25} />
-        <StudioEnvironment />
+        {/* Flat: ONE full-strength ambient and nothing else — no key light,
+            no shadow pass, no environment probe. Standard materials still
+            shade, they just have a single uniform light to answer to, which
+            is the cheapest honest way to take the light rig out of the
+            picture. */}
+        <ambientLight intensity={rq === "flat" ? 1.15 : 0.4} />
+        {rq !== "flat" && (
+          <>
+            <KeyLight
+              w={w}
+              d={d}
+              diag={diag}
+              castShadow={rq !== "low"}
+              shadowRes={rq === "high" ? 2048 : 1024}
+            />
+            <directionalLight position={[w, 8, d]} intensity={0.25} />
+            <StudioEnvironment />
+          </>
+        )}
         {/* Ambient occlusion (High only): the interior depth that makes an
             open cabinet look deep rather than printed. Screen-space, so the
             depthWrite=false ghosts never smudge it. */}
