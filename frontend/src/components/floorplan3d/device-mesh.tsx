@@ -24,10 +24,18 @@ import {
 import { useReportLegend, type LegendReporter } from "@/components/speed-scale"
 
 import { useMaxAnisotropy } from "./texture-quality"
-import { deviceBoxM, type SceneDevice, type SceneRack } from "./world"
+import {
+  TRANSPARENT_ORDER,
+  deviceBoxM,
+  type SceneDevice,
+  type SceneRack,
+} from "./world"
 
 const DEVICE_FALLBACK = "#52525b"
 const DEVICE_SELECTED = "#0ea5e9"
+/** Standing edge line — the box's silhouette, dark enough to read against
+ * both a pale faceplate photo and a dark role colour. */
+const DEVICE_EDGE = "#18181b"
 
 // Photo-port quad tint: the SAME status colours the 2D faceplate uses (speed
 // tint via portState / PORT_STATE_HEX, live SNMP via liveHex), so a port lights
@@ -114,6 +122,7 @@ export function DeviceMesh({
   showTexture,
   onSelect,
   onSelectPort,
+  onZoomTo,
   onLegend,
 }: {
   rack: SceneRack
@@ -137,6 +146,9 @@ export function DeviceMesh({
     marker: ImagePortMarker,
     side: "front" | "rear"
   ) => void
+  /** Double-click — fly the camera onto this device's face. Same gesture the
+   * rack already answers, one level down. */
+  onZoomTo?: (dev: SceneDevice) => void
   /** Report the colours this face puts on screen, so the room's legend keys
    * only those. Near tier only — a far cabinet draws no port colours. */
   onLegend?: LegendReporter
@@ -228,10 +240,16 @@ export function DeviceMesh({
       : dev.role_color || DEVICE_FALLBACK
 
   // Memoized (and disposed) — an inline `new BoxGeometry` re-allocated on
-  // every hover/selection render.
+  // every hover/selection render. Drawn for EVERY solid device, not just the
+  // selected one: with a photo face on the front and the studio key light
+  // raking the sides, an un-edged box lost its silhouette and the faceplate
+  // read as a picture floating in the rack.
   const edges = useMemo(
-    () => (selected ? new THREE.BoxGeometry(dw, boxH, dd) : null),
-    [selected, dw, boxH, dd]
+    () =>
+      ghosted
+        ? null
+        : new THREE.EdgesGeometry(new THREE.BoxGeometry(dw, boxH, dd)),
+    [ghosted, dw, boxH, dd]
   )
   useEffect(() => () => edges?.dispose(), [edges])
 
@@ -242,6 +260,14 @@ export function DeviceMesh({
         e.stopPropagation()
         onSelect(dev.id)
       }}
+      onDoubleClick={
+        onZoomTo
+          ? (e) => {
+              e.stopPropagation()
+              onZoomTo(dev)
+            }
+          : undefined
+      }
       onPointerOver={(e) => {
         e.stopPropagation()
         setHovered(true)
@@ -252,7 +278,15 @@ export function DeviceMesh({
         document.body.style.cursor = ""
       }}
     >
-      <mesh castShadow={!ghosted}>
+      {/* receiveShadow as well as cast: without it a device took no shadow
+          from the gear above it and the rack interior rendered flat.
+          Ghosts take a fixed transparent order so they can't reshuffle
+          against the cabinet glass as the camera moves. */}
+      <mesh
+        castShadow={!ghosted}
+        receiveShadow={!ghosted}
+        renderOrder={ghosted ? TRANSPARENT_ORDER.ghost : 0}
+      >
         <boxGeometry args={[dw, boxH, dd]} />
         {/* Ghosting = the room's one transparency convention. */}
         {ghosted ? (
@@ -402,10 +436,13 @@ export function DeviceMesh({
           })}
         </group>
       )}
-      {selected && edges && (
-        <lineSegments raycast={() => null}>
-          <edgesGeometry args={[edges]} />
-          <lineBasicMaterial color={DEVICE_SELECTED} />
+      {edges && (
+        <lineSegments geometry={edges} raycast={() => null}>
+          <lineBasicMaterial
+            color={selected ? DEVICE_SELECTED : DEVICE_EDGE}
+            transparent={!selected}
+            opacity={selected ? 1 : 0.5}
+          />
         </lineSegments>
       )}
     </group>

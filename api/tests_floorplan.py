@@ -737,6 +737,117 @@ class CablePathTests(_Base):
         )
 
 
+class CableRoutingTests(_Base):
+    """Reading and setting what a cable FOLLOWS on a plan — trays in a chosen
+    order, or point-to-point. Before this the assignment was only writable by
+    auto-route, so an operator had no way to see or correct it."""
+
+    def setUp(self):
+        super().setUp()
+        from .models import Device, Interface
+
+        self.plan = FloorPlan.objects.create(
+            tenant=self.tenant, location=self.loc, name="Hall A"
+        )
+        dev = Device.objects.create(
+            tenant=self.tenant, name="sw", site=self.site, rack=self.rack
+        )
+        iface = Interface.objects.create(device=dev, name="e0")
+        self.cable = Cable.objects.create(tenant=self.tenant, label="c1")
+        CableTermination.objects.create(
+            cable=self.cable, end="A", interface=iface
+        )
+        self.t1 = FloorPlanTray.objects.create(
+            floor_plan=self.plan, name="North", points=[[0, 0], [10, 0]]
+        )
+        self.t2 = FloorPlanTray.objects.create(
+            floor_plan=self.plan, name="Riser", points=[[10, 0], [10, 8]]
+        )
+
+    def _url(self):
+        return f"/api/cables/{self.cable.id}/routing/"
+
+    def test_unrouted_cable_reads_point_to_point(self):
+        r = self.client.get(f"{self._url()}?floor_plan={self.plan.id}")
+        self.assertEqual(r.status_code, 200, r.content)
+        body = r.json()
+        self.assertEqual(body["mode"], "point-to-point")
+        self.assertEqual(body["trays"], [])
+        # Every tray on the plan is offered as a choice.
+        self.assertEqual(
+            {t["name"] for t in body["available"]}, {"North", "Riser"}
+        )
+
+    def test_set_multiple_trays_in_order(self):
+        r = self.client.put(
+            self._url(),
+            {
+                "floor_plan": str(self.plan.id),
+                "tray_ids": [str(self.t2.id), str(self.t1.id)],
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["mode"], "trays")
+        self.assertEqual(
+            [t["name"] for t in r.json()["trays"]], ["Riser", "North"]
+        )
+        self.assertEqual(self.cable.trays.count(), 2)
+
+    def test_empty_list_is_point_to_point(self):
+        self.cable.trays.add(self.t1)
+        r = self.client.put(
+            self._url(),
+            {"floor_plan": str(self.plan.id), "tray_ids": []},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["mode"], "point-to-point")
+        self.assertEqual(self.cable.trays.count(), 0)
+
+    def test_foreign_tray_rejected(self):
+        other_plan = FloorPlan.objects.create(
+            tenant=self.tenant, location=self.loc, name="Hall B"
+        )
+        stranger = FloorPlanTray.objects.create(
+            floor_plan=other_plan, name="Elsewhere", points=[[0, 0], [4, 0]]
+        )
+        r = self.client.put(
+            self._url(),
+            {
+                "floor_plan": str(self.plan.id),
+                "tray_ids": [str(stranger.id)],
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.cable.trays.count(), 0)
+
+    def test_other_plans_assignments_survive(self):
+        other_plan = FloorPlan.objects.create(
+            tenant=self.tenant, location=self.loc, name="Hall B"
+        )
+        elsewhere = FloorPlanTray.objects.create(
+            floor_plan=other_plan, name="Elsewhere", points=[[0, 0], [4, 0]]
+        )
+        self.cable.trays.add(elsewhere)
+        self.client.put(
+            self._url(),
+            {"floor_plan": str(self.plan.id), "tray_ids": [str(self.t1.id)]},
+            format="json",
+        )
+        self.assertEqual(
+            set(self.cable.trays.values_list("name", flat=True)),
+            {"Elsewhere", "North"},
+        )
+
+    def test_unknown_plan_rejected(self):
+        r = self.client.get(
+            f"{self._url()}?floor_plan=00000000-0000-0000-0000-000000000000"
+        )
+        self.assertEqual(r.status_code, 400)
+
+
 class CableFloorPlanResolverTests(_Base):
     def test_cable_floor_plan_prefers_tray_then_tile(self):
         from .models import Device, Interface

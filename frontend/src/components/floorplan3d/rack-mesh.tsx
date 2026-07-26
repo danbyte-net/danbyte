@@ -13,7 +13,10 @@ import { RackRuler } from "./rack-ruler"
 import { FaceLabel } from "./text-sprite"
 import {
   RACK_BASE_M,
+  TRANSPARENT_ORDER,
   cellToWorld,
+  deviceBoxM,
+  deviceViewpoint,
   deviceYM,
   rackFootprintM,
   rackViewpoint,
@@ -235,6 +238,19 @@ export function RackMesh({
                 }
                 showTexture={!devGhost}
                 onLegend={onLegend}
+                onZoomTo={(target) => {
+                  // Same fly-to channel the rack's own double-click uses,
+                  // one level down: frame THIS device's face.
+                  const vp = deviceViewpoint(
+                    plan,
+                    tile,
+                    deviceBoxM(rack, target, width, depth)
+                  )
+                  onFlyTo(
+                    new THREE.Vector3(...vp.target),
+                    new THREE.Vector3(...vp.position)
+                  )
+                }}
                 onSelect={(deviceId) =>
                   onSelect({ kind: "device", tileId: tile.id, deviceId })
                 }
@@ -347,7 +363,12 @@ function Frame({
   // shadow reads as a bug.
   const ghost = ghostOpacity > 0
   return (
-    <mesh position={[0, h / 2, 0]} castShadow={!ghost} receiveShadow={!ghost}>
+    <mesh
+      position={[0, h / 2, 0]}
+      castShadow={!ghost}
+      receiveShadow={!ghost}
+      renderOrder={ghost ? TRANSPARENT_ORDER.ghost : 0}
+    >
       <boxGeometry args={[w, h, d]} />
       {ghost ? (
         <meshStandardMaterial
@@ -493,7 +514,15 @@ const DOOR_HEADROOM = 0.034
 function GlassDoor({ w, h, z }: { w: number; h: number; z: number }) {
   const doorH = h - RACK_BASE_M - DOOR_HEADROOM
   return (
-    <mesh position={[0, RACK_BASE_M + doorH / 2, z]} raycast={() => null}>
+    <mesh
+      position={[0, RACK_BASE_M + doorH / 2, z]}
+      raycast={() => null}
+      // Fixed order instead of three.js's per-frame depth sort. Glass, ghosts
+      // and the lifted floor all compete in the same transparent pass; letting
+      // distance decide made them swap order as the camera moved, which is
+      // what "buggy when switching solid/cutaway/x-ray" looked like.
+      renderOrder={TRANSPARENT_ORDER.glass}
+    >
       <boxGeometry args={[w - 0.02, doorH, 0.008]} />
       <meshStandardMaterial
         color="#0b0b0e"

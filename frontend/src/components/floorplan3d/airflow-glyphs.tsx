@@ -5,13 +5,21 @@ import { AIRFLOW_HEX, EMPTY_LEGEND } from "@/lib/faceplate-colors"
 import { useReportLegend } from "@/components/speed-scale"
 import type { LegendReporter } from "@/components/speed-scale"
 
-import { airflowGlyphPlacements, deviceBoxM, rackFootprintM } from "./world"
+import {
+  GLYPH_UNIT_H_M,
+  airflowGlyphPlacements,
+  deviceBoxM,
+  rackFootprintM,
+} from "./world"
 import type { SceneRack } from "./world"
 
-// Cone proportions: a direction cue readable from a few metres, small enough
-// not to read as hardware. 8 radial segments — dozens of instances per rack.
-const CONE_R = 0.025
-const CONE_H = 0.06
+// The UNIT cone every instance scales from — each glyph carries its own
+// factor, sized to the device it annotates (world.airflowGlyphSizeM). A fixed
+// 50 mm cone was wider than the 42 mm 1U box it belonged to, and up close it
+// sat over the faceplate and hid the ports. 8 radial segments — dozens of
+// instances per rack.
+const CONE_H = GLYPH_UNIT_H_M
+const CONE_R = CONE_H * 0.42
 const UP = new THREE.Vector3(0, 1, 0)
 
 /**
@@ -52,7 +60,7 @@ export function AirflowGlyphs({
     const q = new THREE.Quaternion()
     const dir = new THREE.Vector3()
     const pos = new THREE.Vector3()
-    const one = new THREE.Vector3(1, 1, 1)
+    const scale = new THREE.Vector3()
     for (const [ref, glyphs] of [
       [intakeRef, intake],
       [exhaustRef, exhaust],
@@ -60,9 +68,13 @@ export function AirflowGlyphs({
       const mesh = ref.current
       if (!mesh) continue
       glyphs.forEach((g, i) => {
-        // Cones point +Y by default; rotate that axis onto the flow direction.
+        // Cones point +Y by default; rotate that axis onto the flow direction,
+        // then shrink the unit cone to this device's size.
         q.setFromUnitVectors(UP, dir.set(...g.dir))
-        mesh.setMatrixAt(i, m.compose(pos.set(...g.pos), q, one))
+        mesh.setMatrixAt(
+          i,
+          m.compose(pos.set(...g.pos), q, scale.setScalar(g.scale))
+        )
       })
       mesh.instanceMatrix.needsUpdate = true
     }
