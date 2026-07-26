@@ -778,6 +778,122 @@ export function trayRideY(trayY: number, lift = 0): number {
 }
 
 /**
+ * Where two straight runs cross or meet, in world metres.
+ *
+ * `null` when they are parallel (an end-to-end continuation needs no joint)
+ * or when the crossing falls outside either segment. Inclusive at the ends,
+ * so a run terminating ON another run — a tee — counts.
+ */
+export function segmentCrossing(
+  a1: [number, number],
+  a2: [number, number],
+  b1: [number, number],
+  b2: [number, number]
+): [number, number] | null {
+  const rx = a2[0] - a1[0]
+  const rz = a2[1] - a1[1]
+  const sx = b2[0] - b1[0]
+  const sz = b2[1] - b1[1]
+  const denom = rx * sz - rz * sx
+  if (Math.abs(denom) < 1e-12) return null
+  const qx = b1[0] - a1[0]
+  const qz = b1[1] - a1[1]
+  const t = (qx * sz - qz * sx) / denom
+  const u = (qx * rz - qz * rx) / denom
+  const e = 1e-6
+  if (t < -e || t > 1 + e || u < -e || u > 1 + e) return null
+  return [a1[0] + t * rx, a1[1] + t * rz]
+}
+
+/**
+ * Every place tray runs join: a polyline's own corners, plus wherever two
+ * different trays tee or cross.
+ *
+ * Each segment is drawn as a full-length basket, so at a junction two baskets
+ * simply shot through each other — rails overshooting past the corner, rungs
+ * crossing in mid-air. Knowing the joints lets the rails stop short and a
+ * junction plate bridge the gap, the way fabricated tray actually turns.
+ */
+export interface TrayJunction {
+  /** World position of the joint (x, z). */
+  at: [number, number]
+  /** Ids of the trays that meet here — the first one styles the plate. */
+  trayIds: string[]
+}
+
+export function trayJunctions(
+  plan: ScenePayload["plan"],
+  trays: SceneTray[]
+): TrayJunction[] {
+  const out: TrayJunction[] = []
+  const byKey = new Map<string, TrayJunction>()
+  const add = (p: [number, number], ...ids: string[]) => {
+    // Dedupe to the millimetre — a crossing found from both trays is one
+    // joint, and it remembers every run that lands on it.
+    const key = `${Math.round(p[0] * 1000)}:${Math.round(p[1] * 1000)}`
+    let j = byKey.get(key)
+    if (!j) {
+      j = { at: p, trayIds: [] }
+      byKey.set(key, j)
+      out.push(j)
+    }
+    for (const id of ids) if (!j.trayIds.includes(id)) j.trayIds.push(id)
+  }
+
+  const world = trays.map((t) =>
+    t.points.map((p) => cellToWorld(plan, p[0], p[1]))
+  )
+  // A polyline's own interior vertices are corners by definition.
+  world.forEach((pts, t) => {
+    for (let i = 1; i < pts.length - 1; i++) add(pts[i], trays[t].id)
+  })
+  // …and every tee or crossing BETWEEN trays.
+  for (let a = 0; a < world.length; a++) {
+    for (let b = a + 1; b < world.length; b++) {
+      for (let i = 0; i < world[a].length - 1; i++) {
+        for (let j = 0; j < world[b].length - 1; j++) {
+          const hit = segmentCrossing(
+            world[a][i],
+            world[a][i + 1],
+            world[b][j],
+            world[b][j + 1]
+          )
+          if (hit) add(hit, trays[a].id, trays[b].id)
+        }
+      }
+    }
+  }
+  return out
+}
+
+/** The tallest cabinet top in the room (m) — what a tray-less run must clear. */
+export function tallestRackTopM(scene: ScenePayload): number {
+  let top = 0
+  for (const t of scene.tiles) {
+    if (!t.rack) continue
+    top = Math.max(top, rackFootprintM(t.rack).height)
+  }
+  return top
+}
+
+/**
+ * Ride height for a run that follows NO tray — over the cabinets, under the
+ * ceiling.
+ *
+ * The old constant was two thirds of the ceiling: 1.98 m in a 3 m room, which
+ * is BELOW the top of a 42U cabinet (~1.97 m plus its cap). Every
+ * point-to-point run therefore flew at cabinet height and sliced diagonally
+ * through every rack between its ends. Clearing the tallest cabinet keeps the
+ * abstract "no duct assigned" read without driving cable through steel.
+ */
+export function freeAirRideY(scene: ScenePayload, lift = 0): number {
+  const ceiling = mm(scene.plan.ceiling_mm)
+  const overRacks = tallestRackTopM(scene) + 0.3
+  const headroom = Math.max(0.15, ceiling - 0.12)
+  return Math.min(headroom, Math.max(ceiling * 0.66, overRacks) + lift)
+}
+
+/**
  * Cable jacket radius (m) by kind — power reads fatter than fibre.
  *
  * These are deliberately a shade over life size (a real Cat6 is ~3 mm radius)

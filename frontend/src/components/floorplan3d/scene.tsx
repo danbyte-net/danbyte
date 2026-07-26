@@ -46,13 +46,15 @@ import { RackMesh } from "./rack-mesh"
 import type { Sel, ShellMode } from "./rack-mesh"
 import { RaisedFloorMesh } from "./raised-floor-mesh"
 import { TileGhostMesh } from "./tile-ghost-mesh"
-import { TrayMesh } from "./tray-mesh"
+import { TrayJunctionMesh, TrayMesh } from "./tray-mesh"
 import { WallMesh } from "./wall-mesh"
 import { useScene } from "./use-scene"
 import {
   cellToWorld,
   rackFootprintM,
   rackViewpoint,
+  trayElevationM,
+  trayJunctions,
   webglSupported,
   type SceneDevice,
   type SceneTile,
@@ -344,6 +346,10 @@ export default function FloorScene3D({
   const [w, d] = cellToWorld(plan, plan.grid_width, plan.grid_height)
   const rackTiles = data.tiles.filter((t) => t.kind === "rack" && t.rack)
   const diag = Math.max(w, d)
+  // Corners, tees and crossings across every tray — rails trim back to these
+  // and a plate bridges each one.
+  const trayJoints = trayJunctions(plan, data.trays)
+  const trayJointPoints = trayJoints.map((j) => j.at)
   // Effects budget: Low = no shadows/AO and a capped dpr, Medium = shadows,
   // High = shadows + ambient occlusion. "auto" asks the GPU once.
   const rq: RenderQuality = quality === "auto" ? detectRenderQuality() : quality
@@ -486,9 +492,12 @@ export default function FloorScene3D({
             depthWrite=false ghosts never smudge it. */}
         {rq === "high" && (
           <EffectComposer multisampling={4}>
+            {/* Contact shading, not a black wash. intensity 3 (triple the
+                default) buried every large dark surface: the zinc walls went
+                solid black on High and read as having disappeared. */}
             <N8AO
-              aoRadius={0.5}
-              intensity={3}
+              aoRadius={0.4}
+              intensity={1.1}
               distanceFalloff={0.6}
               quality="performance"
               halfRes
@@ -527,6 +536,7 @@ export default function FloorScene3D({
             plan={plan}
             tray={tr}
             areas={scene.data.raised_floors}
+            junctions={trayJointPoints}
             selected={traySel === tr.id}
             onSelect={(id) => {
               setSelection(null)
@@ -535,6 +545,20 @@ export default function FloorScene3D({
             }}
           />
         ))}
+        {/* One plate per joint, at scene level: a crossing belongs to both
+            runs, so drawing it per tray would stack two in one place. */}
+        {trayJoints.map((j, i) => {
+          const owner = data.trays.find((t) => t.id === j.trayIds[0])
+          if (!owner) return null
+          return (
+            <TrayJunctionMesh
+              key={`joint-${i}`}
+              at={j.at}
+              y={trayElevationM(plan, owner, scene.data.raised_floors)}
+              color={owner.color || undefined}
+            />
+          )
+        })}
         {(scene.data.raised_floors ?? []).map((a) => (
           <RaisedFloorMesh
             key={a.id}

@@ -422,7 +422,15 @@ function OutlineShell({ w, h, d }: { w: number; h: number; d: number }) {
 /** Corner-post size and how far posts sit in from the outer planes. */
 const POST = 0.05
 const POST_INSET = 0.006
-/** Top/base overhang past the panel planes. */
+/**
+ * Top/base overhang past the panel planes — on the DEPTH axis only.
+ *
+ * The lip used to run all four sides, which meant two cabinets bayed side by
+ * side overlapped each other's caps by 12 mm: intersecting geometry that
+ * z-fights and flickers as the camera moves. Real cabinets in a row butt
+ * flush, so the width axis gets no lip and the front/rear lip (where it
+ * actually reads) stays.
+ */
 const CAP_LIP = 0.012
 
 /**
@@ -468,12 +476,8 @@ function Shell({
   return (
     <group>
       {/* Top cap + plinth overhang everything below them. */}
-      {steel("top", [0, h - t / 2, 0], [w + CAP_LIP, t, d + CAP_LIP])}
-      {steel(
-        "base",
-        [0, RACK_BASE_M / 2, 0],
-        [w + CAP_LIP, RACK_BASE_M, d + CAP_LIP]
-      )}
+      {steel("top", [0, h - t / 2, 0], [w, t, d + CAP_LIP])}
+      {steel("base", [0, RACK_BASE_M / 2, 0], [w, RACK_BASE_M, d + CAP_LIP])}
       {mode === "cutaway" ? (
         <>
           {steel("p1", [-px, h / 2, -pz], [POST, h - t, POST])}

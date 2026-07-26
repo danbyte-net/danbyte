@@ -17,12 +17,16 @@ import {
   deviceViewpoint,
   deviceYM,
   filletPath,
+  freeAirRideY,
   offsetPolyline,
   rackFootprintM,
   rackViewpoint,
+  segmentCrossing,
   sideStripBoxM,
+  tallestRackTopM,
   TRAY_H_M,
   trayElevationM,
+  trayJunctions,
   trayRideY,
   underfloorMM,
   wallDoorSpans,
@@ -656,6 +660,109 @@ describe("trayRideY — cables ride IN the basket, not inside the tin", () => {
     const high = trayRideY(datum, 0.02)
     expect(high).toBeGreaterThan(low)
     expect(high).toBeLessThan(datum + TRAY_H_M / 2)
+  })
+})
+
+describe("segmentCrossing + trayJunctions — where tray runs actually meet", () => {
+  const tray = (id: string, points: [number, number][]): SceneTray => ({
+    id,
+    name: id,
+    kind: "",
+    color: "",
+    level: "overhead",
+    elevation_mm: null,
+    points,
+    cable_count: 0,
+  })
+
+  it("finds a true crossing", () => {
+    const hit = segmentCrossing([0, 0], [10, 0], [5, -5], [5, 5])
+    expect(hit).not.toBeNull()
+    expect(hit![0]).toBeCloseTo(5)
+    expect(hit![1]).toBeCloseTo(0)
+  })
+
+  it("counts a tee — one run ENDING on another", () => {
+    expect(segmentCrossing([0, 0], [10, 0], [5, 0], [5, 6])).not.toBeNull()
+  })
+
+  it("ignores parallel runs and misses", () => {
+    expect(segmentCrossing([0, 0], [10, 0], [0, 2], [10, 2])).toBeNull()
+    expect(segmentCrossing([0, 0], [4, 0], [8, -5], [8, 5])).toBeNull()
+  })
+
+  it("treats a polyline's own interior vertices as corners", () => {
+    const js = trayJunctions(plan, [
+      tray("a", [
+        [0, 0],
+        [8, 0],
+        [8, 6],
+      ]),
+    ])
+    expect(js).toHaveLength(1)
+    // Cell (8,0) at 600 mm cells → 4.8 m east, 0 south.
+    expect(js[0].at[0]).toBeCloseTo(4.8)
+    expect(js[0].trayIds).toEqual(["a"])
+  })
+
+  it("reports a crossing ONCE, naming both runs", () => {
+    const js = trayJunctions(plan, [
+      tray("a", [
+        [0, 4],
+        [10, 4],
+      ]),
+      tray("b", [
+        [5, 0],
+        [5, 8],
+      ]),
+    ])
+    expect(js).toHaveLength(1)
+    expect(js[0].trayIds.sort()).toEqual(["a", "b"])
+  })
+
+  it("finds nothing when runs never meet", () => {
+    expect(
+      trayJunctions(plan, [
+        tray("a", [
+          [0, 0],
+          [4, 0],
+        ]),
+        tray("b", [
+          [0, 6],
+          [4, 6],
+        ]),
+      ])
+    ).toEqual([])
+  })
+})
+
+describe("freeAirRideY — a tray-less run flies OVER the cabinets", () => {
+  const sceneWith = (rackU: number): ScenePayload =>
+    ({
+      plan,
+      tiles: [{ rack: rack({ u_height: rackU }) }],
+      trays: [],
+      raised_floors: [],
+    }) as unknown as ScenePayload
+
+  it("clears a 42U cabinet by a real margin, not by millimetres", () => {
+    const s = sceneWith(42)
+    const rackTop = tallestRackTopM(s)
+    // The bug: 3 m ceiling × 2/3 = 1.98 m against a 1.967 m cabinet top —
+    // 13 mm of "clearance", which the cap lip and the lane lift eat, so runs
+    // grazed and cut through every cabinet between their ends.
+    expect((plan.ceiling_mm / 1000) * 0.66 - rackTop).toBeLessThan(0.02)
+    expect(freeAirRideY(s) - rackTop).toBeGreaterThan(0.25)
+  })
+
+  it("stays under the ceiling even with a tall rack and a lane lift", () => {
+    const s = sceneWith(52)
+    expect(freeAirRideY(s, 0.03)).toBeLessThan(plan.ceiling_mm / 1000)
+  })
+
+  it("still flies high in a room with no racks at all", () => {
+    const empty = { plan, tiles: [], trays: [] } as unknown as ScenePayload
+    expect(freeAirRideY(empty)).toBeCloseTo((plan.ceiling_mm / 1000) * 0.66)
   })
 })
 

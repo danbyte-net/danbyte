@@ -107,13 +107,23 @@ export function Room({
           <ZonePatch key={t.id} plan={plan} tile={t} />
         ))}
       {ceiling && !xray && (
+        // Faces DOWN, so it encloses the room from inside and never blocks
+        // the bird's-eye. It also has to be light enough to SEE from below:
+        // the key light sits above it, so the underside gets ambient only —
+        // at near-black (#1c1c1f) it was indistinguishable from the empty
+        // background and read as "the ceiling toggle does nothing".
         <mesh
           rotation={[Math.PI / 2, 0, 0]}
           position={[w / 2, mm(plan.ceiling_mm), d / 2]}
           raycast={() => null}
         >
           <planeGeometry args={[w, d]} />
-          <meshStandardMaterial color="#1c1c1f" roughness={0.95} />
+          <meshStandardMaterial
+            color="#4b4b52"
+            roughness={0.95}
+            emissive="#4b4b52"
+            emissiveIntensity={0.12}
+          />
         </mesh>
       )}
     </group>

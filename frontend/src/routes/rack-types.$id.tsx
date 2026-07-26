@@ -477,9 +477,9 @@ function AccessoryDialog({
   )
 }
 
-/** Racks built as this model. */
+/** Racks built as this model, and a one-click way to add another. */
 function RacksOfTypePane({ rackTypeId }: { rackTypeId: string }) {
-  const { humanIds } = useMe()
+  const { canDo, humanIds } = useMe()
   const q = useQuery({
     queryKey: ["racks", { rack_type: rackTypeId }],
     queryFn: () => api<Paginated<Rack>>(`/api/racks/?rack_type=${rackTypeId}`),
@@ -492,15 +492,36 @@ function RacksOfTypePane({ rackTypeId }: { rackTypeId: string }) {
       }),
     [humanIds]
   )
-  if (q.isError) return <QueryError error={q.error} />
   const rows = q.data?.results ?? []
-  if (q.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
-  if (rows.length === 0)
-    return (
-      <p className="text-sm text-muted-foreground">
-        No racks use this type yet — pick it on a rack's form.
-      </p>
-    )
-  return <DataTable data={rows} columns={columns} tableId="rack-type-racks" />
+  // Lands on the rack form with this model already picked and its dims filled.
+  const addButton = canDo("rack", "add") ? (
+    <Button size="sm" asChild>
+      <Link to="/racks/new" search={{ rack_type: rackTypeId }}>
+        <Plus className="h-3.5 w-3.5" /> Add rack
+      </Link>
+    </Button>
+  ) : null
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+          Racks of this type
+        </h3>
+        {addButton}
+      </div>
+      {q.isError ? (
+        <QueryError error={q.error} />
+      ) : q.isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No racks use this type yet — add one here, or pick the type on any
+          rack's form.
+        </p>
+      ) : (
+        <DataTable data={rows} columns={columns} tableId="rack-type-racks" />
+      )}
+    </section>
+  )
 }
