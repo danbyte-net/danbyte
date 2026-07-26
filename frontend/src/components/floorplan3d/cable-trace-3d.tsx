@@ -62,6 +62,10 @@ interface EndRun {
   railAt: (y: number) => Vec3
 }
 
+/** The traced run draws last and ignores depth — above the glass and ghosts
+ * that TRANSPARENT_ORDER sequences, so nothing in the room can hide it. */
+const TRACE_ORDER = 10
+
 /** Outlet spacing down a vertical PDU strip (m) — about a real C13 pitch, so
  * 24 outlets cover roughly the strip's outlet field. Replace with per-outlet
  * markers once the scene payload carries them. */
@@ -505,6 +509,13 @@ function MarchingLine({
       dashed
       dashSize={0.25}
       gapSize={0.12}
+      // A trace has to be followable through the room, and a run between two
+      // rows spends most of its length behind a cabinet. Depth-testing it
+      // meant the answer to "where does this cable go" was hidden by the very
+      // gear you are asking about. It draws over everything instead, last, so
+      // it reads as an overlay on the room rather than an object in it.
+      depthTest={false}
+      renderOrder={TRACE_ORDER}
     />
   )
 }
