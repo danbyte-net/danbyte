@@ -248,10 +248,16 @@ describe("airflowGlyphPlacements", () => {
     expect(g.map((x) => x.kind).sort()).toEqual(["exhaust", "intake"])
   })
 
-  it("glyphs sit at the device's vertical centre", () => {
+  it("glyphs ride the top edge, clear of the port field", () => {
+    // Centred on the face they covered the ports — head-on a cone reads as a
+    // fat disc. They must sit in the top slice of the unit and stay inside it.
     const b = box()
-    for (const x of airflowGlyphPlacements("front-to-rear", b))
-      expect(x.pos[1]).toBeCloseTo(b.y + b.h / 2)
+    const placements = airflowGlyphPlacements("front-to-rear", b)
+    expect(placements.length).toBeGreaterThan(0)
+    for (const x of placements) {
+      expect(x.pos[1]).toBeGreaterThan(b.y + b.h * 0.7)
+      expect(x.pos[1]).toBeLessThanOrEqual(b.y + b.h)
+    }
   })
 })
 

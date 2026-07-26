@@ -346,9 +346,9 @@ export interface AirflowGlyph {
 
 /** Cone size as a fraction of the device's box height, and the floor/ceiling
  * that keeps a 0U strip's cue visible and a 10U chassis's cue sane. */
-const GLYPH_H_FRAC = 0.42
+const GLYPH_H_FRAC = 0.2
 const GLYPH_MIN_M = 0.012
-const GLYPH_MAX_M = 0.05
+const GLYPH_MAX_M = 0.024
 
 /** Unit-cone height the scale multiplies (keep in step with the geometry in
  * airflow-glyphs.tsx, which builds a cone of exactly this height). */
@@ -376,7 +376,11 @@ export function airflowGlyphPlacements(
   box: ReturnType<typeof deviceBoxM>
 ): AirflowGlyph[] {
   if (!airflow || airflow === "passive") return []
-  const midY = box.y + box.h / 2
+  // Ride the TOP EDGE of the unit, not its middle. Centred on the face these
+  // sat straight on the port field — head-on a cone reads as a fat disc, and a
+  // rack of them made faceplates unreadable (reported twice). An airflow cue
+  // annotates a unit; it must never be the thing you see instead of it.
+  const midY = box.y + box.h - airflowGlyphSizeM(box.boxH) * 0.6
   // Cone size — and therefore its standoff — follow the device, so the cue
   // never outgrows the gear or lands on top of the faceplate's ports.
   const size = airflowGlyphSizeM(box.boxH)
