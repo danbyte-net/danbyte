@@ -88,12 +88,12 @@ uploaded blueprint textures it.
   size, so a closet and a 400-rack hall take about the same number of ticks
   end to end.
 - **Cabinet shell** (View menu, 3D): a three-position mode, not a checkbox.
-  **Solid** closes every cabinet — side panels plus perforated mesh doors
-  front and rear — the room as a visitor sees it. **Cutaway** (the default)
-  strips doors and side panels down to the corner-post frame so whole rows
-  read through, and drops walls to knee height so the room's bounds stay
-  visible without boxing the view in. **X-ray** ghosts the shells, the
-  walls and the floor, lifts every raised floor, and fades all devices
+  **Solid** closes every cabinet — side panels plus smoked-glass doors
+  front and rear, so the gear reads as silhouettes — the room as a visitor
+  sees it. **Cutaway** (the default) strips doors and side panels down to
+  the corner-post frame so whole rows read through. **X-ray** keeps the
+  open frame up close and draws distant cabinets as bare outlines, ghosts
+  the walls and floor, lifts every raised floor, and fades all devices
   except the selected one — the view for following copper through tin.
   The shell mode is independent of draw distance: how much detail a far
   cabinet gets is still the renderer's business.
@@ -101,12 +101,12 @@ uploaded blueprint textures it.
   selection stays lit and everything else drops to a faint ghost. Click
   another cabinet to move the spotlight; ++esc++ (or clicking empty floor)
   lifts it.
-- **Isolate**: click a **zone** on the floor to hide everything standing
-  outside it, or use **Isolate row** on a rack's card to keep just that
-  row (the row axis is detected from how the hall actually lines up). A
-  pill at the bottom shows what's isolated; ++esc++ or **Show all**
-  restores the room. Isolation hides tiles outright — ghosts are for
-  focus, absence is for isolation.
+- **Isolate**: on a selected rack's card, **Isolate row** keeps just that
+  row (the row axis is detected from how the hall actually lines up) and
+  **Isolate zone** — offered when the rack stands in a zone — keeps
+  everything inside that zone. A pill at the bottom shows what's isolated;
+  ++esc++ or **Show all** restores the room. Isolation hides tiles
+  outright — ghosts are for focus, absence is for isolation.
 - **View rear** on a rack's card flips the camera to the cabinet's other
   face — the same framing as a double-click fly-to, mirrored through the
   rack — and flips back with **View front**.

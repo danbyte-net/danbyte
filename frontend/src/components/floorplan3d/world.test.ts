@@ -7,7 +7,6 @@ import {
   DOOR_DEFAULT_MM,
   RACK_BASE_M,
   airflowGlyphPlacements,
-  capWallBoxes,
   cellToWorld,
   deviceBoxM,
   deviceYM,
@@ -463,24 +462,6 @@ describe("rackViewpoint — one math for double-click fly-to and the rear flip",
     expect(
       Math.hypot(position[0] - target[0], position[2] - target[2])
     ).toBeCloseTo(2.2)
-  })
-})
-
-describe("capWallBoxes — Cutaway's knee-high walls", () => {
-  const box = (y0: number, y1: number) => ({
-    x0: 0,
-    z0: 0,
-    x1: 4,
-    z1: 0,
-    y0,
-    y1,
-  })
-
-  it("clamps spans to the cap and drops boxes entirely above it", () => {
-    const capped = capWallBoxes([box(0, 3), box(2.1, 3), box(0, 0.4)], 0.6)
-    expect(capped).toHaveLength(2)
-    expect(capped[0].y1).toBe(0.6)
-    expect(capped[1].y1).toBe(0.4) // already under the cap — untouched
   })
 })
 

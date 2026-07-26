@@ -264,11 +264,12 @@ export default function FloorScene3D({
       return
     }
     setCableSel(null)
-    setSelection((prev) => {
-      // A different cabinet resets the flip — you arrive at its front.
-      if (prev?.tileId !== sel.tileId) setViewSide("front")
-      return sel
-    })
+    // A different cabinet resets the flip — you arrive at its front. (Plain
+    // sequential setState: the first version nested this inside the
+    // setSelection updater, and a state update from inside an updater is a
+    // render-phase side effect React is allowed to double-fire.)
+    if (selection?.tileId !== sel.tileId) setViewSide("front")
+    setSelection(sel)
   }
 
   // Esc cancels an in-flight connect.
@@ -350,6 +351,9 @@ export default function FloorScene3D({
   // Pure client state: a set of tile ids that stay mounted, everything else
   // unmounts (hidden racks can't be raycast, so nothing invisible eats
   // clicks). Zones and the room shell always stay — they are the context.
+  // Entry points live on the rack HUD: a first version made zone patches
+  // clickable, and every empty-floor click inside a zone isolated instead
+  // of deselecting.
   const nonZoneTiles = data.tiles.filter((t) => !t.is_zone)
   const isolateZone = (zone: SceneTile) => {
     const ids = new Set(
@@ -367,13 +371,25 @@ export default function FloorScene3D({
       toast.info("Nothing stands in that zone yet.")
       return
     }
-    setSelection(null)
-    setFocusOn(false)
     setIsolation({
       label: zone.label || zone.type_name || "zone",
       ids,
     })
   }
+  // Zones the selected rack stands in, most specific (smallest) first —
+  // powers the HUD's "Isolate zone".
+  const zonesForSelected = selTile
+    ? data.tiles
+        .filter(
+          (z) =>
+            z.is_zone &&
+            selTile.x < z.x + z.w &&
+            z.x < selTile.x + selTile.w &&
+            selTile.y < z.y + z.h &&
+            z.y < selTile.y + selTile.h
+        )
+        .sort((a, b) => a.w * a.h - b.w * b.h)
+    : []
   const isolateRow = (anchor: SceneTile) => {
     // A row is whichever axis the hall actually runs: the alignment
     // (same-y vs same-x) that catches more racks wins.
@@ -470,11 +486,7 @@ export default function FloorScene3D({
             />
           </EffectComposer>
         )}
-        <Room
-          scene={data}
-          xray={shellMode === "xray"}
-          onZoneClick={isolateZone}
-        />
+        <Room scene={data} xray={shellMode === "xray"} />
         {shownRacks.map((t) => (
           <RackMesh
             key={t.id}
@@ -523,13 +535,7 @@ export default function FloorScene3D({
               key={wl.id}
               plan={plan}
               wall={wl}
-              mode={
-                shellMode === "xray"
-                  ? "ghost"
-                  : shellMode === "cutaway"
-                    ? "knee"
-                    : "solid"
-              }
+              mode={shellMode === "xray" ? "ghost" : "solid"}
             />
           ))}
         {/* Unlinked / non-rack tiles as ghost massing — a typed tile holds
@@ -572,6 +578,11 @@ export default function FloorScene3D({
           onToggleFocus={() => setFocusOn((v) => !v)}
           onFlip={flipView}
           onIsolateRow={() => isolateRow(selTile)}
+          onIsolateZone={
+            zonesForSelected.length > 0
+              ? () => isolateZone(zonesForSelected[0])
+              : undefined
+          }
         />
       )}
       {selTile && selDevice && selection?.kind === "device" && (
@@ -871,6 +882,7 @@ function RackHud({
   onToggleFocus,
   onFlip,
   onIsolateRow,
+  onIsolateZone,
 }: {
   tile: SceneTile
   liveState: FloorPlanLiveState | null
@@ -879,6 +891,8 @@ function RackHud({
   onToggleFocus: () => void
   onFlip: () => void
   onIsolateRow: () => void
+  /** Present only when the rack stands in a zone (smallest zone wins). */
+  onIsolateZone?: () => void
 }) {
   const rack = tile.rack!
   const live = liveState?.tiles[tile.id]
@@ -918,15 +932,28 @@ function RackHud({
           {viewSide === "front" ? "View rear" : "View front"}
         </Button>
       </div>
-      <Button
-        size="sm"
-        variant="outline"
-        className="mt-1.5 h-7 w-full"
-        onClick={onIsolateRow}
-        title="Hide everything outside this rack's row (Esc restores)"
-      >
-        Isolate row
-      </Button>
+      <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+        <Button
+          size="sm"
+          variant="outline"
+          className={onIsolateZone ? "h-7" : "col-span-2 h-7"}
+          onClick={onIsolateRow}
+          title="Hide everything outside this rack's row (Esc restores)"
+        >
+          Isolate row
+        </Button>
+        {onIsolateZone && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7"
+            onClick={onIsolateZone}
+            title="Hide everything outside this rack's zone (Esc restores)"
+          >
+            Isolate zone
+          </Button>
+        )}
+      </div>
       <Button size="sm" variant="outline" asChild className="mt-1.5 h-7 w-full">
         <Link to="/racks/$id" params={{ id: rack.id }}>
           Open rack →
