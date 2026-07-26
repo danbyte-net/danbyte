@@ -242,10 +242,16 @@ export function cableRunPoints(
   const A = endRun(cp.a_points, cp.a_tiles[0])
   const B = endRun(cp.b_points, cp.b_tiles[0])
 
-  // Same rack (or same tile): port → corner → corner → port, no room trip —
-  // filleted so the patch lead droops like a lead, not a wire sculpture.
+  // Same rack (or same tile): a short patch lead — port → stub → stub → port,
+  // filleted so it droops like a lead. It does NOT visit the corner channels:
+  // those sit outside the rack edges, so a PSU→PDU cord that took both looped
+  // right across the cabinet and out both sides (the "big loops"). The corner
+  // channel is for runs that actually LEAVE the rack. `entry` is
+  // [port, stub, corner]; the first two points keep it hugging the gear.
   if (cp.a_tiles[0] === cp.b_tiles[0]) {
-    return filletPath([...A.entry, ...[...B.entry].reverse()], 0.08)
+    const aShort = A.entry.slice(0, 2)
+    const bShort = B.entry.slice(0, 2)
+    return filletPath([...aShort, ...[...bShort].reverse()], 0.05)
   }
 
   const trays = scene.trays.filter((t) => cp.tray_ids.includes(t.id))
