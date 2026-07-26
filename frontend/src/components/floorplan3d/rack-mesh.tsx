@@ -189,6 +189,16 @@ export function RackMesh({
   // noise); x-ray keeps them — it is still the room, just opened up.
   const showOverlays = tier === "detail" && !ghosted
 
+  // Live port + SNMP resolution is TWO fetches per device, and it used to fire
+  // for every device in the detail tier. In a full hall that is ~1000 XHRs at
+  // once: Chrome runs out of resource slots (ERR_INSUFFICIENT_RESOURCES) and
+  // the main thread spends the frame budget on fetch/JSON/query churn instead
+  // of drawing. Only the cabinet the operator has actually engaged with —
+  // selected, or holding the focused device — resolves it. That caps the
+  // traffic at one rack's worth (~24 devices) no matter how big the room is.
+  const engaged = selection?.tileId === tile.id || focusDeviceId != null
+  const liveData = tier === "detail" && !ghosted && engaged
+
   return (
     <group
       position={[cx, 0, cz]}
@@ -258,6 +268,7 @@ export function RackMesh({
                 }
                 showTexture={!devGhost}
                 viewRear={viewRear}
+                livePorts={liveData}
                 onLegend={onLegend}
                 onZoomTo={(target) => {
                   // Same fly-to channel the rack's own double-click uses,

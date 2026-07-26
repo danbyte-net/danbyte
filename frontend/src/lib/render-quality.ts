@@ -8,11 +8,16 @@
  * control, and the 3D stack must stay in its own lazy chunk.
  */
 
-export type RenderQuality = "low" | "medium" | "high"
+/** `flat` is the escape hatch: no lights, no shadow pass, no environment
+ * probe — every surface renders at its own colour. It exists so "is the light
+ * rig what's slow?" is a question you can answer by clicking one menu item
+ * instead of taking someone's word for it. */
+export type RenderQuality = "flat" | "low" | "medium" | "high"
 export type RenderQualitySetting = "auto" | RenderQuality
 
 export const RENDER_QUALITY_SETTINGS = [
   "auto",
+  "flat",
   "low",
   "medium",
   "high",
