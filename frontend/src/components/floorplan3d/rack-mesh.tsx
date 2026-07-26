@@ -7,6 +7,7 @@ import type { FloorTileCheck } from "@/lib/api"
 import type { LegendReporter } from "@/components/speed-scale"
 
 import { AirflowGlyphs } from "./airflow-glyphs"
+import { DeviceInstances } from "./device-instances"
 import { DeviceMesh } from "./device-mesh"
 import { SideStripMesh } from "./side-strip-mesh"
 import { RackRuler } from "./rack-ruler"
@@ -20,8 +21,9 @@ import {
   deviceYM,
   rackFootprintM,
   rackViewpoint,
+  tierFor,
 } from "./world"
-import type { ScenePayload, SceneTile } from "./world"
+import type { ScenePayload, SceneTile, Tier } from "./world"
 
 /** Monitoring worst-status → beacon color (same semantics as the 2D rings). */
 const CHECK_COLOR: Record<string, string> = {
@@ -57,9 +59,10 @@ export interface Sel {
 }
 
 /**
- * One rack cabinet at its tile position. Two LOD tiers:
+ * One rack cabinet at its tile position. Three LOD tiers (see `tierFor`):
  *  - far: a single frame box + name plate (cheap — scales to large rooms)
- *  - near: shell per `shellMode` + one clickable box per racked device at
+ *  - mid: that frame plus every device in ONE instanced draw call
+ *  - detail: shell per `shellMode` + one clickable box per racked device at
  *    true U position/size, wearing its device-type face image
  *
  * Shell modes: solid = side panels + smoked-glass doors; cutaway = open
@@ -124,11 +127,13 @@ export function RackMesh({
   // Distance is measured to the cabinet's SURFACE (centre minus half its
   // diagonal), not its centre — centre-distance made big/edge-of-room racks
   // flip tiers later than they looked, reading as "devices missing up close".
-  // Wide hysteresis (18 in / 24 out) kills popping while orbiting at the
-  // threshold; with the demand frameloop this runs only on frames the
-  // controls already trigger.
-  const [near, setNear] = useState(false)
-  const nearRef = useRef(false)
+  // `tierFor` carries the hysteresis that keeps orbiting on a boundary from
+  // strobing; with the demand frameloop this runs only on frames the controls
+  // already trigger.
+  const [tier, setTier] = useState<Tier>("far")
+  const tierRef = useRef<Tier>("far")
+  const [viewRear, setViewRear] = useState(false)
+  const viewRearRef = useRef(false)
   const centre = useMemo(
     () => new THREE.Vector3(cx, height / 2, cz),
     [cx, cz, height]
@@ -139,15 +144,25 @@ export function RackMesh({
   )
   useFrame(({ camera }) => {
     const dist = camera.position.distanceTo(centre) - halfDiag
-    // 18/24 m was tuned on a handful of half-empty cabinets. In a hall of
-    // FULL racks that admitted most of the room to the near tier at once —
-    // 24 devices each, every one a box plus an edge outline plus a textured
-    // faceplate. 12/16 m still covers two or three rows, which is as much
-    // detail as anyone reads at once.
-    const next = dist < (nearRef.current ? 16 : 12)
-    if (next !== nearRef.current) {
-      nearRef.current = next
-      setNear(next)
+    const next = tierFor(dist, tierRef.current)
+    if (next !== tierRef.current) {
+      tierRef.current = next
+      setTier(next)
+    }
+    // Which side of the cabinet the eye is on. The rack group is turned by
+    // rotY and its front plane faces local −Z, so the world-space front
+    // normal is (−sin, 0, −cos). Normalised dot with a dead band, or the
+    // panels would thrash while the camera slides along the row.
+    const vx = camera.position.x - centre.x
+    const vz = camera.position.z - centre.z
+    const len = Math.hypot(vx, vz)
+    if (len > 1e-6) {
+      const d = (vx * -Math.sin(rotY) + vz * -Math.cos(rotY)) / len
+      const rear = viewRearRef.current ? d < 0.05 : d < -0.05
+      if (rear !== viewRearRef.current) {
+        viewRearRef.current = rear
+        setViewRear(rear)
+      }
     }
   })
 
@@ -172,7 +187,7 @@ export function RackMesh({
 
   // Focus-ghosted cabinets drop their overlays (labels on a ghost read as
   // noise); x-ray keeps them — it is still the room, just opened up.
-  const showOverlays = near && !ghosted
+  const showOverlays = tier === "detail" && !ghosted
 
   return (
     <group
@@ -205,7 +220,7 @@ export function RackMesh({
           color={frameColor}
           ghostOpacity={FOCUS_GHOST_OPACITY}
         />
-      ) : near ? (
+      ) : tier === "detail" ? (
         <group>
           {/* X-ray up close = the open cutaway frame; the see-through story
               is told by the ghosted DEVICES, not by transparent tin. */}
@@ -242,6 +257,7 @@ export function RackMesh({
                     : null
                 }
                 showTexture={!devGhost}
+                viewRear={viewRear}
                 onLegend={onLegend}
                 onZoomTo={(target) => {
                   // Same fly-to channel the rack's own double-click uses,
@@ -273,10 +289,23 @@ export function RackMesh({
             )
           })}
         </group>
-      ) : xray ? (
-        <OutlineShell w={width} h={height} d={depth} />
       ) : (
-        <Frame w={width} h={height} d={depth} color={frameColor} />
+        <group>
+          {xray ? (
+            <OutlineShell w={width} h={height} d={depth} />
+          ) : (
+            <Frame w={width} h={height} d={depth} color={frameColor} />
+          )}
+          {/* Mid range: the gear is there, in one draw call, unreadable. */}
+          {tier === "mid" && (
+            <DeviceInstances
+              rack={rack}
+              devices={positioned}
+              rackWidthM={width}
+              rackDepthM={depth}
+            />
+          )}
+        </group>
       )}
       {!ghosted &&
         mounted.map((d) => (

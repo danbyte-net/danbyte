@@ -627,6 +627,31 @@ const STRIP_CLEARANCE_M = 0.008
  * can't hang a PDU in one — and the render should say so rather than
  * pretend.
  */
+/** How much of a cabinet's contents the room draws at a given range. */
+export type Tier = "detail" | "mid" | "far"
+
+/** Metres (surface distance, not centre) at which each tier takes over, with
+ * hysteresis so orbiting on a boundary can't strobe. */
+const TIER_IN = { detail: 7, mid: 26 }
+const TIER_OUT = { detail: 9, mid: 30 }
+
+/**
+ * Pick a cabinet's detail tier from its distance to the eye.
+ *
+ * Two tiers were not enough for a full hall. `detail` (a mesh, an outline, a
+ * photo plane and port quads per device) has to stay within a few metres or a
+ * hundred full cabinets is five figures of draw calls; but promoting straight
+ * from there to an empty frame left the room looking derelict from the door.
+ * `mid` fills that gap with one instanced draw call per cabinet — you see the
+ * gear, you just can't read it.
+ */
+export function tierFor(distM: number, current: Tier): Tier {
+  const detail = current === "detail" ? TIER_OUT.detail : TIER_IN.detail
+  if (distM < detail) return "detail"
+  const mid = current === "far" ? TIER_IN.mid : TIER_OUT.mid
+  return distM < mid ? "mid" : "far"
+}
+
 export function zeroUChannelM(rack: SceneRack): number {
   const opening = mm(OPENING_MM[rack.width] ?? PANEL_MM.opening)
   const { width } = rackFootprintM(rack)

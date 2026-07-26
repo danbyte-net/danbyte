@@ -31,7 +31,7 @@ import {
   type SceneRack,
 } from "./world"
 
-const DEVICE_FALLBACK = "#52525b"
+export const DEVICE_FALLBACK = "#52525b"
 const DEVICE_SELECTED = "#0ea5e9"
 /** Standing edge line — the box's silhouette, dark enough to read against
  * both a pale faceplate photo and a dark role colour. */
@@ -154,6 +154,7 @@ export function DeviceMesh({
   ghosted = false,
   selectedPort,
   showTexture,
+  viewRear,
   onSelect,
   onSelectPort,
   onZoomTo,
@@ -172,6 +173,9 @@ export function DeviceMesh({
   selectedPort?: string | null
   /** Near tier only — keeps image fetches away from far cabinets. */
   showTexture: boolean
+  /** True while the camera is behind the cabinet — picks which of the device's
+   * own panels (and which photo) is the one you can see. */
+  viewRear: boolean
   onSelect: (deviceId: string) => void
   /** A photo port was clicked — anchor for HUD + cable building. `side` is the
    * face the marker lives on (the device's mounted face). */
@@ -197,15 +201,22 @@ export function DeviceMesh({
     rackDepthM
   )
 
-  const imageUrl = mountedRear
-    ? (dev.rear_image ?? dev.front_image)
-    : (dev.front_image ?? dev.rear_image)
+  // Which of the device's OWN two panels the camera can see. A full-depth box
+  // on the front rail shows its front panel to the cold aisle and its REAR
+  // panel to whoever is standing behind the cabinet; a rear-mounted box is the
+  // other way round. Keying this off the mount face alone meant walking around
+  // to the hot aisle still showed you front photos, and rear images never
+  // rendered at all.
+  const showingFront = viewRear === mountedRear
+  const imageUrl = showingFront
+    ? (dev.front_image ?? dev.rear_image)
+    : (dev.rear_image ?? dev.front_image)
   const texture = useFaceTexture(showTexture ? imageUrl : null)
 
   // Resolve this device's markers to real ports (id + cabled state) so the
   // quads can be lit by connection status, not just drawn. Lazy: only near
   // (showTexture) devices that actually carry markers on the shown face.
-  const side = mountedRear ? "rear" : "front"
+  const side = showingFront ? "front" : "rear"
   // Memoized: the legend derives from these, and a fresh `[]` every render
   // would make it recompute (and re-report) forever.
   const markers = useMemo(() => dev.image_ports?.[side] ?? [], [dev, side])
@@ -337,11 +348,12 @@ export function DeviceMesh({
       {texture && (
         // The exposed face, textured with the device-type photo, plus any
         // photo-anchored port markers on top of it. Both share one frame
-        // (a hair off the box to dodge z-fighting); front faces −Z (the rack's
-        // front plane), rear faces +Z.
+        // (a hair off the box to dodge z-fighting). It sits on the side the
+        // camera is on, not the side the box is bolted to: the rack's front
+        // plane faces −Z, its rear +Z.
         <group
-          position={[0, 0, (dd / 2 + 0.002) * (mountedRear ? 1 : -1)]}
-          rotation={[0, mountedRear ? 0 : Math.PI, 0]}
+          position={[0, 0, (dd / 2 + 0.002) * (viewRear ? 1 : -1)]}
+          rotation={[0, viewRear ? 0 : Math.PI, 0]}
         >
           <mesh>
             <planeGeometry args={[dw, boxH]} />
