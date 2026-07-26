@@ -64,6 +64,9 @@ type Vec3 = [number, number, number]
 interface EndRun {
   entry: Vec3[]
   railAt: (y: number) => Vec3
+  /** Which face the lead exits — true = rear. Two same-face ends on one rack
+   * patch directly; opposite faces must wrap the side, not cut through. */
+  rear: boolean
 }
 
 /** The traced run draws last and ignores depth — above the glass and ghosts
@@ -127,6 +130,7 @@ function portEndRun(
         worldOf(scene, tile, chanX, p.y, stubZ),
       ],
       railAt: (y) => worldOf(scene, tile, chanX, y, stubZ),
+      rear: p.out === 1,
     }
   }
 
@@ -195,6 +199,7 @@ function portEndRun(
       world(chanX, ly, chanZ),
     ],
     railAt: (y) => world(chanX, y, chanZ),
+    rear: panelRear,
   }
 }
 
@@ -236,22 +241,34 @@ export function cableRunPoints(
       t ? t.x + t.w / 2 : 0,
       t ? t.y + t.h / 2 : 0
     )
-    return { entry: [[x, y, z]], railAt: (ry) => [x, ry, z] }
+    return { entry: [[x, y, z]], railAt: (ry) => [x, ry, z], rear: true }
   }
 
   const A = endRun(cp.a_points, cp.a_tiles[0])
   const B = endRun(cp.b_points, cp.b_tiles[0])
 
-  // Same rack (or same tile): a short patch lead — port → stub → stub → port,
-  // filleted so it droops like a lead. It does NOT visit the corner channels:
-  // those sit outside the rack edges, so a PSU→PDU cord that took both looped
-  // right across the cabinet and out both sides (the "big loops"). The corner
-  // channel is for runs that actually LEAVE the rack. `entry` is
-  // [port, stub, corner]; the first two points keep it hugging the gear.
+  // Same rack (or same tile). Two cases, told apart by the exit face:
+  //  · SAME face (both rear, e.g. a PSU→PDU cord): a short direct patch —
+  //    port → stub → stub → port. No corner channels (they sit outside the
+  //    rack edges, so taking both looped the lead across the cabinet — the
+  //    "big loops").
+  //  · OPPOSITE faces (front↔rear): a straight hop would spear through the
+  //    gear, so wrap the SIDE — port → stub → side corner (front depth) →
+  //    same-side corner (rear depth) → stub → port. Forcing both to ONE side
+  //    (A's) keeps it hugging that edge instead of crossing the cabinet.
   if (cp.a_tiles[0] === cp.b_tiles[0]) {
-    const aShort = A.entry.slice(0, 2)
-    const bShort = B.entry.slice(0, 2)
-    return filletPath([...aShort, ...[...bShort].reverse()], 0.05)
+    if (A.rear === B.rear) {
+      const aShort = A.entry.slice(0, 2)
+      const bShort = B.entry.slice(0, 2)
+      return filletPath([...aShort, ...[...bShort].reverse()], 0.05)
+    }
+    // A's side corner is entry[2]; run B's face down to that same X.
+    const aCorner = A.entry[2] ?? A.entry[A.entry.length - 1]
+    const bCorner: Vec3 = [aCorner[0], B.entry[0][1], A.entry[1][2]]
+    return filletPath(
+      [...A.entry, bCorner, ...[...B.entry.slice(0, 2)].reverse()],
+      0.06
+    )
   }
 
   const trays = scene.trays.filter((t) => cp.tray_ids.includes(t.id))
