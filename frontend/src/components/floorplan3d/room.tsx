@@ -4,8 +4,18 @@ import * as THREE from "three"
 import { cellToWorld, cellM, type ScenePayload, type SceneTile } from "./world"
 
 /** The room shell: floor slab, grid lines, optional blueprint texture, and
- * zone tiles painted flat on the floor. Everything static — one draw each. */
-export function Room({ scene }: { scene: ScenePayload }) {
+ * zone tiles painted flat on the floor. Everything static — one draw each.
+ * `xray` ghosts the slab so underfloor runs read through; `onZoneClick`
+ * makes zone patches clickable (the isolate-a-zone entry point). */
+export function Room({
+  scene,
+  xray = false,
+  onZoneClick,
+}: {
+  scene: ScenePayload
+  xray?: boolean
+  onZoneClick?: (tile: SceneTile) => void
+}) {
   const { plan } = scene
   const [w, d] = cellToWorld(plan, plan.grid_width, plan.grid_height)
 
@@ -24,14 +34,24 @@ export function Room({ scene }: { scene: ScenePayload }) {
 
   return (
     <group>
-      {/* Floor slab */}
+      {/* Floor slab — ghosted in x-ray so the plenum reads from above. */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
         position={[w / 2, -0.01, d / 2]}
         receiveShadow
       >
         <planeGeometry args={[w, d]} />
-        <meshStandardMaterial color="#27272a" roughness={0.95} />
+        {xray ? (
+          <meshStandardMaterial
+            color="#27272a"
+            roughness={0.95}
+            transparent
+            opacity={0.35}
+            depthWrite={false}
+          />
+        ) : (
+          <meshStandardMaterial color="#27272a" roughness={0.95} />
+        )}
       </mesh>
       {plan.background_image && (
         <Blueprint
@@ -49,7 +69,7 @@ export function Room({ scene }: { scene: ScenePayload }) {
       {scene.tiles
         .filter((t) => t.is_zone)
         .map((t) => (
-          <ZonePatch key={t.id} plan={plan} tile={t} />
+          <ZonePatch key={t.id} plan={plan} tile={t} onClick={onZoneClick} />
         ))}
     </group>
   )
@@ -58,16 +78,46 @@ export function Room({ scene }: { scene: ScenePayload }) {
 function ZonePatch({
   plan,
   tile,
+  onClick,
 }: {
   plan: ScenePayload["plan"]
   tile: SceneTile
+  onClick?: (tile: SceneTile) => void
 }) {
   const [x, z] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
   const [w, d] = cellToWorld(plan, tile.w, tile.h)
   // 0.015 sits ABOVE a raised-floor slab top (0.012): a cold aisle drawn on
   // a raised pad must tint the pad, not vanish inside it.
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.015, z]}>
+    <mesh
+      rotation={[-Math.PI / 2, 0, 0]}
+      position={[x, 0.015, z]}
+      // Zone click = isolate that zone. Racks sit above and stop
+      // propagation, so only genuine aisle-floor clicks land here.
+      onClick={
+        onClick
+          ? (e) => {
+              e.stopPropagation()
+              onClick(tile)
+            }
+          : undefined
+      }
+      onPointerOver={
+        onClick
+          ? (e) => {
+              e.stopPropagation()
+              document.body.style.cursor = "pointer"
+            }
+          : undefined
+      }
+      onPointerOut={
+        onClick
+          ? () => {
+              document.body.style.cursor = ""
+            }
+          : undefined
+      }
+    >
       <planeGeometry args={[w, d]} />
       <meshBasicMaterial
         color={tile.color || "#52525b"}

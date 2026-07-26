@@ -109,6 +109,7 @@ export function DeviceMesh({
   rackWidthM,
   rackDepthM,
   selected,
+  ghosted = false,
   selectedPort,
   showTexture,
   onSelect,
@@ -120,6 +121,10 @@ export function DeviceMesh({
   rackWidthM: number
   rackDepthM: number
   selected: boolean
+  /** X-ray / focus dimming: the box fades to a low-opacity ghost (still
+   * clickable — clicking a ghost selects it, which un-ghosts it). The
+   * caller also drops `showTexture`, so ghosts never fetch images/ports. */
+  ghosted?: boolean
   /** Name of the photo port currently selected on THIS device, if any. */
   selectedPort?: string | null
   /** Near tier only — keeps image fetches away from far cabinets. */
@@ -218,7 +223,7 @@ export function DeviceMesh({
 
   const bodyColor = selected
     ? DEVICE_SELECTED
-    : hovered
+    : hovered && !ghosted
       ? "#71717a"
       : dev.role_color || DEVICE_FALLBACK
 
@@ -249,7 +254,18 @@ export function DeviceMesh({
     >
       <mesh>
         <boxGeometry args={[dw, boxH, dd]} />
-        <meshStandardMaterial color={bodyColor} roughness={0.7} />
+        {/* Ghosting = the room's one transparency convention. */}
+        {ghosted ? (
+          <meshStandardMaterial
+            color={bodyColor}
+            roughness={0.7}
+            transparent
+            opacity={0.12}
+            depthWrite={false}
+          />
+        ) : (
+          <meshStandardMaterial color={bodyColor} roughness={0.7} />
+        )}
       </mesh>
       {texture && (
         // The exposed face, textured with the device-type photo, plus any

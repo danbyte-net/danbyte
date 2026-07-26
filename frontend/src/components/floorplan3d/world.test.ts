@@ -7,10 +7,12 @@ import {
   DOOR_DEFAULT_MM,
   RACK_BASE_M,
   airflowGlyphPlacements,
+  capWallBoxes,
   cellToWorld,
   deviceBoxM,
   deviceYM,
   rackFootprintM,
+  rackViewpoint,
   trayElevationM,
   underfloorMM,
   wallDoorSpans,
@@ -417,6 +419,68 @@ describe("wallSegmentsWithOpenings — the geometry that shapes every room", () 
     )
     const solids = boxes.filter((b) => b.y0 === 0)
     expect(solids.map((b) => [b.x0, b.x1])).toEqual([[0, 8]])
+  })
+})
+
+describe("rackViewpoint — one math for double-click fly-to and the rear flip", () => {
+  // 2×2-cell rack tile centred at cell (5, 5) → world (3, 3) with 600 mm cells.
+  const tile = {
+    id: "t",
+    x: 4,
+    y: 4,
+    w: 2,
+    h: 2,
+    orientation: 0,
+    status: "",
+    label: "",
+    kind: "rack" as const,
+    color: "",
+    is_zone: false,
+    rack: null,
+  }
+
+  it("frames the front out along −Z at orientation 0, the rear at +Z", () => {
+    const front = rackViewpoint(plan, tile, 2, "front")
+    expect(front.target).toEqual([3, 1.1, 3])
+    expect(front.position[0]).toBeCloseTo(3)
+    expect(front.position[2]).toBeCloseTo(3 - 2.6) // height 2 × 1.3
+    const rear = rackViewpoint(plan, tile, 2, "rear")
+    expect(rear.position[2]).toBeCloseTo(3 + 2.6)
+    // Rear is the front mirrored through the rack centre plane.
+    expect(rear.position[0]).toBeCloseTo(2 * 3 - front.position[0])
+  })
+
+  it("rotates with the tile's orientation", () => {
+    const t90 = { ...tile, orientation: 90 }
+    const { position } = rackViewpoint(plan, t90, 2, "front")
+    // Facing east: the front viewpoint backs off along +X.
+    expect(position[0]).toBeCloseTo(3 + 2.6)
+    expect(position[2]).toBeCloseTo(3)
+  })
+
+  it("never gets closer than the 2.2 m comfort floor on short racks", () => {
+    const { position, target } = rackViewpoint(plan, tile, 1, "front")
+    expect(
+      Math.hypot(position[0] - target[0], position[2] - target[2])
+    ).toBeCloseTo(2.2)
+  })
+})
+
+describe("capWallBoxes — Cutaway's knee-high walls", () => {
+  const box = (y0: number, y1: number) => ({
+    x0: 0,
+    z0: 0,
+    x1: 4,
+    z1: 0,
+    y0,
+    y1,
+  })
+
+  it("clamps spans to the cap and drops boxes entirely above it", () => {
+    const capped = capWallBoxes([box(0, 3), box(2.1, 3), box(0, 0.4)], 0.6)
+    expect(capped).toHaveLength(2)
+    expect(capped[0].y1).toBe(0.6)
+    expect(capped[1].y1).toBe(0.4) // already under the cap — untouched
   })
 })
 
