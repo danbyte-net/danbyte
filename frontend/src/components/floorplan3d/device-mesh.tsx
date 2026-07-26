@@ -51,6 +51,40 @@ const PORT_DRIFT = "#f59e0b" // amber-500
  * visible at rack distance without swallowing a small disk bay. */
 const DRIFT_HALO_M = 0.004
 
+// ─── Shared box + edge geometry ──────────────────────────────────────────────
+// A hall of full cabinets holds thousands of devices, and nearly all of them
+// are one of a handful of sizes (1U and 2U at full width). Allocating a fresh
+// BoxGeometry AND EdgesGeometry per device meant ~5000 buffers for ~4 distinct
+// shapes — the dominant cost once racks got filled. Keyed to the millimetre
+// and shared: three.js keeps transforms per mesh, so one geometry serves any
+// number of devices. Never disposed — the set is tiny and lives as long as
+// the room does.
+const boxCache = new Map<string, THREE.BoxGeometry>()
+const edgeCache = new Map<string, THREE.BufferGeometry>()
+
+const sizeKey = (w: number, h: number, d: number) =>
+  `${Math.round(w * 1000)}:${Math.round(h * 1000)}:${Math.round(d * 1000)}`
+
+function sharedBox(w: number, h: number, d: number): THREE.BoxGeometry {
+  const key = sizeKey(w, h, d)
+  let g = boxCache.get(key)
+  if (!g) {
+    g = new THREE.BoxGeometry(w, h, d)
+    boxCache.set(key, g)
+  }
+  return g
+}
+
+function sharedEdges(w: number, h: number, d: number): THREE.BufferGeometry {
+  const key = sizeKey(w, h, d)
+  let g = edgeCache.get(key)
+  if (!g) {
+    g = new THREE.EdgesGeometry(sharedBox(w, h, d))
+    edgeCache.set(key, g)
+  }
+  return g
+}
+
 // ─── Face-texture cache ──────────────────────────────────────────────────────
 // One texture per device-type image URL, shared across every device box that
 // wears it (a rack of 20 identical switches loads one image). LRU-capped so a
@@ -239,19 +273,13 @@ export function DeviceMesh({
       ? "#71717a"
       : dev.role_color || DEVICE_FALLBACK
 
-  // Memoized (and disposed) — an inline `new BoxGeometry` re-allocated on
-  // every hover/selection render. Drawn for EVERY solid device, not just the
-  // selected one: with a photo face on the front and the studio key light
-  // raking the sides, an un-edged box lost its silhouette and the faceplate
-  // read as a picture floating in the rack.
-  const edges = useMemo(
-    () =>
-      ghosted
-        ? null
-        : new THREE.EdgesGeometry(new THREE.BoxGeometry(dw, boxH, dd)),
-    [ghosted, dw, boxH, dd]
-  )
-  useEffect(() => () => edges?.dispose(), [edges])
+  // Both SHARED across every device of the same size — see the caches above.
+  // The edge line is drawn for every solid device, not just the selected one:
+  // with a photo face on the front and the studio key light raking the sides,
+  // an un-edged box loses its silhouette and the faceplate reads as a picture
+  // floating in the rack.
+  const box = sharedBox(dw, boxH, dd)
+  const edges = ghosted ? null : sharedEdges(dw, boxH, dd)
 
   return (
     <group
@@ -286,8 +314,8 @@ export function DeviceMesh({
         castShadow={!ghosted}
         receiveShadow={!ghosted}
         renderOrder={ghosted ? TRANSPARENT_ORDER.ghost : 0}
+        geometry={box}
       >
-        <boxGeometry args={[dw, boxH, dd]} />
         {/* Ghosting = the room's one transparency convention. */}
         {ghosted ? (
           <meshStandardMaterial

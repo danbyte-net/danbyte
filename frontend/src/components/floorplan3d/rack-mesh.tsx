@@ -139,7 +139,12 @@ export function RackMesh({
   )
   useFrame(({ camera }) => {
     const dist = camera.position.distanceTo(centre) - halfDiag
-    const next = dist < (nearRef.current ? 24 : 18)
+    // 18/24 m was tuned on a handful of half-empty cabinets. In a hall of
+    // FULL racks that admitted most of the room to the near tier at once —
+    // 24 devices each, every one a box plus an edge outline plus a textured
+    // faceplate. 12/16 m still covers two or three rows, which is as much
+    // detail as anyone reads at once.
+    const next = dist < (nearRef.current ? 16 : 12)
     if (next !== nearRef.current) {
       nearRef.current = next
       setNear(next)

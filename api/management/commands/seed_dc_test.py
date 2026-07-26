@@ -98,8 +98,13 @@ GRID_W = RACK_X0 + PER_ROW + MARGIN
 
 PDU_NAME = "DC-TEST Vertical PDU 24×C13"
 PDU_OUTLETS = 24
-RACK_TYPE_NAME = "DC-TEST 42U 800mm"
-OUTER_W_MM = 800  # 800 mm gives a real zero-U channel for the PDUs
+RACK_TYPE_NAME = "DC-TEST 42U"
+# 600 mm wide = EXACTLY one grid cell, so cabinets bay flush the way they do
+# in a real row. The 800 mm variant of the first pass overhung its 600 mm
+# tile by 100 mm a side, which collided every neighbour by 200 mm — the same
+# mistake as the depth one, on the other axis. A 600 mm cabinet still leaves
+# ~63 mm of zero-U channel each side, enough for the 50 mm PDU strips.
+OUTER_W_MM = 600
 OUTER_D_MM = 1200
 
 FW_TYPE = "PA-3420"   # 1U, photo faceplate
@@ -224,8 +229,8 @@ class Command(BaseCommand):
                 "outer_depth_mm": OUTER_D_MM,
                 "max_weight": 1200,
                 "max_weight_unit": "kg",
-                "description": "Test cabinet: 42U, 800 mm wide so both "
-                               "rear channels take a vertical PDU.",
+                "description": "Test cabinet: 42U, 600 mm wide so a row bays "
+                               "flush; the rear channels take the PDUs.",
             },
         )
         # A and B strips, rear channel, one on each rail.
