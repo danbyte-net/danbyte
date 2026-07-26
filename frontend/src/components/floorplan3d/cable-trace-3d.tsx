@@ -18,6 +18,7 @@ import {
   freeAirRideY,
   offsetPolyline,
   portLocalM,
+  sideStripBoxM,
   rackFootprintM,
   trayElevationM,
   trayRideY,
@@ -61,6 +62,33 @@ interface EndRun {
   railAt: (y: number) => Vec3
 }
 
+/** Outlet spacing down a vertical PDU strip (m) — about a real C13 pitch, so
+ * 24 outlets cover roughly the strip's outlet field. Replace with per-outlet
+ * markers once the scene payload carries them. */
+const OUTLET_PITCH_M = 0.05
+
+/** Rack-local (x, y, z) → world, applying the tile's centre and orientation.
+ * Same transform RackMesh puts on its group. */
+function worldOf(
+  scene: ScenePayload,
+  tile: SceneTile,
+  x: number,
+  y: number,
+  z: number
+): Vec3 {
+  const [cx, cz] = cellToWorld(
+    scene.plan,
+    tile.x + tile.w / 2,
+    tile.y + tile.h / 2
+  )
+  const th = (-tile.orientation * Math.PI) / 180
+  return [
+    cx + x * Math.cos(th) + z * Math.sin(th),
+    y,
+    cz - x * Math.sin(th) + z * Math.cos(th),
+  ]
+}
+
 /** Resolve one termination to its port-anchored EndRun, or null. */
 function portEndRun(
   scene: ScenePayload,
@@ -75,30 +103,60 @@ function portEndRun(
   // Side-mounted strips have no U position — deviceBoxM geometry would be
   // nonsense. Fall back to the tile drop; strip-anchored runs come with the
   // outlet-marker phase.
-  if (dev.position == null) return null
+  const { width, depth } = rackFootprintM(rack)
+
+  // ── Side-mounted 0U strip (a vertical PDU). No U, so deviceBoxM geometry
+  // would be nonsense — anchor on the STRIP instead. Outlets are named with a
+  // trailing index (C13-01 …), so spread them down the strip at a real C13
+  // pitch from the top, clamped inside it. Before this, every power cable in
+  // the room resolved to null and simply was not drawn.
+  if (dev.position == null) {
+    if (!dev.mount) return null
+    const strip = sideStripBoxM(rack, dev, width, depth)
+    const idx = Number(/(\d+)\s*$/.exec(point.port)?.[1] ?? 0)
+    const top = strip.y + strip.h
+    const py =
+      idx > 0
+        ? Math.max(strip.y, top - (idx - 0.5) * OUTLET_PITCH_M)
+        : strip.y + strip.h / 2
+    const outward = dev.mount === "side_left" ? -1 : 1
+    const sx = strip.x + outward * 0.02
+    const chanX = outward * (width / 2 + 0.04)
+    return {
+      entry: [
+        [...worldOf(scene, tile, sx, py, strip.z)],
+        [...worldOf(scene, tile, chanX, py, strip.z)],
+      ] as Vec3[],
+      railAt: (y) => worldOf(scene, tile, chanX, y, strip.z),
+    }
+  }
+
   const side = dev.face === "rear" ? "rear" : "front"
   const markers = dev.image_ports?.[side] ?? []
   // Markers carry template names; terminations carry rendered ones.
   const m = markers.find(
     (mk) => renderTemplateName(mk.name, null) === point.port
   )
-  if (!m) return null
-  const { width, depth } = rackFootprintM(rack)
   const box = deviceBoxM(rack, dev, width, depth)
-  const [lx, ly, lz] = portLocalM(box, m)
+  // A matched marker gives the exact port. WITHOUT one, anchor on the middle
+  // of the device's exposed FACE — not nothing. Returning null here sent the
+  // run to a drop at the tile centre, i.e. inside the cabinet, which is why
+  // in-rack cables looked like they dived into the middle of the rack and
+  // could not be traced. A port whose name doesn't match a marker (or a device
+  // type with no markers at all) still has a known U and a known face, and
+  // landing on the right unit's face is far more use than a hole in the middle.
+  const [lx, ly, lz] = m
+    ? portLocalM(box, m)
+    : [
+        box.dx,
+        box.y + box.h / 2,
+        box.mountedRear
+          ? box.dz + box.dd / 2 + 0.004
+          : box.dz - box.dd / 2 - 0.004,
+      ]
 
-  // Rack group transform (same as RackMesh): tile centre + orientation.
-  const [cx, cz] = cellToWorld(
-    scene.plan,
-    tile.x + tile.w / 2,
-    tile.y + tile.h / 2
-  )
-  const th = (-tile.orientation * Math.PI) / 180
-  const world = (x: number, y: number, z: number): Vec3 => [
-    cx + x * Math.cos(th) + z * Math.sin(th),
-    y,
-    cz - x * Math.sin(th) + z * Math.cos(th),
-  ]
+  const world = (x: number, y: number, z: number): Vec3 =>
+    worldOf(scene, tile, x, y, z)
 
   // Stub OUT of the face (local ±Z), then sweep sideways at stub depth —
   // clear of every faceplate — to the nearest cabinet edge, and rise there:
