@@ -138,7 +138,8 @@ function Body({ circuit: c }: { circuit: Circuit }) {
                   value={
                     c.provider ? (
                       <Link
-                        to="/providers"
+                        to="/providers/$id"
+                        params={{ id: c.provider.id }}
                         className="text-primary hover:underline"
                       >
                         {c.provider.name}
@@ -231,7 +232,11 @@ function CircuitOverview({ circuit: c }: { circuit: Circuit }) {
     {
       label: "Provider",
       value: c.provider ? (
-        <Link to="/providers" className="text-primary hover:underline">
+        <Link
+          to="/providers/$id"
+          params={{ id: c.provider.id }}
+          className="text-primary hover:underline"
+        >
           {c.provider.name}
         </Link>
       ) : (

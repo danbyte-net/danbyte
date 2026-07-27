@@ -22,6 +22,11 @@ inside other regions.
 
 To put a site in a region, open the site's form and pick the **region** there.
 
+Click a region's name to open its **detail page** — the pencil in the header
+edits it. It shows the parent region plus a **Sites** tab (the sites that sit
+directly in the region) and a **Sub-regions** tab, each with counts, backed by
+`GET /api/sites/?region=<id>` and `?parent=<id>` on regions.
+
 ## Add a location
 
 A location is a place inside a single site — a building, a floor, a room — and

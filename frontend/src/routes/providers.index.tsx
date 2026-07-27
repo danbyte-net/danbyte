@@ -47,7 +47,7 @@ function ProvidersPage() {
         header: ({ column }) => <SortHeader column={column} label="Name" />,
         cell: ({ row }) => (
           <Link
-            to="/providers/$id/edit"
+            to="/providers/$id"
             params={{ id: row.original.id }}
             className="font-medium hover:underline"
           >

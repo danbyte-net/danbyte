@@ -48,7 +48,7 @@ function RegionsPage() {
         header: ({ column }) => <SortHeader column={column} label="Name" />,
         cell: ({ row }) => (
           <Link
-            to="/regions/$id/edit"
+            to="/regions/$id"
             params={{ id: row.original.id }}
             className="font-medium hover:underline"
           >

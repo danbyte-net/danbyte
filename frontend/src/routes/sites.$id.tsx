@@ -9,7 +9,6 @@ import {
   api,
   type ObjectPermission,
   type Paginated,
-  type Circuit,
   type Prefix,
   type Site,
   type VLAN,
@@ -23,13 +22,13 @@ import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
-import { StatusBadge } from "@/components/status-badge"
 import { QueryError } from "@/components/query-error"
 import { SiteDeleteDialog } from "@/components/site-delete-dialog"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { MiniMap } from "@/components/site-map/mini-map"
 import { ObjectImages } from "@/components/object-images"
 import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
+import { EmbeddedCircuitTable } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { ContactsPanel } from "@/components/contacts-panel"
@@ -171,7 +170,10 @@ function SiteDetailBody({ site: s }: { site: Site }) {
         <SiteVlansTable siteId={s.id} />
       </DetailTab>
       <DetailTab value="circuits">
-        <SiteCircuitsTable siteId={s.id} />
+        <EmbeddedCircuitTable
+          filter={{ site: s.id }}
+          emptyText="No circuits terminate at this site."
+        />
       </DetailTab>
       <DetailTab value="contacts">
         <ContactsPanel objectType="api.site" objectId={s.id} />
@@ -427,77 +429,6 @@ function SiteVlansTable({ siteId }: { siteId: string }) {
   if (rows.length === 0)
     return (
       <p className="text-sm text-muted-foreground">No VLANs at this site.</p>
-    )
-  return <DataTable data={rows} columns={columns} flexColumn="description" />
-}
-
-/** Circuits terminating at this site — the provider WAN links landing here.
- * Each row links to the circuit; the "other end" shows where the far
- * termination lands (another site or a provider network). */
-function SiteCircuitsTable({ siteId }: { siteId: string }) {
-  const q = useQuery({
-    queryKey: ["site-circuits", siteId],
-    queryFn: () =>
-      api<Paginated<Circuit>>(`/api/circuits/?site=${siteId}&page_size=500`),
-  })
-  const columns = useMemo<ColumnDef<Circuit>[]>(
-    () => [
-      {
-        header: "Circuit",
-        accessorKey: "cid",
-        cell: ({ row }) => (
-          <Link
-            to="/circuits/$id"
-            params={{ id: row.original.id }}
-            className="font-mono text-primary hover:underline"
-          >
-            {row.original.cid}
-          </Link>
-        ),
-      },
-      {
-        header: "Provider",
-        cell: ({ row }) => row.original.provider?.name ?? dash,
-      },
-      { header: "Type", cell: ({ row }) => row.original.type?.name ?? dash },
-      {
-        header: "Status",
-        cell: ({ row }) =>
-          row.original.status ? (
-            <StatusBadge status={row.original.status} />
-          ) : (
-            dash
-          ),
-      },
-      {
-        header: "Other end",
-        cell: ({ row }) => {
-          // The termination that is NOT this site — where the link goes to.
-          const far = row.original.terminations.find(
-            (t) => t.site?.id !== siteId
-          )
-          const label = far?.site?.name ?? far?.provider_network?.name ?? dash
-          return <span className="text-muted-foreground">{label}</span>
-        },
-      },
-      {
-        header: "Description",
-        accessorKey: "description",
-        cell: ({ row }) => row.original.description || dash,
-      },
-    ],
-    [siteId]
-  )
-
-  if (q.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading circuits…</p>
-  if (q.isError) return <QueryError error={q.error} />
-  const rows = q.data?.results ?? []
-  if (rows.length === 0)
-    return (
-      <p className="text-sm text-muted-foreground">
-        No circuits terminate at this site.
-      </p>
     )
   return <DataTable data={rows} columns={columns} flexColumn="description" />
 }

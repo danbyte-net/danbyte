@@ -90,6 +90,32 @@ class CircuitTerminationTests(_TenantAPITestCase):
         )
         self.assertEqual(bad.status_code, 400, bad.content)
 
+    def test_provider_network_and_region_filters(self):
+        # Circuit terminates on the provider network — issue #18: circuits are
+        # listed on the provider and provider-network detail pages.
+        CircuitTermination.objects.create(
+            circuit=self.circuit, term_side="Z", provider_network=self.pn
+        )
+        by_pn = self.client.get(
+            f"/api/circuits/?provider_network={self.pn.id}"
+        ).json()["results"]
+        self.assertEqual([c["cid"] for c in by_pn], ["CID-1"])
+        by_provider = self.client.get(
+            f"/api/circuits/?provider={self.provider.id}"
+        ).json()["results"]
+        self.assertEqual([c["cid"] for c in by_provider], ["CID-1"])
+        # Sites filter by region — issue #18: the region page's Sites tab.
+        from api.models import Region
+        region = Region.objects.create(
+            tenant=self.tenant, name="EU", slug="eu"
+        )
+        self.site.region = region
+        self.site.save(update_fields=["region"])
+        listed = self.client.get(
+            f"/api/sites/?region={region.id}"
+        ).json()["results"]
+        self.assertEqual([s["name"] for s in listed], ["DC1"])
+
     def test_exactly_one_endpoint_enforced(self):
         r = self.client.post("/api/circuit-terminations/", {
             "circuit_id": str(self.circuit.id), "term_side": "A",

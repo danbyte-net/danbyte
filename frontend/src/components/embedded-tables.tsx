@@ -4,12 +4,15 @@ import { type ColumnDef } from "@tanstack/react-table"
 
 import {
   api,
+  type Circuit,
   type Cluster,
   type IPAddress,
   type Paginated,
   type Rack,
 } from "@/lib/api"
 import { DataTable } from "@/components/data-table"
+import { buildCircuitColumns } from "@/components/columns/circuit-columns"
+import type { CircuitColumnId } from "@/components/columns/circuit-columns"
 import { buildClusterColumns } from "@/components/columns/cluster-columns"
 import { buildIpColumns } from "@/components/columns/ip-columns"
 import { buildRackColumns } from "@/components/columns/rack-columns"
@@ -111,6 +114,46 @@ export function EmbeddedRackTable({
       columns={columns}
       flexColumn="name"
       tableId="embedded-racks"
+    />
+  )
+}
+
+/** Circuits scoped by provider / provider-network / site. Reuses the one
+ * circuit column factory — the same row the /circuits list draws. `omitProvider`
+ * drops the redundant Provider column on a provider's own detail page. */
+export function EmbeddedCircuitTable({
+  filter,
+  omitProvider = false,
+  emptyText = "No circuits.",
+}: {
+  filter: Record<string, string>
+  omitProvider?: boolean
+  emptyText?: string
+}) {
+  const q = useEmbed<Circuit>("embedded-circuits", "/api/circuits/", filter)
+  const columns = useMemo<ColumnDef<Circuit>[]>(() => {
+    const include: CircuitColumnId[] = [
+      "cid",
+      "provider",
+      "type",
+      "status",
+      "endpoints",
+      "commit",
+      "description",
+    ]
+    return buildCircuitColumns({
+      include: omitProvider
+        ? include.filter((id) => id !== "provider")
+        : include,
+    })
+  }, [omitProvider])
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="description"
+      tableId="embedded-circuits"
     />
   )
 }

@@ -90,6 +90,20 @@ lives on the side it belongs to.
     If a provider or circuit type still has circuits attached, Danbyte blocks
     the delete. Reassign or remove those circuits first.
 
+## Provider & provider-network pages
+
+Click a **provider** or **provider network** name in its list to open its
+detail page — the pencil in the header edits it.
+
+- A **provider** page carries its account and NOC contact details up top, a
+  **Circuits** tab listing every circuit you lease from that provider, and a
+  **Networks** tab for the provider networks it operates.
+- A **provider network** page shows its provider and service ID, with a
+  **Circuits** tab listing the circuits that terminate on it.
+
+Both circuit lists are the same table the main Circuits page draws. They are
+powered by `GET /api/circuits/?provider=<id>` and `?provider_network=<id>`.
+
 ## Tags & custom fields
 
 Need to track something extra — a contract end date, an SLA tier, an order

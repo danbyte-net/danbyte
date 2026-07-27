@@ -1392,6 +1392,10 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 | qs.filter(location__icontains=search)
                 | qs.filter(description__icontains=search)
             )
+        # Sites within a region — powers the region detail page's Sites tab.
+        region = self.request.query_params.get("region")
+        if region:
+            qs = qs.filter(region_id=region)
         return qs
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
@@ -5304,12 +5308,16 @@ class CircuitViewSet(TenantScopedViewSet):
                 val = self.request.query_params.get(param)
                 if val:
                     qs = qs.filter(**{field: val})
-            # Circuits terminating at a given site — powers the site page's
-            # Circuits tab. distinct() because a circuit with both ends at the
-            # site would otherwise appear twice.
+            # Circuits terminating at a given site / provider network — powers
+            # the site and provider-network detail pages' Circuits tabs.
+            # distinct() because a circuit with both ends on the same object
+            # would otherwise appear twice.
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(terminations__site_id=site).distinct()
+            pnet = self.request.query_params.get("provider_network")
+            if pnet:
+                qs = qs.filter(terminations__provider_network_id=pnet).distinct()
         return qs
 
 
