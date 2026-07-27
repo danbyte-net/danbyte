@@ -5304,6 +5304,12 @@ class CircuitViewSet(TenantScopedViewSet):
                 val = self.request.query_params.get(param)
                 if val:
                     qs = qs.filter(**{field: val})
+            # Circuits terminating at a given site — powers the site page's
+            # Circuits tab. distinct() because a circuit with both ends at the
+            # site would otherwise appear twice.
+            site = self.request.query_params.get("site")
+            if site:
+                qs = qs.filter(terminations__site_id=site).distinct()
         return qs
 
 

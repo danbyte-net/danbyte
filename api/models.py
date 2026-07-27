@@ -241,6 +241,11 @@ class Site(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # Free-text address line (legacy). The structured within-site hierarchy is
     # the separate Location model.
     location = models.CharField(max_length=255, blank=True)
+    # IANA tz name (e.g. "Europe/Copenhagen"); blank = unset. Free text on
+    # purpose — no fixed choice list to maintain — validated against the
+    # standard zoneinfo set at the serializer. Lets an operator read the local
+    # time difference between sites, the way NetBox surfaces it.
+    time_zone = models.CharField(max_length=63, blank=True, default="")
     # Where the site sits on the world map (the Site map page). Set by
     # dragging/placing the marker there, or typed into the site form.
     latitude = models.DecimalField(

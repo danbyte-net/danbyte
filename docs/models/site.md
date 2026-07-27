@@ -14,6 +14,7 @@ A physical location — DC, office, POP, edge.
 | `tenant` | FK → `Tenant` | required | |
 | `name` | char(255) | required | |
 | `location` | char(255) | `""` | Free-form (city, address, …) |
+| `time_zone` | char(63) | `""` | IANA name (e.g. `Europe/Copenhagen`); validated against the zoneinfo set. The detail page shows the current local time so you can read the offset between sites. |
 | `description` | text | `""` | |
 | `gateway_policy` | choice | `first` | `first` · `last` · `none` |
 | `vrfs` | M2M → `VRF` | empty | Documentation only — "VRFs operating at this site" |
@@ -34,6 +35,14 @@ empty:
 - `none` → no autospawn
 
 See [Gateway autospawn](../features/gateway-autospawn.md) for the full flow.
+
+## Detail page
+
+The site page tabs carry live counts (devices, prefixes, VLANs, circuits,
+contacts). A **Circuits** tab lists the circuits terminating at the site — a
+circuit's termination links to a site, so each site shows the WAN links landing
+there, with the far end (another site or a provider network). `GET
+/api/circuits/?site=<id>` powers that list.
 
 ## Coming in Phase 4
 

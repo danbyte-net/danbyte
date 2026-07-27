@@ -67,6 +67,7 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
     site?.region?.id ?? null
   )
   const [location, setLocation] = useState(site?.location ?? "")
+  const [timeZone, setTimeZone] = useState(site?.time_zone ?? "")
   const [latitude, setLatitude] = useState(site?.latitude ?? "")
   const [longitude, setLongitude] = useState(site?.longitude ?? "")
   const [description, setDescription] = useState(site?.description ?? "")
@@ -136,6 +137,7 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
         name: name.trim(),
         region_id: regionId,
         location: location.trim(),
+        time_zone: timeZone.trim(),
         latitude: String(latitude).trim() || null,
         longitude: String(longitude).trim() || null,
         description: description.trim(),
@@ -218,6 +220,18 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
           placeholder="Frankfurt, DE"
           value={location}
           onChange={(e) => setLocation(e.target.value)}
+        />
+      </Field>
+
+      <Field
+        label="Time zone"
+        hint="optional — IANA name, e.g. Europe/Copenhagen"
+        error={fieldErrors.time_zone}
+      >
+        <Input
+          placeholder="Europe/Copenhagen"
+          value={timeZone}
+          onChange={(e) => setTimeZone(e.target.value)}
         />
       </Field>
 

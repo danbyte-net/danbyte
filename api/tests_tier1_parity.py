@@ -62,6 +62,34 @@ class CircuitTerminationTests(_TenantAPITestCase):
             sides["Z"]["provider_network"]["id"], str(self.pn.id)
         )
 
+    def test_site_shows_its_circuits_and_counts(self):
+        CircuitTermination.objects.create(
+            circuit=self.circuit, term_side="A", site=self.site
+        )
+        # The site serializer surfaces a circuit_count and the circuits list
+        # filters to this site (issue #17: circuits visible from the site).
+        body = self.client.get(f"/api/sites/{self.site.id}/").json()
+        self.assertEqual(body["circuit_count"], 1)
+        self.assertIn("device_count", body)
+        self.assertIn("rack_count", body)
+        self.assertIn("contact_count", body)
+        listed = self.client.get(
+            f"/api/circuits/?site={self.site.id}"
+        ).json()["results"]
+        self.assertEqual([c["cid"] for c in listed], ["CID-1"])
+
+    def test_site_time_zone_validated(self):
+        ok = self.client.patch(
+            f"/api/sites/{self.site.id}/",
+            {"time_zone": "Europe/Copenhagen"}, format="json",
+        )
+        self.assertEqual(ok.status_code, 200, ok.content)
+        bad = self.client.patch(
+            f"/api/sites/{self.site.id}/",
+            {"time_zone": "Mars/Olympus"}, format="json",
+        )
+        self.assertEqual(bad.status_code, 400, bad.content)
+
     def test_exactly_one_endpoint_enforced(self):
         r = self.client.post("/api/circuit-terminations/", {
             "circuit_id": str(self.circuit.id), "term_side": "A",

@@ -612,22 +612,62 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
                 )
         return value
 
+    device_count = serializers.SerializerMethodField()
+    rack_count = serializers.SerializerMethodField()
+    contact_count = serializers.SerializerMethodField()
+    circuit_count = serializers.SerializerMethodField()
+
     def get_prefix_count(self, obj) -> int:
         return obj.prefixes.count()
 
     def get_vlan_count(self, obj) -> int:
         return obj.vlan_set.count()
 
+    def get_device_count(self, obj) -> int:
+        return obj.device_set.count()
+
+    def get_rack_count(self, obj) -> int:
+        return obj.racks.count()
+
+    def get_contact_count(self, obj) -> int:
+        # ContactAssignment binds by a "app.model" label + object_id string,
+        # not a ContentType FK.
+        return ContactAssignment.objects.filter(
+            object_type="api.site", object_id=str(obj.id)
+        ).count()
+
+    def get_circuit_count(self, obj) -> int:
+        # Distinct circuits landing here, not raw terminations — a circuit with
+        # both ends at one site still counts once.
+        return obj.circuit_terminations.values("circuit").distinct().count()
+
+    def validate_time_zone(self, value):
+        if not value:
+            return value
+        from zoneinfo import ZoneInfo, available_timezones
+
+        if value not in available_timezones():
+            try:
+                ZoneInfo(value)
+            except Exception:
+                raise serializers.ValidationError(
+                    "Unknown time zone — use an IANA name like "
+                    "'Europe/Copenhagen'."
+                )
+        return value
+
     class Meta:
         model = Site
         fields = [
             "id", "name", "region", "region_id", "location", "description",
+            "time_zone",
             "latitude", "longitude",
             "gateway_policy",
             "default_prefix", "default_prefix_id",
             "vrfs", "vrf_ids",
             "tags", "tag_ids",
             "prefix_count", "vlan_count",
+            "device_count", "rack_count", "contact_count", "circuit_count",
             "custom_fields",
             "created_at", "updated_at",
         ]

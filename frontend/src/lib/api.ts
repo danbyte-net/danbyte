@@ -2880,6 +2880,8 @@ export interface Site {
   latitude: string | null
   longitude: string | null
   description: string
+  /** IANA tz name (e.g. "Europe/Copenhagen"), or "" when unset. */
+  time_zone: string
   gateway_policy: SiteGatewayPolicy
   /** The prefix new addresses here come from by default — a hint for staff at
    * this site, not a constraint. */
@@ -2888,6 +2890,10 @@ export interface Site {
   tags: Tag[]
   prefix_count: number
   vlan_count: number
+  device_count: number
+  rack_count: number
+  contact_count: number
+  circuit_count: number
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
@@ -2897,6 +2903,7 @@ export interface SiteWritePayload {
   name: string
   region_id?: string | null
   location?: string
+  time_zone?: string
   latitude?: string | null
   longitude?: string | null
   description?: string

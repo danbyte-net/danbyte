@@ -9,6 +9,7 @@ import {
   api,
   type ObjectPermission,
   type Paginated,
+  type Circuit,
   type Prefix,
   type Site,
   type VLAN,
@@ -22,6 +23,7 @@ import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
+import { StatusBadge } from "@/components/status-badge"
 import { QueryError } from "@/components/query-error"
 import { SiteDeleteDialog } from "@/components/site-delete-dialog"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
@@ -68,6 +70,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
     | "devices"
     | "prefixes"
     | "vlans"
+    | "circuits"
     | "contacts"
     | "access"
     | "journal"
@@ -140,10 +143,11 @@ function SiteDetailBody({ site: s }: { site: Site }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
-        { value: "devices", label: "Devices" },
+        { value: "devices", label: "Devices", count: s.device_count },
         { value: "prefixes", label: "Prefixes", count: s.prefix_count },
         { value: "vlans", label: "VLANs", count: s.vlan_count },
-        { value: "contacts", label: "Contacts" },
+        { value: "circuits", label: "Circuits", count: s.circuit_count },
+        { value: "contacts", label: "Contacts", count: s.contact_count },
         ...(showAccess ? [{ value: "access", label: "Access" }] : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
@@ -165,6 +169,9 @@ function SiteDetailBody({ site: s }: { site: Site }) {
       </DetailTab>
       <DetailTab value="vlans">
         <SiteVlansTable siteId={s.id} />
+      </DetailTab>
+      <DetailTab value="circuits">
+        <SiteCircuitsTable siteId={s.id} />
       </DetailTab>
       <DetailTab value="contacts">
         <ContactsPanel objectType="api.site" objectId={s.id} />
@@ -424,6 +431,99 @@ function SiteVlansTable({ siteId }: { siteId: string }) {
   return <DataTable data={rows} columns={columns} flexColumn="description" />
 }
 
+/** Circuits terminating at this site — the provider WAN links landing here.
+ * Each row links to the circuit; the "other end" shows where the far
+ * termination lands (another site or a provider network). */
+function SiteCircuitsTable({ siteId }: { siteId: string }) {
+  const q = useQuery({
+    queryKey: ["site-circuits", siteId],
+    queryFn: () =>
+      api<Paginated<Circuit>>(`/api/circuits/?site=${siteId}&page_size=500`),
+  })
+  const columns = useMemo<ColumnDef<Circuit>[]>(
+    () => [
+      {
+        header: "Circuit",
+        accessorKey: "cid",
+        cell: ({ row }) => (
+          <Link
+            to="/circuits/$id"
+            params={{ id: row.original.id }}
+            className="font-mono text-primary hover:underline"
+          >
+            {row.original.cid}
+          </Link>
+        ),
+      },
+      {
+        header: "Provider",
+        cell: ({ row }) => row.original.provider?.name ?? dash,
+      },
+      { header: "Type", cell: ({ row }) => row.original.type?.name ?? dash },
+      {
+        header: "Status",
+        cell: ({ row }) =>
+          row.original.status ? (
+            <StatusBadge status={row.original.status} />
+          ) : (
+            dash
+          ),
+      },
+      {
+        header: "Other end",
+        cell: ({ row }) => {
+          // The termination that is NOT this site — where the link goes to.
+          const far = row.original.terminations.find(
+            (t) => t.site?.id !== siteId
+          )
+          const label = far?.site?.name ?? far?.provider_network?.name ?? dash
+          return <span className="text-muted-foreground">{label}</span>
+        },
+      },
+      {
+        header: "Description",
+        accessorKey: "description",
+        cell: ({ row }) => row.original.description || dash,
+      },
+    ],
+    [siteId]
+  )
+
+  if (q.isLoading)
+    return <p className="text-sm text-muted-foreground">Loading circuits…</p>
+  if (q.isError) return <QueryError error={q.error} />
+  const rows = q.data?.results ?? []
+  if (rows.length === 0)
+    return (
+      <p className="text-sm text-muted-foreground">
+        No circuits terminate at this site.
+      </p>
+    )
+  return <DataTable data={rows} columns={columns} flexColumn="description" />
+}
+
+/** The site's IANA zone plus its current local time — so an operator can read
+ * the offset between sites at a glance. Recomputed each render (cheap; the page
+ * isn't a clock, it just needs to be right when opened). */
+function SiteLocalTime({ tz }: { tz: string }) {
+  let local = ""
+  try {
+    local = new Intl.DateTimeFormat(undefined, {
+      timeZone: tz,
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date())
+  } catch {
+    // Unknown zone (shouldn't pass validation) — show the name alone.
+  }
+  return (
+    <span className="text-xs">
+      {tz}
+      {local && <span className="ml-2 text-muted-foreground">{local}</span>}
+    </span>
+  )
+}
+
 /** The site's attributes, grouped into labelled tables — the detail that used
  * to crowd the page header. Only the name, compliance badge, location, tags and
  * description stay up top; everything else reads here. */
@@ -444,6 +544,10 @@ function SiteOverview({
         ]
       : []),
     { label: "Location", value: s.location || dash },
+    {
+      label: "Time zone",
+      value: s.time_zone ? <SiteLocalTime tz={s.time_zone} /> : dash,
+    },
     {
       label: "Gateway policy",
       value: <span className="text-xs">{POLICY_LABEL[s.gateway_policy]}</span>,
