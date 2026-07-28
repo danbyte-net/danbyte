@@ -174,7 +174,7 @@ export DANBYTE_TOKEN=dbt_xxxxxxxxxxxxxxxxxxxxxxxx
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/inventory/ansible/` | Native Ansible dynamic inventory — hosts, `ansible_host` (primary IP), `danbyte` metadata (incl. `danbyte.custom_fields` and `danbyte.interfaces`), merged `config_context`, and `role_<slug>` / `site_<name>` / `platform_<slug>` / `status_<slug>` / `tag_<slug>` / `cf_<name>` groups. Filter with `?status=active&site=AMS&role=leaf&has_primary_ip=1`. |
+| `GET /api/inventory/ansible/` | Native Ansible dynamic inventory — **devices and virtual machines** as hosts, `ansible_host` (primary IP), `danbyte` metadata (`danbyte.kind` = `device` or `virtual_machine`, `danbyte.custom_fields`, `danbyte.interfaces`; VMs also carry `cluster`, `cluster_group`, host `device`, and `vcpus`/`memory_mb`/`disk_gb`), merged `config_context`, and `role_<slug>` / `site_<name>` / `platform_<slug>` / `status_<slug>` / `tag_<slug>` / `cf_<name>` groups — plus `cluster_<name>` / `cluster_group_<name>` for VMs and the `all_devices` / `all_vms` catch-alls. Filter with `?status=active&site=AMS&role=leaf&has_primary_ip=1`, and scope to one kind with `?kind=device` or `?kind=vm`. Host names are expected unique across devices and VMs; on a collision the device wins. |
 | `POST /api/devices/<id>/config-state/` | Report a device's config. Send `actual_config` + a `template` id and **Danbyte renders the intent** (config context + IPAM) and diffs it → `status` ∈ `in_sync \| drift \| unknown`, the unified `diff`, and a history snapshot on change. (Or send `intended_config` yourself if the runner does the templating.) |
 
 ## Ansible demo

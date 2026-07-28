@@ -5,8 +5,9 @@ from django.contrib.auth.models import User
 from rest_framework.test import APITestCase
 
 from api.models import (
-    ConfigContext, Device, DeviceRole, DeviceType, IPAddress, Manufacturer,
-    Platform, Prefix, Region, Site, ExportTemplate,
+    Cluster, ClusterType, ConfigContext, Device, DeviceRole, DeviceType,
+    IPAddress, Manufacturer, Platform, Prefix, Region, Site, ExportTemplate,
+    VirtualMachine, VMInterface,
 )
 from auth_api.models import UserProfile
 from core.models import Organization, Tenant
@@ -136,3 +137,75 @@ class InventoryTests(APITestCase):
     def test_render_bad_template_400(self):
         r = self.client.get(f"/api/devices/{self.dev.id}/render/?template=")
         self.assertEqual(r.status_code, 400)
+
+
+class VmInventoryTests(APITestCase):
+    """VMs join devices in the Ansible export, so the static VM file can go."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.su = User.objects.create_user("su", password="x", is_superuser=True)
+        prof = UserProfile.objects.create(user=self.su)
+        prof.tenants.add(self.tenant)
+        prof.current_tenant = self.tenant
+        prof.save()
+        self.eu = Region.objects.create(tenant=self.tenant, name="EU", slug="eu")
+        self.site = Site.objects.create(tenant=self.tenant, name="AMS", region=self.eu)
+        self.role = DeviceRole.objects.create(tenant=self.tenant, name="App", slug="app")
+        self.plat = Platform.objects.create(tenant=self.tenant, name="Linux", slug="linux")
+        ctype = ClusterType.objects.create(
+            tenant=self.tenant, name="vSphere", slug="vsphere"
+        )
+        self.cluster = Cluster.objects.create(
+            tenant=self.tenant, name="prod-cl", type=ctype
+        )
+        pfx = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.9.0.0/24", status=status_for(self.tenant)
+        )
+        self.vip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.9.0.20", prefix=pfx
+        )
+        self.vm = VirtualMachine.objects.create(
+            tenant=self.tenant, name="vm1", cluster=self.cluster, site=self.site,
+            role=self.role, platform=self.plat, primary_ip=self.vip,
+            status=status_for(self.tenant), vcpus=4, memory_mb=8192, disk_gb=100,
+        )
+        VMInterface.objects.create(vm=self.vm, name="eth0", mac_address="00:11:22:33:44:55")
+        self.client.force_login(self.su)
+        self.client.post(f"/api/tenants/{self.tenant.id}/switch/")
+
+    def test_vm_appears_with_kind_and_groups(self):
+        inv = self.client.get("/api/inventory/ansible/").json()
+        self.assertIn("vm1", inv["_meta"]["hostvars"])
+        hv = inv["_meta"]["hostvars"]["vm1"]
+        self.assertEqual(hv["danbyte"]["kind"], "virtual_machine")
+        self.assertEqual(hv["ansible_host"], "10.9.0.20")
+        self.assertEqual(hv["danbyte"]["cluster"], "prod-cl")
+        self.assertEqual(hv["danbyte"]["vcpus"], 4)
+        self.assertEqual(hv["danbyte"]["interfaces"][0]["name"], "eth0")
+        self.assertIn("vm1", inv["all_vms"]["hosts"])
+        self.assertIn("vm1", inv["cluster_prod_cl"]["hosts"])
+        self.assertIn("vm1", inv["site_ams"]["hosts"])
+
+    def test_kind_filter_scopes_to_one(self):
+        dev = Device.objects.create(
+            tenant=self.tenant, name="sw1", site=self.site, role=self.role,
+            status=status_for(self.tenant),
+        )
+        only_vm = self.client.get("/api/inventory/ansible/?kind=vm").json()
+        self.assertIn("vm1", only_vm["_meta"]["hostvars"])
+        self.assertNotIn("sw1", only_vm["_meta"]["hostvars"])
+        only_dev = self.client.get("/api/inventory/ansible/?kind=device").json()
+        self.assertIn("sw1", only_dev["_meta"]["hostvars"])
+        self.assertNotIn("vm1", only_dev["_meta"]["hostvars"])
+        self.assertEqual(dev.name, "sw1")  # silence unused
+
+    def test_device_wins_on_name_collision(self):
+        Device.objects.create(
+            tenant=self.tenant, name="vm1", site=self.site, role=self.role,
+            status=status_for(self.tenant),
+        )
+        inv = self.client.get("/api/inventory/ansible/").json()
+        # The host named vm1 is the device (kind=device), VM skipped, not clobbered.
+        self.assertEqual(inv["_meta"]["hostvars"]["vm1"]["danbyte"]["kind"], "device")
