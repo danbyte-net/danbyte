@@ -50,6 +50,7 @@ const SEGMENT_SLUG: Record<string, string> = {
   webhooks: "webhook",
   "automation-targets": "automationtarget",
   "config-contexts": "configcontext",
+  "export-templates": "exporttemplate",
 }
 
 /**

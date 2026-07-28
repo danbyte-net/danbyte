@@ -97,3 +97,23 @@ danbyte/
 
 `frontend/src/routeTree.gen.ts` and build output are generated. Archived static
 mockups under `reference/` are not runtime sources of truth.
+
+## Route-file conventions
+
+Two rules hold for every entity under `frontend/src/routes/`, enforced by
+`frontend/src/routes/-route-shape.test.ts` (the leading `-` is TanStack Router's
+ignore prefix, so the test does not become a route):
+
+- **An entity you can create or edit must be openable.** If `<entity>.new.tsx`
+  or an edit route exists, `<entity>.$id.tsx` must exist too. Without it the
+  only way to reach a record is the edit form, and any History the object is
+  already accumulating has nowhere to render. Non-object screens (`settings`,
+  `import`, `topology`) and the RBAC admin lists (`users`, `groups`,
+  `permissions`) are allow-listed; entities that still lack a detail page are
+  named in an acknowledged-gap list that is asserted to match exactly.
+- **Edit routes are named `$id_.edit`, never `$id.edit`.** The file router
+  treats `<entity>.$id.tsx` as the *layout parent* of `<entity>.$id.edit.tsx`,
+  so a dot-named edit route renders the detail component instead of the form —
+  and the detail component has no `<Outlet/>`, so the form never appears. It
+  typechecks and it builds. The trailing underscore opts the child out of the
+  nesting; the URL is unchanged.

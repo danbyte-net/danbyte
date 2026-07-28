@@ -151,6 +151,7 @@ import { Route as AggregatesIndexRouteImport } from './routes/aggregates.index'
 import { Route as ZonesNewRouteImport } from './routes/zones.new'
 import { Route as ZonesIdRouteImport } from './routes/zones.$id'
 import { Route as WirelessLansNewRouteImport } from './routes/wireless-lans.new'
+import { Route as WirelessLansIdRouteImport } from './routes/wireless-lans.$id'
 import { Route as WirelessLanGroupsNewRouteImport } from './routes/wireless-lan-groups.new'
 import { Route as WirelessLanGroupsIdRouteImport } from './routes/wireless-lan-groups.$id'
 import { Route as WebhooksNewRouteImport } from './routes/webhooks.new'
@@ -257,6 +258,7 @@ import { Route as FloorTileTypesIdRouteImport } from './routes/floor-tile-types.
 import { Route as FhrpGroupsNewRouteImport } from './routes/fhrp-groups.new'
 import { Route as FhrpGroupsIdRouteImport } from './routes/fhrp-groups.$id'
 import { Route as ExportTemplatesNewRouteImport } from './routes/export-templates.new'
+import { Route as ExportTemplatesIdRouteImport } from './routes/export-templates.$id'
 import { Route as DevicesNewRouteImport } from './routes/devices.new'
 import { Route as DevicesIdRouteImport } from './routes/devices.$id'
 import { Route as DeviceTypesNewRouteImport } from './routes/device-types.new'
@@ -272,6 +274,7 @@ import { Route as ContactsIdRouteImport } from './routes/contacts.$id'
 import { Route as ContactRolesNewRouteImport } from './routes/contact-roles.new'
 import { Route as ContactRolesIdRouteImport } from './routes/contact-roles.$id'
 import { Route as ContactGroupsNewRouteImport } from './routes/contact-groups.new'
+import { Route as ContactGroupsIdRouteImport } from './routes/contact-groups.$id'
 import { Route as ConfigContextsNewRouteImport } from './routes/config-contexts.new'
 import { Route as ConfigContextsIdRouteImport } from './routes/config-contexts.$id'
 import { Route as ComplianceRulesNewRouteImport } from './routes/compliance-rules.new'
@@ -314,7 +317,7 @@ import { Route as TenantsIdEditRouteImport } from './routes/tenants.$id_.edit'
 import { Route as TagsIdEditRouteImport } from './routes/tags.$id_.edit'
 import { Route as StatusesIdEditRouteImport } from './routes/statuses.$id_.edit'
 import { Route as SitesIdEditRouteImport } from './routes/sites.$id_.edit'
-import { Route as SilencesIdEditRouteImport } from './routes/silences.$id.edit'
+import { Route as SilencesIdEditRouteImport } from './routes/silences.$id_.edit'
 import { Route as ServiceTemplatesIdEditRouteImport } from './routes/service-templates.$id_.edit'
 import { Route as RouteTargetsIdEditRouteImport } from './routes/route-targets.$id_.edit'
 import { Route as RirsIdEditRouteImport } from './routes/rirs.$id_.edit'
@@ -354,17 +357,17 @@ import { Route as ContactsIdEditRouteImport } from './routes/contacts.$id_.edit'
 import { Route as ContactRolesIdEditRouteImport } from './routes/contact-roles.$id_.edit'
 import { Route as ContactGroupsIdEditRouteImport } from './routes/contact-groups.$id_.edit'
 import { Route as ConfigContextsIdEditRouteImport } from './routes/config-contexts.$id_.edit'
-import { Route as ComplianceRulesIdEditRouteImport } from './routes/compliance-rules.$id.edit'
+import { Route as ComplianceRulesIdEditRouteImport } from './routes/compliance-rules.$id_.edit'
 import { Route as ClustersIdEditRouteImport } from './routes/clusters.$id_.edit'
 import { Route as ClusterTypesIdEditRouteImport } from './routes/cluster-types.$id_.edit'
 import { Route as ClusterGroupsIdEditRouteImport } from './routes/cluster-groups.$id_.edit'
 import { Route as CircuitsIdEditRouteImport } from './routes/circuits.$id_.edit'
 import { Route as CircuitTypesIdEditRouteImport } from './routes/circuit-types.$id_.edit'
-import { Route as ChannelsIdEditRouteImport } from './routes/channels.$id.edit'
+import { Route as ChannelsIdEditRouteImport } from './routes/channels.$id_.edit'
 import { Route as CablesIdEditRouteImport } from './routes/cables.$id_.edit'
 import { Route as AutomationTargetsIdEditRouteImport } from './routes/automation-targets.$id_.edit'
 import { Route as AsnsIdEditRouteImport } from './routes/asns.$id_.edit'
-import { Route as AlertRulesIdEditRouteImport } from './routes/alert-rules.$id.edit'
+import { Route as AlertRulesIdEditRouteImport } from './routes/alert-rules.$id_.edit'
 import { Route as AggregatesIdEditRouteImport } from './routes/aggregates.$id_.edit'
 
 const ZonesRoute = ZonesRouteImport.update({
@@ -1077,6 +1080,11 @@ const WirelessLansNewRoute = WirelessLansNewRouteImport.update({
   path: '/new',
   getParentRoute: () => WirelessLansRoute,
 } as any)
+const WirelessLansIdRoute = WirelessLansIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => WirelessLansRoute,
+} as any)
 const WirelessLanGroupsNewRoute = WirelessLanGroupsNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -1607,6 +1615,11 @@ const ExportTemplatesNewRoute = ExportTemplatesNewRouteImport.update({
   path: '/new',
   getParentRoute: () => ExportTemplatesRoute,
 } as any)
+const ExportTemplatesIdRoute = ExportTemplatesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ExportTemplatesRoute,
+} as any)
 const DevicesNewRoute = DevicesNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -1680,6 +1693,11 @@ const ContactRolesIdRoute = ContactRolesIdRouteImport.update({
 const ContactGroupsNewRoute = ContactGroupsNewRouteImport.update({
   id: '/new',
   path: '/new',
+  getParentRoute: () => ContactGroupsRoute,
+} as any)
+const ContactGroupsIdRoute = ContactGroupsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
   getParentRoute: () => ContactGroupsRoute,
 } as any)
 const ConfigContextsNewRoute = ConfigContextsNewRouteImport.update({
@@ -1893,7 +1911,7 @@ const SitesIdEditRoute = SitesIdEditRouteImport.update({
   getParentRoute: () => SitesRoute,
 } as any)
 const SilencesIdEditRoute = SilencesIdEditRouteImport.update({
-  id: '/silences/$id/edit',
+  id: '/silences/$id_/edit',
   path: '/silences/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
@@ -2093,9 +2111,9 @@ const ConfigContextsIdEditRoute = ConfigContextsIdEditRouteImport.update({
   getParentRoute: () => ConfigContextsRoute,
 } as any)
 const ComplianceRulesIdEditRoute = ComplianceRulesIdEditRouteImport.update({
-  id: '/edit',
-  path: '/edit',
-  getParentRoute: () => ComplianceRulesIdRoute,
+  id: '/compliance-rules/$id_/edit',
+  path: '/compliance-rules/$id/edit',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ClustersIdEditRoute = ClustersIdEditRouteImport.update({
   id: '/clusters/$id_/edit',
@@ -2123,7 +2141,7 @@ const CircuitTypesIdEditRoute = CircuitTypesIdEditRouteImport.update({
   getParentRoute: () => CircuitTypesRoute,
 } as any)
 const ChannelsIdEditRoute = ChannelsIdEditRouteImport.update({
-  id: '/channels/$id/edit',
+  id: '/channels/$id_/edit',
   path: '/channels/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
@@ -2143,7 +2161,7 @@ const AsnsIdEditRoute = AsnsIdEditRouteImport.update({
   getParentRoute: () => AsnsRoute,
 } as any)
 const AlertRulesIdEditRoute = AlertRulesIdEditRouteImport.update({
-  id: '/alert-rules/$id/edit',
+  id: '/alert-rules/$id_/edit',
   path: '/alert-rules/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
@@ -2247,10 +2265,11 @@ export interface FileRoutesByFullPath {
   '/cluster-types/new': typeof ClusterTypesNewRoute
   '/clusters/$id': typeof ClustersIdRoute
   '/clusters/new': typeof ClustersNewRoute
-  '/compliance-rules/$id': typeof ComplianceRulesIdRouteWithChildren
+  '/compliance-rules/$id': typeof ComplianceRulesIdRoute
   '/compliance-rules/new': typeof ComplianceRulesNewRoute
   '/config-contexts/$id': typeof ConfigContextsIdRoute
   '/config-contexts/new': typeof ConfigContextsNewRoute
+  '/contact-groups/$id': typeof ContactGroupsIdRoute
   '/contact-groups/new': typeof ContactGroupsNewRoute
   '/contact-roles/$id': typeof ContactRolesIdRoute
   '/contact-roles/new': typeof ContactRolesNewRoute
@@ -2266,6 +2285,7 @@ export interface FileRoutesByFullPath {
   '/device-types/new': typeof DeviceTypesNewRoute
   '/devices/$id': typeof DevicesIdRoute
   '/devices/new': typeof DevicesNewRoute
+  '/export-templates/$id': typeof ExportTemplatesIdRoute
   '/export-templates/new': typeof ExportTemplatesNewRoute
   '/fhrp-groups/$id': typeof FhrpGroupsIdRoute
   '/fhrp-groups/new': typeof FhrpGroupsNewRoute
@@ -2372,6 +2392,7 @@ export interface FileRoutesByFullPath {
   '/webhooks/new': typeof WebhooksNewRoute
   '/wireless-lan-groups/$id': typeof WirelessLanGroupsIdRoute
   '/wireless-lan-groups/new': typeof WirelessLanGroupsNewRoute
+  '/wireless-lans/$id': typeof WirelessLansIdRoute
   '/wireless-lans/new': typeof WirelessLansNewRoute
   '/zones/$id': typeof ZonesIdRoute
   '/zones/new': typeof ZonesNewRoute
@@ -2550,10 +2571,11 @@ export interface FileRoutesByTo {
   '/cluster-types/new': typeof ClusterTypesNewRoute
   '/clusters/$id': typeof ClustersIdRoute
   '/clusters/new': typeof ClustersNewRoute
-  '/compliance-rules/$id': typeof ComplianceRulesIdRouteWithChildren
+  '/compliance-rules/$id': typeof ComplianceRulesIdRoute
   '/compliance-rules/new': typeof ComplianceRulesNewRoute
   '/config-contexts/$id': typeof ConfigContextsIdRoute
   '/config-contexts/new': typeof ConfigContextsNewRoute
+  '/contact-groups/$id': typeof ContactGroupsIdRoute
   '/contact-groups/new': typeof ContactGroupsNewRoute
   '/contact-roles/$id': typeof ContactRolesIdRoute
   '/contact-roles/new': typeof ContactRolesNewRoute
@@ -2569,6 +2591,7 @@ export interface FileRoutesByTo {
   '/device-types/new': typeof DeviceTypesNewRoute
   '/devices/$id': typeof DevicesIdRoute
   '/devices/new': typeof DevicesNewRoute
+  '/export-templates/$id': typeof ExportTemplatesIdRoute
   '/export-templates/new': typeof ExportTemplatesNewRoute
   '/fhrp-groups/$id': typeof FhrpGroupsIdRoute
   '/fhrp-groups/new': typeof FhrpGroupsNewRoute
@@ -2675,6 +2698,7 @@ export interface FileRoutesByTo {
   '/webhooks/new': typeof WebhooksNewRoute
   '/wireless-lan-groups/$id': typeof WirelessLanGroupsIdRoute
   '/wireless-lan-groups/new': typeof WirelessLanGroupsNewRoute
+  '/wireless-lans/$id': typeof WirelessLansIdRoute
   '/wireless-lans/new': typeof WirelessLansNewRoute
   '/zones/$id': typeof ZonesIdRoute
   '/zones/new': typeof ZonesNewRoute
@@ -2910,10 +2934,11 @@ export interface FileRoutesById {
   '/cluster-types/new': typeof ClusterTypesNewRoute
   '/clusters/$id': typeof ClustersIdRoute
   '/clusters/new': typeof ClustersNewRoute
-  '/compliance-rules/$id': typeof ComplianceRulesIdRouteWithChildren
+  '/compliance-rules/$id': typeof ComplianceRulesIdRoute
   '/compliance-rules/new': typeof ComplianceRulesNewRoute
   '/config-contexts/$id': typeof ConfigContextsIdRoute
   '/config-contexts/new': typeof ConfigContextsNewRoute
+  '/contact-groups/$id': typeof ContactGroupsIdRoute
   '/contact-groups/new': typeof ContactGroupsNewRoute
   '/contact-roles/$id': typeof ContactRolesIdRoute
   '/contact-roles/new': typeof ContactRolesNewRoute
@@ -2929,6 +2954,7 @@ export interface FileRoutesById {
   '/device-types/new': typeof DeviceTypesNewRoute
   '/devices/$id': typeof DevicesIdRoute
   '/devices/new': typeof DevicesNewRoute
+  '/export-templates/$id': typeof ExportTemplatesIdRoute
   '/export-templates/new': typeof ExportTemplatesNewRoute
   '/fhrp-groups/$id': typeof FhrpGroupsIdRoute
   '/fhrp-groups/new': typeof FhrpGroupsNewRoute
@@ -3035,6 +3061,7 @@ export interface FileRoutesById {
   '/webhooks/new': typeof WebhooksNewRoute
   '/wireless-lan-groups/$id': typeof WirelessLanGroupsIdRoute
   '/wireless-lan-groups/new': typeof WirelessLanGroupsNewRoute
+  '/wireless-lans/$id': typeof WirelessLansIdRoute
   '/wireless-lans/new': typeof WirelessLansNewRoute
   '/zones/$id': typeof ZonesIdRoute
   '/zones/new': typeof ZonesNewRoute
@@ -3107,17 +3134,17 @@ export interface FileRoutesById {
   '/wireless-lans/': typeof WirelessLansIndexRoute
   '/zones/': typeof ZonesIndexRoute
   '/aggregates/$id_/edit': typeof AggregatesIdEditRoute
-  '/alert-rules/$id/edit': typeof AlertRulesIdEditRoute
+  '/alert-rules/$id_/edit': typeof AlertRulesIdEditRoute
   '/asns/$id_/edit': typeof AsnsIdEditRoute
   '/automation-targets/$id_/edit': typeof AutomationTargetsIdEditRoute
   '/cables/$id_/edit': typeof CablesIdEditRoute
-  '/channels/$id/edit': typeof ChannelsIdEditRoute
+  '/channels/$id_/edit': typeof ChannelsIdEditRoute
   '/circuit-types/$id_/edit': typeof CircuitTypesIdEditRoute
   '/circuits/$id_/edit': typeof CircuitsIdEditRoute
   '/cluster-groups/$id_/edit': typeof ClusterGroupsIdEditRoute
   '/cluster-types/$id_/edit': typeof ClusterTypesIdEditRoute
   '/clusters/$id_/edit': typeof ClustersIdEditRoute
-  '/compliance-rules/$id/edit': typeof ComplianceRulesIdEditRoute
+  '/compliance-rules/$id_/edit': typeof ComplianceRulesIdEditRoute
   '/config-contexts/$id_/edit': typeof ConfigContextsIdEditRoute
   '/contact-groups/$id_/edit': typeof ContactGroupsIdEditRoute
   '/contact-roles/$id_/edit': typeof ContactRolesIdEditRoute
@@ -3157,7 +3184,7 @@ export interface FileRoutesById {
   '/rirs/$id_/edit': typeof RirsIdEditRoute
   '/route-targets/$id_/edit': typeof RouteTargetsIdEditRoute
   '/service-templates/$id_/edit': typeof ServiceTemplatesIdEditRoute
-  '/silences/$id/edit': typeof SilencesIdEditRoute
+  '/silences/$id_/edit': typeof SilencesIdEditRoute
   '/sites/$id_/edit': typeof SitesIdEditRoute
   '/statuses/$id_/edit': typeof StatusesIdEditRoute
   '/tags/$id_/edit': typeof TagsIdEditRoute
@@ -3275,6 +3302,7 @@ export interface FileRouteTypes {
     | '/compliance-rules/new'
     | '/config-contexts/$id'
     | '/config-contexts/new'
+    | '/contact-groups/$id'
     | '/contact-groups/new'
     | '/contact-roles/$id'
     | '/contact-roles/new'
@@ -3290,6 +3318,7 @@ export interface FileRouteTypes {
     | '/device-types/new'
     | '/devices/$id'
     | '/devices/new'
+    | '/export-templates/$id'
     | '/export-templates/new'
     | '/fhrp-groups/$id'
     | '/fhrp-groups/new'
@@ -3396,6 +3425,7 @@ export interface FileRouteTypes {
     | '/webhooks/new'
     | '/wireless-lan-groups/$id'
     | '/wireless-lan-groups/new'
+    | '/wireless-lans/$id'
     | '/wireless-lans/new'
     | '/zones/$id'
     | '/zones/new'
@@ -3578,6 +3608,7 @@ export interface FileRouteTypes {
     | '/compliance-rules/new'
     | '/config-contexts/$id'
     | '/config-contexts/new'
+    | '/contact-groups/$id'
     | '/contact-groups/new'
     | '/contact-roles/$id'
     | '/contact-roles/new'
@@ -3593,6 +3624,7 @@ export interface FileRouteTypes {
     | '/device-types/new'
     | '/devices/$id'
     | '/devices/new'
+    | '/export-templates/$id'
     | '/export-templates/new'
     | '/fhrp-groups/$id'
     | '/fhrp-groups/new'
@@ -3699,6 +3731,7 @@ export interface FileRouteTypes {
     | '/webhooks/new'
     | '/wireless-lan-groups/$id'
     | '/wireless-lan-groups/new'
+    | '/wireless-lans/$id'
     | '/wireless-lans/new'
     | '/zones/$id'
     | '/zones/new'
@@ -3937,6 +3970,7 @@ export interface FileRouteTypes {
     | '/compliance-rules/new'
     | '/config-contexts/$id'
     | '/config-contexts/new'
+    | '/contact-groups/$id'
     | '/contact-groups/new'
     | '/contact-roles/$id'
     | '/contact-roles/new'
@@ -3952,6 +3986,7 @@ export interface FileRouteTypes {
     | '/device-types/new'
     | '/devices/$id'
     | '/devices/new'
+    | '/export-templates/$id'
     | '/export-templates/new'
     | '/fhrp-groups/$id'
     | '/fhrp-groups/new'
@@ -4058,6 +4093,7 @@ export interface FileRouteTypes {
     | '/webhooks/new'
     | '/wireless-lan-groups/$id'
     | '/wireless-lan-groups/new'
+    | '/wireless-lans/$id'
     | '/wireless-lans/new'
     | '/zones/$id'
     | '/zones/new'
@@ -4130,17 +4166,17 @@ export interface FileRouteTypes {
     | '/wireless-lans/'
     | '/zones/'
     | '/aggregates/$id_/edit'
-    | '/alert-rules/$id/edit'
+    | '/alert-rules/$id_/edit'
     | '/asns/$id_/edit'
     | '/automation-targets/$id_/edit'
     | '/cables/$id_/edit'
-    | '/channels/$id/edit'
+    | '/channels/$id_/edit'
     | '/circuit-types/$id_/edit'
     | '/circuits/$id_/edit'
     | '/cluster-groups/$id_/edit'
     | '/cluster-types/$id_/edit'
     | '/clusters/$id_/edit'
-    | '/compliance-rules/$id/edit'
+    | '/compliance-rules/$id_/edit'
     | '/config-contexts/$id_/edit'
     | '/contact-groups/$id_/edit'
     | '/contact-roles/$id_/edit'
@@ -4180,7 +4216,7 @@ export interface FileRouteTypes {
     | '/rirs/$id_/edit'
     | '/route-targets/$id_/edit'
     | '/service-templates/$id_/edit'
-    | '/silences/$id/edit'
+    | '/silences/$id_/edit'
     | '/sites/$id_/edit'
     | '/statuses/$id_/edit'
     | '/tags/$id_/edit'
@@ -4280,7 +4316,7 @@ export interface RootRouteChildren {
   ClusterTypesNewRoute: typeof ClusterTypesNewRoute
   ClustersIdRoute: typeof ClustersIdRoute
   ClustersNewRoute: typeof ClustersNewRoute
-  ComplianceRulesIdRoute: typeof ComplianceRulesIdRouteWithChildren
+  ComplianceRulesIdRoute: typeof ComplianceRulesIdRoute
   ComplianceRulesNewRoute: typeof ComplianceRulesNewRoute
   DeviceRolesIdRoute: typeof DeviceRolesIdRoute
   DeviceRolesNewRoute: typeof DeviceRolesNewRoute
@@ -4320,6 +4356,7 @@ export interface RootRouteChildren {
   ClusterGroupsIdEditRoute: typeof ClusterGroupsIdEditRoute
   ClusterTypesIdEditRoute: typeof ClusterTypesIdEditRoute
   ClustersIdEditRoute: typeof ClustersIdEditRoute
+  ComplianceRulesIdEditRoute: typeof ComplianceRulesIdEditRoute
   DeviceRolesIdEditRoute: typeof DeviceRolesIdEditRoute
   IpsIdEditRoute: typeof IpsIdEditRoute
   PSlugSplatRoute: typeof PSlugSplatRoute
@@ -5328,6 +5365,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WirelessLansNewRouteImport
       parentRoute: typeof WirelessLansRoute
     }
+    '/wireless-lans/$id': {
+      id: '/wireless-lans/$id'
+      path: '/$id'
+      fullPath: '/wireless-lans/$id'
+      preLoaderRoute: typeof WirelessLansIdRouteImport
+      parentRoute: typeof WirelessLansRoute
+    }
     '/wireless-lan-groups/new': {
       id: '/wireless-lan-groups/new'
       path: '/new'
@@ -6070,6 +6114,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ExportTemplatesNewRouteImport
       parentRoute: typeof ExportTemplatesRoute
     }
+    '/export-templates/$id': {
+      id: '/export-templates/$id'
+      path: '/$id'
+      fullPath: '/export-templates/$id'
+      preLoaderRoute: typeof ExportTemplatesIdRouteImport
+      parentRoute: typeof ExportTemplatesRoute
+    }
     '/devices/new': {
       id: '/devices/new'
       path: '/new'
@@ -6173,6 +6224,13 @@ declare module '@tanstack/react-router' {
       path: '/new'
       fullPath: '/contact-groups/new'
       preLoaderRoute: typeof ContactGroupsNewRouteImport
+      parentRoute: typeof ContactGroupsRoute
+    }
+    '/contact-groups/$id': {
+      id: '/contact-groups/$id'
+      path: '/$id'
+      fullPath: '/contact-groups/$id'
+      preLoaderRoute: typeof ContactGroupsIdRouteImport
       parentRoute: typeof ContactGroupsRoute
     }
     '/config-contexts/new': {
@@ -6469,8 +6527,8 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SitesIdEditRouteImport
       parentRoute: typeof SitesRoute
     }
-    '/silences/$id/edit': {
-      id: '/silences/$id/edit'
+    '/silences/$id_/edit': {
+      id: '/silences/$id_/edit'
       path: '/silences/$id/edit'
       fullPath: '/silences/$id/edit'
       preLoaderRoute: typeof SilencesIdEditRouteImport
@@ -6749,12 +6807,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfigContextsIdEditRouteImport
       parentRoute: typeof ConfigContextsRoute
     }
-    '/compliance-rules/$id/edit': {
-      id: '/compliance-rules/$id/edit'
-      path: '/edit'
+    '/compliance-rules/$id_/edit': {
+      id: '/compliance-rules/$id_/edit'
+      path: '/compliance-rules/$id/edit'
       fullPath: '/compliance-rules/$id/edit'
       preLoaderRoute: typeof ComplianceRulesIdEditRouteImport
-      parentRoute: typeof ComplianceRulesIdRoute
+      parentRoute: typeof rootRouteImport
     }
     '/clusters/$id_/edit': {
       id: '/clusters/$id_/edit'
@@ -6791,8 +6849,8 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CircuitTypesIdEditRouteImport
       parentRoute: typeof CircuitTypesRoute
     }
-    '/channels/$id/edit': {
-      id: '/channels/$id/edit'
+    '/channels/$id_/edit': {
+      id: '/channels/$id_/edit'
       path: '/channels/$id/edit'
       fullPath: '/channels/$id/edit'
       preLoaderRoute: typeof ChannelsIdEditRouteImport
@@ -6819,8 +6877,8 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AsnsIdEditRouteImport
       parentRoute: typeof AsnsRoute
     }
-    '/alert-rules/$id/edit': {
-      id: '/alert-rules/$id/edit'
+    '/alert-rules/$id_/edit': {
+      id: '/alert-rules/$id_/edit'
       path: '/alert-rules/$id/edit'
       fullPath: '/alert-rules/$id/edit'
       preLoaderRoute: typeof AlertRulesIdEditRouteImport
@@ -6961,12 +7019,14 @@ const ConfigContextsRouteWithChildren = ConfigContextsRoute._addFileChildren(
 )
 
 interface ContactGroupsRouteChildren {
+  ContactGroupsIdRoute: typeof ContactGroupsIdRoute
   ContactGroupsNewRoute: typeof ContactGroupsNewRoute
   ContactGroupsIndexRoute: typeof ContactGroupsIndexRoute
   ContactGroupsIdEditRoute: typeof ContactGroupsIdEditRoute
 }
 
 const ContactGroupsRouteChildren: ContactGroupsRouteChildren = {
+  ContactGroupsIdRoute: ContactGroupsIdRoute,
   ContactGroupsNewRoute: ContactGroupsNewRoute,
   ContactGroupsIndexRoute: ContactGroupsIndexRoute,
   ContactGroupsIdEditRoute: ContactGroupsIdEditRoute,
@@ -7085,12 +7145,14 @@ const DevicesRouteWithChildren =
   DevicesRoute._addFileChildren(DevicesRouteChildren)
 
 interface ExportTemplatesRouteChildren {
+  ExportTemplatesIdRoute: typeof ExportTemplatesIdRoute
   ExportTemplatesNewRoute: typeof ExportTemplatesNewRoute
   ExportTemplatesIndexRoute: typeof ExportTemplatesIndexRoute
   ExportTemplatesIdEditRoute: typeof ExportTemplatesIdEditRoute
 }
 
 const ExportTemplatesRouteChildren: ExportTemplatesRouteChildren = {
+  ExportTemplatesIdRoute: ExportTemplatesIdRoute,
   ExportTemplatesNewRoute: ExportTemplatesNewRoute,
   ExportTemplatesIndexRoute: ExportTemplatesIndexRoute,
   ExportTemplatesIdEditRoute: ExportTemplatesIdEditRoute,
@@ -7786,12 +7848,14 @@ const WirelessLanGroupsRouteWithChildren =
   WirelessLanGroupsRoute._addFileChildren(WirelessLanGroupsRouteChildren)
 
 interface WirelessLansRouteChildren {
+  WirelessLansIdRoute: typeof WirelessLansIdRoute
   WirelessLansNewRoute: typeof WirelessLansNewRoute
   WirelessLansIndexRoute: typeof WirelessLansIndexRoute
   WirelessLansIdEditRoute: typeof WirelessLansIdEditRoute
 }
 
 const WirelessLansRouteChildren: WirelessLansRouteChildren = {
+  WirelessLansIdRoute: WirelessLansIdRoute,
   WirelessLansNewRoute: WirelessLansNewRoute,
   WirelessLansIndexRoute: WirelessLansIndexRoute,
   WirelessLansIdEditRoute: WirelessLansIdEditRoute,
@@ -7816,17 +7880,6 @@ const ZonesRouteChildren: ZonesRouteChildren = {
 }
 
 const ZonesRouteWithChildren = ZonesRoute._addFileChildren(ZonesRouteChildren)
-
-interface ComplianceRulesIdRouteChildren {
-  ComplianceRulesIdEditRoute: typeof ComplianceRulesIdEditRoute
-}
-
-const ComplianceRulesIdRouteChildren: ComplianceRulesIdRouteChildren = {
-  ComplianceRulesIdEditRoute: ComplianceRulesIdEditRoute,
-}
-
-const ComplianceRulesIdRouteWithChildren =
-  ComplianceRulesIdRoute._addFileChildren(ComplianceRulesIdRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -7909,7 +7962,7 @@ const rootRouteChildren: RootRouteChildren = {
   ClusterTypesNewRoute: ClusterTypesNewRoute,
   ClustersIdRoute: ClustersIdRoute,
   ClustersNewRoute: ClustersNewRoute,
-  ComplianceRulesIdRoute: ComplianceRulesIdRouteWithChildren,
+  ComplianceRulesIdRoute: ComplianceRulesIdRoute,
   ComplianceRulesNewRoute: ComplianceRulesNewRoute,
   DeviceRolesIdRoute: DeviceRolesIdRoute,
   DeviceRolesNewRoute: DeviceRolesNewRoute,
@@ -7949,6 +8002,7 @@ const rootRouteChildren: RootRouteChildren = {
   ClusterGroupsIdEditRoute: ClusterGroupsIdEditRoute,
   ClusterTypesIdEditRoute: ClusterTypesIdEditRoute,
   ClustersIdEditRoute: ClustersIdEditRoute,
+  ComplianceRulesIdEditRoute: ComplianceRulesIdEditRoute,
   DeviceRolesIdEditRoute: DeviceRolesIdEditRoute,
   IpsIdEditRoute: IpsIdEditRoute,
   PSlugSplatRoute: PSlugSplatRoute,

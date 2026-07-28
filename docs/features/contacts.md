@@ -61,6 +61,27 @@ priority. To remove an attachment, detach it from that object's Contacts tab.
     If a group or role is still referenced by a contact or an attachment, Danbyte
     blocks the delete. Clear those references first.
 
+## Open a contact group
+
+Clicking a name in **Organization → Contact groups** opens that group's detail
+page. Because groups nest, the page is how you walk the tree: the parent is a
+link under the title (up one level), and the **Child groups** tab is the way
+down.
+
+- **Overview** — name, slug, description, the parent group, and the two counts
+  the tabs list.
+- **Child groups** — the groups nested *directly* under this one, one hop, not
+  the whole subtree. Each row links to its own page, so you walk deeper a level
+  at a time. Powered by `GET /api/contact-groups/?parent=<id>`.
+- **Contacts** — every contact in this group, using the same table the main
+  Contacts page draws (minus the redundant Group column). This is the list to
+  read before you rename or delete a group: it is what the delete guard counts.
+- **Journal** — your notes on this group.
+- **History** — the change log for the row.
+
+Both counts are one hop, not a subtree total, so the numbers on the tabs and the
+rows in the tables can never disagree.
+
 ## Open a contact role
 
 Clicking a name in **Organization → Contact roles** opens that role's detail

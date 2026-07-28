@@ -5097,9 +5097,17 @@ class ContactGroupViewSet(_ContactCatalogViewSet):
     model = ContactGroup
 
     def get_queryset(self):
-        return super().get_queryset().annotate(
+        qs = super().get_queryset().annotate(
             contact_count_annotated=Count("contacts")
         )
+        # "Groups nested directly under this one" — the group detail page's
+        # Child groups tab. Applied after the tenant scoping above, so a
+        # foreign parent id narrows to nothing rather than widening the set.
+        if self.request:
+            parent = self.request.query_params.get("parent")
+            if parent:
+                qs = qs.filter(parent_id=parent)
+        return qs
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()

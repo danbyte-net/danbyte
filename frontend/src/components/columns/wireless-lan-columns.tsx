@@ -15,10 +15,6 @@ import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 // their columns here, so a WLAN row reads identically in both places. Facet
 // meta (useTableFilters) is attached where it makes sense; panes that don't
 // draw a facet rail simply ignore it.
-//
-// The SSID cell still points at the edit form: WirelessLAN has no `$id` detail
-// route yet. Flip it to "/wireless-lans/$id" here — in this one place — when
-// that route lands.
 
 export type WirelessLANColumnId =
   | "numid"
@@ -72,7 +68,7 @@ export function buildWirelessLANColumns<T extends WirelessLAN = WirelessLAN>(
       header: ({ column }) => <SortHeader column={column} label="SSID" />,
       cell: ({ row }) => (
         <Link
-          to="/wireless-lans/$id/edit"
+          to="/wireless-lans/$id"
           params={{ id: row.original.id }}
           className="font-medium hover:underline"
         >

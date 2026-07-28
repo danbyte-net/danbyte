@@ -6,7 +6,7 @@ import { EditPageShell } from "@/components/edit-page-shell"
 import { ComplianceRuleForm } from "@/components/compliance/rule-form"
 import { QueryError } from "@/components/query-error"
 
-export const Route = createFileRoute("/compliance-rules/$id/edit")({
+export const Route = createFileRoute("/compliance-rules/$id_/edit")({
   component: EditRulePage,
 })
 

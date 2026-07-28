@@ -6,7 +6,7 @@ import { EditPageShell } from "@/components/edit-page-shell"
 import { ChannelForm } from "@/components/monitoring/channel-form"
 import { QueryError } from "@/components/query-error"
 
-export const Route = createFileRoute("/channels/$id/edit")({
+export const Route = createFileRoute("/channels/$id_/edit")({
   component: EditChannelPage,
 })
 

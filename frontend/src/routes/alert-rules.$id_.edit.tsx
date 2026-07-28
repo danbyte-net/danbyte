@@ -1,37 +1,37 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 
-import { api, type Silence } from "@/lib/api"
+import { api, type AlertRule } from "@/lib/api"
 import { EditPageShell } from "@/components/edit-page-shell"
-import { SilenceForm } from "@/components/monitoring/silence-form"
+import { RuleForm } from "@/components/monitoring/rule-form"
 import { QueryError } from "@/components/query-error"
 
-export const Route = createFileRoute("/silences/$id/edit")({
-  component: EditSilencePage,
+export const Route = createFileRoute("/alert-rules/$id_/edit")({
+  component: EditRulePage,
 })
 
-function EditSilencePage() {
+function EditRulePage() {
   const { id } = Route.useParams()
   const nav = useNavigate()
   const back = () =>
     nav({
       to: "/alerts",
-      search: { tab: "silences", state: "firing", severity: "all", ack: "all", q: "", site: "all" },
+      search: { tab: "rules", state: "firing", severity: "all", ack: "all", q: "", site: "all" },
     })
 
   const q = useQuery({
-    queryKey: ["silence", id],
-    queryFn: () => api<Silence>(`/api/monitoring/silences/${id}/`),
+    queryKey: ["alert-rule", id],
+    queryFn: () => api<AlertRule>(`/api/monitoring/alert-rules/${id}/`),
   })
 
   return (
     <EditPageShell
-      crumbs={[{ label: "Alerts", to: "/alerts" }, { label: "Edit silence" }]}
-      title="Edit silence"
+      crumbs={[{ label: "Alerts", to: "/alerts" }, { label: "Edit rule" }]}
+      title="Edit alert rule"
     >
       {q.isError && <QueryError error={q.error} />}
       {q.data ? (
-        <SilenceForm silence={q.data} onSaved={back} onCancel={back} />
+        <RuleForm rule={q.data} onSaved={back} onCancel={back} />
       ) : (
         !q.isError && <p className="text-sm text-muted-foreground">Loading…</p>
       )}

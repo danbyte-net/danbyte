@@ -54,12 +54,31 @@ Total: {{ count }}
     data and use normal Jinja2 features, but they can't reach into Python
     internals or run arbitrary code. This keeps a shared template library safe.
 
+## Open a template
+
+Clicking a name in **Customize → Export templates** opens that template's detail
+page, the same way every other object in Danbyte works. The pencil in the header
+edits it; **Render** produces the file without leaving the page.
+
+- **Overview** — what the template is for (name, object type, description), what
+  it produces (file extension, MIME type, inline or attachment), when it was
+  created and last changed, and then the **template body itself**, rendered in a
+  scrollable monospace box.
+- **Journal** — your notes on this template.
+- **History** — the change log for the row.
+
+An export template has no reverse relations: nothing in the data model points
+back at one, and a render is produced on demand rather than stored. So the page
+is deliberately short — the template body is the content, and there is no
+"what uses this" tab to show.
+
 ## Preview and download
 
 - While editing a template, the **Run preview** pane renders it against your live
   objects so you can see the output before saving.
 - From the template list, each row has a **Render & download** action that
-  produces the file (saved as an attachment when you enabled that option).
+  produces the file (saved as an attachment when you enabled that option). The
+  same action sits in the header of the template's own page.
 
 ## Config-template bindings
 

@@ -95,7 +95,7 @@ function ExportTemplatesPage() {
         header: ({ column }) => <SortHeader column={column} label="Name" />,
         cell: ({ row }) => (
           <Link
-            to="/export-templates/$id/edit"
+            to="/export-templates/$id"
             params={{ id: row.original.id }}
             className="font-medium hover:underline"
           >

@@ -7,6 +7,8 @@ import type {
   Cable,
   Circuit,
   Cluster,
+  Contact,
+  ContactGroup,
   IPAddress,
   Paginated,
   PowerFeed,
@@ -19,6 +21,9 @@ import { buildCableColumns } from "@/components/columns/cable-columns"
 import { buildCircuitColumns } from "@/components/columns/circuit-columns"
 import type { CircuitColumnId } from "@/components/columns/circuit-columns"
 import { buildClusterColumns } from "@/components/columns/cluster-columns"
+import { buildContactColumns } from "@/components/columns/contact-columns"
+import type { ContactColumnId } from "@/components/columns/contact-columns"
+import { buildContactGroupColumns } from "@/components/columns/contact-group-columns"
 import { buildIpColumns } from "@/components/columns/ip-columns"
 import { buildPowerFeedColumns } from "@/components/columns/power-feed-columns"
 import type { PowerFeedColumnId } from "@/components/columns/power-feed-columns"
@@ -350,6 +355,77 @@ export function EmbeddedClusterTable({
       columns={columns}
       flexColumn="name"
       tableId="embedded-clusters"
+    />
+  )
+}
+
+/** Contact groups scoped by parent — the Child groups pane on a group's own
+ * detail page. `parent` is a single hop down, not the whole subtree: each row
+ * links to its own page, so deeper nesting is walked one level at a time. */
+export function EmbeddedContactGroupTable({
+  filter,
+  emptyText = "No child groups.",
+}: {
+  filter: Record<string, string>
+  emptyText?: string
+}) {
+  const q = useEmbed<ContactGroup>(
+    "embedded-contact-groups",
+    "/api/contact-groups/",
+    filter
+  )
+  const columns = useMemo<ColumnDef<ContactGroup>[]>(
+    () =>
+      // "parent" would repeat the page you're already on.
+      buildContactGroupColumns({
+        include: ["name", "description", "contacts", "children", "updated"],
+      }),
+    []
+  )
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="description"
+      tableId="embedded-contact-groups"
+    />
+  )
+}
+
+/** Contacts scoped by group. Reuses the one contact column factory, so a
+ * contact row reads the same here as on /contacts. */
+export function EmbeddedContactTable({
+  filter,
+  omitGroup = false,
+  emptyText = "No contacts.",
+}: {
+  filter: Record<string, string>
+  omitGroup?: boolean
+  emptyText?: string
+}) {
+  const q = useEmbed<Contact>("embedded-contacts", "/api/contacts/", filter)
+  const columns = useMemo<ColumnDef<Contact>[]>(() => {
+    const include: ContactColumnId[] = [
+      "name",
+      "title",
+      "email",
+      "phone",
+      "group",
+      "assignments",
+      "tags",
+    ]
+    return buildContactColumns({
+      include: omitGroup ? include.filter((id) => id !== "group") : include,
+    })
+  }, [omitGroup])
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="title"
+      tableId="embedded-contacts"
     />
   )
 }
