@@ -27,11 +27,15 @@ server {
 }
 
 server {
-    # `listen … http2` (rather than the standalone `http2 on;` directive) keeps
-    # this valid on nginx < 1.25.1 — e.g. nginx 1.24 on Ubuntu 24.04, where
-    # `http2 on;` fails `nginx -t` with `unknown directive "http2"`.
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    # HTTP/2 form is chosen by the renderer (make proxy-install) from the
+    # installed nginx version: 1.25.1+ gets the standalone `http2 on;` directive
+    # (@@H2_DIRECTIVE@@) with a bare `listen … ssl`, older nginx (e.g. 1.24 on
+    # Ubuntu 24.04) gets `listen … ssl http2` via @@H2_LISTEN@@, where the
+    # standalone directive is an unknown-directive error. One template, no
+    # deprecation warning on new nginx, no breakage on old.
+    listen 443 ssl@@H2_LISTEN@@;
+    listen [::]:443 ssl@@H2_LISTEN@@;
+@@H2_DIRECTIVE@@
     server_name @@SERVER_NAME@@;
 
     ssl_certificate     @@CERT@@;

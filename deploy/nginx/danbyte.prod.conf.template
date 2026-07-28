@@ -29,8 +29,13 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    # HTTP/2 form chosen by the renderer from the installed nginx version:
+    # 1.25.1+ → bare `listen … ssl` + standalone `http2 on;` (@@H2_DIRECTIVE@@);
+    # older → `listen … ssl http2` (@@H2_LISTEN@@). Avoids the deprecation
+    # warning on new nginx and the unknown-directive error on old.
+    listen 443 ssl@@H2_LISTEN@@;
+    listen [::]:443 ssl@@H2_LISTEN@@;
+@@H2_DIRECTIVE@@
     server_name @@SERVER_NAME@@;
 
     ssl_certificate     @@CERT@@;

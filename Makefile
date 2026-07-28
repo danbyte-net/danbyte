@@ -193,6 +193,28 @@ proxy-cert:
 	    -subj "/CN=$(PROXY_HOST)" -addext "subjectAltName=$$san" ; \
 	else echo "Cert already exists in $(CERT_DIR) (delete to regenerate)." ; fi
 
+# Render $(NGINX_TMPL) → $(NGINX_SITE), choosing the HTTP/2 form from the
+# INSTALLED nginx version (detected at recipe time, so nginx is already present):
+# 1.25.1+ gets a bare `listen … ssl` + standalone `http2 on;`; older nginx gets
+# `listen … ssl http2`, where the standalone directive is a hard error. One
+# template, no deprecation warning on new nginx, no breakage on old. Shared by
+# proxy-install and proxy-reload so the two can't drift.
+define RENDER_NGINX
+ver=$$(nginx -v 2>&1 | sed -n 's|.*/\([0-9][0-9.]*\).*|\1|p'); \
+if [ -n "$$ver" ] && [ "$$(printf '1.25.1\n%s\n' "$$ver" | sort -V | head -n1)" = "1.25.1" ]; then \
+  h2l=""; h2d="    http2 on;"; \
+else h2l=" http2"; h2d=""; fi; \
+sed -e "s|@@SERVER_NAME@@|$(PROXY_HOST)|g" \
+    -e "s|@@CERT@@|$(CERT)|g" \
+    -e "s|@@KEY@@|$(KEY)|g" \
+    -e "s|@@STATIC_ROOT@@|$(STATIC_ROOT)|g" \
+    -e "s|@@MEDIA_ROOT@@|$(MEDIA_ROOT)|g" \
+    -e "s|@@MAINTENANCE_ROOT@@|$(PROJECT_DIR)/deploy|g" \
+    -e "s|@@H2_LISTEN@@|$$h2l|g" \
+    -e "s|@@H2_DIRECTIVE@@|$$h2d|g" \
+    $(NGINX_TMPL) | sudo tee $(NGINX_SITE) >/dev/null
+endef
+
 proxy-install: proxy-cert
 	@command -v nginx >/dev/null || { echo "Installing nginx ..."; sudo apt-get update -qq && sudo apt-get install -y nginx; }
 	@echo "Installing cert to /etc/ssl/danbyte ..."
@@ -200,13 +222,7 @@ proxy-install: proxy-cert
 	@sudo install -m 644 $(CERT_DIR)/danbyte.crt $(CERT)
 	@sudo install -m 600 $(CERT_DIR)/danbyte.key $(KEY)
 	@echo "Writing nginx site for host '$(PROXY_HOST)' ..."
-	@sed -e "s|@@SERVER_NAME@@|$(PROXY_HOST)|g" \
-	     -e "s|@@CERT@@|$(CERT)|g" \
-	     -e "s|@@KEY@@|$(KEY)|g" \
-	     -e "s|@@STATIC_ROOT@@|$(STATIC_ROOT)|g" \
-	     -e "s|@@MEDIA_ROOT@@|$(MEDIA_ROOT)|g" \
-	     -e "s|@@MAINTENANCE_ROOT@@|$(PROJECT_DIR)/deploy|g" \
-	     $(NGINX_TMPL) | sudo tee $(NGINX_SITE) >/dev/null
+	@$(RENDER_NGINX)
 	@sudo mkdir -p /etc/nginx/sites-enabled
 	@sudo ln -sfn $(NGINX_SITE) /etc/nginx/sites-enabled/danbyte.conf
 	@sudo rm -f /etc/nginx/sites-enabled/default
@@ -217,13 +233,7 @@ proxy-install: proxy-cert
 	@echo "Make sure the dev servers are up:  make docs-up backend-up  +  make frontend-dev"
 
 proxy-reload:
-	@sed -e "s|@@SERVER_NAME@@|$(PROXY_HOST)|g" \
-	     -e "s|@@CERT@@|$(CERT)|g" \
-	     -e "s|@@KEY@@|$(KEY)|g" \
-	     -e "s|@@STATIC_ROOT@@|$(STATIC_ROOT)|g" \
-	     -e "s|@@MEDIA_ROOT@@|$(MEDIA_ROOT)|g" \
-	     -e "s|@@MAINTENANCE_ROOT@@|$(PROJECT_DIR)/deploy|g" \
-	     $(NGINX_TMPL) | sudo tee $(NGINX_SITE) >/dev/null
+	@$(RENDER_NGINX)
 	@sudo nginx -t && sudo systemctl reload nginx && echo "Reloaded."
 
 proxy-uninstall:
