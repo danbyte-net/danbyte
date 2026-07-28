@@ -136,6 +136,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # Bindings say *which of your endpoints* serve a certificate — the blast
     # radius of an expiry, and a map of your estate. Grantable separately.
     ("monitoring.CertificateBinding", "Certificate bindings", "Monitoring"),
+    # Assignments are intent — which object *should* present a certificate.
+    # Writable source of truth, so its own add/change/delete grant.
+    ("monitoring.CertificateAssignment", "Certificate assignments", "Monitoring"),
     ("monitoring.NotificationChannel", "Notification channels", "Monitoring"),
     ("monitoring.AlertRule", "Alert rules", "Monitoring"),
     ("monitoring.Silence", "Silences", "Monitoring"),

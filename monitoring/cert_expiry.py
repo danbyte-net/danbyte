@@ -325,6 +325,20 @@ def evaluate_endpoints(*, tenant_ids=None, endpoint_keys=None, now=None) -> dict
             "certificate expiry: %s opened, %s updated, %s resolved (%s stale)",
             counts["opened"], counts["updated"], counts["resolved"], counts["stale"],
         )
+
+    # Assignment drift (S1) rides the same endpoint pass — reactive after an
+    # observation, and the nightly sweep — so a served-vs-declared mismatch
+    # opens/resolves on the same schedule as expiry. Isolated: a drift problem
+    # must never lose the expiry reconciliation above.
+    try:
+        from .cert_drift import evaluate_mismatch
+
+        evaluate_mismatch(
+            tenant_ids=tenant_ids, endpoint_keys=endpoint_keys, now=now
+        )
+    except Exception:  # noqa: BLE001 — mismatch drift must not break expiry
+        log.exception("certificate mismatch evaluation failed")
+
     return counts
 
 
@@ -352,4 +366,14 @@ def sweep(now=None) -> dict:
             alert.tenant_id, alert.dedup_key[len(DEDUP_PREFIX):],
             "no binding remains for this endpoint", now,
         )
+
+    # Same orphan cleanup for mismatch drift alerts (endpoint's leaf binding
+    # gone). Isolated so an issue here can't lose the expiry sweep above.
+    try:
+        from .cert_drift import sweep_orphans
+
+        counts["resolved"] += sweep_orphans(now)
+    except Exception:  # noqa: BLE001 — mismatch sweep must not break expiry
+        log.exception("certificate mismatch orphan sweep failed")
+
     return counts

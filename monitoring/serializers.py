@@ -18,6 +18,7 @@ from .models import (
     Alert,
     AlertRule,
     Certificate,
+    CertificateAssignment,
     CertificateBinding,
     CheckAssignment,
     CheckKind,
@@ -92,21 +93,29 @@ class DeviceSnmpSerializer(serializers.ModelSerializer):
 
 
 class CertificateSerializer(serializers.ModelSerializer):
-    """An observed X.509 certificate — public fields only, and **read-only**.
+    """An X.509 certificate — public fields only.
 
-    Certificates are observed, never authored: nothing here is writable through
-    the API, so there is no payload that could carry key material even before
-    the model's own guard. ``is_expired`` / ``days_until_expiry`` are derived at
-    read time so a stale row can't report itself healthy.
+    The intrinsic facts are properties of the exact DER bytes the fingerprint
+    covers, so they are **read-only**: subject/issuer/serial/fingerprint/validity/
+    key can never be edited, whatever a payload says. Only the authored metadata
+    (``name``, ``notes``) is writable, and only via PATCH — there is still no way
+    for a payload to reach a fact field, which is the outermost layer of "a
+    private key is never accepted". ``pem`` is the stored **public** PEM (present
+    only for uploaded certs) and is read-only here; it is set by the upload path.
+
+    ``is_expired`` / ``days_until_expiry`` / ``origin`` are derived at read time
+    so a stale row can't report itself healthy or mislabel how it came to exist.
     """
 
     is_expired = serializers.BooleanField(read_only=True)
     days_until_expiry = serializers.FloatField(read_only=True)
+    origin = serializers.CharField(read_only=True)
     binding_count = serializers.IntegerField(
         read_only=True, default=0,
         help_text="How many endpoints are on record as having served this "
         "certificate — the size of the blast radius when it expires.",
     )
+    assignment_count = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
         model = Certificate
@@ -115,10 +124,35 @@ class CertificateSerializer(serializers.ModelSerializer):
             "issuer_cn", "serial", "san_dns", "san_ip", "not_before",
             "not_after", "is_expired", "days_until_expiry",
             "public_key_algorithm", "public_key_bits", "signature_algorithm",
-            "self_signed", "last_seen", "binding_count",
+            "self_signed", "last_seen", "binding_count", "assignment_count",
+            # Authoring surface.
+            "origin", "observed", "uploaded", "pem", "name", "notes",
             "created_at", "updated_at",
         ]
-        read_only_fields = fields
+        # Everything intrinsic (and the origin flags/pem) is read-only; only the
+        # authored metadata may be written.
+        read_only_fields = [
+            f for f in fields if f not in ("name", "notes")
+        ]
+
+
+class CertificateUploadSerializer(serializers.Serializer):
+    """Input for authoring a certificate from a pasted/uploaded public PEM.
+
+    Only ``pem`` (plus optional metadata) is accepted — the facts are extracted
+    from the bytes, never trusted from the payload. The private-key refusal and
+    parsing happen in :func:`monitoring.certificates.upload_certificate`.
+    """
+
+    pem = serializers.CharField(
+        help_text="The public certificate in PEM format (-----BEGIN "
+        "CERTIFICATE-----). Never a private key.",
+        trim_whitespace=False,
+    )
+    name = serializers.CharField(
+        max_length=255, required=False, allow_blank=True, default=""
+    )
+    notes = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 class CertificateBindingSerializer(serializers.ModelSerializer):
@@ -153,6 +187,49 @@ class CertificateBindingSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
         ]
         read_only_fields = fields
+
+
+class CertificateAssignmentSerializer(serializers.ModelSerializer):
+    """Declares that a certificate should be presented by some object.
+
+    The generic ``(object_type, object_id)`` target is validated for existence
+    *in the active tenant* by the viewset (it lives in the ``api`` app and is
+    resolved by label). Here we only guard the shape of ``object_type`` and
+    expose read-only certificate context for the assignment lists.
+    """
+
+    certificate_subject_cn = serializers.CharField(
+        source="certificate.subject_cn", read_only=True, default=None
+    )
+    certificate_fingerprint = serializers.CharField(
+        source="certificate.fingerprint_sha256", read_only=True, default=None
+    )
+    certificate_not_after = serializers.DateTimeField(
+        source="certificate.not_after", read_only=True, default=None
+    )
+
+    def validate_object_type(self, value):
+        from auth_api.object_types import is_registered
+
+        value = (value or "").strip().lower()
+        # Resolve by the model's registry slug (e.g. "device"), the same shape
+        # ContactAssignment targets use, accepting the "app.model" label form.
+        slug = value.split(".")[-1]
+        if not is_registered(slug):
+            raise serializers.ValidationError(
+                "Unknown object type. Use e.g. api.device, api.ipaddress, "
+                "api.virtualmachine, api.service."
+            )
+        return value
+
+    class Meta:
+        model = CertificateAssignment
+        fields = [
+            "id", "certificate", "certificate_subject_cn",
+            "certificate_fingerprint", "certificate_not_after",
+            "object_type", "object_id", "notes", "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class SnmpSensorSerializer(serializers.ModelSerializer):

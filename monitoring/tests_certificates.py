@@ -29,6 +29,8 @@ from api.test_utils import status_for
 from core.models import Organization, Tenant
 from danbyte_checks import get_checker, tls_cert
 
+from .cert_drift import accept_cert_mismatch, evaluate_mismatch
+from .cert_drift import dedup_key as mismatch_key
 from .cert_expiry import (
     DEDUP_PREFIX,
     EXPIRED,
@@ -39,12 +41,19 @@ from .cert_expiry import (
     sweep,
     thresholds,
 )
-from .certificates import Endpoint, observe_endpoint, record_chain
+from .certificates import (
+    CertificateUploadError,
+    Endpoint,
+    observe_endpoint,
+    record_chain,
+    upload_certificate,
+)
 from .models import (
     Alert,
     AlertSeverity,
     AlertStatus,
     Certificate,
+    CertificateAssignment,
     CertificateBinding,
     MonitoringSettings,
 )
@@ -444,16 +453,29 @@ class TenantIsolationTests(_TenantBase):
 
 
 class NoPrivateKeyTests(_TenantBase):
-    def test_the_model_has_no_field_that_could_hold_key_material(self):
-        """There is deliberately no PEM/blob/notes/custom-fields column — the
-        strongest form of "a private key is never stored" is having nowhere to
-        put one. Every text field is a named, bounded X.509 attribute."""
+    def test_the_model_has_no_key_bearing_field(self):
+        """S0 adds a ``pem`` column for the **public** certificate (broadcast to
+        every client — not a secret) and free-text ``name``/``notes``, but still
+        has no field named for a key or an opaque blob, and the ``save`` guard
+        below rejects key material in any field regardless."""
         names = {f.name for f in Certificate._meta.get_fields()}
         for forbidden in (
-            "private_key", "key", "key_pem", "pem", "raw", "blob", "body",
-            "secret_params", "secrets", "custom_fields", "notes", "data",
+            "private_key", "key", "key_pem", "raw", "blob", "body",
+            "secret_params", "secrets", "custom_fields", "data",
         ):
             self.assertNotIn(forbidden, names)
+        # The public PEM column exists deliberately; the private key never does.
+        self.assertIn("pem", names)
+
+    def test_save_refuses_key_material_in_pem_and_notes(self):
+        der, _ = make_cert("svc.example.internal")
+        _, rows = self.observe([der])
+        for field in ("pem", "notes", "name"):
+            with self.subTest(field=field):
+                fresh = Certificate.objects.get(pk=rows[0].pk)
+                setattr(fresh, field, PRIVATE_KEY_PEM)
+                with self.assertRaises(ValidationError):
+                    fresh.save()
 
     def test_save_refuses_key_material_in_any_field(self):
         der, _ = make_cert("svc.example.internal")
@@ -530,23 +552,53 @@ class CertificateApiTests(APITestCase):
         resp = self.client.get(f"/api/monitoring/certificates/{theirs.id}/")
         self.assertEqual(resp.status_code, 404)
 
-    def test_write_methods_are_refused(self):
+    def test_observed_facts_are_read_only_on_patch(self):
+        """PATCH may touch authored metadata only — never an intrinsic fact.
+
+        A payload trying to overwrite subject/fingerprint (or smuggle a key into
+        one) is silently ignored for the facts and accepted for name/notes."""
         mine = Certificate.objects.get(tenant=self.tenant)
-        payload = {"subject_cn": "hacked", "subject": PRIVATE_KEY_PEM}
-        self.assertEqual(
-            self.client.post("/api/monitoring/certificates/", payload,
-                             format="json").status_code, 405
+        payload = {
+            "subject_cn": "hacked", "subject": PRIVATE_KEY_PEM,
+            "fingerprint_sha256": "0" * 64,
+            "name": "Edge cert", "notes": "renewed by ACME",
+        }
+        resp = self.client.patch(
+            f"/api/monitoring/certificates/{mine.id}/", payload, format="json"
         )
-        self.assertEqual(
-            self.client.patch(f"/api/monitoring/certificates/{mine.id}/", payload,
-                              format="json").status_code, 405
-        )
-        self.assertEqual(
-            self.client.delete(f"/api/monitoring/certificates/{mine.id}/").status_code,
-            405,
-        )
+        self.assertEqual(resp.status_code, 200)
         mine.refresh_from_db()
+        # Facts unchanged; only authored metadata took.
         self.assertEqual(mine.subject_cn, "mine.example.com")
+        self.assertNotIn("PRIVATE KEY", mine.subject)
+        self.assertEqual(mine.name, "Edge cert")
+        self.assertEqual(mine.notes, "renewed by ACME")
+
+    def test_create_without_pem_is_a_400_not_a_405(self):
+        """The create path is upload-only: a body with fact fields but no PEM is
+        a clean validation error, and nothing is written."""
+        before = Certificate.objects.filter(tenant=self.tenant).count()
+        resp = self.client.post(
+            "/api/monitoring/certificates/",
+            {"subject_cn": "hacked", "subject": PRIVATE_KEY_PEM},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(
+            Certificate.objects.filter(tenant=self.tenant).count(), before
+        )
+
+    def test_delete_is_allowed(self):
+        mine = Certificate.objects.get(tenant=self.tenant)
+        self.assertEqual(
+            self.client.delete(
+                f"/api/monitoring/certificates/{mine.id}/"
+            ).status_code,
+            204,
+        )
+        self.assertFalse(
+            Certificate.objects.filter(pk=mine.id).exists()
+        )
 
     def test_expiry_filters(self):
         rows = self._results(
@@ -1076,3 +1128,296 @@ class CheckResultSeamTests(_TenantBase):
         )
         self.assertEqual(record_check_results([result]), 0)
         self.assertEqual(Certificate.objects.count(), 0)
+
+
+# ─── S0: authoring (upload) ─────────────────────────────────────────────────
+
+
+def pem_of(der: bytes) -> str:
+    """DER → public-certificate PEM, as an operator would paste it."""
+    cert = x509.load_der_x509_certificate(der)
+    return cert.public_bytes(serialization.Encoding.PEM).decode("ascii")
+
+
+class UploadTests(_TenantBase):
+    def test_upload_happy_path_parses_fields_and_stores_pem(self):
+        der, _ = make_cert("edge.example.com", dns=("edge.example.com",))
+        pem = pem_of(der)
+        row, created = upload_certificate(self.tenant, pem, name="Edge")
+        self.assertTrue(created)
+        parsed = tls_cert.parse_certificate(der, 0)
+        self.assertEqual(row.fingerprint_sha256, parsed["fingerprint_sha256"])
+        self.assertEqual(row.subject_cn, "edge.example.com")
+        self.assertEqual(row.san_dns, ["edge.example.com"])
+        self.assertTrue(row.uploaded)
+        self.assertFalse(row.observed)
+        self.assertEqual(row.origin, "uploaded")
+        self.assertEqual(row.name, "Edge")
+        self.assertIn("BEGIN CERTIFICATE", row.pem)
+        self.assertNotIn("PRIVATE KEY", row.pem)
+
+    def test_upload_rejects_a_pem_carrying_a_private_key(self):
+        der, _ = make_cert("edge.example.com")
+        bundle = pem_of(der) + "\n" + PRIVATE_KEY_PEM
+        with self.assertRaises(CertificateUploadError) as cm:
+            upload_certificate(self.tenant, bundle)
+        self.assertIn("private key", str(cm.exception).lower())
+        self.assertEqual(Certificate.objects.count(), 0)
+
+    def test_upload_rejects_unparseable_pem(self):
+        with self.assertRaises(CertificateUploadError):
+            upload_certificate(self.tenant, "-----BEGIN CERTIFICATE-----\nnope\n")
+        self.assertEqual(Certificate.objects.count(), 0)
+
+    def test_upload_of_an_already_observed_fingerprint_dedups_to_one_row(self):
+        der, _ = make_cert("edge.example.com")
+        self.observe([der])  # observed row first
+        self.assertEqual(Certificate.objects.count(), 1)
+        row, created = upload_certificate(self.tenant, pem_of(der))
+        self.assertFalse(created)  # converged, not duplicated
+        self.assertEqual(Certificate.objects.count(), 1)
+        self.assertTrue(row.uploaded)
+        self.assertTrue(row.observed)
+        self.assertEqual(row.origin, "both")
+
+    def test_observing_an_uploaded_cert_flips_observed_on(self):
+        der, _ = make_cert("edge.example.com")
+        row, _ = upload_certificate(self.tenant, pem_of(der))
+        self.assertFalse(row.observed)
+        self.observe([der])
+        row.refresh_from_db()
+        self.assertTrue(row.observed)
+        self.assertTrue(row.uploaded)
+
+    def test_a_bundle_uses_the_first_block_as_the_leaf(self):
+        root, root_key = make_cert("Test Root CA")
+        leaf, _ = make_cert("edge.example.com", issuer_cn="Test Root CA",
+                            issuer_key=root_key)
+        bundle = pem_of(leaf) + pem_of(root)
+        row, _ = upload_certificate(self.tenant, bundle)
+        self.assertEqual(row.subject_cn, "edge.example.com")
+        self.assertEqual(Certificate.objects.count(), 1)
+
+
+class UploadApiTests(APITestCase):
+    def setUp(self):
+        self.org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=self.org, name="Acme", slug="acme")
+        admin = User.objects.create_superuser("admin", "admin@example.com", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def test_upload_via_api_returns_the_created_certificate(self):
+        der, _ = make_cert("api.example.com")
+        resp = self.client.post(
+            "/api/monitoring/certificates/",
+            {"pem": pem_of(der), "name": "API cert"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual(body["subject_cn"], "api.example.com")
+        self.assertEqual(body["origin"], "uploaded")
+        self.assertTrue(body["uploaded"])
+        self.assertEqual(body["name"], "API cert")
+        self.assertIn("BEGIN CERTIFICATE", body["pem"])
+
+    def test_upload_of_a_private_key_is_a_clean_400(self):
+        der, _ = make_cert("api.example.com")
+        resp = self.client.post(
+            "/api/monitoring/certificates/",
+            {"pem": pem_of(der) + "\n" + PRIVATE_KEY_PEM}, format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertNotIn("PRIVATE KEY", str(resp.json()).upper()
+                         .replace("REMOVE THE PRIVATE KEY", ""))
+        self.assertEqual(Certificate.objects.count(), 0)
+
+
+# ─── S0: assignment ─────────────────────────────────────────────────────────
+
+
+class AssignmentApiTests(APITestCase):
+    def setUp(self):
+        self.org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=self.org, name="Acme", slug="acme")
+        self.other_org = Organization.objects.create(name="Globex", slug="globex")
+        self.other = Tenant.objects.create(
+            org=self.other_org, name="Globex", slug="globex"
+        )
+        der, _ = make_cert("edge.example.com")
+        self.cert, _ = upload_certificate(self.tenant, pem_of(der))
+        self.prefix, _ = Prefix.objects.get_or_create(
+            tenant=self.tenant, cidr="10.0.0.0/8",
+            defaults={"status": status_for(self.tenant, "container")},
+        )
+        self.ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.0.0.5", prefix=self.prefix
+        )
+        admin = User.objects.create_superuser("admin", "admin@example.com", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def test_assign_a_cert_to_an_ip(self):
+        resp = self.client.post(
+            "/api/monitoring/certificate-assignments/",
+            {"certificate": str(self.cert.id), "object_type": "api.ipaddress",
+             "object_id": str(self.ip.id)}, format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.json()["object_type"], "api.ipaddress")
+        self.assertEqual(CertificateAssignment.objects.count(), 1)
+
+    def test_assignment_to_another_tenants_object_is_rejected(self):
+        their_prefix = Prefix.objects.create(
+            tenant=self.other, cidr="10.9.0.0/16",
+            status=status_for(self.other, "container"),
+        )
+        their_ip = IPAddress.objects.create(
+            tenant=self.other, ip_address="10.9.0.5", prefix=their_prefix
+        )
+        resp = self.client.post(
+            "/api/monitoring/certificate-assignments/",
+            {"certificate": str(self.cert.id), "object_type": "api.ipaddress",
+             "object_id": str(their_ip.id)}, format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(CertificateAssignment.objects.count(), 0)
+
+    def test_unknown_object_type_is_rejected(self):
+        resp = self.client.post(
+            "/api/monitoring/certificate-assignments/",
+            {"certificate": str(self.cert.id), "object_type": "api.nope",
+             "object_id": str(self.ip.id)}, format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_list_is_scoped_to_the_active_tenant(self):
+        CertificateAssignment.objects.create(
+            tenant=self.tenant, certificate=self.cert,
+            object_type="api.ipaddress", object_id=str(self.ip.id),
+        )
+        their_der, _ = make_cert("theirs.example.com")
+        their_cert, _ = upload_certificate(self.other, pem_of(their_der))
+        CertificateAssignment.objects.create(
+            tenant=self.other, certificate=their_cert,
+            object_type="api.ipaddress", object_id="00000000-0000-0000-0000-000000000000",
+        )
+        resp = self.client.get("/api/monitoring/certificate-assignments/")
+        rows = resp.json()["results"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["certificate"], str(self.cert.id))
+
+
+# ─── S1: assignment drift (cert_mismatch) ───────────────────────────────────
+
+
+class CertMismatchDriftTests(_TenantBase):
+    def _upload(self, cn, tenant=None):
+        der, _ = make_cert(cn)
+        row, _ = upload_certificate(tenant or self.tenant, pem_of(der))
+        return der, row
+
+    def _assign(self, cert, object_type, object_id, tenant=None):
+        return CertificateAssignment.objects.create(
+            tenant=tenant or self.tenant, certificate=cert,
+            object_type=object_type, object_id=str(object_id),
+        )
+
+    def _mismatch_alert(self, endpoint_key, tenant=None):
+        return Alert.objects.filter(
+            tenant=tenant or self.tenant, dedup_key=mismatch_key(endpoint_key),
+            status=AlertStatus.FIRING,
+        ).first()
+
+    def test_serving_a_different_cert_than_assigned_fires_cert_mismatch(self):
+        ip = self.make_ip()
+        _, declared = self._upload("declared.example.com")
+        self._assign(declared, "api.ipaddress", ip.id)
+        served_der, _ = make_cert("served.example.com")
+        # Observing (with the assignment already in place) runs the reactive pass.
+        self.observe_at([served_der], ip)
+        binding = CertificateBinding.objects.get(target_ip=ip, chain_depth=0)
+        alert = self._mismatch_alert(binding.endpoint_key)
+        self.assertIsNotNone(alert)
+        self.assertEqual(alert.detail["drift"], "cert_mismatch")
+        self.assertEqual(
+            alert.detail["served_fingerprint_sha256"],
+            binding.certificate.fingerprint_sha256,
+        )
+        self.assertEqual(alert.severity, AlertSeverity.WARNING)
+
+    def test_serving_the_assigned_cert_is_silent(self):
+        ip = self.make_ip()
+        served_der, served = self._upload("match.example.com")
+        self._assign(served, "api.ipaddress", ip.id)
+        self.observe_at([served_der], ip)
+        binding = CertificateBinding.objects.get(target_ip=ip, chain_depth=0)
+        self.assertIsNone(self._mismatch_alert(binding.endpoint_key))
+
+    def test_no_assignment_means_no_drift(self):
+        ip = self.make_ip()
+        served_der, _ = make_cert("undeclared.example.com")
+        self.observe_at([served_der], ip)
+        binding = CertificateBinding.objects.get(target_ip=ip, chain_depth=0)
+        self.assertIsNone(self._mismatch_alert(binding.endpoint_key))
+
+    def test_a_device_level_assignment_is_inherited_by_its_endpoints(self):
+        from api.models import Device
+
+        device = Device.objects.create(tenant=self.tenant, name="edge-sw")
+        ip = self.make_ip()
+        ip.assigned_device = device
+        ip.save(update_fields=["assigned_device"])
+        _, declared = self._upload("declared.example.com")
+        self._assign(declared, "api.device", device.id)
+        served_der, _ = make_cert("served.example.com")
+        self.observe_at([served_der], ip)
+        binding = CertificateBinding.objects.get(target_ip=ip, chain_depth=0)
+        self.assertIsNotNone(self._mismatch_alert(binding.endpoint_key))
+
+    def test_renewal_that_updates_the_assignment_resolves_the_mismatch(self):
+        ip = self.make_ip()
+        _, declared = self._upload("declared.example.com")
+        self._assign(declared, "api.ipaddress", ip.id)
+        served_der, _ = make_cert("served.example.com")
+        self.observe_at([served_der], ip)
+        binding = CertificateBinding.objects.get(target_ip=ip, chain_depth=0)
+        self.assertIsNotNone(self._mismatch_alert(binding.endpoint_key))
+        # Point the assignment at what's actually served → resolves.
+        served_cert = binding.certificate
+        CertificateAssignment.objects.filter(certificate=declared).delete()
+        self._assign(served_cert, "api.ipaddress", ip.id)
+        evaluate_mismatch(tenant_ids={self.tenant.id},
+                          endpoint_keys={binding.endpoint_key})
+        self.assertIsNone(self._mismatch_alert(binding.endpoint_key))
+
+    def test_accepting_a_mismatch_creates_the_assignment_and_clears_it(self):
+        ip = self.make_ip()
+        _, declared = self._upload("declared.example.com")
+        self._assign(declared, "api.ipaddress", ip.id)
+        served_der, _ = make_cert("served.example.com")
+        self.observe_at([served_der], ip)
+        binding = CertificateBinding.objects.get(target_ip=ip, chain_depth=0)
+        self.assertIsNotNone(self._mismatch_alert(binding.endpoint_key))
+        assignment = accept_cert_mismatch(self.tenant, binding)
+        self.assertEqual(assignment.certificate_id, binding.certificate_id)
+        # The stale IP-level assignment was replaced, and the alert cleared.
+        self.assertFalse(
+            CertificateAssignment.objects.filter(certificate=declared).exists()
+        )
+        self.assertIsNone(self._mismatch_alert(binding.endpoint_key))
+
+    def test_mismatch_is_tenant_isolated(self):
+        ip = self.make_ip()
+        _, declared = self._upload("declared.example.com")
+        self._assign(declared, "api.ipaddress", ip.id)
+        served_der, _ = make_cert("served.example.com")
+        self.observe_at([served_der], ip)
+        binding = CertificateBinding.objects.get(target_ip=ip, chain_depth=0)
+        # The other tenant sees no alert for this endpoint key.
+        self.assertIsNone(self._mismatch_alert(binding.endpoint_key, tenant=self.other))
+        self.assertIsNotNone(self._mismatch_alert(binding.endpoint_key))

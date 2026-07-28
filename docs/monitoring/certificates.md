@@ -14,11 +14,12 @@ records it.
 
     A private key is the one secret in this domain, and Danbyte **never stores,
     requests, or accepts one**. Not behind a flag, not for convenience, not for
-    renewal. There is deliberately no PEM, blob, notes, or custom-field column
-    on a certificate that *could* hold key material — and the model refuses to
-    save anything that looks like a key, whatever wrote it. If someone offers
-    you a workflow that needs Danbyte to hold the key, that is a different
-    product.
+    renewal. When you [upload](#authoring-certificates) a certificate, only the
+    **public** PEM is stored — and the upload path rejects a PEM carrying any
+    `PRIVATE KEY` block with a clear `400` *before* it parses anything, while the
+    model itself still refuses to save anything key-shaped in any field, whatever
+    wrote it. If someone offers you a workflow that needs Danbyte to hold the
+    key, that is a different product.
 
 ## What Danbyte records
 
@@ -311,17 +312,111 @@ detail page. With nothing expiring it shows a clean "No certificates expiring in
 the next 30 days" message rather than an empty box. Add or remove it from the
 dashboard's **Add widget** menu like any other tile.
 
+## Source of truth: authoring and assignment
+
+Observation answers *what is being served*. To answer *what should be served*,
+Danbyte lets you **declare** the certificates you expect — the same
+observe → intent → drift model interfaces and hardware use. A served certificate
+that isn't the declared one is [drift](#assignment-drift-cert_mismatch), not a
+silent overwrite.
+
+### Authoring certificates
+
+Upload a certificate by posting its **public PEM**. Danbyte parses it exactly as
+the collector parses an observed one — the same fingerprint, subject, issuer,
+SANs, validity window and key facts come straight from the bytes — so an
+uploaded certificate and the same certificate observed on the wire are **one
+row**, identified by their shared fingerprint. An uploaded row carries two extra
+truths:
+
+- a **public PEM** (`pem`), stored only for uploaded certs;
+- editable **`name`** and **`notes`**. These are the *only* editable fields. The
+  intrinsic facts (subject, issuer, serial, fingerprint, validity, key) are
+  read-only forever — they are properties of the exact bytes, so a `PATCH` can
+  never rewrite them.
+
+Every row records how it came to exist in its **`origin`**:
+
+| `origin` | Meaning |
+|---|---|
+| `observed` | Seen being served; the collector wrote it. |
+| `uploaded` | Declared by an operator; not (yet) seen on the wire. |
+| `both` | Uploaded **and** observed — the certificate you declared is the one being served. This convergence is free: it is the same row, by fingerprint identity. |
+
+!!! danger "The upload path refuses a private key, loudly"
+    A PEM containing any `PRIVATE KEY` block is rejected with a `400` and the
+    message *"Remove the private key; only the public certificate is stored"* —
+    checked before parsing, so you never get an opaque `500`. If the blob holds
+    several certificates, the **first** block is taken as the leaf (the
+    end-entity certificate you are declaring) and re-serialised on its own; no
+    chain member or stray key is ever stored. An unparseable PEM is also a `400`.
+
+### Assigning a certificate to an object
+
+A **certificate assignment** declares that some object should present a
+certificate. It is a generic reference — an `object_type` label plus an
+`object_id` — so a certificate can be declared on a device, an IP address, a
+virtual machine, or a service without a column per kind (the same shape contact
+assignments use). One certificate can be assigned to many objects (a wildcard on
+every host it covers); one object can carry several certificates (a device
+running several services).
+
+The target must belong to the **active tenant** — a certificate can never be
+attached to another tenant's object, validated on both create and update.
+
+## Assignment drift (`cert_mismatch`)
+
+Once an object has an assigned certificate, its endpoints are checked against it
+on the **same endpoint alert path as expiry** — reactively after every
+observation, and on the nightly sweep. There is no second mechanism:
+`cert_mismatch` opens and resolves ordinary alerts, so acknowledgement, silences,
+renotify and every notification channel apply to it exactly as they do to expiry.
+
+For each endpoint (an `IP + port + SNI`, the newest leaf binding — *what it
+serves now*), Danbyte resolves whether the endpoint's object has an assigned
+certificate:
+
+- **direct** — an assignment to the endpoint's IP (`object_type=api.ipaddress`);
+- **inherited** — an assignment to the Device or VM the IP is assigned to
+  (`api.device` / `api.virtualmachine`); a device-level declaration applies to
+  every endpoint of that device.
+
+Then:
+
+- the served fingerprint matches one of the assigned certificates → healthy, no
+  drift;
+- it matches **none** of them → `cert_mismatch` fires (a `warning` — the endpoint
+  serves TLS fine, it just isn't serving the certificate you declared);
+- the object has **no** assignment → nothing to drift against, so nothing fires.
+
+A renewal is a new fingerprint, so it reads as a mismatch until you point the
+assignment at the new certificate — which is the honest signal that intent and
+reality have diverged.
+
+!!! note "Detection never writes intent"
+    Drift is read-only. **Accepting** a mismatch is the only path that writes an
+    assignment: `POST /api/monitoring/certificate-assignments/accept-served/`
+    with `{"binding": "<id>"}` creates (or replaces) an IP-level assignment
+    pointing at what is actually served, mirroring how SNMP/interface drift is
+    accepted, and re-evaluates the endpoint so the alert clears at once.
+
+Expiry drift is unchanged — see [expiry alerting](#expiry-alerting).
+
 ## Permissions
 
-Certificates and their bindings are separate RBAC object types
-(**Monitoring → Certificates** and **Monitoring → Certificate bindings**), so
-each can be granted or withheld like any other object. The certificate data
-itself is public, but *which endpoints your organisation runs* is not — which is
-exactly what a binding records.
+Certificates, their bindings, and their assignments are separate RBAC object
+types (**Monitoring → Certificates**, **Monitoring → Certificate bindings**,
+**Monitoring → Certificate assignments**), so each can be granted or withheld
+like any other object. The certificate data itself is public, but *which
+endpoints your organisation runs* — and *which certificates you declare on them*
+— is not.
 
-The inventory is **read-only** everywhere — API and admin alike. A certificate
-record is an observation, so there is no legitimate way to author one by hand,
-and no request body can reach these fields at all.
+Observed facts stay **read-only** whatever the grant: uploading authors a row and
+edits only `name` / `notes`, and no request body can reach a fact field. Creating
+a certificate requires an `add` grant; editing metadata a `change` grant;
+deleting a `delete` grant. Deleting an **observed** certificate is harmless — it
+is simply re-created on the next poll, since the fingerprint is its identity — so
+delete is allowed for either origin; an uploaded-only row is gone.
 
 ## API
 
@@ -332,16 +427,30 @@ and no request body can reach these fields at all.
 | `expiring_in_days=N` | Only certificates expiring within N days (already-expired included). |
 | `expired=1` / `expired=0` | Only expired / only currently-valid certificates. |
 | `self_signed=1` / `self_signed=0` | Filter on the self-signed flag. |
-| `search=` | Matches subject, issuer, or a fingerprint prefix. |
+| `origin=observed\|uploaded\|both` | Filter on how the row came to exist. |
+| `assigned=1` / `assigned=0` | Only certificates that are declared somewhere / declared nowhere. |
+| `search=` | Matches subject, issuer, name, or a fingerprint prefix. |
 
-`GET /api/monitoring/certificates/{id}/` returns one record. `POST`, `PATCH`,
-`PUT` and `DELETE` are not available.
+`GET /api/monitoring/certificates/{id}/` returns one record.
 
-Each record also exposes two derived, always-current values: `is_expired` and
-`days_until_expiry` (negative once the certificate has expired). These are
-computed at read time, never stored, so a record that hasn't been re-observed
-can never report itself healthy. `binding_count` is the size of the blast
-radius — how many endpoints are on record as having served it.
+`POST /api/monitoring/certificates/` is **upload only** — it accepts
+`{"pem": "<public PEM>", "name": "...", "notes": "..."}` (also as a form/file
+field), never fact fields. It parses the PEM, computes the fingerprint, and
+either creates a new `uploaded` row or converges onto the existing row for that
+fingerprint (marking it `uploaded` and attaching the PEM). It returns `201` for a
+new row, `200` when it converged onto one already on file. A private-key block is
+a `400`; an unparseable PEM is a `400`.
+
+`PATCH /api/monitoring/certificates/{id}/` edits **only** `name` and `notes`;
+every other field is read-only and silently ignored. `DELETE` removes the
+tenant's row.
+
+Each record also exposes derived, always-current values: `is_expired`,
+`days_until_expiry` (negative once expired), and `origin`. These are computed at
+read time, never stored, so a record that hasn't been re-observed can never
+report itself healthy. `binding_count` is the size of the blast radius — how
+many endpoints are on record as having served it — and `assignment_count` is how
+many objects declare it.
 
 `GET /api/monitoring/certificate-bindings/` — the active tenant's bindings, also
 read-only.
@@ -354,10 +463,23 @@ read-only.
 | `leaf=1` / `leaf=0` | End-entity certificates only / chain members only. |
 | `stale=1` / `stale=0` | What an endpoint *used* to serve / what it is still observed serving. |
 
+`GET /api/monitoring/certificate-assignments/` — the active tenant's assignments
+(intent). Writable: `POST` to declare, `PATCH` to adjust, `DELETE` to remove.
+
+| Query parameter | Effect |
+|---|---|
+| `certificate=<id>` | The objects a certificate is declared on. |
+| `object_type=` & `object_id=` | The certificates declared on one object. |
+
+`POST /api/monitoring/certificate-assignments/accept-served/` with
+`{"binding": "<id>"}` accepts a `cert_mismatch`: it declares the served
+certificate on the endpoint's IP (replacing any conflicting IP-level assignment)
+and re-evaluates, so the alert clears immediately.
+
 ## Changes are journalled
 
-Certificate records are audited, so creation and any change appear in the
-change log alongside the rest of your inventory.
+Certificate records **and their assignments** are audited, so creation and any
+change appear in the change log alongside the rest of your inventory.
 
 Bindings are **not** audited. Their `last_seen` moves on every observation, so
 journalling them would write one change-log entry per endpoint per scan and bury

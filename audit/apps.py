@@ -112,6 +112,7 @@ AUDITED_MODELS = [
     "monitoring.SnmpSensor",
     "monitoring.RedfishEndpoint",
     "monitoring.Certificate",
+    "monitoring.CertificateAssignment",
     # Org-level objects.
     "core.Tenant",
     "core.TenantGroup",

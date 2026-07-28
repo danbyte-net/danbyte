@@ -39,6 +39,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from cryptography import x509
+from cryptography.hazmat.primitives.serialization import Encoding
 from django.utils import timezone
 
 from danbyte_checks import tls_cert
@@ -48,9 +50,105 @@ from .models import (
     CertificateBinding,
     PublicKeyAlgorithm,
     certificate_endpoint_key,
+    contains_private_key_material,
 )
 
 logger = logging.getLogger(__name__)
+
+
+class CertificateUploadError(ValueError):
+    """An uploaded PEM could not be turned into a certificate row.
+
+    Carries an operator-facing ``message`` the viewset returns verbatim as a
+    400 — private key present, unparseable PEM, or nothing certificate-shaped.
+    """
+
+
+def upload_certificate(tenant, pem_text, *, name="", notes="", now=None):
+    """Author a :class:`Certificate` from an uploaded **public** PEM.
+
+    Parsing reuses :func:`danbyte_checks.tls_cert.parse_certificate` and the same
+    field extraction the collector uses, so an uploaded certificate that is later
+    observed on the wire (or was already observed) **dedups to one row** by its
+    ``(tenant, fingerprint)`` identity — the upload just flips ``uploaded`` on and
+    attaches the PEM.
+
+    Rules, all raising :class:`CertificateUploadError` (→ 400) rather than 500:
+
+    * a PEM carrying **any** private-key block is refused outright, before the
+      model guard, with a clear message — only the public certificate is stored;
+    * an unparseable PEM is refused;
+    * a bundle with several certificates uses the **first** block as the leaf
+      (the end-entity certificate being declared), and re-serialises *only* that
+      one to canonical PEM, so no chain member or stray key can be stored.
+
+    Returns ``(row, created)``.
+    """
+    if not isinstance(pem_text, str) or not pem_text.strip():
+        raise CertificateUploadError("Provide a certificate in PEM format.")
+    # Reject key material on the *input*, before parsing or the model guard, so
+    # the operator gets a precise 400 instead of a generic failure.
+    if contains_private_key_material(pem_text):
+        raise CertificateUploadError(
+            "Remove the private key; only the public certificate is stored."
+        )
+
+    raw = pem_text.encode("utf-8", "replace")
+    certs = []
+    loader = getattr(x509, "load_pem_x509_certificates", None)
+    if loader is not None:
+        try:
+            certs = list(loader(raw))
+        except (ValueError, TypeError):
+            certs = []
+    if not certs:
+        try:
+            certs = [x509.load_pem_x509_certificate(raw)]
+        except (ValueError, TypeError):
+            certs = []
+    if not certs:
+        raise CertificateUploadError(
+            "Could not parse a certificate from the PEM provided."
+        )
+
+    leaf = certs[0]
+    fields = tls_cert.parse_certificate(leaf.public_bytes(Encoding.DER), 0)
+    fingerprint = fields["fingerprint_sha256"].lower()
+    canonical_pem = leaf.public_bytes(Encoding.PEM).decode("ascii")
+
+    now = now or timezone.now()
+    defaults = _defaults(fields)
+    if defaults["not_before"] is None or defaults["not_after"] is None:
+        raise CertificateUploadError(
+            "The certificate has no usable validity window."
+        )
+
+    row, created = Certificate.objects.get_or_create(
+        tenant=tenant,
+        fingerprint_sha256=fingerprint,
+        defaults={
+            **defaults,
+            "uploaded": True,
+            "pem": canonical_pem,
+            "name": name[:255],
+            "notes": notes,
+        },
+    )
+    if not created:
+        # Already on file (commonly: already observed). Converge rather than
+        # duplicate — mark it uploaded and attach the PEM, never touching the
+        # immutable facts.
+        row.uploaded = True
+        row.pem = canonical_pem
+        update_fields = ["uploaded", "pem", "updated_at"]
+        if name:
+            row.name = name[:255]
+            update_fields.append("name")
+        if notes:
+            row.notes = notes
+            update_fields.append("notes")
+        row.save(update_fields=update_fields)
+    return row, created
 
 # Fields written only when the row is created — properties of the exact DER
 # bytes the fingerprint covers, so they cannot legitimately change.
@@ -225,14 +323,20 @@ def record_chain(
         row, created = Certificate.objects.get_or_create(
             tenant=tenant,
             fingerprint_sha256=fingerprint.lower(),
-            defaults={**defaults, "last_seen": now},
+            defaults={**defaults, "last_seen": now, "observed": True},
         )
         if not created:
             # Never rewrite the immutable facts — different facts would mean
             # different bytes, which would be a different fingerprint. Only the
-            # roll-up "seen somewhere" timestamp moves.
+            # roll-up "seen somewhere" timestamp moves — and the ``observed``
+            # flag flips on if this row had only been uploaded until now (that
+            # convergence is the whole point: the declared cert is being served).
             row.last_seen = now
-            row.save(update_fields=["last_seen", "updated_at"])
+            update_fields = ["last_seen", "updated_at"]
+            if not row.observed:
+                row.observed = True
+                update_fields.append("observed")
+            row.save(update_fields=update_fields)
         if endpoint is not None:
             _record_binding(tenant, row, endpoint, cert, verified, now)
         rows.append(row)

@@ -1818,6 +1818,35 @@ class Certificate(TimestampedModel):
         help_text="Most recent observation. ``created_at`` is the first.",
     )
 
+    # ─── Origin: observed on the wire, declared by a human, or both ───────
+    # The fingerprint is the identity, so a certificate that was uploaded and is
+    # later served (or vice-versa) is the *same row* — these two flags record
+    # that convergence rather than duplicating it. "The cert I declared is the
+    # one being served" is then simply ``uploaded and observed`` on one row.
+    observed = models.BooleanField(
+        default=False,
+        help_text="Seen being served by a TLS endpoint (the collector wrote it).",
+    )
+    uploaded = models.BooleanField(
+        default=False,
+        help_text="Declared by an operator via the upload API (public PEM stored).",
+    )
+    # The public certificate PEM, stored **only** for uploaded certs. A public
+    # X.509 certificate is broadcast to every client, so it is not a secret; a
+    # private key is, and the upload path + save() guard both refuse one.
+    pem = models.TextField(
+        blank=True, default="",
+        help_text="Public certificate PEM (uploaded certs only). Never a key.",
+    )
+    # Authored metadata — editable for any row, meaningful for uploaded ones.
+    # The intrinsic facts (subject/issuer/serial/fingerprint/validity/key) are
+    # never editable: they come from the DER bytes the fingerprint covers.
+    name = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Operator-chosen label for this certificate.",
+    )
+    notes = models.TextField(blank=True, default="")
+
     class Meta:
         ordering = ["not_after", "subject_cn"]
         constraints = [
@@ -1833,6 +1862,19 @@ class Certificate(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.subject_cn or self.subject or self.fingerprint_sha256[:16]}"
+
+    @property
+    def origin(self) -> str:
+        """How this row came to exist: ``observed``, ``uploaded``, ``both`` (the
+        declared cert is the one being served), or ``unknown`` (neither flag —
+        shouldn't happen for a persisted row)."""
+        if self.uploaded and self.observed:
+            return "both"
+        if self.uploaded:
+            return "uploaded"
+        if self.observed:
+            return "observed"
+        return "unknown"
 
     @property
     def is_expired(self) -> bool:
@@ -1997,4 +2039,72 @@ class CertificateBinding(TimestampedModel):
             self.endpoint_key = certificate_endpoint_key(
                 self.target_ip_id, self.port, self.server_name
             )
+        return super().save(*args, **kwargs)
+
+
+class CertificateAssignment(TimestampedModel):
+    """Intent: *this certificate should be presented by that object* — the
+    source-of-truth half a drift check compares against.
+
+    A generic reference (``object_type`` label + ``object_id``) rather than typed
+    FKs, mirroring :class:`api.ContactAssignment`: a certificate can be declared
+    on a device, an IP address, a virtual machine or a service without a column
+    per kind, and the generic ref is the established "attach X to anything" shape.
+    Because the reference is by label, this model needs no import of the ``api``
+    models it points at — tenant isolation of the target is enforced in the
+    viewset, exactly as ``ContactAssignment`` does.
+
+    One certificate can be assigned to many objects (a wildcard on every host it
+    covers); one object can carry several certificates (a device running several
+    services). Uniqueness is therefore on the *triple* ``(certificate,
+    object_type, object_id)`` — declaring the same certificate on the same object
+    twice is the only thing forbidden.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="certificate_assignments"
+    )
+    certificate = models.ForeignKey(
+        Certificate, on_delete=models.CASCADE, related_name="assignments"
+    )
+    object_type = models.CharField(
+        max_length=64,
+        help_text="e.g. api.device, api.ipaddress, api.virtualmachine, api.service.",
+    )
+    object_id = models.CharField(max_length=64)
+    notes = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        ordering = ["object_type", "object_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["certificate", "object_type", "object_id"],
+                name="uniq_certificate_assignment",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "object_type", "object_id"]),
+            models.Index(fields=["certificate"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.certificate_id} → {self.object_type} {self.object_id}"
+
+    def _assert_single_tenant(self) -> None:
+        """An assignment may never join a certificate from another tenant.
+
+        The target object's tenancy is validated in the viewset (it lives in the
+        ``api`` app and is resolved by label); this covers the one FK we own.
+        """
+        from django.core.exceptions import ValidationError
+
+        if self.certificate_id and self.certificate.tenant_id != self.tenant_id:
+            raise ValidationError({
+                "certificate": "An assignment may not reference a certificate "
+                "from another tenant."
+            })
+
+    def save(self, *args, **kwargs):
+        self._assert_single_tenant()
         return super().save(*args, **kwargs)

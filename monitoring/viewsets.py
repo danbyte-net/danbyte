@@ -25,6 +25,7 @@ from auth_api.permissions import can_manage_admin
 from .models import (
     AlertRule,
     Certificate,
+    CertificateAssignment,
     CertificateBinding,
     CheckAssignment,
     CheckTemplate,
@@ -40,8 +41,10 @@ from .models import (
 )
 from .serializers import (
     AlertRuleSerializer,
+    CertificateAssignmentSerializer,
     CertificateBindingSerializer,
     CertificateSerializer,
+    CertificateUploadSerializer,
     CheckAssignmentSerializer,
     CheckTemplateSerializer,
     MonitoringDenySubnetSerializer,
@@ -187,21 +190,31 @@ class SnmpProfileViewSet(TenantScopedViewSet):
     serializer_class = SnmpProfileSerializer
 
 
-class CertificateViewSet(TenantScopedReadViewSet):
-    """Observed certificates — tenant-scoped, authenticated, and read-only.
+class CertificateViewSet(TenantScopedViewSet):
+    """Certificates — tenant-scoped, authenticated, and authored-or-observed.
 
-    Read-only is the design, not an omission: a certificate row is an
-    observation of what an endpoint served, so there is no legitimate write. It
-    also means no request body can reach these fields at all, which is the
-    outermost layer of "a private key is never accepted".
+    Observed rows are written by the collector; uploaded rows are authored by an
+    operator (source of truth). The write surface is deliberately narrow:
 
-    Filters: ``?expiring_in_days=N`` (expiring within N days, expired
-    included), ``?expired=1|0``, ``?self_signed=1|0``, ``?search=`` over
-    subject / issuer / fingerprint.
+    * **create** is *upload only* — POST a public PEM (see ``CertificateUpload``);
+      the facts are extracted from the bytes, and a private key is a clean 400.
+      There is no way to POST fact fields directly.
+    * **update** touches only ``name`` / ``notes`` — every intrinsic fact is
+      ``read_only`` on the serializer, so a PATCH can never rewrite the bytes'
+      properties.
+    * **delete** removes the tenant's row. An *observed* certificate that is
+      still being served will simply be re-created on the next poll (identity is
+      the fingerprint); an *uploaded-only* row is gone. Deleting is thus safe and
+      non-destructive to reality, so it is allowed for either origin.
+
+    Filters: ``?expiring_in_days=N`` (expiring within N days, expired included),
+    ``?expired=1|0``, ``?self_signed=1|0``, ``?origin=observed|uploaded|both``,
+    ``?assigned=1|0``, ``?search=`` over subject / issuer / fingerprint.
     """
 
     queryset = Certificate.objects.all()
     serializer_class = CertificateSerializer
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
 
     def get_queryset(self):
         from django.db.models import Count
@@ -211,7 +224,10 @@ class CertificateViewSet(TenantScopedReadViewSet):
         # unordered paginated list silently reshuffles between pages.
         qs = (
             super().get_queryset()
-            .annotate(binding_count=Count("bindings"))
+            .annotate(
+                binding_count=Count("bindings", distinct=True),
+                assignment_count=Count("assignments", distinct=True),
+            )
             .order_by("not_after", "subject_cn")
         )
         params = self.request.query_params
@@ -233,14 +249,51 @@ class CertificateViewSet(TenantScopedReadViewSet):
             qs = qs.filter(self_signed=True)
         elif self_signed in ("0", "false"):
             qs = qs.filter(self_signed=False)
+        origin = params.get("origin")
+        if origin == "observed":
+            qs = qs.filter(observed=True)
+        elif origin == "uploaded":
+            qs = qs.filter(uploaded=True)
+        elif origin == "both":
+            qs = qs.filter(observed=True, uploaded=True)
+        assigned = params.get("assigned")
+        if assigned in ("1", "true"):
+            qs = qs.filter(assignments__isnull=False).distinct()
+        elif assigned in ("0", "false"):
+            qs = qs.filter(assignments__isnull=True)
         search = (params.get("search") or "").strip()
         if search:
             qs = qs.filter(
                 Q(subject__icontains=search)
                 | Q(issuer__icontains=search)
+                | Q(name__icontains=search)
                 | Q(fingerprint_sha256__istartswith=search)
             )
         return qs
+
+    def create(self, request, *args, **kwargs):
+        """Author a certificate from an uploaded public PEM (dedups by
+        fingerprint; refuses a private key with a 400)."""
+        from .certificates import CertificateUploadError, upload_certificate
+
+        tenant = self._tenant_or_403()
+        upload = CertificateUploadSerializer(data=request.data)
+        upload.is_valid(raise_exception=True)
+        try:
+            row, created = upload_certificate(
+                tenant,
+                upload.validated_data["pem"],
+                name=upload.validated_data.get("name", ""),
+                notes=upload.validated_data.get("notes", ""),
+            )
+        except CertificateUploadError as exc:
+            raise ValidationError({"pem": str(exc)}) from exc
+
+        # Re-fetch through the annotated, tenant-scoped queryset so the response
+        # carries binding_count / assignment_count like every other read.
+        row = self.get_queryset().get(pk=row.pk)
+        data = self.get_serializer(row).data
+        return Response(data, status=201 if created else 200)
 
 
 class CertificateBindingViewSet(TenantScopedReadViewSet):
@@ -299,6 +352,114 @@ class CertificateBindingViewSet(TenantScopedReadViewSet):
                 else qs.filter(last_seen__gte=cutoff)
             )
         return qs
+
+
+class CertificateAssignmentViewSet(TenantScopedViewSet):
+    """Declare which object should present a certificate — the intent a drift
+    check compares against. Writable, tenant-scoped, default-closed.
+
+    Filter by ``?certificate=<id>`` (a certificate's declared objects),
+    ``?object_type=&?object_id=`` (an object's declared certificates), so a
+    device/IP detail page can list what it's supposed to serve.
+
+    The generic ``(object_type, object_id)`` target is validated to exist **in
+    the active tenant** on create and update — mirroring ``ContactAssignment`` —
+    so a certificate can never be attached to another tenant's object.
+    """
+
+    queryset = CertificateAssignment.objects.select_related("certificate")
+    serializer_class = CertificateAssignmentSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        params = self.request.query_params if self.request else {}
+        certificate = params.get("certificate")
+        if certificate:
+            qs = qs.filter(certificate_id=certificate)
+        ot = params.get("object_type")
+        if ot:
+            qs = qs.filter(object_type=ot.strip().lower())
+        oid = params.get("object_id")
+        if oid:
+            qs = qs.filter(object_id=str(oid))
+        return qs
+
+    def _check_certificate_tenant(self, serializer):
+        """The referenced certificate must belong to the active tenant."""
+        cert = serializer.validated_data.get("certificate") or (
+            serializer.instance.certificate if serializer.instance else None
+        )
+        if cert is not None and cert.tenant_id != self._tenant_or_403().id:
+            raise ValidationError({"certificate": "Not found in this tenant."})
+
+    def _check_target(self, serializer):
+        """The generic ``(object_type, object_id)`` target must belong to the
+        active tenant — otherwise a certificate could be declared on another
+        tenant's object (cross-tenant reference)."""
+        from django.apps import apps
+
+        ot = serializer.validated_data.get("object_type") or (
+            serializer.instance.object_type if serializer.instance else None
+        )
+        oid = serializer.validated_data.get("object_id") or (
+            serializer.instance.object_id if serializer.instance else None
+        )
+        if not ot or not oid:
+            return
+        tenant = self._tenant_or_403()
+        if ot == "core.tenant":
+            if str(oid) != str(tenant.id):
+                raise ValidationError({"object_id": "Not found in this tenant."})
+            return
+        # Stored as "app.model"; the app label may be omitted for api models.
+        parts = ot.split(".")
+        app_label, model_name = ("api", parts[0]) if len(parts) == 1 else parts
+        try:
+            model = apps.get_model(app_label, model_name)
+        except (LookupError, ValueError):
+            raise ValidationError({"object_type": "Unknown object type."}) from None
+        if not model.objects.filter(pk=oid, tenant=tenant).exists():
+            raise ValidationError({"object_id": "Not found in this tenant."})
+
+    def perform_create(self, serializer):
+        self._check_certificate_tenant(serializer)
+        self._check_target(serializer)
+        super().perform_create(serializer)
+
+    def perform_update(self, serializer):
+        self._check_certificate_tenant(serializer)
+        self._check_target(serializer)
+        super().perform_update(serializer)
+
+    @action(detail=False, methods=["post"], url_path="accept-served")
+    def accept_served(self, request):
+        """Accept a ``cert_mismatch`` drift: declare the served certificate on
+        the endpoint's IP, so intent matches reality (the observe→accept pattern).
+
+        Body: ``{"binding": "<CertificateBinding id>"}``. Creates/replaces the
+        IP-level assignment and re-evaluates the endpoint (the alert clears at
+        once). Requires an ``add`` grant on certificate assignments.
+        """
+        from .cert_drift import accept_cert_mismatch
+
+        tenant = self._tenant_or_403()
+        binding_id = request.data.get("binding")
+        if not binding_id:
+            raise ValidationError({"binding": "This field is required."})
+        binding = (
+            CertificateBinding.objects.filter(tenant=tenant, pk=binding_id)
+            .select_related("certificate", "target_ip")
+            .first()
+        )
+        if binding is None:
+            raise ValidationError({"binding": "Not found in this tenant."})
+        try:
+            assignment = accept_cert_mismatch(
+                tenant, binding, notes=request.data.get("notes", "")[:255]
+            )
+        except ValueError as exc:
+            raise ValidationError({"binding": str(exc)}) from exc
+        return Response(self.get_serializer(assignment).data, status=201)
 
 
 class SnmpSensorViewSet(TenantScopedViewSet):
