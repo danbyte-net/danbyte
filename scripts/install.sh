@@ -71,14 +71,17 @@ ADMIN_LOGIN="$(logname 2>/dev/null || echo "${SUDO_USER:-}")"
 # ── 1. OS services ───────────────────────────────────────────────────────────
 # nginx is only needed when this installer manages the TLS front end; --no-nginx
 # means you terminate TLS elsewhere (or run direct), so don't require it.
+# `make` drives the service/proxy install steps below (make install-services,
+# proxy-install); a minimal server won't have it, so install it like any other
+# OS dependency rather than assuming it's present.
 if [ "$DO_NGINX" -eq 1 ]; then
-  step "OS packages (postgresql, redis-server, nginx)"
-  PKGS="postgresql redis-server nginx"
-  CHECK_BINS="psql redis-server nginx"
+  step "OS packages (postgresql, redis-server, nginx, make)"
+  PKGS="postgresql redis-server nginx make"
+  CHECK_BINS="psql redis-server nginx make"
 else
-  step "OS packages (postgresql, redis-server) — skipping nginx (--no-nginx)"
-  PKGS="postgresql redis-server"
-  CHECK_BINS="psql redis-server"
+  step "OS packages (postgresql, redis-server, make) — skipping nginx (--no-nginx)"
+  PKGS="postgresql redis-server make"
+  CHECK_BINS="psql redis-server make"
 fi
 need_pkg=0
 for b in $CHECK_BINS; do command -v "$b" >/dev/null 2>&1 || need_pkg=1; done
