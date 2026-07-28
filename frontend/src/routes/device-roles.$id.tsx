@@ -5,6 +5,7 @@ import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api, type DeviceRole } from "@/lib/api"
+import { cssColor } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -174,7 +175,7 @@ function DeviceRoleOverview({ role: r }: { role: DeviceRole }) {
         <span className="inline-flex items-center gap-1.5">
           <span
             className="h-3 w-3 rounded-sm border border-border"
-            style={{ backgroundColor: r.color }}
+            style={{ backgroundColor: cssColor(r.color) }}
           />
           <span className="font-mono">{r.color}</span>
         </span>

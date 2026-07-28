@@ -222,7 +222,15 @@ export function buildIpColumns<T = IPAddress>(
             />
           )
         if (ip?.assigned_vm)
-          return <span className="text-xs">{ip.assigned_vm.name}</span>
+          return (
+            <Link
+              to="/virtual-machines/$id"
+              params={{ id: ip.assigned_vm.id }}
+              className="text-xs hover:underline"
+            >
+              {ip.assigned_vm.name}
+            </Link>
+          )
         return dash
       },
     }),

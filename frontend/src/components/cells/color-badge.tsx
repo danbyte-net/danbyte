@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge"
-import { cn } from "@/lib/utils"
+import { cn, cssColor } from "@/lib/utils"
 
 export interface ColorBadgeProps {
   name: string
@@ -34,7 +34,7 @@ export function ColorBadge({
   return (
     <Badge
       className={cn("gap-1.5", className)}
-      style={{ backgroundColor: color, color: fg }}
+      style={{ backgroundColor: cssColor(color), color: fg }}
     >
       {name}
       {suffix && <span className="font-mono opacity-80">{suffix}</span>}

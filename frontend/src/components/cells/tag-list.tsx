@@ -1,6 +1,6 @@
 import { type ColumnDef } from "@tanstack/react-table"
 import { Badge } from "@/components/ui/badge"
-import { cn } from "@/lib/utils"
+import { cn, cssColor } from "@/lib/utils"
 import { type Tag } from "@/lib/api"
 
 interface TagListProps {
@@ -67,7 +67,7 @@ export function TagList({
             )}
             style={
               t.color
-                ? { backgroundColor: t.color, color: t.text_color || "#fff" }
+                ? { backgroundColor: cssColor(t.color), color: t.text_color || "#fff" }
                 : undefined
             }
           >
