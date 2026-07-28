@@ -85,7 +85,10 @@ function estSegWidth(seg: PathSegment): number {
 export type PathChip = {
   deviceId?: string
   device: string
-  ports: { name: string; interfaceId?: string }[]
+  ports: { name: string; interfaceId?: string; powerFeedId?: string }[]
+  /** The container is a power panel, not a device — `deviceId` is the panel's,
+   * so the chip links to /power-panels/$id and its ports to /power-feeds/$id. */
+  powerPanel?: boolean
   /** The device whose page this trace is on — bordered as "you are here". */
   origin?: boolean
 }
@@ -153,7 +156,7 @@ export function PathStrip({
           >
             {s.chip.deviceId ? (
               <Link
-                to="/devices/$id"
+                to={s.chip.powerPanel ? "/power-panels/$id" : "/devices/$id"}
                 params={{ id: s.chip.deviceId }}
                 className="block px-2.5 pt-1.5 pb-1 text-[11px] font-medium whitespace-nowrap hover:underline"
               >
@@ -166,22 +169,29 @@ export function PathStrip({
             )}
             <div className="flex divide-x divide-border border-t border-border">
               {s.chip.ports.map((port, pi) => {
-                // Interfaces open their own page; other ports (front/rear/
-                // console/power) open their device's Hardware tab.
+                // Interfaces and site power feeds open their own page; other
+                // ports (front/rear/console/power) open their device's
+                // Hardware tab.
                 const onClick = port.interfaceId
                   ? () =>
                       navigate({
                         to: "/interfaces/$id",
                         params: { id: port.interfaceId! },
                       })
-                  : s.chip.deviceId
+                  : port.powerFeedId
                     ? () =>
                         navigate({
-                          to: "/devices/$id",
-                          params: { id: s.chip.deviceId! },
-                          search: { tab: "components", sub: "hardware" },
+                          to: "/power-feeds/$id",
+                          params: { id: port.powerFeedId! },
                         })
-                    : undefined
+                    : s.chip.deviceId && !s.chip.powerPanel
+                      ? () =>
+                          navigate({
+                            to: "/devices/$id",
+                            params: { id: s.chip.deviceId! },
+                            search: { tab: "components", sub: "hardware" },
+                          })
+                      : undefined
                 return (
                   <span
                     key={pi}
@@ -196,9 +206,11 @@ export function PathStrip({
                     title={
                       port.interfaceId
                         ? "Open interface"
-                        : onClick
-                          ? "Open in Hardware"
-                          : undefined
+                        : port.powerFeedId
+                          ? "Open power feed"
+                          : onClick
+                            ? "Open in Hardware"
+                            : undefined
                     }
                   >
                     {port.name}
@@ -309,10 +321,14 @@ export function PathStrip({
 export function portOf(n: { id: string; data: { name: string } }): {
   name: string
   interfaceId?: string
+  powerFeedId?: string
 } {
-  return n.id.startsWith("if:")
-    ? { name: n.data.name, interfaceId: n.id.slice(3) }
-    : { name: n.data.name }
+  if (n.id.startsWith("if:"))
+    return { name: n.data.name, interfaceId: n.id.slice(3) }
+  // "pfd:" — a site power feed (trace's NODE_PREFIX), which has its own page.
+  if (n.id.startsWith("pfd:"))
+    return { name: n.data.name, powerFeedId: n.id.slice(4) }
+  return { name: n.data.name }
 }
 
 type TraceEdge = TraceGraph["edges"][number]
@@ -368,7 +384,12 @@ function buildSteps(
         chip = null
       }
       if (chip === null) {
-        chip = { deviceId: devId, device: dev, ports: [portOf(n)] }
+        chip = {
+          deviceId: devId,
+          device: dev,
+          ports: [portOf(n)],
+          powerPanel: nodeId.startsWith("pfd:"),
+        }
         steps.push({ t: "chip", chip })
         continue
       }

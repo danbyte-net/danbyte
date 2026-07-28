@@ -1,20 +1,25 @@
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { type ColumnDef } from "@tanstack/react-table"
+import type { ColumnDef } from "@tanstack/react-table"
 
-import {
-  api,
-  type Circuit,
-  type Cluster,
-  type IPAddress,
-  type Paginated,
-  type Rack,
+import { api } from "@/lib/api"
+import type {
+  Cable,
+  Circuit,
+  Cluster,
+  IPAddress,
+  Paginated,
+  PowerFeed,
+  Rack,
 } from "@/lib/api"
 import { DataTable } from "@/components/data-table"
+import { buildCableColumns } from "@/components/columns/cable-columns"
 import { buildCircuitColumns } from "@/components/columns/circuit-columns"
 import type { CircuitColumnId } from "@/components/columns/circuit-columns"
 import { buildClusterColumns } from "@/components/columns/cluster-columns"
 import { buildIpColumns } from "@/components/columns/ip-columns"
+import { buildPowerFeedColumns } from "@/components/columns/power-feed-columns"
+import type { PowerFeedColumnId } from "@/components/columns/power-feed-columns"
 import { buildRackColumns } from "@/components/columns/rack-columns"
 import { QueryError } from "@/components/query-error"
 
@@ -154,6 +159,78 @@ export function EmbeddedCircuitTable({
       columns={columns}
       flexColumn="description"
       tableId="embedded-circuits"
+    />
+  )
+}
+
+/** Power feeds scoped by panel / rack / status. Reuses the one power-feed
+ * column factory — the same row the /power-feeds list draws. `omitPanel` drops
+ * the redundant Panel column on a panel's own detail page. */
+export function EmbeddedPowerFeedTable({
+  filter,
+  omitPanel = false,
+  emptyText = "No power feeds.",
+}: {
+  filter: Record<string, string>
+  omitPanel?: boolean
+  emptyText?: string
+}) {
+  const q = useEmbed<PowerFeed>(
+    "embedded-power-feeds",
+    "/api/power-feeds/",
+    filter
+  )
+  const columns = useMemo<ColumnDef<PowerFeed>[]>(() => {
+    const include: PowerFeedColumnId[] = [
+      "name",
+      "panel",
+      "rack",
+      "status",
+      "type",
+      "supply",
+      "phase",
+      "power",
+      "max",
+    ]
+    return buildPowerFeedColumns({
+      include: omitPanel ? include.filter((id) => id !== "panel") : include,
+    })
+  }, [omitPanel])
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="name"
+      tableId="embedded-power-feeds"
+    />
+  )
+}
+
+/** Cables scoped by device / power feed. Reuses the one cable column factory,
+ * so a cable row reads the same here as on /cables. */
+export function EmbeddedCableTable({
+  filter,
+  emptyText = "No cables.",
+}: {
+  filter: Record<string, string>
+  emptyText?: string
+}) {
+  const q = useEmbed<Cable>("embedded-cables", "/api/cables/", filter)
+  const columns = useMemo<ColumnDef<Cable>[]>(
+    () =>
+      buildCableColumns({
+        include: ["label", "a", "link", "b", "type", "status", "description"],
+      }),
+    []
+  )
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="description"
+      tableId="embedded-cables"
     />
   )
 }

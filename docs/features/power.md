@@ -45,6 +45,32 @@ specific rack.
 | **Amperage** | the rated current (amps). |
 | **Max utilization** | a percentage ceiling — the most of this feed you plan to draw. |
 
+### Open a feed or a panel
+
+Clicking a name in **Power → Power feeds** or **Power → Power panels** opens
+that object's detail page, the same way every other object in Danbyte works.
+
+A **power panel** page has:
+
+- **Overview** — its site, how many feeds draw from it, comments, and when it
+  was created and last changed.
+- **Feeds** — every feed on the panel, the same row the feeds list draws.
+- **Journal** — your notes on this panel.
+- **History** — the change log: who changed which field, and when.
+
+A **power feed** page has:
+
+- **Overview** — the panel it draws from (a link), the rack it delivers to,
+  status and type, and the electrical details (supply, phase, voltage,
+  amperage, max utilization).
+- **Terminations** — the cables landing on this feed, usually the PDU inlet it
+  powers. Follow one to trace the whole power path.
+- **Journal** and **History**, as above.
+
+!!! note "Max utilization is a plan, not a measurement"
+    Danbyte records the ceiling you set. It does not meter the feed, so the
+    page states the ceiling rather than a live draw against it.
+
 ### Feed status
 
 | Status | Meaning |

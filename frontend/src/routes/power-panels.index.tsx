@@ -46,7 +46,7 @@ function PowerPanelsPage() {
         header: ({ column }) => <SortHeader column={column} label="Name" />,
         cell: ({ row }) => (
           <Link
-            to="/power-panels/$id/edit"
+            to="/power-panels/$id"
             params={{ id: row.original.id }}
             className="font-medium hover:underline"
           >

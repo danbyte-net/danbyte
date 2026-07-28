@@ -58,19 +58,23 @@ function CableDetail() {
 }
 
 function TerminationBox({ t }: { t: Termination }) {
+  // A power feed hangs off a power panel, not a device — the API surfaces the
+  // panel under the same `device` key, so both halves of the box point at the
+  // power pages instead of a device that doesn't exist.
+  const feed = t.kind === "power_feed"
   return (
     <div className="rounded-lg border border-border px-4 py-3">
       <Link
-        to="/devices/$id"
+        to={feed ? "/power-panels/$id" : "/devices/$id"}
         params={{ id: t.device.id }}
         className="font-mono text-xs text-muted-foreground hover:underline"
       >
         {t.device.name}
       </Link>
       <div className="mt-1 flex items-center gap-2 font-mono font-medium">
-        {t.kind === "interface" ? (
+        {t.kind === "interface" || feed ? (
           <Link
-            to="/interfaces/$id"
+            to={feed ? "/power-feeds/$id" : "/interfaces/$id"}
             params={{ id: t.id }}
             className="hover:underline"
           >

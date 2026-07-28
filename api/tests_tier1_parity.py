@@ -304,6 +304,16 @@ class ConsolePowerComponentTests(_TenantAPITestCase):
         (a,) = r.json()["a_terminations"]
         # The feed's "device" slot carries its panel, keeping one read shape.
         self.assertEqual(a["device"]["name"], "PP-1")
+        # ?power_feed= backs the feed detail page's Terminations tab — site
+        # power has no device, so the ?device= filter can't reach it.
+        listed = self.client.get(f"/api/cables/?power_feed={feed.id}").json()
+        self.assertEqual(listed["count"], 1)
+        self.assertEqual(listed["results"][0]["id"], r.json()["id"])
+        other = PowerFeed.objects.create(
+            tenant=self.tenant, power_panel=panel, name="FEED-B"
+        )
+        empty = self.client.get(f"/api/cables/?power_feed={other.id}").json()
+        self.assertEqual(empty["count"], 0)
 
 
 class ComponentTemplateMaterializationTests(_TenantAPITestCase):

@@ -216,7 +216,9 @@ import { Route as PrefixesNewRouteImport } from './routes/prefixes.new'
 import { Route as PrefixesBulkEditRouteImport } from './routes/prefixes.bulk-edit'
 import { Route as PrefixesIdRouteImport } from './routes/prefixes.$id'
 import { Route as PowerPanelsNewRouteImport } from './routes/power-panels.new'
+import { Route as PowerPanelsIdRouteImport } from './routes/power-panels.$id'
 import { Route as PowerFeedsNewRouteImport } from './routes/power-feeds.new'
+import { Route as PowerFeedsIdRouteImport } from './routes/power-feeds.$id'
 import { Route as PlatformsNewRouteImport } from './routes/platforms.new'
 import { Route as PlatformsIdRouteImport } from './routes/platforms.$id'
 import { Route as PlatformGroupsNewRouteImport } from './routes/platform-groups.new'
@@ -1391,9 +1393,19 @@ const PowerPanelsNewRoute = PowerPanelsNewRouteImport.update({
   path: '/new',
   getParentRoute: () => PowerPanelsRoute,
 } as any)
+const PowerPanelsIdRoute = PowerPanelsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => PowerPanelsRoute,
+} as any)
 const PowerFeedsNewRoute = PowerFeedsNewRouteImport.update({
   id: '/new',
   path: '/new',
+  getParentRoute: () => PowerFeedsRoute,
+} as any)
+const PowerFeedsIdRoute = PowerFeedsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
   getParentRoute: () => PowerFeedsRoute,
 } as any)
 const PlatformsNewRoute = PlatformsNewRouteImport.update({
@@ -2229,7 +2241,9 @@ export interface FileRoutesByFullPath {
   '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
   '/platforms/new': typeof PlatformsNewRoute
+  '/power-feeds/$id': typeof PowerFeedsIdRoute
   '/power-feeds/new': typeof PowerFeedsNewRoute
+  '/power-panels/$id': typeof PowerPanelsIdRoute
   '/power-panels/new': typeof PowerPanelsNewRoute
   '/prefixes/$id': typeof PrefixesIdRoute
   '/prefixes/bulk-edit': typeof PrefixesBulkEditRoute
@@ -2521,7 +2535,9 @@ export interface FileRoutesByTo {
   '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
   '/platforms/new': typeof PlatformsNewRoute
+  '/power-feeds/$id': typeof PowerFeedsIdRoute
   '/power-feeds/new': typeof PowerFeedsNewRoute
+  '/power-panels/$id': typeof PowerPanelsIdRoute
   '/power-panels/new': typeof PowerPanelsNewRoute
   '/prefixes/$id': typeof PrefixesIdRoute
   '/prefixes/bulk-edit': typeof PrefixesBulkEditRoute
@@ -2870,7 +2886,9 @@ export interface FileRoutesById {
   '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
   '/platforms/new': typeof PlatformsNewRoute
+  '/power-feeds/$id': typeof PowerFeedsIdRoute
   '/power-feeds/new': typeof PowerFeedsNewRoute
+  '/power-panels/$id': typeof PowerPanelsIdRoute
   '/power-panels/new': typeof PowerPanelsNewRoute
   '/prefixes/$id': typeof PrefixesIdRoute
   '/prefixes/bulk-edit': typeof PrefixesBulkEditRoute
@@ -3220,7 +3238,9 @@ export interface FileRouteTypes {
     | '/platform-groups/new'
     | '/platforms/$id'
     | '/platforms/new'
+    | '/power-feeds/$id'
     | '/power-feeds/new'
+    | '/power-panels/$id'
     | '/power-panels/new'
     | '/prefixes/$id'
     | '/prefixes/bulk-edit'
@@ -3512,7 +3532,9 @@ export interface FileRouteTypes {
     | '/platform-groups/new'
     | '/platforms/$id'
     | '/platforms/new'
+    | '/power-feeds/$id'
     | '/power-feeds/new'
+    | '/power-panels/$id'
     | '/power-panels/new'
     | '/prefixes/$id'
     | '/prefixes/bulk-edit'
@@ -3860,7 +3882,9 @@ export interface FileRouteTypes {
     | '/platform-groups/new'
     | '/platforms/$id'
     | '/platforms/new'
+    | '/power-feeds/$id'
     | '/power-feeds/new'
+    | '/power-panels/$id'
     | '/power-panels/new'
     | '/prefixes/$id'
     | '/prefixes/bulk-edit'
@@ -5651,11 +5675,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PowerPanelsNewRouteImport
       parentRoute: typeof PowerPanelsRoute
     }
+    '/power-panels/$id': {
+      id: '/power-panels/$id'
+      path: '/$id'
+      fullPath: '/power-panels/$id'
+      preLoaderRoute: typeof PowerPanelsIdRouteImport
+      parentRoute: typeof PowerPanelsRoute
+    }
     '/power-feeds/new': {
       id: '/power-feeds/new'
       path: '/new'
       fullPath: '/power-feeds/new'
       preLoaderRoute: typeof PowerFeedsNewRouteImport
+      parentRoute: typeof PowerFeedsRoute
+    }
+    '/power-feeds/$id': {
+      id: '/power-feeds/$id'
+      path: '/$id'
+      fullPath: '/power-feeds/$id'
+      preLoaderRoute: typeof PowerFeedsIdRouteImport
       parentRoute: typeof PowerFeedsRoute
     }
     '/platforms/new': {
@@ -7130,12 +7168,14 @@ const PermissionsRouteWithChildren = PermissionsRoute._addFileChildren(
 )
 
 interface PowerFeedsRouteChildren {
+  PowerFeedsIdRoute: typeof PowerFeedsIdRoute
   PowerFeedsNewRoute: typeof PowerFeedsNewRoute
   PowerFeedsIndexRoute: typeof PowerFeedsIndexRoute
   PowerFeedsIdEditRoute: typeof PowerFeedsIdEditRoute
 }
 
 const PowerFeedsRouteChildren: PowerFeedsRouteChildren = {
+  PowerFeedsIdRoute: PowerFeedsIdRoute,
   PowerFeedsNewRoute: PowerFeedsNewRoute,
   PowerFeedsIndexRoute: PowerFeedsIndexRoute,
   PowerFeedsIdEditRoute: PowerFeedsIdEditRoute,
@@ -7146,12 +7186,14 @@ const PowerFeedsRouteWithChildren = PowerFeedsRoute._addFileChildren(
 )
 
 interface PowerPanelsRouteChildren {
+  PowerPanelsIdRoute: typeof PowerPanelsIdRoute
   PowerPanelsNewRoute: typeof PowerPanelsNewRoute
   PowerPanelsIndexRoute: typeof PowerPanelsIndexRoute
   PowerPanelsIdEditRoute: typeof PowerPanelsIdEditRoute
 }
 
 const PowerPanelsRouteChildren: PowerPanelsRouteChildren = {
+  PowerPanelsIdRoute: PowerPanelsIdRoute,
   PowerPanelsNewRoute: PowerPanelsNewRoute,
   PowerPanelsIndexRoute: PowerPanelsIndexRoute,
   PowerPanelsIdEditRoute: PowerPanelsIdEditRoute,

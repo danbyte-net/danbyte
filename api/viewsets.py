@@ -3328,6 +3328,9 @@ class CableViewSet(TenantScopedViewSet):
             "terminations__interface__device",
             "terminations__front_port__device",
             "terminations__rear_port__device",
+            # A power feed hangs off a panel, not a device — the read shape
+            # names the panel, so prefetch it like the device-side kinds.
+            "terminations__power_feed__power_panel",
             "tags",
         ).order_by("-created_at")
     )
@@ -3361,6 +3364,11 @@ class CableViewSet(TenantScopedViewSet):
                 qs = (qs.filter(terminations__interface__device_id=device_id)
                       | qs.filter(terminations__front_port__device_id=device_id)
                       | qs.filter(terminations__rear_port__device_id=device_id))
+            # "What lands on this feed" — the power feed detail page's
+            # Terminations tab. Site-level power has no device to filter by.
+            feed_id = self.request.query_params.get("power_feed")
+            if feed_id:
+                qs = qs.filter(terminations__power_feed_id=feed_id)
         return qs.distinct()
 
     def _assert_write_in_site_scope(self, response, action):
