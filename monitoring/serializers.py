@@ -17,6 +17,7 @@ from .checkers import CheckConfigError, get_checker
 from .models import (
     Alert,
     AlertRule,
+    Certificate,
     CheckAssignment,
     CheckKind,
     CheckResult,
@@ -85,6 +86,31 @@ class DeviceSnmpSerializer(serializers.ModelSerializer):
         fields = [
             "id", "device", "profile", "profile_name", "data", "interfaces",
             "neighbors", "arp", "sensors", "reachable", "error", "polled_at",
+        ]
+        read_only_fields = fields
+
+
+class CertificateSerializer(serializers.ModelSerializer):
+    """An observed X.509 certificate — public fields only, and **read-only**.
+
+    Certificates are observed, never authored: nothing here is writable through
+    the API, so there is no payload that could carry key material even before
+    the model's own guard. ``is_expired`` / ``days_until_expiry`` are derived at
+    read time so a stale row can't report itself healthy.
+    """
+
+    is_expired = serializers.BooleanField(read_only=True)
+    days_until_expiry = serializers.FloatField(read_only=True)
+
+    class Meta:
+        model = Certificate
+        fields = [
+            "id", "fingerprint_sha256", "subject", "subject_cn", "issuer",
+            "issuer_cn", "serial", "san_dns", "san_ip", "not_before",
+            "not_after", "is_expired", "days_until_expiry",
+            "public_key_algorithm", "public_key_bits", "signature_algorithm",
+            "chain_depth", "self_signed", "chain_verified", "last_seen",
+            "created_at", "updated_at",
         ]
         read_only_fields = fields
 

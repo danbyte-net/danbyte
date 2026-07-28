@@ -69,6 +69,7 @@ nav = [
       "monitoring/index.md",
       { "Monitoring"        = "features/monitoring.md" },
       { "Outposts (remote engines)" = "monitoring/outposts.md" },
+      { "Certificate inventory" = "monitoring/certificates.md" },
       { "SNMP discovery"    = "features/snmp-discovery.md" },
       { "Compliance"        = "features/compliance.md" },
     ] },

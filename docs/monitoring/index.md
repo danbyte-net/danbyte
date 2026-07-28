@@ -8,5 +8,6 @@ way they should be**.
 | Page | What it's for |
 |---|---|
 | [Monitoring](../features/monitoring.md) | Run health checks (ping, TCP, HTTP, and more) against IPs and subnets, with schedules, history, and alerts. |
+| [Certificate inventory](certificates.md) | Record the TLS certificates your endpoints actually serve — expiry, issuer, SANs, key strength. Public data only; never a private key. |
 | [Compliance](../features/compliance.md) | Define rules your objects must satisfy, and see what's violating them. |
 | [Jobs](../features/jobs.md) | Watch the background work queue — discovery sweeps, scheduled checks, notifications — and requeue or cancel jobs. |

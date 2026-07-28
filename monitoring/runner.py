@@ -112,6 +112,9 @@ def record_results(ip, items: list[RunItem]) -> list[CheckResult]:
     ]
     if rows:
         CheckResult.objects.bulk_create(rows)
+        from .certificates import record_check_results
+
+        record_check_results(rows)
     return rows
 
 

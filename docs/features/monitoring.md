@@ -6,14 +6,15 @@ icon: lucide/activity
 
 Monitoring watches your IPs and prefixes and tells you whether they're up,
 degraded, or down. You define **checks** — ICMP ping, TCP, UDP, HTTP(S), SNMP,
-SSH, Telnet, or a script — attach them to an IP or a whole prefix, and Danbyte
-runs them on a schedule, keeps the history, and shows live status everywhere it
-matters: on detail pages, in list columns, and on a global Monitoring dashboard.
+SSH, Telnet, a TLS certificate read, or a script — attach them to an IP or a
+whole prefix, and Danbyte runs them on a schedule, keeps the history, and shows
+live status everywhere it matters: on detail pages, in list columns, and on a
+global Monitoring dashboard.
 
 This page is organised by task. Jump to:
 
 - [Set up a check](#set-up-a-check) — create one and attach it
-- [Check types](#check-types) — the eight protocols and what each measures
+- [Check types](#check-types) — the protocols and what each measures
 - [Where checks apply (prefixes and inheritance)](#where-checks-apply)
 - [Schedule modes](#schedule-modes) — when checks run
 - [Reading results](#reading-results) — status, sparklines, history, uptime
@@ -68,11 +69,21 @@ internal error — never treated as an outage).
 | **SSH** | Connects and authenticates (plus optional command checks) | Auth rejected, or a command check fails | Username + password or key |
 | **Telnet** | Connects (and optional banner matches) | The banner doesn't match | — |
 | **Script / exec** | A local plugin exits `0` | The plugin exits `1` (warning) | — |
+| **TLS certificate** | The presented chain verifies and is inside its validity window | Reachable, but the certificate is untrusted, self-signed, or expired | — |
 
 !!! tip "`unknown` is not `down`"
     If a check is misconfigured — bad parameters, missing privilege, an
     unexpected error — it reports **unknown**, and that never flips a known-good
     status to down. Misconfiguration won't masquerade as an outage.
+
+### TLS certificate checks
+
+The **TLS certificate** kind reads the certificate chain an endpoint presents
+and files it in the [certificate inventory](../monitoring/certificates.md) —
+expiry, issuer, SANs, key strength, self-signed and trust flags. It stores
+**public certificate data only and never a private key**, and reads an
+untrusted certificate without weakening verification anywhere. See that page
+for the full field list and the trust rules.
 
 ### HTTP checks are pinned to the target
 

@@ -324,6 +324,10 @@ def _finalise(states: list[CheckState], outcomes: list[CheckOutcome], settings_m
         state.next_run = now + timedelta(seconds=interval) if interval else None
 
     CheckResult.objects.bulk_create(results, batch_size=2000)
+    if results:
+        from .certificates import record_check_results
+
+        record_check_results(results)
     if transitions:
         StateTransition.objects.bulk_create(transitions, batch_size=2000)
     CheckState.objects.bulk_update(

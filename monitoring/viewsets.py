@@ -6,6 +6,7 @@ every referenced IP/prefix belongs to the active tenant.
 """
 from __future__ import annotations
 
+from datetime import timedelta
 from secrets import token_urlsafe
 
 from django.core.exceptions import FieldError
@@ -17,12 +18,13 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from api.views import _get_active_tenant
-from api.viewsets import TenantScopedViewSet
+from api.viewsets import TenantScopedReadViewSet, TenantScopedViewSet
 from auth_api import rbac
 from auth_api.permissions import can_manage_admin
 
 from .models import (
     AlertRule,
+    Certificate,
     CheckAssignment,
     CheckTemplate,
     MonitoringDenySubnet,
@@ -37,6 +39,7 @@ from .models import (
 )
 from .serializers import (
     AlertRuleSerializer,
+    CertificateSerializer,
     CheckAssignmentSerializer,
     CheckTemplateSerializer,
     MonitoringDenySubnetSerializer,
@@ -180,6 +183,55 @@ class MonitoringEngineViewSet(viewsets.ModelViewSet):
 class SnmpProfileViewSet(TenantScopedViewSet):
     queryset = SnmpProfile.objects.all().order_by("name")
     serializer_class = SnmpProfileSerializer
+
+
+class CertificateViewSet(TenantScopedReadViewSet):
+    """Observed certificates — tenant-scoped, authenticated, and read-only.
+
+    Read-only is the design, not an omission: a certificate row is an
+    observation of what an endpoint served, so there is no legitimate write. It
+    also means no request body can reach these fields at all, which is the
+    outermost layer of "a private key is never accepted".
+
+    Filters: ``?expiring_in_days=N`` (expiring within N days, expired
+    included), ``?expired=1|0``, ``?self_signed=1|0``, ``?search=`` over
+    subject / issuer / fingerprint.
+    """
+
+    queryset = Certificate.objects.all()
+    serializer_class = CertificateSerializer
+
+    def get_queryset(self):
+        from django.utils import timezone
+
+        qs = super().get_queryset()
+        params = self.request.query_params
+        now = timezone.now()
+
+        days = params.get("expiring_in_days")
+        if days:
+            try:
+                qs = qs.filter(not_after__lte=now + timedelta(days=float(days)))
+            except ValueError:
+                pass
+        expired = params.get("expired")
+        if expired in ("1", "true"):
+            qs = qs.filter(not_after__lte=now)
+        elif expired in ("0", "false"):
+            qs = qs.filter(not_after__gt=now)
+        self_signed = params.get("self_signed")
+        if self_signed in ("1", "true"):
+            qs = qs.filter(self_signed=True)
+        elif self_signed in ("0", "false"):
+            qs = qs.filter(self_signed=False)
+        search = (params.get("search") or "").strip()
+        if search:
+            qs = qs.filter(
+                Q(subject__icontains=search)
+                | Q(issuer__icontains=search)
+                | Q(fingerprint_sha256__istartswith=search)
+            )
+        return qs
 
 
 class SnmpSensorViewSet(TenantScopedViewSet):

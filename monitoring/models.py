@@ -54,6 +54,7 @@ class CheckKind(models.TextChoices):
     SSH = "ssh", "SSH"
     TELNET = "telnet", "Telnet"
     EXEC = "exec", "Script / exec"
+    TLS_CERT = "tls_cert", "TLS certificate"
 
 
 def check_kinds() -> list[tuple[str, str]]:
@@ -1668,3 +1669,171 @@ class SnmpInterfaceSample(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.device_id}/{self.if_index} @ {self.sampled_at:%H:%M}"
+
+
+# ─── Certificate inventory ────────────────────────────────────────────────
+
+
+# Markers for every PEM/OpenSSH private-key envelope. A certificate inventory
+# stores public data only; these exist so the rule is enforced, not just stated.
+_PRIVATE_KEY_MARKERS = (
+    "PRIVATE KEY-----",
+    "BEGIN OPENSSH PRIVATE KEY",
+    "BEGIN PGP PRIVATE KEY",
+    "BEGIN SSH2 ENCRYPTED PRIVATE KEY",
+)
+
+
+def contains_private_key_material(value) -> bool:
+    """Whether ``value`` (a string, or a list/dict of them) looks like a key."""
+    if isinstance(value, str):
+        upper = value.upper()
+        return any(marker in upper for marker in _PRIVATE_KEY_MARKERS)
+    if isinstance(value, (list, tuple)):
+        return any(contains_private_key_material(v) for v in value)
+    if isinstance(value, dict):
+        return any(
+            contains_private_key_material(k) or contains_private_key_material(v)
+            for k, v in value.items()
+        )
+    return False
+
+
+class PublicKeyAlgorithm(models.TextChoices):
+    RSA = "rsa", "RSA"
+    EC = "ec", "ECDSA"
+    ED25519 = "ed25519", "Ed25519"
+    ED448 = "ed448", "Ed448"
+    DSA = "dsa", "DSA"
+    UNKNOWN = "unknown", "Unknown"
+
+
+class Certificate(TimestampedModel):
+    """One observed X.509 certificate — **public data only**.
+
+    Every field here is a value the server broadcasts to every client that
+    completes a handshake: subject, issuer, SANs, serial, fingerprint, validity
+    window, key algorithm/size, signature algorithm. That is what makes a
+    certificate inventory safe by construction where a credential store was not.
+
+    **A private key is never stored, requested, or accepted.** There is
+    deliberately no PEM/blob/notes/custom-fields column that could hold one:
+    a field that *could* carry key material is the design error, so none exists.
+    :meth:`save` additionally scans what it is about to write and refuses key
+    material outright, whatever the write path (collector, shell, future import).
+
+    Identity is the **SHA-256 fingerprint of the DER**, scoped to the tenant:
+
+    * The same certificate served by ten endpoints is **one row**, not ten —
+      the fingerprint is over the exact bytes, so equality is exact.
+    * Uniqueness is ``(tenant, fingerprint_sha256)`` rather than a global
+      unique fingerprint: tenant isolation is a hard boundary, so two tenants
+      that legitimately observe the same public certificate each own their own
+      row, and one tenant can never read or delete another's.
+    * **Renewal creates a new row.** A renewed certificate has a new validity
+      window (and usually a new serial and key), so different DER, so a
+      different fingerprint. The previous row is never overwritten or deleted —
+      it stays as history, which is what makes "what were we serving when that
+      outage happened?" answerable.
+
+    Observation-scoped fields (``chain_depth``, ``chain_verified``, ``last_seen``)
+    record the **most recent** sighting. Per-endpoint history belongs to the
+    binding model (phase X1), not here.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="certificates"
+    )
+
+    fingerprint_sha256 = models.CharField(
+        max_length=64,
+        help_text="SHA-256 of the DER encoding, lowercase hex. The identity of "
+        "the certificate — the same cert seen anywhere is this same row.",
+    )
+    subject = models.CharField(max_length=1024, blank=True, default="")
+    subject_cn = models.CharField(max_length=255, blank=True, default="")
+    issuer = models.CharField(max_length=1024, blank=True, default="")
+    issuer_cn = models.CharField(max_length=255, blank=True, default="")
+    serial = models.CharField(
+        max_length=128, blank=True, default="",
+        help_text="Certificate serial number, lowercase hex.",
+    )
+    san_dns = models.JSONField(
+        default=list, blank=True,
+        help_text="dNSName subject alternative names, e.g. "
+        '["example.com", "*.example.com"].',
+    )
+    san_ip = models.JSONField(
+        default=list, blank=True,
+        help_text="iPAddress subject alternative names, as strings.",
+    )
+    not_before = models.DateTimeField()
+    not_after = models.DateTimeField(db_index=True)
+    public_key_algorithm = models.CharField(
+        max_length=16,
+        choices=PublicKeyAlgorithm.choices,
+        default=PublicKeyAlgorithm.UNKNOWN,
+    )
+    public_key_bits = models.PositiveIntegerField(null=True, blank=True)
+    signature_algorithm = models.CharField(max_length=64, blank=True, default="")
+    chain_depth = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Position in the presented chain when last observed — 0 is "
+        "the end-entity (leaf) certificate, 1 its issuer, and so on.",
+    )
+    self_signed = models.BooleanField(default=False)
+    chain_verified = models.BooleanField(
+        null=True, blank=True,
+        help_text="Did the chain this certificate arrived in validate against "
+        "the trust store? NULL = not known. Recorded, never enforced — Danbyte "
+        "reports trust, it does not become one.",
+    )
+    last_seen = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Most recent observation. ``created_at`` is the first.",
+    )
+
+    class Meta:
+        ordering = ["not_after", "subject_cn"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "fingerprint_sha256"],
+                name="uniq_certificate_tenant_fingerprint",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "not_after"]),
+            models.Index(fields=["tenant", "subject_cn"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.subject_cn or self.subject or self.fingerprint_sha256[:16]}"
+
+    @property
+    def is_expired(self) -> bool:
+        return self.not_after <= timezone.now()
+
+    @property
+    def days_until_expiry(self) -> float:
+        return round((self.not_after - timezone.now()).total_seconds() / 86400, 2)
+
+    def _assert_public_only(self) -> None:
+        """Refuse to persist anything that looks like private key material.
+
+        Belt and braces on top of "there is no field for it": the guarantee is
+        that no write path — collector, management command, shell, a future
+        import — can smuggle a key into a certificate row.
+        """
+        from django.core.exceptions import ValidationError
+
+        for field in self._meta.fields:
+            if contains_private_key_material(getattr(self, field.attname, None)):
+                raise ValidationError({
+                    field.name: "Private key material must never be stored on a "
+                    "certificate. Certificates hold public data only."
+                })
+
+    def save(self, *args, **kwargs):
+        self._assert_public_only()
+        return super().save(*args, **kwargs)

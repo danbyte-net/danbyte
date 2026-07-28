@@ -28,6 +28,7 @@ from . import udp  # noqa: E402,F401
 from . import ssh  # noqa: E402,F401
 from . import snmp  # noqa: E402,F401
 from . import telnet  # noqa: E402,F401
+from . import tls_cert  # noqa: E402,F401
 
 __version__ = "0.1.0"
 

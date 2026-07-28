@@ -3,6 +3,7 @@ from django.contrib import admin
 from .models import (
     Alert,
     AlertRule,
+    Certificate,
     CheckAssignment,
     CheckResult,
     CheckState,
@@ -96,6 +97,24 @@ class StateTransitionAdmin(admin.ModelAdmin):
     list_display = ("target_ip", "kind", "from_status", "to_status", "at")
     list_filter = ("kind", "to_status")
     raw_id_fields = ("target_ip", "template")
+
+
+@admin.register(Certificate)
+class CertificateAdmin(admin.ModelAdmin):
+    """Observed certificates. Read-only — a row records what an endpoint served,
+    so there is nothing to author here (and nowhere to type key material)."""
+
+    list_display = ("subject_cn", "issuer_cn", "not_after", "self_signed",
+                    "chain_verified", "tenant")
+    list_filter = ("self_signed", "chain_verified", "public_key_algorithm", "tenant")
+    search_fields = ("subject", "issuer", "fingerprint_sha256", "serial")
+    readonly_fields = [f.name for f in Certificate._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(NotificationChannel)
