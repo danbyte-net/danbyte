@@ -126,7 +126,13 @@ function buildColumns({
           >
             <DynamicIcon name={row.original.icon} className="h-3.5 w-3.5" />
           </span>
-          <span className="font-medium">{row.original.name}</span>
+          <Link
+            to="/floor-tile-types/$id"
+            params={{ id: row.original.id }}
+            className="font-medium hover:underline"
+          >
+            {row.original.name}
+          </Link>
         </span>
       ),
     },

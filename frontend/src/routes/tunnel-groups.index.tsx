@@ -54,7 +54,7 @@ function TunnelGroupsPage() {
         header: ({ column }) => <SortHeader column={column} label="Name" />,
         cell: ({ row }) => (
           <Link
-            to="/tunnel-groups/$id/edit"
+            to="/tunnel-groups/$id"
             params={{ id: row.original.id }}
             className="font-medium hover:underline"
           >

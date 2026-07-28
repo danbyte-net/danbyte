@@ -7,7 +7,7 @@ import { EditPageShell } from "@/components/edit-page-shell"
 import { FloorTileTypeForm } from "@/components/floor-tile-type-form"
 import { QueryError } from "@/components/query-error"
 
-export const Route = createFileRoute("/floor-tile-types/$id/edit")({
+export const Route = createFileRoute("/floor-tile-types/$id_/edit")({
   component: EditFloorTileTypePage,
 })
 

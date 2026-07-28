@@ -57,6 +57,21 @@ A group bundles related SSIDs together — for example *Corporate*, *Guest*, or
     If a group still has SSIDs attached, Danbyte blocks the delete. Move or
     remove those SSIDs first.
 
+## Wireless LAN group pages
+
+Click a **wireless LAN group** name in its list to open its detail page — the
+pencil in the header edits it.
+
+The Overview shows the group's name, slug and description; the **Wireless LANs**
+tab lists every SSID in the group, using the same table the main Wireless LANs
+page draws (minus the redundant Group column). It is powered by
+`GET /api/wireless-lans/?group=<id>`, and it is the check to run before you
+move or delete a group.
+
+The page also carries **Journal** and **History** tabs. Groups have been
+audited all along, so History shows every recorded change to the row, including
+ones made before the page existed.
+
 ## Tags & custom fields
 
 Need to track something extra — a controller name, a band, a PSK rotation date?

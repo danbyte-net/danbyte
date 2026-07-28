@@ -53,7 +53,7 @@ function CircuitTypesPage() {
         header: ({ column }) => <SortHeader column={column} label="Name" />,
         cell: ({ row }) => (
           <Link
-            to="/circuit-types/$id/edit"
+            to="/circuit-types/$id"
             params={{ id: row.original.id }}
             className="font-medium hover:underline"
           >

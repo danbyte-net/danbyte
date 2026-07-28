@@ -1636,6 +1636,11 @@ class CustomFieldViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         model = self.request.query_params.get("model")
         if model:
             qs = qs.filter(applies_to__contains=[model])
+        # "Which fields are in this section" — the custom-field-group detail
+        # page's Fields tab. Applied after the tenant-scoped queryset above.
+        group = self.request.query_params.get("group")
+        if group:
+            qs = qs.filter(group_id=group)
         return qs
 
     def _assert_key_unique(self, key, exclude_pk=None):
@@ -5182,6 +5187,12 @@ class ContactAssignmentViewSet(TenantScopedViewSet):
             contact = self.request.query_params.get("contact")
             if contact:
                 qs = qs.filter(contact_id=contact)
+            # "What uses this role" — the contact-role detail page's
+            # Assignments tab. Applied after the tenant filter above, so it
+            # narrows an already-authorised set rather than widening one.
+            role = self.request.query_params.get("role")
+            if role:
+                qs = qs.filter(role_id=role)
         return qs
 
     def _check_target(self, serializer):
@@ -5612,6 +5623,10 @@ class TunnelViewSet(TenantScopedViewSet):
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
             for param, field in (
                 ("group", "group_id"),
+                # "What uses this profile" — the IPSec profile detail page's
+                # Tunnels tab. Applied after the tenant-scoped queryset, so it
+                # only ever narrows an already-authorized set.
+                ("ipsec_profile", "ipsec_profile_id"),
                 ("status", "status"),
                 ("encapsulation", "encapsulation"),
             ):
@@ -6566,6 +6581,17 @@ class SiteMarkerViewSet(TenantScopedViewSet):
     serializer_class = SiteMarkerSerializer
     pagination_class = StandardPagination
 
+    def get_queryset(self):
+        # super() applies the tenant filter + row restrictions; ?tile_type=
+        # then narrows that authorised set for the floor-tile-type detail
+        # page ("which markers on the world map use this type").
+        qs = super().get_queryset()
+        if self.request:
+            tile_type = self.request.query_params.get("tile_type")
+            if tile_type:
+                qs = qs.filter(tile_type_id=tile_type)
+        return qs
+
 
 class FloorPlanTileViewSet(TenantScopedViewSet):
     """Tiles are scoped through their plan's tenant (they carry no tenant FK
@@ -6589,6 +6615,9 @@ class FloorPlanTileViewSet(TenantScopedViewSet):
                 ("floor_plan", "floor_plan_id"),
                 ("rack", "rack_id"),
                 ("device", "device_id"),
+                # "Where is this tile type placed" — the floor-tile-type
+                # detail page's Tiles tab.
+                ("tile_type", "tile_type_id"),
             ):
                 val = self.request.query_params.get(param)
                 if val:

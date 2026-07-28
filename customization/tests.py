@@ -103,3 +103,30 @@ class CustomFieldGroupTests(APITestCase):
         names = {r["name"] for r in rows}
         self.assertIn("Mine", names)
         self.assertNotIn("Foreign", names)
+
+    def test_field_list_filters_by_group(self):
+        """?group= backs the group detail page's Fields tab."""
+        g = self._make_group("Monitoring")
+        CustomField.objects.create(
+            tenant=self.tenant, key="grouped", label="Grouped",
+            applies_to=["device"],
+            group=CustomFieldGroup.objects.get(id=g["id"]),
+        )
+        CustomField.objects.create(
+            tenant=self.tenant, key="loose", label="Loose", applies_to=["device"]
+        )
+        body = self.client.get(f"/api/custom-fields/?group={g['id']}").json()
+        self.assertEqual([f["key"] for f in body["results"]], ["grouped"])
+
+    def test_field_group_filter_cannot_read_another_tenant(self):
+        """The filter narrows the tenant-scoped queryset — it never widens it,
+        so another tenant's group id returns nothing rather than their fields."""
+        foreign = CustomFieldGroup.objects.create(
+            tenant=self.other, name="Foreign", slug="foreign"
+        )
+        CustomField.objects.create(
+            tenant=self.other, key="secret", label="Secret",
+            applies_to=["device"], group=foreign,
+        )
+        body = self.client.get(f"/api/custom-fields/?group={foreign.id}").json()
+        self.assertEqual(body["count"], 0)

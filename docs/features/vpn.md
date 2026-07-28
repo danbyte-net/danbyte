@@ -118,6 +118,26 @@ scoped to the interface's tenant.
     If a group or IPSec profile still has tunnels attached, Danbyte blocks the
     delete. Reassign or remove those tunnels first.
 
+## Tunnel group & IPSec profile pages
+
+Click a **tunnel group** or **IPSec profile** name in its list to open its
+detail page — the pencil in the header edits it.
+
+- A **tunnel group** page shows its name, slug and description, with a
+  **Tunnels** tab listing every tunnel in the group.
+- An **IPSec profile** page puts the crypto parameters — IKE version,
+  encryption, authentication, DH and PFS groups, SA lifetime — on its Overview,
+  with a **Tunnels** tab listing every tunnel that inherits them. Read that tab
+  before changing a profile: the edit lands on all of them at once.
+
+Both tunnel lists are the same table the main Tunnels page draws, minus the
+column that repeats the object you are already looking at. They are powered by
+`GET /api/tunnels/?group=<id>` and `?ipsec_profile=<id>`.
+
+Each page also carries **Journal** and **History** tabs. Groups and profiles
+have been audited all along, so the History tab shows every recorded change to
+the row, including ones made before the page existed.
+
 ## L2VPN overlays
 
 Alongside point-to-point tunnels, Danbyte models **L2VPNs** — layer-2 overlay

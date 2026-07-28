@@ -90,7 +90,7 @@ function buildColumns({
       header: ({ column }) => <SortHeader column={column} label="Name" />,
       cell: ({ row }) => (
         <Link
-          to="/contact-roles/$id/edit"
+          to="/contact-roles/$id"
           params={{ id: row.original.id }}
           className="font-medium hover:underline"
         >

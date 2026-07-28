@@ -1,22 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Check } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api, type CustomField, type Paginated } from "@/lib/api"
 import {
   CUSTOMIZABLE_MODELS,
   CUSTOM_FIELD_TYPES,
-  fieldTypeLabel,
-  modelLabel,
   useCustomizationMeta,
 } from "@/lib/custom-fields"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
-import { timeAgoColumn } from "@/components/cells/time-ago"
+import { buildCustomFieldColumns } from "@/components/columns/custom-field-columns"
 import {
   FilterRail,
   FacetGroup,
@@ -24,7 +20,6 @@ import {
   type FacetOption,
 } from "@/components/filter-rail"
 import { CustomFieldDeleteDialog } from "@/components/custom-field-delete-dialog"
-import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/custom-fields/")({
@@ -152,79 +147,18 @@ function buildColumns({
   onDelete: (f: CustomField) => void
   canEdit: boolean
   canDelete: boolean
-}): ColumnDef<CustomField>[] {
-  return [
-    selectionColumn<CustomField>(),
-    {
-      id: "key",
-      accessorKey: "key",
-      header: ({ column }) => <SortHeader column={column} label="Key" />,
-      cell: ({ row }) => (
-        <Link
-          to="/custom-fields/$id"
-          params={{ id: row.original.id }}
-          className="font-mono font-medium hover:underline"
-        >
-          {row.original.key}
-        </Link>
-      ),
+}): ColumnDef<CustomField, unknown>[] {
+  return buildCustomFieldColumns<CustomField>({
+    selection: true,
+    // Weight only reads as ordering *within* a section, so it lives on the
+    // group page rather than this flat list.
+    omit: ["weight"],
+    actions: {
+      editTo: "/custom-fields/$id/edit",
+      editParams: (f) => ({ id: f.id }),
+      canEdit: () => canEdit,
+      canDelete: () => canDelete,
+      onDelete,
     },
-    {
-      id: "label",
-      accessorKey: "label",
-      header: "Label",
-      cell: ({ row }) => (
-        <span className="line-clamp-1 block">{row.original.label}</span>
-      ),
-    },
-    {
-      id: "type",
-      accessorKey: "type",
-      header: ({ column }) => <SortHeader column={column} label="Type" />,
-      cell: ({ row }) => (
-        <Badge variant="secondary">{fieldTypeLabel(row.original.type)}</Badge>
-      ),
-    },
-    {
-      id: "applies",
-      header: "Applies to",
-      enableSorting: false,
-      cell: ({ row }) =>
-        row.original.applies_to.length ? (
-          <span className="text-xs text-muted-foreground">
-            {row.original.applies_to.map(modelLabel).join(" · ")}
-          </span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      id: "required",
-      accessorKey: "required",
-      header: "Required",
-      cell: ({ row }) =>
-        row.original.required ? (
-          <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    timeAgoColumn<CustomField>({
-      id: "updated",
-      header: "Updated",
-      get: (r) => r.updated_at,
-      align: "right",
-    }),
-    {
-      id: "actions",
-      enableHiding: false,
-      cell: ({ row }) => (
-        <RowActions
-          editTo={canEdit ? "/custom-fields/$id/edit" : undefined}
-          editParams={{ id: row.original.id }}
-          onDelete={canDelete ? () => onDelete(row.original) : undefined}
-        />
-      ),
-    },
-  ]
+  })
 }

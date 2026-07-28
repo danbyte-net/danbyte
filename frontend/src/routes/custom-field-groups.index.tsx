@@ -91,7 +91,7 @@ function buildColumns({
       header: ({ column }) => <SortHeader column={column} label="Name" />,
       cell: ({ row }) => (
         <Link
-          to="/custom-field-groups/$id/edit"
+          to="/custom-field-groups/$id"
           params={{ id: row.original.id }}
           className="font-medium hover:underline"
         >

@@ -9,8 +9,8 @@ from rest_framework.test import APITestCase
 from api.models import (
     Circuit, CircuitTermination, ConsolePort, ConsolePortTemplate, Device,
     DeviceType, FrontPortTemplate, Interface, InterfaceTemplate, IPAddress,
-    PowerOutletTemplate, PowerPortTemplate, Prefix, Provider, ProviderNetwork,
-    RearPortTemplate, Tunnel, TunnelTermination,
+    IPSecProfile, PowerOutletTemplate, PowerPortTemplate, Prefix, Provider,
+    ProviderNetwork, RearPortTemplate, Tunnel, TunnelTermination,
 )
 from core.models import Organization, Tenant
 
@@ -207,6 +207,34 @@ class TunnelTerminationTests(_TenantAPITestCase):
         )
         body = self.client.get(f"/api/interfaces/{self.iface.id}/").json()
         self.assertEqual(body["tunnel_terminations"], [])
+
+    def test_tunnels_filter_by_ipsec_profile(self):
+        # ?ipsec_profile= backs the profile detail page's Tunnels tab.
+        profile = IPSecProfile.objects.create(tenant=self.tenant, name="strong")
+        self.tunnel.ipsec_profile = profile
+        self.tunnel.save(update_fields=["ipsec_profile"])
+        listed = self.client.get(
+            f"/api/tunnels/?ipsec_profile={profile.id}"
+        ).json()
+        self.assertEqual([t["name"] for t in listed["results"]], ["vpn-1"])
+        unused = IPSecProfile.objects.create(tenant=self.tenant, name="weak")
+        empty = self.client.get(f"/api/tunnels/?ipsec_profile={unused.id}").json()
+        self.assertEqual(empty["count"], 0)
+
+    def test_ipsec_profile_filter_cannot_reach_another_tenant(self):
+        # The filter narrows an already tenant-scoped queryset; naming a
+        # foreign profile must not widen it back out.
+        other = Tenant.objects.create(
+            org=self.tenant.org, name="Other", slug="other-ipsec"
+        )
+        foreign_profile = IPSecProfile.objects.create(tenant=other, name="theirs")
+        Tunnel.objects.create(
+            tenant=other, name="their-vpn", ipsec_profile=foreign_profile
+        )
+        listed = self.client.get(
+            f"/api/tunnels/?ipsec_profile={foreign_profile.id}"
+        ).json()
+        self.assertEqual(listed["count"], 0)
 
 
 class ConsolePowerComponentTests(_TenantAPITestCase):

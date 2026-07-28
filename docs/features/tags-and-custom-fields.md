@@ -117,6 +117,22 @@ Fields with no group stay under the default **Custom fields** heading, so nothin
 changes until you start grouping. Deleting a group simply un-groups its fields —
 they're never lost.
 
+### Open a group
+
+Clicking a group's name in **Customize → Custom field groups** opens its detail
+page:
+
+- **Overview** — the heading name, slug, description, its **weight** and
+  **Start collapsed** setting, and (under enhanced site separation) whether the
+  group is global or owned by one site.
+- **Fields** — the definitions filed under this heading, in the order the
+  section will render them. Read it before you rename a group or move a field.
+- **Journal** — your notes on this group.
+- **History** — the change log for the group itself.
+
+The **Custom fields** list also carries a **Group** column, so you can see which
+section every field belongs to without opening each one.
+
 !!! tip "Why a real group, not a label"
     Danbyte uses a first-class group **object** rather than a free-text group
     name: rename or reorder a group in one place, the picker

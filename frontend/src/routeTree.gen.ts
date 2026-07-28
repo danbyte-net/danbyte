@@ -152,6 +152,7 @@ import { Route as ZonesNewRouteImport } from './routes/zones.new'
 import { Route as ZonesIdRouteImport } from './routes/zones.$id'
 import { Route as WirelessLansNewRouteImport } from './routes/wireless-lans.new'
 import { Route as WirelessLanGroupsNewRouteImport } from './routes/wireless-lan-groups.new'
+import { Route as WirelessLanGroupsIdRouteImport } from './routes/wireless-lan-groups.$id'
 import { Route as WebhooksNewRouteImport } from './routes/webhooks.new'
 import { Route as VrfsNewRouteImport } from './routes/vrfs.new'
 import { Route as VrfsIdRouteImport } from './routes/vrfs.$id'
@@ -168,6 +169,7 @@ import { Route as UsersNewRouteImport } from './routes/users.new'
 import { Route as TunnelsNewRouteImport } from './routes/tunnels.new'
 import { Route as TunnelsIdRouteImport } from './routes/tunnels.$id'
 import { Route as TunnelGroupsNewRouteImport } from './routes/tunnel-groups.new'
+import { Route as TunnelGroupsIdRouteImport } from './routes/tunnel-groups.$id'
 import { Route as TenantsNewRouteImport } from './routes/tenants.new'
 import { Route as TenantsIdRouteImport } from './routes/tenants.$id'
 import { Route as TagsNewRouteImport } from './routes/tags.new'
@@ -235,6 +237,7 @@ import { Route as L2vpnsNewRouteImport } from './routes/l2vpns.new'
 import { Route as L2vpnsIdRouteImport } from './routes/l2vpns.$id'
 import { Route as JobsIdRouteImport } from './routes/jobs.$id'
 import { Route as IpsecProfilesNewRouteImport } from './routes/ipsec-profiles.new'
+import { Route as IpsecProfilesIdRouteImport } from './routes/ipsec-profiles.$id'
 import { Route as IpsNewRouteImport } from './routes/ips.new'
 import { Route as IpsBulkEditRouteImport } from './routes/ips.bulk-edit'
 import { Route as IpsIdRouteImport } from './routes/ips.$id'
@@ -250,6 +253,7 @@ import { Route as GroupsNewRouteImport } from './routes/groups.new'
 import { Route as FloorplansNewRouteImport } from './routes/floorplans.new'
 import { Route as FloorplansIdRouteImport } from './routes/floorplans.$id'
 import { Route as FloorTileTypesNewRouteImport } from './routes/floor-tile-types.new'
+import { Route as FloorTileTypesIdRouteImport } from './routes/floor-tile-types.$id'
 import { Route as FhrpGroupsNewRouteImport } from './routes/fhrp-groups.new'
 import { Route as FhrpGroupsIdRouteImport } from './routes/fhrp-groups.$id'
 import { Route as ExportTemplatesNewRouteImport } from './routes/export-templates.new'
@@ -262,9 +266,11 @@ import { Route as DeviceRolesIdRouteImport } from './routes/device-roles.$id'
 import { Route as CustomFieldsNewRouteImport } from './routes/custom-fields.new'
 import { Route as CustomFieldsIdRouteImport } from './routes/custom-fields.$id'
 import { Route as CustomFieldGroupsNewRouteImport } from './routes/custom-field-groups.new'
+import { Route as CustomFieldGroupsIdRouteImport } from './routes/custom-field-groups.$id'
 import { Route as ContactsNewRouteImport } from './routes/contacts.new'
 import { Route as ContactsIdRouteImport } from './routes/contacts.$id'
 import { Route as ContactRolesNewRouteImport } from './routes/contact-roles.new'
+import { Route as ContactRolesIdRouteImport } from './routes/contact-roles.$id'
 import { Route as ContactGroupsNewRouteImport } from './routes/contact-groups.new'
 import { Route as ConfigContextsNewRouteImport } from './routes/config-contexts.new'
 import { Route as ConfigContextsIdRouteImport } from './routes/config-contexts.$id'
@@ -279,6 +285,7 @@ import { Route as ClusterGroupsIdRouteImport } from './routes/cluster-groups.$id
 import { Route as CircuitsNewRouteImport } from './routes/circuits.new'
 import { Route as CircuitsIdRouteImport } from './routes/circuits.$id'
 import { Route as CircuitTypesNewRouteImport } from './routes/circuit-types.new'
+import { Route as CircuitTypesIdRouteImport } from './routes/circuit-types.$id'
 import { Route as ChannelsNewRouteImport } from './routes/channels.new'
 import { Route as CablesNewRouteImport } from './routes/cables.new'
 import { Route as CablesIdRouteImport } from './routes/cables.$id'
@@ -334,7 +341,7 @@ import { Route as IpRolesIdEditRouteImport } from './routes/ip-roles.$id_.edit'
 import { Route as IpRangesIdEditRouteImport } from './routes/ip-ranges.$id_.edit'
 import { Route as InterfacesIdEditRouteImport } from './routes/interfaces.$id_.edit'
 import { Route as GroupsIdEditRouteImport } from './routes/groups.$id_.edit'
-import { Route as FloorTileTypesIdEditRouteImport } from './routes/floor-tile-types.$id.edit'
+import { Route as FloorTileTypesIdEditRouteImport } from './routes/floor-tile-types.$id_.edit'
 import { Route as FhrpGroupsIdEditRouteImport } from './routes/fhrp-groups.$id_.edit'
 import { Route as ExportTemplatesIdEditRouteImport } from './routes/export-templates.$id_.edit'
 import { Route as DevicesIdEditRouteImport } from './routes/devices.$id_.edit'
@@ -1075,6 +1082,11 @@ const WirelessLanGroupsNewRoute = WirelessLanGroupsNewRouteImport.update({
   path: '/new',
   getParentRoute: () => WirelessLanGroupsRoute,
 } as any)
+const WirelessLanGroupsIdRoute = WirelessLanGroupsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => WirelessLanGroupsRoute,
+} as any)
 const WebhooksNewRoute = WebhooksNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -1153,6 +1165,11 @@ const TunnelsIdRoute = TunnelsIdRouteImport.update({
 const TunnelGroupsNewRoute = TunnelGroupsNewRouteImport.update({
   id: '/new',
   path: '/new',
+  getParentRoute: () => TunnelGroupsRoute,
+} as any)
+const TunnelGroupsIdRoute = TunnelGroupsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
   getParentRoute: () => TunnelGroupsRoute,
 } as any)
 const TenantsNewRoute = TenantsNewRouteImport.update({
@@ -1490,6 +1507,11 @@ const IpsecProfilesNewRoute = IpsecProfilesNewRouteImport.update({
   path: '/new',
   getParentRoute: () => IpsecProfilesRoute,
 } as any)
+const IpsecProfilesIdRoute = IpsecProfilesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => IpsecProfilesRoute,
+} as any)
 const IpsNewRoute = IpsNewRouteImport.update({
   id: '/ips/new',
   path: '/ips/new',
@@ -1565,6 +1587,11 @@ const FloorTileTypesNewRoute = FloorTileTypesNewRouteImport.update({
   path: '/new',
   getParentRoute: () => FloorTileTypesRoute,
 } as any)
+const FloorTileTypesIdRoute = FloorTileTypesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => FloorTileTypesRoute,
+} as any)
 const FhrpGroupsNewRoute = FhrpGroupsNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -1625,6 +1652,11 @@ const CustomFieldGroupsNewRoute = CustomFieldGroupsNewRouteImport.update({
   path: '/new',
   getParentRoute: () => CustomFieldGroupsRoute,
 } as any)
+const CustomFieldGroupsIdRoute = CustomFieldGroupsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => CustomFieldGroupsRoute,
+} as any)
 const ContactsNewRoute = ContactsNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -1638,6 +1670,11 @@ const ContactsIdRoute = ContactsIdRouteImport.update({
 const ContactRolesNewRoute = ContactRolesNewRouteImport.update({
   id: '/new',
   path: '/new',
+  getParentRoute: () => ContactRolesRoute,
+} as any)
+const ContactRolesIdRoute = ContactRolesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
   getParentRoute: () => ContactRolesRoute,
 } as any)
 const ContactGroupsNewRoute = ContactGroupsNewRouteImport.update({
@@ -1708,6 +1745,11 @@ const CircuitsIdRoute = CircuitsIdRouteImport.update({
 const CircuitTypesNewRoute = CircuitTypesNewRouteImport.update({
   id: '/new',
   path: '/new',
+  getParentRoute: () => CircuitTypesRoute,
+} as any)
+const CircuitTypesIdRoute = CircuitTypesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
   getParentRoute: () => CircuitTypesRoute,
 } as any)
 const ChannelsNewRoute = ChannelsNewRouteImport.update({
@@ -1986,7 +2028,7 @@ const GroupsIdEditRoute = GroupsIdEditRouteImport.update({
   getParentRoute: () => GroupsRoute,
 } as any)
 const FloorTileTypesIdEditRoute = FloorTileTypesIdEditRouteImport.update({
-  id: '/$id/edit',
+  id: '/$id_/edit',
   path: '/$id/edit',
   getParentRoute: () => FloorTileTypesRoute,
 } as any)
@@ -2195,6 +2237,7 @@ export interface FileRoutesByFullPath {
   '/cables/$id': typeof CablesIdRoute
   '/cables/new': typeof CablesNewRoute
   '/channels/new': typeof ChannelsNewRoute
+  '/circuit-types/$id': typeof CircuitTypesIdRoute
   '/circuit-types/new': typeof CircuitTypesNewRoute
   '/circuits/$id': typeof CircuitsIdRoute
   '/circuits/new': typeof CircuitsNewRoute
@@ -2209,9 +2252,11 @@ export interface FileRoutesByFullPath {
   '/config-contexts/$id': typeof ConfigContextsIdRoute
   '/config-contexts/new': typeof ConfigContextsNewRoute
   '/contact-groups/new': typeof ContactGroupsNewRoute
+  '/contact-roles/$id': typeof ContactRolesIdRoute
   '/contact-roles/new': typeof ContactRolesNewRoute
   '/contacts/$id': typeof ContactsIdRoute
   '/contacts/new': typeof ContactsNewRoute
+  '/custom-field-groups/$id': typeof CustomFieldGroupsIdRoute
   '/custom-field-groups/new': typeof CustomFieldGroupsNewRoute
   '/custom-fields/$id': typeof CustomFieldsIdRoute
   '/custom-fields/new': typeof CustomFieldsNewRoute
@@ -2224,6 +2269,7 @@ export interface FileRoutesByFullPath {
   '/export-templates/new': typeof ExportTemplatesNewRoute
   '/fhrp-groups/$id': typeof FhrpGroupsIdRoute
   '/fhrp-groups/new': typeof FhrpGroupsNewRoute
+  '/floor-tile-types/$id': typeof FloorTileTypesIdRoute
   '/floor-tile-types/new': typeof FloorTileTypesNewRoute
   '/floorplans/$id': typeof FloorplansIdRoute
   '/floorplans/new': typeof FloorplansNewRoute
@@ -2239,6 +2285,7 @@ export interface FileRoutesByFullPath {
   '/ips/$id': typeof IpsIdRoute
   '/ips/bulk-edit': typeof IpsBulkEditRoute
   '/ips/new': typeof IpsNewRoute
+  '/ipsec-profiles/$id': typeof IpsecProfilesIdRoute
   '/ipsec-profiles/new': typeof IpsecProfilesNewRoute
   '/jobs/$id': typeof JobsIdRoute
   '/l2vpns/$id': typeof L2vpnsIdRoute
@@ -2306,6 +2353,7 @@ export interface FileRoutesByFullPath {
   '/tags/new': typeof TagsNewRoute
   '/tenants/$id': typeof TenantsIdRoute
   '/tenants/new': typeof TenantsNewRoute
+  '/tunnel-groups/$id': typeof TunnelGroupsIdRoute
   '/tunnel-groups/new': typeof TunnelGroupsNewRoute
   '/tunnels/$id': typeof TunnelsIdRoute
   '/tunnels/new': typeof TunnelsNewRoute
@@ -2322,6 +2370,7 @@ export interface FileRoutesByFullPath {
   '/vrfs/$id': typeof VrfsIdRoute
   '/vrfs/new': typeof VrfsNewRoute
   '/webhooks/new': typeof WebhooksNewRoute
+  '/wireless-lan-groups/$id': typeof WirelessLanGroupsIdRoute
   '/wireless-lan-groups/new': typeof WirelessLanGroupsNewRoute
   '/wireless-lans/new': typeof WirelessLansNewRoute
   '/zones/$id': typeof ZonesIdRoute
@@ -2491,6 +2540,7 @@ export interface FileRoutesByTo {
   '/cables/$id': typeof CablesIdRoute
   '/cables/new': typeof CablesNewRoute
   '/channels/new': typeof ChannelsNewRoute
+  '/circuit-types/$id': typeof CircuitTypesIdRoute
   '/circuit-types/new': typeof CircuitTypesNewRoute
   '/circuits/$id': typeof CircuitsIdRoute
   '/circuits/new': typeof CircuitsNewRoute
@@ -2505,9 +2555,11 @@ export interface FileRoutesByTo {
   '/config-contexts/$id': typeof ConfigContextsIdRoute
   '/config-contexts/new': typeof ConfigContextsNewRoute
   '/contact-groups/new': typeof ContactGroupsNewRoute
+  '/contact-roles/$id': typeof ContactRolesIdRoute
   '/contact-roles/new': typeof ContactRolesNewRoute
   '/contacts/$id': typeof ContactsIdRoute
   '/contacts/new': typeof ContactsNewRoute
+  '/custom-field-groups/$id': typeof CustomFieldGroupsIdRoute
   '/custom-field-groups/new': typeof CustomFieldGroupsNewRoute
   '/custom-fields/$id': typeof CustomFieldsIdRoute
   '/custom-fields/new': typeof CustomFieldsNewRoute
@@ -2520,6 +2572,7 @@ export interface FileRoutesByTo {
   '/export-templates/new': typeof ExportTemplatesNewRoute
   '/fhrp-groups/$id': typeof FhrpGroupsIdRoute
   '/fhrp-groups/new': typeof FhrpGroupsNewRoute
+  '/floor-tile-types/$id': typeof FloorTileTypesIdRoute
   '/floor-tile-types/new': typeof FloorTileTypesNewRoute
   '/floorplans/$id': typeof FloorplansIdRoute
   '/floorplans/new': typeof FloorplansNewRoute
@@ -2535,6 +2588,7 @@ export interface FileRoutesByTo {
   '/ips/$id': typeof IpsIdRoute
   '/ips/bulk-edit': typeof IpsBulkEditRoute
   '/ips/new': typeof IpsNewRoute
+  '/ipsec-profiles/$id': typeof IpsecProfilesIdRoute
   '/ipsec-profiles/new': typeof IpsecProfilesNewRoute
   '/jobs/$id': typeof JobsIdRoute
   '/l2vpns/$id': typeof L2vpnsIdRoute
@@ -2602,6 +2656,7 @@ export interface FileRoutesByTo {
   '/tags/new': typeof TagsNewRoute
   '/tenants/$id': typeof TenantsIdRoute
   '/tenants/new': typeof TenantsNewRoute
+  '/tunnel-groups/$id': typeof TunnelGroupsIdRoute
   '/tunnel-groups/new': typeof TunnelGroupsNewRoute
   '/tunnels/$id': typeof TunnelsIdRoute
   '/tunnels/new': typeof TunnelsNewRoute
@@ -2618,6 +2673,7 @@ export interface FileRoutesByTo {
   '/vrfs/$id': typeof VrfsIdRoute
   '/vrfs/new': typeof VrfsNewRoute
   '/webhooks/new': typeof WebhooksNewRoute
+  '/wireless-lan-groups/$id': typeof WirelessLanGroupsIdRoute
   '/wireless-lan-groups/new': typeof WirelessLanGroupsNewRoute
   '/wireless-lans/new': typeof WirelessLansNewRoute
   '/zones/$id': typeof ZonesIdRoute
@@ -2844,6 +2900,7 @@ export interface FileRoutesById {
   '/cables/$id': typeof CablesIdRoute
   '/cables/new': typeof CablesNewRoute
   '/channels/new': typeof ChannelsNewRoute
+  '/circuit-types/$id': typeof CircuitTypesIdRoute
   '/circuit-types/new': typeof CircuitTypesNewRoute
   '/circuits/$id': typeof CircuitsIdRoute
   '/circuits/new': typeof CircuitsNewRoute
@@ -2858,9 +2915,11 @@ export interface FileRoutesById {
   '/config-contexts/$id': typeof ConfigContextsIdRoute
   '/config-contexts/new': typeof ConfigContextsNewRoute
   '/contact-groups/new': typeof ContactGroupsNewRoute
+  '/contact-roles/$id': typeof ContactRolesIdRoute
   '/contact-roles/new': typeof ContactRolesNewRoute
   '/contacts/$id': typeof ContactsIdRoute
   '/contacts/new': typeof ContactsNewRoute
+  '/custom-field-groups/$id': typeof CustomFieldGroupsIdRoute
   '/custom-field-groups/new': typeof CustomFieldGroupsNewRoute
   '/custom-fields/$id': typeof CustomFieldsIdRoute
   '/custom-fields/new': typeof CustomFieldsNewRoute
@@ -2873,6 +2932,7 @@ export interface FileRoutesById {
   '/export-templates/new': typeof ExportTemplatesNewRoute
   '/fhrp-groups/$id': typeof FhrpGroupsIdRoute
   '/fhrp-groups/new': typeof FhrpGroupsNewRoute
+  '/floor-tile-types/$id': typeof FloorTileTypesIdRoute
   '/floor-tile-types/new': typeof FloorTileTypesNewRoute
   '/floorplans/$id': typeof FloorplansIdRoute
   '/floorplans/new': typeof FloorplansNewRoute
@@ -2888,6 +2948,7 @@ export interface FileRoutesById {
   '/ips/$id': typeof IpsIdRoute
   '/ips/bulk-edit': typeof IpsBulkEditRoute
   '/ips/new': typeof IpsNewRoute
+  '/ipsec-profiles/$id': typeof IpsecProfilesIdRoute
   '/ipsec-profiles/new': typeof IpsecProfilesNewRoute
   '/jobs/$id': typeof JobsIdRoute
   '/l2vpns/$id': typeof L2vpnsIdRoute
@@ -2955,6 +3016,7 @@ export interface FileRoutesById {
   '/tags/new': typeof TagsNewRoute
   '/tenants/$id': typeof TenantsIdRoute
   '/tenants/new': typeof TenantsNewRoute
+  '/tunnel-groups/$id': typeof TunnelGroupsIdRoute
   '/tunnel-groups/new': typeof TunnelGroupsNewRoute
   '/tunnels/$id': typeof TunnelsIdRoute
   '/tunnels/new': typeof TunnelsNewRoute
@@ -2971,6 +3033,7 @@ export interface FileRoutesById {
   '/vrfs/$id': typeof VrfsIdRoute
   '/vrfs/new': typeof VrfsNewRoute
   '/webhooks/new': typeof WebhooksNewRoute
+  '/wireless-lan-groups/$id': typeof WirelessLanGroupsIdRoute
   '/wireless-lan-groups/new': typeof WirelessLanGroupsNewRoute
   '/wireless-lans/new': typeof WirelessLansNewRoute
   '/zones/$id': typeof ZonesIdRoute
@@ -3067,7 +3130,7 @@ export interface FileRoutesById {
   '/devices/$id_/edit': typeof DevicesIdEditRoute
   '/export-templates/$id_/edit': typeof ExportTemplatesIdEditRoute
   '/fhrp-groups/$id_/edit': typeof FhrpGroupsIdEditRoute
-  '/floor-tile-types/$id/edit': typeof FloorTileTypesIdEditRoute
+  '/floor-tile-types/$id_/edit': typeof FloorTileTypesIdEditRoute
   '/groups/$id_/edit': typeof GroupsIdEditRoute
   '/interfaces/$id_/edit': typeof InterfacesIdEditRoute
   '/ip-ranges/$id_/edit': typeof IpRangesIdEditRoute
@@ -3198,6 +3261,7 @@ export interface FileRouteTypes {
     | '/cables/$id'
     | '/cables/new'
     | '/channels/new'
+    | '/circuit-types/$id'
     | '/circuit-types/new'
     | '/circuits/$id'
     | '/circuits/new'
@@ -3212,9 +3276,11 @@ export interface FileRouteTypes {
     | '/config-contexts/$id'
     | '/config-contexts/new'
     | '/contact-groups/new'
+    | '/contact-roles/$id'
     | '/contact-roles/new'
     | '/contacts/$id'
     | '/contacts/new'
+    | '/custom-field-groups/$id'
     | '/custom-field-groups/new'
     | '/custom-fields/$id'
     | '/custom-fields/new'
@@ -3227,6 +3293,7 @@ export interface FileRouteTypes {
     | '/export-templates/new'
     | '/fhrp-groups/$id'
     | '/fhrp-groups/new'
+    | '/floor-tile-types/$id'
     | '/floor-tile-types/new'
     | '/floorplans/$id'
     | '/floorplans/new'
@@ -3242,6 +3309,7 @@ export interface FileRouteTypes {
     | '/ips/$id'
     | '/ips/bulk-edit'
     | '/ips/new'
+    | '/ipsec-profiles/$id'
     | '/ipsec-profiles/new'
     | '/jobs/$id'
     | '/l2vpns/$id'
@@ -3309,6 +3377,7 @@ export interface FileRouteTypes {
     | '/tags/new'
     | '/tenants/$id'
     | '/tenants/new'
+    | '/tunnel-groups/$id'
     | '/tunnel-groups/new'
     | '/tunnels/$id'
     | '/tunnels/new'
@@ -3325,6 +3394,7 @@ export interface FileRouteTypes {
     | '/vrfs/$id'
     | '/vrfs/new'
     | '/webhooks/new'
+    | '/wireless-lan-groups/$id'
     | '/wireless-lan-groups/new'
     | '/wireless-lans/new'
     | '/zones/$id'
@@ -3494,6 +3564,7 @@ export interface FileRouteTypes {
     | '/cables/$id'
     | '/cables/new'
     | '/channels/new'
+    | '/circuit-types/$id'
     | '/circuit-types/new'
     | '/circuits/$id'
     | '/circuits/new'
@@ -3508,9 +3579,11 @@ export interface FileRouteTypes {
     | '/config-contexts/$id'
     | '/config-contexts/new'
     | '/contact-groups/new'
+    | '/contact-roles/$id'
     | '/contact-roles/new'
     | '/contacts/$id'
     | '/contacts/new'
+    | '/custom-field-groups/$id'
     | '/custom-field-groups/new'
     | '/custom-fields/$id'
     | '/custom-fields/new'
@@ -3523,6 +3596,7 @@ export interface FileRouteTypes {
     | '/export-templates/new'
     | '/fhrp-groups/$id'
     | '/fhrp-groups/new'
+    | '/floor-tile-types/$id'
     | '/floor-tile-types/new'
     | '/floorplans/$id'
     | '/floorplans/new'
@@ -3538,6 +3612,7 @@ export interface FileRouteTypes {
     | '/ips/$id'
     | '/ips/bulk-edit'
     | '/ips/new'
+    | '/ipsec-profiles/$id'
     | '/ipsec-profiles/new'
     | '/jobs/$id'
     | '/l2vpns/$id'
@@ -3605,6 +3680,7 @@ export interface FileRouteTypes {
     | '/tags/new'
     | '/tenants/$id'
     | '/tenants/new'
+    | '/tunnel-groups/$id'
     | '/tunnel-groups/new'
     | '/tunnels/$id'
     | '/tunnels/new'
@@ -3621,6 +3697,7 @@ export interface FileRouteTypes {
     | '/vrfs/$id'
     | '/vrfs/new'
     | '/webhooks/new'
+    | '/wireless-lan-groups/$id'
     | '/wireless-lan-groups/new'
     | '/wireless-lans/new'
     | '/zones/$id'
@@ -3846,6 +3923,7 @@ export interface FileRouteTypes {
     | '/cables/$id'
     | '/cables/new'
     | '/channels/new'
+    | '/circuit-types/$id'
     | '/circuit-types/new'
     | '/circuits/$id'
     | '/circuits/new'
@@ -3860,9 +3938,11 @@ export interface FileRouteTypes {
     | '/config-contexts/$id'
     | '/config-contexts/new'
     | '/contact-groups/new'
+    | '/contact-roles/$id'
     | '/contact-roles/new'
     | '/contacts/$id'
     | '/contacts/new'
+    | '/custom-field-groups/$id'
     | '/custom-field-groups/new'
     | '/custom-fields/$id'
     | '/custom-fields/new'
@@ -3875,6 +3955,7 @@ export interface FileRouteTypes {
     | '/export-templates/new'
     | '/fhrp-groups/$id'
     | '/fhrp-groups/new'
+    | '/floor-tile-types/$id'
     | '/floor-tile-types/new'
     | '/floorplans/$id'
     | '/floorplans/new'
@@ -3890,6 +3971,7 @@ export interface FileRouteTypes {
     | '/ips/$id'
     | '/ips/bulk-edit'
     | '/ips/new'
+    | '/ipsec-profiles/$id'
     | '/ipsec-profiles/new'
     | '/jobs/$id'
     | '/l2vpns/$id'
@@ -3957,6 +4039,7 @@ export interface FileRouteTypes {
     | '/tags/new'
     | '/tenants/$id'
     | '/tenants/new'
+    | '/tunnel-groups/$id'
     | '/tunnel-groups/new'
     | '/tunnels/$id'
     | '/tunnels/new'
@@ -3973,6 +4056,7 @@ export interface FileRouteTypes {
     | '/vrfs/$id'
     | '/vrfs/new'
     | '/webhooks/new'
+    | '/wireless-lan-groups/$id'
     | '/wireless-lan-groups/new'
     | '/wireless-lans/new'
     | '/zones/$id'
@@ -4069,7 +4153,7 @@ export interface FileRouteTypes {
     | '/devices/$id_/edit'
     | '/export-templates/$id_/edit'
     | '/fhrp-groups/$id_/edit'
-    | '/floor-tile-types/$id/edit'
+    | '/floor-tile-types/$id_/edit'
     | '/groups/$id_/edit'
     | '/interfaces/$id_/edit'
     | '/ip-ranges/$id_/edit'
@@ -5251,6 +5335,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WirelessLanGroupsNewRouteImport
       parentRoute: typeof WirelessLanGroupsRoute
     }
+    '/wireless-lan-groups/$id': {
+      id: '/wireless-lan-groups/$id'
+      path: '/$id'
+      fullPath: '/wireless-lan-groups/$id'
+      preLoaderRoute: typeof WirelessLanGroupsIdRouteImport
+      parentRoute: typeof WirelessLanGroupsRoute
+    }
     '/webhooks/new': {
       id: '/webhooks/new'
       path: '/new'
@@ -5361,6 +5452,13 @@ declare module '@tanstack/react-router' {
       path: '/new'
       fullPath: '/tunnel-groups/new'
       preLoaderRoute: typeof TunnelGroupsNewRouteImport
+      parentRoute: typeof TunnelGroupsRoute
+    }
+    '/tunnel-groups/$id': {
+      id: '/tunnel-groups/$id'
+      path: '/$id'
+      fullPath: '/tunnel-groups/$id'
+      preLoaderRoute: typeof TunnelGroupsIdRouteImport
       parentRoute: typeof TunnelGroupsRoute
     }
     '/tenants/new': {
@@ -5832,6 +5930,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IpsecProfilesNewRouteImport
       parentRoute: typeof IpsecProfilesRoute
     }
+    '/ipsec-profiles/$id': {
+      id: '/ipsec-profiles/$id'
+      path: '/$id'
+      fullPath: '/ipsec-profiles/$id'
+      preLoaderRoute: typeof IpsecProfilesIdRouteImport
+      parentRoute: typeof IpsecProfilesRoute
+    }
     '/ips/new': {
       id: '/ips/new'
       path: '/ips/new'
@@ -5937,6 +6042,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FloorTileTypesNewRouteImport
       parentRoute: typeof FloorTileTypesRoute
     }
+    '/floor-tile-types/$id': {
+      id: '/floor-tile-types/$id'
+      path: '/$id'
+      fullPath: '/floor-tile-types/$id'
+      preLoaderRoute: typeof FloorTileTypesIdRouteImport
+      parentRoute: typeof FloorTileTypesRoute
+    }
     '/fhrp-groups/new': {
       id: '/fhrp-groups/new'
       path: '/new'
@@ -6021,6 +6133,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CustomFieldGroupsNewRouteImport
       parentRoute: typeof CustomFieldGroupsRoute
     }
+    '/custom-field-groups/$id': {
+      id: '/custom-field-groups/$id'
+      path: '/$id'
+      fullPath: '/custom-field-groups/$id'
+      preLoaderRoute: typeof CustomFieldGroupsIdRouteImport
+      parentRoute: typeof CustomFieldGroupsRoute
+    }
     '/contacts/new': {
       id: '/contacts/new'
       path: '/new'
@@ -6040,6 +6159,13 @@ declare module '@tanstack/react-router' {
       path: '/new'
       fullPath: '/contact-roles/new'
       preLoaderRoute: typeof ContactRolesNewRouteImport
+      parentRoute: typeof ContactRolesRoute
+    }
+    '/contact-roles/$id': {
+      id: '/contact-roles/$id'
+      path: '/$id'
+      fullPath: '/contact-roles/$id'
+      preLoaderRoute: typeof ContactRolesIdRouteImport
       parentRoute: typeof ContactRolesRoute
     }
     '/contact-groups/new': {
@@ -6138,6 +6264,13 @@ declare module '@tanstack/react-router' {
       path: '/new'
       fullPath: '/circuit-types/new'
       preLoaderRoute: typeof CircuitTypesNewRouteImport
+      parentRoute: typeof CircuitTypesRoute
+    }
+    '/circuit-types/$id': {
+      id: '/circuit-types/$id'
+      path: '/$id'
+      fullPath: '/circuit-types/$id'
+      preLoaderRoute: typeof CircuitTypesIdRouteImport
       parentRoute: typeof CircuitTypesRoute
     }
     '/channels/new': {
@@ -6525,8 +6658,8 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GroupsIdEditRouteImport
       parentRoute: typeof GroupsRoute
     }
-    '/floor-tile-types/$id/edit': {
-      id: '/floor-tile-types/$id/edit'
+    '/floor-tile-types/$id_/edit': {
+      id: '/floor-tile-types/$id_/edit'
       path: '/$id/edit'
       fullPath: '/floor-tile-types/$id/edit'
       preLoaderRoute: typeof FloorTileTypesIdEditRouteImport
@@ -6774,12 +6907,14 @@ const CablesRouteWithChildren =
   CablesRoute._addFileChildren(CablesRouteChildren)
 
 interface CircuitTypesRouteChildren {
+  CircuitTypesIdRoute: typeof CircuitTypesIdRoute
   CircuitTypesNewRoute: typeof CircuitTypesNewRoute
   CircuitTypesIndexRoute: typeof CircuitTypesIndexRoute
   CircuitTypesIdEditRoute: typeof CircuitTypesIdEditRoute
 }
 
 const CircuitTypesRouteChildren: CircuitTypesRouteChildren = {
+  CircuitTypesIdRoute: CircuitTypesIdRoute,
   CircuitTypesNewRoute: CircuitTypesNewRoute,
   CircuitTypesIndexRoute: CircuitTypesIndexRoute,
   CircuitTypesIdEditRoute: CircuitTypesIdEditRoute,
@@ -6842,12 +6977,14 @@ const ContactGroupsRouteWithChildren = ContactGroupsRoute._addFileChildren(
 )
 
 interface ContactRolesRouteChildren {
+  ContactRolesIdRoute: typeof ContactRolesIdRoute
   ContactRolesNewRoute: typeof ContactRolesNewRoute
   ContactRolesIndexRoute: typeof ContactRolesIndexRoute
   ContactRolesIdEditRoute: typeof ContactRolesIdEditRoute
 }
 
 const ContactRolesRouteChildren: ContactRolesRouteChildren = {
+  ContactRolesIdRoute: ContactRolesIdRoute,
   ContactRolesNewRoute: ContactRolesNewRoute,
   ContactRolesIndexRoute: ContactRolesIndexRoute,
   ContactRolesIdEditRoute: ContactRolesIdEditRoute,
@@ -6876,12 +7013,14 @@ const ContactsRouteWithChildren = ContactsRoute._addFileChildren(
 )
 
 interface CustomFieldGroupsRouteChildren {
+  CustomFieldGroupsIdRoute: typeof CustomFieldGroupsIdRoute
   CustomFieldGroupsNewRoute: typeof CustomFieldGroupsNewRoute
   CustomFieldGroupsIndexRoute: typeof CustomFieldGroupsIndexRoute
   CustomFieldGroupsIdEditRoute: typeof CustomFieldGroupsIdEditRoute
 }
 
 const CustomFieldGroupsRouteChildren: CustomFieldGroupsRouteChildren = {
+  CustomFieldGroupsIdRoute: CustomFieldGroupsIdRoute,
   CustomFieldGroupsNewRoute: CustomFieldGroupsNewRoute,
   CustomFieldGroupsIndexRoute: CustomFieldGroupsIndexRoute,
   CustomFieldGroupsIdEditRoute: CustomFieldGroupsIdEditRoute,
@@ -6980,12 +7119,14 @@ const FhrpGroupsRouteWithChildren = FhrpGroupsRoute._addFileChildren(
 )
 
 interface FloorTileTypesRouteChildren {
+  FloorTileTypesIdRoute: typeof FloorTileTypesIdRoute
   FloorTileTypesNewRoute: typeof FloorTileTypesNewRoute
   FloorTileTypesIndexRoute: typeof FloorTileTypesIndexRoute
   FloorTileTypesIdEditRoute: typeof FloorTileTypesIdEditRoute
 }
 
 const FloorTileTypesRouteChildren: FloorTileTypesRouteChildren = {
+  FloorTileTypesIdRoute: FloorTileTypesIdRoute,
   FloorTileTypesNewRoute: FloorTileTypesNewRoute,
   FloorTileTypesIndexRoute: FloorTileTypesIndexRoute,
   FloorTileTypesIdEditRoute: FloorTileTypesIdEditRoute,
@@ -7095,12 +7236,14 @@ const IpRolesRouteWithChildren =
   IpRolesRoute._addFileChildren(IpRolesRouteChildren)
 
 interface IpsecProfilesRouteChildren {
+  IpsecProfilesIdRoute: typeof IpsecProfilesIdRoute
   IpsecProfilesNewRoute: typeof IpsecProfilesNewRoute
   IpsecProfilesIndexRoute: typeof IpsecProfilesIndexRoute
   IpsecProfilesIdEditRoute: typeof IpsecProfilesIdEditRoute
 }
 
 const IpsecProfilesRouteChildren: IpsecProfilesRouteChildren = {
+  IpsecProfilesIdRoute: IpsecProfilesIdRoute,
   IpsecProfilesNewRoute: IpsecProfilesNewRoute,
   IpsecProfilesIndexRoute: IpsecProfilesIndexRoute,
   IpsecProfilesIdEditRoute: IpsecProfilesIdEditRoute,
@@ -7491,12 +7634,14 @@ const TopologyRouteWithChildren = TopologyRoute._addFileChildren(
 )
 
 interface TunnelGroupsRouteChildren {
+  TunnelGroupsIdRoute: typeof TunnelGroupsIdRoute
   TunnelGroupsNewRoute: typeof TunnelGroupsNewRoute
   TunnelGroupsIndexRoute: typeof TunnelGroupsIndexRoute
   TunnelGroupsIdEditRoute: typeof TunnelGroupsIdEditRoute
 }
 
 const TunnelGroupsRouteChildren: TunnelGroupsRouteChildren = {
+  TunnelGroupsIdRoute: TunnelGroupsIdRoute,
   TunnelGroupsNewRoute: TunnelGroupsNewRoute,
   TunnelGroupsIndexRoute: TunnelGroupsIndexRoute,
   TunnelGroupsIdEditRoute: TunnelGroupsIdEditRoute,
@@ -7624,12 +7769,14 @@ const WebhooksRouteWithChildren = WebhooksRoute._addFileChildren(
 )
 
 interface WirelessLanGroupsRouteChildren {
+  WirelessLanGroupsIdRoute: typeof WirelessLanGroupsIdRoute
   WirelessLanGroupsNewRoute: typeof WirelessLanGroupsNewRoute
   WirelessLanGroupsIndexRoute: typeof WirelessLanGroupsIndexRoute
   WirelessLanGroupsIdEditRoute: typeof WirelessLanGroupsIdEditRoute
 }
 
 const WirelessLanGroupsRouteChildren: WirelessLanGroupsRouteChildren = {
+  WirelessLanGroupsIdRoute: WirelessLanGroupsIdRoute,
   WirelessLanGroupsNewRoute: WirelessLanGroupsNewRoute,
   WirelessLanGroupsIndexRoute: WirelessLanGroupsIndexRoute,
   WirelessLanGroupsIdEditRoute: WirelessLanGroupsIdEditRoute,

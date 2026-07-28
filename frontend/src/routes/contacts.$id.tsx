@@ -11,11 +11,11 @@ import {
   type ContactAssignment,
   type Paginated,
 } from "@/lib/api"
-import { CONTACT_OBJECT_TYPES, contactObjectLabel } from "@/lib/contact-objects"
 import { Badge } from "@/components/ui/badge"
 import { TagList } from "@/components/cells/tag-list"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
+import { buildContactAssignmentColumns } from "@/components/columns/contact-assignment-columns"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard, mono, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
@@ -197,61 +197,9 @@ function ContactAssignmentsTable({ contactId }: { contactId: string }) {
         `/api/contact-assignments/?contact=${contactId}&page_size=500`
       ),
   })
-  const columns = useMemo<ColumnDef<ContactAssignment>[]>(
-    () => [
-      {
-        id: "object",
-        header: "Object",
-        enableSorting: false,
-        cell: ({ row }) => {
-          const t = CONTACT_OBJECT_TYPES[row.original.object_type]
-          return t?.route ? (
-            <Link
-              to={t.route}
-              params={{ id: row.original.object_id }}
-              className="font-mono font-medium hover:underline"
-            >
-              {row.original.object_id.slice(0, 8)}
-            </Link>
-          ) : (
-            <span className="font-mono">
-              {row.original.object_id.slice(0, 8)}
-            </span>
-          )
-        },
-      },
-      {
-        id: "type",
-        accessorFn: (a) => contactObjectLabel(a.object_type),
-        header: "Type",
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground">
-            {contactObjectLabel(row.original.object_type)}
-          </span>
-        ),
-      },
-      {
-        id: "role",
-        header: "Role",
-        enableSorting: false,
-        cell: ({ row }) =>
-          row.original.role ? (
-            <span className="text-xs">{row.original.role.name}</span>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          ),
-      },
-      {
-        id: "priority",
-        accessorKey: "priority",
-        header: "Priority",
-        cell: ({ row }) => (
-          <span className="text-xs capitalize">
-            {row.original.priority_display}
-          </span>
-        ),
-      },
-    ],
+  // This page *is* the contact, so the "contact" column would repeat the title.
+  const columns = useMemo<ColumnDef<ContactAssignment, unknown>[]>(
+    () => buildContactAssignmentColumns({ omit: ["contact", "updated"] }),
     []
   )
 

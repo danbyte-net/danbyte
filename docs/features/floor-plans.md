@@ -48,6 +48,23 @@ A tile's *behaviour* never depends on what its type is called — it comes from
 what the tile **links to**. A tile linked to a rack acts like a rack tile
 whether you named its type "Rack", "Cabinet", or "Skab".
 
+### Open a tile type
+
+Clicking a name under **Customize → Floor tiles** opens that type's detail page
+— the answer to "what breaks if I change this?" before you recolour, rename, or
+delete a palette entry.
+
+- **Overview** — its colour, icon, slug and default size; the three rendering
+  ticks (**Background zone**, **Camera field of view**, **Perforated**); and a
+  short **Site markers** list, because a type is also the vocabulary for free
+  markers on the geographic [site map](site-map.md). Markers are a handful at
+  most, so they sit here rather than in a tab of their own.
+- **Placed** — every tile of this type on any floor plan, with the plan, the
+  grid cell, the size, and what the tile is linked to. Both placed tiles and
+  site markers block a delete, and both are listed here.
+- **Journal** — your notes on this tile type.
+- **History** — the change log for the type itself.
+
 ## Creating a plan
 
 **Maps → Floor plans → Add** (or the **Floor plan** button on a Location

@@ -200,6 +200,42 @@ class SiteMarkerTests(SiteMapHealthTests.__bases__[0]):
         self.assertEqual(m["type"]["icon"], "zap")
         self.assertFalse(m["type"]["has_fov"])
 
+    def test_marker_list_filters_by_tile_type(self):
+        """?tile_type= backs the tile-type detail page's marker read, and it
+        narrows the tenant-scoped queryset — a foreign type id returns
+        nothing rather than the other tenant's markers."""
+        from api.models import FloorTileType, SiteMarker
+
+        mine = FloorTileType.objects.create(
+            tenant=self.tenant, name="Camera", slug="camera"
+        )
+        other_type = FloorTileType.objects.create(
+            tenant=self.tenant, name="Generator", slug="generator"
+        )
+        SiteMarker.objects.create(
+            tenant=self.tenant, latitude="55.1", longitude="12.1",
+            tile_type=mine, label="Cam 1",
+        )
+        SiteMarker.objects.create(
+            tenant=self.tenant, latitude="55.2", longitude="12.2",
+            tile_type=other_type, label="Gen 1",
+        )
+        body = self.client_api.get(f"/api/site-markers/?tile_type={mine.id}").json()
+        self.assertEqual([m["label"] for m in body["results"]], ["Cam 1"])
+
+        foreign_tenant = Tenant.objects.create(org=self.org, name="MX", slug="mx")
+        foreign_type = FloorTileType.objects.create(
+            tenant=foreign_tenant, name="Foreign", slug="foreign"
+        )
+        SiteMarker.objects.create(
+            tenant=foreign_tenant, latitude="1.0", longitude="1.0",
+            tile_type=foreign_type, label="Theirs",
+        )
+        leaked = self.client_api.get(
+            f"/api/site-markers/?tile_type={foreign_type.id}"
+        ).json()
+        self.assertEqual(leaked["count"], 0)
+
     def test_marker_requires_exactly_one_type(self):
         r = self.client_api.post(
             "/api/site-markers/",

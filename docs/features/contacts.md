@@ -61,6 +61,21 @@ priority. To remove an attachment, detach it from that object's Contacts tab.
     If a group or role is still referenced by a contact or an attachment, Danbyte
     blocks the delete. Clear those references first.
 
+## Open a contact role
+
+Clicking a name in **Organization → Contact roles** opens that role's detail
+page, the same way every other object in Danbyte works.
+
+- **Overview** — the role's name, slug, how many attachments use it, and when it
+  was created and last changed.
+- **Assignments** — every contact attached to something *in this role*, with a
+  link to the contact, the object it's attached to, and the priority. This is the
+  list to read before you rename or delete a role: it is exactly what the delete
+  guard is counting.
+- **Journal** — your notes on this role.
+- **History** — the change log: who changed which field, and when. Danbyte has
+  been recording this since roles were added.
+
 ## Tags & custom fields
 
 Need to track something extra — a Slack handle, an escalation tier, working

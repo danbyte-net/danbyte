@@ -5648,6 +5648,36 @@ export interface FloorTileTypeWritePayload {
   description?: string
 }
 
+/**
+ * A free marker on the geographic Site map, as `GET /api/site-markers/`
+ * returns it (SiteMarkerSerializer). Distinct from {@link SiteMapMarker},
+ * which is the render-optimised shape the `/api/site-map/` payload carries:
+ * coordinates here are DRF decimal *strings*, and the FOV fields are flat.
+ */
+export interface SiteMarker {
+  id: string
+  latitude: string
+  longitude: string
+  label: string
+  description: string
+  device: { id: string; name: string } | null
+  /** Exactly one of a floor tile type or a device role — `kind` says which. */
+  type: {
+    id: string
+    name: string
+    color: string
+    icon: string
+    has_fov: boolean
+    kind: "tile_type" | "role"
+  } | null
+  fov_direction: number | null
+  fov_deg: number | null
+  fov_distance_m: number | null
+  fov_ptz: boolean
+  created_at: string
+  updated_at: string
+}
+
 export type FovAnchor = "" | "tl" | "tr" | "bl" | "br"
 
 export type FloorPlanLinkKind =

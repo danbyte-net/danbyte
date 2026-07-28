@@ -100,7 +100,7 @@ function buildColumns({
       header: ({ column }) => <SortHeader column={column} label="Name" />,
       cell: ({ row }) => (
         <Link
-          to="/ipsec-profiles/$id/edit"
+          to="/ipsec-profiles/$id"
           params={{ id: row.original.id }}
           className="font-medium hover:underline"
         >

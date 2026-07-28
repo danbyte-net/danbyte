@@ -8,7 +8,13 @@ export interface ContactObjectType {
   route: string | null
 }
 
-export const CONTACT_OBJECT_TYPES: Record<string, ContactObjectType> = {
+// Typed with `| undefined` on purpose: an assignment written by a newer
+// backend (or an older SPA build) can carry an object_type this map doesn't
+// know, and callers must handle the miss rather than read through it.
+export const CONTACT_OBJECT_TYPES: Record<
+  string,
+  ContactObjectType | undefined
+> = {
   "api.site": { label: "Site", route: "/sites/$id" },
   "api.device": { label: "Device", route: "/devices/$id" },
   "api.virtualmachine": {
@@ -18,7 +24,7 @@ export const CONTACT_OBJECT_TYPES: Record<string, ContactObjectType> = {
   "api.cluster": { label: "Cluster", route: "/clusters/$id" },
   "api.rack": { label: "Rack", route: "/racks/$id" },
   "api.prefix": { label: "Prefix", route: "/prefixes/$id" },
-  "api.circuit": { label: "Circuit", route: null },
+  "api.circuit": { label: "Circuit", route: "/circuits/$id" },
   "core.tenant": { label: "Tenant", route: "/tenants/$id" },
 }
 

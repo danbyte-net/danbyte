@@ -11,6 +11,8 @@ import type {
   Paginated,
   PowerFeed,
   Rack,
+  Tunnel,
+  WirelessLAN,
 } from "@/lib/api"
 import { DataTable } from "@/components/data-table"
 import { buildCableColumns } from "@/components/columns/cable-columns"
@@ -21,6 +23,10 @@ import { buildIpColumns } from "@/components/columns/ip-columns"
 import { buildPowerFeedColumns } from "@/components/columns/power-feed-columns"
 import type { PowerFeedColumnId } from "@/components/columns/power-feed-columns"
 import { buildRackColumns } from "@/components/columns/rack-columns"
+import { buildTunnelColumns } from "@/components/columns/tunnel-columns"
+import type { TunnelColumnId } from "@/components/columns/tunnel-columns"
+import { buildWirelessLANColumns } from "@/components/columns/wireless-lan-columns"
+import type { WirelessLANColumnId } from "@/components/columns/wireless-lan-columns"
 import { QueryError } from "@/components/query-error"
 
 function useEmbed<T>(
@@ -203,6 +209,89 @@ export function EmbeddedPowerFeedTable({
       columns={columns}
       flexColumn="name"
       tableId="embedded-power-feeds"
+    />
+  )
+}
+
+/** Tunnels scoped by group / IPSec profile / device. Reuses the one tunnel
+ * column factory — the same row the /tunnels list draws. The two flags drop
+ * the column that repeats the object being viewed: a tunnel group's own page
+ * omits Group, an IPSec profile's own page omits IPSec profile. */
+export function EmbeddedTunnelTable({
+  filter,
+  omitGroup = false,
+  omitProfile = false,
+  emptyText = "No tunnels.",
+}: {
+  filter: Record<string, string>
+  omitGroup?: boolean
+  omitProfile?: boolean
+  emptyText?: string
+}) {
+  const q = useEmbed<Tunnel>("embedded-tunnels", "/api/tunnels/", filter)
+  const columns = useMemo<ColumnDef<Tunnel>[]>(() => {
+    const include: TunnelColumnId[] = [
+      "name",
+      "status",
+      "encapsulation",
+      "group",
+      "profile",
+      "tunnel_id",
+      "description",
+    ]
+    const omit: TunnelColumnId[] = []
+    if (omitGroup) omit.push("group")
+    if (omitProfile) omit.push("profile")
+    return buildTunnelColumns({ include, omit })
+  }, [omitGroup, omitProfile])
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="description"
+      tableId="embedded-tunnels"
+    />
+  )
+}
+
+/** Wireless LANs scoped by group / status / VLAN. Reuses the one wireless-LAN
+ * column factory — the same row the /wireless-lans list draws. `omitGroup`
+ * drops the redundant Group column on a group's own detail page. */
+export function EmbeddedWirelessLANTable({
+  filter,
+  omitGroup = false,
+  emptyText = "No wireless LANs.",
+}: {
+  filter: Record<string, string>
+  omitGroup?: boolean
+  emptyText?: string
+}) {
+  const q = useEmbed<WirelessLAN>(
+    "embedded-wireless-lans",
+    "/api/wireless-lans/",
+    filter
+  )
+  const columns = useMemo<ColumnDef<WirelessLAN>[]>(() => {
+    const include: WirelessLANColumnId[] = [
+      "ssid",
+      "group",
+      "status",
+      "vlan",
+      "auth",
+      "description",
+    ]
+    return buildWirelessLANColumns({
+      include: omitGroup ? include.filter((id) => id !== "group") : include,
+    })
+  }, [omitGroup])
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="description"
+      tableId="embedded-wireless-lans"
     />
   )
 }

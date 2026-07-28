@@ -54,7 +54,7 @@ function WlanGroupsPage() {
         header: ({ column }) => <SortHeader column={column} label="Name" />,
         cell: ({ row }) => (
           <Link
-            to="/wireless-lan-groups/$id/edit"
+            to="/wireless-lan-groups/$id"
             params={{ id: row.original.id }}
             className="font-medium hover:underline"
           >

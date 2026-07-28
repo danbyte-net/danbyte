@@ -130,6 +130,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("monitoring.SnmpProfile", "SNMP profiles", "Monitoring"),
     ("monitoring.SnmpSensor", "SNMP sensors", "Monitoring"),
     ("monitoring.RedfishEndpoint", "BMC (Redfish) endpoints", "Monitoring"),
+    # Observed certificates are public data, but which endpoints a tenant
+    # runs is not — so viewing the inventory is a grantable permission.
+    ("monitoring.Certificate", "Certificates", "Monitoring"),
     ("monitoring.NotificationChannel", "Notification channels", "Monitoring"),
     ("monitoring.AlertRule", "Alert rules", "Monitoring"),
     ("monitoring.Silence", "Silences", "Monitoring"),

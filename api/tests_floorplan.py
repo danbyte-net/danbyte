@@ -523,6 +523,43 @@ class TrayTests(_Base):
         ).json()
         self.assertEqual(got["count"], 1)
 
+    def test_tile_type_filter(self):
+        """?tile_type= backs the tile-type detail page's Tiles tab."""
+        mine = FloorTileType.objects.create(
+            tenant=self.tenant, name="Cooling", slug="cooling"
+        )
+        other_type = FloorTileType.objects.create(
+            tenant=self.tenant, name="Wall", slug="wall"
+        )
+        FloorPlanTile.objects.create(
+            floor_plan=self.plan, tile_type=mine, x=1, y=1
+        )
+        FloorPlanTile.objects.create(
+            floor_plan=self.plan, tile_type=other_type, x=2, y=1
+        )
+        got = self.client.get(
+            f"/api/floor-plan-tiles/?tile_type={mine.id}"
+        ).json()
+        self.assertEqual(got["count"], 1)
+        self.assertEqual(got["results"][0]["tile_type"]["name"], "Cooling")
+
+    def test_tile_type_filter_cannot_read_another_tenant(self):
+        """The filter narrows the plan-tenant-scoped queryset, so a foreign
+        tile-type id returns nothing instead of that tenant's tiles."""
+        foreign_type = FloorTileType.objects.create(
+            tenant=self.other, name="Foreign", slug="foreign"
+        )
+        foreign_plan = FloorPlan.objects.create(
+            tenant=self.other, location=self.other_loc, name="Their plan"
+        )
+        FloorPlanTile.objects.create(
+            floor_plan=foreign_plan, tile_type=foreign_type, x=0, y=0
+        )
+        got = self.client.get(
+            f"/api/floor-plan-tiles/?tile_type={foreign_type.id}"
+        ).json()
+        self.assertEqual(got["count"], 0)
+
 
 class SceneTests(_Base):
     """GET /api/floor-plans/{id}/scene/ — the 3D room view's one-fetch payload."""
