@@ -133,6 +133,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # Observed certificates are public data, but which endpoints a tenant
     # runs is not — so viewing the inventory is a grantable permission.
     ("monitoring.Certificate", "Certificates", "Monitoring"),
+    # Bindings say *which of your endpoints* serve a certificate — the blast
+    # radius of an expiry, and a map of your estate. Grantable separately.
+    ("monitoring.CertificateBinding", "Certificate bindings", "Monitoring"),
     ("monitoring.NotificationChannel", "Notification channels", "Monitoring"),
     ("monitoring.AlertRule", "Alert rules", "Monitoring"),
     ("monitoring.Silence", "Silences", "Monitoring"),

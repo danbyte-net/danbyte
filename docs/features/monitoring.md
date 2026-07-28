@@ -82,8 +82,12 @@ The **TLS certificate** kind reads the certificate chain an endpoint presents
 and files it in the [certificate inventory](../monitoring/certificates.md) —
 expiry, issuer, SANs, key strength, self-signed and trust flags. It stores
 **public certificate data only and never a private key**, and reads an
-untrusted certificate without weakening verification anywhere. See that page
-for the full field list and the trust rules.
+untrusted certificate without weakening verification anywhere.
+
+Each read also records a **binding** — which endpoint served which certificate —
+so "what breaks when this expires" is answerable, and endpoints inside the
+warning window raise ordinary alerts through this same engine. See that page for
+the full field list, the trust rules, and the expiry thresholds.
 
 ### HTTP checks are pinned to the target
 

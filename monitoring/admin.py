@@ -4,6 +4,7 @@ from .models import (
     Alert,
     AlertRule,
     Certificate,
+    CertificateBinding,
     CheckAssignment,
     CheckResult,
     CheckState,
@@ -105,10 +106,30 @@ class CertificateAdmin(admin.ModelAdmin):
     so there is nothing to author here (and nowhere to type key material)."""
 
     list_display = ("subject_cn", "issuer_cn", "not_after", "self_signed",
-                    "chain_verified", "tenant")
-    list_filter = ("self_signed", "chain_verified", "public_key_algorithm", "tenant")
+                    "last_seen", "tenant")
+    list_filter = ("self_signed", "public_key_algorithm", "tenant")
     search_fields = ("subject", "issuer", "fingerprint_sha256", "serial")
     readonly_fields = [f.name for f in Certificate._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(CertificateBinding)
+class CertificateBindingAdmin(admin.ModelAdmin):
+    """Which endpoint served which certificate. Read-only, and never pruned —
+    a stale binding is the record of what an endpoint *used* to serve."""
+
+    list_display = ("target_ip", "port", "server_name", "certificate",
+                    "chain_depth", "chain_verified", "last_seen", "tenant")
+    list_filter = ("chain_verified", "chain_depth", "tenant")
+    search_fields = ("server_name", "endpoint_key",
+                     "certificate__fingerprint_sha256", "certificate__subject")
+    raw_id_fields = ("certificate", "target_ip")
+    readonly_fields = [f.name for f in CertificateBinding._meta.fields]
 
     def has_add_permission(self, request):
         return False

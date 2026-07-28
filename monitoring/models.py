@@ -26,6 +26,7 @@ Design notes:
 """
 from __future__ import annotations
 
+import hashlib
 import uuid
 
 from django.conf import settings
@@ -715,6 +716,33 @@ class MonitoringSettings(TimestampedModel):
     group_threshold = models.PositiveSmallIntegerField(
         default=3,
         help_text="New alerts in one scan batch before they're grouped into a digest.",
+    )
+
+    # ─── certificate expiry alerting (X2) ────────────────────────────────
+    # Thresholds for the expiry alerts raised over certificate *bindings*
+    # (endpoints), not certificate rows — see ``monitoring.cert_expiry``.
+    # A tenant with no settings row still alerts, on the defaults below.
+    cert_expiry_alerts_enabled = models.BooleanField(
+        default=True,
+        help_text="Raise alerts for endpoints serving a certificate that is "
+        "close to expiry or already expired.",
+    )
+    cert_expiry_warning_days = models.PositiveSmallIntegerField(
+        default=30,
+        help_text="Days before expiry a warning alert opens. Must be above your "
+        "certificates' renewal lead time, or a freshly renewed short-lived "
+        "certificate re-opens the alert immediately.",
+    )
+    cert_expiry_critical_days = models.PositiveSmallIntegerField(
+        default=7,
+        help_text="Days before expiry the alert becomes critical. An already "
+        "expired certificate is a separate, worse state again.",
+    )
+    cert_binding_stale_days = models.PositiveSmallIntegerField(
+        default=7,
+        help_text="Days without observing an endpoint before its binding counts "
+        "as stale. A stale binding stops alerting — nobody is served by a "
+        "certificate we can no longer see — but is never deleted.",
     )
 
     # ─── discovery (M12) ─────────────────────────────────────────────────
@@ -1736,9 +1764,16 @@ class Certificate(TimestampedModel):
       it stays as history, which is what makes "what were we serving when that
       outage happened?" answerable.
 
-    Observation-scoped fields (``chain_depth``, ``chain_verified``, ``last_seen``)
-    record the **most recent** sighting. Per-endpoint history belongs to the
-    binding model (phase X1), not here.
+    Everything stored here is **intrinsic** — a property of those exact DER
+    bytes, so it cannot legitimately change while the fingerprint stays the
+    same. Facts that depend on *where* the certificate was seen (how deep in
+    the presented chain, whether that chain verified) belong to
+    :class:`CertificateBinding`, because the same certificate can sit at depth 1
+    on one host and be absent from another host's chain entirely.
+
+    ``last_seen`` is the one deliberate exception: it is the roll-up across
+    every binding — "is this certificate still in service *anywhere*?" — and it
+    is refreshed on observation, never used to derive validity.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -1777,18 +1812,7 @@ class Certificate(TimestampedModel):
     )
     public_key_bits = models.PositiveIntegerField(null=True, blank=True)
     signature_algorithm = models.CharField(max_length=64, blank=True, default="")
-    chain_depth = models.PositiveSmallIntegerField(
-        default=0,
-        help_text="Position in the presented chain when last observed — 0 is "
-        "the end-entity (leaf) certificate, 1 its issuer, and so on.",
-    )
     self_signed = models.BooleanField(default=False)
-    chain_verified = models.BooleanField(
-        null=True, blank=True,
-        help_text="Did the chain this certificate arrived in validate against "
-        "the trust store? NULL = not known. Recorded, never enforced — Danbyte "
-        "reports trust, it does not become one.",
-    )
     last_seen = models.DateTimeField(
         null=True, blank=True,
         help_text="Most recent observation. ``created_at`` is the first.",
@@ -1836,4 +1860,141 @@ class Certificate(TimestampedModel):
 
     def save(self, *args, **kwargs):
         self._assert_public_only()
+        return super().save(*args, **kwargs)
+
+
+def certificate_endpoint_key(target_ip_id, port: int, server_name: str) -> str:
+    """The stable identity of a TLS **endpoint**: ``(IP, port, SNI)``.
+
+    Deliberately *not* the certificate. A renewal replaces the certificate on an
+    endpoint but the endpoint is the same thing it was yesterday, so anything
+    that must survive a renewal — an expiry alert above all — has to key off
+    this, not off a :class:`Certificate` row.
+
+    The SNI is hashed rather than embedded so the key stays inside the
+    ``Alert.dedup_key`` length budget for any hostname; the readable value is
+    always available on the binding itself.
+    """
+    digest = hashlib.blake2s(
+        (server_name or "").strip().lower().encode("utf-8"), digest_size=8
+    ).hexdigest()
+    return f"{target_ip_id}:{int(port)}:{digest}"
+
+
+class CertificateBinding(TimestampedModel):
+    """One endpoint served one certificate — the row that makes the inventory
+    answer *what breaks when it expires*.
+
+    A :class:`Certificate` alone is a floating fact. The binding joins it to the
+    endpoint that presented it, so a wildcard certificate on twelve hosts is
+    **one certificate row and twelve bindings** — which is the whole reason the
+    fingerprint, not the hostname, is the certificate's identity.
+
+    **The anchor is (IPAddress, port, server name).** That is exactly what the
+    collector dialled and what the check engine already targets, so every
+    observation can produce one; an ``api.Service`` anchor would have silently
+    dropped every endpoint nobody had happened to author a Service row for.
+
+    **Per-endpoint facts live here, not on the certificate.** ``chain_depth``
+    and ``chain_verified`` describe *this handshake*: the same intermediate is
+    depth 1 where the server sends a full chain and missing where it doesn't,
+    and a certificate can verify from one endpoint and fail from another. On the
+    certificate they would have been the last writer's opinion.
+
+    **Bindings are never deleted when an endpoint stops serving a certificate.**
+    A stale ``last_seen`` is the signal; deleting the row would destroy the
+    answer to "what *used* to serve this?".
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="certificate_bindings"
+    )
+    certificate = models.ForeignKey(
+        Certificate, on_delete=models.CASCADE, related_name="bindings"
+    )
+    target_ip = models.ForeignKey(
+        "api.IPAddress", on_delete=models.CASCADE, related_name="certificate_bindings"
+    )
+    port = models.PositiveIntegerField(default=443)
+    server_name = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="The SNI / hostname requested when the certificate was read. "
+        "Part of the endpoint's identity: one IP:port can legitimately serve a "
+        "different certificate per name.",
+    )
+    endpoint_key = models.CharField(
+        max_length=80, db_index=True,
+        help_text="Denormalised (IP, port, SNI) identity — stable across "
+        "renewals, which is what expiry alerts are keyed on.",
+    )
+
+    chain_depth = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Position in the chain *this endpoint* presented — 0 is the "
+        "end-entity (leaf) certificate, 1 its issuer, and so on.",
+    )
+    chain_verified = models.BooleanField(
+        null=True, blank=True,
+        help_text="Did the chain *this endpoint* presented validate against the "
+        "trust store? NULL = not known. Recorded, never enforced.",
+    )
+
+    first_seen = models.DateTimeField(
+        help_text="First time this endpoint was observed serving this certificate."
+    )
+    last_seen = models.DateTimeField(
+        db_index=True,
+        help_text="Most recent observation. Going stale — not being deleted — is "
+        "how an endpoint that stopped serving this certificate is recorded.",
+    )
+
+    class Meta:
+        ordering = ["-last_seen"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "certificate", "target_ip", "port", "server_name"],
+                name="uniq_certificate_binding_endpoint",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "endpoint_key", "-last_seen"]),
+            models.Index(fields=["certificate", "-last_seen"]),
+            models.Index(fields=["tenant", "chain_depth", "-last_seen"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.target_ip_id}:{self.port} → {self.certificate_id}"
+
+    @property
+    def endpoint_label(self) -> str:
+        """Human-readable endpoint, e.g. ``192.0.2.10:443 (www.example.com)``."""
+        base = f"{self.target_ip.ip_address}:{self.port}"
+        return f"{base} ({self.server_name})" if self.server_name else base
+
+    def _assert_single_tenant(self) -> None:
+        """A binding may never join objects from two tenants.
+
+        The queryset filters already hide cross-tenant rows; this is the write
+        side of the same boundary, on the only path that creates bindings.
+        """
+        from django.core.exceptions import ValidationError
+
+        if self.certificate.tenant_id != self.tenant_id:
+            raise ValidationError({
+                "certificate": "A binding may not join a certificate from "
+                "another tenant."
+            })
+        if self.target_ip.tenant_id != self.tenant_id:
+            raise ValidationError({
+                "target_ip": "A binding may not join an IP address from "
+                "another tenant."
+            })
+
+    def save(self, *args, **kwargs):
+        self._assert_single_tenant()
+        if not self.endpoint_key:
+            self.endpoint_key = certificate_endpoint_key(
+                self.target_ip_id, self.port, self.server_name
+            )
         return super().save(*args, **kwargs)

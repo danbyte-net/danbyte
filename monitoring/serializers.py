@@ -18,6 +18,7 @@ from .models import (
     Alert,
     AlertRule,
     Certificate,
+    CertificateBinding,
     CheckAssignment,
     CheckKind,
     CheckResult,
@@ -101,6 +102,11 @@ class CertificateSerializer(serializers.ModelSerializer):
 
     is_expired = serializers.BooleanField(read_only=True)
     days_until_expiry = serializers.FloatField(read_only=True)
+    binding_count = serializers.IntegerField(
+        read_only=True, default=0,
+        help_text="How many endpoints are on record as having served this "
+        "certificate — the size of the blast radius when it expires.",
+    )
 
     class Meta:
         model = Certificate
@@ -109,7 +115,41 @@ class CertificateSerializer(serializers.ModelSerializer):
             "issuer_cn", "serial", "san_dns", "san_ip", "not_before",
             "not_after", "is_expired", "days_until_expiry",
             "public_key_algorithm", "public_key_bits", "signature_algorithm",
-            "chain_depth", "self_signed", "chain_verified", "last_seen",
+            "self_signed", "last_seen", "binding_count",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class CertificateBindingSerializer(serializers.ModelSerializer):
+    """An endpoint that served a certificate — read-only, like the certificate.
+
+    This is the row that answers "what breaks when this expires": one
+    certificate, N of these. ``chain_depth`` and ``chain_verified`` are
+    per-endpoint facts, so they live here rather than on the certificate.
+    """
+
+    target_ip_address = serializers.CharField(
+        source="target_ip.ip_address", read_only=True, default=None
+    )
+    endpoint = serializers.CharField(source="endpoint_label", read_only=True)
+    certificate_subject_cn = serializers.CharField(
+        source="certificate.subject_cn", read_only=True, default=None
+    )
+    certificate_not_after = serializers.DateTimeField(
+        source="certificate.not_after", read_only=True, default=None
+    )
+    fingerprint_sha256 = serializers.CharField(
+        source="certificate.fingerprint_sha256", read_only=True, default=None
+    )
+
+    class Meta:
+        model = CertificateBinding
+        fields = [
+            "id", "certificate", "certificate_subject_cn", "certificate_not_after",
+            "fingerprint_sha256", "target_ip", "target_ip_address", "port",
+            "server_name", "endpoint", "endpoint_key", "chain_depth",
+            "chain_verified", "first_seen", "last_seen",
             "created_at", "updated_at",
         ]
         read_only_fields = fields

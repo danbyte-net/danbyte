@@ -9,6 +9,7 @@ from rest_framework.routers import DefaultRouter
 
 from .viewsets import (
     AlertRuleViewSet,
+    CertificateBindingViewSet,
     CertificateViewSet,
     CheckAssignmentViewSet,
     CheckTemplateViewSet,
@@ -71,6 +72,9 @@ router.register(r"alert-rules", AlertRuleViewSet, basename="alert-rule")
 router.register(r"silences", SilenceViewSet, basename="silence")
 router.register(r"snmp-profiles", SnmpProfileViewSet, basename="snmp-profile")
 router.register(r"certificates", CertificateViewSet, basename="certificate")
+router.register(
+    r"certificate-bindings", CertificateBindingViewSet, basename="certificatebinding"
+)
 router.register(r"snmp-sensors", SnmpSensorViewSet, basename="snmp-sensor")
 router.register(r"engines", MonitoringEngineViewSet, basename="monitoring-engine")
 router.register(r"outpost-releases", OutpostReleaseViewSet, basename="outpost-release")

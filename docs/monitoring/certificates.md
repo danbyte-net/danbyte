@@ -34,13 +34,16 @@ Everything below comes out of the certificate the endpoint presented:
 | **Not before** / **Not after** | The validity window. *Not after* is the expiry date everything else hangs off. |
 | **Public key algorithm** and **size** | RSA / ECDSA / Ed25519 / Ed448 / DSA, and the key size in bits. Spots a downgrade to a weak key. |
 | **Signature algorithm** | For example `sha256WithRSAEncryption`. Spots a SHA-1 signature that shouldn't still be around. |
-| **Chain depth** | Position in the presented chain — `0` is the end-entity (leaf) certificate, `1` its issuer, and so on. Every certificate the server sent is recorded, not just the leaf, so a missing intermediate is visible. |
 | **Self-signed** | Whether the certificate signed itself. |
-| **Chain verified** | Whether the chain validated against the trust store when it was last read. Recorded, never enforced. |
-| **Last seen** | The most recent time the certificate was observed. The row's creation time is the first. |
+| **Last seen** | The most recent time this certificate was observed **anywhere** — "is it still in service?". The row's creation time is the first sighting. |
 
 Nothing else is stored. There is no field for a key, a passphrase, or a
 credential, because a certificate check needs none.
+
+Everything above is **intrinsic** — a property of the certificate's exact bytes,
+which is why it can be written once and never rewritten. Facts that depend on
+*where* the certificate was seen live on the [binding](#bindings-what-breaks-when-this-expires)
+instead.
 
 ## Reading a certificate you don't trust
 
@@ -130,14 +133,125 @@ exact bytes.
   after the fact.
 
 Re-observing a certificate that's already on file only refreshes when it was
-last seen and where it sat in the chain. The certificate's own facts are
-properties of those exact bytes, so they are never rewritten.
+last seen. The certificate's own facts are properties of those exact bytes, so
+they are never rewritten.
+
+## Bindings — what breaks when this expires
+
+A certificate on its own is a floating fact. You can see it expires on Tuesday;
+you cannot see *what stops working on Tuesday*. A **binding** is the row that
+closes that gap: it records that a specific endpoint served a specific
+certificate.
+
+**An endpoint is an IP address, a port, and the server name (SNI) requested.**
+That is exactly what the check dialled, so every observation produces one. It is
+deliberately not a [Service](../architecture/service-monitoring.md) record — anchoring on
+Services would have silently skipped every endpoint nobody happened to author a
+Service for, and an inventory with invisible gaps is worse than no inventory.
+
+So a wildcard certificate on twelve hosts is **one certificate row and twelve
+bindings** — which is the whole reason the fingerprint, not the hostname, is the
+certificate's identity.
+
+Each binding records:
+
+| Field | What it is |
+|---|---|
+| **Endpoint** | The IP, port and requested server name. One `IP:port` can legitimately serve a different certificate per name, so the name is part of the endpoint's identity. |
+| **Chain depth** | Position in the chain *this endpoint* presented — `0` is the end-entity (leaf), `1` its issuer, and so on. Every certificate the server sent is recorded, not just the leaf, so a **missing intermediate is visible**. |
+| **Chain verified** | Whether the chain *this endpoint* presented validated against the trust store. Recorded, never enforced. |
+| **First seen** / **Last seen** | When this endpoint was first and most recently observed serving this certificate. |
+
+!!! note "Chain facts belong to the endpoint, not the certificate"
+    A server that stops sending its intermediate changes what you observe
+    without changing a single byte of any certificate. The same intermediate is
+    depth `1` where the chain is complete and absent where it isn't, and a
+    certificate can verify from one host and fail from another. Recorded on the
+    certificate, those would have been whichever endpoint happened to be read
+    last — so they live on the binding, where they are true.
+
+### Bindings are history, and history is never deleted
+
+When an endpoint stops serving a certificate, its binding is **not removed**.
+The `last_seen` timestamp simply goes stale. That is the record of what an
+endpoint *used* to serve, and deleting it would throw away the answer to "what
+were we running when that outage happened?" — which is half the reason to keep
+an inventory at all.
+
+A binding is **stale** once it hasn't been observed for
+`cert_binding_stale_days` (default **7**).
+
+## Expiry alerting
+
+Expiry alerts use the ordinary [alerting engine](../features/monitoring.md) —
+the same `Alert` rows, so they inherit acknowledgement, silences and maintenance
+windows, renotify, escalation, grouping, and every notification channel you have
+configured. There is no separate certificate-notification path to set up.
+
+| State | Severity | When |
+|---|---|---|
+| **Expiring (warning)** | warning | Within `cert_expiry_warning_days` (default **30**). |
+| **Expiring (critical)** | critical | Within `cert_expiry_critical_days` (default **7**). |
+| **Expired** | critical | Past `not_after`. Its own state, not merely "very urgent" — anything validating this certificate is *already* failing, so it is recorded with the `down` check status while an approaching expiry is `degraded`. |
+
+Thresholds live in **Monitoring settings**, per tenant. A tenant with no
+settings row still alerts, on the defaults above.
+
+Only **leaf** certificates raise alerts. An expiring intermediate or root in a
+presented chain is the CA's renewal to do and would double every alert.
+
+### The alert is about the endpoint, not the certificate
+
+This is the part that matters, and the part that is easy to get wrong.
+
+A renewal produces a **new certificate row** — new bytes, new fingerprint, new
+record. If an expiry alert were attached to the certificate, then renewing would
+leave the old alert firing forever on a record nobody serves, with nothing that
+could ever resolve it. One renewal cycle later the alert list is noise and gets
+muted.
+
+So the alert is keyed on the **endpoint**, which is exactly what a renewal does
+*not* change. Evaluating asks "what is this endpoint serving **now**?" — after a
+renewal that is the new certificate, which is healthy, which **resolves the same
+alert row** that was firing for the old one. One endpoint, one alert, across any
+number of renewals.
+
+### What does *not* alert
+
+- **Stale bindings.** A certificate nobody serves any more raises nothing, and
+  an alert that was firing for it resolves. An endpoint that has gone
+  unreachable already raises its *own* check alert, which is the honest place
+  for "we cannot reach this"; a certificate inventory that also pages about
+  decommissioned endpoints becomes noise and gets ignored.
+- **Anything, if `cert_expiry_alerts_enabled` is off** — and switching it off
+  resolves the alerts it was maintaining, rather than leaving strays nothing can
+  clear.
+
+!!! warning "Set the warning window below your renewal lead time"
+    If your certificates are valid for 14 days and the warning window is 30, a
+    freshly renewed certificate is *immediately* inside the window and the alert
+    never clears. Short-lived (ACME-style) certificates want a correspondingly
+    short warning window.
+
+### When alerts are evaluated
+
+Two paths, both needed:
+
+- **On every observation.** A `tls_cert` check that lands re-evaluates the
+  endpoint it just read, so a renewal resolves its alert in the same pass rather
+  than waiting for the night.
+- **Daily, on a timer** (`danbyte-certificate-expiry` →
+  `manage.py certificate_expiry`). A certificate crosses the 30-day line whether
+  or not anything scanned it that day, so time passing has to be enough on its
+  own. The sweep appears in **Jobs → Scheduled tasks** like every other timer.
 
 ## Permissions
 
-Certificates are an RBAC object type (**Monitoring → Certificates**), so viewing
-the inventory can be granted or withheld like any other object. The data itself
-is public, but *which endpoints your organisation runs* is not.
+Certificates and their bindings are separate RBAC object types
+(**Monitoring → Certificates** and **Monitoring → Certificate bindings**), so
+each can be granted or withheld like any other object. The certificate data
+itself is public, but *which endpoints your organisation runs* is not — which is
+exactly what a binding records.
 
 The inventory is **read-only** everywhere — API and admin alike. A certificate
 record is an observation, so there is no legitimate way to author one by hand,
@@ -158,9 +272,28 @@ and no request body can reach these fields at all.
 `PUT` and `DELETE` are not available.
 
 Each record also exposes two derived, always-current values: `is_expired` and
-`days_until_expiry` (negative once the certificate has expired).
+`days_until_expiry` (negative once the certificate has expired). These are
+computed at read time, never stored, so a record that hasn't been re-observed
+can never report itself healthy. `binding_count` is the size of the blast
+radius — how many endpoints are on record as having served it.
+
+`GET /api/monitoring/certificate-bindings/` — the active tenant's bindings, also
+read-only.
+
+| Query parameter | Effect |
+|---|---|
+| `certificate=<id>` | Every endpoint that has served this certificate — *what breaks when it expires*. |
+| `target_ip=<id>` | Everything one address has ever presented. |
+| `endpoint_key=` | One exact endpoint (IP + port + SNI), across renewals. |
+| `leaf=1` / `leaf=0` | End-entity certificates only / chain members only. |
+| `stale=1` / `stale=0` | What an endpoint *used* to serve / what it is still observed serving. |
 
 ## Changes are journalled
 
 Certificate records are audited, so creation and any change appear in the
 change log alongside the rest of your inventory.
+
+Bindings are **not** audited. Their `last_seen` moves on every observation, so
+journalling them would write one change-log entry per endpoint per scan and bury
+everything worth reading — the same reason check results and check state aren't
+journalled either. The bindings themselves are the history.

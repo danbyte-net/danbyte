@@ -1,5 +1,5 @@
-"""Certificate inventory (phase X0): collector, reconciliation, and the rule
-that no private key may ever be stored.
+"""Certificate inventory: collector, reconciliation, bindings, expiry alerting,
+and the rule that no private key may ever be stored.
 
 Every certificate here is generated in-process with ``cryptography`` — the tests
 never touch the network. The collector's socket layer is exercised by swapping
@@ -24,11 +24,30 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
+from api.models import IPAddress, Prefix
+from api.test_utils import status_for
 from core.models import Organization, Tenant
 from danbyte_checks import get_checker, tls_cert
 
-from .certificates import observe_endpoint, record_chain
-from .models import Certificate
+from .cert_expiry import (
+    DEDUP_PREFIX,
+    EXPIRED,
+    EXPIRING_CRITICAL,
+    EXPIRING_WARNING,
+    OK,
+    classify,
+    sweep,
+    thresholds,
+)
+from .certificates import Endpoint, observe_endpoint, record_chain
+from .models import (
+    Alert,
+    AlertSeverity,
+    AlertStatus,
+    Certificate,
+    CertificateBinding,
+    MonitoringSettings,
+)
 
 User = get_user_model()
 
@@ -267,9 +286,32 @@ class _TenantBase(TestCase):
         )
 
     def observe(self, chain_der, tenant=None, host="svc.example.internal"):
+        """An anonymous read — no monitored IP, so no binding."""
         with allow_target(), fake_handshake(list(chain_der)):
             obs, rows = observe_endpoint(tenant or self.tenant, host, 443)
         return obs, rows
+
+    def make_ip(self, address="10.0.0.5", tenant=None):
+        tenant = tenant or self.tenant
+        prefix, _ = Prefix.objects.get_or_create(
+            tenant=tenant, cidr="10.0.0.0/8",
+            defaults={"status": status_for(tenant, "container")},
+        )
+        return IPAddress.objects.create(
+            tenant=tenant, ip_address=address, prefix=prefix
+        )
+
+    def observe_at(self, chain_der, ip, *, tenant=None, host=None, port=443,
+                   server_name=None):
+        """A read tied to a monitored IP — this is what produces bindings."""
+        with allow_target(), fake_handshake(list(chain_der)):
+            return observe_endpoint(
+                tenant or self.tenant,
+                host or ip.ip_address,
+                port,
+                server_name=server_name,
+                target_ip=ip,
+            )
 
 
 class ReconcileTests(_TenantBase):
@@ -300,14 +342,21 @@ class ReconcileTests(_TenantBase):
         self.assertNotEqual(rows[0].fingerprint_sha256, rows[1].fingerprint_sha256)
         self.assertLess(rows[0].not_after, rows[1].not_after)
 
-    def test_whole_chain_is_recorded_with_depth(self):
+    def test_whole_chain_is_recorded_with_depth_on_the_binding(self):
         root, root_key = make_cert("Test Root CA")
         leaf, _ = make_cert("svc.example.internal", issuer_cn="Test Root CA",
                             issuer_key=root_key)
-        self.observe([leaf, root])
+        ip = self.make_ip()
+        self.observe_at([leaf, root], ip)
         rows = {c.subject_cn: c for c in Certificate.objects.filter(tenant=self.tenant)}
-        self.assertEqual(rows["svc.example.internal"].chain_depth, 0)
-        self.assertEqual(rows["Test Root CA"].chain_depth, 1)
+        # Depth is a property of *this* handshake, so it lives on the binding.
+        depths = {
+            b.certificate.subject_cn: b.chain_depth
+            for b in CertificateBinding.objects.select_related("certificate")
+        }
+        self.assertEqual(depths["svc.example.internal"], 0)
+        self.assertEqual(depths["Test Root CA"], 1)
+        # Self-signed is intrinsic to the bytes, so it stays on the certificate.
         self.assertTrue(rows["Test Root CA"].self_signed)
         self.assertFalse(rows["svc.example.internal"].self_signed)
 
@@ -322,16 +371,20 @@ class ReconcileTests(_TenantBase):
 
     def test_self_signed_certificate_sets_the_flag(self):
         der, _ = make_cert("selfsigned.example.internal")
+        ip = self.make_ip()
         error = ssl.SSLCertVerificationError("self-signed certificate")
         error.verify_message = "self-signed certificate"
         with allow_target(), mock.patch.object(
             tls_cert, "_handshake",
             side_effect=[error, ([der], "TLSv1.3", "TLS_AES_256_GCM_SHA384")],
         ):
-            observe_endpoint(self.tenant, "selfsigned.example.internal", 443)
+            observe_endpoint(
+                self.tenant, "selfsigned.example.internal", 443, target_ip=ip
+            )
         row = Certificate.objects.get(tenant=self.tenant)
         self.assertTrue(row.self_signed)
-        self.assertIs(row.chain_verified, False)
+        # "Did the chain verify" is per-endpoint, so it is on the binding.
+        self.assertIs(CertificateBinding.objects.get().chain_verified, False)
 
     def test_fetch_failure_records_nothing_and_never_refreshes(self):
         der, _ = make_cert("svc.example.internal")
@@ -511,3 +564,515 @@ class CertificateApiTests(APITestCase):
         rows = self._results(self.client.get("/api/monitoring/certificates/"))
         self.assertNotIn("PRIVATE KEY", str(rows))
         self.assertTrue(set(rows[0]) & {"fingerprint_sha256", "not_after"})
+
+
+# ─── X1: bindings ─────────────────────────────────────────────────────────
+
+
+class BindingTests(_TenantBase):
+    def test_one_certificate_on_many_endpoints_is_one_row_and_many_bindings(self):
+        """The reason the fingerprint is the identity: a wildcard cert on three
+        hosts must not become three certificate rows."""
+        der, _ = make_cert("*.example.com", dns=("*.example.com",))
+        for address in ("10.0.0.5", "10.0.0.6", "10.0.0.7"):
+            self.observe_at([der], self.make_ip(address))
+
+        self.assertEqual(Certificate.objects.filter(tenant=self.tenant).count(), 1)
+        cert = Certificate.objects.get(tenant=self.tenant)
+        self.assertEqual(cert.bindings.count(), 3)
+        self.assertEqual(
+            {b.target_ip.ip_address for b in cert.bindings.all()},
+            {"10.0.0.5", "10.0.0.6", "10.0.0.7"},
+        )
+
+    def test_re_observation_moves_last_seen_and_keeps_first_seen(self):
+        der, _ = make_cert("svc.example.com")
+        ip = self.make_ip()
+        self.observe_at([der], ip)
+        binding = CertificateBinding.objects.get()
+        first, seen = binding.first_seen, binding.last_seen
+
+        self.observe_at([der], ip)
+        self.assertEqual(CertificateBinding.objects.count(), 1)
+        binding.refresh_from_db()
+        self.assertEqual(binding.first_seen, first)
+        self.assertGreater(binding.last_seen, seen)
+
+    def test_a_failed_read_creates_no_binding_and_refreshes_none(self):
+        der, _ = make_cert("svc.example.com")
+        ip = self.make_ip()
+        self.observe_at([der], ip)
+        binding = CertificateBinding.objects.get()
+        seen = binding.last_seen
+
+        with allow_target(), mock.patch.object(
+            tls_cert, "_handshake", side_effect=ConnectionRefusedError("refused")
+        ):
+            observe_endpoint(self.tenant, ip.ip_address, 443, target_ip=ip)
+
+        self.assertEqual(CertificateBinding.objects.count(), 1)
+        binding.refresh_from_db()
+        self.assertEqual(binding.last_seen, seen)
+
+    def test_a_renewal_leaves_the_old_binding_as_history(self):
+        """Bindings are never deleted — that is the record of what an endpoint
+        *used* to serve, and the reason a stale last_seen is the signal."""
+        old, _ = make_cert("svc.example.com", days_after=20)
+        ip = self.make_ip()
+        self.observe_at([old], ip)
+        new, _ = make_cert("svc.example.com", days_after=400)
+        self.observe_at([new], ip)
+
+        bindings = list(CertificateBinding.objects.order_by("first_seen"))
+        self.assertEqual(len(bindings), 2)
+        # Same endpoint, two certificates, one key that outlives the renewal.
+        self.assertEqual({b.endpoint_key for b in bindings}, {bindings[0].endpoint_key})
+        self.assertNotEqual(bindings[0].certificate_id, bindings[1].certificate_id)
+
+    def test_the_endpoint_key_is_ip_port_and_sni(self):
+        der, _ = make_cert("svc.example.com")
+        ip = self.make_ip()
+        self.observe_at([der], ip, port=443, server_name="a.example.com")
+        self.observe_at([der], ip, port=443, server_name="b.example.com")
+        self.observe_at([der], ip, port=8443, server_name="a.example.com")
+
+        keys = set(CertificateBinding.objects.values_list("endpoint_key", flat=True))
+        self.assertEqual(len(keys), 3)  # name and port each make a new endpoint
+        self.assertEqual(CertificateBinding.objects.count(), 3)
+
+    def test_chain_facts_are_per_endpoint_not_per_certificate(self):
+        """A server that stops sending its intermediate changes the observation
+        but not a single byte of any certificate."""
+        root, root_key = make_cert("Test Root CA")
+        leaf, _ = make_cert("svc.example.com", issuer_cn="Test Root CA",
+                            issuer_key=root_key)
+        full = self.make_ip("10.0.0.5")
+        partial = self.make_ip("10.0.0.6")
+        self.observe_at([leaf, root], full)
+        self.observe_at([leaf], partial)
+
+        cert = Certificate.objects.get(subject_cn="svc.example.com")
+        self.assertEqual(cert.bindings.count(), 2)
+        self.assertEqual(
+            CertificateBinding.objects.filter(
+                certificate__subject_cn="Test Root CA"
+            ).count(),
+            1,  # only the endpoint that actually sent it
+        )
+        for field in ("chain_depth", "chain_verified"):
+            self.assertNotIn(field, {f.name for f in Certificate._meta.get_fields()})
+
+    def test_an_anonymous_read_records_a_certificate_but_no_binding(self):
+        der, _ = make_cert("svc.example.com")
+        self.observe([der])  # no target IP
+        self.assertEqual(Certificate.objects.count(), 1)
+        self.assertEqual(CertificateBinding.objects.count(), 0)
+
+
+class BindingTenantIsolationTests(_TenantBase):
+    def test_a_binding_may_never_cross_tenants(self):
+        der, _ = make_cert("shared.example.com")
+        theirs = self.make_ip("10.0.0.9", tenant=self.other)
+        parsed = tls_cert.parse_certificate(der, 0)
+
+        with self.assertRaises(ValueError):
+            record_chain(
+                self.tenant,
+                {"validity": "verified", "chain": [parsed]},
+                endpoint=Endpoint(target_ip=theirs, port=443),
+            )
+        self.assertEqual(CertificateBinding.objects.count(), 0)
+
+    def test_the_model_itself_refuses_a_cross_tenant_certificate(self):
+        """Defence in depth: the reconciler's guard is not the only one."""
+        der, _ = make_cert("shared.example.com")
+        self.observe_at([der], self.make_ip("10.0.0.5"))
+        theirs_ip = self.make_ip("10.0.0.9", tenant=self.other)
+        mine_cert = Certificate.objects.get(tenant=self.tenant)
+
+        with self.assertRaises(ValidationError):
+            CertificateBinding(
+                tenant=self.tenant, certificate=mine_cert, target_ip=theirs_ip,
+                port=443, first_seen=timezone.now(), last_seen=timezone.now(),
+            ).save()
+
+    def test_two_tenants_observing_the_same_certificate_get_separate_bindings(self):
+        der, _ = make_cert("shared.example.com")
+        self.observe_at([der], self.make_ip("10.0.0.5"))
+        self.observe_at(
+            [der], self.make_ip("10.0.0.5", tenant=self.other), tenant=self.other
+        )
+        self.assertEqual(CertificateBinding.objects.filter(tenant=self.tenant).count(), 1)
+        self.assertEqual(CertificateBinding.objects.filter(tenant=self.other).count(), 1)
+        mine = CertificateBinding.objects.get(tenant=self.tenant)
+        self.assertEqual(mine.certificate.tenant_id, self.tenant.id)
+        self.assertEqual(mine.target_ip.tenant_id, self.tenant.id)
+
+
+# ─── X2: expiry alerting ──────────────────────────────────────────────────
+
+
+class ExpiryAlertTests(_TenantBase):
+    """The alert is about the *endpoint*, not the certificate row — which is
+    what makes a renewal resolve it instead of orphaning it."""
+
+    def setUp(self):
+        super().setUp()
+        self.ip = self.make_ip()
+        self.notify = mock.patch("monitoring.notify.notify_alert").start()
+        self.addCleanup(mock.patch.stopall)
+
+    def alerts(self, status=AlertStatus.FIRING):
+        return list(Alert.objects.filter(tenant=self.tenant, status=status))
+
+    def serve(self, days_after, *, ip=None, host=None):
+        der, _ = make_cert(
+            "svc.example.com", days_before=400, days_after=days_after
+        )
+        return self.observe_at([der], ip or self.ip, host=host)
+
+    def test_healthy_certificate_raises_nothing(self):
+        self.serve(365)
+        self.assertEqual(self.alerts(), [])
+
+    def test_warning_window_opens_a_warning(self):
+        self.serve(20)  # inside 30, outside 7
+        alert = Alert.objects.get()
+        self.assertEqual(alert.severity, AlertSeverity.WARNING)
+        self.assertEqual(alert.check_status, "degraded")
+        self.assertEqual(alert.detail["cert_state"], EXPIRING_WARNING)
+        self.assertEqual(alert.kind, "tls_cert")
+        self.assertTrue(alert.dedup_key.startswith(DEDUP_PREFIX))
+
+    def test_critical_window_opens_a_critical(self):
+        self.serve(3)
+        alert = Alert.objects.get()
+        self.assertEqual(alert.severity, AlertSeverity.CRITICAL)
+        self.assertEqual(alert.detail["cert_state"], EXPIRING_CRITICAL)
+
+    def test_expired_is_its_own_state_not_just_urgent(self):
+        self.serve(-5)
+        alert = Alert.objects.get()
+        self.assertEqual(alert.severity, AlertSeverity.CRITICAL)
+        self.assertEqual(alert.detail["cert_state"], EXPIRED)
+        # Distinct from "expiring critically": an expired cert is a failure.
+        self.assertEqual(alert.check_status, "down")
+
+    def test_crossing_from_warning_to_critical_updates_one_alert(self):
+        self.serve(20)
+        opened = Alert.objects.get()
+        self.serve(3)  # a new (shorter) cert on the same endpoint
+        self.assertEqual(Alert.objects.count(), 1)
+        opened.refresh_from_db()
+        self.assertEqual(opened.severity, AlertSeverity.CRITICAL)
+        self.assertEqual(opened.detail["cert_state"], EXPIRING_CRITICAL)
+        self.assertEqual(opened.notify_count, 2)
+
+    def test_renewal_resolves_the_alert_rather_than_orphaning_it(self):
+        """The subtle failure this whole design exists to avoid: a renewal is a
+        NEW certificate row, so an alert keyed on the certificate could never be
+        resolved by it."""
+        self.serve(3)
+        firing = Alert.objects.get()
+        self.assertEqual(firing.status, AlertStatus.FIRING)
+        old_fingerprint = firing.detail["fingerprint_sha256"]
+
+        self.serve(365)  # renewed on the same endpoint
+
+        self.assertEqual(Alert.objects.count(), 1)  # no second, orphaned alert
+        firing.refresh_from_db()
+        self.assertEqual(firing.status, AlertStatus.RESOLVED)
+        self.assertIsNotNone(firing.resolved_at)
+        # And it is the *same row* that was firing for the retired certificate.
+        self.assertEqual(firing.detail["fingerprint_sha256"], old_fingerprint)
+        self.assertEqual(Certificate.objects.count(), 2)  # history intact
+
+    def test_renewal_into_the_window_keeps_one_alert_pointing_at_the_new_cert(self):
+        self.serve(3)
+        alert = Alert.objects.get()
+        self.serve(20)  # renewed, but still inside the warning window
+        self.assertEqual(Alert.objects.count(), 1)
+        alert.refresh_from_db()
+        self.assertEqual(alert.status, AlertStatus.FIRING)
+        self.assertEqual(alert.detail["cert_state"], EXPIRING_WARNING)
+        newest = Certificate.objects.order_by("-not_after").first()
+        self.assertEqual(alert.detail["fingerprint_sha256"], newest.fingerprint_sha256)
+
+    def test_a_stale_binding_stops_alerting(self):
+        self.serve(3)
+        self.assertEqual(len(self.alerts()), 1)
+
+        CertificateBinding.objects.update(
+            last_seen=timezone.now() - dt.timedelta(days=30)
+        )
+        sweep()
+
+        self.assertEqual(self.alerts(), [])
+        resolved = Alert.objects.get()
+        self.assertEqual(resolved.status, AlertStatus.RESOLVED)
+        self.assertIn("no longer observed", resolved.detail["resolution"])
+        # History survives — the binding is not deleted, only stale.
+        self.assertEqual(CertificateBinding.objects.count(), 1)
+
+    def test_a_stale_binding_never_opens_an_alert_in_the_first_place(self):
+        self.serve(3)
+        Alert.objects.all().delete()
+        CertificateBinding.objects.update(
+            last_seen=timezone.now() - dt.timedelta(days=30)
+        )
+        self.assertEqual(sweep()["opened"], 0)
+        self.assertEqual(Alert.objects.count(), 0)
+
+    def test_thresholds_are_configurable_per_tenant(self):
+        MonitoringSettings.objects.create(
+            tenant=self.tenant,
+            cert_expiry_warning_days=90,
+            cert_expiry_critical_days=45,
+        )
+        self.serve(60)  # healthy on the defaults, a warning at 90/45
+        alert = Alert.objects.get()
+        self.assertEqual(alert.detail["cert_state"], EXPIRING_WARNING)
+        self.assertEqual(alert.detail["warning_days"], 90)
+
+    def test_alerting_can_be_switched_off_without_leaving_strays(self):
+        self.serve(3)
+        self.assertEqual(len(self.alerts()), 1)
+        MonitoringSettings.objects.create(
+            tenant=self.tenant, cert_expiry_alerts_enabled=False
+        )
+        sweep()
+        self.assertEqual(self.alerts(), [])
+
+    def test_time_passing_is_enough_to_open_an_alert(self):
+        """The sweep exists because a certificate crosses the warning line
+        whether or not anything scanned it that day."""
+        self.serve(365)
+        self.assertEqual(Alert.objects.count(), 0)
+        Certificate.objects.update(
+            not_after=timezone.now() + dt.timedelta(days=2)
+        )
+        sweep()
+        self.assertEqual(Alert.objects.get().detail["cert_state"], EXPIRING_CRITICAL)
+
+    def test_only_leaf_certificates_alert(self):
+        root, root_key = make_cert("Test Root CA", days_after=4)
+        leaf, _ = make_cert("svc.example.com", issuer_cn="Test Root CA",
+                            issuer_key=root_key, days_after=400)
+        self.observe_at([leaf, root], self.ip)
+        # The root expires in 4 days but is the CA's problem, not an endpoint's.
+        self.assertEqual(Alert.objects.count(), 0)
+
+    def test_each_endpoint_gets_its_own_alert(self):
+        der, _ = make_cert("*.example.com", days_after=3)
+        second = self.make_ip("10.0.0.6")
+        self.observe_at([der], self.ip)
+        self.observe_at([der], second)
+        self.assertEqual(Alert.objects.count(), 2)
+        self.assertEqual(
+            {a.target_ip_id for a in Alert.objects.all()}, {self.ip.id, second.id}
+        )
+        # ...over one certificate row: N endpoints, N alerts, 1 cert.
+        self.assertEqual(Certificate.objects.count(), 1)
+
+    def test_dedup_key_cannot_collide_with_a_check_alert(self):
+        self.serve(3)
+        key = Alert.objects.get().dedup_key
+        self.assertTrue(key.startswith(DEDUP_PREFIX))
+        self.assertLessEqual(len(key), 120)  # fits Alert.dedup_key
+
+    def test_alerts_do_not_cross_tenants(self):
+        theirs_ip = self.make_ip("10.0.0.5", tenant=self.other)
+        self.serve(3)
+        der, _ = make_cert("theirs.example.com", days_after=3)
+        self.observe_at([der], theirs_ip, tenant=self.other)
+        self.assertEqual(Alert.objects.filter(tenant=self.tenant).count(), 1)
+        self.assertEqual(Alert.objects.filter(tenant=self.other).count(), 1)
+        mine = Alert.objects.get(tenant=self.tenant)
+        self.assertEqual(mine.target_ip_id, self.ip.id)
+
+
+class ExpiryClassificationTests(TestCase):
+    """The derived-at-read-time property X0 established, kept intact."""
+
+    def test_state_is_derived_from_not_after_never_from_a_stored_flag(self):
+        limits = {"warning_days": 30, "critical_days": 7, "stale_days": 7}
+        now = timezone.now()
+
+        class _Cert:
+            def __init__(self, days):
+                self.not_after = now + dt.timedelta(days=days)
+
+        self.assertEqual(classify(_Cert(365), limits, now), OK)
+        self.assertEqual(classify(_Cert(29), limits, now), EXPIRING_WARNING)
+        self.assertEqual(classify(_Cert(6), limits, now), EXPIRING_CRITICAL)
+        self.assertEqual(classify(_Cert(-1), limits, now), EXPIRED)
+        self.assertEqual(classify(_Cert(0), limits, now), EXPIRED)
+
+    def test_critical_above_warning_degrades_to_all_critical(self):
+        row = MonitoringSettings(
+            cert_expiry_warning_days=7, cert_expiry_critical_days=30
+        )
+        self.assertEqual(thresholds(row)["critical_days"], 7)
+
+
+# ─── X1/X2 API ────────────────────────────────────────────────────────────
+
+
+class CertificateBindingApiTests(APITestCase):
+    def setUp(self):
+        self.org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=self.org, name="Acme", slug="acme")
+        self.other_org = Organization.objects.create(name="Globex", slug="globex")
+        self.other = Tenant.objects.create(
+            org=self.other_org, name="Globex", slug="globex"
+        )
+
+        def ip_for(tenant, address):
+            prefix, _ = Prefix.objects.get_or_create(
+                tenant=tenant, cidr="10.0.0.0/8",
+                defaults={"status": status_for(tenant, "container")},
+            )
+            return IPAddress.objects.create(
+                tenant=tenant, ip_address=address, prefix=prefix
+            )
+
+        der, _ = make_cert("mine.example.com", days_after=10)
+        with allow_target(), fake_handshake([der]):
+            observe_endpoint(
+                self.tenant, "10.0.0.5", 443, target_ip=ip_for(self.tenant, "10.0.0.5")
+            )
+        other_der, _ = make_cert("theirs.example.com")
+        with allow_target(), fake_handshake([other_der]):
+            observe_endpoint(
+                self.other, "10.0.0.5", 443, target_ip=ip_for(self.other, "10.0.0.5")
+            )
+
+        admin = User.objects.create_superuser("admin", "admin@example.com", "x")
+        self.client.force_login(admin)
+        session = self.client.session
+        session["current_tenant_id"] = str(self.tenant.id)
+        session.save()
+
+    def _results(self, response):
+        body = response.json()
+        return body["results"] if isinstance(body, dict) else body
+
+    def test_requires_authentication(self):
+        self.client.logout()
+        resp = self.client.get("/api/monitoring/certificate-bindings/")
+        self.assertIn(resp.status_code, (401, 403))
+
+    def test_list_is_scoped_to_the_active_tenant(self):
+        rows = self._results(
+            self.client.get("/api/monitoring/certificate-bindings/")
+        )
+        self.assertEqual([r["certificate_subject_cn"] for r in rows],
+                         ["mine.example.com"])
+
+    def test_cross_tenant_detail_is_not_readable(self):
+        theirs = CertificateBinding.objects.get(tenant=self.other)
+        resp = self.client.get(f"/api/monitoring/certificate-bindings/{theirs.id}/")
+        self.assertEqual(resp.status_code, 404)
+
+    def test_write_methods_are_refused(self):
+        mine = CertificateBinding.objects.get(tenant=self.tenant)
+        self.assertEqual(
+            self.client.post("/api/monitoring/certificate-bindings/", {},
+                             format="json").status_code, 405
+        )
+        self.assertEqual(
+            self.client.delete(
+                f"/api/monitoring/certificate-bindings/{mine.id}/"
+            ).status_code, 405
+        )
+
+    def test_filter_by_certificate_answers_what_breaks(self):
+        cert = Certificate.objects.get(tenant=self.tenant)
+        rows = self._results(
+            self.client.get(
+                f"/api/monitoring/certificate-bindings/?certificate={cert.id}"
+            )
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["endpoint"], "10.0.0.5:443")
+
+    def test_stale_filter_separates_history_from_what_is_served_now(self):
+        fresh = self._results(
+            self.client.get("/api/monitoring/certificate-bindings/?stale=0")
+        )
+        self.assertEqual(len(fresh), 1)
+        CertificateBinding.objects.filter(tenant=self.tenant).update(
+            last_seen=timezone.now() - dt.timedelta(days=90)
+        )
+        self.assertEqual(
+            len(self._results(
+                self.client.get("/api/monitoring/certificate-bindings/?stale=0")
+            )), 0,
+        )
+        self.assertEqual(
+            len(self._results(
+                self.client.get("/api/monitoring/certificate-bindings/?stale=1")
+            )), 1,
+        )
+
+    def test_certificate_exposes_its_blast_radius(self):
+        rows = self._results(self.client.get("/api/monitoring/certificates/"))
+        self.assertEqual(rows[0]["binding_count"], 1)
+
+
+class CheckResultSeamTests(_TenantBase):
+    """The production path: a ``tls_cert`` CheckResult lands, and the inventory
+    plus its alert follow — for both persistence seams (check-now and the
+    scheduled worker), which share ``record_check_results``."""
+
+    def test_a_check_result_produces_a_binding_and_an_alert(self):
+        from .certificates import record_check_results
+        from .models import CheckKind, CheckResult, CheckTemplate
+
+        ip = self.make_ip()
+        template = CheckTemplate.objects.create(
+            tenant=self.tenant, name="tls", slug="tls", kind=CheckKind.TLS_CERT
+        )
+        der, _ = make_cert("svc.example.com", days_before=400, days_after=3)
+        with allow_target(), fake_handshake([der]):
+            observation = tls_cert.collect_chain("svc.example.com", 8443)
+
+        result = CheckResult.objects.create(
+            tenant=self.tenant, target_ip=ip, template=template,
+            kind="tls_cert", status="degraded", detail=observation,
+        )
+        self.assertEqual(record_check_results([result]), 1)
+
+        binding = CertificateBinding.objects.get()
+        self.assertEqual(binding.target_ip_id, ip.id)
+        self.assertEqual(binding.port, 8443)  # taken from the observation
+        self.assertEqual(binding.server_name, "svc.example.com")
+        alert = Alert.objects.get()
+        self.assertEqual(alert.detail["cert_state"], EXPIRING_CRITICAL)
+        self.assertEqual(alert.target_ip_id, ip.id)
+
+    def test_the_binding_ip_comes_from_the_check_not_the_payload(self):
+        """A detail blob must not be able to point a binding at another IP."""
+        from .certificates import endpoint_from_result
+        from .models import CheckResult
+
+        ip = self.make_ip()
+        elsewhere = self.make_ip("10.0.0.99")
+        result = CheckResult(
+            tenant=self.tenant, target_ip=ip, kind="tls_cert", status="up",
+            detail={"host": elsewhere.ip_address, "port": 443,
+                    "server_name": "spoof.example.com"},
+        )
+        endpoint = endpoint_from_result(result)
+        self.assertEqual(endpoint.target_ip.id, ip.id)
+
+    def test_a_non_certificate_result_is_ignored(self):
+        from .certificates import record_check_results
+        from .models import CheckResult
+
+        result = CheckResult(
+            tenant=self.tenant, target_ip=self.make_ip(), kind="icmp",
+            status="up", detail={"rtt": 1.0},
+        )
+        self.assertEqual(record_check_results([result]), 0)
+        self.assertEqual(Certificate.objects.count(), 0)

@@ -1,0 +1,11 @@
+[Unit]
+Description=Sweep Danbyte certificate expiry alerts daily
+
+[Timer]
+OnCalendar=*-*-* 06:30:00
+OnBootSec=240
+Persistent=true
+AccuracySec=15m
+
+[Install]
+WantedBy=timers.target

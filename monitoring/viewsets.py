@@ -25,6 +25,7 @@ from auth_api.permissions import can_manage_admin
 from .models import (
     AlertRule,
     Certificate,
+    CertificateBinding,
     CheckAssignment,
     CheckTemplate,
     MonitoringDenySubnet,
@@ -39,6 +40,7 @@ from .models import (
 )
 from .serializers import (
     AlertRuleSerializer,
+    CertificateBindingSerializer,
     CertificateSerializer,
     CheckAssignmentSerializer,
     CheckTemplateSerializer,
@@ -202,9 +204,16 @@ class CertificateViewSet(TenantScopedReadViewSet):
     serializer_class = CertificateSerializer
 
     def get_queryset(self):
+        from django.db.models import Count
         from django.utils import timezone
 
-        qs = super().get_queryset()
+        # Aggregation drops Meta.ordering (Django ≥3.1), so restate it — an
+        # unordered paginated list silently reshuffles between pages.
+        qs = (
+            super().get_queryset()
+            .annotate(binding_count=Count("bindings"))
+            .order_by("not_after", "subject_cn")
+        )
         params = self.request.query_params
         now = timezone.now()
 
@@ -230,6 +239,64 @@ class CertificateViewSet(TenantScopedReadViewSet):
                 Q(subject__icontains=search)
                 | Q(issuer__icontains=search)
                 | Q(fingerprint_sha256__istartswith=search)
+            )
+        return qs
+
+
+class CertificateBindingViewSet(TenantScopedReadViewSet):
+    """Which endpoints served which certificate — tenant-scoped and read-only.
+
+    This is the "what breaks when it expires" surface: filter by
+    ``?certificate=<id>`` for a certificate's blast radius, or by
+    ``?target_ip=<id>`` for everything one address has ever presented.
+
+    Bindings are history, so nothing here is deleted when an endpoint stops
+    serving a certificate — use ``?stale=1`` / ``?stale=0`` to separate what is
+    still being observed from what used to be.
+    """
+
+    queryset = CertificateBinding.objects.select_related("certificate", "target_ip")
+    serializer_class = CertificateBindingSerializer
+
+    def get_queryset(self):
+        from django.utils import timezone
+
+        from .cert_expiry import DEFAULTS
+
+        qs = super().get_queryset()
+        params = self.request.query_params
+
+        certificate = params.get("certificate")
+        if certificate:
+            qs = qs.filter(certificate_id=certificate)
+        target_ip = params.get("target_ip")
+        if target_ip:
+            qs = qs.filter(target_ip_id=target_ip)
+        endpoint_key = params.get("endpoint_key")
+        if endpoint_key:
+            qs = qs.filter(endpoint_key=endpoint_key)
+        leaf = params.get("leaf")
+        if leaf in ("1", "true"):
+            qs = qs.filter(chain_depth=0)
+        elif leaf in ("0", "false"):
+            qs = qs.filter(chain_depth__gt=0)
+
+        stale = params.get("stale")
+        if stale in ("1", "true", "0", "false"):
+            tenant = _get_active_tenant(self.request)
+            row = None
+            if tenant is not None:
+                from .models import MonitoringSettings
+
+                row = MonitoringSettings.objects.filter(tenant=tenant).first()
+            days = (
+                int(row.cert_binding_stale_days) if row else DEFAULTS["stale_days"]
+            )
+            cutoff = timezone.now() - timedelta(days=days)
+            qs = (
+                qs.filter(last_seen__lt=cutoff)
+                if stale in ("1", "true")
+                else qs.filter(last_seen__gte=cutoff)
             )
         return qs
 
