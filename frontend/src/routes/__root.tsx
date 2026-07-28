@@ -19,6 +19,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { PresenceProvider } from "@/lib/presence-context"
+import { ErrorBoundary } from "@/components/error-boundary"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
@@ -201,7 +202,12 @@ function AppLayout() {
               overflow-hidden clips it (unreachable). With it, the width is
               capped and the page's own overflow-x-auto containers scroll. */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <Outlet />
+            {/* Keyed on the pathname: a crashed view (often a browser
+                extension mutating React's DOM on unmount) recovers the moment
+                the user navigates, instead of dead-until-refresh. */}
+            <ErrorBoundary resetKey={pathname}>
+              <Outlet />
+            </ErrorBoundary>
           </div>
         </SidebarInset>
       </PresenceProvider>
