@@ -3,13 +3,18 @@ import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 
+import { Upload } from "lucide-react"
+
 import { api } from "@/lib/api"
 import type { Certificate, Paginated } from "@/lib/api"
 import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { EmptyState } from "@/components/empty-state"
+import { Button } from "@/components/ui/button"
 import { buildCertificateColumns } from "@/components/columns/certificate-columns"
 import { useTableFilters } from "@/components/table-filters"
+import { UploadCertificateDialog } from "@/components/monitoring/upload-certificate-dialog"
+import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/certificates/")({
   component: CertificatesPage,
@@ -17,6 +22,8 @@ export const Route = createFileRoute("/certificates/")({
 
 function CertificatesPage() {
   const [q, setQ] = useState("")
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const { canDo } = useMe()
 
   // Server-side search over subject / issuer / fingerprint. The list arrives
   // ordered by not_after (soonest to expire first), so the default view leads
@@ -52,14 +59,22 @@ function CertificatesPage() {
         onChange: setQ,
         placeholder: "Filter by subject, issuer, fingerprint…",
       }}
+      actions={
+        canDo("certificate", "add") ? (
+          <Button size="sm" onClick={() => setUploadOpen(true)}>
+            <Upload className="h-3.5 w-3.5" /> Upload certificate
+          </Button>
+        ) : undefined
+      }
       query={query}
     >
       {allRows.length === 0 ? (
         <EmptyState title="No certificates yet.">
-          Certificates appear here once a{" "}
-          <span className="font-mono">tls_cert</span> check observes what an
-          endpoint is serving. Nothing is authored here — the inventory only
-          records what was actually presented.
+          Upload a public certificate to declare what an object should present,
+          or wait for a <span className="font-mono">tls_cert</span> check to
+          observe what an endpoint is actually serving. Either way the row is
+          keyed by its fingerprint, so an uploaded certificate and its
+          observation collapse into one.
         </EmptyState>
       ) : (
         <DataTable
@@ -69,6 +84,8 @@ function CertificatesPage() {
           tableId="certificates"
         />
       )}
+
+      <UploadCertificateDialog open={uploadOpen} onOpenChange={setUploadOpen} />
     </ListPageShell>
   )
 }

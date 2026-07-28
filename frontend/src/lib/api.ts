@@ -34,6 +34,17 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return (await apiStatus<T>(path, init)).data
+}
+
+// Like `api`, but also returns the HTTP status. Use when the endpoint encodes
+// meaning in the status beyond ok/not-ok — the certificate upload returns 201
+// when a new row was authored and 200 when the PEM matched an already-seen
+// certificate (dedup by fingerprint), and the UI reports the two differently.
+export async function apiStatus<T>(
+  path: string,
+  init: RequestInit = {}
+): Promise<{ data: T; status: number }> {
   const isMutation =
     init.method &&
     !["GET", "HEAD", "OPTIONS"].includes(init.method.toUpperCase())
@@ -77,8 +88,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
         : raw.slice(0, 200)
     throw new ApiError(res.status, body, `${path} → ${res.status} ${detail}`)
   }
-  if (res.status === 204) return undefined as T
-  return res.json() as Promise<T>
+  if (res.status === 204) return { data: undefined as T, status: res.status }
+  return { data: (await res.json()) as T, status: res.status }
 }
 
 // Human-readable message for a failed api() call. Prefers the DRF `detail`
@@ -3906,10 +3917,14 @@ export interface MonitoringStats {
 
 // ─── Certificates ────────────────────────────────────────────────────────
 //
-// Observed X.509 certificates and the endpoints that served them. Both are
-// **read-only** on the API (public data, never authored), so there is no
-// create/update/delete payload — the field names below mirror
-// CertificateSerializer / CertificateBindingSerializer exactly.
+// X.509 certificates, the endpoints that served them, and the assignments that
+// declare which object should present which certificate (the source of truth a
+// drift check compares against). A certificate's intrinsic facts
+// (subject/issuer/serial/fingerprint/validity/key) are read-only — they are
+// properties of the exact DER bytes — and the field names mirror
+// CertificateSerializer / CertificateBindingSerializer / the assignment
+// serializer exactly. Only `name`/`notes` are writable (PATCH), and a
+// certificate is authored solely by uploading a public PEM (never a key).
 
 export type PublicKeyAlgorithm =
   | "rsa"
@@ -3918,6 +3933,10 @@ export type PublicKeyAlgorithm =
   | "ed448"
   | "dsa"
   | "unknown"
+
+/** How the row came to exist: seen on the wire, uploaded by an operator, or
+ * both (an uploaded cert later observed being served — one row, by fingerprint). */
+export type CertificateOrigin = "observed" | "uploaded" | "both"
 
 export interface Certificate {
   id: string
@@ -3942,6 +3961,36 @@ export interface Certificate {
   last_seen: string | null
   /** Endpoints on record as having served this cert — the blast radius. */
   binding_count: number
+  /** Objects declared to present this cert (the source-of-truth intent). */
+  assignment_count: number
+  /** Derived from the flags below; how the row came to exist. */
+  origin: CertificateOrigin
+  /** Seen on the wire at least once. */
+  observed: boolean
+  /** Authored by an operator (a public PEM was uploaded). */
+  uploaded: boolean
+  /** The stored **public** PEM — present only for uploaded rows, else "". */
+  pem: string
+  /** Operator-authored label; editable. */
+  name: string
+  /** Operator-authored notes; editable. */
+  notes: string
+  created_at: string
+  updated_at: string
+}
+
+/** Declares that an object (device / VM / IP / …) should present a certificate.
+ * A generic `(object_type, object_id)` target, like ContactAssignment. */
+export interface CertificateAssignment {
+  id: string
+  certificate: string
+  certificate_subject_cn: string | null
+  certificate_fingerprint: string | null
+  certificate_not_after: string | null
+  /** `app.model` label, e.g. `api.device`, `api.ipaddress`, `api.virtualmachine`. */
+  object_type: string
+  object_id: string
+  notes: string
   created_at: string
   updated_at: string
 }

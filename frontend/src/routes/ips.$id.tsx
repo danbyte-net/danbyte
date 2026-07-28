@@ -31,6 +31,7 @@ import { VrfCell } from "@/components/cells/vrf-cell"
 import { RoleChip } from "@/components/role-chip"
 import { IpDeleteDialog } from "@/components/ip-delete-dialog"
 import { IpMonitoring } from "@/components/monitoring/ip-monitoring"
+import { CertificatesPanel } from "@/components/monitoring/certificates-panel"
 import { IpMonitoringSummary } from "@/components/monitoring/ip-monitoring-summary"
 import { QueryError } from "@/components/query-error"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
@@ -507,13 +508,16 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       </DetailTab>
 
       <DetailTab value="monitoring">
-        <IpMonitoring
-          ip={{
-            id: ip.id,
-            ip_address: ip.ip_address,
-            flap_exclude: ip.flap_exclude,
-          }}
-        />
+        <div className="space-y-6">
+          <IpMonitoring
+            ip={{
+              id: ip.id,
+              ip_address: ip.ip_address,
+              flap_exclude: ip.flap_exclude,
+            }}
+          />
+          <CertificatesPanel objectType="api.ipaddress" objectId={ip.id} />
+        </div>
       </DetailTab>
 
       <DetailTab value="journal">

@@ -74,6 +74,7 @@ import {
   useDeviceDrift,
 } from "@/components/monitoring/device-drift-badge"
 import { ContactsPanel } from "@/components/contacts-panel"
+import { CertificatesPanel } from "@/components/monitoring/certificates-panel"
 import { ConfigContextPanel } from "@/components/config-context-panel"
 import { DeviceConfigRender } from "@/components/device-config-render"
 import { DeviceDeployPanel } from "@/components/device-deploy-panel"
@@ -150,6 +151,7 @@ const DEVICE_TABS = [
   "images",
   "snmp",
   "services",
+  "certificates",
   "contacts",
   "config",
   "journal",
@@ -356,6 +358,7 @@ function Body({ device: d }: { device: Device }) {
           label: "Services",
           count: d.service_count || undefined,
         },
+        { value: "certificates", label: "Certificates" },
         { value: "contacts", label: "Contacts" },
         { value: "config", label: "Config" },
         { value: "journal", label: "Journal" },
@@ -426,6 +429,9 @@ function Body({ device: d }: { device: Device }) {
           parent={{ kind: "device", id: d.id }}
           parentHasPrimaryIp={!!d.primary_ip}
         />
+      </DetailTab>
+      <DetailTab value="certificates">
+        <CertificatesPanel objectType="api.device" objectId={d.id} />
       </DetailTab>
       <DetailTab value="contacts">
         <ContactsPanel objectType="api.device" objectId={d.id} />

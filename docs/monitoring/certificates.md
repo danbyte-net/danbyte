@@ -255,14 +255,23 @@ sidebar.
 
 `/certificates` is the whole inventory for the active tenant, one row per
 certificate. It shows the **subject** (links to the detail page), the
-**issuer**, the **expiry** (see below), the **key** (algorithm plus size, e.g.
-`RSA 2048`), the number of **endpoints** serving it (`binding_count` — the blast
-radius), whether it is **self-signed**, and when it was **last seen**.
+**issuer**, the **expiry** (see below), the **origin** (Observed / Uploaded /
+Both), the **key** (algorithm plus size, e.g. `RSA 2048`), the number of
+**endpoints** serving it (`binding_count` — the blast radius), how many objects
+it is **assigned** to (`assignment_count`), whether it is **self-signed**, and
+when it was **last seen**.
 
-The search box matches subject, issuer, or a fingerprint prefix (server-side,
-the same `search=` the API takes). The filter rail on the left refines by:
+An **Upload certificate** button in the header opens the [upload
+dialog](#authoring-certificates) (shown only to users with the `add` grant on
+certificates).
+
+The search box matches subject, issuer, name, or a fingerprint prefix
+(server-side, the same `search=` the API takes). The filter rail on the left
+refines by:
 
 - **Expiry** — expired, critical (≤7 days), warning (≤30 days), or healthy.
+- **Origin** — observed, uploaded, or both.
+- **Assigned** — assigned to an object, or unassigned.
 - **Trust** — self-signed vs CA-issued.
 - **Key algorithm** — RSA, ECDSA, Ed25519, …
 
@@ -291,17 +300,26 @@ colour a row shows agrees with when an alert would actually fire.
 
 ### The detail page
 
-`/certificates/{id}` opens the certificate with four tabs:
+`/certificates/{id}` opens the certificate with five tabs. The hero carries the
+**origin** badge (Observed / Uploaded / Both) beside the expiry tag, and — for
+users with the grant — an **Edit** button (the only writable fields, `name` and
+`notes`) and **Delete**.
 
 - **Overview** — the certificate's facts in grouped cards: *Identity* (subject,
   issuer, serial, SHA-256 fingerprint, SANs), *Validity* (not-before, not-after,
   the expiry tag, last seen), *Key* (algorithm, size, signature algorithm,
-  self-signed), and the *Record* timestamps.
+  self-signed), and the *Record* card (origin, name, notes, timestamps). For an
+  **uploaded** certificate the stored public **PEM** is shown below the cards in
+  a scrolling block with **copy** and **download** actions.
 - **Bindings** — the endpoints that served this certificate: endpoint, IP, port,
   SNI, chain depth (`leaf` at depth 0), chain verified, and first / last seen.
   This is the tab that answers *what breaks when this expires*. A binding whose
   chain did **not** verify is shown as an *Unverified* tag rather than hidden —
   a self-signed or incomplete chain from that endpoint is a fact worth seeing.
+- **Assignments** — the objects declared to present this certificate (the
+  source-of-truth intent), each linking to its detail page, with an **Assign
+  to…** control (pick an object type — device / VM / IP — then the object) and a
+  per-row **Unassign**. Empty until you assign it somewhere.
 - **Journal** and **History** — the shared operator notes and change log, last.
 
 ### Dashboard widget
@@ -351,6 +369,14 @@ Every row records how it came to exist in its **`origin`**:
     end-entity certificate you are declaring) and re-serialised on its own; no
     chain member or stray key is ever stored. An unparseable PEM is also a `400`.
 
+In the UI, **Upload certificate** (on the certificate list, or **Upload** inside
+an object's [Certificates section](#the-certificates-section-on-an-object)) opens
+a dialog: paste the PEM or **load a `.pem`/`.crt` file** into the box, with an
+optional name and notes. A `201` reports *"Certificate added"*; a `200` — the
+fingerprint already existed (e.g. it was already observed) and is now also marked
+uploaded — reports *"Matched an already-seen certificate"*. Both the private-key
+and parse `400`s surface as an error toast carrying the field message.
+
 ### Assigning a certificate to an object
 
 A **certificate assignment** declares that some object should present a
@@ -363,6 +389,27 @@ running several services).
 
 The target must belong to the **active tenant** — a certificate can never be
 attached to another tenant's object, validated on both create and update.
+
+### The Certificates section on an object
+
+The payoff of the source-of-truth model is the view *on the object*. Device and
+virtual-machine detail pages carry a **Certificates** tab; the IP detail page
+carries a compact **Certificates** card inside its Monitoring tab (a full tab
+would be heavy for a single address). All three are the same panel, resolved
+from the object's `(object_type, object_id)`:
+
+- the certificates **assigned** to the object (subject, origin, expiry, notes)
+  with a per-row **Unassign**;
+- an **Assign a certificate…** control to attach an existing certificate, and an
+  **Upload** button to author a new one and assign it in one step;
+- a **drift** banner — amber, with the compare-arrows marker used for SNMP drift
+  — for each endpoint serving a certificate that is *not* assigned here
+  (`cert_mismatch`), with an **Accept served** action.
+
+With nothing assigned the panel shows a clean *"No certificates assigned"* empty
+state and still offers the assign/upload controls; the assign and accept actions
+are shown only to users with the `add` grant on certificate assignments, and
+unassign only with `delete`.
 
 ## Assignment drift (`cert_mismatch`)
 
@@ -398,7 +445,10 @@ reality have diverged.
     assignment: `POST /api/monitoring/certificate-assignments/accept-served/`
     with `{"binding": "<id>"}` creates (or replaces) an IP-level assignment
     pointing at what is actually served, mirroring how SNMP/interface drift is
-    accepted, and re-evaluates the endpoint so the alert clears at once.
+    accepted, and re-evaluates the endpoint so the alert clears at once. In the
+    UI this is the **Accept served** button on the object's Certificates
+    section; the button is wired to the drifting endpoint's binding, so one click
+    repoints intent at reality and clears the `cert_mismatch` alert.
 
 Expiry drift is unchanged — see [expiry alerting](#expiry-alerting).
 

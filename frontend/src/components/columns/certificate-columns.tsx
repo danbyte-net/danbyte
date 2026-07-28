@@ -1,7 +1,11 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 
-import type { Certificate, PublicKeyAlgorithm } from "@/lib/api"
+import type {
+  Certificate,
+  CertificateOrigin,
+  PublicKeyAlgorithm,
+} from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { Badge } from "@/components/ui/badge"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -81,6 +85,26 @@ export function ExpiryBadge({ cert }: { cert: Certificate }) {
   )
 }
 
+// Origin reuses the neutral Badge tones (secondary/outline) rather than a new
+// colour palette — it is a provenance label, not a severity. "Uploaded" is the
+// authored source of truth, "Observed" is what the wire showed, "Both" is an
+// uploaded cert since seen being served (the fingerprints matched).
+const ORIGIN_LABEL: Record<CertificateOrigin, string> = {
+  observed: "Observed",
+  uploaded: "Uploaded",
+  both: "Both",
+}
+
+/** The provenance pill, reused by the list and the detail hero so a
+ * certificate's origin reads identically wherever it appears. */
+export function OriginBadge({ cert }: { cert: Certificate }) {
+  return (
+    <Badge variant="secondary" className="text-xs">
+      {ORIGIN_LABEL[cert.origin]}
+    </Badge>
+  )
+}
+
 const ALG_LABEL: Record<PublicKeyAlgorithm, string> = {
   rsa: "RSA",
   ec: "ECDSA",
@@ -100,8 +124,10 @@ export type CertificateColumnId =
   | "subject"
   | "issuer"
   | "expiry"
+  | "origin"
   | "key"
   | "endpoints"
+  | "assignments"
   | "self_signed"
   | "last_seen"
 
@@ -109,8 +135,10 @@ const CANONICAL_ORDER: CertificateColumnId[] = [
   "subject",
   "issuer",
   "expiry",
+  "origin",
   "key",
   "endpoints",
+  "assignments",
   "self_signed",
   "last_seen",
 ]
@@ -185,6 +213,20 @@ export function buildCertificateColumns<T extends Certificate = Certificate>(
         },
       },
     }),
+    origin: () => ({
+      id: "origin",
+      accessorFn: (c) => c.origin,
+      header: "Origin",
+      cell: ({ row }) => <OriginBadge cert={row.original} />,
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Origin",
+          get: (r: T) => r.origin,
+          formatValue: (v) => ({ label: ORIGIN_LABEL[v as CertificateOrigin] }),
+        },
+      },
+    }),
     key: () => ({
       id: "key",
       accessorFn: (c) => c.public_key_algorithm,
@@ -210,6 +252,24 @@ export function buildCertificateColumns<T extends Certificate = Certificate>(
       cell: ({ row }) => (
         <span className="num text-xs">{row.original.binding_count}</span>
       ),
+    }),
+    assignments: () => ({
+      id: "assignments",
+      accessorFn: (c) => c.assignment_count,
+      header: ({ column }) => <SortHeader column={column} label="Assigned" />,
+      cell: ({ row }) => (
+        <span className="num text-xs">{row.original.assignment_count}</span>
+      ),
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Assigned",
+          get: (r: T) => (r.assignment_count > 0 ? "yes" : "no"),
+          formatValue: (v) => ({
+            label: v === "yes" ? "Assigned to an object" : "Unassigned",
+          }),
+        },
+      },
     }),
     self_signed: () => ({
       id: "self_signed",

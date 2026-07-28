@@ -21,6 +21,7 @@ import { useMe } from "@/lib/use-me"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { VMInterfacesPane } from "@/components/vm-interfaces-pane"
+import { CertificatesPanel } from "@/components/monitoring/certificates-panel"
 import { ConfigContextPanel } from "@/components/config-context-panel"
 import { ServicesPane } from "@/components/services-pane"
 import { IpMonitoring } from "@/components/monitoring/ip-monitoring"
@@ -63,6 +64,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
     | "components"
     | "services"
     | "monitoring"
+    | "certificates"
     | "config"
     | "journal"
     | "history"
@@ -145,6 +147,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         { value: "components", label: "Components" },
         { value: "services", label: "Services" },
         { value: "monitoring", label: "Monitoring" },
+        { value: "certificates", label: "Certificates" },
         { value: "config", label: "Config" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
@@ -184,6 +187,9 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
             </Link>
           </p>
         )}
+      </DetailTab>
+      <DetailTab value="certificates">
+        <CertificatesPanel objectType="api.virtualmachine" objectId={vm.id} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.virtualmachine" objectId={vm.id} />
