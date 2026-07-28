@@ -60,6 +60,20 @@ The result is a single rendered config context for that object.
     sets `ntp: ["10.1.0.1"]` (weight 100), the object gets `["10.1.0.1"]` — the
     list is replaced by the higher-weight layer, not merged.
 
+## The config-context page
+
+Click a context's name in the list to open it. It has three tabs:
+
+| Tab | What's on it |
+|---|---|
+| **Overview** | Weight, active flag, description, the assignment criteria — regions, sites, device roles, and platforms, each linking to the object it names — and the context's **Data** block, rendered as formatted JSON. A dimension with no entries reads **Any**, which is exactly how the merge treats it. |
+| **Journal** | Your notes on this context. |
+| **History** | Every create, edit, and delete of the context, from the [change log](change-log.md). |
+
+Because a context's whole purpose is the data it contributes, the Data block is
+on the Overview rather than behind a tab. Long blocks scroll inside their own
+box, so a large context doesn't stretch the page.
+
 ## See it on a device or VM
 
 Every device and virtual machine detail page has a **Config** tab. It shows the

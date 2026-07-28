@@ -1,14 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
-import { useMutation, useQuery } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Plug, Wand2 } from "lucide-react"
+import { Wand2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
-import { toast } from "sonner"
 
 import { api, type AutomationTarget, type Paginated } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
-import { Spinner } from "@/components/ui/spinner"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { useMe } from "@/lib/use-me"
@@ -16,42 +14,7 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { AutomationTargetDeleteDialog } from "@/components/automation-target-delete-dialog"
 import { AutomationExplainer } from "@/components/automation-explainer"
-import { apiErrorToast } from "@/lib/api-toast"
-
-// One-click "is this target reachable" probe for a row.
-function TestButton({ target }: { target: AutomationTarget }) {
-  const m = useMutation({
-    mutationFn: () =>
-      api<{ ok: boolean; status_code?: number; error?: string }>(
-        `/api/automation-targets/${target.id}/test/`,
-        { method: "POST" }
-      ),
-    onSuccess: (r) =>
-      r.ok
-        ? toast.success(
-            `Reachable${r.status_code ? ` (${r.status_code})` : ""}`
-          )
-        : toast.error(`Test failed: ${r.error ?? r.status_code}`),
-    onError: (err) => apiErrorToast(err),
-  })
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="h-7 w-7 text-muted-foreground hover:text-foreground"
-      title="Test connection"
-      disabled={m.isPending}
-      onClick={() => m.mutate()}
-    >
-      {m.isPending ? (
-        <Spinner className="h-3.5 w-3.5" />
-      ) : (
-        <Plug className="h-3.5 w-3.5" />
-      )}
-      <span className="sr-only">Test connection</span>
-    </Button>
-  )
-}
+import { AutomationTargetTestButton } from "@/components/automation-target-test-button"
 
 export const Route = createFileRoute("/automation-targets/")({
   component: AutomationTargetsPage,
@@ -81,7 +44,7 @@ function AutomationTargetsPage() {
         header: ({ column }) => <SortHeader column={column} label="Name" />,
         cell: ({ row }) => (
           <Link
-            to="/automation-targets/$id/edit"
+            to="/automation-targets/$id"
             params={{ id: row.original.id }}
             className="flex items-center gap-2 font-medium hover:underline"
           >
@@ -137,7 +100,7 @@ function AutomationTargetsPage() {
             editTo="/automation-targets/$id/edit"
             editParams={{ id: row.original.id }}
             onDelete={() => onDelete(row.original)}
-            extra={<TestButton target={row.original} />}
+            extra={<AutomationTargetTestButton target={row.original} />}
           />
         ),
       },

@@ -49,6 +49,7 @@ const SEGMENT_SLUG: Record<string, string> = {
   "power-panels": "powerpanel",
   webhooks: "webhook",
   "automation-targets": "automationtarget",
+  "config-contexts": "configcontext",
 }
 
 /**

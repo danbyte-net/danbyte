@@ -267,6 +267,7 @@ import { Route as ContactsIdRouteImport } from './routes/contacts.$id'
 import { Route as ContactRolesNewRouteImport } from './routes/contact-roles.new'
 import { Route as ContactGroupsNewRouteImport } from './routes/contact-groups.new'
 import { Route as ConfigContextsNewRouteImport } from './routes/config-contexts.new'
+import { Route as ConfigContextsIdRouteImport } from './routes/config-contexts.$id'
 import { Route as ComplianceRulesNewRouteImport } from './routes/compliance-rules.new'
 import { Route as ComplianceRulesIdRouteImport } from './routes/compliance-rules.$id'
 import { Route as ClustersNewRouteImport } from './routes/clusters.new'
@@ -283,6 +284,7 @@ import { Route as CablesNewRouteImport } from './routes/cables.new'
 import { Route as CablesIdRouteImport } from './routes/cables.$id'
 import { Route as AutomationTargetsSetupRouteImport } from './routes/automation-targets.setup'
 import { Route as AutomationTargetsNewRouteImport } from './routes/automation-targets.new'
+import { Route as AutomationTargetsIdRouteImport } from './routes/automation-targets.$id'
 import { Route as AuditLogIdRouteImport } from './routes/audit-log_.$id'
 import { Route as AsnsNewRouteImport } from './routes/asns.new'
 import { Route as AsnsIdRouteImport } from './routes/asns.$id'
@@ -1648,6 +1650,11 @@ const ConfigContextsNewRoute = ConfigContextsNewRouteImport.update({
   path: '/new',
   getParentRoute: () => ConfigContextsRoute,
 } as any)
+const ConfigContextsIdRoute = ConfigContextsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ConfigContextsRoute,
+} as any)
 const ComplianceRulesNewRoute = ComplianceRulesNewRouteImport.update({
   id: '/compliance-rules/new',
   path: '/compliance-rules/new',
@@ -1726,6 +1733,11 @@ const AutomationTargetsSetupRoute = AutomationTargetsSetupRouteImport.update({
 const AutomationTargetsNewRoute = AutomationTargetsNewRouteImport.update({
   id: '/new',
   path: '/new',
+  getParentRoute: () => AutomationTargetsRoute,
+} as any)
+const AutomationTargetsIdRoute = AutomationTargetsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
   getParentRoute: () => AutomationTargetsRoute,
 } as any)
 const AuditLogIdRoute = AuditLogIdRouteImport.update({
@@ -2177,6 +2189,7 @@ export interface FileRoutesByFullPath {
   '/asns/$id': typeof AsnsIdRoute
   '/asns/new': typeof AsnsNewRoute
   '/audit-log/$id': typeof AuditLogIdRoute
+  '/automation-targets/$id': typeof AutomationTargetsIdRoute
   '/automation-targets/new': typeof AutomationTargetsNewRoute
   '/automation-targets/setup': typeof AutomationTargetsSetupRoute
   '/cables/$id': typeof CablesIdRoute
@@ -2193,6 +2206,7 @@ export interface FileRoutesByFullPath {
   '/clusters/new': typeof ClustersNewRoute
   '/compliance-rules/$id': typeof ComplianceRulesIdRouteWithChildren
   '/compliance-rules/new': typeof ComplianceRulesNewRoute
+  '/config-contexts/$id': typeof ConfigContextsIdRoute
   '/config-contexts/new': typeof ConfigContextsNewRoute
   '/contact-groups/new': typeof ContactGroupsNewRoute
   '/contact-roles/new': typeof ContactRolesNewRoute
@@ -2471,6 +2485,7 @@ export interface FileRoutesByTo {
   '/asns/$id': typeof AsnsIdRoute
   '/asns/new': typeof AsnsNewRoute
   '/audit-log/$id': typeof AuditLogIdRoute
+  '/automation-targets/$id': typeof AutomationTargetsIdRoute
   '/automation-targets/new': typeof AutomationTargetsNewRoute
   '/automation-targets/setup': typeof AutomationTargetsSetupRoute
   '/cables/$id': typeof CablesIdRoute
@@ -2487,6 +2502,7 @@ export interface FileRoutesByTo {
   '/clusters/new': typeof ClustersNewRoute
   '/compliance-rules/$id': typeof ComplianceRulesIdRouteWithChildren
   '/compliance-rules/new': typeof ComplianceRulesNewRoute
+  '/config-contexts/$id': typeof ConfigContextsIdRoute
   '/config-contexts/new': typeof ConfigContextsNewRoute
   '/contact-groups/new': typeof ContactGroupsNewRoute
   '/contact-roles/new': typeof ContactRolesNewRoute
@@ -2822,6 +2838,7 @@ export interface FileRoutesById {
   '/asns/$id': typeof AsnsIdRoute
   '/asns/new': typeof AsnsNewRoute
   '/audit-log_/$id': typeof AuditLogIdRoute
+  '/automation-targets/$id': typeof AutomationTargetsIdRoute
   '/automation-targets/new': typeof AutomationTargetsNewRoute
   '/automation-targets/setup': typeof AutomationTargetsSetupRoute
   '/cables/$id': typeof CablesIdRoute
@@ -2838,6 +2855,7 @@ export interface FileRoutesById {
   '/clusters/new': typeof ClustersNewRoute
   '/compliance-rules/$id': typeof ComplianceRulesIdRouteWithChildren
   '/compliance-rules/new': typeof ComplianceRulesNewRoute
+  '/config-contexts/$id': typeof ConfigContextsIdRoute
   '/config-contexts/new': typeof ConfigContextsNewRoute
   '/contact-groups/new': typeof ContactGroupsNewRoute
   '/contact-roles/new': typeof ContactRolesNewRoute
@@ -3174,6 +3192,7 @@ export interface FileRouteTypes {
     | '/asns/$id'
     | '/asns/new'
     | '/audit-log/$id'
+    | '/automation-targets/$id'
     | '/automation-targets/new'
     | '/automation-targets/setup'
     | '/cables/$id'
@@ -3190,6 +3209,7 @@ export interface FileRouteTypes {
     | '/clusters/new'
     | '/compliance-rules/$id'
     | '/compliance-rules/new'
+    | '/config-contexts/$id'
     | '/config-contexts/new'
     | '/contact-groups/new'
     | '/contact-roles/new'
@@ -3468,6 +3488,7 @@ export interface FileRouteTypes {
     | '/asns/$id'
     | '/asns/new'
     | '/audit-log/$id'
+    | '/automation-targets/$id'
     | '/automation-targets/new'
     | '/automation-targets/setup'
     | '/cables/$id'
@@ -3484,6 +3505,7 @@ export interface FileRouteTypes {
     | '/clusters/new'
     | '/compliance-rules/$id'
     | '/compliance-rules/new'
+    | '/config-contexts/$id'
     | '/config-contexts/new'
     | '/contact-groups/new'
     | '/contact-roles/new'
@@ -3818,6 +3840,7 @@ export interface FileRouteTypes {
     | '/asns/$id'
     | '/asns/new'
     | '/audit-log_/$id'
+    | '/automation-targets/$id'
     | '/automation-targets/new'
     | '/automation-targets/setup'
     | '/cables/$id'
@@ -3834,6 +3857,7 @@ export interface FileRouteTypes {
     | '/clusters/new'
     | '/compliance-rules/$id'
     | '/compliance-rules/new'
+    | '/config-contexts/$id'
     | '/config-contexts/new'
     | '/contact-groups/new'
     | '/contact-roles/new'
@@ -6032,6 +6056,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfigContextsNewRouteImport
       parentRoute: typeof ConfigContextsRoute
     }
+    '/config-contexts/$id': {
+      id: '/config-contexts/$id'
+      path: '/$id'
+      fullPath: '/config-contexts/$id'
+      preLoaderRoute: typeof ConfigContextsIdRouteImport
+      parentRoute: typeof ConfigContextsRoute
+    }
     '/compliance-rules/new': {
       id: '/compliance-rules/new'
       path: '/compliance-rules/new'
@@ -6142,6 +6173,13 @@ declare module '@tanstack/react-router' {
       path: '/new'
       fullPath: '/automation-targets/new'
       preLoaderRoute: typeof AutomationTargetsNewRouteImport
+      parentRoute: typeof AutomationTargetsRoute
+    }
+    '/automation-targets/$id': {
+      id: '/automation-targets/$id'
+      path: '/$id'
+      fullPath: '/automation-targets/$id'
+      preLoaderRoute: typeof AutomationTargetsIdRouteImport
       parentRoute: typeof AutomationTargetsRoute
     }
     '/audit-log_/$id': {
@@ -6700,6 +6738,7 @@ const AsnsRouteChildren: AsnsRouteChildren = {
 const AsnsRouteWithChildren = AsnsRoute._addFileChildren(AsnsRouteChildren)
 
 interface AutomationTargetsRouteChildren {
+  AutomationTargetsIdRoute: typeof AutomationTargetsIdRoute
   AutomationTargetsNewRoute: typeof AutomationTargetsNewRoute
   AutomationTargetsSetupRoute: typeof AutomationTargetsSetupRoute
   AutomationTargetsIndexRoute: typeof AutomationTargetsIndexRoute
@@ -6707,6 +6746,7 @@ interface AutomationTargetsRouteChildren {
 }
 
 const AutomationTargetsRouteChildren: AutomationTargetsRouteChildren = {
+  AutomationTargetsIdRoute: AutomationTargetsIdRoute,
   AutomationTargetsNewRoute: AutomationTargetsNewRoute,
   AutomationTargetsSetupRoute: AutomationTargetsSetupRoute,
   AutomationTargetsIndexRoute: AutomationTargetsIndexRoute,
@@ -6768,12 +6808,14 @@ const CircuitsRouteWithChildren = CircuitsRoute._addFileChildren(
 )
 
 interface ConfigContextsRouteChildren {
+  ConfigContextsIdRoute: typeof ConfigContextsIdRoute
   ConfigContextsNewRoute: typeof ConfigContextsNewRoute
   ConfigContextsIndexRoute: typeof ConfigContextsIndexRoute
   ConfigContextsIdEditRoute: typeof ConfigContextsIdEditRoute
 }
 
 const ConfigContextsRouteChildren: ConfigContextsRouteChildren = {
+  ConfigContextsIdRoute: ConfigContextsIdRoute,
   ConfigContextsNewRoute: ConfigContextsNewRoute,
   ConfigContextsIndexRoute: ConfigContextsIndexRoute,
   ConfigContextsIdEditRoute: ConfigContextsIdEditRoute,

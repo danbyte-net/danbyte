@@ -17,9 +17,12 @@ import { apiErrorToast } from "@/lib/api-toast"
 export function AutomationTargetDeleteDialog({
   item,
   onOpenChange,
+  onDeleted,
 }: {
   item: AutomationTarget | null
   onOpenChange: (open: boolean) => void
+  /** Detail pages pass a navigate-away callback; the list omits it. */
+  onDeleted?: () => void
 }) {
   const qc = useQueryClient()
   const m = useMutation({
@@ -29,6 +32,7 @@ export function AutomationTargetDeleteDialog({
       toast.success(`Deleted ${item!.name}`)
       qc.invalidateQueries({ queryKey: ["automation-targets"] })
       onOpenChange(false)
+      onDeleted?.()
     },
     onError: (err) => apiErrorToast(err),
   })

@@ -1,6 +1,8 @@
 """Webhooks admin API — tenant-scoped CRUD + a synchronous test-fire."""
 from __future__ import annotations
 
+import uuid as _uuid_mod
+
 from rest_framework import serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -221,6 +223,15 @@ class DeployRunViewSet(TenantScopedViewSet):
         device = self.request.query_params.get("device")
         if device:
             qs = qs.filter(device_ids__contains=device)
+        # ?target=<id> → the dispatch history of one automation target (its
+        # detail page). Runs whose target was deleted keep only ``target_name``,
+        # so they drop out here by design.
+        target = self.request.query_params.get("target")
+        if target:
+            try:
+                qs = qs.filter(target_id=_uuid_mod.UUID(str(target)))
+            except (ValueError, AttributeError, TypeError):
+                qs = qs.none()
         status_ = self.request.query_params.get("status")
         if status_:
             qs = qs.filter(status=status_)

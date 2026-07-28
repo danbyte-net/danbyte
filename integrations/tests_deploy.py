@@ -291,3 +291,54 @@ class RetryDeployEndpointTests(_DeployEndpointBase):
         row = next(r for r in res.json()["results"] if r["id"] == str(run.id))
         self.assertTrue(row["can_retry"])
         self.assertEqual(row["attempt"], 1)
+
+
+class DeployRunTargetFilterTests(_DeployEndpointBase):
+    """GET /api/deploy-runs/?target=<id> — the Runs tab on a target's page."""
+
+    def _run(self, target, status="launched"):
+        return DeployRun.objects.create(
+            tenant=self.tenant, target=target,
+            target_name=target.name if target else "gone",
+            device_ids=[str(self.d1.id)], status=status,
+        )
+
+    def test_filters_to_one_target(self):
+        other = AutomationTarget.objects.create(
+            tenant=self.tenant, name="ci", kind="webhook",
+            base_url="http://ci.test/hook",
+        )
+        mine = self._run(self.target)
+        theirs = self._run(other)
+        res = self.client.get(f"/api/deploy-runs/?target={self.target.id}")
+        ids = [r["id"] for r in res.json()["results"]]
+        self.assertIn(str(mine.id), ids)
+        self.assertNotIn(str(theirs.id), ids)
+
+    def test_combines_with_status(self):
+        ok = self._run(self.target, status="launched")
+        bad = self._run(self.target, status="failed")
+        res = self.client.get(
+            f"/api/deploy-runs/?target={self.target.id}&status=failed"
+        )
+        ids = [r["id"] for r in res.json()["results"]]
+        self.assertEqual(ids, [str(bad.id)])
+        self.assertNotIn(str(ok.id), ids)
+
+    def test_malformed_target_returns_nothing(self):
+        self._run(self.target)
+        res = self.client.get("/api/deploy-runs/?target=not-a-uuid")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["results"], [])
+
+    def test_cross_tenant_target_leaks_nothing(self):
+        foreign = AutomationTarget.objects.create(
+            tenant=self.other, name="theirs", kind="webhook",
+            base_url="http://x.test/h",
+        )
+        DeployRun.objects.create(
+            tenant=self.other, target=foreign, target_name=foreign.name,
+            device_ids=["x"], status="launched",
+        )
+        res = self.client.get(f"/api/deploy-runs/?target={foreign.id}")
+        self.assertEqual(res.json()["results"], [])

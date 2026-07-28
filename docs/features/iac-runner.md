@@ -38,6 +38,22 @@ these five spots in the Danbyte UI — the **How automation works** panel on the
     14:32, got a 200 back" — like the audit log, nothing is editable there. To
     change *how* a deploy is dispatched, edit its **automation target**.
 
+### The automation-target page
+
+Click a target's name in **Integrations → Automation targets** to open it (the
+Edit button is still there, next to **Test**):
+
+| Tab | What's on it |
+|---|---|
+| **Overview** | Kind, enabled, endpoint, AWX job-template id, TLS verification, whether a credential is stored, auto-deploy-on-change, the object types it can deploy, and any extra vars. |
+| **Runs** | Every dispatch Danbyte handed to *this* target, newest first — the same rows as **Deploy runs**, pre-filtered (`GET /api/deploy-runs/?target=<id>`), with the same **Retry** on a failed run. |
+| **Journal** | Your notes on this target. |
+| **History** | Every create/edit/delete of the target itself, from the [change log](change-log.md). |
+
+The stored AWX bearer token / webhook signing secret is **never** shown here.
+It is write-only on the API, so the page can only report whether one is set —
+to change it, edit the target and type a new one.
+
 ## What lives where
 
 Two systems, on purpose — **Danbyte does not run Ansible**:

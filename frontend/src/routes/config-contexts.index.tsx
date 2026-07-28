@@ -55,7 +55,7 @@ function ConfigContextsPage() {
         header: ({ column }) => <SortHeader column={column} label="Name" />,
         cell: ({ row }) => (
           <Link
-            to="/config-contexts/$id/edit"
+            to="/config-contexts/$id"
             params={{ id: row.original.id }}
             className="flex items-center gap-2 font-medium hover:underline"
           >
