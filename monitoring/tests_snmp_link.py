@@ -16,7 +16,7 @@ from api.test_utils import status_for
 from auth_api.models import UserProfile
 from core.models import Organization, Tenant
 from monitoring.models import DeviceSnmp
-from monitoring.snmp_drift import compute_device_drift
+from monitoring.snmp_drift import compute_device_drift, sync_device_from_snmp
 
 
 class _SnmpDriftTestBase(APITestCase):
@@ -391,3 +391,74 @@ class SnmpIgnoreTests(_SnmpDriftTestBase):
         self.assertEqual(
             Interface.objects.filter(device=self.device).count(), 1
         )
+
+
+class ShortLongNameBridgeTests(_SnmpDriftTestBase):
+    """Cisco (and most vendors) report ifName short (Gi1/0/1) but ifDescr long
+    (GigabitEthernet1/0/1) — and the device-type library stamps the long form.
+    Matching must bridge the two via the device's own name↔descr pair, without a
+    manual link, or a library-built switch drifts every port twice."""
+
+    def _observe_rows(self, rows):
+        DeviceSnmp.objects.update_or_create(
+            device=self.device, tenant=self.tenant,
+            defaults={
+                "polled_at": timezone.now(),
+                "data": {"sys_name": self.device.name},
+                "interfaces": rows,
+            },
+        )
+
+    def test_short_ifname_matches_long_intended_via_ifdescr(self):
+        Interface.objects.create(device=self.device, name="GigabitEthernet1/0/1")
+        self._observe_rows([
+            {"name": "Gi1/0/1", "descr": "GigabitEthernet1/0/1", "if_index": "1"},
+        ])
+        kinds = {d["kind"] for d in self._drift()}
+        self.assertNotIn("interface_missing", kinds)  # not a phantom "new"
+        self.assertNotIn("interface_stale", kinds)    # not a phantom "not seen"
+
+    def test_a_genuinely_new_port_still_drifts(self):
+        Interface.objects.create(device=self.device, name="GigabitEthernet1/0/1")
+        self._observe_rows([
+            {"name": "Gi1/0/1", "descr": "GigabitEthernet1/0/1", "if_index": "1"},
+            {"name": "Gi1/0/2", "descr": "GigabitEthernet1/0/2", "if_index": "2"},
+        ])
+        new = {d["name"] for d in self._drift() if d["kind"] == "interface_missing"}
+        self.assertEqual(new, {"Gi1/0/2"})
+
+    def test_descr_matching_the_field_still_reports_field_drift(self):
+        # Bridged match must not swallow real field differences.
+        Interface.objects.create(
+            device=self.device, name="GigabitEthernet1/0/1", speed="10G"
+        )
+        self._observe_rows([
+            {"name": "Gi1/0/1", "descr": "GigabitEthernet1/0/1",
+             "if_index": "1", "speed_mbps": 1000},
+        ])
+        speed = [d for d in self._drift()
+                 if d["kind"] == "interface_mismatch" and d["field"] == "speed"]
+        self.assertEqual(len(speed), 1, self._drift())
+
+    def test_junk_ifdescr_does_not_false_match(self):
+        # ifDescr that isn't a real intended name must not bridge anything.
+        Interface.objects.create(device=self.device, name="GigabitEthernet1/0/1")
+        self._observe_rows([
+            {"name": "Gi9/9/9", "descr": "Ethernet interface", "if_index": "9"},
+        ])
+        drift = self._drift()
+        self.assertIn("interface_missing", {d["kind"] for d in drift})   # Gi9/9/9 is new
+        self.assertIn("interface_stale", {d["kind"] for d in drift})     # the real port is unseen
+
+    def test_sync_updates_the_long_named_port_instead_of_duplicating(self):
+        Interface.objects.create(
+            device=self.device, name="GigabitEthernet1/0/1", enabled=False
+        )
+        self._observe_rows([
+            {"name": "Gi1/0/1", "descr": "GigabitEthernet1/0/1",
+             "if_index": "1", "admin_status": "up"},
+        ])
+        summary = sync_device_from_snmp(self.device, self.tenant)
+        self.assertEqual(summary["interfaces_created"], 0)   # no duplicate
+        self.assertEqual(Interface.objects.filter(device=self.device).count(), 1)
+        self.device.interfaces.get(name="GigabitEthernet1/0/1")  # unchanged name

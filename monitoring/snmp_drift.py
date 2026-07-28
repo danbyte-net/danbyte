@@ -202,6 +202,27 @@ def _intent_by_observed_name(intended) -> dict:
     return by_name
 
 
+def _match_observed(o: dict, int_by_name: dict):
+    """The intended interface an observed SNMP row refers to, or ``None``.
+
+    Tries ifName (``Gi1/0/1``) first, then ifDescr (``GigabitEthernet1/0/1``).
+    Cisco — and most vendors — report the SHORT form as ifName but the FULL form
+    as ifDescr, and the full form is exactly what the device-type library stamps.
+    Matching on name alone drifts every port of a library-built switch twice: a
+    "new interface" for the short name and a "not seen on device" for the full
+    one. Bridging through the device's OWN name↔descr pair beats a hard-coded
+    abbreviation table (no Gi/Te/Fo/Twe/Tw vocabulary to maintain, no vendor
+    guessing) and is safe: ifDescr only matches when it equals a real intended
+    name, so a device that puts descriptive or duplicate text in ifDescr simply
+    falls through to "new", exactly as before. An explicit snmp_name link still
+    wins — it is already folded into ``int_by_name``.
+    """
+    for key in (_norm(o.get("name")), _norm(o.get("descr"))):
+        if key and key in int_by_name:
+            return int_by_name[key]
+    return None
+
+
 def _norm_mac(value) -> str:
     """Compare MACs by their hex digits only, so colon/dash/Cisco-dotted forms
     of the same address (``00:11:22:33:44:55`` vs ``0011.2233.4455``) don't read
@@ -260,8 +281,9 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
             return False
         return any(addr in n for n in tenant_nets)
 
+    matched_ids: set = set()
     for name, o in obs_by_name.items():
-        existing = int_by_name.get(name)
+        existing = _match_observed(o, int_by_name)
         if existing is None:
             items.append({
                 "kind": "interface_missing",
@@ -272,6 +294,9 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
                 },
             })
             continue
+        # This intended port has been seen (by name or by descr), so it can't
+        # also be reported stale below.
+        matched_ids.add(existing.id)
         # Excluded from drift: the port still matches (so its observed row
         # doesn't drift as "new"), but produces no items in either direction.
         if existing.snmp_ignore:
@@ -336,7 +361,7 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
     for name, i in int_by_name.items():
         if i.snmp_ignore:
             continue
-        if name not in obs_by_name:
+        if i.id not in matched_ids:
             items.append({
                 "kind": "interface_stale", "interface_id": str(i.id), "name": i.name,
             })
@@ -536,7 +561,11 @@ def sync_device_from_snmp(device, tenant) -> dict:
             continue
         speed = _fmt_speed(o.get("speed_mbps"))
         vlan = _resolve_observed_vlan(tenant, o)
-        iface = existing.get(_norm(name))
+        # Match on ifName then ifDescr (see _match_observed): a library-built
+        # switch stores the FULL name (GigabitEthernet1/0/1) that SNMP reports
+        # as ifDescr, so name-only matching would create a duplicate short-named
+        # port instead of updating the real one.
+        iface = _match_observed(o, existing)
         # Excluded from drift ⇒ excluded from sync: sync is "accept all
         # drift", and an ignored port produces none.
         if iface is not None and iface.snmp_ignore:
