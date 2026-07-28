@@ -69,6 +69,45 @@ class NumIdModelSerializer(serializers.ModelSerializer):
             names = ["numid", *names]
         return names
 
+    def _reject_nested_relation_inputs(self):
+        """Guard against the common client mistake of sending a relation's
+        *label* key (the nested read-only projection, e.g. ``device_type``,
+        ``role``, ``site``, ``status``) instead of its write key
+        (``device_type_id`` …).
+
+        DRF silently drops input it has no writable field for, so such a
+        payload would otherwise create a half-empty object and return 201 —
+        exactly how real, structurally-invalid devices got created. We compare
+        the raw input against each writable ``*_id`` field's relation source and
+        raise a 400 that names the right key. Callers that already use the
+        ``*_id`` convention (the frontend forms, the OpenAPI-typed clients) are
+        untouched; only the mistaken label keys are flagged.
+
+        Call from ``validate()`` on the big write serializers. It is a no-op
+        for reads (no ``initial_data``) and for nested serializers.
+        """
+        raw = getattr(self, "initial_data", None)
+        if not isinstance(raw, dict):
+            return
+        writable = {name for name, f in self.fields.items() if not f.read_only}
+        errors = {}
+        for name, field in self.fields.items():
+            if field.read_only:
+                continue
+            source = field.source
+            # Only ``*_id``-style aliases (source differs from the field name)
+            # have a distinct label key a client could mistakenly send.
+            if not source or source == "*" or source == name:
+                continue
+            # The label key is present, and isn't itself a writable field.
+            if source in raw and source not in writable:
+                errors[source] = (
+                    f"'{source}' is a read-only field; send '{name}' with the "
+                    f"object id instead."
+                )
+        if errors:
+            raise serializers.ValidationError(errors)
+
 
 # Models that carry no ``tenant`` column but ARE tenant-scoped through a parent
 # relation — the lookup path used to scope them. Without this, the scoped field
@@ -1070,6 +1109,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        self._reject_nested_relation_inputs()
         import ipaddress as _ipa
 
         ip_str = attrs.get("ip_address", getattr(self.instance, "ip_address", None))
@@ -1817,6 +1857,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        self._reject_nested_relation_inputs()
 
         vc = attrs.get(
             "virtual_chassis", getattr(self.instance, "virtual_chassis", None)
@@ -2173,6 +2214,7 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        self._reject_nested_relation_inputs()
         device = attrs.get("device", getattr(self.instance, "device", None))
         self_pk = getattr(self.instance, "pk", None)
 
