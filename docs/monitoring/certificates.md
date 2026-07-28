@@ -245,6 +245,72 @@ Two paths, both needed:
   or not anything scanned it that day, so time passing has to be enough on its
   own. The sweep appears in **Jobs → Scheduled tasks** like every other timer.
 
+## Viewing certificates
+
+The inventory has its own UI under **Governance → Certificates** in the
+sidebar.
+
+### The list
+
+`/certificates` is the whole inventory for the active tenant, one row per
+certificate. It shows the **subject** (links to the detail page), the
+**issuer**, the **expiry** (see below), the **key** (algorithm plus size, e.g.
+`RSA 2048`), the number of **endpoints** serving it (`binding_count` — the blast
+radius), whether it is **self-signed**, and when it was **last seen**.
+
+The search box matches subject, issuer, or a fingerprint prefix (server-side,
+the same `search=` the API takes). The filter rail on the left refines by:
+
+- **Expiry** — expired, critical (≤7 days), warning (≤30 days), or healthy.
+- **Trust** — self-signed vs CA-issued.
+- **Key algorithm** — RSA, ECDSA, Ed25519, …
+
+The list arrives ordered soonest-to-expire first, so the top of the page is
+always what needs attention. The **Expiry** column sorts by urgency (remaining
+days ascending, expired first) rather than alphabetically.
+
+### The expiry column and its colours
+
+Expiry is the headline, so it reads at a glance. Each row shows a coloured tag
+with the remaining life, and the colour is derived from the server's
+`is_expired` / `days_until_expiry` — never a date compared in the browser, so a
+row that hasn't been re-observed can't paint itself healthy. The tiers reuse the
+application's existing severity vocabulary (the same tones alerts use); they are
+**not** a new palette:
+
+| Tier | When | Treatment |
+|---|---|---|
+| **Expired** | past `not_after` | the `destructive` / down tone (red) |
+| **Critical** | within `cert_expiry_critical_days` (7) | the `warning` tone (amber) |
+| **Warning** | within `cert_expiry_warning_days` (30) | the `info` caution tone |
+| **Healthy** | further out | quiet muted text, no tag |
+
+The thresholds match the [expiry-alerting](#expiry-alerting) defaults, so the
+colour a row shows agrees with when an alert would actually fire.
+
+### The detail page
+
+`/certificates/{id}` opens the certificate with four tabs:
+
+- **Overview** — the certificate's facts in grouped cards: *Identity* (subject,
+  issuer, serial, SHA-256 fingerprint, SANs), *Validity* (not-before, not-after,
+  the expiry tag, last seen), *Key* (algorithm, size, signature algorithm,
+  self-signed), and the *Record* timestamps.
+- **Bindings** — the endpoints that served this certificate: endpoint, IP, port,
+  SNI, chain depth (`leaf` at depth 0), chain verified, and first / last seen.
+  This is the tab that answers *what breaks when this expires*. A binding whose
+  chain did **not** verify is shown as an *Unverified* tag rather than hidden —
+  a self-signed or incomplete chain from that endpoint is a fact worth seeing.
+- **Journal** and **History** — the shared operator notes and change log, last.
+
+### Dashboard widget
+
+The dashboard carries an **Expiring certificates** widget listing everything
+expired or expiring within 30 days, most urgent first, each row linking to its
+detail page. With nothing expiring it shows a clean "No certificates expiring in
+the next 30 days" message rather than an empty box. Add or remove it from the
+dashboard's **Add widget** menu like any other tile.
+
 ## Permissions
 
 Certificates and their bindings are separate RBAC object types

@@ -3904,6 +3904,71 @@ export interface MonitoringStats {
   }>
 }
 
+// ─── Certificates ────────────────────────────────────────────────────────
+//
+// Observed X.509 certificates and the endpoints that served them. Both are
+// **read-only** on the API (public data, never authored), so there is no
+// create/update/delete payload — the field names below mirror
+// CertificateSerializer / CertificateBindingSerializer exactly.
+
+export type PublicKeyAlgorithm =
+  | "rsa"
+  | "ec"
+  | "ed25519"
+  | "ed448"
+  | "dsa"
+  | "unknown"
+
+export interface Certificate {
+  id: string
+  fingerprint_sha256: string
+  subject: string
+  subject_cn: string
+  issuer: string
+  issuer_cn: string
+  serial: string
+  san_dns: string[]
+  san_ip: string[]
+  not_before: string
+  not_after: string
+  /** Derived at read time — a stale row can't report itself healthy. */
+  is_expired: boolean
+  /** Derived at read time; negative once expired. Sort key for urgency. */
+  days_until_expiry: number
+  public_key_algorithm: PublicKeyAlgorithm
+  public_key_bits: number | null
+  signature_algorithm: string
+  self_signed: boolean
+  last_seen: string | null
+  /** Endpoints on record as having served this cert — the blast radius. */
+  binding_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface CertificateBinding {
+  id: string
+  certificate: string
+  certificate_subject_cn: string | null
+  certificate_not_after: string | null
+  fingerprint_sha256: string | null
+  target_ip: string | null
+  target_ip_address: string | null
+  port: number
+  server_name: string
+  /** Human-readable endpoint, e.g. `192.0.2.10:443 (www.example.com)`. */
+  endpoint: string
+  endpoint_key: string
+  /** 0 = end-entity (leaf), 1 = its issuer, … — this endpoint's chain. */
+  chain_depth: number
+  /** Did the chain THIS endpoint presented verify? null = not known. */
+  chain_verified: boolean | null
+  first_seen: string
+  last_seen: string
+  created_at: string
+  updated_at: string
+}
+
 // ─── Alerting ──────────────────────────────────────────────────────────────
 
 export type AlertSeverity = "critical" | "warning" | "info"

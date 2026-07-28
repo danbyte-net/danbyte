@@ -144,6 +144,7 @@ import { Route as ClusterTypesIndexRouteImport } from './routes/cluster-types.in
 import { Route as ClusterGroupsIndexRouteImport } from './routes/cluster-groups.index'
 import { Route as CircuitsIndexRouteImport } from './routes/circuits.index'
 import { Route as CircuitTypesIndexRouteImport } from './routes/circuit-types.index'
+import { Route as CertificatesIndexRouteImport } from './routes/certificates.index'
 import { Route as CablesIndexRouteImport } from './routes/cables.index'
 import { Route as AutomationTargetsIndexRouteImport } from './routes/automation-targets.index'
 import { Route as AsnsIndexRouteImport } from './routes/asns.index'
@@ -290,6 +291,7 @@ import { Route as CircuitsIdRouteImport } from './routes/circuits.$id'
 import { Route as CircuitTypesNewRouteImport } from './routes/circuit-types.new'
 import { Route as CircuitTypesIdRouteImport } from './routes/circuit-types.$id'
 import { Route as ChannelsNewRouteImport } from './routes/channels.new'
+import { Route as CertificatesIdRouteImport } from './routes/certificates.$id'
 import { Route as CablesNewRouteImport } from './routes/cables.new'
 import { Route as CablesIdRouteImport } from './routes/cables.$id'
 import { Route as AutomationTargetsSetupRouteImport } from './routes/automation-targets.setup'
@@ -1045,6 +1047,11 @@ const CircuitTypesIndexRoute = CircuitTypesIndexRouteImport.update({
   path: '/',
   getParentRoute: () => CircuitTypesRoute,
 } as any)
+const CertificatesIndexRoute = CertificatesIndexRouteImport.update({
+  id: '/certificates/',
+  path: '/certificates/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CablesIndexRoute = CablesIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -1775,6 +1782,11 @@ const ChannelsNewRoute = ChannelsNewRouteImport.update({
   path: '/channels/new',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CertificatesIdRoute = CertificatesIdRouteImport.update({
+  id: '/certificates/$id',
+  path: '/certificates/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CablesNewRoute = CablesNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -2254,6 +2266,7 @@ export interface FileRoutesByFullPath {
   '/automation-targets/setup': typeof AutomationTargetsSetupRoute
   '/cables/$id': typeof CablesIdRoute
   '/cables/new': typeof CablesNewRoute
+  '/certificates/$id': typeof CertificatesIdRoute
   '/channels/new': typeof ChannelsNewRoute
   '/circuit-types/$id': typeof CircuitTypesIdRoute
   '/circuit-types/new': typeof CircuitTypesNewRoute
@@ -2400,6 +2413,7 @@ export interface FileRoutesByFullPath {
   '/asns/': typeof AsnsIndexRoute
   '/automation-targets/': typeof AutomationTargetsIndexRoute
   '/cables/': typeof CablesIndexRoute
+  '/certificates/': typeof CertificatesIndexRoute
   '/circuit-types/': typeof CircuitTypesIndexRoute
   '/circuits/': typeof CircuitsIndexRoute
   '/cluster-groups/': typeof ClusterGroupsIndexRoute
@@ -2560,6 +2574,7 @@ export interface FileRoutesByTo {
   '/automation-targets/setup': typeof AutomationTargetsSetupRoute
   '/cables/$id': typeof CablesIdRoute
   '/cables/new': typeof CablesNewRoute
+  '/certificates/$id': typeof CertificatesIdRoute
   '/channels/new': typeof ChannelsNewRoute
   '/circuit-types/$id': typeof CircuitTypesIdRoute
   '/circuit-types/new': typeof CircuitTypesNewRoute
@@ -2706,6 +2721,7 @@ export interface FileRoutesByTo {
   '/asns': typeof AsnsIndexRoute
   '/automation-targets': typeof AutomationTargetsIndexRoute
   '/cables': typeof CablesIndexRoute
+  '/certificates': typeof CertificatesIndexRoute
   '/circuit-types': typeof CircuitTypesIndexRoute
   '/circuits': typeof CircuitsIndexRoute
   '/cluster-groups': typeof ClusterGroupsIndexRoute
@@ -2923,6 +2939,7 @@ export interface FileRoutesById {
   '/automation-targets/setup': typeof AutomationTargetsSetupRoute
   '/cables/$id': typeof CablesIdRoute
   '/cables/new': typeof CablesNewRoute
+  '/certificates/$id': typeof CertificatesIdRoute
   '/channels/new': typeof ChannelsNewRoute
   '/circuit-types/$id': typeof CircuitTypesIdRoute
   '/circuit-types/new': typeof CircuitTypesNewRoute
@@ -3069,6 +3086,7 @@ export interface FileRoutesById {
   '/asns/': typeof AsnsIndexRoute
   '/automation-targets/': typeof AutomationTargetsIndexRoute
   '/cables/': typeof CablesIndexRoute
+  '/certificates/': typeof CertificatesIndexRoute
   '/circuit-types/': typeof CircuitTypesIndexRoute
   '/circuits/': typeof CircuitsIndexRoute
   '/cluster-groups/': typeof ClusterGroupsIndexRoute
@@ -3287,6 +3305,7 @@ export interface FileRouteTypes {
     | '/automation-targets/setup'
     | '/cables/$id'
     | '/cables/new'
+    | '/certificates/$id'
     | '/channels/new'
     | '/circuit-types/$id'
     | '/circuit-types/new'
@@ -3433,6 +3452,7 @@ export interface FileRouteTypes {
     | '/asns/'
     | '/automation-targets/'
     | '/cables/'
+    | '/certificates/'
     | '/circuit-types/'
     | '/circuits/'
     | '/cluster-groups/'
@@ -3593,6 +3613,7 @@ export interface FileRouteTypes {
     | '/automation-targets/setup'
     | '/cables/$id'
     | '/cables/new'
+    | '/certificates/$id'
     | '/channels/new'
     | '/circuit-types/$id'
     | '/circuit-types/new'
@@ -3739,6 +3760,7 @@ export interface FileRouteTypes {
     | '/asns'
     | '/automation-targets'
     | '/cables'
+    | '/certificates'
     | '/circuit-types'
     | '/circuits'
     | '/cluster-groups'
@@ -3955,6 +3977,7 @@ export interface FileRouteTypes {
     | '/automation-targets/setup'
     | '/cables/$id'
     | '/cables/new'
+    | '/certificates/$id'
     | '/channels/new'
     | '/circuit-types/$id'
     | '/circuit-types/new'
@@ -4101,6 +4124,7 @@ export interface FileRouteTypes {
     | '/asns/'
     | '/automation-targets/'
     | '/cables/'
+    | '/certificates/'
     | '/circuit-types/'
     | '/circuits/'
     | '/cluster-groups/'
@@ -4309,6 +4333,7 @@ export interface RootRouteChildren {
   ZonesRoute: typeof ZonesRouteWithChildren
   AlertRulesNewRoute: typeof AlertRulesNewRoute
   AuditLogIdRoute: typeof AuditLogIdRoute
+  CertificatesIdRoute: typeof CertificatesIdRoute
   ChannelsNewRoute: typeof ChannelsNewRoute
   ClusterGroupsIdRoute: typeof ClusterGroupsIdRoute
   ClusterGroupsNewRoute: typeof ClusterGroupsNewRoute
@@ -4339,6 +4364,7 @@ export interface RootRouteChildren {
   SilencesNewRoute: typeof SilencesNewRoute
   VirtualMachinesIdRoute: typeof VirtualMachinesIdRoute
   VirtualMachinesNewRoute: typeof VirtualMachinesNewRoute
+  CertificatesIndexRoute: typeof CertificatesIndexRoute
   ClusterGroupsIndexRoute: typeof ClusterGroupsIndexRoute
   ClusterTypesIndexRoute: typeof ClusterTypesIndexRoute
   ClustersIndexRoute: typeof ClustersIndexRoute
@@ -5315,6 +5341,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/circuit-types/'
       preLoaderRoute: typeof CircuitTypesIndexRouteImport
       parentRoute: typeof CircuitTypesRoute
+    }
+    '/certificates/': {
+      id: '/certificates/'
+      path: '/certificates'
+      fullPath: '/certificates/'
+      preLoaderRoute: typeof CertificatesIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/cables/': {
       id: '/cables/'
@@ -6336,6 +6369,13 @@ declare module '@tanstack/react-router' {
       path: '/channels/new'
       fullPath: '/channels/new'
       preLoaderRoute: typeof ChannelsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/certificates/$id': {
+      id: '/certificates/$id'
+      path: '/certificates/$id'
+      fullPath: '/certificates/$id'
+      preLoaderRoute: typeof CertificatesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cables/new': {
@@ -7955,6 +7995,7 @@ const rootRouteChildren: RootRouteChildren = {
   ZonesRoute: ZonesRouteWithChildren,
   AlertRulesNewRoute: AlertRulesNewRoute,
   AuditLogIdRoute: AuditLogIdRoute,
+  CertificatesIdRoute: CertificatesIdRoute,
   ChannelsNewRoute: ChannelsNewRoute,
   ClusterGroupsIdRoute: ClusterGroupsIdRoute,
   ClusterGroupsNewRoute: ClusterGroupsNewRoute,
@@ -7985,6 +8026,7 @@ const rootRouteChildren: RootRouteChildren = {
   SilencesNewRoute: SilencesNewRoute,
   VirtualMachinesIdRoute: VirtualMachinesIdRoute,
   VirtualMachinesNewRoute: VirtualMachinesNewRoute,
+  CertificatesIndexRoute: CertificatesIndexRoute,
   ClusterGroupsIndexRoute: ClusterGroupsIndexRoute,
   ClusterTypesIndexRoute: ClusterTypesIndexRoute,
   ClustersIndexRoute: ClustersIndexRoute,

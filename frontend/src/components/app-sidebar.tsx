@@ -628,6 +628,12 @@ const sections: NavSection[] = [
             anyOf: ["alertrule", "notificationchannel", "silence"],
           },
           {
+            title: "Certificates",
+            url: "/certificates",
+            icon: Fingerprint,
+            objectType: "certificate",
+          },
+          {
             title: "Compliance",
             url: "/compliance",
             icon: ShieldCheck,

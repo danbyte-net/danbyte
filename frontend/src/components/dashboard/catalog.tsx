@@ -12,6 +12,7 @@ import {
 import { RecentDevices, RecentIps, RecentPrefixes } from "./widget-tables"
 import { BookmarksWidget } from "./widget-bookmarks"
 import { OsmMapWidget } from "./widget-osm-map"
+import { ExpiringCertsWidget } from "./widget-certificates"
 
 // Lazy — pulls in the floor-plan canvas only when the widget is actually shown.
 const FloorplanWidget = lazy(() =>
@@ -38,6 +39,7 @@ export type WidgetId =
   | "device-manufacturer"
   | "check-status"
   | "alerts-severity"
+  | "expiring-certs"
   | "map"
   | "floorplan"
 
@@ -140,7 +142,11 @@ export const CATALOG: WidgetDef[] = [
     description: "IPv4 vs IPv6",
     size: "sq",
     render: (d) => (
-      <DistDonut data={d.prefix_by_family} unit="prefixes" link={() => "/prefixes"} />
+      <DistDonut
+        data={d.prefix_by_family}
+        unit="prefixes"
+        link={() => "/prefixes"}
+      />
     ),
   },
   {
@@ -149,7 +155,11 @@ export const CATALOG: WidgetDef[] = [
     description: "Container / active / reserved",
     size: "sq",
     render: (d) => (
-      <DistDonut data={d.prefix_by_status} unit="prefixes" link={() => "/prefixes"} />
+      <DistDonut
+        data={d.prefix_by_status}
+        unit="prefixes"
+        link={() => "/prefixes"}
+      />
     ),
   },
   {
@@ -165,7 +175,11 @@ export const CATALOG: WidgetDef[] = [
     description: "Operational state",
     size: "sq",
     render: (d) => (
-      <DistDonut data={d.device_by_status} unit="devices" link={() => "/devices"} />
+      <DistDonut
+        data={d.device_by_status}
+        unit="devices"
+        link={() => "/devices"}
+      />
     ),
   },
   {
@@ -197,7 +211,11 @@ export const CATALOG: WidgetDef[] = [
     description: "Checks by current status",
     size: "sq",
     render: (d) => (
-      <DistDonut data={d.check_by_status} unit="checks" link={() => "/monitoring"} />
+      <DistDonut
+        data={d.check_by_status}
+        unit="checks"
+        link={() => "/monitoring"}
+      />
     ),
   },
   {
@@ -206,8 +224,19 @@ export const CATALOG: WidgetDef[] = [
     description: "Open alerts by severity",
     size: "sq",
     render: (d) => (
-      <DistDonut data={d.alerts_by_severity} unit="alerts" link={() => "/monitoring"} />
+      <DistDonut
+        data={d.alerts_by_severity}
+        unit="alerts"
+        link={() => "/monitoring"}
+      />
     ),
+  },
+  {
+    id: "expiring-certs",
+    title: "Expiring certificates",
+    description: "Certificates expired or expiring within 30 days",
+    size: "wide",
+    render: () => <ExpiringCertsWidget />,
   },
   {
     id: "map",
@@ -237,6 +266,7 @@ export const DEFAULT_LAYOUT: WidgetId[] = [
   "reachable-gauge",
   "check-status",
   "alerts-severity",
+  "expiring-certs",
   "map",
   "top-prefixes",
   "ip-status",
