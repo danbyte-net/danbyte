@@ -83,7 +83,12 @@ export function EditPageShell({
           Without it a form taller than the viewport is clipped and can't
           scroll — invisible on desktop (forms fit) but broken on mobile. */}
       <main className="min-h-0 flex-1 overflow-y-auto">
-        <div className={cn("mx-auto w-full max-w-2xl px-6 py-6", className)}>
+        <div
+          className={cn(
+            "edit-page-form mx-auto w-full max-w-2xl px-6 py-6",
+            className
+          )}
+        >
           <div className="mb-5">
             <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
             {subtitle && (

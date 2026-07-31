@@ -41,6 +41,12 @@ export function FormFooter({
     // flex-col-reverse on mobile matches DialogFooter, so buttons stack the
     // same way whichever footer a dialog happens to use.
     <div
+      // `data-form-footer` lets EditPageShell make this a sticky action bar on
+      // full-page forms (see the `.edit-page-form [data-form-footer]` rule in
+      // styles.css) so Save stays reachable without scrolling to the bottom.
+      // Dialogs use the same forms but aren't inside .edit-page-form, so their
+      // footers are unaffected.
+      data-form-footer=""
       className={cn(
         "mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end",
         className

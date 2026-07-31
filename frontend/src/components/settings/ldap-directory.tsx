@@ -307,7 +307,7 @@ export function LdapDirectory({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border bg-background/90 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/75">
           <Button onClick={() => save.mutate()} disabled={save.isPending}>
             {save.isPending && <Spinner className="size-4" />}
             Save settings

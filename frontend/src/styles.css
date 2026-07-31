@@ -401,3 +401,21 @@
 .num {
   font-variant-numeric: tabular-nums;
 }
+
+/* Sticky form action bar. On full-page create/edit forms (EditPageShell adds
+   `.edit-page-form`) the Save/Cancel footer sticks to the bottom of the scroll
+   area, so long forms don't force a scroll to the bottom just to save. Scoped
+   to EditPageShell only: the same form components render inside dialogs, which
+   are NOT `.edit-page-form`, so dialog footers are unaffected. The negative
+   inline margin lets the border + backdrop span the container's `px-6`. */
+.edit-page-form [data-form-footer] {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  margin-top: 1rem;
+  margin-inline: -1.5rem;
+  padding: 0.75rem 1.5rem;
+  border-top: 1px solid var(--border);
+  background: color-mix(in oklab, var(--background) 92%, transparent);
+  backdrop-filter: blur(8px);
+}
