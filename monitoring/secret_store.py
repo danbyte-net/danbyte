@@ -103,8 +103,8 @@ def require_secret_store() -> SecretStore:
     store = active_secret_store()
     if store is None:
         raise SecretStoreDisabled(
-            "No secret store is enabled. An administrator must enable a secrets "
-            "backend (Settings → Security) before certificates can be requested "
-            "or issued."
+            "No secret store is enabled. An administrator must enable one under "
+            "Settings → Administration → Secret store before certificates can be "
+            "requested or issued."
         )
     return store
