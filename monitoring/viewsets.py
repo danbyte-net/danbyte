@@ -701,6 +701,8 @@ class CertificateRequestViewSet(TenantScopedViewSet):
         "csr": "view",
         "private_key": "change",
         "import_issued": "change",
+        "acme_order": "change",
+        "acme_finalize": "change",
     }
 
     def get_queryset(self):
@@ -776,6 +778,87 @@ class CertificateRequestViewSet(TenantScopedViewSet):
         data["issued_certificate_id"] = str(cert.id)
         return Response(data, status=201)
 
+    @action(detail=True, methods=["post"], url_path="acme-order")
+    def acme_order(self, request, pk=None):
+        """Open an ACME order for this request against an issuer.
+
+        Creates the :class:`AcmeOrder`, calls the CA's newOrder, and returns the
+        order with the challenges the operator (or a publisher) must satisfy. The
+        issuer is looked up scoped to the active tenant — a cross-tenant issuer id
+        can't be used.
+        """
+        from .acme_engine import AcmeError, create_order
+        from .secret_store import SecretStoreDisabled
+
+        req = self.get_object()
+        tenant = self._tenant_or_403()
+        issuer = Issuer.objects.filter(
+            tenant=tenant, id=request.data.get("issuer")
+        ).first()
+        if issuer is None:
+            raise ValidationError({"issuer": "Unknown issuer for this tenant."})
+        challenge_type = request.data.get("challenge_type") or AcmeOrder.Challenge.DNS01
+        if challenge_type not in AcmeOrder.Challenge.values:
+            raise ValidationError({"challenge_type": "Unknown challenge type."})
+
+        order = AcmeOrder(
+            tenant=tenant,
+            issuer=issuer,
+            request=req,
+            challenge_type=challenge_type,
+            created_by=(
+                request.user
+                if getattr(request.user, "is_authenticated", False)
+                else None
+            ),
+        )
+        order.save()
+        try:
+            create_order(order)
+        except SecretStoreDisabled as exc:
+            order.delete()
+            raise ValidationError({"detail": str(exc)}) from exc
+        except AcmeError as exc:
+            order.status = AcmeOrder.Status.ERRORED
+            order.error = str(exc)
+            order.save(update_fields=["status", "error", "updated_at"])
+            raise ValidationError({"detail": str(exc)}) from exc
+        return Response(AcmeOrderSerializer(order).data, status=201)
+
+    @action(detail=True, methods=["post"], url_path="acme-finalize")
+    def acme_finalize(self, request, pk=None):
+        """Finalize a previously opened ACME order (challenges now published).
+
+        Runs asynchronously (it polls the CA) — enqueues the finalize job and
+        returns the order at its current state. The order must belong to this
+        request and tenant.
+        """
+        import django_rq
+
+        req = self.get_object()
+        tenant = self._tenant_or_403()
+        order = AcmeOrder.objects.filter(
+            tenant=tenant, request=req, id=request.data.get("order")
+        ).first()
+        if order is None:
+            raise ValidationError({"order": "Unknown order for this request."})
+        if not order.order_url:
+            raise ValidationError(
+                {"order": "This order was never opened — create it first."}
+            )
+        order.status = AcmeOrder.Status.PROCESSING
+        order.error = ""
+        order.save(update_fields=["status", "error", "updated_at"])
+        try:
+            django_rq.get_queue("default").enqueue(
+                "monitoring.acme_engine.finalize_order_job", str(order.id)
+            )
+        except Exception as exc:  # noqa: BLE001 — Redis down: report, don't 500
+            raise ValidationError(
+                {"detail": f"Could not enqueue the issuance job: {exc}"}
+            ) from exc
+        return Response(AcmeOrderSerializer(order).data, status=202)
+
     def perform_destroy(self, instance):
         from .csr import delete_key
 
@@ -789,6 +872,9 @@ class IssuerViewSet(TenantScopedViewSet):
 
     queryset = Issuer.objects.all()
     serializer_class = IssuerSerializer
+    # Registering the ACME account mutates the issuer (stores the account key +
+    # URI), so it needs `change`, not the default read.
+    rbac_action_map = {"register_account": "change"}
 
     def perform_create(self, serializer):
         serializer.save(
@@ -799,6 +885,25 @@ class IssuerViewSet(TenantScopedViewSet):
                 else None
             ),
         )
+
+    @action(detail=True, methods=["post"], url_path="register-account")
+    def register_account(self, request, pk=None):
+        """Create (or re-register) the issuer's ACME account and store its key.
+
+        Synchronous — it is a handful of round trips and the operator wants the
+        success/failure immediately. Fail-closed if no secret store is enabled.
+        """
+        from .acme_engine import AcmeError, register_account
+        from .secret_store import SecretStoreDisabled
+
+        issuer = self.get_object()
+        try:
+            uri = register_account(issuer)
+        except SecretStoreDisabled as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        except AcmeError as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        return Response({"account_uri": uri, **self.get_serializer(issuer).data})
 
 
 class AcmeOrderViewSet(TenantScopedReadViewSet):

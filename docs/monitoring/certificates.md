@@ -341,7 +341,7 @@ directory, public (Let's Encrypt / ZeroSSL) or internal (step-ca). Configure the
 directory URL, an optional contact e-mail, and — where the CA requires it —
 External Account Binding (a key id plus an HMAC, stored encrypted). The ACME
 account key is generated on first use and kept in the [secret
-store](#the-secret-store-for-issuing-keys); it never lands in the database.
+store](#the-secret-store-for-issuance-keys); it never lands in the database.
 `GET/POST /api/monitoring/issuers/` manages them.
 
 An **ACME order** fulfils a [certificate request](#requesting-a-certificate-csr)
@@ -349,6 +349,45 @@ against an issuer: it carries the DNS-01 / HTTP-01 challenge data to satisfy and
 tracks the order to completion, then imports the signed certificate. The order
 API (`/api/monitoring/acme-orders/`) is read-only — orders are created and driven
 by the ACME engine.
+
+### The issuance flow
+
+The engine (`monitoring/acme_engine.py`, built on the RFC 8555 `acme` library)
+drives three steps:
+
+1. **Register the account** — `POST /api/monitoring/issuers/{id}/register-account/`
+   generates an ECDSA account key, registers it with the CA (sending the EAB when
+   configured), and stores the key in the secret store at `account_ref`. The
+   account URI is saved on the issuer; the key never touches the database. It is
+   fail-closed without a secret store, and idempotent — re-registering the same
+   key returns the existing account.
+2. **Open an order** —
+   `POST /api/monitoring/certificate-requests/{id}/acme-order/` with
+   `{"issuer": "<id>", "challenge_type": "dns-01"|"http-01"}` calls the CA's
+   newOrder for the request's CSR and returns the order with the exact records to
+   publish: for **DNS-01** the `_acme-challenge.<domain>` TXT name and value, for
+   **HTTP-01** the `/.well-known/acme-challenge/<token>` path and content. The
+   issuer is looked up scoped to the active tenant — a cross-tenant issuer id is
+   rejected.
+3. **Finalize** —
+   `POST /api/monitoring/certificate-requests/{id}/acme-finalize/` with
+   `{"order": "<id>"}` answers the challenges, polls to `valid`, downloads the
+   chain, and imports it exactly like [Import issued](#requesting-a-certificate-csr)
+   (public-key match, links the [Certificate](#viewing-certificates), marks the
+   request **issued**). Because it polls the CA it runs on the worker queue and
+   returns `202`; the order moves `processing → valid` (or `invalid` with the
+   error recorded on the row).
+
+### Publishing the challenge
+
+The order surfaces exactly what to publish, so an operator can satisfy DNS-01 or
+HTTP-01 by hand (add the TXT record / serve the token) and then finalize. A
+**DNS-01 auto-publisher** — writing the TXT record for you so the order
+self-validates end to end — plugs in behind the same `ChallengePublisher`
+interface; it needs the deployment's DNS-write mechanism configured.
+
+The `acme` client is a runtime dependency (`acme>=4`, `josepy>=2`), included in
+the offline bundle for airgapped installs.
 
 ## Certificate authorities and chains
 
