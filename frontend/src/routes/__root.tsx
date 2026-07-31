@@ -179,6 +179,10 @@ function AppLayout() {
   // this just keeps the UI from ever leaking a page it shouldn't.
   if (isLoading || !me.is_authenticated) return <AuthSplash />
 
+  // The print sheet renders as a bare page — no sidebar/header — so its own
+  // document is just the labels and prints clean (see routes/labels.print.tsx).
+  if (pathname.startsWith("/labels/print")) return <Outlet />
+
   return (
     // `h-svh` on SidebarProvider is load-bearing. Default shadcn ships
     // `min-h-svh` (allows growth past viewport) which breaks any nested

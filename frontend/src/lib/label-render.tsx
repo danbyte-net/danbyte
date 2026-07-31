@@ -55,23 +55,20 @@ type SheetTmpl = Pick<
   "width_mm" | "height_mm" | "margin_mm" | "css" | "qr_enabled" | "qr_size_mm"
 >
 
-/** One print-ready document holding EVERY label, one per physical page.
- *
- * Printed from inside its own iframe (`iframe.contentWindow.print()`) with
- * `@page { margin: 0 }`, so the browser prints exactly the labels — no SPA
- * chrome, and Chrome/Edge drop their default header/footer (date, URL, page
- * number) that appear when a normal page is printed. Each label is sized in mm
- * and separated by a hard page break so a label printer feeds one per sheet. */
-export function labelSheet(tmpl: SheetTmpl, labels: RenderedLabel[]): string {
-  const cells = labels
-    .map((l) => {
-      const body = tmpl.qr_enabled
-        ? injectQr(l.html, l.qr, tmpl.qr_size_mm)
-        : l.html
-      return `<div class="lbl">${body}</div>`
-    })
-    .join("")
-  return `<!doctype html><html><head><meta charset="utf-8"><style>
+/** The inner HTML for one label (QR composited in). */
+export function labelBody(tmpl: SheetTmpl, label: RenderedLabel): string {
+  return tmpl.qr_enabled
+    ? injectQr(label.html, label.qr, tmpl.qr_size_mm)
+    : label.html
+}
+
+/** The stylesheet for a print sheet: `@page` sized to the label with zero
+ * margin (so the browser omits its header/footer), each `.lbl` sized in mm and
+ * hard-page-broken, plus the template's own CSS. Injected into the print page's
+ * document — used by the /labels/print route, which is a bare page (no SPA
+ * chrome) so both the Print button and Ctrl+P produce clean labels. */
+export function sheetCss(tmpl: SheetTmpl): string {
+  return `
     *{box-sizing:border-box}
     html,body{margin:0;padding:0;background:#fff}
     @page{ size:${tmpl.width_mm}mm ${tmpl.height_mm}mm; margin:0; }
@@ -83,9 +80,11 @@ export function labelSheet(tmpl: SheetTmpl, labels: RenderedLabel[]): string {
       page-break-after:always;break-after:page;
     }
     .lbl:last-child{ page-break-after:auto;break-after:auto; }
-    /* On screen, stack the labels with a little gap; print collapses it. */
-    @media screen{ body{padding:12px;display:flex;flex-direction:column;gap:12px;align-items:flex-start}
-      .lbl{border:1px solid #ddd} }
-    ${tmpl.css || ""}
-  </style></head><body>${cells}</body></html>`
+    /* On screen, centre the stack with a little gap; print collapses it. */
+    @media screen{
+      body{padding:16px;display:flex;flex-direction:column;gap:12px;align-items:center;background:#e5e7eb}
+      .lbl{border:1px solid #ccc;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+    }
+    @media print{ .print-toolbar{display:none!important} }
+  `
 }

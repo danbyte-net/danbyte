@@ -1,11 +1,10 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { useRef } from "react"
 import { Printer } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type { LabelTemplate, RenderedLabel } from "@/lib/api"
-import { labelSheet } from "@/lib/label-render"
+import { labelBody, sheetCss } from "@/lib/label-render"
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
 
@@ -17,9 +16,12 @@ export const Route = createFileRoute("/labels/print")({
   }),
 })
 
+// Rendered as a BARE page (no app shell — see routes/__root.tsx), so the page's
+// own document IS the label sheet. With @page margin:0 (sheetCss) the browser
+// prints only the labels — no header/footer — whether the user clicks Print or
+// hits Ctrl+P. Labels come pre-rendered + autoescaped from the server.
 function PrintLabelsPage() {
   const { template, ids } = useSearch({ from: "/labels/print" })
-  const frameRef = useRef<HTMLIFrameElement>(null)
 
   const tmplQ = useQuery({
     queryKey: ["label-template", template],
@@ -58,42 +60,29 @@ function PrintLabelsPage() {
 
   const tmpl = tmplQ.data
   const labels = renderQ.data.labels
-  const sheet = labelSheet(tmpl, labels)
-
-  // Print the IFRAME's own document, not this page — so the browser prints only
-  // the labels (no SPA chrome) and, thanks to @page margin:0, omits its default
-  // header/footer (date, URL, page number).
-  const doPrint = () => {
-    const win = frameRef.current?.contentWindow
-    if (win) {
-      win.focus()
-      win.print()
-    }
-  }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6">
-        <h1 className="text-base font-semibold">
-          Print · {tmpl.name}{" "}
-          <span className="text-muted-foreground">({labels.length})</span>
-        </h1>
-        <span className="text-xs text-muted-foreground">
-          {tmpl.width_mm} × {tmpl.height_mm} mm
-        </span>
-        <Button size="sm" className="ml-auto" onClick={doPrint}>
-          <Printer className="h-3.5 w-3.5" /> Print
+    <>
+      {/* Sizes the page to the label + zero @page margin (screen styling too). */}
+      <style dangerouslySetInnerHTML={{ __html: sheetCss(tmpl) }} />
+      <div
+        className="print-toolbar"
+        style={{ position: "fixed", top: 12, right: 12, zIndex: 10 }}
+      >
+        <Button size="sm" onClick={() => window.print()}>
+          <Printer className="h-3.5 w-3.5" /> Print {labels.length} label
+          {labels.length === 1 ? "" : "s"}
         </Button>
-      </header>
-
-      {/* One iframe holds every label; we print it directly. */}
-      <iframe
-        ref={frameRef}
-        title="Labels"
-        sandbox="allow-same-origin allow-modals"
-        srcDoc={sheet}
-        className="min-h-0 flex-1 border-0 bg-muted"
-      />
-    </div>
+      </div>
+      {labels.map((l, i) => (
+        // Each label is one mm-sized, page-broken cell. Content is the server's
+        // sandboxed, autoescaped render with the QR composited in.
+        <div
+          key={l.id ?? i}
+          className="lbl"
+          dangerouslySetInnerHTML={{ __html: labelBody(tmpl, l) }}
+        />
+      ))}
+    </>
   )
 }
