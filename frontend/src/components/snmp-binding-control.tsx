@@ -125,33 +125,17 @@ export function SnmpBindingHint({
   scope: SnmpBinding["scope"]
   objectId: string
 }) {
-  const { binding, profiles } = useBinding(scope, objectId)
+  const { binding } = useBinding(scope, objectId)
   const eff = binding.data?.effective
-  const profileList = profiles.data?.results ?? []
-
-  const showEffective = scope === "device" && !binding.data?.profile_id && eff
-  const showNoProfiles = profileList.length === 0
-  if (!showEffective && !showNoProfiles) return null
-
+  // Only the concise positive case: an inherited profile resolved. The
+  // "set one / none exist yet" guidance lives in the card's InfoTip so the
+  // page isn't stacked with setup nags.
+  if (scope !== "device" || binding.data?.profile_id || !eff?.profile_name)
+    return null
   return (
-    <div className="space-y-0.5">
-      {showEffective && (
-        <p className="text-[11px] text-muted-foreground">
-          {eff.profile_name ? (
-            <>
-              Effective: <span className="font-medium">{eff.profile_name}</span>
-              {eff.source ? ` (${SOURCE_LABEL[eff.source] ?? eff.source})` : ""}
-            </>
-          ) : (
-            "No profile resolves — set one here, on the role/type, or a tenant default."
-          )}
-        </p>
-      )}
-      {showNoProfiles && (
-        <p className="text-[11px] text-muted-foreground">
-          No SNMP profiles yet — create one in Settings → SNMP profiles.
-        </p>
-      )}
-    </div>
+    <p className="text-[11px] text-muted-foreground">
+      Effective: <span className="font-medium">{eff.profile_name}</span>
+      {eff.source ? ` (${SOURCE_LABEL[eff.source] ?? eff.source})` : ""}
+    </p>
   )
 }

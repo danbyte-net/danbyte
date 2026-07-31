@@ -9,6 +9,7 @@ import type { DeviceSnmp, IPAddress, Interface } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { KvCard, mono } from "@/components/kv-card"
+import { InfoTip } from "@/components/ui/info-tip"
 import type { KvRow } from "@/components/kv-card"
 import { Section } from "@/components/ui/section"
 import { SimpleTable } from "@/components/ui/simple-table"
@@ -258,10 +259,15 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
       >
         <SnmpBindingHint scope="device" objectId={deviceId} />
         {factRows.length === 0 ? (
-          <p className="text-[13px] text-muted-foreground">
-            {state?.error
-              ? state.error
-              : "Not polled yet — pick a profile and use “Poll now” to read the device's live system facts."}
+          <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+            {state?.error ? state.error : "Not polled yet."}
+            {!state?.error && (
+              <InfoTip>
+                Pick an SNMP profile (top right) and click “Poll now” to read
+                the device's live system facts. No profiles yet? Create one in
+                Settings → SNMP profiles.
+              </InfoTip>
+            )}
           </p>
         ) : (
           <KvCard title="System" rows={factRows} />
