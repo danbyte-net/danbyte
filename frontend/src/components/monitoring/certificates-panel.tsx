@@ -264,7 +264,42 @@ export function CertificatesPanel({
   ]
 
   return (
-    <Section title="Certificates" count={rows.length}>
+    <Section
+      title="Certificates"
+      count={rows.length}
+      actions={
+        canAssign ? (
+          <>
+            <div className="w-56">
+              <Combobox
+                value={pick}
+                onChange={setPick}
+                options={options}
+                placeholder="Assign a certificate…"
+                searchPlaceholder="Search certificates…"
+                emptyText="No unassigned certificates."
+              />
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              disabled={!pick || assign.isPending}
+              onClick={() => pick && assign.mutate(pick)}
+            >
+              <Plus className="h-3.5 w-3.5" /> Assign
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setUploadOpen(true)}
+            >
+              <Upload className="h-3.5 w-3.5" /> Upload
+            </Button>
+          </>
+        ) : undefined
+      }
+    >
       <div className="max-w-3xl space-y-3">
         {assignments.isError && <QueryError error={assignments.error} />}
 
@@ -340,37 +375,6 @@ export function CertificatesPanel({
           getRowKey={(a) => a.id}
           empty="No certificates assigned. Assign one to declare what this object should present."
         />
-
-        {canAssign && (
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="min-w-50 flex-1">
-              <Combobox
-                value={pick}
-                onChange={setPick}
-                options={options}
-                placeholder="Assign a certificate…"
-                searchPlaceholder="Search certificates…"
-                emptyText="No unassigned certificates."
-              />
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              disabled={!pick || assign.isPending}
-              onClick={() => pick && assign.mutate(pick)}
-            >
-              <Plus className="h-3.5 w-3.5" /> Assign
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setUploadOpen(true)}
-            >
-              <Upload className="h-3.5 w-3.5" /> Upload
-            </Button>
-          </div>
-        )}
       </div>
 
       <UploadCertificateDialog
