@@ -76,9 +76,10 @@ def _provider() -> str:
 
 
 def secret_store_enabled() -> bool:
-    """True when an operator has enabled a secret store — the gate CSR/ACME
-    check before doing anything with a private key."""
-    return _provider() in PROVIDERS
+    """True when a usable secret store is configured — the gate CSR/ACME check
+    before touching a private key. A provider that is selected but unconfigured
+    (e.g. ``vault`` with no address/token) counts as disabled: fail closed."""
+    return active_secret_store() is not None
 
 
 def active_secret_store() -> SecretStore | None:

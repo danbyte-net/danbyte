@@ -300,7 +300,12 @@ enables under **Settings → Administration → Secret store**:
   `MONITORING_SECRET_KEY`, exactly like every other stored credential. Works out
   of the box and airgap-friendly.
 - **Vault / OpenBao** — keys live in an external HashiCorp Vault / OpenBao and
-  Danbyte holds only a reference.
+  Danbyte holds only a reference. Configure the address, KV v2 mount (default
+  `danbyte`), TLS verification, and a token in the same settings card; the token
+  is stored encrypted and never returned. The Vault address is admin-configured
+  and deployment-tier, so it may be an internal/loopback Vault — Danbyte reaches
+  it directly (TLS-verified, redirects off), not through the tenant SSRF guard.
+  A provider selected but not fully configured counts as disabled (fail closed).
 
 It is a **deployment-tier** choice on purpose — where the organisation's private
 keys live is not a per-tenant decision. Nothing reads a stored secret over the

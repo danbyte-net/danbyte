@@ -23,6 +23,7 @@ import {
   FormCheckbox,
   FormCombobox,
   FormSelect,
+  FormText,
 } from "@/components/forms"
 import {
   SettingsCard,
@@ -224,6 +225,10 @@ function DeploymentSection() {
   const [secretsProvider, setSecretsProvider] = useState<
     "" | "local" | "vault"
   >("")
+  const [vaultAddr, setVaultAddr] = useState("")
+  const [vaultMount, setVaultMount] = useState("danbyte")
+  const [vaultVerify, setVaultVerify] = useState(true)
+  const [vaultToken, setVaultToken] = useState("")
   const [tileUrl, setTileUrl] = useState("")
   const [tileAttrib, setTileAttrib] = useState("")
   const [satUrl, setSatUrl] = useState("")
@@ -247,6 +252,10 @@ function DeploymentSection() {
       setSiteSettings(data.allow_site_settings)
       setSsrfList((data.ssrf_allowlist ?? []).join("\n"))
       setSecretsProvider(data.secrets_provider ?? "")
+      setVaultAddr(data.vault_addr ?? "")
+      setVaultMount(data.vault_mount ?? "danbyte")
+      setVaultVerify(data.vault_verify_tls ?? true)
+      setVaultToken("")
       setTileUrl(data.map_tile_url ?? "")
       setTileAttrib(data.map_tile_attribution ?? "")
       setSatUrl(data.map_satellite_url ?? "")
@@ -453,10 +462,22 @@ function DeploymentSection() {
         onSave={() =>
           save.mutate({
             key: "secrets",
-            patch: { secrets_provider: secretsProvider },
+            patch: {
+              secrets_provider: secretsProvider,
+              vault_addr: vaultAddr.trim(),
+              vault_mount: vaultMount.trim() || "danbyte",
+              vault_verify_tls: vaultVerify,
+              ...(vaultToken ? { vault_token: vaultToken } : {}),
+            },
           })
         }
-        dirty={secretsProvider !== (data.secrets_provider ?? "")}
+        dirty={
+          secretsProvider !== (data.secrets_provider ?? "") ||
+          vaultAddr !== (data.vault_addr ?? "") ||
+          vaultMount !== (data.vault_mount ?? "danbyte") ||
+          vaultVerify !== (data.vault_verify_tls ?? true) ||
+          !!vaultToken
+        }
         saving={savingKey === "secrets"}
         saveLabel="Save secret store"
       >
@@ -479,6 +500,39 @@ function DeploymentSection() {
           <span className="font-medium">Vault</span> keeps them in an external
           store and Danbyte holds only a reference.
         </p>
+        {secretsProvider === "vault" && (
+          <div className="space-y-3 rounded-md border border-border p-3">
+            <FormText
+              label="Vault address"
+              value={vaultAddr}
+              onChange={setVaultAddr}
+              placeholder="https://vault.danbyte.lan:8200"
+            />
+            <FormText
+              label="KV v2 mount"
+              value={vaultMount}
+              onChange={setVaultMount}
+              placeholder="danbyte"
+            />
+            <FormText
+              label={
+                data.vault_token_set
+                  ? "Vault token (leave blank to keep current)"
+                  : "Vault token"
+              }
+              value={vaultToken}
+              onChange={setVaultToken}
+              type="password"
+              placeholder={data.vault_token_set ? "•••••• set" : "hvs.…"}
+            />
+            <FormCheckbox
+              label="Verify TLS certificate"
+              checked={vaultVerify}
+              onChange={setVaultVerify}
+              hint="Turn off only for a Vault with a self-signed cert on a trusted network."
+            />
+          </div>
+        )}
       </SettingsCard>
 
       <SettingsCard

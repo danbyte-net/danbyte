@@ -55,6 +55,11 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
     release_repo_token_set = serializers.SerializerMethodField()
+    # Vault token for the secret store (write-only, in `secrets`).
+    vault_token = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False
+    )
+    vault_token_set = serializers.SerializerMethodField()
     # Absolute URL of the custom favicon (read-only); null = the Danbyte
     # default. Uploaded via the dedicated multipart endpoint below.
     favicon_url = serializers.SerializerMethodField()
@@ -78,6 +83,11 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "favicon_url",
             "ssrf_allowlist",
             "secrets_provider",
+            "vault_addr",
+            "vault_mount",
+            "vault_verify_tls",
+            "vault_token",
+            "vault_token_set",
             "map_tile_url",
             "map_tile_attribution",
             "map_satellite_url",
@@ -166,6 +176,9 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
     def get_release_repo_token_set(self, obj) -> bool:
         return bool((obj.secrets or {}).get("release_repo_token"))
 
+    def get_vault_token_set(self, obj) -> bool:
+        return bool((obj.secrets or {}).get("vault_token"))
+
     def update(self, instance, validated_data):
         secrets = dict(instance.secrets or {})
         pw = validated_data.pop("smtp_password", None)
@@ -174,6 +187,9 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
         tok = validated_data.pop("release_repo_token", None)
         if tok:
             secrets["release_repo_token"] = tok
+        vtok = validated_data.pop("vault_token", None)
+        if vtok:
+            secrets["vault_token"] = vtok
         instance.secrets = secrets
         for field, value in validated_data.items():
             setattr(instance, field, value)

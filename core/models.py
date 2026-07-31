@@ -386,6 +386,19 @@ class DeploymentSettings(TimestampedModel):
         help_text="Where issuance private keys (CSR, ACME) are stored. Blank "
         "leaves those features disabled.",
     )
+    # Vault/OpenBao connection (used only when secrets_provider == "vault").
+    # The token is a secret and lives in ``secrets["vault_token"]``, never here.
+    # Admin-configured + deployment-tier, so it may point at an internal/loopback
+    # Vault — reached directly (TLS-verified), not via the tenant SSRF guard.
+    vault_addr = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Vault/OpenBao base URL, e.g. https://vault.danbyte.lan:8200.",
+    )
+    vault_mount = models.CharField(
+        max_length=64, blank=True, default="danbyte",
+        help_text="KV v2 mount path secrets are written under.",
+    )
+    vault_verify_tls = models.BooleanField(default=True)
 
     # ─── site map tiles ──────────────────────────────────────────────────
     # Blank = OpenStreetMap's donated tile servers (light use only, per
