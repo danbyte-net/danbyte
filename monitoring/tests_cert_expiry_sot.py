@@ -10,8 +10,10 @@ from __future__ import annotations
 import datetime as dt
 from unittest import mock
 
+from django.contrib.auth.models import User
 from django.test import TestCase
 from django.utils import timezone
+from rest_framework.test import APITestCase
 
 from api.models import (
     Device, DeviceRole, DeviceType, IPAddress, Manufacturer, Prefix, Site,
@@ -205,3 +207,54 @@ class SotExpiryTests(TestCase):
         alert.refresh_from_db()
         self.assertEqual(alert.severity, AlertSeverity.CRITICAL)
         self.assertEqual(alert.notify_count, 2)
+
+
+class CertHealthEndpointTests(APITestCase):
+    """The monitoring-overview summary: one tenant-scoped read that buckets
+    certificate expiry, self-signed, SSH drift, and firing alerts."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        other_org = Organization.objects.create(name="O2", slug="o2")
+        self.other = Tenant.objects.create(org=other_org, name="T2", slug="t2")
+        now = timezone.now()
+
+        def cert(tenant, days, *, seed, self_signed=False):
+            return Certificate.objects.create(
+                tenant=tenant, fingerprint_sha256=_fingerprint(seed),
+                subject_cn="c", not_before=now - dt.timedelta(days=1),
+                not_after=now + dt.timedelta(days=days),
+                self_signed=self_signed, uploaded=True,
+            )
+
+        cert(self.tenant, -3, seed="a")               # expired
+        cert(self.tenant, 3, seed="b")                # critical (≤7)
+        cert(self.tenant, 20, seed="c")               # warning (≤30)
+        cert(self.tenant, 200, seed="d")              # healthy
+        cert(self.tenant, 100, seed="e", self_signed=True)  # healthy + self-signed
+        cert(self.other, -1, seed="f")                # another tenant — must not leak
+
+        admin = User.objects.create_superuser("admin", "a@x.com", "x")
+        self.client.force_login(admin)
+        session = self.client.session
+        session["current_tenant_id"] = str(self.tenant.id)
+        session.save()
+
+    def test_health_buckets_are_tenant_scoped(self):
+        r = self.client.get("/api/monitoring/certificates/health/")
+        self.assertEqual(r.status_code, 200, r.content)
+        d = r.json()
+        self.assertEqual(d["total"], 5)  # the other tenant's cert is excluded
+        self.assertEqual(d["expired"], 1)
+        self.assertEqual(d["expiring_critical"], 1)
+        self.assertEqual(d["expiring_warning"], 1)
+        self.assertEqual(d["healthy"], 2)
+        self.assertEqual(d["self_signed"], 1)
+        self.assertEqual(d["warning_days"], 30)
+        self.assertEqual(d["critical_days"], 7)
+
+    def test_health_requires_authentication(self):
+        self.client.logout()
+        r = self.client.get("/api/monitoring/certificates/health/")
+        self.assertIn(r.status_code, (401, 403))

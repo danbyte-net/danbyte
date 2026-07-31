@@ -48,6 +48,7 @@ import { MonitoringSettingsForm } from "@/components/monitoring/settings-form"
 import { ChecksList } from "@/components/monitoring/checks-list"
 import { TemplatesList } from "@/components/monitoring/templates-list"
 import { MonitoringConfiguration } from "@/components/monitoring/configuration"
+import { CertKeyHealthCard } from "@/components/monitoring/cert-key-health"
 
 type MonitoringView = "overview" | "checks" | "templates" | "configuration"
 interface MonitoringSearch {
@@ -258,6 +259,10 @@ function MonitoringPage() {
                 tone="skipped"
               />
             </div>
+
+            {/* Certificate & key health — expiry buckets, SSH drift, firing
+                alerts, each opening the matching list. Hidden with no certs. */}
+            <CertKeyHealthCard />
 
             {/* Hero: results over time (shadcn stacked area) */}
             <Card>

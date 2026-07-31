@@ -276,6 +276,47 @@ class CertificateViewSet(TenantScopedViewSet):
             )
         return qs
 
+    @action(detail=False, methods=["get"])
+    def health(self, request):
+        """At-a-glance certificate + key health for the monitoring overview.
+
+        Expiry buckets against the tenant's own thresholds, the self-signed
+        count, SSH host-key drift, and the tenant's firing-alert total — one
+        tenant-scoped read instead of a fistful of list calls the client would
+        have to bucket itself. Each count maps to an existing filtered list view.
+        """
+        from django.utils import timezone
+
+        from .cert_expiry import thresholds
+        from .models import Alert, AlertStatus, MonitoringSettings
+
+        tenant = self._tenant_or_403()
+        now = timezone.now()
+        limits = thresholds(MonitoringSettings.objects.filter(tenant=tenant).first())
+        warn = now + timedelta(days=limits["warning_days"])
+        crit = now + timedelta(days=limits["critical_days"])
+
+        certs = Certificate.objects.filter(tenant=tenant)
+        firing = Alert.objects.filter(tenant=tenant, status=AlertStatus.FIRING)
+        return Response(
+            {
+                "total": certs.count(),
+                "expired": certs.filter(not_after__lte=now).count(),
+                "expiring_critical": certs.filter(
+                    not_after__gt=now, not_after__lte=crit
+                ).count(),
+                "expiring_warning": certs.filter(
+                    not_after__gt=crit, not_after__lte=warn
+                ).count(),
+                "healthy": certs.filter(not_after__gt=warn).count(),
+                "self_signed": certs.filter(self_signed=True).count(),
+                "warning_days": limits["warning_days"],
+                "critical_days": limits["critical_days"],
+                "ssh_host_key_drift": firing.filter(kind="ssh").count(),
+                "firing_alerts": firing.count(),
+            }
+        )
+
     def create(self, request, *args, **kwargs):
         """Author a certificate from an uploaded public PEM (dedups by
         fingerprint; refuses a private key with a 400)."""

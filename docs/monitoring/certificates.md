@@ -276,6 +276,17 @@ Two paths, both needed:
   uploaded cert that nothing serves still warns on time. It appears in
   **Jobs → Scheduled tasks** like every other timer.
 
+### The monitoring overview at a glance
+
+The **Monitoring → Overview** page carries a **Certificate & key health** card:
+one row of tiles — expired, expiring within the critical window, expiring within
+the warning window, healthy, self-signed, SSH host-key drift, and the tenant's
+firing-alert total. The labels track the tenant's own thresholds. Each tile opens
+the matching list, and the whole card hides on a deployment with no certificates
+and no key drift. The counts come from a single tenant-scoped read,
+`GET /api/monitoring/certificates/health/`, so the client never re-buckets the
+inventory itself.
+
 ## Viewing certificates
 
 The inventory has its own UI under **Governance → Certificates** in the
