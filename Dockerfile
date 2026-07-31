@@ -11,20 +11,28 @@
 # `runtime` stage and just overrides the command to `runserver`.
 
 # ─── 1. Build the SPA ────────────────────────────────────────────────────────
-FROM node:22-slim AS frontend
+FROM docker.io/library/node:22-slim AS frontend
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-# ─── 2. nginx serving the built SPA + reverse-proxying the backend ────────────
-FROM nginx:1.27-alpine AS web
+# ─── 2. nginx: reverse-proxy the SPA server + backend, with self-signed TLS ───
+# The SPA is a TanStack Start SSR build (no static index.html), so nginx proxies
+# `/` to the `frontend` service (vite preview) rather than serving files. A
+# self-signed cert is baked in so browsers that force HTTPS still connect (they
+# show a one-time warning); terminate real TLS in front for production.
+FROM docker.io/library/nginx:1.27-alpine AS web
+RUN apk add --no-cache openssl \
+    && mkdir -p /etc/nginx/tls \
+    && openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
+        -keyout /etc/nginx/tls/key.pem -out /etc/nginx/tls/cert.pem \
+        -subj "/CN=danbyte" >/dev/null 2>&1
 COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=frontend /app/frontend/dist /usr/share/nginx/html
 
 # ─── 3. Python application runtime ───────────────────────────────────────────
-FROM python:3.13-slim AS runtime
+FROM docker.io/library/python:3.13-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 

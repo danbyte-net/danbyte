@@ -40,7 +40,7 @@ x-app-build: &app-build
 
 services:
   postgres:
-    image: postgres:17
+    image: docker.io/library/postgres:17
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:-danbyte}
@@ -55,7 +55,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:7
+    image: docker.io/library/redis:7
     restart: unless-stopped
     volumes:
       - redis_data:/data
@@ -104,7 +104,19 @@ services:
     sysctls:
       - net.ipv4.ping_group_range=0 2147483647
 
-  # nginx: serves the built SPA + proxies /api, /ws, /static, /media.
+  # The SPA server — TanStack Start SSR build served by vite preview. nginx
+  # proxies `/` here (the build has no static index.html to serve directly).
+  frontend:
+    build:
+      context: .
+      target: frontend
+    image: danbyte-frontend:latest
+    restart: unless-stopped
+    working_dir: /app/frontend
+    command: ["node", "node_modules/vite/bin/vite.js", "preview", "--host", "0.0.0.0", "--port", "3000"]
+
+  # nginx: proxies the SPA + /api + /ws, serves /static + /media. Speaks HTTP
+  # (:80) and HTTPS (:443, self-signed) so browsers that force TLS still connect.
   web:
     build:
       context: .
@@ -112,10 +124,12 @@ services:
     image: danbyte-web:latest
     restart: unless-stopped
     depends_on:
+      - frontend
       - backend
       - ws
     ports:
       - "${HTTP_PORT:-8080}:80"
+      - "${HTTPS_PORT:-8443}:443"
     volumes:
       - staticfiles:/app/staticfiles:ro
       - media:/app/media:ro
