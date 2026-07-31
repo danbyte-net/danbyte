@@ -212,7 +212,7 @@ function UpdatesSettingsPage() {
         )}
 
         {/* System info — Postgres/Django/etc, loads instantly. */}
-        <dl className="mt-4 grid max-w-2xl grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 rounded-lg border border-border p-4 text-[13px]">
+        <dl className="mt-4 grid max-w-2xl grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 rounded-lg border border-border bg-card p-4 text-[13px]">
           {(
             [
               ["Danbyte", sys ? `v${sys.version}` : "…"],
@@ -233,7 +233,7 @@ function UpdatesSettingsPage() {
       </section>
 
       {/* Release repo config */}
-      <section className="space-y-3 rounded-lg border border-border p-4">
+      <section className="space-y-3 rounded-lg border border-border bg-card p-4">
         <h3 className="text-sm font-semibold">Release source</h3>
         <p className="text-[13px] text-muted-foreground">
           Blank uses the official Danbyte repo. Set a custom repo (fork /
@@ -345,7 +345,7 @@ function UpdatesSettingsPage() {
       </section>
 
       {/* Offline / airgapped: upgrade by uploading a release bundle. */}
-      <section className="space-y-2 rounded-lg border border-border p-4">
+      <section className="space-y-2 rounded-lg border border-border bg-card p-4">
         <h3 className="text-sm font-semibold">Upgrade from a bundle</h3>
         <p className="max-w-5xl text-[13px] text-muted-foreground">
           For offline or tarball installs that can&apos;t pull from the release

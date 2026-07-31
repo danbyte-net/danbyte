@@ -393,7 +393,7 @@ function AcmeTab({
   return (
     <div className="space-y-6">
       {canChange && (
-        <div className="rounded-lg border border-border p-4">
+        <div className="rounded-lg border border-border bg-card p-4">
           <h3 className="text-sm font-semibold">Issue via ACME</h3>
           <p className="mt-1 text-[13px] text-muted-foreground">
             Request this certificate from a CA. With DNS-01 auto-publish,
@@ -513,7 +513,7 @@ function OrderCard({
     canChange && (order.status === "pending" || order.status === "ready")
 
   return (
-    <div className="rounded-lg border border-border p-3">
+    <div className="rounded-lg border border-border bg-card p-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Badge variant={ORDER_VARIANT[order.status]}>

@@ -22,7 +22,7 @@ export function OverrideCard({
   children: ReactNode
 }) {
   return (
-    <section className="rounded-lg border border-border bg-background">
+    <section className="rounded-lg border border-border bg-card">
       <div className="flex items-start justify-between gap-4 border-b border-border px-4 py-3">
         <div>
           <h2 className="text-sm font-semibold">{title}</h2>

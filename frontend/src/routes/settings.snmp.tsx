@@ -153,7 +153,7 @@ function SnmpProfilesPage() {
         </p>
       </div>
 
-      <section className="rounded-lg border border-border">
+      <section className="rounded-lg border border-border bg-card">
         {list.isError && (
           <div className="p-4">
             <QueryError error={list.error} />
@@ -205,7 +205,7 @@ function SnmpProfilesPage() {
         )}
       </section>
 
-      <section className="space-y-4 rounded-lg border border-border p-4">
+      <section className="space-y-4 rounded-lg border border-border bg-card p-4">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold">
             {editingId ? "Edit profile" : "Add a profile"}

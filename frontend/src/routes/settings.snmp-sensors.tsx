@@ -175,7 +175,7 @@ function SnmpSensorCatalogPage() {
         </div>
       </div>
 
-      <section className="rounded-lg border border-border">
+      <section className="rounded-lg border border-border bg-card">
         {list.isError && (
           <div className="p-4">
             <QueryError error={list.error} />

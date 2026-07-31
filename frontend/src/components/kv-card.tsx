@@ -32,7 +32,7 @@ export function KvCard({ title, rows }: { title: string; rows: KvRow[] }) {
       <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
         {title}
       </h2>
-      <div className="overflow-hidden rounded-lg border border-border">
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
         <Table>
           <TableBody>
             {rows.map((r, i) => (

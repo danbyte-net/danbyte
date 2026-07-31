@@ -354,11 +354,10 @@ function WorkersControl({ workers }: { workers: WorkerConfig }) {
 
   const n = Number(count)
   const dirty = n !== workers.rq_workers
-  const valid =
-    Number.isInteger(n) && n >= workers.min && n <= workers.max
+  const valid = Number.isInteger(n) && n >= workers.min && n <= workers.max
 
   return (
-    <div className="mb-3 rounded-lg border border-border p-3">
+    <div className="mb-3 rounded-lg border border-border bg-card p-3">
       <div className="flex items-center gap-2 text-[13px] font-medium">
         <Cpu className="size-4 text-muted-foreground" />
         Background workers (RQ pool)

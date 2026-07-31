@@ -391,7 +391,7 @@ function FloorplanSettingsPage() {
           )}
         </aside>
 
-        <section className="min-w-0 flex-1 rounded-lg border border-border p-4">
+        <section className="min-w-0 flex-1 rounded-lg border border-border bg-card p-4">
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold">
