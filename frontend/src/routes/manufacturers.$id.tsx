@@ -107,7 +107,11 @@ function Body({ manufacturer: m }: { manufacturer: Manufacturer }) {
           label: "Device types",
           count: m.device_type_count,
         },
-        { value: "module-types", label: "Module types" },
+        {
+          value: "module-types",
+          label: "Module types",
+          count: m.module_type_count,
+        },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
       ]}

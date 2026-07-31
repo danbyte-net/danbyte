@@ -847,6 +847,7 @@ export interface Manufacturer {
   description: string
   tags: Tag[]
   device_type_count: number
+  module_type_count: number
   owning_site?: { id: string; name: string } | null
   permissions?: ObjectPerms
   created_at: string
@@ -2974,6 +2975,8 @@ export interface Location {
   status: StatusMini | null
   description: string
   child_count: number
+  device_count: number
+  rack_count: number
   created_at: string
   updated_at: string
 }

@@ -2052,7 +2052,12 @@ class ManufacturerViewSet(CatalogLocalityMixin, TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
-        return qs.annotate(device_type_count_annotated=Count("device_types"))
+        # distinct=True on both: two Counts over different relations in one
+        # annotate() join-multiply each other without it (Django fan-out).
+        return qs.annotate(
+            device_type_count_annotated=Count("device_types", distinct=True),
+            module_type_count_annotated=Count("module_types", distinct=True),
+        )
 
     def _slug(self, serializer, tenant):
         data = serializer.validated_data

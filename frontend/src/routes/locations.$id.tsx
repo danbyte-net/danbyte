@@ -127,8 +127,8 @@ function Body({ location: l }: { location: Location }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
-        { value: "devices", label: "Devices" },
-        { value: "racks", label: "Racks" },
+        { value: "devices", label: "Devices", count: l.device_count },
+        { value: "racks", label: "Racks", count: l.rack_count },
         { value: "prefixes", label: "Prefix ranges", count: rows.length },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },

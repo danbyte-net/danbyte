@@ -1380,6 +1380,7 @@ class ManufacturerMiniSerializer(NumIdModelSerializer):
 class ManufacturerSerializer(TaggableSerializerMixin, OwningSiteSerializerMixin, ObjectPermsSerializerMixin, NumIdModelSerializer):
     slug = serializers.SlugField(required=False, allow_blank=True)
     device_type_count = serializers.SerializerMethodField()
+    module_type_count = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
         source="tags", queryset=Tag.objects.all(),
@@ -1390,13 +1391,19 @@ class ManufacturerSerializer(TaggableSerializerMixin, OwningSiteSerializerMixin,
         v = getattr(obj, "device_type_count_annotated", None)
         return v if v is not None else obj.device_types.count()
 
+    def get_module_type_count(self, obj) -> int:
+        v = getattr(obj, "module_type_count_annotated", None)
+        return v if v is not None else obj.module_types.count()
+
     class Meta:
         model = Manufacturer
         fields = [
             "owning_site", "owning_site_id", "permissions", "id", "name", "slug", "url", "description",
                   "tags", "tag_ids",
-                  "device_type_count", "created_at", "updated_at"]
-        read_only_fields = ["id", "device_type_count", "created_at", "updated_at"]
+                  "device_type_count", "module_type_count", "created_at", "updated_at"]
+        read_only_fields = [
+            "id", "device_type_count", "module_type_count", "created_at", "updated_at"
+        ]
 
 
 def _img_url(serializer, f):
