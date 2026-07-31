@@ -5984,30 +5984,39 @@ class LabelTemplateViewSet(TenantScopedViewSet):
                 qs = qs.filter(object_type=ot)
         return qs
 
+    def _view_scoped(self, model, object_type, qs):
+        """Narrow ``qs`` to rows the caller may actually VIEW — tenant plus the
+        row/site RBAC restriction for the target type. Rendering a label must
+        not leak a name/serial/IP/custom field of an object the user couldn't
+        retrieve directly (row/site isolation)."""
+        from auth_api import rbac
+
+        tenant = _get_active_tenant(self.request)
+        if any(f.name == "tenant" for f in model._meta.concrete_fields):
+            qs = qs.filter(tenant=tenant)
+        return rbac.restrict_queryset(
+            qs, self.request.user, tenant, object_type, "view"
+        )
+
     def _objects(self, object_type, ids):
-        """Tenant-scoped objects of ``object_type`` for the given ids."""
+        """View-authorised objects of ``object_type`` for the given ids."""
         from auth_api.object_types import model_for
 
         model = model_for(object_type)
         if model is None:
             return None
-        qs = model.objects.filter(pk__in=ids)
-        if any(f.name == "tenant" for f in model._meta.concrete_fields):
-            qs = qs.filter(tenant=_get_active_tenant(self.request))
+        qs = self._view_scoped(model, object_type, model.objects.filter(pk__in=ids))
         return list(qs)
 
     def _first_object(self, object_type):
-        """One representative object of the type in the active tenant, for the
+        """One representative, view-authorised object of the type, for the
         editor's zero-setup live preview. Returns a 1-list or []."""
         from auth_api.object_types import model_for
 
         model = model_for(object_type)
         if model is None:
             return []
-        qs = model.objects.all()
-        if any(f.name == "tenant" for f in model._meta.concrete_fields):
-            qs = qs.filter(tenant=_get_active_tenant(self.request))
-        obj = qs.first()
+        obj = self._view_scoped(model, object_type, model.objects.all()).first()
         return [obj] if obj else []
 
     def _base_url(self, request) -> str:

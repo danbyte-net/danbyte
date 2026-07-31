@@ -62,6 +62,19 @@ export function labelBody(tmpl: SheetTmpl, label: RenderedLabel): string {
     : label.html
 }
 
+/** One self-contained HTML document holding every label, for a **sandboxed**
+ * print iframe. Author-controlled template markup is isolated here (the iframe
+ * runs with no `allow-scripts`, so an injected `<script>`/`onerror` can't
+ * execute in the app origin), while `@page margin:0` keeps printing clean. */
+export function labelSheetDoc(tmpl: SheetTmpl, labels: RenderedLabel[]): string {
+  const cells = labels
+    .map((l) => `<div class="lbl">${labelBody(tmpl, l)}</div>`)
+    .join("")
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${sheetCss(
+    tmpl
+  )}</style></head><body>${cells}</body></html>`
+}
+
 /** The stylesheet for a print sheet: `@page` sized to the label with zero
  * margin (so the browser omits its header/footer), each `.lbl` sized in mm and
  * hard-page-broken, plus the template's own CSS. Injected into the print page's
