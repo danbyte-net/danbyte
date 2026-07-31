@@ -82,3 +82,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,scope=${{ matrix.image }},mode=max
+          # Attach a full build-provenance attestation + SBOM to each image so
+          # consumers can verify what produced it (defends against a tampered
+          # or rogue image slipping in). Pushing is still gated by org package
+          # write access — this makes authenticity checkable on top of that.
+          provenance: mode=max
+          sbom: true
