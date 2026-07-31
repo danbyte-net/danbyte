@@ -1,0 +1,15 @@
+[Unit]
+Description=Danbyte ACME certificate renewal
+After=network.target
+Wants=danbyte-infra.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/danbyte/.venv/bin/python manage.py acme_renew
+
+# Triggered every 4h by danbyte-acme-renew.timer. Each ACME-issued cert is
+# renewed once it is two-thirds through its lifetime; only issuers with a DNS-01
+# auto-publisher renew unattended.
+# Logs: journalctl --user -fu danbyte-acme-renew

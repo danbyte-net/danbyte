@@ -412,6 +412,101 @@ class IssueJobTests(TestCase):
         self.assertIn("boom", self.order.error)
 
 
+class RenewalTests(TestCase):
+    def setUp(self):
+        _enable_store()
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.user = User.objects.create_user("u", password="x")
+        self.auto_issuer = Issuer.objects.create(
+            tenant=self.tenant, name="auto", directory_url="https://ca/d",
+            account_uri="https://ca/acct/1", dns_provider="rfc2136",
+            dns_settings={"server": "10.0.0.45", "zone": "danbyte.lan", "key_name": "k"},
+        )
+        self.manual_issuer = Issuer.objects.create(
+            tenant=self.tenant, name="manual", directory_url="https://ca/d",
+            account_uri="https://ca/acct/2",
+        )
+
+    def _cert(self, fp, age_hours, lifetime_hours=24):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from .models import Certificate
+
+        now = timezone.now()
+        return Certificate.objects.create(
+            tenant=self.tenant,
+            fingerprint_sha256=fp,
+            subject_cn="svc.danbyte.lan",
+            not_before=now - timedelta(hours=age_hours),
+            not_after=now - timedelta(hours=age_hours) + timedelta(hours=lifetime_hours),
+        )
+
+    def _order(self, issuer, cert):
+        req, _ = generate(
+            tenant=self.tenant, user=self.user, common_name="svc.danbyte.lan"
+        )
+        AcmeOrder.objects.create(
+            tenant=self.tenant, issuer=issuer, request=req,
+            challenge_type=AcmeOrder.Challenge.DNS01,
+            status=AcmeOrder.Status.VALID, issued_certificate=cert,
+        )
+        return req
+
+    def test_renew_due_fraction(self):
+        from django.utils import timezone
+
+        from . import acme_renew
+
+        now = timezone.now()
+        fresh = self._cert("a" * 64, age_hours=1)  # 1/24 elapsed → not due
+        old = self._cert("b" * 64, age_hours=20)  # 20/24 elapsed → due
+        self.assertFalse(acme_renew._renew_due(fresh, now))
+        self.assertTrue(acme_renew._renew_due(old, now))
+
+    def test_auto_issuer_cert_is_renewed(self):
+        from . import acme_renew
+
+        self._order(self.auto_issuer, self._cert("c" * 64, age_hours=20))
+        r = acme_renew.renew_due(enqueue=False)
+        self.assertEqual(r["renewed"], 1)
+        # A fresh renewal order exists for the request.
+        self.assertEqual(
+            AcmeOrder.objects.filter(status=AcmeOrder.Status.PROCESSING).count(), 1
+        )
+
+    def test_manual_issuer_is_skipped(self):
+        from . import acme_renew
+
+        self._order(self.manual_issuer, self._cert("d" * 64, age_hours=20))
+        r = acme_renew.renew_due(enqueue=False)
+        self.assertEqual(r["renewed"], 0)
+        self.assertEqual(r["skipped_manual"], 1)
+
+    def test_not_due_is_left_alone(self):
+        from . import acme_renew
+
+        self._order(self.auto_issuer, self._cert("e" * 64, age_hours=1))
+        r = acme_renew.renew_due(enqueue=False)
+        self.assertEqual(r["renewed"], 0)
+
+    def test_in_flight_renewal_is_not_stacked(self):
+        from . import acme_renew
+
+        req = self._order(self.auto_issuer, self._cert("f" * 64, age_hours=20))
+        # A renewal is already running for this request.
+        AcmeOrder.objects.create(
+            tenant=self.tenant, issuer=self.auto_issuer, request=req,
+            challenge_type=AcmeOrder.Challenge.DNS01,
+            status=AcmeOrder.Status.PROCESSING,
+        )
+        r = acme_renew.renew_due(enqueue=False)
+        self.assertEqual(r["renewed"], 0)
+        self.assertEqual(r["in_flight"], 1)
+
+
 class AcmeApiTests(TestCase):
     def setUp(self):
         _enable_store()

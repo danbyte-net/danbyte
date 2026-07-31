@@ -111,6 +111,7 @@ SCHEDULED_TASKS = [
     {"name": "utilization", "label": "Interface utilization", "cadence": "every 15 min"},
     {"name": "auto-upgrade", "label": "Auto-upgrade check", "cadence": "every 20 min"},
     {"name": "digest", "label": "Email digest", "cadence": "daily 07:00"},
+    {"name": "acme-renew", "label": "ACME renewal", "cadence": "every 4h"},
     {"name": "cleanup-ips", "label": "Stale-IP cleanup", "cadence": "daily"},
     {"name": "prune-changelog", "label": "Prune changelog", "cadence": "daily"},
     {"name": "prune-results", "label": "Prune check results", "cadence": "daily"},

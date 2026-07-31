@@ -1,0 +1,13 @@
+[Unit]
+Description=Renew ACME certificates before they expire
+
+[Timer]
+# step-ca certs default to 24h, so check often; each cert renews only once it is
+# two-thirds through its lifetime, so frequent runs are cheap and safe.
+OnCalendar=*-*-* 00/4:00:00
+OnBootSec=240
+Persistent=true
+AccuracySec=5m
+
+[Install]
+WantedBy=timers.target

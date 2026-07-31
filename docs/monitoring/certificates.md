@@ -424,6 +424,20 @@ The `acme` client and `dnspython` are runtime dependencies (`acme>=4`,
 `josepy>=2`, `dnspython>=2`), included in the offline bundle for airgapped
 installs.
 
+### Renewal
+
+`danbyte-acme-renew.timer` runs `manage.py acme_renew` every four hours. A
+certificate is re-issued once it is **two-thirds through its own lifetime**, so
+the same rule covers step-ca's 24-hour certs (renewed in their last ~8 hours) and
+a 90-day public cert (renewed in its last 30 days). Renewal reuses the request's
+existing CSR and opens a fresh order; the new certificate lands as a new
+[Certificate](#viewing-certificates) row, exactly like a first issuance.
+
+Only issuers with a DNS-01 **auto-publisher** renew unattended — a manual issuer
+can't self-validate, so its certs are left for the operator (the
+[expiry alerting](#expiry-alerting) already warns before they lapse). A renewal
+that is already in flight is never stacked with another.
+
 ## Certificate authorities and chains
 
 An issuer is more than a string. When a certificate is recorded — uploaded or
