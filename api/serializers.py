@@ -1839,6 +1839,10 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_virtual_chassis(self, obj):
+        # Detail-only — the list table doesn't render it, so skip the FK lookup
+        # and the members COUNT on list rows.
+        if not self._detail_only():
+            return None
         vc = obj.virtual_chassis
         if vc is None:
             return None
@@ -1988,10 +1992,16 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return attrs
 
     def get_interface_count(self, obj) -> int:
+        # Detail-only (the list table doesn't render it) — skip the COUNT on list.
+        if not self._detail_only():
+            return 0
         return obj.interfaces.count()
 
     def get_ip_count(self, obj) -> int:
-        return obj.ip_addresses.count()
+        # The list renders this, so it can't be skipped; served from a queryset
+        # annotation when present (DeviceViewSet), else a direct count.
+        annotated = getattr(obj, "ip_count_annotated", None)
+        return annotated if annotated is not None else obj.ip_addresses.count()
 
     def _detail_only(self) -> bool:
         # These per-tab counts are only for the device detail page; skip the

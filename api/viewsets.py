@@ -2584,8 +2584,19 @@ def _region_and_descendant_ids(region_id):
 
 class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
     queryset = (
-        Device.objects.select_related("device_type", "device_type__platform", "site", "primary_ip")
-        .prefetch_related("tags").all().order_by(NATURAL_NAME)
+        # select_related every FK the serializer dereferences per row — role,
+        # rack, status, platform, location, cluster were method-field lookups
+        # doing one query each, so the list ran ~430 extra queries (see the
+        # DeviceSerializer getters). Pulling them into the join keeps the list
+        # to a handful of queries.
+        Device.objects.select_related(
+            "device_type", "device_type__platform", "site", "primary_ip",
+            "role", "rack", "status", "platform", "location", "cluster",
+        )
+        .prefetch_related("tags")
+        # ip_count is shown on the list; one annotation beats a COUNT per row.
+        .annotate(ip_count_annotated=Count("ip_addresses", distinct=True))
+        .all().order_by(NATURAL_NAME)
     )
     serializer_class = DeviceSerializer
     pagination_class = StandardPagination
