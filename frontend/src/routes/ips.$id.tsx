@@ -62,7 +62,7 @@ function IPDetail() {
 function IPDetailBody({ ip }: { ip: IPAddress }) {
   const [deleteOpen, setDeleteOpen] = useState<IPAddress | null>(null)
   const [tab, setTab] = useUrlTab<
-    "overview" | "monitoring" | "journal" | "history"
+    "overview" | "monitoring" | "certificates" | "journal" | "history"
   >("overview")
   const qc = useQueryClient()
   const { canDo, humanIds } = useMe()
@@ -463,6 +463,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "monitoring", label: "Monitoring" },
+        { value: "certificates", label: "Certificates" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
       ]}
@@ -508,16 +509,17 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       </DetailTab>
 
       <DetailTab value="monitoring">
-        <div className="space-y-6">
-          <IpMonitoring
-            ip={{
-              id: ip.id,
-              ip_address: ip.ip_address,
-              flap_exclude: ip.flap_exclude,
-            }}
-          />
-          <CertificatesPanel objectType="api.ipaddress" objectId={ip.id} />
-        </div>
+        <IpMonitoring
+          ip={{
+            id: ip.id,
+            ip_address: ip.ip_address,
+            flap_exclude: ip.flap_exclude,
+          }}
+        />
+      </DetailTab>
+
+      <DetailTab value="certificates">
+        <CertificatesPanel objectType="api.ipaddress" objectId={ip.id} />
       </DetailTab>
 
       <DetailTab value="journal">
