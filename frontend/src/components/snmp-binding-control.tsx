@@ -23,23 +23,7 @@ const SOURCE_LABEL: Record<string, string> = {
   tenant_default: "tenant default",
 }
 
-/**
- * Assign the SNMP profile at one level of the hierarchy (device / device role /
- * device type). Most-specific wins: device → role → type → tenant default
- * (issue #84). On a device, also shows the resolved *effective* profile and
- * where it comes from when nothing is set directly.
- */
-export function SnmpBindingControl({
-  scope,
-  objectId,
-  canEdit,
-}: {
-  scope: SnmpBinding["scope"]
-  objectId: string
-  canEdit: boolean
-}) {
-  const qc = useQueryClient()
-
+function useBinding(scope: SnmpBinding["scope"], objectId: string) {
   const binding = useQuery({
     queryKey: ["snmp-binding", scope, objectId],
     queryFn: () =>
@@ -51,6 +35,32 @@ export function SnmpBindingControl({
       api<Paginated<SnmpProfileOption>>("/api/monitoring/snmp-profiles/"),
     staleTime: 5 * 60_000,
   })
+  return { binding, profiles }
+}
+
+/**
+ * Assign the SNMP profile at one level of the hierarchy (device / device role /
+ * device type). Most-specific wins: device → role → type → tenant default
+ * (issue #84).
+ *
+ * By default it renders the Select plus a resolved-profile hint stacked below —
+ * fine inside a form column. Pass `inline` to render only the Select (for a
+ * card header's actions row); render {@link SnmpBindingHint} in the card body
+ * instead so the hint text doesn't wrap into the corner.
+ */
+export function SnmpBindingControl({
+  scope,
+  objectId,
+  canEdit,
+  inline = false,
+}: {
+  scope: SnmpBinding["scope"]
+  objectId: string
+  canEdit: boolean
+  inline?: boolean
+}) {
+  const qc = useQueryClient()
+  const { binding, profiles } = useBinding(scope, objectId)
 
   const set = useMutation({
     mutationFn: (profileId: string | null) =>
@@ -68,32 +78,64 @@ export function SnmpBindingControl({
   })
 
   const value = binding.data?.profile_id ?? INHERIT
-  const eff = binding.data?.effective
   const profileList = profiles.data?.results ?? []
+
+  const select = (
+    <Select
+      value={value}
+      onValueChange={(v) => set.mutate(v === INHERIT ? null : v)}
+      disabled={!canEdit || set.isPending}
+    >
+      <SelectTrigger className="h-8 w-60 text-xs">
+        <SelectValue placeholder="—" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={INHERIT}>
+          {scope === "device" ? "Inherit / tenant default" : "None"}
+        </SelectItem>
+        {profileList.map((p) => (
+          <SelectItem key={p.id} value={p.id}>
+            {p.name} · {p.version}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+
+  if (inline) return select
 
   return (
     <div className="space-y-1">
-      <Select
-        value={value}
-        onValueChange={(v) => set.mutate(v === INHERIT ? null : v)}
-        disabled={!canEdit || set.isPending}
-      >
-        <SelectTrigger className="h-8 w-60 text-xs">
-          <SelectValue placeholder="—" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={INHERIT}>
-            {scope === "device" ? "Inherit / tenant default" : "None"}
-          </SelectItem>
-          {profileList.map((p) => (
-            <SelectItem key={p.id} value={p.id}>
-              {p.name} · {p.version}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {select}
+      <SnmpBindingHint scope={scope} objectId={objectId} />
+    </div>
+  )
+}
 
-      {scope === "device" && !binding.data?.profile_id && eff && (
+/**
+ * The resolved-profile / no-profile hint for a binding, left-aligned. Shares the
+ * same queries as {@link SnmpBindingControl} (React Query dedupes by key), so it
+ * can be rendered in a card body while the Select sits in the header. Returns
+ * null when there's nothing to say.
+ */
+export function SnmpBindingHint({
+  scope,
+  objectId,
+}: {
+  scope: SnmpBinding["scope"]
+  objectId: string
+}) {
+  const { binding, profiles } = useBinding(scope, objectId)
+  const eff = binding.data?.effective
+  const profileList = profiles.data?.results ?? []
+
+  const showEffective = scope === "device" && !binding.data?.profile_id && eff
+  const showNoProfiles = profileList.length === 0
+  if (!showEffective && !showNoProfiles) return null
+
+  return (
+    <div className="space-y-0.5">
+      {showEffective && (
         <p className="text-[11px] text-muted-foreground">
           {eff.profile_name ? (
             <>
@@ -105,7 +147,7 @@ export function SnmpBindingControl({
           )}
         </p>
       )}
-      {profileList.length === 0 && (
+      {showNoProfiles && (
         <p className="text-[11px] text-muted-foreground">
           No SNMP profiles yet — create one in Settings → SNMP profiles.
         </p>

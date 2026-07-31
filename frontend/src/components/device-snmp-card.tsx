@@ -13,7 +13,10 @@ import type { KvRow } from "@/components/kv-card"
 import { Section } from "@/components/ui/section"
 import { SimpleTable } from "@/components/ui/simple-table"
 import type { SimpleColumn } from "@/components/ui/simple-table"
-import { SnmpBindingControl } from "@/components/snmp-binding-control"
+import {
+  SnmpBindingControl,
+  SnmpBindingHint,
+} from "@/components/snmp-binding-control"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -233,6 +236,7 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
               scope="device"
               objectId={deviceId}
               canEdit={canPoll}
+              inline
             />
             {canPoll && (
               <Button
@@ -252,6 +256,7 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
           </>
         }
       >
+        <SnmpBindingHint scope="device" objectId={deviceId} />
         {factRows.length === 0 ? (
           <p className="text-[13px] text-muted-foreground">
             {state?.error
