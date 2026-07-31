@@ -47,9 +47,9 @@ def upload_host_key(tenant, device, line, *, now=None):
     now = now or timezone.now()
     row, created = SSHHostKey.objects.get_or_create(
         tenant=tenant,
+        device=device,
         fingerprint_sha256=parsed["fingerprint"],
         defaults={
-            "device": device,
             "key_type": parsed["key_type"],
             "public_key": parsed["public_key"],
             "comment": parsed["comment"],
@@ -88,9 +88,9 @@ def record_host_key(tenant, device, hk: dict, *, now=None) -> SSHHostKey | None:
     now = now or timezone.now()
     row, created = SSHHostKey.objects.get_or_create(
         tenant=tenant,
+        device=device,
         fingerprint_sha256=fp,
         defaults={
-            "device": device,
             "key_type": key_type,
             "public_key": blob,
             "observed": True,

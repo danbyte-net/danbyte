@@ -38,6 +38,7 @@ SITE_PATHS: dict[str, str] = {
     "modulebay": "device__site",
     "module": "device__site",
     "macaddress": "assigned_interface__device__site",
+    "sshhostkey": "device__site",
     "vminterface": "vm__site",
     "circuittermination": "site",
     "floorplan": "location__site",

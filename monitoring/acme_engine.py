@@ -572,8 +572,12 @@ def _finalize_with(acme, jwk, orderr, order: AcmeOrder):
         order.save(update_fields=["status", "error", "updated_at"])
         raise AcmeError(f"ACME finalize failed: {exc}") from exc
     except Exception as exc:  # noqa: BLE001 — surface poll timeouts cleanly
+        # A poll timeout (acme.errors.TimeoutError) must land in a terminal
+        # state, not stay PROCESSING — otherwise the UI polls it forever with
+        # no retry. ERRORED (vs INVALID) marks "didn't complete", retryable.
+        order.status = AcmeOrder.Status.ERRORED
         order.error = str(exc)
-        order.save(update_fields=["error", "updated_at"])
+        order.save(update_fields=["status", "error", "updated_at"])
         raise AcmeError(f"ACME order did not complete: {exc}") from exc
 
     cert_row = csr_mod.import_issued(order.request, finalized.fullchain_pem)

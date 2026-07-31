@@ -568,6 +568,9 @@ class CertificateAssignmentViewSet(TenantScopedViewSet):
 
     queryset = CertificateAssignment.objects.select_related("certificate")
     serializer_class = CertificateAssignmentSerializer
+    # accept_served creates/replaces an assignment, so it needs an `add` grant —
+    # not the default `change` a custom action would otherwise demand.
+    rbac_action_map = {"accept_served": "add"}
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -713,9 +716,33 @@ class CertificateRequestViewSet(TenantScopedViewSet):
             qs = qs.filter(status=status_f)
         return qs
 
+    def _audit_key_reveal(self, req):
+        """Leave a trail whenever stored private-key material is handed out —
+        who, which request, when (revealing a secret writes no model change, so
+        nothing else logs it)."""
+        from audit.context import current_request_id
+        from audit.models import ChangeAction, ChangeLogEntry
+        from audit.site_capture import entry_site_id
+
+        u = getattr(self.request, "user", None)
+        authed = bool(u and u.is_authenticated)
+        ChangeLogEntry.objects.create(
+            tenant_id=getattr(req, "tenant_id", None),
+            user=u if authed else None,
+            user_name=(u.get_username() if authed else ""),
+            action=ChangeAction.REVEAL,
+            object_type=req._meta.label_lower,
+            object_label="Certificate request",
+            object_id=str(req.pk),
+            object_repr=str(req),
+            object_site_id=entry_site_id(req),
+            changes={"revealed": "private_key"},
+            request_id=current_request_id(),
+        )
+
     def create(self, request, *args, **kwargs):
         from .csr import CsrError, generate
-        from .secret_store import SecretStoreDisabled
+        from .secret_store import SecretStoreDisabled, SecretStoreError
 
         tenant = self._tenant_or_403()
         d = request.data
@@ -736,12 +763,17 @@ class CertificateRequestViewSet(TenantScopedViewSet):
             )
         except SecretStoreDisabled as exc:
             raise ValidationError({"detail": str(exc)}) from exc
+        except SecretStoreError as exc:
+            # Store enabled but the write failed (e.g. Vault unreachable). The
+            # row rolled back in generate(); surface an actionable 400, not a 500.
+            raise ValidationError({"detail": str(exc)}) from exc
         except CsrError as exc:
             raise ValidationError({"detail": str(exc)}) from exc
         data = self.get_serializer(req).data
         # The private key is returned exactly once — it is not stored on the row
         # and this response is the operator's chance to save it locally.
         data["private_key"] = private_key
+        self._audit_key_reveal(req)
         return Response(data, status=201)
 
     @action(detail=True, methods=["get"])
@@ -763,6 +795,7 @@ class CertificateRequestViewSet(TenantScopedViewSet):
             raise ValidationError(
                 {"detail": "The private key is no longer available for this request."}
             )
+        self._audit_key_reveal(req)
         return Response({"private_key": key})
 
     @action(detail=True, methods=["post"], url_path="import-issued")

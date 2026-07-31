@@ -2594,8 +2594,12 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
             "role", "rack", "status", "platform", "location", "cluster",
         )
         .prefetch_related("tags")
-        # ip_count is shown on the list; one annotation beats a COUNT per row.
-        .annotate(ip_count_annotated=Count("ip_addresses", distinct=True))
+        # ip_count + interface_count are shown/served on the list; annotate
+        # (distinct) so each is one query, not a COUNT per row.
+        .annotate(
+            ip_count_annotated=Count("ip_addresses", distinct=True),
+            interface_count_annotated=Count("interfaces", distinct=True),
+        )
         .all().order_by(NATURAL_NAME)
     )
     serializer_class = DeviceSerializer
@@ -3501,6 +3505,20 @@ class CableViewSet(TenantScopedViewSet):
                 rack.u_height if rack is not None else None,
                 tray.level, tray.elevation_mm, plan.ceiling_mm, plenum,
             )
+
+        if not used:
+            # Both ends resolved to the same tile (e.g. a same-rack patch): no
+            # tray path is needed. Don't clear existing assignments or write a
+            # bogus 0 m — report it as point-to-point and leave the cable alone.
+            return Response({
+                "reachable": True,
+                "point_to_point": True,
+                "points": [[round(x, 3), round(y, 3)] for x, y in result.points],
+                "tray_ids": [],
+                "tray_names": [],
+                "length_m": None,
+                "length_set": False,
+            })
 
         drop_a = _drop(rack_a, used[0]) if used else 0.0
         drop_b = _drop(rack_b, used[-1]) if used else 0.0
@@ -5870,6 +5888,12 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().select_related("site", "parent")
+        # Detail tabs show Devices/Racks counts; annotate (distinct) so the
+        # serializer serves them without an N+1 per row.
+        qs = qs.annotate(
+            device_count_annotated=Count("devices", distinct=True),
+            rack_count_annotated=Count("racks", distinct=True),
+        )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:

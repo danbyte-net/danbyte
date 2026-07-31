@@ -2071,11 +2071,12 @@ class SSHHostKey(TimestampedModel):
     **A private key is never stored, requested, or accepted** — there is no
     field for one and :meth:`save` refuses key material outright.
 
-    Identity is the OpenSSH ``SHA256:…`` fingerprint, scoped to the tenant, so
-    an uploaded key that is later observed on the wire is the **same row** (the
-    ``observed`` / ``uploaded`` flags record that convergence). A device has one
-    key per algorithm; during rotation the old and new keys coexist as separate
-    rows, which is what makes the mismatch visible.
+    Identity is the OpenSSH ``SHA256:…`` fingerprint, scoped to the **device**,
+    so an uploaded key later observed on the wire is the **same row** (the
+    ``observed`` / ``uploaded`` flags record that convergence), while two devices
+    that happen to share a key (cloned/templated VMs that didn't regenerate it)
+    each keep their own row. During rotation the old and new keys coexist as
+    separate rows, which is what makes the mismatch visible.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -2115,8 +2116,8 @@ class SSHHostKey(TimestampedModel):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["tenant", "fingerprint_sha256"],
-                name="uniq_ssh_host_key_tenant_fp",
+                fields=["tenant", "device", "fingerprint_sha256"],
+                name="uniq_ssh_host_key_device_fp",
             )
         ]
         indexes = [

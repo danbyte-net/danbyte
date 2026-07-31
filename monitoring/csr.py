@@ -130,12 +130,20 @@ def generate(
     algorithm = None if key_spec == "ed25519" else hashes.SHA256()
     csr = builder.sign(key, algorithm)
     req.csr_pem = csr.public_bytes(serialization.Encoding.PEM).decode("ascii")
-    req.save()
-
     private_pem = _private_pem(key)
-    req.key_ref = f"csr/{req.id}"
-    store.put(tenant.id, req.key_ref, {"private_key": private_pem, "csr": req.csr_pem})
-    req.save(update_fields=["key_ref", "updated_at"])
+    req.key_ref = f"csr/{req.id}"  # id is a uuid default, set before save
+
+    # Persist the row and stash its key together. If the secret-store write
+    # fails (e.g. Vault configured but unreachable) the transaction rolls back
+    # the row too, so a keyless CSR request is never left behind for the caller
+    # to trip over. SecretStoreError propagates for the viewset to turn into 400.
+    from django.db import transaction
+
+    with transaction.atomic():
+        req.save()
+        store.put(
+            tenant.id, req.key_ref, {"private_key": private_pem, "csr": req.csr_pem}
+        )
     return req, private_pem
 
 
@@ -150,6 +158,8 @@ def import_issued(req: CertificateRequest, pem_text: str):
 
     if req.status == CertificateRequest.Status.CANCELLED:
         raise CsrError("This request was cancelled.")
+    if req.status == CertificateRequest.Status.ISSUED:
+        raise CsrError("This request has already been issued.")
 
     try:
         issued = x509.load_pem_x509_certificate(pem_text.encode("utf-8", "replace"))

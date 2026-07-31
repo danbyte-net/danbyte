@@ -16,6 +16,9 @@ class ChangeAction(models.TextChoices):
     CREATE = "create", "Created"
     UPDATE = "update", "Updated"
     DELETE = "delete", "Deleted"
+    # A read that exposes secret material (e.g. a stored private key). Not a
+    # mutation, but it must leave a trail — who pulled the secret, and when.
+    REVEAL = "reveal", "Secret revealed"
 
 
 class ChangeLogEntry(models.Model):

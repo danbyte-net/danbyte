@@ -1992,10 +1992,11 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return attrs
 
     def get_interface_count(self, obj) -> int:
-        # Detail-only (the list table doesn't render it) — skip the COUNT on list.
-        if not self._detail_only():
-            return 0
-        return obj.interfaces.count()
+        # Served from a list annotation when present (avoids a COUNT per row);
+        # falls back to a query on the detail path. Never a bare 0 — a raw API
+        # consumer paginating the list would otherwise read wrong values.
+        v = getattr(obj, "interface_count_annotated", None)
+        return v if v is not None else obj.interfaces.count()
 
     def get_ip_count(self, obj) -> int:
         # The list renders this, so it can't be skipped; served from a queryset
@@ -5037,6 +5038,8 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
     site = SiteMiniSerializer(read_only=True)
     parent = LocationMiniSerializer(read_only=True)
     child_count = serializers.SerializerMethodField()
+    device_count = serializers.SerializerMethodField()
+    rack_count = serializers.SerializerMethodField()
 
     site_id = TenantScopedPrimaryKeyRelatedField(
         source="site", queryset=Site.objects.all(), write_only=True,
@@ -5048,6 +5051,14 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
 
     def get_child_count(self, obj) -> int:
         return obj.children.count()
+
+    def get_device_count(self, obj) -> int:
+        v = getattr(obj, "device_count_annotated", None)
+        return v if v is not None else obj.devices.count()
+
+    def get_rack_count(self, obj) -> int:
+        v = getattr(obj, "rack_count_annotated", None)
+        return v if v is not None else obj.racks.count()
 
     def validate(self, attrs):
         parent = attrs.get("parent", getattr(self.instance, "parent", None))
@@ -5067,6 +5078,7 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
         model = Location
         fields = ["id", "name", "slug", "site", "site_id", "parent", "parent_id",
                   "status", "status_id",  "description", "child_count",
+                  "device_count", "rack_count",
                   "created_at", "updated_at"]
         read_only_fields = ["id",  "child_count",
                             "created_at", "updated_at"]

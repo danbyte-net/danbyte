@@ -5071,6 +5071,15 @@ class LabelTemplate(NumIdMixin, TimestampedModel):
     def __str__(self) -> str:
         return self.name
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # One default per (tenant, object_type): marking this default demotes any
+        # sibling, so print never has to choose between two "Default" templates.
+        if self.is_default:
+            LabelTemplate.objects.filter(
+                tenant=self.tenant, object_type=self.object_type, is_default=True
+            ).exclude(pk=self.pk).update(is_default=False)
+
 
 def resolve_config_template(device):
     """The config template that renders this device's intended config —

@@ -65,10 +65,17 @@ def available_fields(object_type, tenant=None) -> dict | None:
             tokens.append(f"{name}.{f.name}.name")
         else:
             tokens.append(f"{name}.{f.name}")
-    # Curated one-hop relations that aren't concrete FKs on the row.
+    # Curated one-hop relations that aren't concrete FKs on the row, mapped to
+    # the sub-attribute that actually holds their display value (an IPAddress
+    # has `ip_address`, not `name`, so `primary_ip.name` would render blank).
+    rel_attr = {
+        "primary_ip": "ip_address",
+        "primary_ip4": "ip_address",
+        "primary_ip6": "ip_address",
+    }
     for rel in ("primary_ip", "site", "rack", "tenant", "role", "status"):
         if hasattr(model, rel):
-            tokens.append(f"{name}.{rel}.name")
+            tokens.append(f"{name}.{rel}.{rel_attr.get(rel, 'name')}")
     # Custom fields: one clickable token per defined field for this type/tenant,
     # so authors don't have to know the JSON key. `custom_fields.<key>` resolves
     # via dict lookup at render time.
