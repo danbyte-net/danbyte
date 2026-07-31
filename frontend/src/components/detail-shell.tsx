@@ -310,7 +310,7 @@ function DefaultTabPin({ current }: { current: string }) {
           <Pin className={cn("h-3.5 w-3.5", isPinned && "fill-current")} />
         </Button>
       </TooltipTrigger>
-      <TooltipContent>
+      <TooltipContent variant="panel">
         {isPinned
           ? "This tab opens by default — click to unpin"
           : "Open this tab by default on this kind of page"}
