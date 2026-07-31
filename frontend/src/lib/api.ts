@@ -3992,6 +3992,12 @@ export interface CertificateAssignment {
   /** `app.model` label, e.g. `api.device`, `api.ipaddress`, `api.virtualmachine`. */
   object_type: string
   object_id: string
+  /** Server-resolved human label for the target (IP address, device name). */
+  object_label: string
+  /** Human type name, e.g. "Ip Address", "Device". */
+  object_type_label: string
+  /** Short disambiguator: an IP's VRF ("Global"), a device/VM's site. */
+  object_context: string
   notes: string
   created_at: string
   updated_at: string

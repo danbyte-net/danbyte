@@ -4,6 +4,7 @@ import { Activity, ArrowRight } from "lucide-react"
 import { api, type CheckStatus, type IpChecksResponse } from "@/lib/api"
 import { useDateFormat } from "@/lib/datetime"
 import { MixedStatusBadge } from "./mixed-status-badge"
+import { ObjectCertExpiryBadge } from "./cert-expiry-badge"
 
 /**
  * Compact monitoring status card for the IP detail Overview tab — the headline
@@ -56,6 +57,9 @@ export function IpMonitoringSummary({
       ) : (
         <span className="text-muted-foreground">Not monitored</span>
       )}
+      {/* A declared certificate on this IP that is expired/expiring shows here,
+          so the Overview flags it without opening the Monitoring tab. */}
+      <ObjectCertExpiryBadge objectType="api.ipaddress" objectId={ipId} />
       <button
         type="button"
         onClick={onOpenMonitoring}

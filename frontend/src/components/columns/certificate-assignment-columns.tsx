@@ -79,22 +79,32 @@ export function buildCertificateAssignmentColumns<
       id: "object",
       header: "Object",
       enableSorting: false,
-      // The target is a generic (object_type, object_id) pair, so there is no
-      // name without a second fetch per row — the short id is the stable label
-      // and the link resolves it.
+      // The server resolves the generic (object_type, object_id) pair to a
+      // human label (an IP's address, a device's name) and a short context (an
+      // IP's VRF, a device's site), so the row reads without a per-row fetch.
+      // Falls back to the short id for a target that no longer resolves.
       cell: ({ row }) => {
         const t = CERTIFICATE_OBJECT_TYPES[row.original.object_type]
-        return t?.route ? (
+        const label =
+          row.original.object_label || row.original.object_id.slice(0, 8)
+        const context = row.original.object_context
+        const inner = t?.route ? (
           <Link
             to={t.route}
             params={{ id: row.original.object_id }}
-            className="font-mono font-medium hover:underline"
+            className="font-medium hover:underline"
           >
-            {row.original.object_id.slice(0, 8)}
+            {label}
           </Link>
         ) : (
-          <span className="font-mono">
-            {row.original.object_id.slice(0, 8)}
+          <span className="font-medium">{label}</span>
+        )
+        return (
+          <span className="flex items-baseline gap-1.5">
+            {inner}
+            {context && (
+              <span className="text-xs text-muted-foreground">{context}</span>
+            )}
           </span>
         )
       },

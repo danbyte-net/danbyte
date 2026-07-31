@@ -243,6 +243,48 @@ class CertificateAssignmentSerializer(serializers.ModelSerializer):
     certificate_not_after = serializers.DateTimeField(
         source="certificate.not_after", read_only=True, default=None
     )
+    # The generic target as a human sees it: "10.0.0.1", "sw1" — not the raw
+    # UUID. `object_context` carries the disambiguator that matters for the type
+    # (an IP's VRF, a device's site), so an assignment reads without a lookup.
+    object_label = serializers.SerializerMethodField()
+    object_type_label = serializers.SerializerMethodField()
+    object_context = serializers.SerializerMethodField()
+
+    def _target(self, obj):
+        """Resolve the assignment's (object_type, object_id) to the instance,
+        cached on the serializer-bound assignment to avoid a double query."""
+        if not hasattr(obj, "_resolved_target"):
+            from auth_api.object_types import model_for
+
+            model = model_for((obj.object_type or "").split(".")[-1])
+            obj._resolved_target = (
+                model.objects.filter(pk=obj.object_id).first() if model else None
+            )
+        return obj._resolved_target
+
+    def get_object_label(self, obj) -> str:
+        target = self._target(obj)
+        return str(target) if target is not None else str(obj.object_id)
+
+    def get_object_type_label(self, obj) -> str:
+        from auth_api.object_types import model_for
+
+        model = model_for((obj.object_type or "").split(".")[-1])
+        return str(model._meta.verbose_name).title() if model else obj.object_type
+
+    def get_object_context(self, obj) -> str:
+        """A short disambiguator for the target: an IP's VRF (or "Global"),
+        a device/VM's site. Empty when the type has no useful context."""
+        target = self._target(obj)
+        if target is None:
+            return ""
+        # IPAddress → VRF (nullable = the global table).
+        if hasattr(target, "vrf_id"):
+            return target.vrf.name if target.vrf_id else "Global"
+        # Device / VirtualMachine → site.
+        if getattr(target, "site_id", None):
+            return target.site.name
+        return ""
 
     def validate_object_type(self, value):
         from auth_api.object_types import is_registered
@@ -263,7 +305,8 @@ class CertificateAssignmentSerializer(serializers.ModelSerializer):
         fields = [
             "id", "certificate", "certificate_subject_cn",
             "certificate_fingerprint", "certificate_not_after",
-            "object_type", "object_id", "notes", "created_at", "updated_at",
+            "object_type", "object_id", "object_label", "object_type_label",
+            "object_context", "notes", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 

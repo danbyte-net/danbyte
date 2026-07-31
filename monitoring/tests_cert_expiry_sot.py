@@ -209,6 +209,78 @@ class SotExpiryTests(TestCase):
         self.assertEqual(alert.notify_count, 2)
 
 
+class AssignmentLabelTests(TestCase):
+    """The assignment serializer resolves the generic target to a human label
+    (IP address, device name) + context (VRF, site), not the raw UUID."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.site = Site.objects.create(tenant=self.tenant, name="AMS")
+        mfr = Manufacturer.objects.create(tenant=self.tenant, name="M", slug="m")
+        dtype = DeviceType.objects.create(tenant=self.tenant, manufacturer=mfr, model="X")
+        role = DeviceRole.objects.create(tenant=self.tenant, name="R", slug="r")
+        prefix = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.0.0.0/24", status=status_for(self.tenant)
+        )
+        self.ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.0.0.5", prefix=prefix
+        )
+        self.device = Device.objects.create(
+            tenant=self.tenant, name="sw1", device_type=dtype, site=self.site,
+            role=role, status=status_for(self.tenant),
+        )
+        now = timezone.now()
+        self.cert = Certificate.objects.create(
+            tenant=self.tenant, fingerprint_sha256=_fingerprint("z"),
+            subject_cn="c", not_before=now - dt.timedelta(days=1),
+            not_after=now + dt.timedelta(days=10), uploaded=True,
+        )
+
+    def _serialize(self, assignment):
+        from .serializers import CertificateAssignmentSerializer
+
+        return CertificateAssignmentSerializer(assignment).data
+
+    def test_ip_assignment_resolves_address_and_vrf_context(self):
+        a = CertificateAssignment.objects.create(
+            tenant=self.tenant, certificate=self.cert,
+            object_type="api.ipaddress", object_id=str(self.ip.id),
+        )
+        data = self._serialize(a)
+        self.assertEqual(data["object_label"], "10.0.0.5")
+        self.assertEqual(data["object_context"], "Global")  # no VRF = global table
+        self.assertIn("Ip Address", data["object_type_label"])
+
+    def test_device_assignment_resolves_name_and_site(self):
+        a = CertificateAssignment.objects.create(
+            tenant=self.tenant, certificate=self.cert,
+            object_type="api.device", object_id=str(self.device.id),
+        )
+        data = self._serialize(a)
+        self.assertEqual(data["object_label"], "sw1")
+        self.assertEqual(data["object_context"], "AMS")
+
+    def test_bare_object_type_still_resolves(self):
+        # The API accepts "ipaddress" ≡ "api.ipaddress"; the label must resolve
+        # either way rather than falling back to the raw id.
+        a = CertificateAssignment.objects.create(
+            tenant=self.tenant, certificate=self.cert,
+            object_type="ipaddress", object_id=str(self.ip.id),
+        )
+        self.assertEqual(self._serialize(a)["object_label"], "10.0.0.5")
+
+    def test_dangling_target_falls_back_to_id(self):
+        a = CertificateAssignment.objects.create(
+            tenant=self.tenant, certificate=self.cert,
+            object_type="api.ipaddress",
+            object_id="00000000-0000-0000-0000-000000000000",
+        )
+        data = self._serialize(a)
+        self.assertEqual(data["object_label"], "00000000-0000-0000-0000-000000000000")
+        self.assertEqual(data["object_context"], "")
+
+
 class CertHealthEndpointTests(APITestCase):
     """The monitoring-overview summary: one tenant-scoped read that buckets
     certificate expiry, self-signed, SSH drift, and firing alerts."""

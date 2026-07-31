@@ -1,7 +1,14 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
-import { GitCompareArrows, Plus, Upload, X } from "lucide-react"
+import {
+  GitCompareArrows,
+  Plus,
+  ShieldAlert,
+  ShieldX,
+  Upload,
+  X,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -22,6 +29,7 @@ import {
   OriginBadge,
 } from "@/components/columns/certificate-columns"
 import { UploadCertificateDialog } from "@/components/monitoring/upload-certificate-dialog"
+import { worstAssignmentExpiry } from "@/components/monitoring/cert-expiry-badge"
 
 // One firing cert_mismatch alert (kind=tls_cert, detail.drift="cert_mismatch"):
 // the endpoint is serving a certificate other than the one its object was
@@ -259,6 +267,39 @@ export function CertificatesPanel({
     <Section title="Certificates" count={rows.length}>
       <div className="max-w-3xl space-y-3">
         {assignments.isError && <QueryError error={assignments.error} />}
+
+        {/* Expiry: a declared certificate here is expired or nearing expiry.
+            Red = expired/critical, amber = within the warning window. The row's
+            own ExpiryBadge carries the exact days; this is the section headline
+            so the problem reads before scrolling the table. */}
+        {(() => {
+          const worst = worstAssignmentExpiry(rows)
+          if (!worst) return null
+          const expiredish = worst === "expired" || worst === "critical"
+          return (
+            <div
+              className={`flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md px-3 py-2 text-xs ring-1 ring-inset ${
+                expiredish
+                  ? "bg-red-50 text-red-800 ring-red-600/20 dark:bg-red-950/40 dark:text-red-200 dark:ring-red-400/20"
+                  : "bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-400/20"
+              }`}
+            >
+              {worst === "expired" ? (
+                <ShieldX className="h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+              )}
+              <span className="font-medium">
+                {worst === "expired"
+                  ? "A certificate declared here has expired."
+                  : worst === "critical"
+                    ? "A certificate declared here expires very soon."
+                    : "A certificate declared here is nearing expiry."}
+              </span>
+              <span>See the expiry column below.</span>
+            </div>
+          )
+        })()}
 
         {/* Drift: the endpoint is serving a certificate other than the one this
             object was declared to present. Amber, compare-arrows — the same
