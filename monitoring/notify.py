@@ -221,14 +221,66 @@ _EVENT_VERB = {
 }
 
 
+# Detail keys worth forwarding verbatim on cert/SSH alert payloads, so a webhook
+# or PagerDuty event carries the specifics (CN, fingerprint, expiry) rather than
+# just "tls_cert is down".
+_RICH_DETAIL_KEYS = (
+    "subject_cn", "issuer_cn", "fingerprint_sha256", "not_after",
+    "days_until_expiry", "cert_state", "certificate_id", "endpoint",
+    "drift", "key_type", "served", "expected", "object_type", "object_id",
+)
+
+
+def _cert_summary(detail: dict) -> str | None:
+    """A human line for a TLS-certificate alert, or None if this isn't one."""
+    cn = detail.get("subject_cn") or detail.get("endpoint") or "certificate"
+    fp = (detail.get("fingerprint_sha256") or "")[:12]
+    tail = f" [{fp}…]" if fp else ""
+    state = detail.get("cert_state")
+    days = detail.get("days_until_expiry")
+    when = (detail.get("not_after") or "")[:10]
+    date = f" ({when})" if when else ""
+    if state == "expired":
+        ago = f"expired {abs(round(days))}d ago" if isinstance(days, (int, float)) else "expired"
+        return f'TLS cert "{cn}" {ago}{date}{tail}'
+    if state in ("expiring_critical", "expiring_warning"):
+        left = f"{round(days)}d" if isinstance(days, (int, float)) else "soon"
+        return f'TLS cert "{cn}" expires in {left}{date}{tail}'
+    if detail.get("drift") == "cert_mismatch":
+        return f'TLS cert served differs from the declared one ("{cn}"){tail}'
+    return None
+
+
+def _ssh_summary(detail: dict) -> str | None:
+    if detail.get("drift") != "ssh_host_key_mismatch":
+        return None
+    kt = detail.get("key_type") or "host key"
+    served = detail.get("served") or "unknown"
+    return f"SSH host-key mismatch ({kt}) — served {served}"
+
+
+def _alert_specific(alert) -> str | None:
+    """The cert/SSH-specific line for an alert, if it is one; else None."""
+    detail = getattr(alert, "detail", None) or {}
+    drift = detail.get("drift") or ""
+    if alert.kind == "tls_cert" or drift.startswith("cert_"):
+        return _cert_summary(detail)
+    if alert.kind == "ssh" or drift == "ssh_host_key_mismatch":
+        return _ssh_summary(detail)
+    return None
+
+
 def _alert_summary(alert, event: str, ip: str) -> str:
     verb = _EVENT_VERB.get(event, "FIRING")
+    specific = _alert_specific(alert)
+    if specific:
+        return f"[{verb}] {alert.severity.upper()}: {ip} — {specific}"
     name = alert.template.name if alert.template_id else alert.kind
     return f"[{verb}] {alert.severity.upper()}: {ip} — {name} is {alert.check_status}"
 
 
 def _alert_payload(alert, event: str, ip: str) -> dict:
-    return {
+    payload = {
         "event": event,
         "alert_id": str(alert.id),
         "severity": alert.severity,
@@ -238,6 +290,11 @@ def _alert_payload(alert, event: str, ip: str) -> dict:
         "template": alert.template.name if alert.template_id else None,
         "opened_at": alert.opened_at.isoformat() if alert.opened_at else None,
     }
+    detail = getattr(alert, "detail", None) or {}
+    for key in _RICH_DETAIL_KEYS:
+        if key in detail:
+            payload[key] = detail[key]
+    return payload
 
 
 def _deployment():
@@ -460,7 +517,9 @@ def _dispatch_group_to_channel(channel, alerts: list, event: str, dep) -> None:
             from django.core.mail import EmailMessage
 
             body = linked + "\n\n" + "\n".join(
-                f"- {a.target_ip.ip_address}: {a.kind} {a.check_status}" for a in alerts
+                f"- {a.target_ip.ip_address}: "
+                f"{_alert_specific(a) or f'{a.kind} {a.check_status}'}"
+                for a in alerts
             )
             EmailMessage(
                 subject=text,

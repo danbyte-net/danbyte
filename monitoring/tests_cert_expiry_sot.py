@@ -165,6 +165,32 @@ class SotExpiryTests(TestCase):
         resolved = Alert.objects.get(dedup_key=sot_dedup_key(aid))
         self.assertEqual(resolved.status, AlertStatus.RESOLVED)
 
+    # ─── B1: notifications render cert specifics, not "tls_cert is down" ──
+
+    def test_notification_summary_names_the_cert_and_its_expiry(self):
+        from .notify import _alert_payload, _alert_summary
+
+        a = self._assign(self._cert(3))
+        evaluate_sot_expiry()
+        alert = Alert.objects.get(dedup_key=sot_dedup_key(a.id))
+        summary = _alert_summary(alert, "firing", "10.0.0.5")
+        self.assertIn("svc.declared", summary)
+        self.assertIn("expires in", summary)
+        self.assertNotIn("tls_cert is", summary)  # not the generic line
+        payload = _alert_payload(alert, "firing", "10.0.0.5")
+        self.assertEqual(payload["subject_cn"], "svc.declared")
+        self.assertEqual(payload["cert_state"], "expiring_critical")
+        self.assertIn("fingerprint_sha256", payload)
+        self.assertIn("not_after", payload)
+
+    def test_expired_cert_summary_says_expired(self):
+        from .notify import _alert_summary
+
+        a = self._assign(self._cert(-5))
+        evaluate_sot_expiry()
+        alert = Alert.objects.get(dedup_key=sot_dedup_key(a.id))
+        self.assertIn("expired", _alert_summary(alert, "firing", "10.0.0.5"))
+
     def test_warning_to_critical_escalates_one_alert_and_re_notifies(self):
         cert = self._cert(20)
         a = self._assign(cert)

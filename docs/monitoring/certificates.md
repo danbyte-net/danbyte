@@ -185,7 +185,13 @@ A binding is **stale** once it hasn't been observed for
 ## Expiry alerting
 
 Expiry alerts use the ordinary [alerting engine](../features/monitoring.md) —
-the same `Alert` rows, so they inherit acknowledgement, silences and maintenance
+the same `Alert` rows routed to the same [notification
+channels](../features/monitoring.md) (email, Slack, Teams, Discord, PagerDuty,
+webhook). A certificate alert names the **certificate** rather than reading
+`tls_cert is down`: the message and webhook/PagerDuty payload carry the subject
+CN, a short fingerprint, the expiry date and days remaining, so an on-call
+message is actionable on its own. They inherit acknowledgement, silences and
+maintenance
 windows, renotify, escalation, grouping, and every notification channel you have
 configured. There is no separate certificate-notification path to set up.
 
