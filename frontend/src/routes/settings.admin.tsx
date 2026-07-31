@@ -483,12 +483,10 @@ function DeploymentSection() {
       >
         <FormSelect
           label="Provider"
-          value={secretsProvider}
-          onChange={(v) =>
-            setSecretsProvider((v as "" | "local" | "vault") ?? "")
-          }
+          value={secretsProvider || null}
+          onChange={(v) => setSecretsProvider((v as "local" | "vault") ?? "")}
+          noneLabel="Disabled — no key storage"
           options={[
-            { value: "", label: "Disabled — no key storage" },
             { value: "local", label: "Local (encrypted in the database)" },
             { value: "vault", label: "HashiCorp Vault / OpenBao" },
           ]}

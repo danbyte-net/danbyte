@@ -27,14 +27,12 @@ import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 
 const AUTH_TYPES: { value: WirelessAuthType; label: string }[] = [
-  { value: "", label: "—" },
   { value: "open", label: "Open" },
   { value: "wep", label: "WEP" },
   { value: "wpa-personal", label: "WPA Personal (PSK)" },
   { value: "wpa-enterprise", label: "WPA Enterprise" },
 ]
 const AUTH_CIPHERS: { value: WirelessAuthCipher; label: string }[] = [
-  { value: "", label: "—" },
   { value: "auto", label: "Auto" },
   { value: "tkip", label: "TKIP" },
   { value: "aes", label: "AES" },
@@ -222,14 +220,16 @@ export function WirelessLANForm({
       <div className="grid grid-cols-2 gap-3">
         <FormSelect
           label="Authentication"
-          value={authType}
+          value={authType || null}
           onChange={(v) => setAuthType((v as WirelessAuthType) ?? "")}
+          noneLabel="—"
           options={AUTH_TYPES}
         />
         <FormSelect
           label="Cipher"
-          value={authCipher}
+          value={authCipher || null}
           onChange={(v) => setAuthCipher((v as WirelessAuthCipher) ?? "")}
+          noneLabel="—"
           options={AUTH_CIPHERS}
         />
       </div>
