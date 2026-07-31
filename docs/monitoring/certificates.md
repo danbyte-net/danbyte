@@ -312,6 +312,18 @@ This gives you a real chain, not a flat list:
 Chain membership stays public-data-only, exactly like the rest of the inventory
 — a CA certificate is still just an observed/uploaded row, never a key.
 
+### Importing a bundle
+
+**Upload certificate** stores a single leaf. **Import bundle** (beside it on the
+Certificates list) takes a whole **PEM bundle** — leaf + intermediates + root, or
+any batch of concatenated certificates — and stores **each block as its own
+row**, so the chain links up immediately. It dedups every block by fingerprint
+(re-importing is safe), reports how many were added versus already on file, and
+skips any unreadable block rather than failing the whole import.
+`POST /api/monitoring/certificates/import-bundle/` with `{"pem": "…"}` is the
+API. A private-key block anywhere in the input refuses the whole bundle — the
+inventory never stores a key.
+
 ## Viewing certificates
 
 The inventory has its own UI under **Governance → Certificates** in the

@@ -19,7 +19,7 @@ from rest_framework.test import APITestCase
 
 from core.models import Organization, Tenant
 
-from .certificates import upload_certificate
+from .certificates import CertificateUploadError, import_bundle, upload_certificate
 from .models import Certificate
 
 User = get_user_model()
@@ -101,6 +101,42 @@ class ChainLinkingTests(TestCase):
         root, inter, leaf = _three_tier()
         self._upload(inter, leaf, root)
         self._assert_linked()
+
+
+class BundleImportTests(TestCase):
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+
+    def test_bundle_imports_every_block_and_links_the_chain(self):
+        root, inter, leaf = _three_tier()
+        result = import_bundle(self.tenant, "\n".join([leaf, inter, root]))
+        self.assertEqual(result.total, 3)
+        self.assertEqual(result.created, 3)
+        self.assertEqual(result.existing, 0)
+        self.assertEqual(result.errors, [])
+        # All three rows exist and the chain is wired up (unlike single upload,
+        # which would keep only the leaf).
+        self.assertEqual(Certificate.objects.filter(tenant=self.tenant).count(), 3)
+        leaf_row = Certificate.objects.get(tenant=self.tenant, subject_cn="svc.danbyte.lan")
+        inter_row = Certificate.objects.get(tenant=self.tenant, subject_cn="Danbyte Issuing CA")
+        self.assertEqual(leaf_row.issuer_certificate_id, inter_row.id)
+
+    def test_reimport_dedups_by_fingerprint(self):
+        root, inter, leaf = _three_tier()
+        bundle = "\n".join([leaf, inter, root])
+        import_bundle(self.tenant, bundle)
+        again = import_bundle(self.tenant, bundle)
+        self.assertEqual(again.created, 0)
+        self.assertEqual(again.existing, 3)
+        self.assertEqual(Certificate.objects.filter(tenant=self.tenant).count(), 3)
+
+    def test_a_private_key_block_refuses_the_whole_bundle(self):
+        root, inter, leaf = _three_tier()
+        poisoned = leaf + "\n-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n"
+        with self.assertRaises(CertificateUploadError):
+            import_bundle(self.tenant, poisoned)
+        self.assertEqual(Certificate.objects.filter(tenant=self.tenant).count(), 0)
 
 
 class ChainApiTests(APITestCase):

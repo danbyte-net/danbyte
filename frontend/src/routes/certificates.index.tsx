@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 
-import { Upload } from "lucide-react"
+import { FileUp, Upload } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type { Certificate, Paginated } from "@/lib/api"
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { buildCertificateColumns } from "@/components/columns/certificate-columns"
 import { useTableFilters } from "@/components/table-filters"
 import { UploadCertificateDialog } from "@/components/monitoring/upload-certificate-dialog"
+import { ImportCertificatesDialog } from "@/components/monitoring/import-certificates-dialog"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/certificates/")({
@@ -23,6 +24,7 @@ export const Route = createFileRoute("/certificates/")({
 function CertificatesPage() {
   const [q, setQ] = useState("")
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const { canDo } = useMe()
 
   // Server-side search over subject / issuer / fingerprint. The list arrives
@@ -61,9 +63,18 @@ function CertificatesPage() {
       }}
       actions={
         canDo("certificate", "add") ? (
-          <Button size="sm" onClick={() => setUploadOpen(true)}>
-            <Upload className="h-3.5 w-3.5" /> Upload certificate
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setImportOpen(true)}
+            >
+              <FileUp className="h-3.5 w-3.5" /> Import bundle
+            </Button>
+            <Button size="sm" onClick={() => setUploadOpen(true)}>
+              <Upload className="h-3.5 w-3.5" /> Upload certificate
+            </Button>
+          </div>
         ) : undefined
       }
       query={query}
@@ -86,6 +97,10 @@ function CertificatesPage() {
       )}
 
       <UploadCertificateDialog open={uploadOpen} onOpenChange={setUploadOpen} />
+      <ImportCertificatesDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+      />
     </ListPageShell>
   )
 }

@@ -220,6 +220,9 @@ class CertificateViewSet(TenantScopedViewSet):
     queryset = Certificate.objects.all()
     serializer_class = CertificateSerializer
     parser_classes = [JSONParser, FormParser, MultiPartParser]
+    # Importing a bundle creates rows, so it needs an ``add`` grant, not the
+    # ``change`` a custom mutating action defaults to.
+    rbac_action_map = {"import_bundle": "add"}
 
     def get_queryset(self):
         from django.db.models import Count
@@ -365,6 +368,35 @@ class CertificateViewSet(TenantScopedViewSet):
         if page is not None:
             return self.get_paginated_response(data)
         return Response(data)
+
+    @action(detail=False, methods=["post"], url_path="import-bundle")
+    def import_bundle(self, request):
+        """Import every certificate in a PEM bundle — leaf, intermediates, root
+        — as its own row, so a whole chain lands at once and its issuer links
+        resolve. Body: ``{"pem": "<concatenated PEM>", "name"?, "notes"?}``.
+        Public-only: a private-key block anywhere is a clean 400.
+        """
+        from .certificates import CertificateUploadError
+        from .certificates import import_bundle as run_import
+
+        tenant = self._tenant_or_403()
+        try:
+            result = run_import(
+                tenant,
+                request.data.get("pem") or "",
+                name=(request.data.get("name") or "")[:255],
+                notes=request.data.get("notes") or "",
+            )
+        except CertificateUploadError as exc:
+            raise ValidationError({"pem": str(exc)}) from exc
+        return Response(
+            {
+                "created": result.created,
+                "existing": result.existing,
+                "total": result.total,
+                "errors": result.errors,
+            }
+        )
 
     def create(self, request, *args, **kwargs):
         """Author a certificate from an uploaded public PEM (dedups by

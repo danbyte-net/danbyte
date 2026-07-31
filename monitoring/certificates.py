@@ -159,6 +159,95 @@ def upload_certificate(tenant, pem_text, *, name="", notes="", now=None):
     link_issuer(row)
     return row, created
 
+
+@dataclass
+class BundleImportResult:
+    created: int
+    existing: int
+    total: int
+    errors: list[str]
+
+
+def import_bundle(tenant, pem_text, *, name="", notes="", now=None) -> BundleImportResult:
+    """Import **every** certificate in a PEM bundle as its own row.
+
+    Where :func:`upload_certificate` keeps only the leaf, this stores each block
+    — leaf, intermediates, root — so a chain arrives complete and
+    :func:`link_issuer` can wire it together. Still public-only: a private-key
+    block anywhere refuses the whole bundle, and each block dedups by
+    fingerprint. ``name``/``notes`` apply to the first (leaf) block only. A block
+    that can't be imported is skipped and reported; the rest still land.
+    """
+    if not isinstance(pem_text, str) or not pem_text.strip():
+        raise CertificateUploadError("Provide one or more certificates in PEM format.")
+    if contains_private_key_material(pem_text):
+        raise CertificateUploadError(
+            "Remove the private key(s); only public certificates are stored."
+        )
+    raw = pem_text.encode("utf-8", "replace")
+    loader = getattr(x509, "load_pem_x509_certificates", None)
+    try:
+        certs = (
+            list(loader(raw))
+            if loader is not None
+            else [x509.load_pem_x509_certificate(raw)]
+        )
+    except Exception:
+        raise CertificateUploadError(
+            "Could not parse any certificate. Paste public PEM blocks "
+            "(-----BEGIN CERTIFICATE-----)."
+        ) from None
+    if not certs:
+        raise CertificateUploadError("No certificate found in the input.")
+
+    now = now or timezone.now()
+    created = existing = 0
+    errors: list[str] = []
+    rows: list[Certificate] = []
+    for i, cert in enumerate(certs):
+        try:
+            fields = tls_cert.parse_certificate(cert.public_bytes(Encoding.DER), 0)
+            defaults = _defaults(fields)
+            if defaults["not_before"] is None or defaults["not_after"] is None:
+                raise CertificateUploadError("no usable validity window")
+            pem = cert.public_bytes(Encoding.PEM).decode("ascii")
+            row, was_created = Certificate.objects.get_or_create(
+                tenant=tenant,
+                fingerprint_sha256=fields["fingerprint_sha256"].lower(),
+                defaults={
+                    **defaults,
+                    "uploaded": True,
+                    "pem": pem,
+                    "name": name[:255] if i == 0 else "",
+                    "notes": notes if i == 0 else "",
+                },
+            )
+            if was_created:
+                created += 1
+            else:
+                existing += 1
+                upd = []
+                if not row.uploaded:
+                    row.uploaded = True
+                    upd.append("uploaded")
+                if not row.pem:
+                    row.pem = pem
+                    upd.append("pem")
+                if upd:
+                    upd.append("updated_at")
+                    row.save(update_fields=upd)
+            rows.append(row)
+        except CertificateUploadError as exc:
+            errors.append(f"block {i + 1}: {exc}")
+        except Exception as exc:  # noqa: BLE001 — one bad block must not sink the rest
+            errors.append(f"block {i + 1}: could not import ({exc})")
+
+    for row in rows:
+        link_issuer(row)
+    return BundleImportResult(
+        created=created, existing=existing, total=len(certs), errors=errors
+    )
+
 # Fields written only when the row is created — properties of the exact DER
 # bytes the fingerprint covers, so they cannot legitimately change.
 _IMMUTABLE_FIELDS = (
