@@ -15,6 +15,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Field, FormCheckbox, FormSelect, FormText } from "@/components/forms"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 // Object types a label makes sense for — matches api/label_templates.py's
 // FRONTEND_ROUTES so `{{ url }}` and the default QR resolve to a real page.
@@ -357,26 +364,31 @@ export function LabelTemplateFormDialog({
                   {blocks.map((b, i) => (
                     <div key={b.id} className="flex items-center gap-1.5">
                       {b.kind === "field" ? (
-                        <select
-                          value={b.value}
-                          onChange={(e) =>
+                        <Select
+                          value={b.value || undefined}
+                          onValueChange={(v) =>
                             setBlocks((bs) =>
                               bs.map((x) =>
-                                x.id === b.id
-                                  ? { ...x, value: e.target.value }
-                                  : x
+                                x.id === b.id ? { ...x, value: v } : x
                               )
                             )
                           }
-                          className="min-w-0 flex-1 rounded border border-input bg-transparent px-1.5 py-1 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         >
-                          <option value="">— pick a field —</option>
-                          {allTokens.map((t) => (
-                            <option key={t} value={t}>
-                              {t}
-                            </option>
-                          ))}
-                        </select>
+                          <SelectTrigger className="h-8 min-w-0 flex-1 font-mono text-[11px]">
+                            <SelectValue placeholder="— pick a field —" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {allTokens.map((t) => (
+                              <SelectItem
+                                key={t}
+                                value={t}
+                                className="font-mono text-[11px]"
+                              >
+                                {t}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       ) : (
                         <input
                           value={b.value}
@@ -393,27 +405,30 @@ export function LabelTemplateFormDialog({
                           className="min-w-0 flex-1 rounded border border-input bg-transparent px-1.5 py-1 text-[12px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         />
                       )}
-                      <select
+                      <Select
                         value={b.size}
-                        onChange={(e) =>
+                        onValueChange={(v) =>
                           setBlocks((bs) =>
                             bs.map((x) =>
                               x.id === b.id
-                                ? {
-                                    ...x,
-                                    size: e.target.value as SimpleBlock["size"],
-                                  }
+                                ? { ...x, size: v as SimpleBlock["size"] }
                                 : x
                             )
                           )
                         }
-                        className="rounded border border-input bg-transparent px-1 py-1 text-[11px]"
-                        title="Text size"
                       >
-                        <option value="sm">S</option>
-                        <option value="md">M</option>
-                        <option value="lg">L</option>
-                      </select>
+                        <SelectTrigger
+                          className="h-8 w-[3.25rem] text-[11px]"
+                          title="Text size"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="sm">S</SelectItem>
+                          <SelectItem value="md">M</SelectItem>
+                          <SelectItem value="lg">L</SelectItem>
+                        </SelectContent>
+                      </Select>
                       <button
                         type="button"
                         title="Bold"
