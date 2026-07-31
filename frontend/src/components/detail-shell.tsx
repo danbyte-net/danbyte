@@ -1,6 +1,6 @@
 import { type ReactNode } from "react"
 import { Link, type LinkProps } from "@tanstack/react-router"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronLeft, ChevronRight, Pin } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -8,6 +8,12 @@ import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { DetailActions } from "@/components/detail-actions"
 import { useRegisterPresence } from "@/lib/presence-context"
+import { useDefaultTabPref } from "@/lib/use-url-tab"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 // ─── The canonical detail-page chrome ────────────────────────────────────
 //
@@ -119,8 +125,9 @@ export function DetailShell({
         onValueChange={onTabChange}
         className="flex min-h-0 min-w-0 flex-1 flex-col gap-0"
       >
-        <div className="flex h-10 min-w-0 items-center border-b border-border px-4 lg:px-6">
+        <div className="flex h-10 min-w-0 items-center gap-2 border-b border-border px-4 lg:px-6">
           <SegmentedTabs value={tab} onValueChange={onTabChange} items={tabs} />
+          <DefaultTabPin current={tab} />
         </div>
         {children}
       </Tabs>
@@ -275,5 +282,39 @@ export function DetailStat({
       </dt>
       <dd className="mt-0.5 text-[13px]">{value}</dd>
     </div>
+  )
+}
+
+/** Pin/unpin the current tab as the default starting tab for this page type
+ * (#5). Stored per-user in localStorage keyed by the route pattern, and read by
+ * `useUrlTab` when a page is opened without an explicit `?tab=`. */
+function DefaultTabPin({ current }: { current: string }) {
+  const { pinned, setPinned } = useDefaultTabPref()
+  const isPinned = pinned === current
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className={cn(
+            "ml-auto shrink-0 self-center",
+            isPinned ? "text-foreground" : "text-muted-foreground/60"
+          )}
+          aria-label={
+            isPinned ? "Unpin this default tab" : "Make this the default tab"
+          }
+          aria-pressed={isPinned}
+          onClick={() => setPinned(isPinned ? null : current)}
+        >
+          <Pin className={cn("h-3.5 w-3.5", isPinned && "fill-current")} />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        {isPinned
+          ? "This tab opens by default — click to unpin"
+          : "Open this tab by default on this kind of page"}
+      </TooltipContent>
+    </Tooltip>
   )
 }

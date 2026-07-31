@@ -1,4 +1,44 @@
-import { useNavigate, useSearch } from "@tanstack/react-router"
+import { useEffect, useState } from "react"
+import { useMatches, useNavigate, useSearch } from "@tanstack/react-router"
+
+// Per-user default-tab preference (#5). A detail page normally opens on its
+// first tab ("overview"); this lets a user pin a different starting tab per page
+// type (e.g. always open a prefix on its IPs tab). Stored in localStorage keyed
+// by the route *pattern* (`/prefixes/$id`) so it applies to every object of that
+// type, and only consulted when the URL carries no explicit `?tab=`.
+const DEFAULT_TAB_PREFIX = "danbyte.defaultTab:"
+
+function readStoredDefault(pageKey: string | null): string | null {
+  if (!pageKey || typeof window === "undefined") return null
+  try {
+    return window.localStorage.getItem(DEFAULT_TAB_PREFIX + pageKey)
+  } catch {
+    return null
+  }
+}
+
+/** Set (or clear, with `null`) the pinned default tab for a page pattern. */
+export function writeStoredDefault(
+  pageKey: string,
+  value: string | null
+): void {
+  if (typeof window === "undefined") return
+  try {
+    if (value) window.localStorage.setItem(DEFAULT_TAB_PREFIX + pageKey, value)
+    else window.localStorage.removeItem(DEFAULT_TAB_PREFIX + pageKey)
+  } catch {
+    /* storage unavailable (private mode / quota) — pinning is best-effort */
+  }
+}
+
+/** Stable key for the current detail page: its route pattern + the tab param
+ * name (so `?tab=` and `?sub=` pin independently). Null when no route matched
+ * (e.g. the unit-test mock), which disables the preference entirely. */
+function usePageKey(tabKey: string): string | null {
+  const matches = useMatches() as Array<{ routeId?: string }> | undefined
+  const routeId = matches?.[matches.length - 1]?.routeId
+  return routeId ? `${routeId}:${tabKey}` : null
+}
 
 /**
  * Detail-page tab state backed by the URL (`?tab=<value>`), so the active tab
@@ -29,7 +69,15 @@ export function useUrlTab<T extends string = string>(
   const search = useSearch({ strict: false }) as Record<string, unknown>
   const raw = search[key]
   const known = typeof raw === "string" && (!valid || valid.includes(raw as T))
-  const tab = (known ? raw : defaultTab) as T
+  // No explicit ?tab= → honour the user's pinned default for this page, if any
+  // and still valid; otherwise the caller's hard-coded default.
+  const pageKey = usePageKey(key)
+  const stored = known ? null : readStoredDefault(pageKey)
+  const preferred =
+    stored && (!valid || valid.includes(stored as T))
+      ? (stored as T)
+      : defaultTab
+  const tab = (known ? raw : preferred) as T
 
   const setTab = (value: string) => {
     void navigate({
@@ -71,4 +119,30 @@ export function useUrlSubTab<T extends string>(
   valid: readonly T[]
 ): [T, (value: string) => void] {
   return useUrlTab<T>(defaultSub, SUB_TAB_KEY, valid)
+}
+
+/**
+ * Controls for the "pin this tab as my default" affordance (#5). Returns the
+ * currently pinned tab for this page (or null) and a setter. The DetailShell tab
+ * strip uses this to show a pin toggle; pinning writes the localStorage default
+ * that :func:`useUrlTab` reads on a param-less visit.
+ */
+export function useDefaultTabPref(key = "tab"): {
+  pinned: string | null
+  setPinned: (value: string | null) => void
+} {
+  const pageKey = usePageKey(key)
+  const [pinned, setPinnedState] = useState<string | null>(() =>
+    readStoredDefault(pageKey)
+  )
+  // Re-sync when navigating between pages of different types (pageKey changes).
+  useEffect(() => {
+    setPinnedState(readStoredDefault(pageKey))
+  }, [pageKey])
+  const setPinned = (value: string | null) => {
+    if (!pageKey) return
+    writeStoredDefault(pageKey, value)
+    setPinnedState(value)
+  }
+  return { pinned, setPinned }
 }

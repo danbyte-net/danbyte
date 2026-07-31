@@ -13,6 +13,9 @@ const navigate = vi.fn()
 vi.mock("@tanstack/react-router", () => ({
   useSearch: () => search,
   useNavigate: () => navigate,
+  // No route context in the unit harness → no page key → the default-tab
+  // preference is disabled, so these tests exercise the pure URL behaviour.
+  useMatches: () => [],
 }))
 
 /** The search object the last setter call would leave on the URL. */
