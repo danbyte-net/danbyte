@@ -4052,6 +4052,67 @@ export interface CertificateRequestCreated extends CertificateRequest {
   private_key: string
 }
 
+/** DNS-01 auto-publish backend for an issuer. "" = manual (operator publishes). */
+export type DnsProvider = "" | "rfc2136" | "gss-tsig"
+
+/** An external CA connector (ACME directory). Secrets are write-only. */
+export interface Issuer {
+  id: string
+  name: string
+  kind: "acme"
+  enabled: boolean
+  directory_url: string
+  contact_email: string
+  eab_kid: string
+  eab_hmac_set: boolean
+  verify_tls: boolean
+  dns_provider: DnsProvider
+  dns_settings: Record<string, string | number>
+  tsig_secret_set: boolean
+  account_registered: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type AcmeOrderStatus =
+  | "pending"
+  | "ready"
+  | "processing"
+  | "valid"
+  | "invalid"
+  | "errored"
+
+/** One challenge record the order must satisfy (DNS-01 TXT or HTTP-01 token). */
+export interface AcmeChallenge {
+  identifier: string
+  type: "dns-01" | "http-01"
+  status: string
+  record_name?: string
+  record_value?: string
+  token?: string
+  path?: string
+  content?: string
+}
+
+/** An ACME issuance order fulfilling a certificate request against an issuer. */
+export interface AcmeOrder {
+  id: string
+  issuer: string
+  issuer_name: string
+  request: string | null
+  request_common_name: string | null
+  status: AcmeOrderStatus
+  status_display: string
+  challenge_type: "dns-01" | "http-01"
+  identifiers: string[]
+  challenges: AcmeChallenge[]
+  error: string
+  issued_certificate: string | null
+  issued_certificate_subject_cn: string | null
+  created_at: string
+  updated_at: string
+}
+
 export type SSHKeyOrigin = "observed" | "uploaded" | "both"
 
 export interface SSHHostKey {

@@ -146,6 +146,7 @@ import { Route as CircuitsIndexRouteImport } from './routes/circuits.index'
 import { Route as CircuitTypesIndexRouteImport } from './routes/circuit-types.index'
 import { Route as CertificatesIndexRouteImport } from './routes/certificates.index'
 import { Route as CertificateRequestsIndexRouteImport } from './routes/certificate-requests.index'
+import { Route as CertificateIssuersIndexRouteImport } from './routes/certificate-issuers.index'
 import { Route as CablesIndexRouteImport } from './routes/cables.index'
 import { Route as AutomationTargetsIndexRouteImport } from './routes/automation-targets.index'
 import { Route as AsnsIndexRouteImport } from './routes/asns.index'
@@ -1066,6 +1067,11 @@ const CertificateRequestsIndexRoute =
     path: '/certificate-requests/',
     getParentRoute: () => rootRouteImport,
   } as any)
+const CertificateIssuersIndexRoute = CertificateIssuersIndexRouteImport.update({
+  id: '/certificate-issuers/',
+  path: '/certificate-issuers/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CablesIndexRoute = CablesIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -2470,6 +2476,7 @@ export interface FileRoutesByFullPath {
   '/asns/': typeof AsnsIndexRoute
   '/automation-targets/': typeof AutomationTargetsIndexRoute
   '/cables/': typeof CablesIndexRoute
+  '/certificate-issuers/': typeof CertificateIssuersIndexRoute
   '/certificate-requests/': typeof CertificateRequestsIndexRoute
   '/certificates/': typeof CertificatesIndexRoute
   '/circuit-types/': typeof CircuitTypesIndexRoute
@@ -2786,6 +2793,7 @@ export interface FileRoutesByTo {
   '/asns': typeof AsnsIndexRoute
   '/automation-targets': typeof AutomationTargetsIndexRoute
   '/cables': typeof CablesIndexRoute
+  '/certificate-issuers': typeof CertificateIssuersIndexRoute
   '/certificate-requests': typeof CertificateRequestsIndexRoute
   '/certificates': typeof CertificatesIndexRoute
   '/circuit-types': typeof CircuitTypesIndexRoute
@@ -3159,6 +3167,7 @@ export interface FileRoutesById {
   '/asns/': typeof AsnsIndexRoute
   '/automation-targets/': typeof AutomationTargetsIndexRoute
   '/cables/': typeof CablesIndexRoute
+  '/certificate-issuers/': typeof CertificateIssuersIndexRoute
   '/certificate-requests/': typeof CertificateRequestsIndexRoute
   '/certificates/': typeof CertificatesIndexRoute
   '/circuit-types/': typeof CircuitTypesIndexRoute
@@ -3533,6 +3542,7 @@ export interface FileRouteTypes {
     | '/asns/'
     | '/automation-targets/'
     | '/cables/'
+    | '/certificate-issuers/'
     | '/certificate-requests/'
     | '/certificates/'
     | '/circuit-types/'
@@ -3849,6 +3859,7 @@ export interface FileRouteTypes {
     | '/asns'
     | '/automation-targets'
     | '/cables'
+    | '/certificate-issuers'
     | '/certificate-requests'
     | '/certificates'
     | '/circuit-types'
@@ -4221,6 +4232,7 @@ export interface FileRouteTypes {
     | '/asns/'
     | '/automation-targets/'
     | '/cables/'
+    | '/certificate-issuers/'
     | '/certificate-requests/'
     | '/certificates/'
     | '/circuit-types/'
@@ -4463,6 +4475,7 @@ export interface RootRouteChildren {
   SilencesNewRoute: typeof SilencesNewRoute
   VirtualMachinesIdRoute: typeof VirtualMachinesIdRoute
   VirtualMachinesNewRoute: typeof VirtualMachinesNewRoute
+  CertificateIssuersIndexRoute: typeof CertificateIssuersIndexRoute
   CertificateRequestsIndexRoute: typeof CertificateRequestsIndexRoute
   CertificatesIndexRoute: typeof CertificatesIndexRoute
   ClusterGroupsIndexRoute: typeof ClusterGroupsIndexRoute
@@ -5454,6 +5467,13 @@ declare module '@tanstack/react-router' {
       path: '/certificate-requests'
       fullPath: '/certificate-requests/'
       preLoaderRoute: typeof CertificateRequestsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/certificate-issuers/': {
+      id: '/certificate-issuers/'
+      path: '/certificate-issuers'
+      fullPath: '/certificate-issuers/'
+      preLoaderRoute: typeof CertificateIssuersIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cables/': {
@@ -8195,6 +8215,7 @@ const rootRouteChildren: RootRouteChildren = {
   SilencesNewRoute: SilencesNewRoute,
   VirtualMachinesIdRoute: VirtualMachinesIdRoute,
   VirtualMachinesNewRoute: VirtualMachinesNewRoute,
+  CertificateIssuersIndexRoute: CertificateIssuersIndexRoute,
   CertificateRequestsIndexRoute: CertificateRequestsIndexRoute,
   CertificatesIndexRoute: CertificatesIndexRoute,
   ClusterGroupsIndexRoute: ClusterGroupsIndexRoute,

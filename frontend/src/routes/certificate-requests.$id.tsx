@@ -5,7 +5,13 @@ import { Download, KeyRound, Trash2, Upload } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { CertificateRequest } from "@/lib/api"
+import type {
+  AcmeOrder,
+  CertificateRequest,
+  Issuer,
+  Paginated,
+} from "@/lib/api"
+import { FormSelect } from "@/components/forms"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -73,7 +79,7 @@ function RequestDetail() {
 }
 
 function Body({ req }: { req: CertificateRequest }) {
-  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">(
+  const [tab, setTab] = useUrlTab<"overview" | "acme" | "journal" | "history">(
     "overview"
   )
   const { canDo } = useMe()
@@ -225,6 +231,7 @@ function Body({ req }: { req: CertificateRequest }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
+        { value: "acme", label: "ACME" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
       ]}
@@ -251,6 +258,9 @@ function Body({ req }: { req: CertificateRequest }) {
             ]}
           />
         </div>
+      </DetailTab>
+      <DetailTab value="acme">
+        <AcmeTab req={req} canChange={canDo("certificaterequest", "change")} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType={OBJECT_TYPE} objectId={req.id} />
@@ -293,6 +303,274 @@ function Body({ req }: { req: CertificateRequest }) {
         </DialogContent>
       </Dialog>
     </DetailShell>
+  )
+}
+
+const ORDER_VARIANT: Record<
+  AcmeOrder["status"],
+  "secondary" | "success" | "outline" | "destructive"
+> = {
+  pending: "secondary",
+  ready: "secondary",
+  processing: "secondary",
+  valid: "success",
+  invalid: "destructive",
+  errored: "destructive",
+}
+
+function AcmeTab({
+  req,
+  canChange,
+}: {
+  req: CertificateRequest
+  canChange: boolean
+}) {
+  const qc = useQueryClient()
+  const [issuerId, setIssuerId] = useState<string | null>(null)
+  const [challengeType, setChallengeType] = useState("dns-01")
+
+  const issuersQ = useQuery({
+    queryKey: ["issuers"],
+    queryFn: () =>
+      api<{ results: Issuer[] }>("/api/monitoring/issuers/?page_size=500"),
+  })
+  const ordersQ = useQuery({
+    queryKey: ["acme-orders", req.id],
+    queryFn: () =>
+      api<Paginated<AcmeOrder>>(
+        `/api/monitoring/acme-orders/?request=${req.id}`
+      ),
+    // Poll while an order is still working so the UI reflects the worker.
+    refetchInterval: (query) => {
+      const rows = query.state.data?.results ?? []
+      return rows.some(
+        (o) => o.status === "pending" || o.status === "processing"
+      )
+        ? 4000
+        : false
+    },
+  })
+
+  const issuers = (issuersQ.data?.results ?? []).filter((i) => i.enabled)
+  const selected = issuers.find((i) => i.id === issuerId) ?? null
+  const orders = ordersQ.data?.results ?? []
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["acme-orders", req.id] })
+    qc.invalidateQueries({ queryKey: ["certificate-request", req.id] })
+  }
+
+  const issueAuto = useMutation({
+    mutationFn: () =>
+      api(`/api/monitoring/certificate-requests/${req.id}/acme-issue/`, {
+        method: "POST",
+        body: JSON.stringify({ issuer: issuerId }),
+      }),
+    onSuccess: () => {
+      toast.success(
+        "Issuing — the record is published and the order finalizes."
+      )
+      invalidate()
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  const createOrder = useMutation({
+    mutationFn: () =>
+      api(`/api/monitoring/certificate-requests/${req.id}/acme-order/`, {
+        method: "POST",
+        body: JSON.stringify({
+          issuer: issuerId,
+          challenge_type: challengeType,
+        }),
+      }),
+    onSuccess: () => {
+      toast.success("Order opened — publish the record below, then finalize.")
+      invalidate()
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  return (
+    <div className="space-y-6">
+      {canChange && (
+        <div className="rounded-lg border border-border p-4">
+          <h3 className="text-sm font-semibold">Issue via ACME</h3>
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            Request this certificate from a CA. With DNS-01 auto-publish,
+            Danbyte publishes the challenge and finalizes automatically;
+            otherwise it shows the record to publish, then you finalize.
+          </p>
+          {issuers.length === 0 ? (
+            <p className="mt-3 text-sm text-muted-foreground">
+              No enabled issuers.{" "}
+              <Link to="/certificate-issuers" className="underline">
+                Add a certificate authority
+              </Link>{" "}
+              first.
+            </p>
+          ) : (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <FormSelect
+                label="Issuer"
+                value={issuerId}
+                onChange={setIssuerId}
+                placeholder="Choose a CA…"
+                options={issuers.map((i) => ({
+                  value: i.id,
+                  label: i.account_registered
+                    ? i.name
+                    : `${i.name} (no account)`,
+                }))}
+              />
+              <FormSelect
+                label="Challenge"
+                value={challengeType}
+                onChange={(v) => v && setChallengeType(v)}
+                options={[
+                  { value: "dns-01", label: "DNS-01" },
+                  { value: "http-01", label: "HTTP-01" },
+                ]}
+              />
+              <div className="flex gap-2 sm:col-span-2">
+                {selected?.dns_provider ? (
+                  <Button
+                    size="sm"
+                    disabled={!issuerId || issueAuto.isPending}
+                    onClick={() => issueAuto.mutate()}
+                  >
+                    {issueAuto.isPending ? "Starting…" : "Issue automatically"}
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    disabled={!issuerId || createOrder.isPending}
+                    onClick={() => createOrder.mutate()}
+                  >
+                    {createOrder.isPending ? "Opening…" : "Open order"}
+                  </Button>
+                )}
+                {selected && !selected.account_registered && (
+                  <span className="self-center text-[12px] text-amber-600 dark:text-amber-500">
+                    Register this issuer's ACME account first.
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div>
+        <h3 className="text-sm font-semibold">Orders</h3>
+        {orders.length === 0 ? (
+          <p className="mt-2 text-sm text-muted-foreground">
+            No ACME orders yet.
+          </p>
+        ) : (
+          <div className="mt-2 space-y-3">
+            {orders.map((o) => (
+              <OrderCard
+                key={o.id}
+                order={o}
+                reqId={req.id}
+                canChange={canChange}
+                onChanged={invalidate}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function OrderCard({
+  order,
+  reqId,
+  canChange,
+  onChanged,
+}: {
+  order: AcmeOrder
+  reqId: string
+  canChange: boolean
+  onChanged: () => void
+}) {
+  const finalize = useMutation({
+    mutationFn: () =>
+      api(`/api/monitoring/certificate-requests/${reqId}/acme-finalize/`, {
+        method: "POST",
+        body: JSON.stringify({ order: order.id }),
+      }),
+    onSuccess: () => {
+      toast.success(
+        "Finalizing — checking the challenge and downloading the cert."
+      )
+      onChanged()
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  const canFinalize =
+    canChange && (order.status === "pending" || order.status === "ready")
+
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Badge variant={ORDER_VARIANT[order.status]}>
+            {order.status_display}
+          </Badge>
+          <span className="text-[13px] text-muted-foreground">
+            {order.issuer_name} · {order.challenge_type} ·{" "}
+            <TimeCell iso={order.created_at} />
+          </span>
+        </div>
+        {canFinalize && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={finalize.isPending}
+            onClick={() => finalize.mutate()}
+          >
+            {finalize.isPending ? "Finalizing…" : "Finalize"}
+          </Button>
+        )}
+      </div>
+
+      {order.issued_certificate && (
+        <p className="mt-2 text-[13px]">
+          Issued:{" "}
+          <Link
+            to="/certificates/$id"
+            params={{ id: order.issued_certificate }}
+            className="font-medium hover:underline"
+          >
+            {order.issued_certificate_subject_cn || "View certificate"}
+          </Link>
+        </p>
+      )}
+
+      {order.error && (
+        <p className="mt-2 text-[12px] text-destructive">{order.error}</p>
+      )}
+
+      {order.challenges.length > 0 && order.status !== "valid" && (
+        <div className="mt-3 space-y-2">
+          <p className="text-[12px] font-medium text-muted-foreground">
+            Publish to pass validation:
+          </p>
+          {order.challenges.map((c, i) => (
+            <pre
+              key={i}
+              className="overflow-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px]"
+            >
+              {c.type === "dns-01"
+                ? `${c.record_name}  IN TXT  "${c.record_value}"`
+                : `${c.path}\n${c.content}`}
+            </pre>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

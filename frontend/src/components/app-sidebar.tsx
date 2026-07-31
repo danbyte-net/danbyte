@@ -39,6 +39,7 @@ import {
   UserMinus,
   Fingerprint,
   FileSignature,
+  Landmark,
   Waypoints,
   GitBranch,
   GitPullRequestArrow,
@@ -639,6 +640,12 @@ const sections: NavSection[] = [
             url: "/certificate-requests",
             icon: FileSignature,
             objectType: "certificaterequest",
+          },
+          {
+            title: "Certificate authorities",
+            url: "/certificate-issuers",
+            icon: Landmark,
+            objectType: "issuer",
           },
           {
             title: "Compliance",
