@@ -43,6 +43,7 @@ AUDITED_MODELS = [
     "api.Location",
     "api.ConfigContext",
     "api.ExportTemplate",
+    "api.LabelTemplate",
     "integrations.Webhook",
     "integrations.AutomationTarget",
     "api.Interface",

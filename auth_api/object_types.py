@@ -159,6 +159,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("customization.CustomFieldGroup", "Custom field groups", "Customize"),
     ("api.ConfigContext", "Config contexts", "Customize"),
     ("api.ExportTemplate", "Export templates", "Customize"),
+    ("api.LabelTemplate", "Label templates", "Customize"),
     ("api.FloorTileType", "Floor tile types", "Customize"),
     ("core.Tag", "Tags", "Customize"),
     # ─── Integrations ───────────────────────────────────────────────

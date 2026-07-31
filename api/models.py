@@ -5015,6 +5015,63 @@ class ExportTemplate(NumIdMixin, TimestampedModel):
         return self.name
 
 
+class LabelTemplate(NumIdMixin, TimestampedModel):
+    """A printable label for one object of ``object_type`` — a Jinja2 HTML body
+    sized in millimetres, optionally carrying a QR code. Rendered per object in a
+    sandbox (see :mod:`api.label_templates`) and laid out on a print sheet by the
+    frontend. Same shape as :class:`ExportTemplate`, but per-object + physical."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="label_templates"
+    )
+    name = models.CharField(max_length=128)
+    object_type = models.CharField(
+        max_length=64,
+        help_text="Object-type slug this labels (see the RBAC registry).",
+    )
+    description = models.TextField(blank=True, default="")
+    # Physical label geometry, in millimetres.
+    width_mm = models.FloatField(default=62.0)
+    height_mm = models.FloatField(default=29.0)
+    margin_mm = models.FloatField(default=2.0)
+    template_html = models.TextField(
+        blank=True,
+        default="",
+        help_text="Jinja2 HTML. Context: the object under its type name "
+                  "(e.g. `device`), plus `obj`, `url`, `qr`, and common relations.",
+    )
+    css = models.TextField(blank=True, default="")
+    qr_enabled = models.BooleanField(default=True)
+    qr_content = models.CharField(
+        max_length=512,
+        blank=True,
+        default="",
+        help_text="Jinja2 expression for what the QR encodes. Blank = the "
+                  "object's absolute URL.",
+    )
+    qr_size_mm = models.FloatField(default=18.0)
+    is_default = models.BooleanField(
+        default=False,
+        help_text="Preselected when printing labels for this object type.",
+    )
+    created_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_labeltemplate_tenant_name"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 def resolve_config_template(device):
     """The config template that renders this device's intended config —
     device's own, else its role's, else its platform's. None when nothing is

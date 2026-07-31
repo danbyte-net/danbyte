@@ -46,7 +46,7 @@ from .models import (
     WirelessLAN, WirelessLANGroup,
     Tunnel, TunnelGroup, TunnelTermination, IPSecProfile,
     L2VPN, L2VPNTermination, VirtualChassis,
-    Region, Location, ConfigContext, ExportTemplate,
+    Region, Location, ConfigContext, ExportTemplate, LabelTemplate,
     materialize_device_components, resolve_config_template,
     sync_positional_interface_names,
     diff_device_components, sync_device_components,
@@ -115,6 +115,7 @@ from .serializers import (
     LocationMiniSerializer,
     ConfigContextSerializer,
     ExportTemplateSerializer,
+    LabelTemplateSerializer,
     PowerPanelSerializer,
     PowerPanelMiniSerializer,
     PowerFeedSerializer,
@@ -5949,6 +5950,114 @@ class ExportTemplateViewSet(TenantScopedViewSet):
             fname = f"{tmpl.name}.{ext}"
             resp["Content-Disposition"] = f'attachment; filename="{fname}"'
         return resp
+
+
+class LabelTemplateViewSet(TenantScopedViewSet):
+    """Printable per-object label templates (Jinja2 HTML + QR, sized in mm).
+
+    CRUD, plus ``fields`` (token reference for the editor), ``preview`` (render an
+    unsaved draft against a sample object), and ``render`` (render the saved
+    template against a set of objects for the print sheet). All rendering is
+    tenant-scoped and sandboxed.
+    """
+
+    queryset = LabelTemplate.objects.all().order_by(NATURAL_NAME)
+    serializer_class = LabelTemplateSerializer
+    pagination_class = StandardPagination
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request:
+            ot = self.request.query_params.get("object_type")
+            if ot:
+                qs = qs.filter(object_type=ot)
+        return qs
+
+    def _objects(self, object_type, ids):
+        """Tenant-scoped objects of ``object_type`` for the given ids."""
+        from auth_api.object_types import model_for
+
+        model = model_for(object_type)
+        if model is None:
+            return None
+        qs = model.objects.filter(pk__in=ids)
+        if any(f.name == "tenant" for f in model._meta.concrete_fields):
+            qs = qs.filter(tenant=_get_active_tenant(self.request))
+        return list(qs)
+
+    def _base_url(self, request) -> str:
+        return request.build_absolute_uri("/").rstrip("/")
+
+    @action(detail=False, methods=["get"])
+    def fields(self, request):
+        """Token reference for the editor: `GET ?object_type=…`."""
+        from .label_templates import available_fields
+
+        ot = request.query_params.get("object_type", "")
+        data = available_fields(ot)
+        if data is None:
+            return Response(
+                {"detail": "Unknown object type."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(data)
+
+    @action(detail=False, methods=["post"])
+    def preview(self, request):
+        """Render an unsaved draft against one sample object (editor preview)."""
+        from jinja2 import TemplateError
+
+        from .label_templates import render_label
+        from .models import LabelTemplate
+
+        d = request.data
+        object_type = d.get("object_type") or ""
+        objs = self._objects(object_type, [d.get("object_id")])
+        if objs is None:
+            return Response(
+                {"detail": "Unknown object type."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+        if not objs:
+            return Response(
+                {"detail": "Pick a sample object of this type to preview."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+        draft = LabelTemplate(
+            object_type=object_type,
+            template_html=d.get("template_html") or "",
+            css=d.get("css") or "",
+            qr_enabled=bool(d.get("qr_enabled", True)),
+            qr_content=d.get("qr_content") or "",
+        )
+        try:
+            out = render_label(draft, objs[0], base_url=self._base_url(request))
+        except TemplateError as exc:
+            return Response(
+                {"detail": f"Template error: {exc}"},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(out)
+
+    @action(detail=True, methods=["get"])
+    def render(self, request, pk=None):
+        """Render the saved template against `?ids=` objects for the print sheet."""
+        from jinja2 import TemplateError
+
+        from .label_templates import render_label
+
+        tmpl = self.get_object()
+        ids = [i for i in (request.query_params.get("ids") or "").split(",") if i]
+        objs = self._objects(tmpl.object_type, ids) or []
+        base = self._base_url(request)
+        out = []
+        for obj in objs:
+            try:
+                rendered = render_label(tmpl, obj, base_url=base)
+            except TemplateError as exc:
+                rendered = {"html": f"<pre>{exc}</pre>", "qr": ""}
+            out.append({"id": str(obj.pk), **rendered})
+        return Response({"labels": out})
 
 
 # ─── Floor plans ─────────────────────────────────────────────────────────────

@@ -174,6 +174,7 @@ from .viewsets import (
     LocationViewSet,
     ConfigContextViewSet,
     ExportTemplateViewSet,
+    LabelTemplateViewSet,
     RIRViewSet,
     IPRoleViewSet,
     ZoneViewSet,
@@ -203,6 +204,7 @@ router.register(r"regions",       RegionViewSet,      basename="region")
 router.register(r"locations",     LocationViewSet,    basename="location")
 router.register(r"config-contexts", ConfigContextViewSet, basename="config-context")
 router.register(r"export-templates", ExportTemplateViewSet, basename="export-template")
+router.register(r"label-templates", LabelTemplateViewSet, basename="label-template")
 router.register(r"vlans",         VLANViewSet,        basename="vlan")
 router.register(r"mac-addresses",  MACAddressViewSet,  basename="mac-address")
 router.register(r"vlan-groups",   VLANGroupViewSet,   basename="vlan-group")

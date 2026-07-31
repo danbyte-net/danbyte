@@ -5144,6 +5144,57 @@ class ExportTemplateSerializer(NumIdModelSerializer):
         read_only_fields = ["id", "object_type_label", "created_at", "updated_at"]
 
 
+class LabelTemplateSerializer(NumIdModelSerializer):
+    """A printable per-object label template (Jinja2 HTML + QR, sized in mm)."""
+
+    object_type_label = serializers.SerializerMethodField()
+
+    def get_object_type_label(self, obj) -> str:
+        from auth_api.object_types import _registry
+
+        entry = _registry().get(obj.object_type)
+        return entry["label"] if entry else obj.object_type
+
+    def validate_object_type(self, value):
+        from auth_api.object_types import is_registered
+
+        if not is_registered(value):
+            raise serializers.ValidationError("Unknown object type.")
+        return value
+
+    def _check_jinja(self, value):
+        from jinja2 import TemplateSyntaxError
+        from jinja2.sandbox import SandboxedEnvironment
+
+        try:
+            SandboxedEnvironment(autoescape=True).from_string(value or "")
+        except TemplateSyntaxError as exc:
+            raise serializers.ValidationError(f"Template syntax error: {exc}")
+        return value
+
+    def validate_template_html(self, value):
+        return self._check_jinja(value)
+
+    def validate_qr_content(self, value):
+        return self._check_jinja(value)
+
+    def create(self, validated_data):
+        request = self.context.get("request")
+        if request and getattr(request.user, "is_authenticated", False):
+            validated_data.setdefault("created_by", request.user)
+        return super().create(validated_data)
+
+    class Meta:
+        from .models import LabelTemplate
+
+        model = LabelTemplate
+        fields = ["id", "name", "object_type", "object_type_label", "description",
+                  "width_mm", "height_mm", "margin_mm", "template_html", "css",
+                  "qr_enabled", "qr_content", "qr_size_mm", "is_default",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "object_type_label", "created_at", "updated_at"]
+
+
 # ─── Virtual chassis (switch stacks) ─────────────────────────────────────────
 class VirtualChassisMiniSerializer(NumIdModelSerializer):
     class Meta:
