@@ -1452,6 +1452,7 @@ function FloorPlanPage() {
                       Quality — this device
                     </span>
                     <SegmentedTabs<RenderQualitySetting>
+                      wrap
                       value={quality3d}
                       onValueChange={setQuality3d}
                       items={[

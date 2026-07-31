@@ -21,11 +21,16 @@ export function SegmentedTabs<V extends string = string>({
   value,
   onValueChange,
   className,
+  wrap = false,
 }: {
   items: readonly SegmentedTab<V>[]
   value: V
   onValueChange: (value: V) => void
   className?: string
+  /** Wrap onto multiple rows instead of scrolling horizontally. Use in narrow
+   * containers (e.g. a popover column) where a scrolling strip would push the
+   * last option out of sight. */
+  wrap?: boolean
 }) {
   return (
     // min-w-0 lets the strip shrink inside flex rows; the overflow then
@@ -33,8 +38,10 @@ export function SegmentedTabs<V extends string = string>({
     // of escalating to the page and dragging the whole layout sideways.
     <nav
       className={cn(
-        "flex min-w-0 items-center gap-1 overflow-x-auto",
-        "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        "flex min-w-0 items-center gap-1",
+        wrap
+          ? "flex-wrap"
+          : "[scrollbar-width:none] overflow-x-auto [&::-webkit-scrollbar]:hidden",
         className
       )}
     >
