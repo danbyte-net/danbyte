@@ -26,6 +26,7 @@ from .models import (
     AlertRule,
     Certificate,
     CertificateAssignment,
+    SSHHostKey,
     CertificateBinding,
     CheckAssignment,
     CheckTemplate,
@@ -44,6 +45,7 @@ from .serializers import (
     CertificateAssignmentSerializer,
     CertificateBindingSerializer,
     CertificateSerializer,
+    SSHHostKeySerializer,
     CertificateUploadSerializer,
     CheckAssignmentSerializer,
     CheckTemplateSerializer,
@@ -294,6 +296,72 @@ class CertificateViewSet(TenantScopedViewSet):
         row = self.get_queryset().get(pk=row.pk)
         data = self.get_serializer(row).data
         return Response(data, status=201 if created else 200)
+
+
+class SSHHostKeyViewSet(TenantScopedViewSet):
+    """A device's SSH host keys — tenant-scoped, public data only.
+
+    * **create** is *upload only* — POST ``{device, public_key_line}`` with an
+      OpenSSH public-key line; the type/blob/fingerprint are parsed from it, a
+      private key or PEM cert is a clean 400, and an existing fingerprint dedups
+      (marked uploaded, 200) rather than duplicating.
+    * **delete** removes the row (an observed key re-appears on the next poll).
+    * **accept-observed** declares an observed key as the expected one, clearing
+      any ``ssh_host_key_mismatch`` for that device+type.
+
+    Filters: ``?device=<id>``, ``?origin=observed|uploaded|both``, ``?key_type=``.
+    """
+
+    queryset = SSHHostKey.objects.select_related("device").all()
+    serializer_class = SSHHostKeySerializer
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
+
+    def get_queryset(self):
+        qs = super().get_queryset().order_by("device_id", "key_type")
+        p = self.request.query_params
+        if p.get("device"):
+            qs = qs.filter(device_id=p["device"])
+        if p.get("key_type"):
+            qs = qs.filter(key_type=p["key_type"])
+        origin = p.get("origin")
+        if origin == "observed":
+            qs = qs.filter(observed=True)
+        elif origin == "uploaded":
+            qs = qs.filter(uploaded=True)
+        elif origin == "both":
+            qs = qs.filter(observed=True, uploaded=True)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        from api.models import Device
+
+        from .ssh_host_keys import HostKeyUploadError, upload_host_key
+
+        tenant = self._tenant_or_403()
+        device_id = request.data.get("device")
+        line = request.data.get("public_key_line")
+        if not device_id:
+            raise ValidationError({"device": "This field is required."})
+        if not line:
+            raise ValidationError({"public_key_line": "This field is required."})
+        device = Device.objects.filter(pk=device_id, tenant=tenant).first()
+        if device is None:
+            raise ValidationError({"device": "Not found in this tenant."})
+        try:
+            row, created = upload_host_key(tenant, device, line)
+        except HostKeyUploadError as exc:
+            raise ValidationError({"public_key_line": str(exc)}) from exc
+        data = self.get_serializer(row).data
+        return Response(data, status=201 if created else 200)
+
+    @action(detail=True, methods=["post"], url_path="accept-observed")
+    def accept_observed(self, request, pk=None):
+        """Declare this observed host key as expected; clears its mismatch."""
+        from .ssh_host_keys import accept_observed
+
+        key = self.get_object()
+        accept_observed(key)
+        return Response(self.get_serializer(key).data)
 
 
 class CertificateBindingViewSet(TenantScopedReadViewSet):

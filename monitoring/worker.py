@@ -326,8 +326,10 @@ def _finalise(states: list[CheckState], outcomes: list[CheckOutcome], settings_m
     CheckResult.objects.bulk_create(results, batch_size=2000)
     if results:
         from .certificates import record_check_results
+        from .ssh_host_keys import record_ssh_results
 
         record_check_results(results)
+        record_ssh_results(results)
     if transitions:
         StateTransition.objects.bulk_create(transitions, batch_size=2000)
     CheckState.objects.bulk_update(

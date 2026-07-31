@@ -20,6 +20,7 @@ from .models import (
     Certificate,
     CertificateAssignment,
     CertificateBinding,
+    SSHHostKey,
     CheckAssignment,
     CheckKind,
     CheckResult,
@@ -187,6 +188,41 @@ class CertificateBindingSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
         ]
         read_only_fields = fields
+
+
+class SSHHostKeySerializer(serializers.ModelSerializer):
+    """A device's SSH host key — public data only, facts read-only.
+
+    Authoring is by pasting an OpenSSH public-key line into ``public_key_line``
+    (write-only). The type/blob/fingerprint are parsed from it — never trusted
+    from the payload — in :func:`monitoring.ssh_host_keys.upload_host_key`, which
+    also refuses private keys. ``device`` is required (a host key belongs to a
+    device)."""
+
+    origin = serializers.CharField(read_only=True)
+    device_name = serializers.CharField(
+        source="device.name", read_only=True, default=None
+    )
+    public_key_line = serializers.CharField(
+        write_only=True, required=False, trim_whitespace=False,
+        help_text="An OpenSSH public-key line: 'ssh-ed25519 AAAA… comment'.",
+    )
+
+    class Meta:
+        model = SSHHostKey
+        fields = [
+            "id", "device", "device_name", "key_type", "public_key",
+            "fingerprint_sha256", "comment", "bits", "origin", "observed",
+            "uploaded", "first_seen", "last_seen", "created_at", "updated_at",
+            "public_key_line",
+        ]
+        # Every fact is derived from the pasted key or the collector; the client
+        # only supplies device + public_key_line.
+        read_only_fields = [
+            "id", "key_type", "public_key", "fingerprint_sha256", "comment",
+            "bits", "origin", "observed", "uploaded", "first_seen", "last_seen",
+            "created_at", "updated_at",
+        ]
 
 
 class CertificateAssignmentSerializer(serializers.ModelSerializer):

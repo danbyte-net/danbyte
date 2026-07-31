@@ -113,6 +113,7 @@ AUDITED_MODELS = [
     "monitoring.RedfishEndpoint",
     "monitoring.Certificate",
     "monitoring.CertificateAssignment",
+    "monitoring.SSHHostKey",
     # Org-level objects.
     "core.Tenant",
     "core.TenantGroup",

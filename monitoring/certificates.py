@@ -107,8 +107,16 @@ def upload_certificate(tenant, pem_text, *, name="", notes="", now=None):
         except (ValueError, TypeError):
             certs = []
     if not certs:
+        stripped = (pem_text or "").strip()
+        if stripped.startswith(("ssh-", "ecdsa-", "sk-")):
+            raise CertificateUploadError(
+                "This looks like an SSH public key — add it under SSH host "
+                "keys, not Certificates."
+            )
         raise CertificateUploadError(
-            "Could not parse a certificate from the PEM provided."
+            "Could not parse an X.509 certificate. Paste the public certificate "
+            "in PEM form (-----BEGIN CERTIFICATE-----) — not a private key or "
+            "an SSH key."
         )
 
     leaf = certs[0]

@@ -2042,6 +2042,96 @@ class CertificateBinding(TimestampedModel):
         return super().save(*args, **kwargs)
 
 
+class SSHHostKey(TimestampedModel):
+    """An SSH host key a device presents on port 22 — **public key only**.
+
+    A device's host key is its cryptographic identity to every SSH client.
+    Recording the expected key and comparing it to what's actually presented
+    catches key rotation, reinstalls, and — the security case — a MITM. Same
+    observe → source-of-truth → drift shape as :class:`Certificate`, scoped to a
+    device rather than a freely-assigned endpoint.
+
+    **A private key is never stored, requested, or accepted** — there is no
+    field for one and :meth:`save` refuses key material outright.
+
+    Identity is the OpenSSH ``SHA256:…`` fingerprint, scoped to the tenant, so
+    an uploaded key that is later observed on the wire is the **same row** (the
+    ``observed`` / ``uploaded`` flags record that convergence). A device has one
+    key per algorithm; during rotation the old and new keys coexist as separate
+    rows, which is what makes the mismatch visible.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="ssh_host_keys"
+    )
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, related_name="ssh_host_keys"
+    )
+    key_type = models.CharField(
+        max_length=64,
+        help_text="OpenSSH algorithm name, e.g. ssh-ed25519, ssh-rsa, "
+        "ecdsa-sha2-nistp256.",
+    )
+    public_key = models.TextField(
+        help_text="The base64 public-key blob (the middle field of an OpenSSH "
+        "line). Public data only — never a private key.",
+    )
+    fingerprint_sha256 = models.CharField(
+        max_length=64,
+        help_text="OpenSSH SHA256:… fingerprint. The identity of the key — the "
+        "same key seen anywhere is this same row.",
+    )
+    comment = models.CharField(max_length=255, blank=True, default="")
+    bits = models.PositiveIntegerField(null=True, blank=True)
+    observed = models.BooleanField(
+        default=False,
+        help_text="Seen being presented by the device (the collector wrote it).",
+    )
+    uploaded = models.BooleanField(
+        default=False,
+        help_text="Declared by an operator as the expected host key.",
+    )
+    first_seen = models.DateTimeField(null=True, blank=True)
+    last_seen = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "fingerprint_sha256"],
+                name="uniq_ssh_host_key_tenant_fp",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "device"]),
+            models.Index(fields=["device", "key_type"]),
+        ]
+        ordering = ["device_id", "key_type"]
+
+    def __str__(self) -> str:
+        return f"{self.key_type} {self.fingerprint_sha256}"
+
+    @property
+    def origin(self) -> str:
+        if self.observed and self.uploaded:
+            return "both"
+        return "uploaded" if self.uploaded else "observed"
+
+    def _assert_public_only(self) -> None:
+        from django.core.exceptions import ValidationError
+
+        for field in self._meta.fields:
+            if contains_private_key_material(getattr(self, field.attname, None)):
+                raise ValidationError({
+                    field.name: "Private key material must never be stored on a "
+                    "host key. Only the public key is held."
+                })
+
+    def save(self, *args, **kwargs):
+        self._assert_public_only()
+        return super().save(*args, **kwargs)
+
+
 class CertificateAssignment(TimestampedModel):
     """Intent: *this certificate should be presented by that object* — the
     source-of-truth half a drift check compares against.

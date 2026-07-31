@@ -113,8 +113,10 @@ def record_results(ip, items: list[RunItem]) -> list[CheckResult]:
     if rows:
         CheckResult.objects.bulk_create(rows)
         from .certificates import record_check_results
+        from .ssh_host_keys import record_ssh_results
 
         record_check_results(rows)
+        record_ssh_results(rows)
     return rows
 
 

@@ -70,6 +70,7 @@ nav = [
       { "Monitoring"        = "features/monitoring.md" },
       { "Outposts (remote engines)" = "monitoring/outposts.md" },
       { "Certificate inventory" = "monitoring/certificates.md" },
+      { "SSH host keys"     = "monitoring/ssh-host-keys.md" },
       { "SNMP discovery"    = "features/snmp-discovery.md" },
       { "Compliance"        = "features/compliance.md" },
     ] },

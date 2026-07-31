@@ -18,9 +18,33 @@ import asyncio
 import re
 import time
 
+import base64
+
 import asyncssh
 
 from .base import CheckConfigError, CheckOutcome, register, require_port
+
+
+def _capture_host_key(conn) -> dict | None:
+    """The SSH host key the server presented, as
+    ``{key_type, public_key(b64), fingerprint}`` — the shape the Django side
+    reconciles into a ``SSHHostKey`` and drifts on. Best-effort: any asyncssh
+    version/API surprise degrades to ``None`` and never disturbs the
+    reachability check that is this probe's real job. The fingerprint matches
+    ``danbyte_checks.ssh_hostkey.fingerprint_from_blob`` for the same key, so an
+    observed key and an uploaded one are the same identity."""
+    try:
+        key = conn.get_server_host_key()
+        if key is None:
+            return None
+        blob = base64.b64encode(key.public_data).decode("ascii")
+        return {
+            "key_type": key.get_algorithm(),
+            "public_key": blob,
+            "fingerprint": key.get_fingerprint(),  # "SHA256:…"
+        }
+    except Exception:  # noqa: BLE001 — host-key capture is a bonus, never fatal
+        return None
 
 
 @register
@@ -68,14 +92,20 @@ class SshChecker:
             async with asyncio.timeout(timeout_s):
                 async with asyncssh.connect(target, **conn_kwargs) as conn:
                     latency = (time.monotonic() - started) * 1000
+                    host_key = _capture_host_key(conn)
                     if not command:
-                        return CheckOutcome("up", latency, {"port": port, "auth": True})
+                        detail = {"port": port, "auth": True}
+                        if host_key:
+                            detail["host_key"] = host_key
+                        return CheckOutcome("up", latency, detail)
                     result = await conn.run(command, check=False)
                     detail = {
                         "port": port,
                         "command": command,
                         "exit_status": result.exit_status,
                     }
+                    if host_key:
+                        detail["host_key"] = host_key
                     ok = True
                     exp_code = params.get("expected_exit_code")
                     if exp_code is not None and result.exit_status != int(exp_code):
