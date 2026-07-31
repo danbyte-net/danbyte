@@ -36,13 +36,21 @@ _RELATIONS = (
 )
 
 
-def available_fields(object_type) -> dict | None:
+# Extra top-level tokens a given object type exposes beyond `url`/`qr`/`obj`.
+_TYPE_SPECIALS = {
+    # A cable's two ends: the terminated device + the port at each end.
+    "cable": ["a", "b", "a_port", "b_port"],
+}
+
+
+def available_fields(object_type, tenant=None) -> dict | None:
     """The token tree offered to the label editor for ``object_type``.
 
     Returns ``{"object", "tokens", "special"}`` where ``tokens`` are
     ``{{ device.name }}``-style references the author can click to insert — the
-    object's own fields, a few curated one-hop relations, and any custom fields.
-    Derived from the model so it tracks the schema instead of a hard-coded list.
+    object's own fields, a few curated one-hop relations, and (when ``tenant`` is
+    given) that tenant's custom fields for the type. Derived from the model so it
+    tracks the schema instead of a hard-coded list.
     """
     from auth_api.object_types import model_for
 
@@ -61,14 +69,27 @@ def available_fields(object_type) -> dict | None:
     for rel in ("primary_ip", "site", "rack", "tenant", "role", "status"):
         if hasattr(model, rel):
             tokens.append(f"{name}.{rel}.name")
-    # Custom fields live under a dict accessor on most models.
+    # Custom fields: one clickable token per defined field for this type/tenant,
+    # so authors don't have to know the JSON key. `custom_fields.<key>` resolves
+    # via dict lookup at render time.
     if hasattr(model, "custom_fields"):
         tokens.append(f"{name}.custom_fields")
+        if tenant is not None:
+            from customization.models import CustomField
+
+            for key in (
+                CustomField.objects.filter(
+                    tenant=tenant, applies_to__contains=[name]
+                )
+                .values_list("key", flat=True)
+                .order_by("key")
+            ):
+                tokens.append(f"{name}.custom_fields.{key}")
     return {
         "object": name,
         "tokens": sorted(set(tokens)),
-        # Always in the render context regardless of object type.
-        "special": ["url", "qr", "obj"],
+        # Always in the render context, plus any per-type extras.
+        "special": ["url", "qr", "obj", *_TYPE_SPECIALS.get(name, [])],
     }
 
 
@@ -78,9 +99,29 @@ def detail_path(obj) -> str:
     return f"{prefix}/{obj.pk}" if prefix else ""
 
 
+def _cable_ends(cable) -> dict:
+    """`{a, b, a_port, b_port}` for a cable — the terminated device + the port
+    object at each end. Missing/half-terminated ends resolve to None instead of
+    raising, so a template referencing them just renders blank."""
+    ends: dict = {}
+    try:
+        terminations = list(cable.terminations.all())
+    except Exception:  # noqa: BLE001
+        return ends
+    for term in terminations:
+        end = (term.end or "").lower()
+        if end not in ("a", "b"):
+            continue
+        point = term.point  # the interface / port / feed at this end
+        ends[f"{end}_port"] = point
+        ends[end] = getattr(point, "device", None) if point is not None else None
+    return ends
+
+
 def _context(obj, url: str) -> dict:
-    """Template context: the object under its type name, plus `obj`, `url`, and
-    common relations (managers materialised to lists)."""
+    """Template context: the object under its type name, plus `obj`, `url`,
+    common relations (managers materialised to lists), and — for a cable — its
+    A/B ends (`a`/`b` devices + `a_port`/`b_port`)."""
     ctx = {obj._meta.model_name: obj, "obj": obj, "url": url}
     for attr in _RELATIONS:
         if attr in ctx or not hasattr(obj, attr):
@@ -95,7 +136,28 @@ def _context(obj, url: str) -> dict:
             except Exception:  # noqa: BLE001
                 continue
         ctx[attr] = val
+    if obj._meta.model_name == "cable":
+        ctx.update(_cable_ends(obj))
     return ctx
+
+
+def _fmt_date(value, fmt="%Y-%m-%d"):
+    """`| date` — a datetime/date rendered short (default YYYY-MM-DD) instead of
+    the raw `2026-07-31 18:34:55.339089+00:00`. Non-dates pass through as text."""
+    if value in (None, ""):
+        return ""
+    return value.strftime(fmt) if hasattr(value, "strftime") else str(value)
+
+
+def _fmt_datetime(value, fmt="%Y-%m-%d %H:%M"):
+    """`| datetime` — date + HH:MM, no microseconds/timezone noise."""
+    return _fmt_date(value, fmt)
+
+
+def _register_filters(env):
+    env.filters["date"] = _fmt_date
+    env.filters["datetime"] = _fmt_datetime
+    return env
 
 
 def render_label(template, obj, *, base_url: str = "") -> dict:
@@ -111,17 +173,17 @@ def render_label(template, obj, *, base_url: str = "") -> dict:
     ctx = _context(obj, url)
 
     # HTML body: autoescape ON so a field value with markup is escaped, not
-    # injected into the label.
-    html_env = SandboxedEnvironment(
+    # injected into the label. `date`/`datetime` filters tame raw timestamps.
+    html_env = _register_filters(SandboxedEnvironment(
         trim_blocks=True, lstrip_blocks=True, autoescape=True
-    )
+    ))
     html = html_env.from_string(template.template_html or "").render(**ctx)
 
     if template.qr_content:
         # The QR payload is a scannable string, NOT HTML — render it with
         # autoescape OFF so e.g. a name with `<`/`&` encodes verbatim in the QR
         # instead of as `&lt;`/`&amp;`.
-        qr_env = SandboxedEnvironment(autoescape=False)
+        qr_env = _register_filters(SandboxedEnvironment(autoescape=False))
         qr = qr_env.from_string(template.qr_content).render(**ctx)
     else:
         qr = url  # default: the object's own URL

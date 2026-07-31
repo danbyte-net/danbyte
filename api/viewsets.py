@@ -6019,7 +6019,7 @@ class LabelTemplateViewSet(TenantScopedViewSet):
         from .label_templates import available_fields
 
         ot = request.query_params.get("object_type", "")
-        data = available_fields(ot)
+        data = available_fields(ot, tenant=_get_active_tenant(request))
         if data is None:
             return Response(
                 {"detail": "Unknown object type."},
