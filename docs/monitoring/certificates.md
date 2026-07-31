@@ -306,6 +306,29 @@ It is a **deployment-tier** choice on purpose — where the organisation's priva
 keys live is not a per-tenant decision. Nothing reads a stored secret over the
 API or writes it to the change log. CSR and ACME build on this in later releases.
 
+## Requesting a certificate (CSR)
+
+Once a [secret store](#the-secret-store-for-issuance-keys) is enabled, Danbyte
+can generate a **certificate signing request**. You give it a subject (common
+name, optional organization/OU/country/state/locality) and subject-alternative
+names, pick a key type (RSA 2048/3072/4096, ECDSA P-256/P-384, or Ed25519), and
+Danbyte:
+
+1. generates the key pair and CSR,
+2. stores the **private key** in the secret store (never on the request row) and
+   returns it to you **once** in the create response — save it then,
+3. keeps the **public CSR** on the request for you to download and hand to a CA.
+
+When the CA returns the signed certificate, **Import issued** attaches it: Danbyte
+checks its public key matches the request (so a wrong paste can't attach), stores
+it as an ordinary public [Certificate](#viewing-certificates), links it, and marks
+the request **issued**. Deleting a request also deletes its stored private key.
+
+`POST /api/monitoring/certificate-requests/` generates one;
+`…/{id}/csr/`, `…/{id}/private-key/`, and `…/{id}/import-issued/` are the CSR
+download, key re-fetch (change grant), and import actions. Without a secret store
+the create call is a clean 400 — the feature is fail-closed.
+
 ## Certificate authorities and chains
 
 An issuer is more than a string. When a certificate is recorded — uploaded or

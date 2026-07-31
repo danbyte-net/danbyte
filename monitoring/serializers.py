@@ -19,6 +19,7 @@ from .models import (
     AlertRule,
     Certificate,
     CertificateAssignment,
+    CertificateRequest,
     CertificateBinding,
     SSHHostKey,
     CheckAssignment,
@@ -317,6 +318,31 @@ class CertificateAssignmentSerializer(serializers.ModelSerializer):
             "object_context", "notes", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class CertificateRequestSerializer(serializers.ModelSerializer):
+    """A CSR request — read view. The private key is never here (it lives in the
+    secret store); the public CSR is. Only ``notes`` is writable via PATCH."""
+
+    key_spec_display = serializers.CharField(source="get_key_spec_display", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    created_by_name = serializers.CharField(
+        source="created_by.get_username", read_only=True, default=None
+    )
+    issued_certificate_subject_cn = serializers.CharField(
+        source="issued_certificate.subject_cn", read_only=True, default=None
+    )
+
+    class Meta:
+        model = CertificateRequest
+        fields = [
+            "id", "common_name", "organization", "organizational_unit",
+            "country", "state", "locality", "san_dns", "san_ip",
+            "key_spec", "key_spec_display", "status", "status_display",
+            "csr_pem", "issued_certificate", "issued_certificate_subject_cn",
+            "created_by_name", "notes", "created_at", "updated_at",
+        ]
+        read_only_fields = [f for f in fields if f != "notes"]
 
 
 class SnmpSensorSerializer(serializers.ModelSerializer):

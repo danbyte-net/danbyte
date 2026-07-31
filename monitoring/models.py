@@ -2247,3 +2247,77 @@ class StoredSecret(TimestampedModel):
 
     def __str__(self) -> str:
         return f"secret:{self.ref}"
+
+
+class CertificateRequest(TimestampedModel):
+    """An operator's request for a new certificate — a CSR and its key.
+
+    Danbyte generates the key pair and the CSR; the **public** CSR is stored on
+    this row (a CSR is not secret), while the **private key** goes to the opt-in
+    secret store under ``key_ref`` — never a column here, and never returned
+    except to the operator who made the request. The request is a small state
+    machine: ``generated`` (CSR ready to hand to a CA) → ``issued`` (the signed
+    certificate came back and is linked) → or ``cancelled``.
+    """
+
+    class KeySpec(models.TextChoices):
+        RSA_2048 = "rsa-2048", "RSA 2048"
+        RSA_3072 = "rsa-3072", "RSA 3072"
+        RSA_4096 = "rsa-4096", "RSA 4096"
+        EC_P256 = "ec-p256", "ECDSA P-256"
+        EC_P384 = "ec-p384", "ECDSA P-384"
+        ED25519 = "ed25519", "Ed25519"
+
+    class Status(models.TextChoices):
+        GENERATED = "generated", "Generated"
+        ISSUED = "issued", "Issued"
+        CANCELLED = "cancelled", "Cancelled"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="certificate_requests"
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="certificate_requests",
+    )
+
+    # ─── subject (DN) — only common_name is required ──────────────────────
+    common_name = models.CharField(max_length=255)
+    organization = models.CharField(max_length=255, blank=True, default="")
+    organizational_unit = models.CharField(max_length=255, blank=True, default="")
+    country = models.CharField(max_length=2, blank=True, default="")
+    state = models.CharField(max_length=128, blank=True, default="")
+    locality = models.CharField(max_length=128, blank=True, default="")
+    # ─── subjectAltName ───────────────────────────────────────────────────
+    san_dns = models.JSONField(default=list, blank=True)
+    san_ip = models.JSONField(default=list, blank=True)
+
+    key_spec = models.CharField(
+        max_length=16, choices=KeySpec.choices, default=KeySpec.RSA_2048
+    )
+    status = models.CharField(
+        max_length=12, choices=Status.choices, default=Status.GENERATED, db_index=True
+    )
+    # The public CSR PEM (safe to store). The private key lives in the secret
+    # store at ``key_ref``, never on this row.
+    csr_pem = models.TextField(blank=True, default="")
+    key_ref = models.CharField(max_length=200, blank=True, default="")
+    issued_certificate = models.ForeignKey(
+        "Certificate",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="certificate_requests",
+    )
+    notes = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["tenant", "status"])]
+
+    def __str__(self) -> str:
+        return f"CSR {self.common_name} ({self.status})"

@@ -27,6 +27,7 @@ from .models import (
     AlertRule,
     Certificate,
     CertificateAssignment,
+    CertificateRequest,
     SSHHostKey,
     CertificateBinding,
     CheckAssignment,
@@ -44,6 +45,7 @@ from .models import (
 from .serializers import (
     AlertRuleSerializer,
     CertificateAssignmentSerializer,
+    CertificateRequestSerializer,
     CertificateBindingSerializer,
     CertificateSerializer,
     SSHHostKeySerializer,
@@ -671,6 +673,110 @@ class CertificateAssignmentViewSet(TenantScopedViewSet):
         except ValueError as exc:
             raise ValidationError({"binding": str(exc)}) from exc
         return Response(self.get_serializer(assignment).data, status=201)
+
+
+class CertificateRequestViewSet(TenantScopedViewSet):
+    """Certificate signing requests — Danbyte generates the key + CSR.
+
+    * **create** generates a key pair and CSR from the posted subject/SANs/key
+      spec, stores the private key in the secret store, and returns the CSR plus
+      the private key **once** (the caller's only chance to receive it inline).
+      Disabled with a 400 when no secret store is enabled (fail closed).
+    * **csr** downloads the public CSR; **private-key** re-fetches the stored key
+      (change grant); **import-issued** attaches the CA-signed certificate.
+    * **delete** removes the request and its stored private key.
+    """
+
+    queryset = CertificateRequest.objects.select_related(
+        "issued_certificate", "created_by"
+    )
+    serializer_class = CertificateRequestSerializer
+    # create defaults to `add`; the key-revealing + issue actions need `change`,
+    # and downloading the public CSR is a read.
+    rbac_action_map = {
+        "csr": "view",
+        "private_key": "change",
+        "import_issued": "change",
+    }
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        status_f = self.request.query_params.get("status")
+        if status_f:
+            qs = qs.filter(status=status_f)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        from .csr import CsrError, generate
+        from .secret_store import SecretStoreDisabled
+
+        tenant = self._tenant_or_403()
+        d = request.data
+        try:
+            req, private_key = generate(
+                tenant=tenant,
+                user=request.user,
+                common_name=d.get("common_name") or "",
+                organization=d.get("organization") or "",
+                organizational_unit=d.get("organizational_unit") or "",
+                country=d.get("country") or "",
+                state=d.get("state") or "",
+                locality=d.get("locality") or "",
+                san_dns=d.get("san_dns") or [],
+                san_ip=d.get("san_ip") or [],
+                key_spec=d.get("key_spec") or "rsa-2048",
+                notes=d.get("notes") or "",
+            )
+        except SecretStoreDisabled as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        except CsrError as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        data = self.get_serializer(req).data
+        # The private key is returned exactly once — it is not stored on the row
+        # and this response is the operator's chance to save it locally.
+        data["private_key"] = private_key
+        return Response(data, status=201)
+
+    @action(detail=True, methods=["get"])
+    def csr(self, request, pk=None):
+        req = self.get_object()
+        return Response({"csr_pem": req.csr_pem})
+
+    @action(detail=True, methods=["get"], url_path="private-key")
+    def private_key(self, request, pk=None):
+        from .csr import get_private_key
+        from .secret_store import SecretStoreDisabled
+
+        req = self.get_object()
+        try:
+            key = get_private_key(req)
+        except SecretStoreDisabled as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        if not key:
+            raise ValidationError(
+                {"detail": "The private key is no longer available for this request."}
+            )
+        return Response({"private_key": key})
+
+    @action(detail=True, methods=["post"], url_path="import-issued")
+    def import_issued(self, request, pk=None):
+        from .csr import CsrError, import_issued
+
+        req = self.get_object()
+        try:
+            cert = import_issued(req, request.data.get("pem") or "")
+        except CsrError as exc:
+            raise ValidationError({"pem": str(exc)}) from exc
+        req.refresh_from_db()
+        data = self.get_serializer(req).data
+        data["issued_certificate_id"] = str(cert.id)
+        return Response(data, status=201)
+
+    def perform_destroy(self, instance):
+        from .csr import delete_key
+
+        delete_key(instance)
+        super().perform_destroy(instance)
 
 
 class SnmpSensorViewSet(TenantScopedViewSet):
