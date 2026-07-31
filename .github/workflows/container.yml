@@ -1,0 +1,84 @@
+name: Container images
+
+# Build and publish the Docker/Podman images to GitHub Container Registry
+# (ghcr.io) on a version tag, plus a manual trigger. Three images come out of
+# the one Dockerfile via its build targets:
+#
+#   ghcr.io/<owner>/danbyte-app       (runtime — gunicorn / daphne / workers)
+#   ghcr.io/<owner>/danbyte-web       (nginx reverse proxy + TLS)
+#   ghcr.io/<owner>/danbyte-frontend  (vite preview SSR server)
+#
+# Pull them with docker-compose.prod.yml by setting the image: fields, or run
+# `docker pull ghcr.io/<owner>/danbyte-app:<tag>`. See
+# docs/getting-started/docker.md. Images are public if the repo/org package
+# visibility is set to public (ghcr defaults to private).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to publish (e.g. v0.10.1 or a test tag)"
+        required: true
+        default: "manual"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: container-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build + push ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: danbyte-app
+            target: runtime
+          - image: danbyte-web
+            target: web
+          - image: danbyte-frontend
+            target: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tags: the version (git tag or manual input) + `latest`. Owner is
+      # lower-cased for ghcr, which rejects capitals in image names.
+      - name: Image tags
+        id: meta
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          ref="${{ github.event.inputs.tag || github.ref_name }}"
+          ver="${ref#v}"
+          base="ghcr.io/${owner}/${{ matrix.image }}"
+          {
+            echo "tags=${base}:${ver},${base}:latest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build + push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: ${{ matrix.target }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max

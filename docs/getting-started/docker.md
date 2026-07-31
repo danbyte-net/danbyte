@@ -131,6 +131,29 @@ The stack is rootless-friendly and works with `podman-compose`. A few notes:
   Kubernetes YAML, generate it from the running pod with
   `podman generate kube`.
 
+## Prebuilt images (ghcr.io)
+
+Tagging a release (`v*`) publishes the three images to **GitHub Container
+Registry** via `.github/workflows/container.yml`:
+
+```
+ghcr.io/danbyte-net/danbyte-app:<version>       # gunicorn / daphne / workers
+ghcr.io/danbyte-net/danbyte-web:<version>       # nginx + TLS
+ghcr.io/danbyte-net/danbyte-frontend:<version>  # vite preview (SSR)
+```
+
+To run from the registry instead of building locally, set the `image:` fields
+in `docker-compose.prod.yml` to the ghcr paths (and drop the `build:` blocks),
+or keep a small override file. `latest` tracks the newest release.
+
+!!! info "Where to host"
+    **ghcr.io** is the default — it ships with the GitHub repo, authenticates
+    with the built-in `GITHUB_TOKEN`, and is free for public images (make the
+    package public in the repo's *Packages* settings). Docker Hub, Quay, or a
+    self-hosted **Harbor** work identically — change the `registry`/image
+    prefix in the workflow. For fully **air-gapped** installs, prefer the
+    offline tarball from the [release workflow](upgrading.md) over a registry.
+
 ## Development
 
 For a lightweight dev backend (auto-reload, `DEBUG=True`, source bind-mounted,
