@@ -90,35 +90,27 @@ class ManualPublisher:
         return None
 
 
-class Rfc2136Publisher:
-    """DNS-01 auto-publish via RFC 2136 dynamic update with a TSIG key.
+class _DynamicDnsPublisher:
+    """Shared RFC2136-style dynamic-update sender for DNS-01 auto-publish.
 
-    The one dynamic-update standard that spans BIND, Samba AD, PowerDNS, Knot,
-    etc. — so it fits the widest range of deployments from a single
-    implementation. Config comes off the issuer's ``dns_settings`` (server, port,
-    zone, key name/algorithm, ttl); the TSIG secret is a credential in
-    ``issuer.secrets['tsig_secret']``. The DNS server is admin-configured, so it
-    is reached directly (like the ACME directory / Vault), not via the tenant
-    SSRF guard.
+    Subclasses provide the TSIG keyring + algorithm via :meth:`_keyring_and_alg`
+    — a static HMAC key for :class:`Rfc2136Publisher`, a negotiated GSS context
+    for :class:`GssTsigPublisher`. The DNS server is admin-configured, so it is
+    reached directly (like the ACME directory / Vault), not via the tenant SSRF
+    guard.
     """
 
     def __init__(self, issuer: Issuer):
-        settings_ = issuer.dns_settings or {}
-        self.server = (settings_.get("server") or "").strip()
-        self.port = int(settings_.get("port") or 53)
-        self.zone = (settings_.get("zone") or "").strip().rstrip(".") + "."
-        self.ttl = int(settings_.get("ttl") or 60)
-        self.key_name = (settings_.get("key_name") or "").strip()
-        self.key_algorithm = settings_.get("key_algorithm") or "hmac-sha256"
-        secret = (issuer.secrets or {}).get("tsig_secret") or ""
-        if not (self.server and self.zone.strip(".") and self.key_name and secret):
-            raise AcmeError(
-                "DNS-01 auto-publish needs a server, zone, TSIG key name, and "
-                "TSIG secret configured on the issuer."
-            )
-        import dns.tsigkeyring
+        s = issuer.dns_settings or {}
+        self.server = (s.get("server") or "").strip()
+        self.port = int(s.get("port") or 53)
+        self.zone = (s.get("zone") or "").strip().rstrip(".") + "."
+        self.ttl = int(s.get("ttl") or 60)
+        if not (self.server and self.zone.strip(".")):
+            raise AcmeError("DNS-01 auto-publish needs a server and zone configured.")
 
-        self._keyring = dns.tsigkeyring.from_text({self.key_name: secret})
+    def _keyring_and_alg(self):  # -> (keyring, algorithm)
+        raise NotImplementedError
 
     def _rel(self, fqdn: str):
         import dns.name
@@ -127,10 +119,9 @@ class Rfc2136Publisher:
 
     def _send(self, update) -> None:
         import dns.query
-
-        resp = dns.query.tcp(update, self.server, port=self.port, timeout=15)
         import dns.rcode
 
+        resp = dns.query.tcp(update, self.server, port=self.port, timeout=15)
         if resp.rcode() != dns.rcode.NOERROR:
             raise AcmeError(
                 f"DNS update to {self.server} was refused: "
@@ -140,12 +131,11 @@ class Rfc2136Publisher:
     def publish(self, records: list[ChallengeRecord]) -> None:
         import dns.update
 
+        keyring, alg = self._keyring_and_alg()
         for rec in records:
             if rec.type != AcmeOrder.Challenge.DNS01:
                 continue
-            upd = dns.update.Update(
-                self.zone, keyring=self._keyring, keyalgorithm=self.key_algorithm
-            )
+            upd = dns.update.Update(self.zone, keyring=keyring, keyalgorithm=alg)
             # `add` (not `replace`): a multi-SAN order may need two TXT values on
             # the same _acme-challenge name at once.
             upd.add(self._rel(rec.record_name), self.ttl, "TXT", rec.record_value)
@@ -155,13 +145,15 @@ class Rfc2136Publisher:
     def cleanup(self, records: list[ChallengeRecord]) -> None:
         import dns.update
 
+        try:
+            keyring, alg = self._keyring_and_alg()
+        except Exception:  # noqa: BLE001 — cleanup is best-effort
+            return
         for rec in records:
             if rec.type != AcmeOrder.Challenge.DNS01:
                 continue
             try:
-                upd = dns.update.Update(
-                    self.zone, keyring=self._keyring, keyalgorithm=self.key_algorithm
-                )
+                upd = dns.update.Update(self.zone, keyring=keyring, keyalgorithm=alg)
                 upd.delete(self._rel(rec.record_name), "TXT", rec.record_value)
                 self._send(upd)
             except Exception:  # noqa: BLE001 — cleanup is best-effort
@@ -205,10 +197,136 @@ class Rfc2136Publisher:
                 waited += 2
 
 
+class Rfc2136Publisher(_DynamicDnsPublisher):
+    """DNS-01 via RFC 2136 dynamic update with a static TSIG key.
+
+    The one dynamic-update standard that spans BIND, Samba AD, PowerDNS, Knot,
+    etc. Config: ``dns_settings`` server/port/zone/key_name/key_algorithm/ttl;
+    the TSIG secret is a credential in ``issuer.secrets['tsig_secret']``.
+    """
+
+    def __init__(self, issuer: Issuer):
+        super().__init__(issuer)
+        s = issuer.dns_settings or {}
+        self.key_name = (s.get("key_name") or "").strip()
+        self.key_algorithm = s.get("key_algorithm") or "hmac-sha256"
+        secret = (issuer.secrets or {}).get("tsig_secret") or ""
+        if not (self.key_name and secret):
+            raise AcmeError(
+                "RFC2136 DNS-01 needs a TSIG key name and secret on the issuer."
+            )
+        import dns.tsigkeyring
+
+        self._keyring = dns.tsigkeyring.from_text({self.key_name: secret})
+
+    def _keyring_and_alg(self):
+        return self._keyring, self.key_algorithm
+
+
+class GssTsigPublisher(_DynamicDnsPublisher):
+    """DNS-01 for Windows AD DNS via GSS-TSIG (Kerberos secure dynamic update).
+
+    Windows AD DNS accepts secure dynamic updates only over GSS-TSIG, so this
+    negotiates a Kerberos context (dnspython's :class:`dns.tsig.GSSTSigAdapter`)
+    from a service-account **keytab** and signs the update with the negotiated
+    key. Config on ``dns_settings``: server (the AD DNS FQDN), zone, plus
+    ``client_principal`` (e.g. ``svc-dns@DANBYTE.LAN``), ``keytab`` (path on the
+    Danbyte host), and optional ``spn`` (default ``DNS@<server>``). Requires the
+    ``gssapi`` package (lazy-imported) and a Kerberos realm config.
+
+    NOTE: the negotiation is validated against dnspython's API but not yet run
+    against a live DC — it needs a real keytab + KDC to confirm end to end.
+    """
+
+    def __init__(self, issuer: Issuer):
+        super().__init__(issuer)
+        s = issuer.dns_settings or {}
+        self.client_principal = (s.get("client_principal") or "").strip()
+        self.keytab = (s.get("keytab") or "").strip()
+        self.spn = (s.get("spn") or f"DNS@{self.server}").strip()
+        if not self.client_principal:
+            raise AcmeError(
+                "GSS-TSIG needs a client principal (the DNS service account)."
+            )
+
+    def _keyring_and_alg(self):
+        return self._negotiate(), "gss-tsig."
+
+    def _negotiate(self):
+        """Run the Kerberos TKEY handshake and return a dnspython GSS keyring."""
+        import uuid
+
+        try:
+            import gssapi
+        except ImportError as exc:  # pragma: no cover - environment dependent
+            raise AcmeError(
+                "GSS-TSIG needs the 'gssapi' package installed (and libkrb5)."
+            ) from exc
+        import time as _time
+
+        import dns.message
+        import dns.name
+        import dns.query
+        import dns.rdataclass
+        import dns.rdatatype
+        import dns.rdtypes.ANY.TKEY
+        import dns.tsig
+
+        client = gssapi.Name(
+            self.client_principal, gssapi.NameType.kerberos_principal
+        )
+        store = {"client_keytab": self.keytab} if self.keytab else None
+        creds = gssapi.Credentials(name=client, usage="initiate", store=store)
+        target = gssapi.Name(self.spn, gssapi.NameType.hostbased_service)
+        ctx = gssapi.SecurityContext(name=target, creds=creds, usage="initiate")
+
+        keyname = dns.name.from_text(f"{uuid.uuid4().hex}.")
+        keyring = {keyname: dns.tsig.Key(keyname, ctx, "gss-tsig.")}
+        adapter = dns.tsig.GSSTSigAdapter(keyring)
+
+        token = ctx.step()
+        now = int(_time.time())
+        while not ctx.complete:
+            tkey = dns.rdtypes.ANY.TKEY.TKEY(
+                dns.rdataclass.ANY,
+                dns.rdatatype.TKEY,
+                algorithm=dns.name.from_text("gss-tsig."),
+                inception=now,
+                expiration=now + 3600,
+                mode=dns.rdtypes.ANY.TKEY.TKEY.GSSAPI_NEGOTIATION,
+                error=0,
+                key=token,
+                other=b"",
+            )
+            query = dns.message.make_query(
+                keyname, dns.rdatatype.TKEY, dns.rdataclass.ANY
+            )
+            query.keyring = adapter
+            query.find_rrset(
+                query.additional,
+                keyname,
+                dns.rdataclass.ANY,
+                dns.rdatatype.TKEY,
+                create=True,
+            ).add(tkey)
+            resp = dns.query.tcp(query, self.server, port=self.port, timeout=15)
+            answer = resp.get_rrset(
+                resp.answer, keyname, dns.rdataclass.ANY, dns.rdatatype.TKEY
+            )
+            if answer is None:
+                raise AcmeError(
+                    "GSS-TSIG negotiation failed: no TKEY in the DNS response."
+                )
+            token = ctx.step(answer[0].key)
+        return keyring
+
+
 def publisher_for(issuer: Issuer) -> ChallengePublisher | None:
     """The auto-publisher for an issuer, or ``None`` for the manual flow."""
     if issuer.dns_provider == Issuer.DnsProvider.RFC2136:
         return Rfc2136Publisher(issuer)
+    if issuer.dns_provider == Issuer.DnsProvider.GSS_TSIG:
+        return GssTsigPublisher(issuer)
     return None
 
 

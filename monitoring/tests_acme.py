@@ -276,6 +276,93 @@ class DnsPublisherTests(TestCase):
         self.assertIn("_acme-challenge", rendered)
         self.assertIn("theTXTvalue", rendered)
 
+    def test_publisher_for_selects_gss_tsig(self):
+        issuer = Issuer.objects.create(
+            tenant=self.tenant,
+            name="win",
+            directory_url="https://ca/d",
+            dns_provider="gss-tsig",
+            dns_settings={
+                "server": "db-dc.danbyte.lan",
+                "zone": "danbyte.lan",
+                "client_principal": "svc-dns@DANBYTE.LAN",
+                "keytab": "/etc/danbyte/dns.keytab",
+            },
+        )
+        self.assertIsInstance(eng.publisher_for(issuer), eng.GssTsigPublisher)
+
+    def test_gss_requires_client_principal(self):
+        issuer = Issuer.objects.create(
+            tenant=self.tenant,
+            name="win",
+            directory_url="https://ca/d",
+            dns_provider="gss-tsig",
+            dns_settings={"server": "db-dc.danbyte.lan", "zone": "danbyte.lan"},
+        )
+        with self.assertRaises(eng.AcmeError):
+            eng.GssTsigPublisher(issuer)
+
+    def test_gss_negotiate_needs_gssapi(self):
+        issuer = Issuer.objects.create(
+            tenant=self.tenant,
+            name="win",
+            directory_url="https://ca/d",
+            dns_provider="gss-tsig",
+            dns_settings={
+                "server": "db-dc.danbyte.lan",
+                "zone": "danbyte.lan",
+                "client_principal": "svc-dns@DANBYTE.LAN",
+            },
+        )
+        pub = eng.GssTsigPublisher(issuer)
+        # Setting the module to None makes `import gssapi` raise ImportError.
+        with mock.patch.dict("sys.modules", {"gssapi": None}):
+            with self.assertRaises(eng.AcmeError):
+                pub._negotiate()
+
+    def test_gss_publish_uses_negotiated_keyring(self):
+        issuer = Issuer.objects.create(
+            tenant=self.tenant,
+            name="win",
+            directory_url="https://ca/d",
+            dns_provider="gss-tsig",
+            dns_settings={
+                "server": "db-dc.danbyte.lan",
+                "zone": "danbyte.lan",
+                "client_principal": "svc-dns@DANBYTE.LAN",
+            },
+        )
+        pub = eng.GssTsigPublisher(issuer)
+        rec = eng.ChallengeRecord(
+            identifier="svc.danbyte.lan",
+            type="dns-01",
+            record_name="_acme-challenge.svc.danbyte.lan",
+            record_value="gssTXT",
+        )
+        # Substitute a valid static keyring so the shared publish path can build
+        # and sign an update; the GSS negotiation itself is covered separately.
+        import base64
+
+        import dns.tsigkeyring
+
+        keyring = dns.tsigkeyring.from_text(
+            {"acme-key": base64.b64encode(b"0" * 32).decode()}
+        )
+        sent = mock.Mock()
+        sent.rcode.return_value = 0
+        with (
+            mock.patch.object(
+                eng.GssTsigPublisher,
+                "_keyring_and_alg",
+                return_value=(keyring, "hmac-sha256"),
+            ),
+            mock.patch("dns.query.tcp", return_value=sent) as tcp,
+            mock.patch.object(eng.GssTsigPublisher, "_wait_visible"),
+        ):
+            pub.publish([rec])
+        self.assertTrue(tcp.called)
+        self.assertIn("gssTXT", tcp.call_args[0][0].to_text())
+
 
 class IssueJobTests(TestCase):
     def setUp(self):

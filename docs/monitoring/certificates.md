@@ -401,16 +401,24 @@ server, answer, finalize, import, and clean the record up. The DNS server is
 admin-configured, so it is reached directly (like the ACME directory / Vault),
 not via the tenant SSRF guard.
 
-**Supported DNS backends.** RFC2136/TSIG works with standards-based DNS —
-**BIND, Samba AD DNS, PowerDNS, Knot**, and anything else that accepts signed
-dynamic updates. **Windows AD DNS is the exception**: it only accepts secure
-updates over GSS-TSIG, which the plain-TSIG client does not speak. On a Windows
-AD network, delegate a small zone — `_acme-challenge.<your-domain>` — to any
-RFC2136-capable server and point the issuer at that; AD DNS stays untouched and
-Danbyte writes only the challenge records. (GSS-TSIG and provider-API backends
-can be added later behind the same publisher interface.) Where none of that fits,
-the manual flow always works: the order shows the record, you publish it, then
-finalize.
+**Supported DNS backends.** Two auto-publishers ship, both behind the same
+pluggable interface:
+
+- **`rfc2136`** — RFC2136 dynamic update with a static TSIG key. Works with
+  **BIND, Samba AD DNS, PowerDNS, Knot**, and anything else that accepts signed
+  dynamic updates. Config: `dns_settings.key_name` / `key_algorithm` +
+  `tsig_secret`.
+- **`gss-tsig`** — **Windows AD DNS**, which accepts secure updates only over
+  GSS-TSIG (Kerberos). Config: `dns_settings.client_principal` (the DNS
+  service account, e.g. `svc-dns@DANBYTE.LAN`), `keytab` (path on the Danbyte
+  host), and optional `spn` (default `DNS@<server>`). Needs the `gssapi` package
+  and a Kerberos realm config on the Danbyte host. *(The negotiation is written
+  to dnspython's GSS API but should be validated against your DC with a real
+  keytab before relying on it.)*
+
+Where neither fits, the manual flow always works: the order shows the record,
+you publish it, then finalize. On Windows AD you can also delegate a small
+`_acme-challenge` zone to an RFC2136 server instead of using GSS-TSIG.
 
 The `acme` client and `dnspython` are runtime dependencies (`acme>=4`,
 `josepy>=2`, `dnspython>=2`), included in the offline bundle for airgapped
