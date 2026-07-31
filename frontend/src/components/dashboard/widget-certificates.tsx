@@ -42,13 +42,18 @@ const COLUMNS: SimpleColumn<Certificate>[] = [
   },
 ]
 
-export function ExpiringCertsWidget() {
+function CertList({
+  queryKey,
+  url,
+  empty,
+}: {
+  queryKey: string
+  url: string
+  empty: string
+}) {
   const q = useQuery({
-    queryKey: ["dashboard-expiring-certs"],
-    queryFn: () =>
-      api<Paginated<Certificate>>(
-        "/api/monitoring/certificates/?expiring_in_days=30&page_size=25"
-      ),
+    queryKey: [queryKey],
+    queryFn: () => api<Paginated<Certificate>>(url),
   })
 
   if (q.isLoading)
@@ -61,8 +66,30 @@ export function ExpiringCertsWidget() {
   if (rows.length === 0)
     return (
       <div className="flex h-full min-h-[120px] items-center justify-center text-center text-sm text-muted-foreground">
-        No certificates expiring in the next 30 days.
+        {empty}
       </div>
     )
   return <SimpleTable columns={COLUMNS} data={rows} getRowKey={(c) => c.id} />
+}
+
+export function ExpiringCertsWidget() {
+  return (
+    <CertList
+      queryKey="dashboard-expiring-certs"
+      url="/api/monitoring/certificates/?expiring_in_days=30&page_size=25"
+      empty="No certificates expiring in the next 30 days."
+    />
+  )
+}
+
+// Already-past-expiry only — the failures, not the warnings. `expired=1` filters
+// to not_after ≤ now; the list still arrives soonest-first (most-overdue).
+export function ExpiredCertsWidget() {
+  return (
+    <CertList
+      queryKey="dashboard-expired-certs"
+      url="/api/monitoring/certificates/?expired=1&page_size=25"
+      empty="No expired certificates. 🎉"
+    />
+  )
 }

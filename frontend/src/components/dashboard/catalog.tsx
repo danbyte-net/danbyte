@@ -12,7 +12,8 @@ import {
 import { RecentDevices, RecentIps, RecentPrefixes } from "./widget-tables"
 import { BookmarksWidget } from "./widget-bookmarks"
 import { OsmMapWidget } from "./widget-osm-map"
-import { ExpiringCertsWidget } from "./widget-certificates"
+import { ExpiredCertsWidget, ExpiringCertsWidget } from "./widget-certificates"
+import { CertHealthWidget } from "./widget-cert-health"
 
 // Lazy — pulls in the floor-plan canvas only when the widget is actually shown.
 const FloorplanWidget = lazy(() =>
@@ -40,6 +41,8 @@ export type WidgetId =
   | "check-status"
   | "alerts-severity"
   | "expiring-certs"
+  | "expired-certs"
+  | "cert-health"
   | "map"
   | "floorplan"
 
@@ -232,11 +235,25 @@ export const CATALOG: WidgetDef[] = [
     ),
   },
   {
+    id: "cert-health",
+    title: "Certificate health",
+    description: "Expiry buckets across the certificate inventory",
+    size: "wide",
+    render: () => <CertHealthWidget />,
+  },
+  {
     id: "expiring-certs",
     title: "Expiring certificates",
     description: "Certificates expired or expiring within 30 days",
     size: "wide",
     render: () => <ExpiringCertsWidget />,
+  },
+  {
+    id: "expired-certs",
+    title: "Expired certificates",
+    description: "Certificates already past their expiry date",
+    size: "wide",
+    render: () => <ExpiredCertsWidget />,
   },
   {
     id: "map",

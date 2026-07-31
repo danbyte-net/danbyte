@@ -22,6 +22,9 @@ The page is a mosaic of tiles:
   **Floor plan** widget that renders one of your floor plans read-only with live
   tile status (monitoring rings + rack utilisation), each linking to its full
   page.
+- **Certificate widgets** — **Certificate health** (expiry buckets across the
+  whole inventory), **Expiring certificates** (expired or within 30 days), and
+  **Expired certificates** (already past expiry). Add them from *Add widget*.
 
 Colours come from your own statuses and roles where you've set them, so the
 charts speak your network's language.
