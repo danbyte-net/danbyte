@@ -128,7 +128,7 @@ export function LdapDirectory({
         </div>
 
         {tenantMode && (
-          <label className="flex cursor-pointer items-start gap-2 rounded-md border border-border p-3 text-sm">
+          <label className="flex cursor-pointer items-start gap-2 rounded-md border border-border bg-card p-3 text-sm">
             <Checkbox
               checked={!!form.override_ldap}
               onCheckedChange={(v) => set("override_ldap", !!v)}
@@ -145,7 +145,7 @@ export function LdapDirectory({
           </label>
         )}
 
-        <label className="flex cursor-pointer items-start gap-2 rounded-md border border-border p-3 text-sm">
+        <label className="flex cursor-pointer items-start gap-2 rounded-md border border-border bg-card p-3 text-sm">
           <Checkbox
             checked={form.ldap_enabled}
             onCheckedChange={(v) => set("ldap_enabled", !!v)}
@@ -404,7 +404,7 @@ function TestLogin({ endpoints }: { endpoints: LdapEndpoints }) {
         </Button>
       </div>
       {result && (
-        <div className="space-y-2 rounded-lg border border-border p-3">
+        <div className="space-y-2 rounded-lg border border-border bg-card p-3">
           {result.ok ? (
             <p className="text-sm text-emerald-600 dark:text-emerald-400">
               Authenticated as{" "}
@@ -572,7 +572,7 @@ function GroupMappings({
       />
 
       {/* Add a mapping */}
-      <div className="grid gap-3 rounded-lg border border-border p-3">
+      <div className="grid gap-3 rounded-lg border border-border bg-card p-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium">Add a mapping</span>
           <Button
