@@ -18,6 +18,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { CableDeleteDialog } from "@/components/cable-delete-dialog"
+import { PrintLabelButton } from "@/components/print-label-button"
 import { CableRoutingCard } from "@/components/cable-routing-card"
 import { CableTracePath } from "@/components/cable-trace-path"
 import { TraceSection } from "@/components/topology/trace-section"
@@ -115,6 +116,7 @@ function Body({ cable: c }: { cable: Cable }) {
           <AutoRouteButton cableId={c.id} />
           <TraceOnMapButton cableId={c.id} />
           <TraceOnSiteMapButton cableId={c.id} />
+          <PrintLabelButton objectType="cable" ids={[c.id]} />
           {canDo("cable", "change") && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/cables/$id/edit" params={{ id: c.id }}>

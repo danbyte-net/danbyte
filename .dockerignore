@@ -1,0 +1,22 @@
+# Keep the build context (and image) lean — the Dockerfile rebuilds these from
+# source. Without this, COPY . . drags .venv/node_modules/.git into the image.
+.git
+.venv
+**/__pycache__
+*.pyc
+node_modules
+frontend/node_modules
+frontend/dist
+frontend/.output
+frontend/.tanstack
+dist
+staticfiles
+media
+site
+.env
+.env.*
+*.sqlite3
+.claude
+.pytest_cache
+.ruff_cache
+docs/**/site

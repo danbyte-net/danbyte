@@ -1,0 +1,127 @@
+# Production container stack for Danbyte (issue #19). Mirrors the bare-metal
+# systemd topology: Postgres + Redis, a gunicorn WSGI backend, a separate daphne
+# ASGI process for WebSockets, an rq worker pool, and nginx serving the built
+# SPA + proxying the rest.
+#
+#   cp deploy/docker/.env.example .env   # then edit the secrets
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+#
+# Podman: `podman-compose -f docker-compose.prod.yml --env-file .env up -d`.
+# See docs/getting-started/docker.md.
+
+# Shared app config — every Python service gets the same DB/Redis/secret env.
+x-app-env: &app-env
+  DEBUG: "False"
+  DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY in .env}
+  MONITORING_SECRET_KEY: ${MONITORING_SECRET_KEY:?set MONITORING_SECRET_KEY in .env}
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
+  CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
+  DANBYTE_HTTPS: ${DANBYTE_HTTPS:-False}
+  DB_NAME: ${DB_NAME:-danbyte}
+  DB_USER: ${DB_USER:-danbyte}
+  DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  REDIS_URL: redis://redis:6379/0
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+
+x-app-build: &app-build
+  build:
+    context: .
+    target: runtime
+  image: danbyte-app:latest
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-danbyte}
+      POSTGRES_USER: ${DB_USER:-danbyte}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-danbyte} -d ${DB_NAME:-danbyte}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # HTTP/WSGI. This service also runs migrate + bootstrap + collectstatic once
+  # on start (MIGRATE_ON_START), populating the shared static/media volumes.
+  backend:
+    <<: *app-build
+    environment:
+      <<: *app-env
+      MIGRATE_ON_START: "1"
+      # Uncomment to have bootstrap create the first admin automatically:
+      # DJANGO_SUPERUSER_USERNAME: admin
+      # DJANGO_SUPERUSER_PASSWORD: ${DJANGO_SUPERUSER_PASSWORD:-}
+      # DJANGO_SUPERUSER_EMAIL: admin@example.com
+    command: ["gunicorn", "danbyte.wsgi:application", "--config", "deploy/gunicorn.conf.py", "--bind", "0.0.0.0:8000"]
+    volumes:
+      - staticfiles:/app/staticfiles
+      - media:/app/media
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # WebSockets — a SEPARATE ASGI process (channels never sits in the HTTP path).
+  ws:
+    <<: *app-build
+    environment: *app-env
+    command: ["daphne", "-b", "0.0.0.0", "-p", "8002", "danbyte.asgi:application"]
+
+  # Background jobs (monitoring, discovery, deploys). Pool = parallel workers.
+  # The ICMP checker uses icmplib's unprivileged datagram sockets; that needs
+  # the container's uid inside ping_group_range, so ping works without running
+  # as root or granting NET_RAW. (Podman honours this sysctl too.)
+  workers:
+    <<: *app-build
+    environment: *app-env
+    command: ["python", "manage.py", "rqworker-pool", "default", "high", "low", "--num-workers", "${RQ_WORKERS:-4}"]
+    sysctls:
+      - net.ipv4.ping_group_range=0 2147483647
+
+  # nginx: serves the built SPA + proxies /api, /ws, /static, /media.
+  web:
+    build:
+      context: .
+      target: web
+    image: danbyte-web:latest
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - ws
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    volumes:
+      - staticfiles:/app/staticfiles:ro
+      - media:/app/media:ro
+
+volumes:
+  postgres_data:
+  redis_data:
+  staticfiles:
+  media:
