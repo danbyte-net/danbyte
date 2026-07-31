@@ -4116,6 +4116,40 @@ export interface AcmeOrder {
   updated_at: string
 }
 
+/** A printable label template — Jinja2 HTML + QR, sized in mm (#9). */
+export interface LabelTemplate {
+  id: string
+  name: string
+  object_type: string
+  object_type_label: string
+  description: string
+  width_mm: number
+  height_mm: number
+  margin_mm: number
+  template_html: string
+  css: string
+  qr_enabled: boolean
+  qr_content: string
+  qr_size_mm: number
+  is_default: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** Token reference for the label editor (`/label-templates/fields/`). */
+export interface LabelFields {
+  object: string
+  tokens: string[]
+  special: string[]
+}
+
+/** One rendered label from the print/preview endpoints. */
+export interface RenderedLabel {
+  id?: string
+  html: string
+  qr: string
+}
+
 export type SSHKeyOrigin = "observed" | "uploaded" | "both"
 
 export interface SSHHostKey {

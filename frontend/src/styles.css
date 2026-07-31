@@ -408,6 +408,16 @@
    to EditPageShell only: the same form components render inside dialogs, which
    are NOT `.edit-page-form`, so dialog footers are unaffected. The negative
    inline margin lets the border + backdrop span the container's `px-6`. */
+/* Label print sheet (#9): when printing, drop the app chrome (sidebar/header)
+   so only the label grid on /labels/print reaches the page. The route also
+   emits an @page rule sizing each sheet to the label's mm dimensions. */
+@media print {
+  body:has(.label-sheet) [data-sidebar],
+  body:has(.label-sheet) [data-slot="sidebar"] {
+    display: none !important;
+  }
+}
+
 .edit-page-form [data-form-footer] {
   position: sticky;
   bottom: 0;

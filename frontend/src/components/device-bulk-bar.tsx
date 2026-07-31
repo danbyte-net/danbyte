@@ -12,6 +12,7 @@ import {
   type Paginated,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { PrintLabelButton } from "@/components/print-label-button"
 import { Spinner } from "@/components/ui/spinner"
 import { FormSelect } from "@/components/forms"
 import {
@@ -51,6 +52,12 @@ export function DeviceBulkBar({ selected, onCleared }: DeviceBulkBarProps) {
           >
             <Rocket className="mr-1 h-3 w-3" /> Deploy
           </Button>
+          <PrintLabelButton
+            objectType="device"
+            ids={selected.map((d) => d.id)}
+            label={`Print labels (${selected.length})`}
+            variant="ghost"
+          />
           <BulkExport ioType="device" ids={selected.map((d) => d.id)} />
           <Button
             size="sm"

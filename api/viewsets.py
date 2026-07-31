@@ -5996,6 +5996,20 @@ class LabelTemplateViewSet(TenantScopedViewSet):
             qs = qs.filter(tenant=_get_active_tenant(self.request))
         return list(qs)
 
+    def _first_object(self, object_type):
+        """One representative object of the type in the active tenant, for the
+        editor's zero-setup live preview. Returns a 1-list or []."""
+        from auth_api.object_types import model_for
+
+        model = model_for(object_type)
+        if model is None:
+            return []
+        qs = model.objects.all()
+        if any(f.name == "tenant" for f in model._meta.concrete_fields):
+            qs = qs.filter(tenant=_get_active_tenant(self.request))
+        obj = qs.first()
+        return [obj] if obj else []
+
     def _base_url(self, request) -> str:
         return request.build_absolute_uri("/").rstrip("/")
 
@@ -6023,15 +6037,20 @@ class LabelTemplateViewSet(TenantScopedViewSet):
 
         d = request.data
         object_type = d.get("object_type") or ""
-        objs = self._objects(object_type, [d.get("object_id")])
-        if objs is None:
+        object_id = d.get("object_id")
+        objs = self._objects(object_type, [object_id]) if object_id else None
+        if objs is None and object_id:
             return Response(
                 {"detail": "Unknown object type."},
                 status=drf_status.HTTP_400_BAD_REQUEST,
             )
         if not objs:
+            # No sample chosen → preview against the first object of this type in
+            # the tenant, so the editor shows a live label with zero setup.
+            objs = self._first_object(object_type)
+        if not objs:
             return Response(
-                {"detail": "Pick a sample object of this type to preview."},
+                {"detail": "No objects of this type exist to preview against."},
                 status=drf_status.HTTP_400_BAD_REQUEST,
             )
         draft = LabelTemplate(

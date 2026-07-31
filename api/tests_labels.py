@@ -111,13 +111,16 @@ class LabelApiTests(TestCase):
         self.assertEqual(len(labels), 1)
         self.assertIn("rtr1", labels[0]["html"])
 
-    def test_preview_needs_sample_object(self):
+    def test_preview_falls_back_to_first_object(self):
+        # No object_id → preview against the first object of the type (zero-setup
+        # editor preview). A device exists in setUp, so this renders.
         r = self.client.post(
             "/api/label-templates/preview/",
-            {"object_type": "device", "template_html": "{{ device.name }}"},
+            {"object_type": "device", "template_html": "N:{{ device.name }}"},
             content_type="application/json",
         )
-        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["html"], "N:rtr1")
 
     def test_preview_renders_draft(self):
         r = self.client.post(

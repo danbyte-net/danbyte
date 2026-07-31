@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlSubTab, useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
+import { PrintLabelButton } from "@/components/print-label-button"
 import { ShowOnSiteMap } from "@/components/show-on-site-map"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
@@ -237,6 +238,7 @@ function Body({ device: d }: { device: Device }) {
             deviceId={d.id}
             hasCoords={d.latitude != null && d.longitude != null}
           />
+          <PrintLabelButton objectType="device" ids={[d.id]} />
           {canEdit && d.device_type && (
             <Button
               variant="outline"

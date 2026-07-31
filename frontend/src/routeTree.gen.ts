@@ -118,6 +118,7 @@ import { Route as ModuleTypesIndexRouteImport } from './routes/module-types.inde
 import { Route as ManufacturersIndexRouteImport } from './routes/manufacturers.index'
 import { Route as MacsIndexRouteImport } from './routes/macs.index'
 import { Route as LocationsIndexRouteImport } from './routes/locations.index'
+import { Route as LabelTemplatesIndexRouteImport } from './routes/label-templates.index'
 import { Route as L2vpnsIndexRouteImport } from './routes/l2vpns.index'
 import { Route as JobsIndexRouteImport } from './routes/jobs.index'
 import { Route as IpsecProfilesIndexRouteImport } from './routes/ipsec-profiles.index'
@@ -243,6 +244,7 @@ import { Route as ManufacturersIdRouteImport } from './routes/manufacturers.$id'
 import { Route as MacsMacRouteImport } from './routes/macs.$mac'
 import { Route as LocationsNewRouteImport } from './routes/locations.new'
 import { Route as LocationsIdRouteImport } from './routes/locations.$id'
+import { Route as LabelsPrintRouteImport } from './routes/labels.print'
 import { Route as L2vpnsNewRouteImport } from './routes/l2vpns.new'
 import { Route as L2vpnsIdRouteImport } from './routes/l2vpns.$id'
 import { Route as JobsIdRouteImport } from './routes/jobs.$id'
@@ -926,6 +928,11 @@ const LocationsIndexRoute = LocationsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => LocationsRoute,
 } as any)
+const LabelTemplatesIndexRoute = LabelTemplatesIndexRouteImport.update({
+  id: '/label-templates/',
+  path: '/label-templates/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const L2vpnsIndexRoute = L2vpnsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -1552,6 +1559,11 @@ const LocationsIdRoute = LocationsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => LocationsRoute,
+} as any)
+const LabelsPrintRoute = LabelsPrintRouteImport.update({
+  id: '/labels/print',
+  path: '/labels/print',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const L2vpnsNewRoute = L2vpnsNewRouteImport.update({
   id: '/new',
@@ -2380,6 +2392,7 @@ export interface FileRoutesByFullPath {
   '/jobs/$id': typeof JobsIdRoute
   '/l2vpns/$id': typeof L2vpnsIdRoute
   '/l2vpns/new': typeof L2vpnsNewRoute
+  '/labels/print': typeof LabelsPrintRoute
   '/locations/$id': typeof LocationsIdRoute
   '/locations/new': typeof LocationsNewRoute
   '/macs/$mac': typeof MacsMacRoute
@@ -2505,6 +2518,7 @@ export interface FileRoutesByFullPath {
   '/ipsec-profiles/': typeof IpsecProfilesIndexRoute
   '/jobs/': typeof JobsIndexRoute
   '/l2vpns/': typeof L2vpnsIndexRoute
+  '/label-templates/': typeof LabelTemplatesIndexRoute
   '/locations/': typeof LocationsIndexRoute
   '/macs/': typeof MacsIndexRoute
   '/manufacturers/': typeof ManufacturersIndexRoute
@@ -2697,6 +2711,7 @@ export interface FileRoutesByTo {
   '/jobs/$id': typeof JobsIdRoute
   '/l2vpns/$id': typeof L2vpnsIdRoute
   '/l2vpns/new': typeof L2vpnsNewRoute
+  '/labels/print': typeof LabelsPrintRoute
   '/locations/$id': typeof LocationsIdRoute
   '/locations/new': typeof LocationsNewRoute
   '/macs/$mac': typeof MacsMacRoute
@@ -2822,6 +2837,7 @@ export interface FileRoutesByTo {
   '/ipsec-profiles': typeof IpsecProfilesIndexRoute
   '/jobs': typeof JobsIndexRoute
   '/l2vpns': typeof L2vpnsIndexRoute
+  '/label-templates': typeof LabelTemplatesIndexRoute
   '/locations': typeof LocationsIndexRoute
   '/macs': typeof MacsIndexRoute
   '/manufacturers': typeof ManufacturersIndexRoute
@@ -3071,6 +3087,7 @@ export interface FileRoutesById {
   '/jobs/$id': typeof JobsIdRoute
   '/l2vpns/$id': typeof L2vpnsIdRoute
   '/l2vpns/new': typeof L2vpnsNewRoute
+  '/labels/print': typeof LabelsPrintRoute
   '/locations/$id': typeof LocationsIdRoute
   '/locations/new': typeof LocationsNewRoute
   '/macs/$mac': typeof MacsMacRoute
@@ -3196,6 +3213,7 @@ export interface FileRoutesById {
   '/ipsec-profiles/': typeof IpsecProfilesIndexRoute
   '/jobs/': typeof JobsIndexRoute
   '/l2vpns/': typeof L2vpnsIndexRoute
+  '/label-templates/': typeof LabelTemplatesIndexRoute
   '/locations/': typeof LocationsIndexRoute
   '/macs/': typeof MacsIndexRoute
   '/manufacturers/': typeof ManufacturersIndexRoute
@@ -3446,6 +3464,7 @@ export interface FileRouteTypes {
     | '/jobs/$id'
     | '/l2vpns/$id'
     | '/l2vpns/new'
+    | '/labels/print'
     | '/locations/$id'
     | '/locations/new'
     | '/macs/$mac'
@@ -3571,6 +3590,7 @@ export interface FileRouteTypes {
     | '/ipsec-profiles/'
     | '/jobs/'
     | '/l2vpns/'
+    | '/label-templates/'
     | '/locations/'
     | '/macs/'
     | '/manufacturers/'
@@ -3763,6 +3783,7 @@ export interface FileRouteTypes {
     | '/jobs/$id'
     | '/l2vpns/$id'
     | '/l2vpns/new'
+    | '/labels/print'
     | '/locations/$id'
     | '/locations/new'
     | '/macs/$mac'
@@ -3888,6 +3909,7 @@ export interface FileRouteTypes {
     | '/ipsec-profiles'
     | '/jobs'
     | '/l2vpns'
+    | '/label-templates'
     | '/locations'
     | '/macs'
     | '/manufacturers'
@@ -4136,6 +4158,7 @@ export interface FileRouteTypes {
     | '/jobs/$id'
     | '/l2vpns/$id'
     | '/l2vpns/new'
+    | '/labels/print'
     | '/locations/$id'
     | '/locations/new'
     | '/macs/$mac'
@@ -4261,6 +4284,7 @@ export interface FileRouteTypes {
     | '/ipsec-profiles/'
     | '/jobs/'
     | '/l2vpns/'
+    | '/label-templates/'
     | '/locations/'
     | '/macs/'
     | '/manufacturers/'
@@ -4460,6 +4484,7 @@ export interface RootRouteChildren {
   IpsBulkEditRoute: typeof IpsBulkEditRoute
   IpsNewRoute: typeof IpsNewRoute
   JobsIdRoute: typeof JobsIdRoute
+  LabelsPrintRoute: typeof LabelsPrintRoute
   PlatformGroupsIdRoute: typeof PlatformGroupsIdRoute
   PlatformGroupsNewRoute: typeof PlatformGroupsNewRoute
   PlatformsIdRoute: typeof PlatformsIdRoute
@@ -4483,6 +4508,7 @@ export interface RootRouteChildren {
   ClustersIndexRoute: typeof ClustersIndexRoute
   DeviceRolesIndexRoute: typeof DeviceRolesIndexRoute
   JobsIndexRoute: typeof JobsIndexRoute
+  LabelTemplatesIndexRoute: typeof LabelTemplatesIndexRoute
   PlatformGroupsIndexRoute: typeof PlatformGroupsIndexRoute
   PlatformsIndexRoute: typeof PlatformsIndexRoute
   RackRolesIndexRoute: typeof RackRolesIndexRoute
@@ -5272,6 +5298,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/locations/'
       preLoaderRoute: typeof LocationsIndexRouteImport
       parentRoute: typeof LocationsRoute
+    }
+    '/label-templates/': {
+      id: '/label-templates/'
+      path: '/label-templates'
+      fullPath: '/label-templates/'
+      preLoaderRoute: typeof LabelTemplatesIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/l2vpns/': {
       id: '/l2vpns/'
@@ -6147,6 +6180,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/locations/$id'
       preLoaderRoute: typeof LocationsIdRouteImport
       parentRoute: typeof LocationsRoute
+    }
+    '/labels/print': {
+      id: '/labels/print'
+      path: '/labels/print'
+      fullPath: '/labels/print'
+      preLoaderRoute: typeof LabelsPrintRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/l2vpns/new': {
       id: '/l2vpns/new'
@@ -8200,6 +8240,7 @@ const rootRouteChildren: RootRouteChildren = {
   IpsBulkEditRoute: IpsBulkEditRoute,
   IpsNewRoute: IpsNewRoute,
   JobsIdRoute: JobsIdRoute,
+  LabelsPrintRoute: LabelsPrintRoute,
   PlatformGroupsIdRoute: PlatformGroupsIdRoute,
   PlatformGroupsNewRoute: PlatformGroupsNewRoute,
   PlatformsIdRoute: PlatformsIdRoute,
@@ -8223,6 +8264,7 @@ const rootRouteChildren: RootRouteChildren = {
   ClustersIndexRoute: ClustersIndexRoute,
   DeviceRolesIndexRoute: DeviceRolesIndexRoute,
   JobsIndexRoute: JobsIndexRoute,
+  LabelTemplatesIndexRoute: LabelTemplatesIndexRoute,
   PlatformGroupsIndexRoute: PlatformGroupsIndexRoute,
   PlatformsIndexRoute: PlatformsIndexRoute,
   RackRolesIndexRoute: RackRolesIndexRoute,
