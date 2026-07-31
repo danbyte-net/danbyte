@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { TimeCell } from "@/components/cells/time-ago"
 import { dash } from "@/components/cells/dash"
+import { useTableFilters } from "@/components/table-filters"
 import { RequestCertificateDialog } from "@/components/monitoring/request-certificate-dialog"
 import { useMe } from "@/lib/use-me"
 
@@ -67,6 +68,13 @@ function CertificateRequestsPage() {
         cell: ({ row }) => (
           <span className="text-xs">{row.original.key_spec_display}</span>
         ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Key",
+            get: (r: CertificateRequest) => r.key_spec_display,
+          },
+        },
       },
       {
         id: "status",
@@ -80,6 +88,13 @@ function CertificateRequestsPage() {
             {row.original.status_display}
           </Badge>
         ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Status",
+            get: (r: CertificateRequest) => r.status_display,
+          },
+        },
       },
       {
         id: "issued",
@@ -108,10 +123,13 @@ function CertificateRequestsPage() {
     []
   )
 
+  const { rail, filteredRows } = useTableFilters(columns, rows)
+
   return (
     <ListPageShell
       title="Certificate requests"
-      count={query.data ? rows.length : undefined}
+      count={query.data ? filteredRows.length : undefined}
+      rail={rail}
       actions={
         canDo("certificaterequest", "add") ? (
           <Button size="sm" onClick={() => setRequestOpen(true)}>
@@ -129,7 +147,7 @@ function CertificateRequestsPage() {
         </EmptyState>
       ) : (
         <DataTable
-          data={rows}
+          data={filteredRows}
           columns={columns}
           flexColumn="common_name"
           tableId="certificate-requests"
