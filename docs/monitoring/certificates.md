@@ -292,7 +292,7 @@ inventory itself.
 The certificate **inventory** never holds a private key, and never will. But
 requesting a certificate (a CSR) and automated issuance (ACME) do need one, so
 those features are gated behind an opt-in **secret store** an administrator
-enables under **Settings → Administration → Secret store**:
+enables under **Settings → Security → Secret store**:
 
 - **Disabled** (default) — no keys are stored anywhere, and the key-bearing
   features stay off (fail closed).

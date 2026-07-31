@@ -187,15 +187,21 @@ import { Route as SettingsUpdatesRouteImport } from './routes/settings.updates'
 import { Route as SettingsTenantLdapRouteImport } from './routes/settings.tenant-ldap'
 import { Route as SettingsTenantEmailRouteImport } from './routes/settings.tenant-email'
 import { Route as SettingsTenantRouteImport } from './routes/settings.tenant'
+import { Route as SettingsTableDefaultsRouteImport } from './routes/settings.table-defaults'
 import { Route as SettingsSnmpSensorsRouteImport } from './routes/settings.snmp-sensors'
 import { Route as SettingsSnmpRouteImport } from './routes/settings.snmp'
+import { Route as SettingsSitesRouteImport } from './routes/settings.sites'
 import { Route as SettingsSiteRouteImport } from './routes/settings.site'
+import { Route as SettingsSecurityRouteImport } from './routes/settings.security'
 import { Route as SettingsPreferencesRouteImport } from './routes/settings.preferences'
 import { Route as SettingsPluginsRouteImport } from './routes/settings.plugins'
+import { Route as SettingsMonitoringDefaultsRouteImport } from './routes/settings.monitoring-defaults'
 import { Route as SettingsMonitoringRouteImport } from './routes/settings.monitoring'
+import { Route as SettingsMapsRouteImport } from './routes/settings.maps'
 import { Route as SettingsLdapRouteImport } from './routes/settings.ldap'
 import { Route as SettingsFloorplanRouteImport } from './routes/settings.floorplan'
 import { Route as SettingsEmailRouteImport } from './routes/settings.email'
+import { Route as SettingsDeviceFieldsRouteImport } from './routes/settings.device-fields'
 import { Route as SettingsAdminRouteImport } from './routes/settings.admin'
 import { Route as ServicesIdRouteImport } from './routes/services.$id'
 import { Route as ServiceTemplatesNewRouteImport } from './routes/service-templates.new'
@@ -1265,6 +1271,11 @@ const SettingsTenantRoute = SettingsTenantRouteImport.update({
   path: '/tenant',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsTableDefaultsRoute = SettingsTableDefaultsRouteImport.update({
+  id: '/table-defaults',
+  path: '/table-defaults',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsSnmpSensorsRoute = SettingsSnmpSensorsRouteImport.update({
   id: '/snmp-sensors',
   path: '/snmp-sensors',
@@ -1275,9 +1286,19 @@ const SettingsSnmpRoute = SettingsSnmpRouteImport.update({
   path: '/snmp',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsSitesRoute = SettingsSitesRouteImport.update({
+  id: '/sites',
+  path: '/sites',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsSiteRoute = SettingsSiteRouteImport.update({
   id: '/site',
   path: '/site',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsSecurityRoute = SettingsSecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsPreferencesRoute = SettingsPreferencesRouteImport.update({
@@ -1290,9 +1311,20 @@ const SettingsPluginsRoute = SettingsPluginsRouteImport.update({
   path: '/plugins',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsMonitoringDefaultsRoute =
+  SettingsMonitoringDefaultsRouteImport.update({
+    id: '/monitoring-defaults',
+    path: '/monitoring-defaults',
+    getParentRoute: () => SettingsRoute,
+  } as any)
 const SettingsMonitoringRoute = SettingsMonitoringRouteImport.update({
   id: '/monitoring',
   path: '/monitoring',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsMapsRoute = SettingsMapsRouteImport.update({
+  id: '/maps',
+  path: '/maps',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsLdapRoute = SettingsLdapRouteImport.update({
@@ -1308,6 +1340,11 @@ const SettingsFloorplanRoute = SettingsFloorplanRouteImport.update({
 const SettingsEmailRoute = SettingsEmailRouteImport.update({
   id: '/email',
   path: '/email',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsDeviceFieldsRoute = SettingsDeviceFieldsRouteImport.update({
+  id: '/device-fields',
+  path: '/device-fields',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsAdminRoute = SettingsAdminRouteImport.update({
@@ -2377,15 +2414,21 @@ export interface FileRoutesByFullPath {
   '/service-templates/new': typeof ServiceTemplatesNewRoute
   '/services/$id': typeof ServicesIdRoute
   '/settings/admin': typeof SettingsAdminRoute
+  '/settings/device-fields': typeof SettingsDeviceFieldsRoute
   '/settings/email': typeof SettingsEmailRoute
   '/settings/floorplan': typeof SettingsFloorplanRoute
   '/settings/ldap': typeof SettingsLdapRoute
+  '/settings/maps': typeof SettingsMapsRoute
   '/settings/monitoring': typeof SettingsMonitoringRoute
+  '/settings/monitoring-defaults': typeof SettingsMonitoringDefaultsRoute
   '/settings/plugins': typeof SettingsPluginsRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
+  '/settings/security': typeof SettingsSecurityRoute
   '/settings/site': typeof SettingsSiteRoute
+  '/settings/sites': typeof SettingsSitesRoute
   '/settings/snmp': typeof SettingsSnmpRoute
   '/settings/snmp-sensors': typeof SettingsSnmpSensorsRoute
+  '/settings/table-defaults': typeof SettingsTableDefaultsRoute
   '/settings/tenant': typeof SettingsTenantRoute
   '/settings/tenant-email': typeof SettingsTenantEmailRoute
   '/settings/tenant-ldap': typeof SettingsTenantLdapRoute
@@ -2687,15 +2730,21 @@ export interface FileRoutesByTo {
   '/service-templates/new': typeof ServiceTemplatesNewRoute
   '/services/$id': typeof ServicesIdRoute
   '/settings/admin': typeof SettingsAdminRoute
+  '/settings/device-fields': typeof SettingsDeviceFieldsRoute
   '/settings/email': typeof SettingsEmailRoute
   '/settings/floorplan': typeof SettingsFloorplanRoute
   '/settings/ldap': typeof SettingsLdapRoute
+  '/settings/maps': typeof SettingsMapsRoute
   '/settings/monitoring': typeof SettingsMonitoringRoute
+  '/settings/monitoring-defaults': typeof SettingsMonitoringDefaultsRoute
   '/settings/plugins': typeof SettingsPluginsRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
+  '/settings/security': typeof SettingsSecurityRoute
   '/settings/site': typeof SettingsSiteRoute
+  '/settings/sites': typeof SettingsSitesRoute
   '/settings/snmp': typeof SettingsSnmpRoute
   '/settings/snmp-sensors': typeof SettingsSnmpSensorsRoute
+  '/settings/table-defaults': typeof SettingsTableDefaultsRoute
   '/settings/tenant': typeof SettingsTenantRoute
   '/settings/tenant-email': typeof SettingsTenantEmailRoute
   '/settings/tenant-ldap': typeof SettingsTenantLdapRoute
@@ -3054,15 +3103,21 @@ export interface FileRoutesById {
   '/service-templates/new': typeof ServiceTemplatesNewRoute
   '/services/$id': typeof ServicesIdRoute
   '/settings/admin': typeof SettingsAdminRoute
+  '/settings/device-fields': typeof SettingsDeviceFieldsRoute
   '/settings/email': typeof SettingsEmailRoute
   '/settings/floorplan': typeof SettingsFloorplanRoute
   '/settings/ldap': typeof SettingsLdapRoute
+  '/settings/maps': typeof SettingsMapsRoute
   '/settings/monitoring': typeof SettingsMonitoringRoute
+  '/settings/monitoring-defaults': typeof SettingsMonitoringDefaultsRoute
   '/settings/plugins': typeof SettingsPluginsRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
+  '/settings/security': typeof SettingsSecurityRoute
   '/settings/site': typeof SettingsSiteRoute
+  '/settings/sites': typeof SettingsSitesRoute
   '/settings/snmp': typeof SettingsSnmpRoute
   '/settings/snmp-sensors': typeof SettingsSnmpSensorsRoute
+  '/settings/table-defaults': typeof SettingsTableDefaultsRoute
   '/settings/tenant': typeof SettingsTenantRoute
   '/settings/tenant-email': typeof SettingsTenantEmailRoute
   '/settings/tenant-ldap': typeof SettingsTenantLdapRoute
@@ -3422,15 +3477,21 @@ export interface FileRouteTypes {
     | '/service-templates/new'
     | '/services/$id'
     | '/settings/admin'
+    | '/settings/device-fields'
     | '/settings/email'
     | '/settings/floorplan'
     | '/settings/ldap'
+    | '/settings/maps'
     | '/settings/monitoring'
+    | '/settings/monitoring-defaults'
     | '/settings/plugins'
     | '/settings/preferences'
+    | '/settings/security'
     | '/settings/site'
+    | '/settings/sites'
     | '/settings/snmp'
     | '/settings/snmp-sensors'
+    | '/settings/table-defaults'
     | '/settings/tenant'
     | '/settings/tenant-email'
     | '/settings/tenant-ldap'
@@ -3732,15 +3793,21 @@ export interface FileRouteTypes {
     | '/service-templates/new'
     | '/services/$id'
     | '/settings/admin'
+    | '/settings/device-fields'
     | '/settings/email'
     | '/settings/floorplan'
     | '/settings/ldap'
+    | '/settings/maps'
     | '/settings/monitoring'
+    | '/settings/monitoring-defaults'
     | '/settings/plugins'
     | '/settings/preferences'
+    | '/settings/security'
     | '/settings/site'
+    | '/settings/sites'
     | '/settings/snmp'
     | '/settings/snmp-sensors'
+    | '/settings/table-defaults'
     | '/settings/tenant'
     | '/settings/tenant-email'
     | '/settings/tenant-ldap'
@@ -4098,15 +4165,21 @@ export interface FileRouteTypes {
     | '/service-templates/new'
     | '/services/$id'
     | '/settings/admin'
+    | '/settings/device-fields'
     | '/settings/email'
     | '/settings/floorplan'
     | '/settings/ldap'
+    | '/settings/maps'
     | '/settings/monitoring'
+    | '/settings/monitoring-defaults'
     | '/settings/plugins'
     | '/settings/preferences'
+    | '/settings/security'
     | '/settings/site'
+    | '/settings/sites'
     | '/settings/snmp'
     | '/settings/snmp-sensors'
+    | '/settings/table-defaults'
     | '/settings/tenant'
     | '/settings/tenant-email'
     | '/settings/tenant-ldap'
@@ -5670,6 +5743,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsTenantRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/table-defaults': {
+      id: '/settings/table-defaults'
+      path: '/table-defaults'
+      fullPath: '/settings/table-defaults'
+      preLoaderRoute: typeof SettingsTableDefaultsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/snmp-sensors': {
       id: '/settings/snmp-sensors'
       path: '/snmp-sensors'
@@ -5684,11 +5764,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsSnmpRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/sites': {
+      id: '/settings/sites'
+      path: '/sites'
+      fullPath: '/settings/sites'
+      preLoaderRoute: typeof SettingsSitesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/site': {
       id: '/settings/site'
       path: '/site'
       fullPath: '/settings/site'
       preLoaderRoute: typeof SettingsSiteRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/security': {
+      id: '/settings/security'
+      path: '/security'
+      fullPath: '/settings/security'
+      preLoaderRoute: typeof SettingsSecurityRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/preferences': {
@@ -5705,11 +5799,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsPluginsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/monitoring-defaults': {
+      id: '/settings/monitoring-defaults'
+      path: '/monitoring-defaults'
+      fullPath: '/settings/monitoring-defaults'
+      preLoaderRoute: typeof SettingsMonitoringDefaultsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/monitoring': {
       id: '/settings/monitoring'
       path: '/monitoring'
       fullPath: '/settings/monitoring'
       preLoaderRoute: typeof SettingsMonitoringRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/maps': {
+      id: '/settings/maps'
+      path: '/maps'
+      fullPath: '/settings/maps'
+      preLoaderRoute: typeof SettingsMapsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/ldap': {
@@ -5731,6 +5839,13 @@ declare module '@tanstack/react-router' {
       path: '/email'
       fullPath: '/settings/email'
       preLoaderRoute: typeof SettingsEmailRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/device-fields': {
+      id: '/settings/device-fields'
+      path: '/device-fields'
+      fullPath: '/settings/device-fields'
+      preLoaderRoute: typeof SettingsDeviceFieldsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/admin': {
@@ -7657,15 +7772,21 @@ const RouteTargetsRouteWithChildren = RouteTargetsRoute._addFileChildren(
 
 interface SettingsRouteChildren {
   SettingsAdminRoute: typeof SettingsAdminRoute
+  SettingsDeviceFieldsRoute: typeof SettingsDeviceFieldsRoute
   SettingsEmailRoute: typeof SettingsEmailRoute
   SettingsFloorplanRoute: typeof SettingsFloorplanRoute
   SettingsLdapRoute: typeof SettingsLdapRoute
+  SettingsMapsRoute: typeof SettingsMapsRoute
   SettingsMonitoringRoute: typeof SettingsMonitoringRoute
+  SettingsMonitoringDefaultsRoute: typeof SettingsMonitoringDefaultsRoute
   SettingsPluginsRoute: typeof SettingsPluginsRoute
   SettingsPreferencesRoute: typeof SettingsPreferencesRoute
+  SettingsSecurityRoute: typeof SettingsSecurityRoute
   SettingsSiteRoute: typeof SettingsSiteRoute
+  SettingsSitesRoute: typeof SettingsSitesRoute
   SettingsSnmpRoute: typeof SettingsSnmpRoute
   SettingsSnmpSensorsRoute: typeof SettingsSnmpSensorsRoute
+  SettingsTableDefaultsRoute: typeof SettingsTableDefaultsRoute
   SettingsTenantRoute: typeof SettingsTenantRoute
   SettingsTenantEmailRoute: typeof SettingsTenantEmailRoute
   SettingsTenantLdapRoute: typeof SettingsTenantLdapRoute
@@ -7675,15 +7796,21 @@ interface SettingsRouteChildren {
 
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAdminRoute: SettingsAdminRoute,
+  SettingsDeviceFieldsRoute: SettingsDeviceFieldsRoute,
   SettingsEmailRoute: SettingsEmailRoute,
   SettingsFloorplanRoute: SettingsFloorplanRoute,
   SettingsLdapRoute: SettingsLdapRoute,
+  SettingsMapsRoute: SettingsMapsRoute,
   SettingsMonitoringRoute: SettingsMonitoringRoute,
+  SettingsMonitoringDefaultsRoute: SettingsMonitoringDefaultsRoute,
   SettingsPluginsRoute: SettingsPluginsRoute,
   SettingsPreferencesRoute: SettingsPreferencesRoute,
+  SettingsSecurityRoute: SettingsSecurityRoute,
   SettingsSiteRoute: SettingsSiteRoute,
+  SettingsSitesRoute: SettingsSitesRoute,
   SettingsSnmpRoute: SettingsSnmpRoute,
   SettingsSnmpSensorsRoute: SettingsSnmpSensorsRoute,
+  SettingsTableDefaultsRoute: SettingsTableDefaultsRoute,
   SettingsTenantRoute: SettingsTenantRoute,
   SettingsTenantEmailRoute: SettingsTenantEmailRoute,
   SettingsTenantLdapRoute: SettingsTenantLdapRoute,

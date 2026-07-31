@@ -104,7 +104,7 @@ def require_secret_store() -> SecretStore:
     if store is None:
         raise SecretStoreDisabled(
             "No secret store is enabled. An administrator must enable one under "
-            "Settings → Administration → Secret store before certificates can be "
+            "Settings → Security → Secret store before certificates can be "
             "requested or issued."
         )
     return store

@@ -57,10 +57,16 @@ const SECTIONS: NavSection[] = [
     gate: "deployment",
     items: [
       { to: "/settings/admin", label: "General" },
-      { to: "/settings/updates", label: "Updates" },
-      { to: "/settings/plugins", label: "Plugins & services" },
+      { to: "/settings/security", label: "Security" },
+      { to: "/settings/sites", label: "Sites & separation" },
+      { to: "/settings/monitoring-defaults", label: "Monitoring defaults" },
+      { to: "/settings/maps", label: "Maps" },
+      { to: "/settings/device-fields", label: "Device fields" },
+      { to: "/settings/table-defaults", label: "Table defaults" },
       { to: "/settings/email", label: "Email & Delivery" },
       { to: "/settings/ldap", label: "Directory (LDAP)" },
+      { to: "/settings/updates", label: "Updates" },
+      { to: "/settings/plugins", label: "Plugins & services" },
     ],
   },
 ]

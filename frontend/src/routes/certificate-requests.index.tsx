@@ -143,7 +143,7 @@ function CertificateRequestsPage() {
         <EmptyState title="No certificate requests yet.">
           Request a certificate to have Danbyte generate a key pair and CSR to
           hand to a certificate authority. Requires a secret store to be enabled
-          (Settings → Administration).
+          (Settings → Security).
         </EmptyState>
       ) : (
         <DataTable
