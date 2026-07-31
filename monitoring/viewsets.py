@@ -6,6 +6,7 @@ every referenced IP/prefix belongs to the active tenant.
 """
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from secrets import token_urlsafe
 
@@ -59,6 +60,8 @@ from .serializers import (
     SnmpProfileSerializer,
     SnmpSensorSerializer,
 )
+
+logger = logging.getLogger("monitoring.viewsets")
 
 
 class _EnginePermission(permissions.BasePermission):
@@ -493,11 +496,29 @@ class CertificateAssignmentViewSet(TenantScopedViewSet):
         self._check_certificate_tenant(serializer)
         self._check_target(serializer)
         super().perform_create(serializer)
+        self._reevaluate_sot_expiry()
 
     def perform_update(self, serializer):
         self._check_certificate_tenant(serializer)
         self._check_target(serializer)
         super().perform_update(serializer)
+        self._reevaluate_sot_expiry()
+
+    def perform_destroy(self, instance):
+        super().perform_destroy(instance)
+        self._reevaluate_sot_expiry()
+
+    def _reevaluate_sot_expiry(self):
+        """Fire the source-of-truth expiry pass now, so assigning/unassigning a
+        declared cert opens or resolves its expiry alert immediately instead of
+        waiting for the nightly sweep. Best-effort — never breaks the write."""
+        from .cert_expiry import evaluate_sot_expiry
+
+        try:
+            tenant = self._tenant_or_403()
+            evaluate_sot_expiry(tenant_ids=[tenant.id])
+        except Exception:  # noqa: BLE001
+            logger.exception("reactive SoT cert expiry evaluation failed")
 
     @action(detail=False, methods=["post"], url_path="accept-served")
     def accept_served(self, request):

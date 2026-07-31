@@ -217,6 +217,28 @@ renewal that is the new certificate, which is healthy, which **resolves the same
 alert row** that was firing for the old one. One endpoint, one alert, across any
 number of renewals.
 
+### Declared certificates alert too, even if never observed
+
+The endpoint path above only sees certificates a scan actually observed on the
+wire. A certificate you **uploaded** and **assigned** to a device, VM or IP is
+*intent* — Danbyte knows it exists and is expiring — so it warns on expiry as
+well, without ever having to be scanned. This is the difference between "email me
+before my cert expires" working for everything you told Danbyte about versus only
+for what it happened to catch on the wire.
+
+- The source-of-truth pass keys the alert on the **assignment** (namespaced apart
+  from the endpoint keys, so the two can never collide) and hangs it on the
+  assigned object's IP — a device or VM contributes its **primary IP** (or any
+  assigned IP if it has no primary); an IP assignment is its own IP. An uploaded
+  certificate with no way to resolve an IP stays list- and dashboard-only rather
+  than raising an alert with nowhere to point.
+- Only certificates that are **not currently observed** take this path. Once a
+  declared certificate is also seen being served, the endpoint path owns it — so
+  a cert never double-alerts.
+- It resolves the same way: renew (the assignment now points at a healthy cert),
+  unassign, or observe it, and the alert clears. It runs both reactively (on
+  assign/unassign) and in the same nightly sweep as the endpoint path.
+
 ### What does *not* alert
 
 - **Stale bindings.** A certificate nobody serves any more raises nothing, and
@@ -244,7 +266,9 @@ Two paths, both needed:
 - **Daily, on a timer** (`danbyte-certificate-expiry` →
   `manage.py certificate_expiry`). A certificate crosses the 30-day line whether
   or not anything scanned it that day, so time passing has to be enough on its
-  own. The sweep appears in **Jobs → Scheduled tasks** like every other timer.
+  own. The same sweep covers declared (uploaded, assigned) certificates, so an
+  uploaded cert that nothing serves still warns on time. It appears in
+  **Jobs → Scheduled tasks** like every other timer.
 
 ## Viewing certificates
 

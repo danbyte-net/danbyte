@@ -57,6 +57,7 @@ from .models import (
     Alert,
     AlertSeverity,
     AlertStatus,
+    CertificateAssignment,
     CertificateBinding,
     MonitoringSettings,
 )
@@ -342,6 +343,180 @@ def evaluate_endpoints(*, tenant_ids=None, endpoint_keys=None, now=None) -> dict
     return counts
 
 
+# ─── Source-of-truth expiry: a *declared* cert expiring, even if never served ──
+# The endpoint sweep above only sees certificates observed on the wire. A cert an
+# operator uploaded and *assigned* to a device/VM/IP is intent — it must warn on
+# expiry too, or "email me before my cert expires" silently misses every cert
+# Danbyte knows about but hasn't happened to observe. Keyed on the assignment
+# (namespaced apart from the endpoint keys) and hung on the assigned object's IP,
+# because Alert.target_ip is not-null. Only certs that are *not* currently
+# observed are handled here — an observed cert is already covered by the endpoint
+# sweep, so this never double-alerts.
+
+SOT_DEDUP_PREFIX = "cert-expiry-sot:"
+
+
+def sot_dedup_key(assignment_id) -> str:
+    return f"{SOT_DEDUP_PREFIX}{assignment_id}"
+
+
+def _assignment_ip_id(assignment):
+    """The IP to hang a SoT expiry alert on, from the assignment's target.
+    Device/VM → primary (else any assigned) IP; an IP assignment → itself.
+    None when nothing resolves (the cert stays list/widget-only)."""
+    # object_type is stored as "app.model" but the app label may be omitted for
+    # api models ("device" ≡ "api.device") — normalise to the bare model name.
+    model_name = assignment.object_type.split(".")[-1].lower()
+    oid = assignment.object_id
+    if model_name == "ipaddress":
+        return oid
+    if model_name in ("device", "virtualmachine"):
+        from api.models import Device, IPAddress, VirtualMachine
+
+        model = Device if model_name == "device" else VirtualMachine
+        obj = model.objects.filter(pk=oid).only("id", "primary_ip_id").first()
+        if obj is None:
+            return None
+        if obj.primary_ip_id:
+            return obj.primary_ip_id
+        field = "assigned_device_id" if model_name == "device" else "assigned_vm_id"
+        return (
+            IPAddress.objects.filter(**{field: oid})
+            .values_list("id", flat=True)
+            .first()
+        )
+    return None
+
+
+def _resolve_sot(tenant_id, assignment_id, reason, now) -> int:
+    from .notify import notify_alert
+
+    firing = list(Alert.objects.filter(
+        tenant_id=tenant_id, dedup_key=sot_dedup_key(assignment_id),
+        status=AlertStatus.FIRING,
+    ))
+    for alert in firing:
+        alert.status = AlertStatus.RESOLVED
+        alert.resolved_at = now
+        alert.last_notified_at = now
+        alert.detail = {**(alert.detail or {}), "resolution": reason}
+        alert.save(update_fields=["status", "resolved_at", "last_notified_at", "detail"])
+        try:
+            notify_alert(alert, "resolved")
+        except Exception:  # noqa: BLE001
+            log.exception("sot resolve notify failed for %s", alert.dedup_key)
+    return len(firing)
+
+
+def _open_sot(assignment, cert, state, target_ip_id, now) -> str:
+    from .notify import notify_alert
+
+    detail = {
+        "cert_state": state,
+        "drift": "cert_expiry_sot",
+        "certificate_id": str(cert.id),
+        "subject_cn": cert.subject_cn,
+        "fingerprint_sha256": cert.fingerprint_sha256,
+        "not_after": cert.not_after.isoformat(),
+        "days_until_expiry": cert.days_until_expiry,
+        "object_type": assignment.object_type,
+        "object_id": str(assignment.object_id),
+    }
+    alert, created = Alert.objects.get_or_create(
+        tenant_id=assignment.tenant_id,
+        dedup_key=sot_dedup_key(assignment.id),
+        status=AlertStatus.FIRING,
+        defaults={
+            "target_ip_id": target_ip_id,
+            "kind": "tls_cert",
+            "severity": _SEVERITY[state],
+            "check_status": _CHECK_STATUS[state],
+            "opened_at": now,
+            "last_status_at": now,
+            "detail": detail,
+            "last_notified_at": now,
+            "notify_count": 1,
+        },
+    )
+    if created:
+        try:
+            notify_alert(alert, "firing")
+        except Exception:  # noqa: BLE001
+            log.exception("sot open notify failed for %s", alert.dedup_key)
+        return "opened"
+
+    previous = (alert.detail or {}).get("cert_state")
+    if previous == state and alert.severity == _SEVERITY[state]:
+        # Same state — refresh the payload silently (a renewal into the warning
+        # window must stop naming the retired cert) without re-paging.
+        if alert.detail != detail:
+            alert.detail = detail
+            alert.save(update_fields=["detail"])
+        return "unchanged"
+
+    # State moved (e.g. warning → critical) — escalate and re-notify.
+    alert.severity = _SEVERITY[state]
+    alert.check_status = _CHECK_STATUS[state]
+    alert.detail = detail
+    alert.last_status_at = now
+    alert.last_notified_at = now
+    alert.notify_count = (alert.notify_count or 0) + 1
+    alert.save(update_fields=[
+        "severity", "check_status", "detail", "last_status_at",
+        "last_notified_at", "notify_count",
+    ])
+    try:
+        notify_alert(alert, "firing")
+    except Exception:  # noqa: BLE001
+        log.exception("sot update notify failed for %s", alert.dedup_key)
+    return "updated"
+
+
+def evaluate_sot_expiry(*, tenant_ids=None, now=None) -> dict:
+    """Reconcile expiry alerts for *declared* (assigned, not-observed) certs."""
+    now = now or timezone.now()
+    qs = CertificateAssignment.objects.select_related("certificate").filter(
+        certificate__uploaded=True, certificate__observed=False
+    )
+    if tenant_ids is not None:
+        qs = qs.filter(tenant_id__in=list(tenant_ids))
+    assignments = list(qs)
+    settings_by_tenant = {
+        s.tenant_id: s for s in MonitoringSettings.objects.filter(
+            tenant_id__in={a.tenant_id for a in assignments}
+        )
+    }
+    counts = {"opened": 0, "updated": 0, "resolved": 0, "checked": len(assignments)}
+    for a in assignments:
+        limits = thresholds(settings_by_tenant.get(a.tenant_id))
+        if not limits["enabled"]:
+            counts["resolved"] += _resolve_sot(
+                a.tenant_id, a.id, "certificate expiry alerting disabled", now)
+            continue
+        state = classify(a.certificate, limits, now)
+        if state == OK:
+            counts["resolved"] += _resolve_sot(
+                a.tenant_id, a.id, "certificate no longer within the warning window", now)
+            continue
+        target_ip_id = _assignment_ip_id(a)
+        if target_ip_id is None:
+            # Nothing to hang an alert on; visible in the list/widget only.
+            continue
+        action = _open_sot(a, a.certificate, state, target_ip_id, now)
+        counts[action] = counts.get(action, 0) + 1
+    # Orphan cleanup: a firing SoT alert whose assignment is gone (unassigned, or
+    # the cert became observed and is now handled by the endpoint sweep).
+    live = {sot_dedup_key(aid) for aid in (a.id for a in assignments)}
+    orphans = Alert.objects.filter(
+        status=AlertStatus.FIRING, dedup_key__startswith=SOT_DEDUP_PREFIX
+    ).exclude(dedup_key__in=live)
+    for alert in orphans:
+        counts["resolved"] += _resolve_sot(
+            alert.tenant_id, alert.dedup_key[len(SOT_DEDUP_PREFIX):],
+            "assignment removed or certificate now observed", now)
+    return counts
+
+
 def sweep(now=None) -> dict:
     """Full pass over every endpoint — the timer entry point.
 
@@ -375,5 +550,15 @@ def sweep(now=None) -> dict:
         counts["resolved"] += sweep_orphans(now)
     except Exception:  # noqa: BLE001 — mismatch sweep must not break expiry
         log.exception("certificate mismatch orphan sweep failed")
+
+    # Declared (assigned, not-observed) certs — the source-of-truth expiry pass.
+    # Isolated so it can't take the endpoint sweep down with it.
+    try:
+        sot = evaluate_sot_expiry(now=now)
+        for k in ("opened", "updated", "resolved"):
+            counts[k] = counts.get(k, 0) + sot.get(k, 0)
+        counts["sot_checked"] = sot.get("checked", 0)
+    except Exception:  # noqa: BLE001 — SoT sweep must not break endpoint expiry
+        log.exception("certificate source-of-truth expiry sweep failed")
 
     return counts
