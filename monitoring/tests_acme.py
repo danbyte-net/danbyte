@@ -391,16 +391,26 @@ class IssueJobTests(TestCase):
 
     def test_issue_job_publishes_and_finalizes(self):
         fake_pub = mock.Mock()
+        rec = eng.ChallengeRecord(
+            identifier="svc.danbyte.lan", type="dns-01",
+            record_name="_acme-challenge.svc.danbyte.lan", record_value="v",
+        )
+        # issue() keeps the opened order in memory and finalizes it directly —
+        # never reloading from the CA on the automated path.
         with (
-            mock.patch.object(eng, "create_order") as create,
-            mock.patch.object(eng, "finalize_order") as final,
+            mock.patch.object(
+                eng,
+                "_open_order",
+                return_value=(mock.Mock(), mock.Mock(), mock.Mock(), [rec]),
+            ) as opened,
+            mock.patch.object(eng, "_finalize_with") as final,
             mock.patch.object(eng, "publisher_for", return_value=fake_pub),
         ):
             eng.issue_order_job(str(self.order.id))
-        create.assert_called_once()
-        fake_pub.publish.assert_called_once()
+        opened.assert_called_once()
+        fake_pub.publish.assert_called_once_with([rec])
         final.assert_called_once()
-        fake_pub.cleanup.assert_called_once()
+        fake_pub.cleanup.assert_called_once_with([rec])
 
     def test_issue_job_records_error(self):
         with (

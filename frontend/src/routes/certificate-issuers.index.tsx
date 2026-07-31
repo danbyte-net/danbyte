@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
-import { Landmark, Pencil, Trash2 } from "lucide-react"
+import { Pencil, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -148,7 +148,7 @@ function IssuersPage() {
               setFormOpen(true)
             }}
           >
-            <Landmark className="h-3.5 w-3.5" /> Add issuer
+            <Plus className="h-3.5 w-3.5" /> Add issuer
           </Button>
         ) : undefined
       }

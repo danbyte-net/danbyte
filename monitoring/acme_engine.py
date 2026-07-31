@@ -479,13 +479,12 @@ def _map_status(order_status) -> str:
 # --------------------------------------------------------------------------- #
 # Order lifecycle
 # --------------------------------------------------------------------------- #
-def create_order(order: AcmeOrder) -> AcmeOrder:
-    """Open an ACME order for the request's CSR and persist the challenges.
+def _open_order(order: AcmeOrder):
+    """Open an ACME order for the request's CSR and persist its challenges.
 
-    Leaves the order ``pending`` with :attr:`AcmeOrder.challenges` describing
-    exactly what to publish. Does not attempt to satisfy them — that is
-    :func:`finalize_order` (after the operator or a publisher acts) or
-    :func:`issue` (automated).
+    Returns ``(acme_client, jwk, orderr, records)`` so the caller can finalize
+    the **same in-memory** order without re-fetching it from the CA. ``records``
+    is the list of :class:`ChallengeRecord` to publish.
     """
     if not order.request or not order.request.csr_pem:
         raise AcmeError("This order has no certificate request / CSR.")
@@ -495,10 +494,11 @@ def create_order(order: AcmeOrder) -> AcmeOrder:
     except messages.Error as exc:
         raise AcmeError(f"ACME newOrder failed: {exc}") from exc
 
-    records = _records_for(orderr, jwk, order.challenge_type)
+    triples = _records_for(orderr, jwk, order.challenge_type)
+    records = [rec for _, _, rec in triples]
     order.order_url = orderr.uri or ""
     order.identifiers = [a.body.identifier.value for a in orderr.authorizations]
-    order.challenges = [rec.as_dict() for _, _, rec in records]
+    order.challenges = [rec.as_dict() for rec in records]
     order.status = _map_status(orderr.body.status)
     order.error = ""
     order.save(
@@ -511,6 +511,18 @@ def create_order(order: AcmeOrder) -> AcmeOrder:
             "updated_at",
         ]
     )
+    return acme, jwk, orderr, records
+
+
+def create_order(order: AcmeOrder) -> AcmeOrder:
+    """Open an ACME order for the request's CSR and persist the challenges.
+
+    Leaves the order ``pending`` with :attr:`AcmeOrder.challenges` describing
+    exactly what to publish. Does not attempt to satisfy them — that is
+    :func:`finalize_order` (after the operator or a publisher acts) or
+    :func:`issue` (automated).
+    """
+    _open_order(order)
     return order
 
 
@@ -534,22 +546,14 @@ def _reload_order(acme, order: AcmeOrder):
     )
 
 
-def finalize_order(order: AcmeOrder):
-    """Answer the order's challenges, finalize, and import the issued cert.
+def _finalize_with(acme, jwk, orderr, order: AcmeOrder):
+    """Answer pending challenges on ``orderr``, finalize, and import the cert.
 
-    Assumes the challenge records are already published (by the operator or a
-    publisher). Answers each pending challenge, polls to ``valid``, downloads the
-    chain, and imports it via :func:`monitoring.csr.import_issued`, linking the
-    resulting :class:`Certificate`. Returns that Certificate.
+    Works from an in-memory OrderResource (whether freshly opened or reloaded),
+    so the automated path never has to re-fetch the order from the CA.
     """
     from . import csr as csr_mod
 
-    if not order.order_url:
-        raise AcmeError("This order was never opened — create it first.")
-    acme, jwk = _client(order.issuer)
-    orderr = _reload_order(acme, order)
-
-    # Tell the CA to validate each still-pending challenge of our type.
     for authz in orderr.authorizations:
         if str(authz.body.status) != str(messages.STATUS_PENDING):
             continue
@@ -572,8 +576,7 @@ def finalize_order(order: AcmeOrder):
         order.save(update_fields=["error", "updated_at"])
         raise AcmeError(f"ACME order did not complete: {exc}") from exc
 
-    fullchain = finalized.fullchain_pem
-    cert_row = csr_mod.import_issued(order.request, fullchain)
+    cert_row = csr_mod.import_issued(order.request, finalized.fullchain_pem)
     order.issued_certificate = cert_row
     order.status = AcmeOrder.Status.VALID
     order.error = ""
@@ -583,41 +586,38 @@ def finalize_order(order: AcmeOrder):
     return cert_row
 
 
-def issue(order: AcmeOrder, publisher: ChallengePublisher | None = None):
-    """Create → publish → finalize in one call (the automated path).
+def finalize_order(order: AcmeOrder):
+    """Answer the order's challenges, finalize, and import the issued cert.
 
-    ``publisher`` publishes the challenge records (e.g. DNS-01 auto-publish) and
-    is cleaned up afterwards. With no publisher, the challenges are created and
-    persisted but not solved — use :func:`finalize_order` after publishing by
-    hand.
+    For the **operator-published** path: the order was opened earlier
+    (:func:`create_order`), so it is reloaded from the CA, its challenges are
+    answered, and it is finalized. The automated path uses :func:`issue`, which
+    keeps the order in memory and never reloads.
     """
-    create_order(order)
+    if not order.order_url:
+        raise AcmeError("This order was never opened — create it first.")
+    acme, jwk = _client(order.issuer)
+    orderr = _reload_order(acme, order)
+    return _finalize_with(acme, jwk, orderr, order)
+
+
+def issue(order: AcmeOrder, publisher: ChallengePublisher | None = None):
+    """Open → publish → finalize in one call (the automated path).
+
+    Keeps the freshly opened order in memory and finalizes *that*, so the
+    automated flow never re-fetches the order from the CA. ``publisher``
+    publishes the challenge records (e.g. DNS-01 auto-publish) and is cleaned up
+    afterwards. With no publisher, the challenges are persisted but not solved —
+    use :func:`finalize_order` after publishing by hand.
+    """
+    acme, jwk, orderr, records = _open_order(order)
     if publisher is None:
         return None
-    records = [ChallengeRecord(**_rec_kwargs(c)) for c in order.challenges]
     publisher.publish(records)
     try:
-        return finalize_order(order)
+        return _finalize_with(acme, jwk, orderr, order)
     finally:
         publisher.cleanup(records)
-
-
-def _rec_kwargs(c: dict) -> dict:
-    """Rebuild ChallengeRecord kwargs from a persisted challenge dict."""
-    kind = c.get("type", AcmeOrder.Challenge.DNS01)
-    base = {"identifier": c.get("identifier", ""), "type": kind}
-    if kind == AcmeOrder.Challenge.DNS01:
-        base.update(
-            record_name=c.get("record_name", ""),
-            record_value=c.get("record_value", ""),
-        )
-    else:
-        base.update(
-            token=c.get("token", ""),
-            path=c.get("path", ""),
-            content=c.get("content", ""),
-        )
-    return base
 
 
 # --------------------------------------------------------------------------- #
