@@ -260,6 +260,11 @@
 .leaflet-container {
   background: var(--muted);
   font: inherit;
+  /* Leaflet's panes/controls use z-index up to ~1000; without a stacking
+     context of its own the map leaks over modals, popovers and dropdowns
+     (which sit at z-50). `isolation: isolate` traps those z-indexes inside the
+     map so app overlays always render on top. */
+  isolation: isolate;
 }
 /* Attribution must stay readable in both themes — never hidden. */
 .leaflet-control-attribution {

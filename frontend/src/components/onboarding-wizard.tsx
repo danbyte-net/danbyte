@@ -55,30 +55,30 @@ export function OnboardingWizard({ me }: { me: Me }) {
     staleTime: Infinity,
   })
 
-  const [forced, setForced] = useState(false)
-  const [dismissedLocal, setDismissedLocal] = useState(false)
-  useEffect(() => {
-    const h = () => {
-      setDismissedLocal(false)
-      setForced(true)
-    }
-    window.addEventListener(OPEN_EVENT, h)
-    return () => window.removeEventListener(OPEN_EVENT, h)
-  }, [])
-
+  // `opened` LATCHES: once the wizard opens (fresh tenant, or a re-run event)
+  // it stays open until the user skips/finishes. Without this it would slam shut
+  // the moment step 1 creates the first site (has_sites flips true).
+  const [opened, setOpened] = useState(false)
   const autoOpen =
     enabled &&
     state.data != null &&
     !state.data.dismissed &&
     !state.data.has_sites
-  const open = !dismissedLocal && (forced || autoOpen)
-  if (!open) return null
+  useEffect(() => {
+    if (autoOpen) setOpened(true)
+  }, [autoOpen])
+  useEffect(() => {
+    const h = () => setOpened(true)
+    window.addEventListener(OPEN_EVENT, h)
+    return () => window.removeEventListener(OPEN_EVENT, h)
+  }, [])
+
+  if (!opened) return null
 
   return (
     <WizardDialog
       onClose={() => {
-        setDismissedLocal(true)
-        setForced(false)
+        setOpened(false)
         // Persist so it never auto-reopens; refresh me + onboarding state.
         api("/api/onboarding/", { method: "POST" })
           .then(() => {
