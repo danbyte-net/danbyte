@@ -214,6 +214,117 @@ class RegisterAccountTests(TestCase):
         self.assertIn("BEGIN PRIVATE KEY", data["account_key"])
 
 
+class DnsPublisherTests(TestCase):
+    def setUp(self):
+        _enable_store()
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        import base64
+
+        self.secret = base64.b64encode(b"0" * 32).decode()
+
+    def _issuer(self, provider="rfc2136", **settings_):
+        base = {
+            "server": "10.0.0.45",
+            "zone": "danbyte.lan",
+            "key_name": "acme-key",
+            "key_algorithm": "hmac-sha256",
+        }
+        base.update(settings_)
+        return Issuer.objects.create(
+            tenant=self.tenant,
+            name="ca",
+            directory_url="https://ca/d",
+            dns_provider=provider,
+            dns_settings=base,
+            secrets={"tsig_secret": self.secret},
+        )
+
+    def test_publisher_for_selects_rfc2136(self):
+        self.assertIsInstance(eng.publisher_for(self._issuer()), eng.Rfc2136Publisher)
+
+    def test_publisher_for_manual_is_none(self):
+        issuer = Issuer.objects.create(
+            tenant=self.tenant, name="m", directory_url="https://ca/d"
+        )
+        self.assertIsNone(eng.publisher_for(issuer))
+
+    def test_rfc2136_requires_full_config(self):
+        issuer = self._issuer()
+        issuer.secrets = {}  # no TSIG secret
+        with self.assertRaises(eng.AcmeError):
+            eng.Rfc2136Publisher(issuer)
+
+    def test_publish_sends_txt_add(self):
+        pub = eng.Rfc2136Publisher(self._issuer())
+        rec = eng.ChallengeRecord(
+            identifier="svc.danbyte.lan",
+            type="dns-01",
+            record_name="_acme-challenge.svc.danbyte.lan",
+            record_value="theTXTvalue",
+        )
+        sent = mock.Mock()
+        sent.rcode.return_value = 0  # NOERROR
+        with (
+            mock.patch("dns.query.tcp", return_value=sent) as tcp,
+            mock.patch.object(eng.Rfc2136Publisher, "_wait_visible"),
+        ):
+            pub.publish([rec])
+        self.assertTrue(tcp.called)
+        update = tcp.call_args[0][0]  # the dns.update.Update message
+        rendered = update.to_text()
+        self.assertIn("_acme-challenge", rendered)
+        self.assertIn("theTXTvalue", rendered)
+
+
+class IssueJobTests(TestCase):
+    def setUp(self):
+        _enable_store()
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.user = User.objects.create_user("u", password="x")
+        import base64
+
+        self.issuer = Issuer.objects.create(
+            tenant=self.tenant,
+            name="ca",
+            directory_url="https://ca/d",
+            account_uri="https://ca/acct/1",
+            dns_provider="rfc2136",
+            dns_settings={"server": "10.0.0.45", "zone": "danbyte.lan", "key_name": "k"},
+            secrets={"tsig_secret": base64.b64encode(b"0" * 32).decode()},
+        )
+        self.req, _ = generate(
+            tenant=self.tenant, user=self.user, common_name="svc.danbyte.lan"
+        )
+        self.order = AcmeOrder.objects.create(
+            tenant=self.tenant, issuer=self.issuer, request=self.req,
+            challenge_type=AcmeOrder.Challenge.DNS01,
+        )
+
+    def test_issue_job_publishes_and_finalizes(self):
+        fake_pub = mock.Mock()
+        with (
+            mock.patch.object(eng, "create_order") as create,
+            mock.patch.object(eng, "finalize_order") as final,
+            mock.patch.object(eng, "publisher_for", return_value=fake_pub),
+        ):
+            eng.issue_order_job(str(self.order.id))
+        create.assert_called_once()
+        fake_pub.publish.assert_called_once()
+        final.assert_called_once()
+        fake_pub.cleanup.assert_called_once()
+
+    def test_issue_job_records_error(self):
+        with (
+            mock.patch.object(eng, "publisher_for", side_effect=eng.AcmeError("boom")),
+        ):
+            eng.issue_order_job(str(self.order.id))
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, AcmeOrder.Status.ERRORED)
+        self.assertIn("boom", self.order.error)
+
+
 class AcmeApiTests(TestCase):
     def setUp(self):
         _enable_store()
@@ -284,3 +395,46 @@ class AcmeApiTests(TestCase):
         gq.return_value.enqueue.assert_called_once()
         order.refresh_from_db()
         self.assertEqual(order.status, AcmeOrder.Status.PROCESSING)
+
+    def test_acme_issue_requires_dns_provider(self):
+        # self.issuer has no dns_provider → auto-issue is refused.
+        r = self.client.post(
+            f"/api/monitoring/certificate-requests/{self.req_id}/acme-issue/",
+            {"issuer": str(self.issuer.id)},
+            content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(AcmeOrder.objects.count(), 0)
+
+    def test_acme_issue_enqueues_full_auto(self):
+        self.issuer.dns_provider = "rfc2136"
+        self.issuer.dns_settings = {"server": "10.0.0.45", "zone": "danbyte.lan", "key_name": "k"}
+        self.issuer.save(update_fields=["dns_provider", "dns_settings"])
+        with mock.patch("django_rq.get_queue") as gq:
+            r = self.client.post(
+                f"/api/monitoring/certificate-requests/{self.req_id}/acme-issue/",
+                {"issuer": str(self.issuer.id)},
+                content_type="application/json",
+            )
+        self.assertEqual(r.status_code, 202, r.content)
+        gq.return_value.enqueue.assert_called_once()
+        self.assertEqual(AcmeOrder.objects.filter(tenant=self.tenant).count(), 1)
+
+    def test_tsig_secret_is_write_only_and_stored_encrypted(self):
+        r = self.client.post(
+            "/api/monitoring/issuers/",
+            {
+                "name": "dns-ca",
+                "directory_url": "https://ca.example.com/d",
+                "dns_provider": "rfc2136",
+                "dns_settings": {"server": "10.0.0.45", "zone": "danbyte.lan"},
+                "tsig_secret": "c2VjcmV0LWtleS0xMjM=",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        body = r.json()
+        self.assertNotIn("tsig_secret", body)
+        self.assertTrue(body["tsig_secret_set"])
+        issuer = Issuer.objects.get(id=body["id"])
+        self.assertEqual(issuer.secrets["tsig_secret"], "c2VjcmV0LWtleS0xMjM=")

@@ -381,13 +381,29 @@ drives three steps:
 ### Publishing the challenge
 
 The order surfaces exactly what to publish, so an operator can satisfy DNS-01 or
-HTTP-01 by hand (add the TXT record / serve the token) and then finalize. A
-**DNS-01 auto-publisher** — writing the TXT record for you so the order
-self-validates end to end — plugs in behind the same `ChallengePublisher`
-interface; it needs the deployment's DNS-write mechanism configured.
+HTTP-01 by hand (add the TXT record / serve the token) and then finalize.
 
-The `acme` client is a runtime dependency (`acme>=4`, `josepy>=2`), included in
-the offline bundle for airgapped installs.
+Danbyte can also **auto-publish DNS-01** so an order self-validates end to end.
+The publisher is pluggable (a `ChallengePublisher`); the first built-in is
+**RFC2136 dynamic DNS with a TSIG key** — the one dynamic-update standard that
+spans BIND, Samba AD, PowerDNS, Knot, and more, so it fits the widest range of
+deployments. Configure it on the issuer:
+
+- `dns_provider: "rfc2136"`,
+- `dns_settings`: `server`, `port` (53), `zone`, `key_name`, `key_algorithm`
+  (`hmac-sha256`), and `ttl`,
+- `tsig_secret`: the TSIG key — write-only, stored encrypted like the EAB HMAC.
+
+With that set, `POST /api/monitoring/certificate-requests/{id}/acme-issue/` with
+`{"issuer": "<id>"}` runs the whole flow on the worker: open the order, write the
+`_acme-challenge` TXT record, wait for it to be visible on the authoritative
+server, answer, finalize, import, and clean the record up. The DNS server is
+admin-configured, so it is reached directly (like the ACME directory / Vault),
+not via the tenant SSRF guard.
+
+The `acme` client and `dnspython` are runtime dependencies (`acme>=4`,
+`josepy>=2`, `dnspython>=2`), included in the offline bundle for airgapped
+installs.
 
 ## Certificate authorities and chains
 

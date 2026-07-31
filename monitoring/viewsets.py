@@ -703,6 +703,7 @@ class CertificateRequestViewSet(TenantScopedViewSet):
         "import_issued": "change",
         "acme_order": "change",
         "acme_finalize": "change",
+        "acme_issue": "change",
     }
 
     def get_queryset(self):
@@ -854,6 +855,54 @@ class CertificateRequestViewSet(TenantScopedViewSet):
                 "monitoring.acme_engine.finalize_order_job", str(order.id)
             )
         except Exception as exc:  # noqa: BLE001 — Redis down: report, don't 500
+            raise ValidationError(
+                {"detail": f"Could not enqueue the issuance job: {exc}"}
+            ) from exc
+        return Response(AcmeOrderSerializer(order).data, status=202)
+
+    @action(detail=True, methods=["post"], url_path="acme-issue")
+    def acme_issue(self, request, pk=None):
+        """Fully-automated issuance: open the order, auto-publish the DNS-01
+        challenge, finalize, and import — all on the worker queue.
+
+        Requires the issuer to have a DNS-01 auto-publisher configured; without
+        one, use ``acme-order`` + ``acme-finalize`` (operator-published).
+        """
+        import django_rq
+
+        req = self.get_object()
+        tenant = self._tenant_or_403()
+        issuer = Issuer.objects.filter(
+            tenant=tenant, id=request.data.get("issuer")
+        ).first()
+        if issuer is None:
+            raise ValidationError({"issuer": "Unknown issuer for this tenant."})
+        if not issuer.dns_provider:
+            raise ValidationError(
+                {
+                    "issuer": "This issuer has no DNS-01 auto-publisher configured. "
+                    "Use an order + manual publish, or configure DNS auto-publish."
+                }
+            )
+        order = AcmeOrder(
+            tenant=tenant,
+            issuer=issuer,
+            request=req,
+            challenge_type=AcmeOrder.Challenge.DNS01,
+            status=AcmeOrder.Status.PROCESSING,
+            created_by=(
+                request.user
+                if getattr(request.user, "is_authenticated", False)
+                else None
+            ),
+        )
+        order.save()
+        try:
+            django_rq.get_queue("default").enqueue(
+                "monitoring.acme_engine.issue_order_job", str(order.id)
+            )
+        except Exception as exc:  # noqa: BLE001 — Redis down: report, don't 500
+            order.delete()
             raise ValidationError(
                 {"detail": f"Could not enqueue the issuance job: {exc}"}
             ) from exc

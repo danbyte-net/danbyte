@@ -90,6 +90,128 @@ class ManualPublisher:
         return None
 
 
+class Rfc2136Publisher:
+    """DNS-01 auto-publish via RFC 2136 dynamic update with a TSIG key.
+
+    The one dynamic-update standard that spans BIND, Samba AD, PowerDNS, Knot,
+    etc. — so it fits the widest range of deployments from a single
+    implementation. Config comes off the issuer's ``dns_settings`` (server, port,
+    zone, key name/algorithm, ttl); the TSIG secret is a credential in
+    ``issuer.secrets['tsig_secret']``. The DNS server is admin-configured, so it
+    is reached directly (like the ACME directory / Vault), not via the tenant
+    SSRF guard.
+    """
+
+    def __init__(self, issuer: Issuer):
+        settings_ = issuer.dns_settings or {}
+        self.server = (settings_.get("server") or "").strip()
+        self.port = int(settings_.get("port") or 53)
+        self.zone = (settings_.get("zone") or "").strip().rstrip(".") + "."
+        self.ttl = int(settings_.get("ttl") or 60)
+        self.key_name = (settings_.get("key_name") or "").strip()
+        self.key_algorithm = settings_.get("key_algorithm") or "hmac-sha256"
+        secret = (issuer.secrets or {}).get("tsig_secret") or ""
+        if not (self.server and self.zone.strip(".") and self.key_name and secret):
+            raise AcmeError(
+                "DNS-01 auto-publish needs a server, zone, TSIG key name, and "
+                "TSIG secret configured on the issuer."
+            )
+        import dns.tsigkeyring
+
+        self._keyring = dns.tsigkeyring.from_text({self.key_name: secret})
+
+    def _rel(self, fqdn: str):
+        import dns.name
+
+        return dns.name.from_text(fqdn).relativize(dns.name.from_text(self.zone))
+
+    def _send(self, update) -> None:
+        import dns.query
+
+        resp = dns.query.tcp(update, self.server, port=self.port, timeout=15)
+        import dns.rcode
+
+        if resp.rcode() != dns.rcode.NOERROR:
+            raise AcmeError(
+                f"DNS update to {self.server} was refused: "
+                f"{dns.rcode.to_text(resp.rcode())}."
+            )
+
+    def publish(self, records: list[ChallengeRecord]) -> None:
+        import dns.update
+
+        for rec in records:
+            if rec.type != AcmeOrder.Challenge.DNS01:
+                continue
+            upd = dns.update.Update(
+                self.zone, keyring=self._keyring, keyalgorithm=self.key_algorithm
+            )
+            # `add` (not `replace`): a multi-SAN order may need two TXT values on
+            # the same _acme-challenge name at once.
+            upd.add(self._rel(rec.record_name), self.ttl, "TXT", rec.record_value)
+            self._send(upd)
+        self._wait_visible(records)
+
+    def cleanup(self, records: list[ChallengeRecord]) -> None:
+        import dns.update
+
+        for rec in records:
+            if rec.type != AcmeOrder.Challenge.DNS01:
+                continue
+            try:
+                upd = dns.update.Update(
+                    self.zone, keyring=self._keyring, keyalgorithm=self.key_algorithm
+                )
+                upd.delete(self._rel(rec.record_name), "TXT", rec.record_value)
+                self._send(upd)
+            except Exception:  # noqa: BLE001 — cleanup is best-effort
+                pass
+
+    def _wait_visible(self, records: list[ChallengeRecord]) -> None:
+        """Poll the authoritative server until each TXT resolves (bounded).
+
+        We write to the authoritative server, so this is usually instant, but a
+        brief confirm avoids answering the challenge before the record is live.
+        """
+        import time
+
+        import dns.message
+        import dns.query
+        import dns.rdatatype
+
+        pending = [r for r in records if r.type == AcmeOrder.Challenge.DNS01]
+        deadline = 20
+        waited = 0.0
+        while pending and waited < deadline:
+            still = []
+            for rec in pending:
+                q = dns.message.make_query(rec.record_name, dns.rdatatype.TXT)
+                try:
+                    resp = dns.query.tcp(q, self.server, port=self.port, timeout=5)
+                    values = " ".join(
+                        s.decode() if isinstance(s, bytes) else str(s)
+                        for rr in resp.answer
+                        for item in rr.items
+                        for s in getattr(item, "strings", [])
+                    )
+                    if rec.record_value in values:
+                        continue
+                except Exception:  # noqa: BLE001 — treat as not-yet-visible
+                    pass
+                still.append(rec)
+            pending = still
+            if pending:
+                time.sleep(2)
+                waited += 2
+
+
+def publisher_for(issuer: Issuer) -> ChallengePublisher | None:
+    """The auto-publisher for an issuer, or ``None`` for the manual flow."""
+    if issuer.dns_provider == Issuer.DnsProvider.RFC2136:
+        return Rfc2136Publisher(issuer)
+    return None
+
+
 # --------------------------------------------------------------------------- #
 # Account + client
 # --------------------------------------------------------------------------- #
@@ -401,3 +523,30 @@ def finalize_order_job(order_id) -> None:
         finalize_order(order)
     except AcmeError:
         pass  # already recorded on the order row
+
+
+def issue_order_job(order_id) -> None:
+    """RQ entry point for fully-automated issuance: create → auto-publish →
+    finalize. Records any failure on the order row.
+    """
+    order = (
+        AcmeOrder.objects.select_related("issuer", "request")
+        .filter(id=order_id)
+        .first()
+    )
+    if order is None:
+        return
+    try:
+        publisher = publisher_for(order.issuer)
+        if publisher is None:
+            # No auto-publisher: create the order so its challenges are visible,
+            # then leave it for the operator to publish + finalize.
+            create_order(order)
+            return
+        issue(order, publisher)
+    except AcmeError as exc:
+        order.refresh_from_db()
+        if order.status not in (AcmeOrder.Status.INVALID, AcmeOrder.Status.VALID):
+            order.status = AcmeOrder.Status.ERRORED
+            order.error = str(exc)
+            order.save(update_fields=["status", "error", "updated_at"])

@@ -355,6 +355,12 @@ class IssuerSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
     eab_hmac_set = serializers.SerializerMethodField()
+    # The TSIG secret for RFC2136 DNS-01 auto-publish — write-only, encrypted at
+    # rest in ``secrets`` exactly like the EAB HMAC.
+    tsig_secret = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False
+    )
+    tsig_secret_set = serializers.SerializerMethodField()
     account_registered = serializers.SerializerMethodField()
 
     class Meta:
@@ -362,36 +368,44 @@ class IssuerSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "kind", "enabled", "directory_url", "contact_email",
             "eab_kid", "eab_hmac", "eab_hmac_set", "verify_tls",
+            "dns_provider", "dns_settings", "tsig_secret", "tsig_secret_set",
             "account_registered", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
+    # Write-only secrets → the encrypted ``secrets`` map, keyed by field name.
+    _SECRET_FIELDS = {"eab_hmac": "eab_hmac", "tsig_secret": "tsig_secret"}
+
     def get_eab_hmac_set(self, obj) -> bool:
         return bool((obj.secrets or {}).get("eab_hmac"))
+
+    def get_tsig_secret_set(self, obj) -> bool:
+        return bool((obj.secrets or {}).get("tsig_secret"))
 
     def get_account_registered(self, obj) -> bool:
         return bool(obj.account_uri)
 
-    def _apply_secret(self, instance, validated_data):
-        hmac = validated_data.pop("eab_hmac", None)
-        if hmac is not None:
-            secrets = dict(instance.secrets or {})
-            if hmac:
-                secrets["eab_hmac"] = hmac
+    def _apply_secrets(self, secrets: dict, validated_data) -> dict:
+        for field, key in self._SECRET_FIELDS.items():
+            value = validated_data.pop(field, None)
+            if value is None:
+                continue  # not supplied — leave the stored secret untouched
+            if value:
+                secrets[key] = value
             else:
-                secrets.pop("eab_hmac", None)
-            instance.secrets = secrets
+                secrets.pop(key, None)
+        return secrets
 
     def create(self, validated_data):
-        hmac = validated_data.pop("eab_hmac", "")
+        secrets = self._apply_secrets({}, validated_data)
         instance = Issuer(**validated_data)
-        if hmac:
-            instance.secrets = {"eab_hmac": hmac}
+        if secrets:
+            instance.secrets = secrets
         instance.save()
         return instance
 
     def update(self, instance, validated_data):
-        self._apply_secret(instance, validated_data)
+        instance.secrets = self._apply_secrets(dict(instance.secrets or {}), validated_data)
         for field, value in validated_data.items():
             setattr(instance, field, value)
         instance.save()

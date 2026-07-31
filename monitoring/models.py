@@ -2353,6 +2353,21 @@ class Issuer(TimestampedModel):
     # External Account Binding key id (public); the HMAC lives in ``secrets``.
     eab_kid = models.CharField(max_length=255, blank=True, default="")
     verify_tls = models.BooleanField(default=True)
+
+    class DnsProvider(models.TextChoices):
+        MANUAL = "", "Manual"
+        RFC2136 = "rfc2136", "RFC2136 / TSIG"
+
+    # How DNS-01 challenges are published. "" = manual (the operator publishes
+    # the TXT record); a provider auto-publishes it so orders self-validate.
+    # Pluggable: RFC2136 is the first built-in (works with BIND, Samba AD,
+    # PowerDNS, Knot, …); more providers slot in behind the same interface.
+    dns_provider = models.CharField(
+        max_length=16, choices=DnsProvider.choices, blank=True, default=""
+    )
+    # Provider config (server, port, zone, key name/algorithm, ttl). The TSIG
+    # secret is a credential and lives in ``secrets``, never here.
+    dns_settings = models.JSONField(default=dict, blank=True)
     # Set once the ACME account is registered; the account key is in the secret
     # store at ``account_ref`` (never on this row).
     account_uri = models.CharField(max_length=512, blank=True, default="")

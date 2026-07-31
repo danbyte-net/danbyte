@@ -23,6 +23,7 @@ zensical>=0.0.45
 cryptography>=43.0        # secrets-at-rest (Fernet) for check credentials
 acme>=4,<5                # ACME client (RFC 8555) for certificate issuance
 josepy>=2                 # JOSE/JWK for the acme client (acme 4.x needs josepy 2)
+dnspython>=2             # RFC2136/TSIG dynamic DNS for ACME DNS-01 auto-publish
 icmplib>=3.0              # async, unprivileged ICMP for the ping checker
 httpx>=0.27               # async HTTP checker
 asyncssh>=2.18            # async SSH checker
