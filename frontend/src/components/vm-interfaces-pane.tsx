@@ -114,6 +114,16 @@ export function VMInterfacesPane({ vmId }: { vmId: string }) {
           ),
       },
       {
+        id: "speed",
+        header: "Speed",
+        cell: ({ row }) =>
+          row.original.speed ? (
+            <span className="text-xs">{row.original.speed}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+      {
         id: "vlan",
         header: "VLAN",
         cell: ({ row }) =>
@@ -326,6 +336,7 @@ function VMInterfaceForm({
   const [enabled, setEnabled] = useState(iface?.enabled ?? true)
   const [mac, setMac] = useState(iface?.mac_address ?? "")
   const [mtu, setMtu] = useState(iface?.mtu != null ? String(iface.mtu) : "")
+  const [speed, setSpeed] = useState(iface?.speed ?? "")
   const [description, setDescription] = useState(iface?.description ?? "")
   const [mode, setMode] = useState<string>(iface?.mode ?? "")
   const [vlanId, setVlanId] = useState<string | null>(iface?.vlan?.id ?? null)
@@ -353,6 +364,7 @@ function VMInterfaceForm({
         enabled,
         mac_address: mac.trim(),
         mtu: mtu.trim() === "" ? null : Number(mtu),
+        speed: speed.trim(),
         mode,
         vlan_id: vlanId,
         tagged_vlan_ids: mode === "tagged" ? taggedVlanIds : [],
@@ -413,6 +425,13 @@ function VMInterfaceForm({
           onChange={setMtu}
           placeholder="1500"
           error={fieldErrors.mtu}
+        />
+        <FormText
+          label="Speed"
+          value={speed}
+          onChange={setSpeed}
+          placeholder="10G, 1G, 25G…"
+          error={fieldErrors.speed}
         />
       </div>
       {/* ── L2 switching ── */}

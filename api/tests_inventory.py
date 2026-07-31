@@ -171,7 +171,9 @@ class VmInventoryTests(APITestCase):
             role=self.role, platform=self.plat, primary_ip=self.vip,
             status=status_for(self.tenant), vcpus=4, memory_mb=8192, disk_gb=100,
         )
-        VMInterface.objects.create(vm=self.vm, name="eth0", mac_address="00:11:22:33:44:55")
+        VMInterface.objects.create(
+            vm=self.vm, name="eth0", mac_address="00:11:22:33:44:55", speed="10G"
+        )
         self.client.force_login(self.su)
         self.client.post(f"/api/tenants/{self.tenant.id}/switch/")
 
@@ -184,6 +186,8 @@ class VmInventoryTests(APITestCase):
         self.assertEqual(hv["danbyte"]["cluster"], "prod-cl")
         self.assertEqual(hv["danbyte"]["vcpus"], 4)
         self.assertEqual(hv["danbyte"]["interfaces"][0]["name"], "eth0")
+        # VM NIC speed (VMXNET3 10G vs E1000 1G) flows into the export.
+        self.assertEqual(hv["danbyte"]["interfaces"][0]["speed"], "10G")
         self.assertIn("vm1", inv["all_vms"]["hosts"])
         self.assertIn("vm1", inv["cluster_prod_cl"]["hosts"])
         self.assertIn("vm1", inv["site_ams"]["hosts"])

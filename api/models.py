@@ -3137,6 +3137,9 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     enabled = models.BooleanField(default=True)
     mac_address = models.CharField(max_length=17, blank=True)
     mtu = models.IntegerField(null=True, blank=True)
+    # Virtual NICs have a real link speed: a VMXNET3 negotiates 10G where an
+    # emulated E1000 caps at 1G. Free-form like the physical Interface.speed.
+    speed = models.CharField(max_length=64, blank=True, default="")
     # ─── L2: 802.1Q switching (mirrors Interface) ────────────────────────
     vlan = models.ForeignKey(
         VLAN, on_delete=models.SET_NULL, null=True, blank=True,

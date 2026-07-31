@@ -160,6 +160,7 @@ def _vm_iface_dict(iface) -> dict:
         "enabled": iface.enabled,
         "mac_address": iface.mac_address or None,
         "mtu": iface.mtu,
+        "speed": iface.speed or None,
         "vlan": (
             {"vid": iface.vlan.vlan_id, "name": iface.vlan.name}
             if iface.vlan_id else None

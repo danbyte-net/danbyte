@@ -3113,6 +3113,7 @@ export interface VMInterface {
   enabled: boolean
   mac_address: string
   mtu: number | null
+  speed: string
   vlan: VLANMini | null
   mode: "" | "access" | "tagged" | "tagged-all"
   mode_display: string
@@ -3132,6 +3133,7 @@ export interface VMInterfaceWritePayload {
   enabled?: boolean
   mac_address?: string
   mtu?: number | null
+  speed?: string
   vlan_id?: string | null
   mode?: string
   tagged_vlan_ids?: string[]
