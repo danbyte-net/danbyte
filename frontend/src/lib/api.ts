@@ -3995,6 +3995,26 @@ export interface CertificateAssignment {
   updated_at: string
 }
 
+export type SSHKeyOrigin = "observed" | "uploaded" | "both"
+
+export interface SSHHostKey {
+  id: string
+  device: string
+  device_name: string | null
+  key_type: string
+  public_key: string
+  fingerprint_sha256: string
+  comment: string
+  bits: number | null
+  origin: SSHKeyOrigin
+  observed: boolean
+  uploaded: boolean
+  first_seen: string | null
+  last_seen: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface CertificateBinding {
   id: string
   certificate: string

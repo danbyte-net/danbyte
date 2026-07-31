@@ -75,6 +75,7 @@ import {
 } from "@/components/monitoring/device-drift-badge"
 import { ContactsPanel } from "@/components/contacts-panel"
 import { CertificatesPanel } from "@/components/monitoring/certificates-panel"
+import { SSHHostKeysPanel } from "@/components/monitoring/ssh-host-keys-panel"
 import { ConfigContextPanel } from "@/components/config-context-panel"
 import { DeviceConfigRender } from "@/components/device-config-render"
 import { DeviceDeployPanel } from "@/components/device-deploy-panel"
@@ -358,7 +359,7 @@ function Body({ device: d }: { device: Device }) {
           label: "Services",
           count: d.service_count || undefined,
         },
-        { value: "certificates", label: "Certificates" },
+        { value: "certificates", label: "Certificates & keys" },
         { value: "contacts", label: "Contacts" },
         { value: "config", label: "Config" },
         { value: "journal", label: "Journal" },
@@ -431,7 +432,10 @@ function Body({ device: d }: { device: Device }) {
         />
       </DetailTab>
       <DetailTab value="certificates">
-        <CertificatesPanel objectType="api.device" objectId={d.id} />
+        <div className="space-y-6">
+          <CertificatesPanel objectType="api.device" objectId={d.id} />
+          <SSHHostKeysPanel deviceId={d.id} />
+        </div>
       </DetailTab>
       <DetailTab value="contacts">
         <ContactsPanel objectType="api.device" objectId={d.id} />

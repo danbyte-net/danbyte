@@ -41,3 +41,10 @@ observed key as expected. Observation never changes intent on its own.
 
 Filters on the list: `?device=<id>`, `?origin=observed|uploaded|both`,
 `?key_type=ssh-ed25519`.
+
+## In the UI
+
+A device's **Certificates & keys** tab has an **SSH host keys** section: the
+expected and observed keys with their type, fingerprint and origin, a drift
+banner when they disagree, an **Add host key** paste dialog, and an **Accept**
+action on an observed key to adopt it as expected.
