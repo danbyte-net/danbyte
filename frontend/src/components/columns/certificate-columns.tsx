@@ -129,6 +129,7 @@ export type CertificateColumnId =
   | "endpoints"
   | "assignments"
   | "self_signed"
+  | "kind"
   | "last_seen"
 
 const CANONICAL_ORDER: CertificateColumnId[] = [
@@ -140,6 +141,7 @@ const CANONICAL_ORDER: CertificateColumnId[] = [
   "endpoints",
   "assignments",
   "self_signed",
+  "kind",
   "last_seen",
 ]
 
@@ -290,6 +292,29 @@ export function buildCertificateColumns<T extends Certificate = Certificate>(
           get: (r: T) => (r.self_signed ? "self" : "ca"),
           formatValue: (v) => ({
             label: v === "self" ? "Self-signed" : "CA-issued",
+          }),
+        },
+      },
+    }),
+    kind: () => ({
+      id: "kind",
+      accessorFn: (c) => (c.is_ca ? "ca" : "leaf"),
+      header: "Kind",
+      cell: ({ row }) =>
+        row.original.is_ca ? (
+          <Badge variant="secondary" className="text-xs">
+            CA
+          </Badge>
+        ) : (
+          dash
+        ),
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Kind",
+          get: (r: T) => (r.is_ca ? "ca" : "leaf"),
+          formatValue: (v) => ({
+            label: v === "ca" ? "Certificate authority" : "End-entity (leaf)",
           }),
         },
       },

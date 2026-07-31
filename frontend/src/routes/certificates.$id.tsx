@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import type { ColumnDef } from "@tanstack/react-table"
@@ -77,7 +77,7 @@ function CertificateDetail() {
 
 function Body({ cert }: { cert: Certificate }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "bindings" | "assignments" | "journal" | "history"
+    "overview" | "chain" | "bindings" | "assignments" | "journal" | "history"
   >("overview")
   const { canDo } = useMe()
   const qc = useQueryClient()
@@ -165,6 +165,7 @@ function Body({ cert }: { cert: Certificate }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
+        { value: "chain", label: "Chain" },
         { value: "bindings", label: "Bindings", count: cert.binding_count },
         {
           value: "assignments",
@@ -179,6 +180,9 @@ function Body({ cert }: { cert: Certificate }) {
     >
       <DetailTab value="overview">
         <CertificateOverview cert={cert} />
+      </DetailTab>
+      <DetailTab value="chain">
+        <ChainTab cert={cert} />
       </DetailTab>
       <DetailTab value="bindings">
         <BindingsTab certificateId={cert.id} />
@@ -337,6 +341,26 @@ function CertificateOverview({ cert }: { cert: Certificate }) {
     { label: "Subject CN", value: cert.subject_cn || dash },
     { label: "Issuer", value: cert.issuer || dash, copy: cert.issuer },
     { label: "Issuer CN", value: cert.issuer_cn || dash },
+    {
+      label: "Issued by",
+      value: cert.self_signed ? (
+        <span className="text-[13px] text-muted-foreground">
+          Self-signed (root)
+        </span>
+      ) : cert.issuer_certificate ? (
+        <Link
+          to="/certificates/$id"
+          params={{ id: cert.issuer_certificate }}
+          className="text-[13px] font-medium hover:underline"
+        >
+          {cert.issuer_certificate_subject_cn || cert.issuer_cn || "CA"}
+        </Link>
+      ) : (
+        <span className="text-[13px] text-muted-foreground">
+          {cert.issuer_cn || "unknown"} — not in inventory
+        </span>
+      ),
+    },
     { label: "Serial", value: mono(cert.serial), copy: cert.serial },
     {
       label: "Fingerprint (SHA-256)",
@@ -375,6 +399,16 @@ function CertificateOverview({ cert }: { cert: Certificate }) {
         <Badge variant="outline">Self-signed</Badge>
       ) : (
         <span className="text-[13px]">CA-issued</span>
+      ),
+    },
+    {
+      label: "Certificate authority",
+      value: cert.is_ca ? (
+        <Badge variant="secondary">CA — can sign certs</Badge>
+      ) : (
+        <span className="text-[13px] text-muted-foreground">
+          No (end-entity)
+        </span>
       ),
     },
   ]
@@ -586,5 +620,72 @@ function BindingsTab({ certificateId }: { certificateId: string }) {
       flexColumn="endpoint"
       tableId="certificate-bindings"
     />
+  )
+}
+
+function certLabel(c: Certificate): string {
+  return c.subject_cn || c.subject || `${c.fingerprint_sha256.slice(0, 16)}…`
+}
+
+function ChainTab({ cert }: { cert: Certificate }) {
+  const q = useQuery({
+    queryKey: ["certificate-chain", cert.id],
+    queryFn: () =>
+      api<{ chain: Certificate[] }>(
+        `/api/monitoring/certificates/${cert.id}/chain/`
+      ),
+  })
+
+  if (q.isError) return <QueryError error={q.error} />
+  if (q.isLoading)
+    return <p className="text-sm text-muted-foreground">Loading…</p>
+  const chain = q.data?.chain ?? []
+  const rootMissing = chain.length > 0 && !chain[chain.length - 1].self_signed
+
+  return (
+    <div className="max-w-2xl space-y-3">
+      <p className="text-sm text-muted-foreground">
+        The issuer chain Danbyte has resolved, leaf first. Each link is a
+        certificate in this tenant&apos;s inventory — a missing issuer simply
+        hasn&apos;t been added yet.
+      </p>
+      <ol className="space-y-2">
+        {chain.map((c, i) => (
+          <li
+            key={c.id}
+            className="flex items-center gap-3 rounded-md border border-border p-3"
+          >
+            <span className="w-16 shrink-0 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+              {i === 0 ? "Leaf" : c.self_signed ? "Root" : "Interm."}
+            </span>
+            {c.id === cert.id ? (
+              <span className="font-medium">{certLabel(c)}</span>
+            ) : (
+              <Link
+                to="/certificates/$id"
+                params={{ id: c.id }}
+                className="font-medium hover:underline"
+              >
+                {certLabel(c)}
+              </Link>
+            )}
+            {c.is_ca && (
+              <Badge variant="secondary" className="text-[10px]">
+                CA
+              </Badge>
+            )}
+            <span className="ml-auto shrink-0">
+              <ExpiryBadge cert={c} />
+            </span>
+          </li>
+        ))}
+      </ol>
+      {rootMissing && (
+        <p className="text-xs text-muted-foreground">
+          The root CA isn&apos;t in the inventory yet — upload or import it to
+          complete the chain.
+        </p>
+      )}
+    </div>
   )
 }

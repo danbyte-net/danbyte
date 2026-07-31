@@ -3960,6 +3960,16 @@ export interface Certificate {
   public_key_bits: number | null
   signature_algorithm: string
   self_signed: boolean
+  /** basicConstraints CA:TRUE — this cert may sign other certs. */
+  is_ca: boolean
+  /** RFC 5280 Subject Key Identifier (hex) — a CA's identity for chaining. */
+  subject_key_id: string
+  /** RFC 5280 Authority Key Identifier (hex) — points at the issuer's SKI. */
+  authority_key_id: string
+  /** The resolved parent CA cert in this tenant's inventory, or null (root/unknown). */
+  issuer_certificate: string | null
+  /** The parent CA's subject CN, for "issued by <CA>" without a lookup. */
+  issuer_certificate_subject_cn: string | null
   last_seen: string | null
   /** Endpoints on record as having served this cert — the blast radius. */
   binding_count: number
