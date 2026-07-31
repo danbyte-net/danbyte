@@ -49,3 +49,43 @@ export function labelDocument(
     ${tmpl.css || ""}
   </style></head><body>${body}</body></html>`
 }
+
+type SheetTmpl = Pick<
+  LabelTemplate,
+  "width_mm" | "height_mm" | "margin_mm" | "css" | "qr_enabled" | "qr_size_mm"
+>
+
+/** One print-ready document holding EVERY label, one per physical page.
+ *
+ * Printed from inside its own iframe (`iframe.contentWindow.print()`) with
+ * `@page { margin: 0 }`, so the browser prints exactly the labels — no SPA
+ * chrome, and Chrome/Edge drop their default header/footer (date, URL, page
+ * number) that appear when a normal page is printed. Each label is sized in mm
+ * and separated by a hard page break so a label printer feeds one per sheet. */
+export function labelSheet(tmpl: SheetTmpl, labels: RenderedLabel[]): string {
+  const cells = labels
+    .map((l) => {
+      const body = tmpl.qr_enabled
+        ? injectQr(l.html, l.qr, tmpl.qr_size_mm)
+        : l.html
+      return `<div class="lbl">${body}</div>`
+    })
+    .join("")
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:#fff}
+    @page{ size:${tmpl.width_mm}mm ${tmpl.height_mm}mm; margin:0; }
+    .lbl{
+      width:${tmpl.width_mm}mm;height:${tmpl.height_mm}mm;
+      padding:${tmpl.margin_mm}mm;
+      font-family:ui-sans-serif,system-ui,sans-serif;font-size:9pt;
+      color:#000;background:#fff;overflow:hidden;
+      page-break-after:always;break-after:page;
+    }
+    .lbl:last-child{ page-break-after:auto;break-after:auto; }
+    /* On screen, stack the labels with a little gap; print collapses it. */
+    @media screen{ body{padding:12px;display:flex;flex-direction:column;gap:12px;align-items:flex-start}
+      .lbl{border:1px solid #ddd} }
+    ${tmpl.css || ""}
+  </style></head><body>${cells}</body></html>`
+}
