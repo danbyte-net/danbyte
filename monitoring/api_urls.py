@@ -8,11 +8,13 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .viewsets import (
+    AcmeOrderViewSet,
     AlertRuleViewSet,
     CertificateAssignmentViewSet,
     CertificateBindingViewSet,
     CertificateRequestViewSet,
     CertificateViewSet,
+    IssuerViewSet,
     SSHHostKeyViewSet,
     CheckAssignmentViewSet,
     CheckTemplateViewSet,
@@ -88,6 +90,8 @@ router.register(
     CertificateRequestViewSet,
     basename="certificaterequest",
 )
+router.register(r"issuers", IssuerViewSet, basename="issuer")
+router.register(r"acme-orders", AcmeOrderViewSet, basename="acmeorder")
 router.register(r"ssh-host-keys", SSHHostKeyViewSet, basename="ssh-host-key")
 router.register(r"snmp-sensors", SnmpSensorViewSet, basename="snmp-sensor")
 router.register(r"engines", MonitoringEngineViewSet, basename="monitoring-engine")

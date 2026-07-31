@@ -114,6 +114,7 @@ AUDITED_MODELS = [
     "monitoring.Certificate",
     "monitoring.CertificateAssignment",
     "monitoring.CertificateRequest",
+    "monitoring.Issuer",
     "monitoring.SSHHostKey",
     # Org-level objects.
     "core.Tenant",

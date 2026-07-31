@@ -140,6 +140,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # Writable source of truth, so its own add/change/delete grant.
     ("monitoring.CertificateAssignment", "Certificate assignments", "Monitoring"),
     ("monitoring.CertificateRequest", "Certificate requests", "Monitoring"),
+    ("monitoring.Issuer", "Certificate issuers", "Monitoring"),
+    ("monitoring.AcmeOrder", "ACME orders", "Monitoring"),
     ("monitoring.SSHHostKey", "SSH host keys", "Monitoring"),
     ("monitoring.NotificationChannel", "Notification channels", "Monitoring"),
     ("monitoring.AlertRule", "Alert rules", "Monitoring"),

@@ -26,8 +26,10 @@ from auth_api.permissions import can_manage_admin
 from .models import (
     AlertRule,
     Certificate,
+    AcmeOrder,
     CertificateAssignment,
     CertificateRequest,
+    Issuer,
     SSHHostKey,
     CertificateBinding,
     CheckAssignment,
@@ -44,8 +46,10 @@ from .models import (
 )
 from .serializers import (
     AlertRuleSerializer,
+    AcmeOrderSerializer,
     CertificateAssignmentSerializer,
     CertificateRequestSerializer,
+    IssuerSerializer,
     CertificateBindingSerializer,
     CertificateSerializer,
     SSHHostKeySerializer,
@@ -777,6 +781,42 @@ class CertificateRequestViewSet(TenantScopedViewSet):
 
         delete_key(instance)
         super().perform_destroy(instance)
+
+
+class IssuerViewSet(TenantScopedViewSet):
+    """External CA connectors (ACME directories). The EAB HMAC is write-only and
+    stored encrypted; the ACME account key never leaves the secret store."""
+
+    queryset = Issuer.objects.all()
+    serializer_class = IssuerSerializer
+
+    def perform_create(self, serializer):
+        serializer.save(
+            tenant=self._tenant_or_403(),
+            created_by=(
+                self.request.user
+                if getattr(self.request.user, "is_authenticated", False)
+                else None
+            ),
+        )
+
+
+class AcmeOrderViewSet(TenantScopedReadViewSet):
+    """ACME issuance orders — read-only here; created and driven by the ACME
+    engine. Filter with ``?issuer=`` / ``?request=`` / ``?status=``."""
+
+    queryset = AcmeOrder.objects.select_related(
+        "issuer", "request", "issued_certificate"
+    )
+    serializer_class = AcmeOrderSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        p = self.request.query_params
+        for field in ("issuer", "request", "status"):
+            if p.get(field):
+                qs = qs.filter(**{field: p[field]})
+        return qs
 
 
 class SnmpSensorViewSet(TenantScopedViewSet):

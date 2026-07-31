@@ -334,6 +334,22 @@ the request **issued**. Deleting a request also deletes its stored private key.
 download, key re-fetch (change grant), and import actions. Without a secret store
 the create call is a clean 400 — the feature is fail-closed.
 
+## Issuers (ACME) — automated issuance
+
+An **Issuer** is a connector to an external certificate authority — any ACME
+directory, public (Let's Encrypt / ZeroSSL) or internal (step-ca). Configure the
+directory URL, an optional contact e-mail, and — where the CA requires it —
+External Account Binding (a key id plus an HMAC, stored encrypted). The ACME
+account key is generated on first use and kept in the [secret
+store](#the-secret-store-for-issuing-keys); it never lands in the database.
+`GET/POST /api/monitoring/issuers/` manages them.
+
+An **ACME order** fulfils a [certificate request](#requesting-a-certificate-csr)
+against an issuer: it carries the DNS-01 / HTTP-01 challenge data to satisfy and
+tracks the order to completion, then imports the signed certificate. The order
+API (`/api/monitoring/acme-orders/`) is read-only — orders are created and driven
+by the ACME engine.
+
 ## Certificate authorities and chains
 
 An issuer is more than a string. When a certificate is recorded — uploaded or

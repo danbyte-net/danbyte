@@ -17,9 +17,11 @@ from .checkers import CheckConfigError, get_checker
 from .models import (
     Alert,
     AlertRule,
+    AcmeOrder,
     Certificate,
     CertificateAssignment,
     CertificateRequest,
+    Issuer,
     CertificateBinding,
     SSHHostKey,
     CheckAssignment,
@@ -343,6 +345,80 @@ class CertificateRequestSerializer(serializers.ModelSerializer):
             "created_by_name", "notes", "created_at", "updated_at",
         ]
         read_only_fields = [f for f in fields if f != "notes"]
+
+
+class IssuerSerializer(serializers.ModelSerializer):
+    """An external CA connector. The EAB HMAC is write-only (stored encrypted);
+    the ACME account key never appears here (it lives in the secret store)."""
+
+    eab_hmac = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False
+    )
+    eab_hmac_set = serializers.SerializerMethodField()
+    account_registered = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Issuer
+        fields = [
+            "id", "name", "kind", "enabled", "directory_url", "contact_email",
+            "eab_kid", "eab_hmac", "eab_hmac_set", "verify_tls",
+            "account_registered", "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_eab_hmac_set(self, obj) -> bool:
+        return bool((obj.secrets or {}).get("eab_hmac"))
+
+    def get_account_registered(self, obj) -> bool:
+        return bool(obj.account_uri)
+
+    def _apply_secret(self, instance, validated_data):
+        hmac = validated_data.pop("eab_hmac", None)
+        if hmac is not None:
+            secrets = dict(instance.secrets or {})
+            if hmac:
+                secrets["eab_hmac"] = hmac
+            else:
+                secrets.pop("eab_hmac", None)
+            instance.secrets = secrets
+
+    def create(self, validated_data):
+        hmac = validated_data.pop("eab_hmac", "")
+        instance = Issuer(**validated_data)
+        if hmac:
+            instance.secrets = {"eab_hmac": hmac}
+        instance.save()
+        return instance
+
+    def update(self, instance, validated_data):
+        self._apply_secret(instance, validated_data)
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        instance.save()
+        return instance
+
+
+class AcmeOrderSerializer(serializers.ModelSerializer):
+    """An ACME issuance order — read view (created/driven by the engine)."""
+
+    issuer_name = serializers.CharField(source="issuer.name", read_only=True)
+    request_common_name = serializers.CharField(
+        source="request.common_name", read_only=True, default=None
+    )
+    issued_certificate_subject_cn = serializers.CharField(
+        source="issued_certificate.subject_cn", read_only=True, default=None
+    )
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+
+    class Meta:
+        model = AcmeOrder
+        fields = [
+            "id", "issuer", "issuer_name", "request", "request_common_name",
+            "status", "status_display", "challenge_type", "identifiers",
+            "challenges", "error", "issued_certificate",
+            "issued_certificate_subject_cn", "created_at", "updated_at",
+        ]
+        read_only_fields = fields
 
 
 class SnmpSensorSerializer(serializers.ModelSerializer):

@@ -2321,3 +2321,114 @@ class CertificateRequest(TimestampedModel):
 
     def __str__(self) -> str:
         return f"CSR {self.common_name} ({self.status})"
+
+
+class Issuer(TimestampedModel):
+    """An external certificate authority Danbyte can request from — an ACME
+    directory (public like Let's Encrypt, or internal like step-ca).
+
+    The account **private key** lives in the secret store at ``account_ref``,
+    never on this row; the EAB HMAC (a credential) is encrypted in ``secrets``.
+    Deployment/tenant-admin configured, so the directory URL may be an internal
+    host — reached directly like the Redfish/Vault endpoints, not via the tenant
+    SSRF guard.
+    """
+
+    class Kind(models.TextChoices):
+        ACME = "acme", "ACME"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="issuers"
+    )
+    name = models.CharField(max_length=120)
+    kind = models.CharField(max_length=12, choices=Kind.choices, default=Kind.ACME)
+    enabled = models.BooleanField(default=True)
+
+    directory_url = models.URLField(
+        help_text="ACME directory URL, e.g. https://acme-v02.api.letsencrypt.org/"
+        "directory or https://stepca.danbyte.lan/acme/acme/directory.",
+    )
+    contact_email = models.CharField(max_length=255, blank=True, default="")
+    # External Account Binding key id (public); the HMAC lives in ``secrets``.
+    eab_kid = models.CharField(max_length=255, blank=True, default="")
+    verify_tls = models.BooleanField(default=True)
+    # Set once the ACME account is registered; the account key is in the secret
+    # store at ``account_ref`` (never on this row).
+    account_uri = models.CharField(max_length=512, blank=True, default="")
+    account_ref = models.CharField(max_length=200, blank=True, default="")
+    secrets = EncryptedJSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="issuers",
+    )
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "name"], name="uniq_issuer_name")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.kind})"
+
+
+class AcmeOrder(TimestampedModel):
+    """One ACME issuance order — fulfilling a :class:`CertificateRequest`'s CSR
+    against an :class:`Issuer`.
+
+    Carries the challenge data the operator (or a DNS connector) must satisfy —
+    DNS-01 TXT records or HTTP-01 tokens — and the order's lifecycle. On success
+    the issued certificate is imported as a :class:`Certificate` and linked.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        READY = "ready", "Ready"
+        PROCESSING = "processing", "Processing"
+        VALID = "valid", "Valid"
+        INVALID = "invalid", "Invalid"
+        ERRORED = "errored", "Errored"
+
+    class Challenge(models.TextChoices):
+        DNS01 = "dns-01", "DNS-01"
+        HTTP01 = "http-01", "HTTP-01"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="acme_orders"
+    )
+    issuer = models.ForeignKey(
+        Issuer, on_delete=models.CASCADE, related_name="orders"
+    )
+    request = models.ForeignKey(
+        CertificateRequest, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="acme_orders",
+    )
+    status = models.CharField(
+        max_length=12, choices=Status.choices, default=Status.PENDING, db_index=True
+    )
+    challenge_type = models.CharField(
+        max_length=8, choices=Challenge.choices, default=Challenge.DNS01
+    )
+    identifiers = models.JSONField(default=list, blank=True)
+    order_url = models.CharField(max_length=512, blank=True, default="")
+    # What the operator must publish to pass validation — a list of
+    # {identifier, type, status, and the DNS record or HTTP token fields}.
+    challenges = models.JSONField(default=list, blank=True)
+    error = models.TextField(blank=True, default="")
+    issued_certificate = models.ForeignKey(
+        "Certificate", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="acme_orders",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="acme_orders",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["tenant", "status"])]
+
+    def __str__(self) -> str:
+        return f"ACME order {', '.join(self.identifiers or [])} ({self.status})"
