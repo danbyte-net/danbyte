@@ -4013,6 +4013,45 @@ export interface CertificateAssignment {
   updated_at: string
 }
 
+export type CertKeySpec =
+  | "rsa-2048"
+  | "rsa-3072"
+  | "rsa-4096"
+  | "ec-p256"
+  | "ec-p384"
+  | "ed25519"
+export type CertRequestStatus = "generated" | "issued" | "cancelled"
+
+/** A certificate signing request Danbyte generated (key held in the secret store). */
+export interface CertificateRequest {
+  id: string
+  common_name: string
+  organization: string
+  organizational_unit: string
+  country: string
+  state: string
+  locality: string
+  san_dns: string[]
+  san_ip: string[]
+  key_spec: CertKeySpec
+  key_spec_display: string
+  status: CertRequestStatus
+  status_display: string
+  /** Public CSR PEM (safe to store/download). The private key is never here. */
+  csr_pem: string
+  issued_certificate: string | null
+  issued_certificate_subject_cn: string | null
+  created_by_name: string | null
+  notes: string
+  created_at: string
+  updated_at: string
+}
+
+/** Create response — carries the private key ONCE (never returned again). */
+export interface CertificateRequestCreated extends CertificateRequest {
+  private_key: string
+}
+
 export type SSHKeyOrigin = "observed" | "uploaded" | "both"
 
 export interface SSHHostKey {

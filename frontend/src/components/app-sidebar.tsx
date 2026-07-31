@@ -38,6 +38,7 @@ import {
   Cloud,
   UserMinus,
   Fingerprint,
+  FileSignature,
   Waypoints,
   GitBranch,
   GitPullRequestArrow,
@@ -632,6 +633,12 @@ const sections: NavSection[] = [
             url: "/certificates",
             icon: Fingerprint,
             objectType: "certificate",
+          },
+          {
+            title: "Certificate requests",
+            url: "/certificate-requests",
+            icon: FileSignature,
+            objectType: "certificaterequest",
           },
           {
             title: "Compliance",
