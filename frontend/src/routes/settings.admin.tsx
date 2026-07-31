@@ -485,19 +485,23 @@ function DeploymentSection() {
           label="Provider"
           value={secretsProvider || null}
           onChange={(v) => setSecretsProvider((v as "local" | "vault") ?? "")}
-          noneLabel="Disabled — no key storage"
+          noneLabel="Disabled"
+          info={
+            <>
+              Where CSR / ACME private keys are stored. Deployment-wide on
+              purpose — it decides where the organisation&apos;s keys live.
+              <br />
+              <b>Local</b> encrypts them at rest under{" "}
+              <code>MONITORING_SECRET_KEY</code>. <b>Vault</b> keeps them in an
+              external HashiCorp Vault / OpenBao and Danbyte holds only a
+              reference. <b>Disabled</b> turns issuance off.
+            </>
+          }
           options={[
-            { value: "local", label: "Local (encrypted in the database)" },
+            { value: "local", label: "Local" },
             { value: "vault", label: "HashiCorp Vault / OpenBao" },
           ]}
         />
-        <p className="text-[11px] text-muted-foreground">
-          Deployment-wide on purpose: it decides where the organisation&apos;s
-          private keys live. <span className="font-medium">Local</span> encrypts
-          them at rest under <code>MONITORING_SECRET_KEY</code>;{" "}
-          <span className="font-medium">Vault</span> keeps them in an external
-          store and Danbyte holds only a reference.
-        </p>
         {secretsProvider === "vault" && (
           <div className="space-y-3 rounded-md border border-border p-3">
             <FormText
@@ -513,15 +517,14 @@ function DeploymentSection() {
               placeholder="danbyte"
             />
             <FormText
-              label={
-                data.vault_token_set
-                  ? "Vault token (leave blank to keep current)"
-                  : "Vault token"
-              }
+              label="Vault token"
               value={vaultToken}
               onChange={setVaultToken}
               type="password"
-              placeholder={data.vault_token_set ? "•••••• set" : "hvs.…"}
+              hint={
+                data.vault_token_set ? "set — blank keeps current" : undefined
+              }
+              placeholder={data.vault_token_set ? "••••••" : "hvs.…"}
             />
             <FormCheckbox
               label="Verify TLS certificate"

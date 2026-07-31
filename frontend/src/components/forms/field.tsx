@@ -1,4 +1,7 @@
+import { type ReactNode } from "react"
+
 import { Label } from "@/components/ui/label"
+import { InfoTip } from "@/components/ui/info-tip"
 import { cn } from "@/lib/utils"
 
 // Shared field wrapper. Renders label + optional hint + the field
@@ -7,6 +10,9 @@ import { cn } from "@/lib/utils"
 export interface FieldProps {
   label: string
   hint?: string
+  /** Optional explanation shown via an (i) info-icon popover beside the label.
+   * Prefer this over cramming a clarification into the label in parentheses. */
+  info?: ReactNode
   error?: string
   /** Mark the label. Field components forward their own `required` here — until
    * this existed, 111 `required` props across 82 files rendered NOTHING, so the
@@ -21,6 +27,7 @@ export interface FieldProps {
 export function Field({
   label,
   hint,
+  info,
   error,
   required,
   className,
@@ -29,7 +36,7 @@ export function Field({
   return (
     <div className={cn("grid gap-1.5", className)}>
       <div className="flex items-baseline justify-between">
-        <Label className="text-xs">
+        <Label className="flex items-center gap-1 text-xs">
           {label}
           {required && (
             // Not `text-destructive`: an untouched required field isn't an
@@ -38,6 +45,7 @@ export function Field({
               *
             </span>
           )}
+          {info && <InfoTip>{info}</InfoTip>}
         </Label>
         {hint && (
           <span className="text-[10px] text-muted-foreground">{hint}</span>
