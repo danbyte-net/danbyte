@@ -4,6 +4,7 @@ import { ArrowRight, Check, Rocket } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type { Me, Paginated } from "@/lib/api"
+import { apiErrorToast } from "@/lib/api-toast"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -47,11 +48,16 @@ export function OnboardingWizard({ me }: { me: Me }) {
   // Auto-trigger only for a genuinely fresh tenant. Skip the fetch entirely once
   // the flag is dismissed — a re-run comes through the window event instead.
   const enabled = me.is_authenticated && me.onboarding_dismissed === false
+  // …and only for a user who can actually create the objects the wizard makes;
+  // otherwise every step's Create button 403s. Site is the anchor, so gate on
+  // add-site. Re-run (the window event) still force-opens it for anyone.
+  const canCreate =
+    !!me.is_superuser || (me.permissions?.site ?? []).includes("add")
   const state = useQuery({
     queryKey: ["onboarding"],
     queryFn: () =>
       api<{ dismissed: boolean; has_sites: boolean }>("/api/onboarding/"),
-    enabled,
+    enabled: enabled && canCreate,
     staleTime: Infinity,
   })
 
@@ -61,6 +67,7 @@ export function OnboardingWizard({ me }: { me: Me }) {
   const [opened, setOpened] = useState(false)
   const autoOpen =
     enabled &&
+    canCreate &&
     state.data != null &&
     !state.data.dismissed &&
     !state.data.has_sites
@@ -186,7 +193,10 @@ function WizardDialog({ onClose }: { onClose: () => void }) {
         }
         return true
       } catch (e) {
+        // 400s map to inline field errors; a 403/500/network error wouldn't,
+        // so also toast so the button doesn't just silently re-enable.
         handleApiError(e)
+        apiErrorToast(e)
         return false
       }
     },

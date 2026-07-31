@@ -424,8 +424,11 @@ function AcmeTab({
               />
               <FormSelect
                 label="Challenge"
-                value={challengeType}
+                // The automatic (dns_provider) path always uses DNS-01, so lock
+                // the selector to it there rather than letting it read HTTP-01.
+                value={selected?.dns_provider ? "dns-01" : challengeType}
                 onChange={(v) => v && setChallengeType(v)}
+                disabled={!!selected?.dns_provider}
                 options={[
                   { value: "dns-01", label: "DNS-01" },
                   { value: "http-01", label: "HTTP-01" },
@@ -435,7 +438,11 @@ function AcmeTab({
                 {selected?.dns_provider ? (
                   <Button
                     size="sm"
-                    disabled={!issuerId || issueAuto.isPending}
+                    disabled={
+                      !issuerId ||
+                      !selected?.account_registered ||
+                      issueAuto.isPending
+                    }
                     onClick={() => issueAuto.mutate()}
                   >
                     {issueAuto.isPending ? "Starting…" : "Issue automatically"}
@@ -443,7 +450,11 @@ function AcmeTab({
                 ) : (
                   <Button
                     size="sm"
-                    disabled={!issuerId || createOrder.isPending}
+                    disabled={
+                      !issuerId ||
+                      !selected?.account_registered ||
+                      createOrder.isPending
+                    }
                     onClick={() => createOrder.mutate()}
                   >
                     {createOrder.isPending ? "Opening…" : "Open order"}

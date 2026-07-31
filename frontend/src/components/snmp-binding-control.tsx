@@ -108,6 +108,11 @@ export function SnmpBindingControl({
     <div className="space-y-1">
       {select}
       <SnmpBindingHint scope={scope} objectId={objectId} />
+      {profileList.length === 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          No SNMP profiles yet — create one in Settings → SNMP profiles.
+        </p>
+      )}
     </div>
   )
 }

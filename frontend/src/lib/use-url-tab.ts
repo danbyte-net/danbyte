@@ -72,7 +72,15 @@ export function useUrlTab<T extends string = string>(
   // No explicit ?tab= → honour the user's pinned default for this page, if any
   // and still valid; otherwise the caller's hard-coded default.
   const pageKey = usePageKey(key)
-  const stored = known ? null : readStoredDefault(pageKey)
+  // Read the pinned default only AFTER hydration. Reading localStorage during
+  // render makes the server (no localStorage → defaultTab) and the client (the
+  // pinned tab) disagree on the first paint — an SSR hydration mismatch + flash.
+  // Starting null means the first client render matches the server; the effect
+  // then applies the pin.
+  const [stored, setStored] = useState<string | null>(null)
+  useEffect(() => {
+    setStored(known ? null : readStoredDefault(pageKey))
+  }, [known, pageKey])
   const preferred =
     stored && (!valid || valid.includes(stored as T))
       ? (stored as T)

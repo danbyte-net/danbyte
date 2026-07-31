@@ -93,7 +93,7 @@ export function CertificatesPanel({
     queryKey: ["certificates", "picker"],
     queryFn: () =>
       api<Paginated<Certificate>>(
-        "/api/monitoring/certificates/?page_size=500"
+        "/api/monitoring/certificates/?page_size=2000"
       ),
     staleTime: 60_000,
   })

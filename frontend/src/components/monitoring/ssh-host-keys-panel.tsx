@@ -58,7 +58,7 @@ interface RawAlert {
 export function SSHHostKeysPanel({ deviceId }: { deviceId: string }) {
   const qc = useQueryClient()
   const { canDo } = useMe()
-  const canManage = canDo("monitoring.sshhostkey", "add")
+  const canManage = canDo("sshhostkey", "add")
   const [uploadOpen, setUploadOpen] = useState(false)
 
   const keys = useQuery({
