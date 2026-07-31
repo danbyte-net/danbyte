@@ -401,6 +401,17 @@ server, answer, finalize, import, and clean the record up. The DNS server is
 admin-configured, so it is reached directly (like the ACME directory / Vault),
 not via the tenant SSRF guard.
 
+**Supported DNS backends.** RFC2136/TSIG works with standards-based DNS —
+**BIND, Samba AD DNS, PowerDNS, Knot**, and anything else that accepts signed
+dynamic updates. **Windows AD DNS is the exception**: it only accepts secure
+updates over GSS-TSIG, which the plain-TSIG client does not speak. On a Windows
+AD network, delegate a small zone — `_acme-challenge.<your-domain>` — to any
+RFC2136-capable server and point the issuer at that; AD DNS stays untouched and
+Danbyte writes only the challenge records. (GSS-TSIG and provider-API backends
+can be added later behind the same publisher interface.) Where none of that fits,
+the manual flow always works: the order shows the record, you publish it, then
+finalize.
+
 The `acme` client and `dnspython` are runtime dependencies (`acme>=4`,
 `josepy>=2`, `dnspython>=2`), included in the offline bundle for airgapped
 installs.

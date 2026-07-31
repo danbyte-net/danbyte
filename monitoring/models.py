@@ -2360,8 +2360,9 @@ class Issuer(TimestampedModel):
 
     # How DNS-01 challenges are published. "" = manual (the operator publishes
     # the TXT record); a provider auto-publishes it so orders self-validate.
-    # Pluggable: RFC2136 is the first built-in (works with BIND, Samba AD,
-    # PowerDNS, Knot, …); more providers slot in behind the same interface.
+    # Pluggable: RFC2136 is the first built-in. It works with standards-based DNS
+    # (BIND, Samba AD, PowerDNS, Knot, …) but NOT Windows AD DNS, which requires
+    # GSS-TSIG — delegate an _acme-challenge zone to an RFC2136 server there.
     dns_provider = models.CharField(
         max_length=16, choices=DnsProvider.choices, blank=True, default=""
     )
