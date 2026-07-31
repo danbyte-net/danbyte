@@ -1813,6 +1813,23 @@ class Certificate(TimestampedModel):
     public_key_bits = models.PositiveIntegerField(null=True, blank=True)
     signature_algorithm = models.CharField(max_length=64, blank=True, default="")
     self_signed = models.BooleanField(default=False)
+
+    # ─── CA modelling: is this a CA, and how it links to its issuer ───────
+    # All still public DER facts. ``is_ca`` = basicConstraints CA:TRUE.
+    # ``subject_key_id`` / ``authority_key_id`` are the RFC 5280 key
+    # identifiers; a leaf's AKI equals its issuer's SKI, which is how the chain
+    # graph is built without trusting DN strings. ``issuer_certificate`` is the
+    # resolved parent in *this tenant's* inventory (nullable — the issuer may
+    # not be known yet), letting the UI walk leaf → intermediate → root.
+    is_ca = models.BooleanField(default=False, db_index=True)
+    subject_key_id = models.CharField(max_length=128, blank=True, default="", db_index=True)
+    authority_key_id = models.CharField(max_length=128, blank=True, default="")
+    issuer_certificate = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="issued_certificates",
+        help_text="The parent CA certificate in this tenant's inventory, if known.",
+    )
+
     last_seen = models.DateTimeField(
         null=True, blank=True,
         help_text="Most recent observation. ``created_at`` is the first.",

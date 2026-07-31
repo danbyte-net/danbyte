@@ -205,7 +205,42 @@ def parse_certificate(der: bytes, depth: int) -> dict[str, Any]:
         "signature_algorithm": getattr(sig_oid, "_name", "") or sig_oid.dotted_string,
         "chain_depth": depth,
         "self_signed": _self_signed(cert),
+        # CA modelling: is this a CA cert, and the key identifiers that let a
+        # leaf be tied to its issuer (AKI → the issuer's SKI) without trusting
+        # the DN strings alone.
+        "is_ca": _is_ca(cert),
+        "subject_key_id": _subject_key_id(cert),
+        "authority_key_id": _authority_key_id(cert),
     }
+
+
+def _is_ca(cert) -> bool:
+    """basicConstraints CA:TRUE — the cert may sign other certs."""
+    try:
+        bc = cert.extensions.get_extension_for_class(x509.BasicConstraints).value
+        return bool(bc.ca)
+    except x509.ExtensionNotFound:
+        return False
+
+
+def _subject_key_id(cert) -> str:
+    """This cert's Subject Key Identifier, lowercase hex, or ""."""
+    try:
+        ski = cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value
+        return ski.digest.hex()
+    except x509.ExtensionNotFound:
+        return ""
+
+
+def _authority_key_id(cert) -> str:
+    """The issuer's key identifier this cert points at, lowercase hex, or ""."""
+    try:
+        aki = cert.extensions.get_extension_for_class(
+            x509.AuthorityKeyIdentifier
+        ).value
+        return aki.key_identifier.hex() if aki.key_identifier else ""
+    except x509.ExtensionNotFound:
+        return ""
 
 
 # ─── Collection ───────────────────────────────────────────────────────────

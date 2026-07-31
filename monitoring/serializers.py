@@ -117,6 +117,11 @@ class CertificateSerializer(serializers.ModelSerializer):
         "certificate — the size of the blast radius when it expires.",
     )
     assignment_count = serializers.IntegerField(read_only=True, default=0)
+    # CA / chain context — the resolved parent in this tenant's inventory, named
+    # so the UI can render "issued by <CA>" and walk leaf → root without a lookup.
+    issuer_certificate_subject_cn = serializers.CharField(
+        source="issuer_certificate.subject_cn", read_only=True, default=None
+    )
 
     class Meta:
         model = Certificate
@@ -126,6 +131,9 @@ class CertificateSerializer(serializers.ModelSerializer):
             "not_after", "is_expired", "days_until_expiry",
             "public_key_algorithm", "public_key_bits", "signature_algorithm",
             "self_signed", "last_seen", "binding_count", "assignment_count",
+            # CA modelling.
+            "is_ca", "subject_key_id", "authority_key_id", "issuer_certificate",
+            "issuer_certificate_subject_cn",
             # Authoring surface.
             "origin", "observed", "uploaded", "pem", "name", "notes",
             "created_at", "updated_at",

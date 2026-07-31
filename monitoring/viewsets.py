@@ -254,6 +254,14 @@ class CertificateViewSet(TenantScopedViewSet):
             qs = qs.filter(self_signed=True)
         elif self_signed in ("0", "false"):
             qs = qs.filter(self_signed=False)
+        is_ca = params.get("is_ca")
+        if is_ca in ("1", "true"):
+            qs = qs.filter(is_ca=True)
+        elif is_ca in ("0", "false"):
+            qs = qs.filter(is_ca=False)
+        issued_by = params.get("issued_by")
+        if issued_by:
+            qs = qs.filter(issuer_certificate_id=issued_by)
         origin = params.get("origin")
         if origin == "observed":
             qs = qs.filter(observed=True)
@@ -316,6 +324,47 @@ class CertificateViewSet(TenantScopedViewSet):
                 "firing_alerts": firing.count(),
             }
         )
+
+    @action(detail=True, methods=["get"])
+    def chain(self, request, pk=None):
+        """The issuer chain for this certificate — leaf → intermediate → root.
+
+        Walks ``issuer_certificate`` up from this row within the tenant, capped
+        and cycle-guarded. Each hop is the full certificate serialisation so the
+        UI can show CN + expiry per link.
+        """
+        leaf = self.get_object()
+        chain, seen, node = [], set(), leaf
+        while node is not None and node.pk not in seen and len(chain) < 16:
+            seen.add(node.pk)
+            chain.append(node)
+            node = node.issuer_certificate
+        return Response({"chain": self.get_serializer(chain, many=True).data})
+
+    @action(detail=False)
+    def authorities(self, request):
+        """The tenant's Certificate Authorities — every CA certificate with how
+        many certs it has issued and its own expiry, soonest-expiring first."""
+        from django.db.models import Count
+
+        tenant = self._tenant_or_403()
+        cas = (
+            Certificate.objects.filter(tenant=tenant, is_ca=True)
+            .annotate(
+                binding_count=Count("bindings", distinct=True),
+                assignment_count=Count("assignments", distinct=True),
+                issued_count=Count("issued_certificates", distinct=True),
+            )
+            .order_by("not_after", "subject_cn")
+        )
+        page = self.paginate_queryset(cas)
+        data = self.get_serializer(page if page is not None else cas, many=True).data
+        # Splice the issued-cert count onto each row (not a model field).
+        for row, obj in zip(data, page if page is not None else cas):
+            row["issued_count"] = obj.issued_count
+        if page is not None:
+            return self.get_paginated_response(data)
+        return Response(data)
 
     def create(self, request, *args, **kwargs):
         """Author a certificate from an uploaded public PEM (dedups by

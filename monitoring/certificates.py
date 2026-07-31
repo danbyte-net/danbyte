@@ -156,6 +156,7 @@ def upload_certificate(tenant, pem_text, *, name="", notes="", now=None):
             row.notes = notes
             update_fields.append("notes")
         row.save(update_fields=update_fields)
+    link_issuer(row)
     return row, created
 
 # Fields written only when the row is created — properties of the exact DER
@@ -164,6 +165,7 @@ _IMMUTABLE_FIELDS = (
     "subject", "subject_cn", "issuer", "issuer_cn", "serial", "san_dns",
     "san_ip", "not_before", "not_after", "public_key_algorithm",
     "public_key_bits", "signature_algorithm", "self_signed",
+    "is_ca", "subject_key_id", "authority_key_id",
 )
 
 _ALGORITHMS = {choice.value for choice in PublicKeyAlgorithm}
@@ -198,7 +200,63 @@ def _defaults(cert: dict) -> dict:
         "public_key_bits": int(bits) if isinstance(bits, int) and bits > 0 else None,
         "signature_algorithm": _clean(cert.get("signature_algorithm"), 64),
         "self_signed": bool(cert.get("self_signed")),
+        "is_ca": bool(cert.get("is_ca")),
+        "subject_key_id": _clean(cert.get("subject_key_id"), 128),
+        "authority_key_id": _clean(cert.get("authority_key_id"), 128),
     }
+
+
+def link_issuer(certificate) -> bool:
+    """Resolve this row's parent CA and adopt any children it issues.
+
+    Chain edges are built from the RFC 5280 key identifiers — a cert's Authority
+    Key Identifier equals its issuer's Subject Key Identifier — falling back to
+    issuer-DN → subject-DN when a cert omits the identifiers. Self-signed roots
+    point at nothing (they are the top). Everything is tenant-scoped. Idempotent;
+    returns True if any edge changed. Runs after upload and after an observed
+    chain is recorded, so links converge regardless of the order certs arrive.
+    """
+    from django.db.models import Q
+
+    changed = False
+    qs = Certificate.objects.filter(tenant_id=certificate.tenant_id)
+
+    # 1. This cert's parent — skip self-signed roots (they issue themselves).
+    if not certificate.self_signed:
+        parent = None
+        if certificate.authority_key_id:
+            parent = (
+                qs.filter(is_ca=True, subject_key_id=certificate.authority_key_id)
+                .exclude(pk=certificate.pk)
+                .first()
+            )
+        if parent is None and certificate.issuer:
+            parent = (
+                qs.filter(is_ca=True, subject=certificate.issuer)
+                .exclude(pk=certificate.pk)
+                .first()
+            )
+        if parent is not None and certificate.issuer_certificate_id != parent.pk:
+            certificate.issuer_certificate = parent
+            certificate.save(update_fields=["issuer_certificate", "updated_at"])
+            changed = True
+
+    # 2. If this is a CA, adopt still-unlinked certs it signed (a root/
+    #    intermediate imported after its children).
+    if certificate.is_ca:
+        match = Q()
+        if certificate.subject_key_id:
+            match |= Q(authority_key_id=certificate.subject_key_id)
+        if certificate.subject:
+            match |= Q(issuer=certificate.subject)
+        if match:
+            adopted = (
+                qs.filter(match, issuer_certificate__isnull=True, self_signed=False)
+                .exclude(pk=certificate.pk)
+                .update(issuer_certificate=certificate)
+            )
+            changed = changed or bool(adopted)
+    return changed
 
 
 def _depth(cert: dict) -> int:
@@ -348,6 +406,10 @@ def record_chain(
         if endpoint is not None:
             _record_binding(tenant, row, endpoint, cert, verified, now)
         rows.append(row)
+    # Resolve issuer edges once the whole chain is on file, so a leaf links to
+    # an intermediate that arrived in the same observation regardless of order.
+    for row in rows:
+        link_issuer(row)
     if rows and endpoint is not None and evaluate:
         evaluate_expiry({tenant.id}, {endpoint.key})
     return rows

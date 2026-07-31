@@ -287,6 +287,31 @@ and no key drift. The counts come from a single tenant-scoped read,
 `GET /api/monitoring/certificates/health/`, so the client never re-buckets the
 inventory itself.
 
+## Certificate authorities and chains
+
+An issuer is more than a string. When a certificate is recorded — uploaded or
+observed — Danbyte reads its **basicConstraints** (is it a CA?) and the RFC 5280
+**key identifiers** (Subject Key Identifier and Authority Key Identifier). A
+leaf's AKI equals its issuer's SKI, and that is how Danbyte links each
+certificate to the **CA certificate that signed it** (`issuer_certificate`),
+falling back to matching the issuer DN against a CA's subject DN when a cert
+omits the identifiers. The links are tenant-scoped and resolve regardless of the
+order certs arrive — upload a leaf first and it adopts its CA the moment the CA
+is added.
+
+This gives you a real chain, not a flat list:
+
+- `GET /api/monitoring/certificates/{id}/chain/` walks
+  leaf → intermediate → root, each hop carrying its own expiry so an expiring
+  **intermediate** is as visible as an expiring leaf.
+- `GET /api/monitoring/certificates/authorities/` lists the tenant's CA
+  certificates with how many certs each has issued.
+- The list filters `?is_ca=1|0` (CAs only / leaves only) and
+  `?issued_by=<ca id>` (everything one CA signed).
+
+Chain membership stays public-data-only, exactly like the rest of the inventory
+— a CA certificate is still just an observed/uploaded row, never a key.
+
 ## Viewing certificates
 
 The inventory has its own UI under **Governance → Certificates** in the
