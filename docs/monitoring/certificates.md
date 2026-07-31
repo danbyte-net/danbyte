@@ -287,6 +287,25 @@ and no key drift. The counts come from a single tenant-scoped read,
 `GET /api/monitoring/certificates/health/`, so the client never re-buckets the
 inventory itself.
 
+## The secret store (for issuance keys)
+
+The certificate **inventory** never holds a private key, and never will. But
+requesting a certificate (a CSR) and automated issuance (ACME) do need one, so
+those features are gated behind an opt-in **secret store** an administrator
+enables under **Settings → Administration → Secret store**:
+
+- **Disabled** (default) — no keys are stored anywhere, and the key-bearing
+  features stay off (fail closed).
+- **Local** — keys live in an encrypted table, at rest under
+  `MONITORING_SECRET_KEY`, exactly like every other stored credential. Works out
+  of the box and airgap-friendly.
+- **Vault / OpenBao** — keys live in an external HashiCorp Vault / OpenBao and
+  Danbyte holds only a reference.
+
+It is a **deployment-tier** choice on purpose — where the organisation's private
+keys live is not a per-tenant decision. Nothing reads a stored secret over the
+API or writes it to the change log. CSR and ACME build on this in later releases.
+
 ## Certificate authorities and chains
 
 An issuer is more than a string. When a certificate is recorded — uploaded or

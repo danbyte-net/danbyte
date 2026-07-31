@@ -77,6 +77,7 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "changelog_retention_days",
             "favicon_url",
             "ssrf_allowlist",
+            "secrets_provider",
             "map_tile_url",
             "map_tile_attribution",
             "map_satellite_url",

@@ -4544,6 +4544,8 @@ export interface DeploymentSettings {
   /** Absolute URL of the custom favicon; null = the Danbyte default. */
   favicon_url: string | null
   ssrf_allowlist: string[]
+  /** "" = disabled, "local" = encrypted DB, "vault" = external Vault/OpenBao. */
+  secrets_provider: "" | "local" | "vault"
   map_tile_url: string
   map_tile_attribution: string
   map_satellite_url: string

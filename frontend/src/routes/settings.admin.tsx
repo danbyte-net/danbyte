@@ -221,6 +221,9 @@ function DeploymentSection() {
   const [separation, setSeparation] = useState(false)
   const [siteSettings, setSiteSettings] = useState(false)
   const [ssrfList, setSsrfList] = useState("")
+  const [secretsProvider, setSecretsProvider] = useState<
+    "" | "local" | "vault"
+  >("")
   const [tileUrl, setTileUrl] = useState("")
   const [tileAttrib, setTileAttrib] = useState("")
   const [satUrl, setSatUrl] = useState("")
@@ -243,6 +246,7 @@ function DeploymentSection() {
       setSeparation(data.enhanced_site_separation)
       setSiteSettings(data.allow_site_settings)
       setSsrfList((data.ssrf_allowlist ?? []).join("\n"))
+      setSecretsProvider(data.secrets_provider ?? "")
       setTileUrl(data.map_tile_url ?? "")
       setTileAttrib(data.map_tile_attribution ?? "")
       setSatUrl(data.map_satellite_url ?? "")
@@ -440,6 +444,40 @@ function DeploymentSection() {
           The guard stops tenant-supplied URLs (NetBox imports, webhooks, SMTP
           relays) from reaching loopback, cloud-metadata, and private ranges.
           Entries here punch specific holes — keep it as narrow as possible.
+        </p>
+      </SettingsCard>
+
+      <SettingsCard
+        title="Secret store"
+        description="Where private keys for certificate requests (CSR) and ACME are kept. Disabled leaves those features off; the certificate inventory itself never stores keys either way."
+        onSave={() =>
+          save.mutate({
+            key: "secrets",
+            patch: { secrets_provider: secretsProvider },
+          })
+        }
+        dirty={secretsProvider !== (data.secrets_provider ?? "")}
+        saving={savingKey === "secrets"}
+        saveLabel="Save secret store"
+      >
+        <FormSelect
+          label="Provider"
+          value={secretsProvider}
+          onChange={(v) =>
+            setSecretsProvider((v as "" | "local" | "vault") ?? "")
+          }
+          options={[
+            { value: "", label: "Disabled — no key storage" },
+            { value: "local", label: "Local (encrypted in the database)" },
+            { value: "vault", label: "HashiCorp Vault / OpenBao" },
+          ]}
+        />
+        <p className="text-[11px] text-muted-foreground">
+          Deployment-wide on purpose: it decides where the organisation&apos;s
+          private keys live. <span className="font-medium">Local</span> encrypts
+          them at rest under <code>MONITORING_SECRET_KEY</code>;{" "}
+          <span className="font-medium">Vault</span> keeps them in an external
+          store and Danbyte holds only a reference.
         </p>
       </SettingsCard>
 

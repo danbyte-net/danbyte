@@ -2215,3 +2215,35 @@ class CertificateAssignment(TimestampedModel):
     def save(self, *args, **kwargs):
         self._assert_single_tenant()
         return super().save(*args, **kwargs)
+
+
+class StoredSecret(TimestampedModel):
+    """A named secret in the **local** secret store, encrypted at rest.
+
+    The store CSR/ACME use to stash private-key material under an opaque ``ref``
+    so nothing else in the app holds the secret itself — only the reference. This
+    is the ``local`` provider's backing table; the ``vault`` provider keeps the
+    same values in an external Vault/OpenBao and this table stays empty. There is
+    deliberately **no serializer, viewset, or audit registration** — a stored
+    secret is never returned over the API or written to the change log.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="stored_secrets"
+    )
+    ref = models.CharField(
+        max_length=200,
+        help_text="Opaque reference the owning feature uses to fetch this secret.",
+    )
+    value = EncryptedJSONField(default=dict, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "ref"], name="uniq_stored_secret_tenant_ref"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"secret:{self.ref}"

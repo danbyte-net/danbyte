@@ -371,6 +371,22 @@ class DeploymentSettings(TimestampedModel):
     # DANBYTE_SSRF_ALLOWLIST env var.
     ssrf_allowlist = models.JSONField(default=list, blank=True)
 
+    # ─── secret store (for issuance keys: CSR / ACME private keys) ────────
+    # Opt-in and DEPLOYMENT tier: it decides where the org's private keys live,
+    # so a tenant admin must never set it. Blank = disabled (key-bearing
+    # features fail closed). "local" keeps keys in an encrypted table; "vault"
+    # keeps them in an external HashiCorp Vault / OpenBao. Vault connection
+    # config (address, mount, auth) is added with the Vault backend; the token
+    # lives in ``secrets`` (encrypted), never a plain column.
+    secrets_provider = models.CharField(
+        max_length=16,
+        blank=True,
+        default="",
+        choices=[("", "Disabled"), ("local", "Local (encrypted)"), ("vault", "Vault / OpenBao")],
+        help_text="Where issuance private keys (CSR, ACME) are stored. Blank "
+        "leaves those features disabled.",
+    )
+
     # ─── site map tiles ──────────────────────────────────────────────────
     # Blank = OpenStreetMap's donated tile servers (light use only, per
     # https://operations.osmfoundation.org/policies/tiles/ — which also asks
