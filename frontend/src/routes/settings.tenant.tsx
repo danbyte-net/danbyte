@@ -3,9 +3,12 @@ import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
+import { Rocket } from "lucide-react"
+
 import { api, type TenantSettings } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
+import { openOnboardingWizard } from "@/components/onboarding-wizard"
 import { Checkbox } from "@/components/ui/checkbox"
 import { FormCombobox, FormSelect } from "@/components/forms"
 import { OverrideCard } from "@/components/settings/override-card"
@@ -131,6 +134,18 @@ function TenantGeneralPage() {
         <span className="font-medium">deployment default</span> follow the
         values a deployment admin sets under Settings → Deployment.
       </p>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
+        <div>
+          <p className="text-sm font-medium">First-time setup</p>
+          <p className="text-xs text-muted-foreground">
+            Re-open the guided wizard to add a site, prefix, VLAN or device.
+          </p>
+        </div>
+        <Button type="button" variant="outline" onClick={openOnboardingWizard}>
+          <Rocket className="h-3.5 w-3.5" /> Re-run setup
+        </Button>
+      </div>
 
       <OverrideCard
         title="UI policy"

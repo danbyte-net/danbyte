@@ -249,6 +249,8 @@ export interface Me {
   favicon_url?: string | null
   /** Whether to surface per-tenant human-readable numbers (numid) in the UI. */
   human_ids_enabled?: boolean
+  /** First-run wizard: true once this tenant has completed or skipped it. */
+  onboarding_dismissed?: boolean
   active_tenant?: { id: string; name: string; slug: string } | null
   /** Site-editor delegation: global toggle + sites this user may invite
    * viewers to ("all" for admins/global editors, else a list of site ids). */

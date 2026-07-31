@@ -18,6 +18,7 @@ import {
 import { ThemeProvider } from "@/components/theme-provider"
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
+import { OnboardingWizard } from "@/components/onboarding-wizard"
 import { PresenceProvider } from "@/lib/presence-context"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
@@ -209,6 +210,9 @@ function AppLayout() {
               <Outlet />
             </ErrorBoundary>
           </div>
+          {/* First-run setup wizard — self-gates on a fresh tenant, renders
+              nothing otherwise. Mounted once here so it overlays any page. */}
+          <OnboardingWizard me={me} />
         </SidebarInset>
       </PresenceProvider>
     </SidebarProvider>

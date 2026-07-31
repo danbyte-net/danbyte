@@ -25,6 +25,7 @@ nav = [
     { "Installation"      = "getting-started/installation.md" },
     { "Upgrading"         = "getting-started/upgrading.md" },
     { "Dev workflow"      = "getting-started/dev-workflow.md" },
+    { "First-time setup"  = "features/onboarding.md" },
     { "The dashboard"     = "features/dashboard.md" },
   ] },
   { "Features" = [

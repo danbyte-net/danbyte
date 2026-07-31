@@ -155,7 +155,7 @@ def me_json(request):
         effective_sharing,
         effective_ui,
     )
-    from core.models import DeploymentSettings
+    from core.models import DeploymentSettings, TenantSettings
     from .permissions import can_manage_deployment
     from .rbac import editable_sites, effective_actions
     from .user_prefs import datetime_prefs
@@ -213,6 +213,14 @@ def me_json(request):
         ),
         # Whether the SPA should surface per-tenant human-readable numbers (numid).
         "human_ids_enabled": ui.human_ids_enabled,
+        # First-run wizard: dismissed once per tenant (read-only here, no row
+        # created — the /api/onboarding/ endpoint owns the write).
+        "onboarding_dismissed": bool(
+            tenant is not None
+            and TenantSettings.objects.filter(tenant=tenant)
+            .values_list("onboarding_dismissed", flat=True)
+            .first()
+        ),
         # Sharing & delegation feature flags for the SPA (per-tenant effective).
         "site_delegation_enabled": delegation_on,
         "can_delegate_sites": can_delegate_sites,

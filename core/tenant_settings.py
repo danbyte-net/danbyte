@@ -475,3 +475,47 @@ def tenant_floorplan_popover(request):
             },
         }
     )
+
+
+@extend_schema(
+    methods=["GET"],
+    summary="First-run onboarding state for the active tenant",
+    tags=["tenant-settings"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="`{dismissed, has_sites}` — drives whether the setup wizard opens.",
+    ),
+)
+@extend_schema(
+    methods=["POST"],
+    summary="Dismiss (complete/skip) the first-run wizard for the active tenant",
+    tags=["tenant-settings"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT, description="`{dismissed: true}`."
+    ),
+)
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def onboarding_state(request):
+    """First-run wizard state — readable and dismissable by any tenant member
+    (not just admins): the wizard only creates a member's own first objects and
+    stores no secrets. GET returns ``{dismissed, has_sites}``; POST sets the
+    per-tenant ``onboarding_dismissed`` flag so it never reopens."""
+    from api.models import Site
+    from api.views import _get_active_tenant
+
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"detail": "No active tenant."}, status=400)
+    obj = TenantSettings.for_tenant(tenant)
+    if request.method == "POST":
+        if not obj.onboarding_dismissed:
+            obj.onboarding_dismissed = True
+            obj.save(update_fields=["onboarding_dismissed", "updated_at"])
+        return Response({"dismissed": True})
+    return Response({
+        "dismissed": obj.onboarding_dismissed,
+        "has_sites": Site.objects.filter(tenant=tenant).exists(),
+    })

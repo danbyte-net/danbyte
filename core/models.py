@@ -834,6 +834,12 @@ class TenantSettings(TimestampedModel):
     # Fernet-encrypted {"password": smtp, "ldap_bind_password": ...}.
     secrets = EncryptedJSONField(default=dict, blank=True)
 
+    # ─── first-run onboarding ──────────────────────────────────────────────
+    # Per-tenant bookkeeping (like digest_last_run) — not an inheritable
+    # override. Set once the first-run wizard is completed or skipped, so it
+    # never pops up again for this tenant.
+    onboarding_dismissed = models.BooleanField(default=False)
+
     class Meta:
         verbose_name = "tenant settings"
         verbose_name_plural = "tenant settings"
