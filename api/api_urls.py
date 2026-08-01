@@ -40,6 +40,7 @@ from auth_api.ldap_api import (
     tenant_ldap_test_login,
 )
 from auth_api.token_api import ApiTokenViewSet
+from auth_api.sso_api import sso_callback, sso_login, sso_providers
 from auth_api.api import (
     GroupViewSet,
     ObjectPermissionViewSet,
@@ -389,6 +390,10 @@ urlpatterns = [
     # Session login + MFA for the React SPA (two-step: password → code).
     path("auth/login/", login_api, name="auth-login"),
     path("auth/logout/", logout_api, name="auth-logout"),
+    # Single sign-on (OIDC): public provider list + login/callback per provider.
+    path("auth/sso/providers/", sso_providers, name="sso-providers"),
+    path("auth/sso/<slug:slug>/login/", sso_login, name="sso-login"),
+    path("auth/sso/<slug:slug>/callback/", sso_callback, name="sso-callback"),
     path("auth/set-password/", set_password_api, name="auth-set-password"),
     path("auth/mfa/verify/", mfa_verify_api, name="auth-mfa-verify"),
     path("auth/mfa/resend/", mfa_resend_api, name="auth-mfa-resend"),

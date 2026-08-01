@@ -281,6 +281,124 @@ class LDAPGroupMapping(TimestampedModel):
         return f"{self.ldap_group_cn or self.ldap_group_dn} → {self.group.name}"
 
 
+class IdentityProvider(TimestampedModel):
+    """A configured single-sign-on identity provider — OIDC or SAML.
+
+    Mirrors the LDAP config pattern: deployment-wide when ``tenant`` is NULL, or
+    scoped to one tenant. On login Danbyte matches (or, when ``jit_provisioning``
+    is on, creates) the user and re-syncs their Danbyte group membership from the
+    IdP's asserted groups via :class:`SsoGroupMapping` — so all existing
+    ``ObjectPermission`` machinery applies unchanged. Only *mapped* IdP groups
+    grant anything; unmapped ones are ignored.
+    """
+
+    class Protocol(models.TextChoices):
+        OIDC = "oidc", "OpenID Connect"
+        SAML = "saml", "SAML 2.0"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=120, help_text="Shown on the login button.")
+    slug = models.SlugField(
+        max_length=64, unique=True,
+        help_text="URL-safe id used in the callback path; stable once created.",
+    )
+    protocol = models.CharField(max_length=8, choices=Protocol.choices)
+    enabled = models.BooleanField(default=True)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="identity_providers",
+        help_text="NULL = available to everyone (deployment-wide).",
+    )
+
+    # ── OIDC ────────────────────────────────────────────────────────────
+    oidc_issuer = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Issuer URL; its /.well-known/openid-configuration is read. "
+        "For Entra: https://login.microsoftonline.com/<tenant-id>/v2.0",
+    )
+    oidc_client_id = models.CharField(max_length=255, blank=True, default="")
+    oidc_scopes = models.CharField(
+        max_length=255, blank=True, default="openid email profile",
+    )
+
+    # ── SAML (Phase B) ──────────────────────────────────────────────────
+    saml_idp_entity_id = models.CharField(max_length=255, blank=True, default="")
+    saml_idp_sso_url = models.CharField(max_length=255, blank=True, default="")
+    saml_idp_x509 = models.TextField(blank=True, default="")
+
+    # ── Claim / attribute mapping ───────────────────────────────────────
+    claim_email = models.CharField(max_length=64, blank=True, default="email")
+    claim_username = models.CharField(
+        max_length=64, blank=True, default="preferred_username"
+    )
+    claim_first_name = models.CharField(
+        max_length=64, blank=True, default="given_name"
+    )
+    claim_last_name = models.CharField(max_length=64, blank=True, default="family_name")
+    claim_groups = models.CharField(max_length=64, blank=True, default="groups")
+
+    # ── Provisioning ────────────────────────────────────────────────────
+    jit_provisioning = models.BooleanField(
+        default=True,
+        help_text="Create users on first login. Off = only pre-created users "
+        "may sign in; unknown users are refused.",
+    )
+    default_tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+        help_text="Tenant a JIT-created user is granted access to. Defaults to "
+        "this provider's tenant when it is tenant-scoped.",
+    )
+
+    # Client secret (OIDC) lives here Fernet-encrypted, never serialised back.
+    secrets = EncryptedJSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+    @property
+    def client_secret(self) -> str:
+        return (self.secrets or {}).get("client_secret", "")
+
+    def provisioning_tenant(self):
+        """Where a JIT user lands: the explicit default, else the provider's own
+        tenant (for a tenant-scoped provider)."""
+        return self.default_tenant or self.tenant
+
+
+class SsoGroupMapping(TimestampedModel):
+    """Maps an IdP group/role value to a Danbyte ``auth.Group`` — the SSO analog
+    of :class:`LDAPGroupMapping`. On each login the user's Danbyte groups are
+    re-synced from the mapped set; unmapped IdP groups grant nothing."""
+
+    provider = models.ForeignKey(
+        IdentityProvider, on_delete=models.CASCADE, related_name="group_mappings"
+    )
+    idp_group = models.CharField(
+        max_length=512,
+        help_text="The group/role value the IdP asserts (name or object id).",
+    )
+    group = models.ForeignKey(
+        "auth.Group", on_delete=models.CASCADE, related_name="sso_mappings",
+        help_text="The Danbyte group whose permissions members receive.",
+    )
+
+    class Meta:
+        ordering = ["idp_group"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider", "idp_group"],
+                name="uniq_sso_mapping_provider_group",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.idp_group} → {self.group.name}"
+
+
 class ApiToken(TimestampedModel):
     """A long-lived, revocable API key for non-interactive callers (Ansible/AWX,
     scripts). Authenticates as ``user`` and is scoped to one ``tenant``, so the
