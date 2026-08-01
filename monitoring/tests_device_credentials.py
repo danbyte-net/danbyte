@@ -208,6 +208,33 @@ class DeviceCredentialRevealRbacTests(_Mixin, APITestCase):
         self.assertEqual(r.status_code, 400)
         self.assertIn("detail", r.json())
 
+    def test_managed_secret_is_written_and_revealed(self):
+        # Create a managed credential with a typed password: Danbyte stores it in
+        # the active store under its own ref, and reveal returns it — no manual
+        # StoredSecret seeding.
+        u = self._user("mgr", superuser=True)
+        self._login(u)
+        r = self.client.post(
+            BASE,
+            {
+                "device": str(self.device.id),
+                "name": "managed",
+                "kind": "ssh_password",
+                "username": "netadmin",
+                "secret_managed": True,
+                "password": "s3cret",
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        body = r.json()
+        self.assertTrue(body["secret_set"])
+        self.assertEqual(body["secret_provider"], "local")
+        self.assertNotIn("password", body)
+        rev = self.client.post(f"{BASE}{body['id']}/reveal/")
+        self.assertEqual(rev.status_code, 200, rev.content)
+        self.assertEqual(rev.json()["secret"], {"password": "s3cret"})
+
     def test_reveal_400_when_nothing_at_path(self):
         self.cred.secret_path = "creds/does-not-exist"
         self.cred.save(update_fields=["secret_path"])

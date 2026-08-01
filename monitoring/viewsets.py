@@ -532,13 +532,49 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
         if device is not None and device.tenant_id != tenant.id:
             raise ValidationError({"device": "Not found in this tenant."})
 
+    def _pop_secret(self, serializer):
+        """Pull the write-only secret material out of validated_data (it is not
+        model fields) and return the assembled value dict, or None if nothing was
+        supplied. Blanks are dropped so a plain edit doesn't wipe the stored
+        secret."""
+        vd = serializer.validated_data
+        password = vd.pop("password", None)
+        private_key = vd.pop("private_key", None)
+        passphrase = vd.pop("passphrase", None)
+        value = {}
+        if password:
+            value["password"] = password
+        if private_key:
+            value["private_key"] = private_key
+        if passphrase:
+            value["passphrase"] = passphrase
+        return value or None
+
+    def _store_secret(self, cred, value):
+        """Persist a managed credential's secret, surfacing store errors as 400."""
+        from .secret_store import SecretStoreDisabled, SecretStoreError
+
+        if value is None or not cred.secret_managed:
+            return
+        try:
+            cred.store_managed_secret(value)
+        except SecretStoreDisabled as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        except SecretStoreError as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        cred.save(update_fields=["secret_path", "secret_provider"])
+
     def perform_create(self, serializer):
         self._validate_device(serializer)
+        value = self._pop_secret(serializer)
         super().perform_create(serializer)
+        self._store_secret(serializer.instance, value)
 
     def perform_update(self, serializer):
         self._validate_device(serializer)
+        value = self._pop_secret(serializer)
         super().perform_update(serializer)
+        self._store_secret(serializer.instance, value)
 
     def _audit_reveal(self, cred):
         """Record who revealed which credential's secret, when — revealing a

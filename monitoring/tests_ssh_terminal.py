@@ -62,6 +62,30 @@ class SshTerminalGateTests(TransactionTestCase):
         UserProfile.objects.create(user=u, role="custom").tenants.add(self.tenant)
         return u
 
+    def test_interactive_mode_asks_for_login_without_a_credential(self):
+        # No credential id, mode=interactive: the consumer authorizes, then asks
+        # the client for the operator's own login (defaulting the username to the
+        # Danbyte account) before touching the device.
+        u = self._user("alice", superuser=True)
+
+        async def run():
+            comm = WebsocketCommunicator(
+                SshTerminalConsumer.as_asgi(), f"/ws/ssh/{self.device.id}/"
+            )
+            comm.scope["user"] = u
+            comm.scope["session"] = {"current_tenant_id": str(self.tenant.id)}
+            comm.scope["url_route"] = {"kwargs": {"device_id": str(self.device.id)}}
+            comm.scope["query_string"] = b"mode=interactive"
+            accepted, _ = await comm.connect()
+            msg = json.loads(await comm.receive_from()) if accepted else None
+            await comm.disconnect()
+            return accepted, msg
+
+        accepted, msg = async_to_sync(run)()
+        self.assertTrue(accepted)
+        self.assertEqual(msg["t"], "need_auth")
+        self.assertEqual(msg["username"], "alice")
+
     def _connect(self, *, user, device_id=None, tenant_id=None, credential=None,
                  accept_new=False):
         """Drive the consumer through connect() and return (accepted, first_msg).

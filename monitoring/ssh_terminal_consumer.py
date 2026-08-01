@@ -56,6 +56,8 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
     _proc = None
     _reader_task = None
     _guard_task = None
+    _awaiting_auth = False
+    _ctx = None
 
     async def connect(self):
         self.device_id = self.scope["url_route"]["kwargs"]["device_id"]
@@ -67,11 +69,14 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
         tenant_id = session.get("current_tenant_id") if session else None
         qs = parse_qs(self.scope.get("query_string", b"").decode())
         credential_id = (qs.get("credential", [""])[0]).strip()
-        accept_new = qs.get("accept_new", ["0"])[0] in ("1", "true")
-        cols = _int(qs.get("cols", ["80"])[0], 80)
-        rows = _int(qs.get("rows", ["24"])[0], 24)
+        self._accept_new = qs.get("accept_new", ["0"])[0] in ("1", "true")
+        self._cols = _int(qs.get("cols", ["80"])[0], 80)
+        self._rows = _int(qs.get("rows", ["24"])[0], 24)
+        interactive = qs.get("mode", [""])[0] == "interactive"
 
-        ctx = await self._load_context(user.id, tenant_id, self.device_id, credential_id)
+        ctx = await self._load_context(
+            user.id, tenant_id, self.device_id, credential_id, interactive=interactive
+        )
         # Accept the socket so we can deliver a readable error before closing.
         await self.accept()
         if ctx.get("error"):
@@ -79,8 +84,22 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
             return
 
         self._last_input = asyncio.get_event_loop().time()
+        self._ctx = ctx
+        if ctx.get("interactive"):
+            # The operator supplies their own login; wait for it before touching
+            # the device, so no shared credential is involved.
+            self._awaiting_auth = True
+            await self.send(
+                json.dumps({"t": "need_auth", "username": ctx.get("username", "")})
+            )
+            return
+        await self._start_session()
+
+    async def _start_session(self):
+        """Open SSH with the resolved context and start the PTY pumps."""
+        ctx = self._ctx
         try:
-            await self._open_ssh(ctx, cols, rows, accept_new)
+            await self._open_ssh(ctx, self._cols, self._rows, self._accept_new)
         except _HostKeyUnknown:
             await self._fail(
                 "This device has no recorded SSH host key. Verify the device, "
@@ -172,13 +191,28 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
             pass
 
     async def receive(self, text_data=None, bytes_data=None):
-        if not text_data or self._proc is None:
+        if not text_data:
             return
         try:
             msg = json.loads(text_data)
         except (ValueError, TypeError):
             return
         t = msg.get("t")
+        # Interactive login: the operator's own username/password arrive once,
+        # here, and are used only for this session — never stored or audited.
+        if self._awaiting_auth and t == "auth":
+            self._awaiting_auth = False
+            username = (msg.get("username") or self._ctx.get("username") or "").strip()
+            if not username:
+                await self._fail("A username is required.")
+                return
+            self._ctx["username"] = username
+            self._ctx["auth_kind"] = "password"
+            self._ctx["password"] = msg.get("password") or ""
+            await self._start_session()
+            return
+        if self._proc is None:
+            return
         if t == "i":
             self._last_input = asyncio.get_event_loop().time()
             data = msg.get("d")
@@ -217,7 +251,8 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
     # ── DB / authz (all sync work runs in the DB thread) ─────────────────────
 
     @database_sync_to_async
-    def _load_context(self, user_id, tenant_id, device_id, credential_id):
+    def _load_context(self, user_id, tenant_id, device_id, credential_id,
+                      *, interactive=False):
         """Resolve + authorize everything the SSH connection needs, or return
         ``{"error": msg}``. Runs in a DB thread (no async ORM here)."""
         from django.contrib.auth.models import User
@@ -248,6 +283,35 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
         if not rbac.can_act_on(user, tenant, "device", "view", device):
             return {"error": "You do not have access to this device."}
 
+        from audit.site_capture import entry_site_id
+
+        host = _device_host(device)
+        if not host:
+            return {"error": "This device has no management IP to connect to."}
+
+        # Everything except the auth material — shared by both modes.
+        ctx = {
+            "user_id": user.id,
+            "user_name": user.get_username(),
+            "tenant_id": tenant.id,
+            "device_id": str(device.id),
+            "device_repr": str(device),
+            "site_id": entry_site_id(device),
+            "host": host,
+            "known_hosts_bytes": _known_hosts_bytes(
+                host, SSHHostKey.objects.filter(tenant_id=tenant.id, device_id=device.id)
+            ),
+        }
+
+        if interactive:
+            # No stored credential: the operator authenticates with their own
+            # login, supplied over the socket after connect. Default the username
+            # to their Danbyte account, but let them override it.
+            ctx["interactive"] = True
+            ctx["port"] = 22
+            ctx["username"] = user.get_username()
+            return ctx
+
         if not _is_uuid(credential_id):
             return {"error": "Pick an SSH credential for this device."}
         cred = DeviceCredential.objects.filter(
@@ -261,12 +325,6 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
         ):
             return {"error": "That credential is not an SSH credential."}
 
-        from audit.site_capture import entry_site_id
-
-        host = _device_host(device)
-        if not host:
-            return {"error": "This device has no management IP to connect to."}
-
         try:
             secret = cred.resolve_secret()  # tenant-scoped + audited (reveal)
         except SecretStoreDisabled as exc:
@@ -274,20 +332,8 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
         except SecretStoreError as exc:
             return {"error": str(exc)}
 
-        ctx = {
-            "user_id": user.id,
-            "user_name": user.get_username(),
-            "tenant_id": tenant.id,
-            "device_id": str(device.id),
-            "device_repr": str(device),
-            "site_id": entry_site_id(device),
-            "host": host,
-            "port": cred.port or 22,
-            "username": cred.username or "root",
-            "known_hosts_bytes": _known_hosts_bytes(
-                host, SSHHostKey.objects.filter(tenant_id=tenant.id, device_id=device.id)
-            ),
-        }
+        ctx["port"] = cred.port or 22
+        ctx["username"] = cred.username or "root"
         if cred.kind == DeviceCredential.Kind.SSH_PASSWORD:
             ctx["auth_kind"] = "password"
             ctx["password"] = (secret or {}).get("password", "")

@@ -240,24 +240,61 @@ class SSHHostKeySerializer(serializers.ModelSerializer):
 
 
 class DeviceCredentialSerializer(serializers.ModelSerializer):
-    """A device login that references an externally-stored secret.
+    """A device login. The secret value is **never** serialised back — only
+    whether one is set. Fetching it is the viewset's ``reveal`` action.
 
-    The secret value is **never** serialised — only its provider + path are
-    exposed. Fetching the actual secret is the viewset's ``reveal`` action, gated
-    on the ``reveal`` RBAC verb and audited."""
+    Two sourcing modes (``secret_managed``):
+
+    * **Managed** (default): the operator types the secret once via the
+      write-only ``password`` / ``private_key`` / ``passphrase`` fields, and the
+      viewset stores it in the active secret store under a Danbyte-owned ref.
+    * **External**: ``secret_managed=false`` + ``secret_path`` points at a path
+      the operator manages themselves (e.g. an existing Vault path).
+    """
 
     device_name = serializers.CharField(
         source="device.name", read_only=True, default=None
     )
+    # Write-only secret material — accepted on create/update, never returned.
+    password = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False
+    )
+    private_key = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False
+    )
+    passphrase = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False
+    )
+    secret_set = serializers.SerializerMethodField()
+
+    def get_secret_set(self, obj) -> bool:
+        # A managed credential has its secret once a ref is assigned; an external
+        # one always "has" one by reference. Cheap, never touches the store.
+        return bool(obj.secret_path)
 
     class Meta:
         model = DeviceCredential
         fields = [
             "id", "device", "device_name", "name", "kind", "username", "port",
-            "scheme", "secret_provider", "secret_path", "description",
-            "created_at", "updated_at",
+            "scheme", "secret_managed", "secret_provider", "secret_path",
+            "secret_set", "password", "private_key", "passphrase",
+            "description", "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "secret_set", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        # External credentials must name a path; managed ones auto-assign it.
+        managed = attrs.get(
+            "secret_managed",
+            getattr(self.instance, "secret_managed", True),
+        )
+        if not managed:
+            path = attrs.get("secret_path", getattr(self.instance, "secret_path", ""))
+            if not path:
+                raise serializers.ValidationError(
+                    {"secret_path": "Required for an external-reference credential."}
+                )
+        return attrs
 
 
 class ConnectProtocolSerializer(serializers.ModelSerializer):

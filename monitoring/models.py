@@ -2189,14 +2189,21 @@ class DeviceCredential(TimestampedModel):
         help_text="For https_login: http or https. Ignored for SSH kinds.",
     )
     secret_provider = models.CharField(
-        max_length=8, choices=Provider.choices,
-        help_text="Which secret store holds the value referenced by secret_path.",
+        max_length=8, choices=Provider.choices, blank=True, default="",
+        help_text="Which secret store holds the value. For a managed credential "
+        "this is stamped with the active provider at write-time.",
+    )
+    secret_managed = models.BooleanField(
+        default=True,
+        help_text="True: Danbyte stores the secret in the active store under its "
+        "own namespace (the operator types the value once). False: the operator "
+        "references an existing external path they manage themselves.",
     )
     secret_path = models.CharField(
-        max_length=200,
-        help_text="Reference to the secret in the chosen store — an external "
-        "path/ref Danbyte reads at use-time. The secret value is never stored "
-        "here.",
+        max_length=200, blank=True, default="",
+        help_text="For a managed credential, the auto-assigned ref Danbyte wrote "
+        "to. For an external credential, the operator-managed path to read. The "
+        "secret value itself is never stored on this row.",
     )
     description = models.TextField(blank=True, default="")
 
@@ -2223,12 +2230,33 @@ class DeviceCredential(TimestampedModel):
         from .secret_store import SecretStoreError, require_secret_store
 
         store = require_secret_store()
-        value = store.get_at_path(self.tenant_id, self.secret_path)
+        # Managed: our own {tenant}/{ref} namespace (get). External: the
+        # operator's own path (get_at_path). Both are tenant-scoped.
+        if self.secret_managed:
+            value = store.get(self.tenant_id, self.secret_path)
+        else:
+            value = store.get_at_path(self.tenant_id, self.secret_path)
         if value is None:
             raise SecretStoreError(
                 f"No secret found at '{self.secret_path}' in the configured store."
             )
         return value
+
+    def store_managed_secret(self, value: dict) -> None:
+        """Write a managed credential's secret into the active store under an
+        auto-assigned ref (``device-credentials/<id>``), stamping the provider.
+        Only for managed credentials; external ones reference a path instead."""
+        from core.models import DeploymentSettings
+
+        from .secret_store import require_secret_store
+
+        store = require_secret_store()
+        if not self.secret_path:
+            self.secret_path = f"device-credentials/{self.id}"
+        self.secret_provider = (
+            DeploymentSettings.load().secrets_provider or ""
+        ).strip()
+        store.put(self.tenant_id, self.secret_path, value or {})
 
 
 class ConnectProtocol(TimestampedModel):
