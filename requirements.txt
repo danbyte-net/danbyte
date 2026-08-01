@@ -25,6 +25,8 @@ openpyxl>=3.1
 zensical>=0.0.45
 # Monitoring / check engine
 cryptography>=43.0        # secrets-at-rest (Fernet) for check credentials
+lxml>=5                   # XML parsing for SAML (manylinux wheel; no system libxml2 needed)
+signxml>=4                # pure-Python XML-DSig verify for SAML (rides lxml + cryptography, no xmlsec1)
 acme>=4,<5                # ACME client (RFC 8555) for certificate issuance
 josepy>=2                 # JOSE/JWK for the acme client (acme 4.x needs josepy 2)
 dnspython>=2             # RFC2136/TSIG dynamic DNS for ACME DNS-01 auto-publish

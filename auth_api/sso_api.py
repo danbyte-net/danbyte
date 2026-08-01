@@ -11,8 +11,9 @@ from __future__ import annotations
 from urllib.parse import quote
 
 from django.contrib.auth import login as auth_login
-from django.http import HttpResponseRedirect
-from django.views.decorators.http import require_GET
+from django.http import HttpResponse, HttpResponseRedirect
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET, require_POST
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -21,6 +22,14 @@ from .models import IdentityProvider
 from .sso import SsoError, build_authorize_url, exchange_code, resolve_user
 
 MODEL_BACKEND = "django.contrib.auth.backends.ModelBackend"
+
+
+def _base_url(request) -> str:
+    return request.build_absolute_uri("/").rstrip("/")
+
+
+def _acs_uri(request, slug: str) -> str:
+    return request.build_absolute_uri(f"/api/auth/sso/{slug}/acs/")
 
 
 def _login_redirect(error: str = "") -> HttpResponseRedirect:
@@ -50,14 +59,25 @@ def sso_providers(request):
 
 @require_GET
 def sso_login(request, slug):
-    """Kick off OIDC: stash state+nonce, redirect to the IdP."""
+    """Kick off SSO — OIDC authorize redirect, or SAML AuthnRequest redirect."""
     import secrets as pysecrets
 
-    provider = IdentityProvider.objects.filter(
-        slug=slug, enabled=True, protocol=IdentityProvider.Protocol.OIDC
-    ).first()
+    provider = IdentityProvider.objects.filter(slug=slug, enabled=True).first()
     if provider is None:
         return _login_redirect("Unknown or disabled SSO provider.")
+
+    if provider.protocol == IdentityProvider.Protocol.SAML:
+        from .saml import SamlError, build_authn_request_redirect
+
+        try:
+            url, request_id = build_authn_request_redirect(
+                provider, _acs_uri(request, slug), _base_url(request), relay_state=slug
+            )
+        except SamlError as exc:
+            return _login_redirect(str(exc))
+        request.session["saml_request_id"] = request_id
+        request.session["sso_slug"] = slug
+        return HttpResponseRedirect(url)
 
     state = pysecrets.token_urlsafe(24)
     nonce = pysecrets.token_urlsafe(24)
@@ -69,6 +89,56 @@ def sso_login(request, slug):
     except SsoError as exc:
         return _login_redirect(str(exc))
     return HttpResponseRedirect(url)
+
+
+@require_GET
+def sso_metadata(request, slug):
+    """SP metadata XML for a SAML provider — hand this to the IdP."""
+    provider = IdentityProvider.objects.filter(
+        slug=slug, protocol=IdentityProvider.Protocol.SAML
+    ).first()
+    if provider is None:
+        return HttpResponse("Not found", status=404)
+    from .saml import sp_metadata_xml
+
+    xml = sp_metadata_xml(provider, _base_url(request), _acs_uri(request, slug))
+    return HttpResponse(xml, content_type="application/samlmetadata+xml")
+
+
+@csrf_exempt
+@require_POST
+def sso_acs(request, slug):
+    """SAML assertion consumer — the IdP POSTs the signed Response here. CSRF-
+    exempt (cross-site POST); security is the signed, audience/recipient/
+    InResponseTo-checked assertion, not a CSRF token."""
+    provider = IdentityProvider.objects.filter(
+        slug=slug, enabled=True, protocol=IdentityProvider.Protocol.SAML
+    ).first()
+    if provider is None:
+        return _login_redirect("Unknown or disabled SSO provider.")
+
+    saml_response = request.POST.get("SAMLResponse")
+    if not saml_response:
+        return _login_redirect("Missing SAML response.")
+    request_id = request.session.get("saml_request_id")
+
+    from .saml import SamlError, parse_and_validate
+
+    try:
+        claims = parse_and_validate(
+            provider, saml_response, _acs_uri(request, slug),
+            _base_url(request), request_id,
+        )
+        user = resolve_user(provider, claims)
+    except (SamlError, SsoError) as exc:
+        return _login_redirect(str(exc))
+
+    request.session.pop("saml_request_id", None)
+    request.session.pop("sso_slug", None)
+    if not user.is_active:
+        return _login_redirect("This account is disabled.")
+    auth_login(request, user, backend=MODEL_BACKEND)
+    return HttpResponseRedirect("/")
 
 
 @require_GET

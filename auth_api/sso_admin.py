@@ -27,15 +27,31 @@ class IdentityProviderSerializer(serializers.ModelSerializer):
     )
     client_secret_set = serializers.SerializerMethodField()
     callback_url = serializers.SerializerMethodField()
+    acs_url = serializers.SerializerMethodField()
+    metadata_url = serializers.SerializerMethodField()
+    sp_entity_id = serializers.SerializerMethodField()
 
     def get_client_secret_set(self, obj) -> bool:
         return bool((obj.secrets or {}).get("client_secret"))
 
-    def get_callback_url(self, obj) -> str:
-        # What the operator registers at the IdP as the redirect/ACS URL.
-        path = f"/api/auth/sso/{obj.slug}/callback/"
+    def _abs(self, path) -> str:
         req = self.context.get("request")
         return req.build_absolute_uri(path) if req else path
+
+    def get_callback_url(self, obj) -> str:
+        # OIDC redirect URI to register at the IdP.
+        return self._abs(f"/api/auth/sso/{obj.slug}/callback/")
+
+    def get_acs_url(self, obj) -> str:
+        # SAML Assertion Consumer Service (Reply URL) to register at the IdP.
+        return self._abs(f"/api/auth/sso/{obj.slug}/acs/")
+
+    def get_metadata_url(self, obj) -> str:
+        return self._abs(f"/api/auth/sso/{obj.slug}/metadata/")
+
+    def get_sp_entity_id(self, obj) -> str:
+        # SAML SP entity id / Identifier — matches auth_api.saml.sp_entity_id.
+        return self._abs(f"/api/auth/sso/{obj.slug}/metadata/")
 
     class Meta:
         model = IdentityProvider
@@ -47,10 +63,12 @@ class IdentityProviderSerializer(serializers.ModelSerializer):
             "claim_last_name", "claim_groups",
             "jit_provisioning", "default_tenant", "default_group",
             "client_secret", "client_secret_set", "callback_url",
+            "acs_url", "metadata_url", "sp_entity_id",
             "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id", "client_secret_set", "callback_url", "created_at", "updated_at",
+            "id", "client_secret_set", "callback_url", "acs_url",
+            "metadata_url", "sp_entity_id", "created_at", "updated_at",
         ]
 
     def _store_secret(self, obj, secret):
