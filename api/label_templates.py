@@ -202,26 +202,30 @@ def _register_filters(env):
 
 
 def _qr_span(value: str, size_mm: float) -> str:
-    """A QR as an inline SVG wrapped in an mm-sized span — the print counterpart
+    """A QR as an inline SVG sized to exactly ``size_mm`` — the print counterpart
     of the frontend's qrcode.react composite, so a PDF label carries a crisp
-    vector QR. Generated with segno (pure-Python, no native deps)."""
+    vector QR at the right size. Generated with segno (pure-Python, no native
+    deps). Sizing via ``unit="mm"`` + a computed ``scale`` bakes both a mm
+    width/height AND a viewBox into the SVG, so it renders at true size — a
+    CSS ``width:100%`` alone won't scale a viewBox-less QR."""
     import io
 
     import segno
 
     qr = segno.make(value or " ", error="m")
+    border = 2  # quiet zone, matching the on-screen QR
+    modules = qr.symbol_size(scale=1, border=border)[0]  # width incl. border
     buf = io.BytesIO()
-    # No XML decl (we're embedding), quiet-zone border matching the on-screen QR.
-    qr.save(buf, kind="svg", border=2, xmldecl=False, svgns=True)
-    svg = buf.getvalue().decode("utf-8")
-    # Let the SVG fill the mm-sized wrapper regardless of its intrinsic size.
-    svg = svg.replace(
-        "<svg ", '<svg preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%" ', 1
+    qr.save(
+        buf,
+        kind="svg",
+        scale=size_mm / modules,
+        unit="mm",
+        border=border,
+        xmldecl=False,
+        svgns=True,
     )
-    return (
-        f'<span style="display:inline-block;width:{size_mm}mm;'
-        f'height:{size_mm}mm">{svg}</span>'
-    )
+    return buf.getvalue().decode("utf-8")
 
 
 # Inject the QR into the first `class="qr"` element — same contract as the
