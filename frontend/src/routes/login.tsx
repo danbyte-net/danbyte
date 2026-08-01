@@ -1,9 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
-import { KeyRound, Mail, ShieldCheck } from "lucide-react"
+import { KeyRound, LogIn, Mail, ShieldCheck } from "lucide-react"
 
-import { ApiError, auth, type MfaMethod } from "@/lib/api"
+import { api, ApiError, auth } from "@/lib/api"
+import type { MfaMethod, SsoPublicProvider } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Input } from "@/components/ui/input"
@@ -11,8 +12,13 @@ import { Label } from "@/components/ui/label"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/login")({
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { redirect?: string; sso_error?: string } => ({
     redirect: typeof search.redirect === "string" ? search.redirect : undefined,
+    // The SSO handoff redirects back to /login?sso_error=<message> on failure.
+    sso_error:
+      typeof search.sso_error === "string" ? search.sso_error : undefined,
   }),
   component: LoginPage,
 })
@@ -50,10 +56,21 @@ function errText(err: unknown): string {
 function LoginPage() {
   const nav = useNavigate()
   const qc = useQueryClient()
-  const { redirect } = Route.useSearch()
+  const { redirect, sso_error } = Route.useSearch()
   // `/api/me/` is what plants the CSRF cookie (it's @ensure_csrf_cookie) — wait
   // for it before allowing a submit so the login POST always carries a token.
   const { me, isLoading: meLoading } = useMe()
+
+  // Enabled SSO providers for the "Sign in with…" buttons. Public endpoint, but
+  // skip it for an already-authenticated visitor — they're bounced immediately
+  // by the redirect effect below, so the fetch would be wasted.
+  const providersQ = useQuery({
+    queryKey: ["sso-providers"],
+    queryFn: () =>
+      api<{ providers: SsoPublicProvider[] }>("/api/auth/sso/providers/"),
+    enabled: !me.is_authenticated,
+  })
+  const providers = providersQ.data?.providers ?? []
 
   const [step, setStep] = useState<Step>("credentials")
   const [username, setUsername] = useState("")
@@ -146,6 +163,14 @@ function LoginPage() {
         <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
           {step === "credentials" ? (
             <form onSubmit={submitCredentials} className="grid gap-4">
+              {sso_error && (
+                <p
+                  role="alert"
+                  className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[13px] text-destructive"
+                >
+                  {sso_error}
+                </p>
+              )}
               <div className="grid gap-1.5">
                 <Label htmlFor="username" className="text-xs">
                   Username
@@ -180,6 +205,34 @@ function LoginPage() {
                 {busy && <Spinner className="size-4" />}
                 Sign in
               </Button>
+
+              {providers.length > 0 && (
+                <>
+                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                    <span className="h-px flex-1 bg-border" />
+                    or
+                    <span className="h-px flex-1 bg-border" />
+                  </div>
+                  <div className="grid gap-2">
+                    {providers.map((p) => (
+                      <Button
+                        key={p.slug}
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => {
+                          // Leaves the SPA — the backend 302-redirects to the
+                          // IdP, so this must be a real navigation, not a Link.
+                          window.location.href = `/api/auth/sso/${p.slug}/login/`
+                        }}
+                      >
+                        <LogIn className="size-4" />
+                        Sign in with {p.name}
+                      </Button>
+                    ))}
+                  </div>
+                </>
+              )}
             </form>
           ) : (
             <form onSubmit={submitCode} className="grid gap-4">

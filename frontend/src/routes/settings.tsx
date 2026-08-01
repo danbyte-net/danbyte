@@ -66,6 +66,7 @@ const SECTIONS: NavSection[] = [
       { to: "/settings/table-defaults", label: "Table defaults" },
       { to: "/settings/email", label: "Email & Delivery" },
       { to: "/settings/ldap", label: "Directory (LDAP)" },
+      { to: "/settings/sso", label: "Identity providers (SSO)" },
       { to: "/settings/updates", label: "Updates" },
       { to: "/settings/plugins", label: "Plugins & services" },
     ],

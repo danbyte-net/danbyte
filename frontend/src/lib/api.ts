@@ -4933,6 +4933,65 @@ export interface LdapGroupMapping {
   updated_at: string
 }
 
+// ─── SSO / Identity providers (admin) ───────────────────────────────────────
+export type SsoProtocol = "oidc" | "saml"
+
+/** A provider offered on the login page — GET /api/auth/sso/providers/ (public,
+ * no auth). Only the fields the "Sign in with…" buttons need. */
+export interface SsoPublicProvider {
+  name: string
+  slug: string
+  protocol: SsoProtocol
+}
+
+/** An identity provider row (deployment admin): /api/identity-providers/.
+ * `client_secret` is write-only and never returned; `client_secret_set`
+ * reports whether one is stored, and `callback_url` is the redirect URI to
+ * register at the IdP. */
+export interface IdentityProvider {
+  id: string
+  name: string
+  slug: string
+  protocol: SsoProtocol
+  enabled: boolean
+  tenant: string | null
+  default_tenant: string | null
+  oidc_issuer: string
+  oidc_client_id: string
+  oidc_scopes: string
+  saml_idp_entity_id: string
+  saml_idp_sso_url: string
+  saml_idp_x509: string
+  claim_email: string
+  claim_username: string
+  claim_first_name: string
+  claim_last_name: string
+  claim_groups: string
+  jit_provisioning: boolean
+  client_secret_set: boolean
+  callback_url: string
+}
+
+export type IdentityProviderWritePayload = Omit<
+  IdentityProvider,
+  "id" | "client_secret_set" | "callback_url"
+> & {
+  /** Write-only. Send only when setting or changing it; omit or leave blank on
+   * edit to keep the stored secret. */
+  client_secret?: string
+}
+
+/** An IdP-asserted group → Danbyte RBAC group mapping:
+ * /api/sso-group-mappings/?provider=<id>. `idp_group` is the value the IdP
+ * asserts (for Entra, a group object-id); `group` is an auth.Group id. */
+export interface SsoGroupMapping {
+  id: string
+  provider: string
+  idp_group: string
+  group: number
+  group_name: string
+}
+
 export type ChannelKind =
   | "webhook"
   | "email"

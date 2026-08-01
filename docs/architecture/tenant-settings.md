@@ -82,7 +82,7 @@ Tenant admins toggle their tenant (`PATCH /api/plugins/<slug>/config/` scope
 | Tier | Gate | Surfaces |
 |---|---|---|
 | **Tenant admin** | `can_manage_admin(user, tenant)` — a `users.manage`/user-change grant *narrowed to the tenant* suffices | Settings → **This tenant**: General (UI + sharing overrides), Email, Directory, Monitoring, SNMP profiles. API: `/api/tenant-settings/*` |
-| **Deployment admin** | `can_manage_deployment(user)` — superuser, global `users.manage`, or a user-change grant with **no** tenant narrowing | Settings → **Deployment**: General, Updates, Email & Delivery, Directory. API: `/api/deployment/*`, `/api/system/*` |
+| **Deployment admin** | `can_manage_deployment(user)` — superuser, global `users.manage`, or a user-change grant with **no** tenant narrowing | Settings → **Deployment**: General, Updates, Email & Delivery, Directory, Identity providers (SSO). API: `/api/deployment/*`, `/api/system/*`, `/api/identity-providers/` |
 
 `me_json` exposes both flags (`can_manage_users`, `can_manage_deployment`);
 the SPA nav (`settings.tsx`) renders the two sections accordingly.

@@ -227,6 +227,22 @@ groups every time they sign in, so the directory decides *who's in what* and
 Danbyte groups decide *what that means*. Only directory groups you've explicitly
 mapped grant anything.
 
+## Single sign-on (SSO)
+
+Optional and off by default. An administrator adds an identity provider under
+**Settings → Identity providers (SSO)** — an OpenID Connect (OIDC) or SAML 2.0
+provider such as Entra ID, Okta, or Google Workspace. Each enabled provider
+appears as a **Sign in with…** button on the login page. When someone signs in
+through it, Danbyte reads their email, username, and name from the provider's
+claims and — if just-in-time provisioning is on — creates their account on first
+login. With just-in-time provisioning off, only accounts you've already created
+may sign in.
+
+As with the directory, group access is driven by mappings: match a group the
+provider asserts (for Entra ID, a group object ID) to a Danbyte group, and only
+mapped groups grant anything. When you add a provider, register the callback URL
+shown on its edit screen as the redirect URI at your identity provider.
+
 ## Related
 
 - [Change log](change-log.md) — who changed what, when.

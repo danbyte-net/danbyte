@@ -191,6 +191,7 @@ import { Route as SettingsTenantLdapRouteImport } from './routes/settings.tenant
 import { Route as SettingsTenantEmailRouteImport } from './routes/settings.tenant-email'
 import { Route as SettingsTenantRouteImport } from './routes/settings.tenant'
 import { Route as SettingsTableDefaultsRouteImport } from './routes/settings.table-defaults'
+import { Route as SettingsSsoRouteImport } from './routes/settings.sso'
 import { Route as SettingsSnmpSensorsRouteImport } from './routes/settings.snmp-sensors'
 import { Route as SettingsSnmpRouteImport } from './routes/settings.snmp'
 import { Route as SettingsSitesRouteImport } from './routes/settings.sites'
@@ -1294,6 +1295,11 @@ const SettingsTenantRoute = SettingsTenantRouteImport.update({
 const SettingsTableDefaultsRoute = SettingsTableDefaultsRouteImport.update({
   id: '/table-defaults',
   path: '/table-defaults',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsSsoRoute = SettingsSsoRouteImport.update({
+  id: '/sso',
+  path: '/sso',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsSnmpSensorsRoute = SettingsSnmpSensorsRouteImport.update({
@@ -2459,6 +2465,7 @@ export interface FileRoutesByFullPath {
   '/settings/sites': typeof SettingsSitesRoute
   '/settings/snmp': typeof SettingsSnmpRoute
   '/settings/snmp-sensors': typeof SettingsSnmpSensorsRoute
+  '/settings/sso': typeof SettingsSsoRoute
   '/settings/table-defaults': typeof SettingsTableDefaultsRoute
   '/settings/tenant': typeof SettingsTenantRoute
   '/settings/tenant-email': typeof SettingsTenantEmailRoute
@@ -2780,6 +2787,7 @@ export interface FileRoutesByTo {
   '/settings/sites': typeof SettingsSitesRoute
   '/settings/snmp': typeof SettingsSnmpRoute
   '/settings/snmp-sensors': typeof SettingsSnmpSensorsRoute
+  '/settings/sso': typeof SettingsSsoRoute
   '/settings/table-defaults': typeof SettingsTableDefaultsRoute
   '/settings/tenant': typeof SettingsTenantRoute
   '/settings/tenant-email': typeof SettingsTenantEmailRoute
@@ -3158,6 +3166,7 @@ export interface FileRoutesById {
   '/settings/sites': typeof SettingsSitesRoute
   '/settings/snmp': typeof SettingsSnmpRoute
   '/settings/snmp-sensors': typeof SettingsSnmpSensorsRoute
+  '/settings/sso': typeof SettingsSsoRoute
   '/settings/table-defaults': typeof SettingsTableDefaultsRoute
   '/settings/tenant': typeof SettingsTenantRoute
   '/settings/tenant-email': typeof SettingsTenantEmailRoute
@@ -3537,6 +3546,7 @@ export interface FileRouteTypes {
     | '/settings/sites'
     | '/settings/snmp'
     | '/settings/snmp-sensors'
+    | '/settings/sso'
     | '/settings/table-defaults'
     | '/settings/tenant'
     | '/settings/tenant-email'
@@ -3858,6 +3868,7 @@ export interface FileRouteTypes {
     | '/settings/sites'
     | '/settings/snmp'
     | '/settings/snmp-sensors'
+    | '/settings/sso'
     | '/settings/table-defaults'
     | '/settings/tenant'
     | '/settings/tenant-email'
@@ -4235,6 +4246,7 @@ export interface FileRouteTypes {
     | '/settings/sites'
     | '/settings/snmp'
     | '/settings/snmp-sensors'
+    | '/settings/sso'
     | '/settings/table-defaults'
     | '/settings/tenant'
     | '/settings/tenant-email'
@@ -5833,6 +5845,13 @@ declare module '@tanstack/react-router' {
       path: '/table-defaults'
       fullPath: '/settings/table-defaults'
       preLoaderRoute: typeof SettingsTableDefaultsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/sso': {
+      id: '/settings/sso'
+      path: '/sso'
+      fullPath: '/settings/sso'
+      preLoaderRoute: typeof SettingsSsoRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/snmp-sensors': {
@@ -7886,6 +7905,7 @@ interface SettingsRouteChildren {
   SettingsSitesRoute: typeof SettingsSitesRoute
   SettingsSnmpRoute: typeof SettingsSnmpRoute
   SettingsSnmpSensorsRoute: typeof SettingsSnmpSensorsRoute
+  SettingsSsoRoute: typeof SettingsSsoRoute
   SettingsTableDefaultsRoute: typeof SettingsTableDefaultsRoute
   SettingsTenantRoute: typeof SettingsTenantRoute
   SettingsTenantEmailRoute: typeof SettingsTenantEmailRoute
@@ -7911,6 +7931,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsSitesRoute: SettingsSitesRoute,
   SettingsSnmpRoute: SettingsSnmpRoute,
   SettingsSnmpSensorsRoute: SettingsSnmpSensorsRoute,
+  SettingsSsoRoute: SettingsSsoRoute,
   SettingsTableDefaultsRoute: SettingsTableDefaultsRoute,
   SettingsTenantRoute: SettingsTenantRoute,
   SettingsTenantEmailRoute: SettingsTenantEmailRoute,
