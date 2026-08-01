@@ -4971,11 +4971,20 @@ export interface IdentityProvider {
   jit_provisioning: boolean
   client_secret_set: boolean
   callback_url: string
+  /** SAML: the URLs/identifier to register at the IdP (read-only). */
+  acs_url: string
+  metadata_url: string
+  sp_entity_id: string
 }
 
 export type IdentityProviderWritePayload = Omit<
   IdentityProvider,
-  "id" | "client_secret_set" | "callback_url"
+  | "id"
+  | "client_secret_set"
+  | "callback_url"
+  | "acs_url"
+  | "metadata_url"
+  | "sp_entity_id"
 > & {
   /** Write-only. Send only when setting or changing it; omit or leave blank on
    * edit to keep the stored secret. */

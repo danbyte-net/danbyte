@@ -65,6 +65,31 @@ function protocolLabel(p: SsoProtocol): string {
   return p === "saml" ? "SAML" : "OIDC"
 }
 
+/** A read-only URL row with a copy button — the values to register at the IdP. */
+function ReadonlyUrl({
+  label,
+  hint,
+  value,
+}: {
+  label: string
+  hint: string
+  value: string
+}) {
+  return (
+    <Field label={label} hint={hint}>
+      <div className="flex items-center gap-2">
+        <Input
+          readOnly
+          value={value}
+          className="font-mono text-xs"
+          onFocus={(e) => e.currentTarget.select()}
+        />
+        <CopyButton value={value} />
+      </div>
+    </Field>
+  )
+}
+
 function SsoSettingsPage() {
   // Deployment-wide auth config — gate here (the backend also enforces it; the
   // hidden nav link is only a UI convenience).
@@ -506,22 +531,32 @@ function ProviderDialog({
             </div>
           )}
 
-          {/* Callback / redirect URI — read-only, copy to register at the IdP. */}
-          {isEdit && provider.callback_url && (
-            <Field
+          {/* Read-only URLs to register at the IdP — differ by protocol. */}
+          {isEdit && protocol === "oidc" && provider.callback_url && (
+            <ReadonlyUrl
               label="Callback URL"
               hint="Register this as the redirect URI at your IdP"
-            >
-              <div className="flex items-center gap-2">
-                <Input
-                  readOnly
-                  value={provider.callback_url}
-                  className="font-mono text-xs"
-                  onFocus={(e) => e.currentTarget.select()}
-                />
-                <CopyButton value={provider.callback_url} />
-              </div>
-            </Field>
+              value={provider.callback_url}
+            />
+          )}
+          {isEdit && protocol === "saml" && (
+            <div className="grid gap-3">
+              <ReadonlyUrl
+                label="ACS / Reply URL"
+                hint="Register as the Assertion Consumer Service (Reply URL) at your IdP"
+                value={provider.acs_url}
+              />
+              <ReadonlyUrl
+                label="SP Identifier (Entity ID)"
+                hint="Register as the SP Identifier / Entity ID at your IdP"
+                value={provider.sp_entity_id}
+              />
+              <ReadonlyUrl
+                label="SP metadata URL"
+                hint="Some IdPs can import SP config from this URL"
+                value={provider.metadata_url}
+              />
+            </div>
           )}
 
           <div className="grid gap-4 rounded-lg border border-border bg-card p-3">
