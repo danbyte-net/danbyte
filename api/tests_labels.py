@@ -39,6 +39,28 @@ class LabelRenderTests(TestCase):
         self.assertIn("&lt;b&gt;rtr1&lt;/b&gt;", out["html"])
         self.assertNotIn("<b>rtr1</b>", out["html"])
 
+    def test_author_script_is_stripped(self):
+        # Autoescape only tames `{{ values }}`; markup the author writes into the
+        # template body is literal and NOT escaped. Since the label prints inline
+        # in the app origin, nh3 must strip executable markup from the output.
+        tmpl = LabelTemplate(
+            object_type="device",
+            template_html=(
+                "<span>{{ device.name }}</span>"
+                "<script>alert(1)</script>"
+                '<img src=x onerror="steal()">'
+                '<a href="javascript:evil()">x</a>'
+            ),
+        )
+        out = render_label(tmpl, self.device)
+        html = out["html"]
+        self.assertNotIn("<script", html)
+        self.assertNotIn("onerror", html)
+        self.assertNotIn("javascript:", html)
+        # Structural/formatting markup and the escaped field value survive.
+        self.assertIn("<span>", html)
+        self.assertIn("&lt;b&gt;rtr1&lt;/b&gt;", html)
+
     def test_url_and_default_qr(self):
         tmpl = LabelTemplate(object_type="device", template_html="{{ url }}")
         out = render_label(tmpl, self.device, base_url="https://x.example")

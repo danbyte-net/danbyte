@@ -4,8 +4,10 @@ Renders one :class:`~api.models.LabelTemplate` against a single object into a
 sized HTML label. Uses Jinja's ``SandboxedEnvironment`` (like
 :mod:`api.export_templates`) so a template can't reach code-exec/mutating
 attributes, and — unlike export configs — with **autoescape on** so a field value
-containing markup is escaped, not injected. The rendered HTML is still shown
-inside a scriptless ``<iframe sandbox>`` on the frontend as defence in depth.
+containing markup is escaped, not injected. The rendered HTML is then run through
+``nh3`` (``sanitize_label_html``) to strip any ``<script>``/event handlers/unsafe
+URLs the *author's own* markup carries, so the frontend can print it inline (the
+label page IS the printed sheet) without an XSS vector.
 """
 from __future__ import annotations
 
@@ -148,6 +150,36 @@ def _context(obj, url: str) -> dict:
     return ctx
 
 
+# Rendered label HTML is author-controlled markup — Jinja autoescaping only
+# escapes the {{ values }}, not the literal template body. Since a label prints
+# inline in the app origin, sanitize it: keep structural/formatting tags + inline
+# style, strip <script>, event handlers, and unsafe URLs. The QR is composited
+# separately from qrcode.react (trusted), so it doesn't pass through here.
+_LABEL_TAGS = {
+    "div", "span", "p", "br", "hr", "b", "strong", "i", "em", "u", "s",
+    "small", "sub", "sup", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol",
+    "li", "table", "thead", "tbody", "tfoot", "tr", "td", "th", "img",
+    "section", "header", "footer", "figure", "figcaption", "font", "center",
+}
+_LABEL_ATTRS = {
+    "*": {"style", "class", "id", "align", "dir", "title", "width", "height"},
+    "img": {"src", "alt", "width", "height"},
+    "td": {"colspan", "rowspan"},
+    "th": {"colspan", "rowspan"},
+}
+
+
+def sanitize_label_html(html: str) -> str:
+    import nh3
+
+    return nh3.clean(
+        html or "",
+        tags=_LABEL_TAGS,
+        attributes=_LABEL_ATTRS,
+        url_schemes={"http", "https", "mailto", "data"},
+    )
+
+
 def _fmt_date(value, fmt="%Y-%m-%d"):
     """`| date` — a datetime/date rendered short (default YYYY-MM-DD) instead of
     the raw `2026-07-31 18:34:55.339089+00:00`. Non-dates pass through as text."""
@@ -185,6 +217,8 @@ def render_label(template, obj, *, base_url: str = "") -> dict:
         trim_blocks=True, lstrip_blocks=True, autoescape=True
     ))
     html = html_env.from_string(template.template_html or "").render(**ctx)
+    # Strip anything executable — the label prints inline in the app origin.
+    html = sanitize_label_html(html)
 
     if template.qr_content:
         # The QR payload is a scannable string, NOT HTML — render it with

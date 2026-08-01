@@ -261,7 +261,7 @@ export function LabelTemplateFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="xl">
+      <DialogContent size="3xl">
         <DialogHeader>
           <DialogTitle>
             {template ? "Edit label template" : "New label template"}
@@ -567,7 +567,10 @@ export function LabelTemplateFormDialog({
                     // label (e.g. 116×71mm) can't blow out of the modal.
                     const w = Math.max(d.width_mm, 1) * MM_PX
                     const h = Math.max(d.height_mm, 1) * MM_PX
-                    const scale = Math.min(1, 300 / w, 380 / h)
+                    // Fill the (wider) preview column: a bigger label renders
+                    // bigger, only scaling down past the panel's budget. Never
+                    // upscale past 1× so a tiny label doesn't balloon.
+                    const scale = Math.min(1, 460 / w, 440 / h)
                     return (
                       <div
                         style={{
