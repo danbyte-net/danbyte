@@ -260,6 +260,34 @@ class LabelApiTests(TestCase):
         )
         self.assertEqual(r.status_code, 404, r.content)
 
+    def test_resolver_no_access_does_not_switch_tenant(self):
+        # A user with no grants in another tenant must NOT be switched into it by
+        # scanning that tenant's label — the resolver 404s and leaves the active
+        # tenant untouched.
+        other_org = Organization.objects.create(name="Other", slug="other")
+        other = Tenant.objects.create(org=other_org, name="Other", slug="other")
+        mfr = Manufacturer.objects.create(tenant=other, name="M", slug="m2")
+        dt = DeviceType.objects.create(tenant=other, manufacturer=mfr, model="MX2")
+        role = DeviceRole.objects.create(tenant=other, name="R", slug="r2")
+        osite = Site.objects.create(tenant=other, name="S2")
+        foreign = Device.objects.create(
+            tenant=other, name="secret", device_type=dt, role=role, site=osite,
+        )
+
+        member = User.objects.create_user("member", "m@x.com", "x")  # no grants
+        c = self.client_class()
+        c.force_login(member)
+        s = c.session
+        s["current_tenant_id"] = str(self.tenant.id)  # active = own tenant
+        s.save()
+
+        r = c.get(
+            f"/api/resolve/?tenant={other.slug}&type=device&numid={foreign.numid}"
+        )
+        self.assertEqual(r.status_code, 404, r.content)
+        # Session was NOT repointed to the foreign tenant.
+        self.assertEqual(c.session.get("current_tenant_id"), str(self.tenant.id))
+
     def device_template(self):
         from api.models import LabelTemplate
 
