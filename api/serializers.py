@@ -22,6 +22,7 @@ from .models import (
     Contact, ContactAssignment, ContactGroup, ContactRole,
     Device, DeviceRole, DeviceType, FHRPGroup, FHRPGroupAssignment,
     ImageAttachment,
+    Document, DocumentCategory,
     FiberSettings,
     FloorPlan, FloorPlanRaisedFloorArea, FloorPlanTile, FloorPlanTray,
     FloorPlanWall, FloorTileType, FrontPort,
@@ -1687,6 +1688,133 @@ class ImageAttachmentSerializer(serializers.ModelSerializer):
         fields = ["id", "image", "name", "sort_order",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "image", "created_at", "updated_at"]
+
+
+# Document uploads: cap size and restrict to a safe extension allowlist. Files
+# are served privately (as an attachment, never inline), so this is a
+# defence-in-depth gate against obviously-hostile uploads rather than the only
+# control. SVG is deliberately excluded (scriptable markup).
+DOCUMENT_MAX_BYTES = 50 * 1024 * 1024  # 50 MB
+DOCUMENT_ALLOWED_EXTENSIONS = frozenset({
+    "pdf", "txt", "csv", "md", "rst", "log", "json", "yaml", "yml",
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff",
+    "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    "odt", "ods", "odp",
+    "zip", "tar", "gz", "tgz", "7z",
+})
+
+
+class DocumentCategorySerializer(serializers.ModelSerializer):
+    """An editable per-tenant document category catalog (ships empty)."""
+
+    class Meta:
+        model = DocumentCategory
+        fields = ["id", "name", "slug", "color", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class DocumentSerializer(serializers.ModelSerializer):
+    """A file OR external-link document attached to any object.
+
+    Never exposes the raw ``/media`` path — ``file`` is write-only and the read
+    side returns ``download_url`` (the auth-checked private download route) plus
+    the basename. ``object_type`` is an ``app.model`` label (JournalEntry style);
+    the viewset's create gate checks the caller can view the target object."""
+
+    category_detail = serializers.SerializerMethodField()
+    file_name = serializers.SerializerMethodField()
+    download_url = serializers.SerializerMethodField()
+    supersedes = TenantScopedPrimaryKeyRelatedField(
+        queryset=Document.objects.all(), required=False, allow_null=True,
+    )
+    category = TenantScopedPrimaryKeyRelatedField(
+        queryset=DocumentCategory.objects.all(), required=False, allow_null=True,
+    )
+
+    class Meta:
+        model = Document
+        fields = [
+            "id", "object_type", "object_id", "name", "description",
+            "category", "category_detail", "file", "file_name", "url",
+            "download_url", "supersedes", "sort_order",
+            "link_status", "link_checked_at", "link_status_code",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "id", "file_name", "download_url", "category_detail",
+            "link_status", "link_checked_at", "link_status_code",
+            "created_at", "updated_at",
+        ]
+        extra_kwargs = {"file": {"write_only": True, "required": False}}
+
+    def get_category_detail(self, obj) -> dict | None:
+        c = obj.category
+        if c is None:
+            return None
+        return {"id": str(c.pk), "name": c.name, "color": c.color}
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_file_name(self, obj) -> str | None:
+        import os
+
+        return os.path.basename(obj.file.name) if obj.file else None
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_download_url(self, obj) -> str | None:
+        # Relative, same-origin — the browser resolves it against the page
+        # origin, and the proxy routes /api to Django (see _img_url rationale).
+        # Points at the private download action, NOT the raw /media file.
+        return f"/api/documents/{obj.pk}/download/" if obj.file else None
+
+    def validate_object_type(self, value):
+        # Normalise to the `app.model` label the view-permission gate expects,
+        # accepting either that or the bare RBAC slug (e.g. "device"). Reject
+        # anything not in the RBAC registry so object_type can't target an
+        # arbitrary/unregistered model.
+        from auth_api.object_types import label_for
+
+        label = label_for(value)
+        if label is None:
+            raise serializers.ValidationError("Unknown object type.")
+        return label
+
+    def validate_file(self, value):
+        import os
+
+        if value is None:
+            return value
+        if value.size > DOCUMENT_MAX_BYTES:
+            mb = DOCUMENT_MAX_BYTES // (1024 * 1024)
+            raise serializers.ValidationError(f"File exceeds the {mb} MB limit.")
+        ext = os.path.splitext(value.name)[1].lstrip(".").lower()
+        if ext not in DOCUMENT_ALLOWED_EXTENSIONS:
+            raise serializers.ValidationError(
+                f"File type '.{ext or '?'}' is not allowed."
+            )
+        return value
+
+    def validate(self, attrs):
+        # Exactly one of file / url — mirrors the DB CheckConstraint, but as an
+        # actionable field error instead of an IntegrityError.
+        has_file = attrs.get("file") if "file" in attrs else (
+            bool(self.instance and self.instance.file)
+        )
+        url = attrs.get("url") if "url" in attrs else (
+            self.instance.url if self.instance else ""
+        )
+        has_url = bool((url or "").strip())
+        if bool(has_file) == has_url:
+            raise serializers.ValidationError(
+                "Provide exactly one of a file or an external URL."
+            )
+        if has_url:
+            from core.ssrf import SSRFError, assert_public_url
+
+            try:
+                assert_public_url(url)
+            except SSRFError as exc:
+                raise serializers.ValidationError({"url": str(exc)}) from exc
+        return attrs
 
 
 class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):

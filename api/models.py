@@ -1618,6 +1618,125 @@ class ImageAttachment(TimestampedModel):
         return self.name or f"Image {self.pk}"
 
 
+class DocumentCategory(TimestampedModel):
+    """An editable, per-tenant catalog of document categories (e.g. "Warranty",
+    "Runbook", "Diagram", "Datasheet").
+
+    Ships EMPTY — categories are user-defined (customization-first, zero seed).
+    Attaching a category to a :class:`Document` is optional; deleting a category
+    nulls its documents' ``category`` rather than removing the documents."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="document_categories"
+    )
+    name = models.CharField(max_length=128)
+    slug = models.SlugField(max_length=140, blank=True, default="")
+    color = models.CharField(
+        max_length=7, blank=True, default="",
+        help_text="Optional hex swatch (e.g. #2563eb) for the category badge.",
+    )
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name_plural = "document categories"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_documentcategory_tenant_name"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class Document(TimestampedModel):
+    """A file OR an external link attached to ANY object (device, rack, site,
+    circuit, prefix, …).
+
+    Generic reference by ``object_type`` label (``app.model`` lower, e.g.
+    ``api.device``) + ``object_id`` — the same string-label mechanism as
+    :class:`audit.models.JournalEntry`, so one model + one flow covers every
+    object type without a per-type table. Exactly one of ``file`` / ``url`` is
+    set (DB ``CheckConstraint``).
+
+    Files are served **privately** through ``DocumentViewSet.download`` — an auth
+    + row/site check runs on every fetch — never a raw ``/media`` URL. External
+    links are SSRF-validated on write and swept by the ``document_linkcheck``
+    dead-link job.
+
+    ``object_site_id`` is stamped from the target at write time (JournalEntry
+    pattern) so row/site RBAC works on this generic table without assuming the
+    target has a ``site`` field. ``supersedes`` chains versions: the new upload
+    points at the one it replaces."""
+
+    class LinkStatus(models.TextChoices):
+        UNKNOWN = "unknown", "Unknown"
+        OK = "ok", "OK"
+        BROKEN = "broken", "Broken"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="documents"
+    )
+    object_type = models.CharField(
+        max_length=64, help_text="Model label, e.g. api.device."
+    )
+    object_id = models.UUIDField()
+    # Site of the target object at write time — row/site RBAC on this generic
+    # table without re-fetching the (possibly deleted) object. NULL = no site.
+    object_site_id = models.UUIDField(null=True, blank=True, db_index=True)
+
+    name = models.CharField(max_length=255, help_text="Document title.")
+    description = models.TextField(blank=True, default="")
+    category = models.ForeignKey(
+        DocumentCategory, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="documents",
+    )
+    file = models.FileField(upload_to="documents/", blank=True, null=True)
+    url = models.URLField(max_length=2048, blank=True, default="")
+    supersedes = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="superseded_by",
+    )
+    sort_order = models.PositiveIntegerField(default=0)
+
+    # Dead-link tracking, maintained by the document_linkcheck job (URL rows).
+    link_status = models.CharField(
+        max_length=8, choices=LinkStatus.choices, default=LinkStatus.UNKNOWN
+    )
+    link_checked_at = models.DateTimeField(null=True, blank=True)
+    link_status_code = models.PositiveIntegerField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["sort_order", "-created_at"]
+        indexes = [
+            models.Index(fields=["object_type", "object_id", "sort_order"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                name="document_exactly_one_of_file_or_url",
+                # Exactly one of file / url is set. A cleared FileField can land
+                # as NULL or "" depending on how it was unset, so treat both as
+                # "no file".
+                check=(
+                    (
+                        models.Q(file__isnull=False)
+                        & ~models.Q(file="")
+                        & models.Q(url="")
+                    )
+                    | (
+                        ~models.Q(url="")
+                        & (models.Q(file__isnull=True) | models.Q(file=""))
+                    )
+                ),
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class VirtualChassis(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """A switch stack (Cisco StackWise, Juniper VC, Aruba VSF, …): several
     physical devices acting as one logical chassis. Each member stays an

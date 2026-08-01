@@ -160,6 +160,10 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.ConfigContext", "Config contexts", "Customize"),
     ("api.ExportTemplate", "Export templates", "Customize"),
     ("api.LabelTemplate", "Label templates", "Customize"),
+    ("api.DocumentCategory", "Document categories", "Customize"),
+    # Documents (files/links) attach to any object; their own view/add/change/
+    # delete grant. Row/site access follows the target object via object_site_id.
+    ("api.Document", "Documents", "Records"),
     ("api.FloorTileType", "Floor tile types", "Customize"),
     ("core.Tag", "Tags", "Customize"),
     # ─── Integrations ───────────────────────────────────────────────
@@ -220,6 +224,33 @@ def model_for(slug: str):
 
 def slug_for_model(model) -> str:
     return model._meta.model_name
+
+
+def label_for(value: str) -> str | None:
+    """Normalise an object-type reference — either an ``app.model`` label or a
+    bare RBAC slug (``model_name``) — to the canonical ``app.model`` lower label,
+    or ``None`` when it isn't a registered type.
+
+    Generic-attachment callers (documents, journal notes) accept either form but
+    must store the ``app.model`` label the view-permission gate
+    (``django.apps.get_model``) resolves.
+    """
+    from django.apps import apps as _apps
+
+    v = (value or "").strip()
+    if not v:
+        return None
+    model = None
+    if "." in v:
+        try:
+            model = _apps.get_model(v)
+        except (LookupError, ValueError):
+            model = None
+    else:
+        model = model_for(v)
+    if model is None or not is_registered(model._meta.model_name):
+        return None
+    return model._meta.label_lower
 
 
 def registry_payload() -> list[dict]:

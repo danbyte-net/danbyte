@@ -44,6 +44,8 @@ AUDITED_MODELS = [
     "api.ConfigContext",
     "api.ExportTemplate",
     "api.LabelTemplate",
+    "api.Document",
+    "api.DocumentCategory",
     "integrations.Webhook",
     "integrations.AutomationTarget",
     "api.Interface",

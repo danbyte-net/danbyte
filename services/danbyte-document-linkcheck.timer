@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Danbyte document external links daily
+
+[Timer]
+OnCalendar=*-*-* 05:15:00
+OnBootSec=300
+Persistent=true
+AccuracySec=15m
+
+[Install]
+WantedBy=timers.target

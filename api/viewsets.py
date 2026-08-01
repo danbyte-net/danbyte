@@ -18,7 +18,7 @@ from rest_framework.decorators import (
 )
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from audit.bulk import apply_and_log_bulk_tags, log_bulk_delete, log_bulk_update
@@ -51,6 +51,7 @@ from .models import (
     Tunnel, TunnelGroup, TunnelTermination, IPSecProfile,
     L2VPN, L2VPNTermination, VirtualChassis,
     Region, Location, ConfigContext, ExportTemplate, LabelTemplate,
+    Document, DocumentCategory,
     materialize_device_components, resolve_config_template,
     sync_positional_interface_names,
     diff_device_components, sync_device_components,
@@ -120,6 +121,8 @@ from .serializers import (
     ConfigContextSerializer,
     ExportTemplateSerializer,
     LabelTemplateSerializer,
+    DocumentSerializer,
+    DocumentCategorySerializer,
     PowerPanelSerializer,
     PowerPanelMiniSerializer,
     PowerFeedSerializer,
@@ -6327,6 +6330,148 @@ def resolve_shortlink(request):
             "switched": switched,
         }
     )
+
+
+# ─── Documents ───────────────────────────────────────────────────────────────
+class DocumentCategoryViewSet(TenantScopedViewSet):
+    """The editable per-tenant document-category catalog (ships empty)."""
+
+    queryset = DocumentCategory.objects.all().order_by(NATURAL_NAME)
+    serializer_class = DocumentCategorySerializer
+    pagination_class = StandardPagination
+
+
+class DocumentViewSet(TenantScopedViewSet):
+    """Files / external links attached to any object.
+
+    List is scoped to one object via ``?object_type=&object_id=`` (the detail-
+    page Documents tab) — and only when the caller can *view* that exact target,
+    so a foreign object UUID can't enumerate its documents (IDOR). The tenant-
+    wide list is row/site-scoped through the stored ``object_site_id`` (Document
+    has no ``site`` field). Files are served privately by ``download``; a raw
+    ``/media`` URL is never exposed.
+    """
+
+    queryset = Document.objects.all()
+    serializer_class = DocumentSerializer
+    pagination_class = StandardPagination
+    # JSON for link/metadata writes; multipart for file uploads.
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related("category", "supersedes")
+        p = getattr(self.request, "query_params", None)
+        if p is None:
+            return qs
+        from auth_api.object_types import label_for
+
+        otype, oid = p.get("object_type"), p.get("object_id")
+        if otype and oid:
+            # Detail-page Documents tab: object_type/object_id are attacker-set,
+            # so list only when the caller can view that exact target object.
+            from audit.api import _can_view_object
+
+            label = label_for(otype)
+            if not label or not _can_view_object(self.request, label, oid):
+                return qs.none()
+            return qs.filter(object_type=label, object_id=oid)
+        if otype:
+            qs = qs.filter(object_type=label_for(otype) or otype)
+        # Tenant-wide list: under enhanced site separation a site-scoped user
+        # sees only documents whose stored object_site_id is a site they may
+        # view (the object_site_id mechanism; NULL = shared, stays visible).
+        sites = self._viewable_sites()
+        if sites is not None:
+            qs = qs.filter(
+                Q(object_site_id__in=sites) | Q(object_site_id__isnull=True)
+            )
+        return qs
+
+    def _viewable_sites(self):
+        """Site ids the caller may view (aggregated across site-bound types), or
+        ``None`` when unrestricted — superuser, separation OFF, or any view grant
+        is site-unscoped. Mirrors ``rbac.editable_sites`` for the view action."""
+        user = getattr(self.request, "user", None)
+        if user is None or user.is_superuser:
+            return None
+        tenant = _get_active_tenant(self.request)
+        if tenant is None:
+            return None
+        from core.effective_settings import separation_enabled
+
+        if not separation_enabled(tenant):
+            return None
+        from auth_api import rbac
+        from auth_api.site_paths import SITE_PATHS
+
+        ids: set = set()
+        for slug in SITE_PATHS:
+            if slug in ("site", "sitesettings"):
+                continue
+            scope = rbac.site_scope(user, tenant, slug, "view")
+            if scope is None:
+                return None  # an unscoped view grant → any site
+            ids |= scope
+        return ids
+
+    def perform_create(self, serializer):
+        # A document may only be attached to an object the caller can view
+        # (row/site-scoped) — otherwise object_type+object_id are attacker-set.
+        from audit.api import _can_view_object, _object_site_id
+
+        otype = serializer.validated_data.get("object_type")
+        oid = serializer.validated_data.get("object_id")
+        if not _can_view_object(self.request, otype, str(oid)):
+            raise PermissionDenied(
+                "You can't attach a document to an object you can't view."
+            )
+        serializer.save(
+            tenant=self._tenant_or_403(),
+            object_site_id=_object_site_id(otype, str(oid)),
+        )
+
+    def perform_update(self, serializer):
+        # A document is bound to its target — retargeting object_type/object_id
+        # would move it onto an object the caller can't view, bypassing the
+        # create-time gate. Reject any such change (JournalEntry rule).
+        inst = serializer.instance
+        new_type = serializer.validated_data.get("object_type", inst.object_type)
+        new_id = serializer.validated_data.get("object_id", inst.object_id)
+        if str(new_type) != str(inst.object_type) or str(new_id) != str(inst.object_id):
+            raise PermissionDenied("A document can't be moved to another object.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        # Remove the stored file, then the row (mirrors ImageAttachment).
+        if instance.file:
+            instance.file.delete(save=False)
+        instance.delete()
+
+    @action(detail=True, methods=["get"], url_path="download")
+    def download(self, request, pk=None):
+        """Stream a file document as an attachment. Re-checks view scope (the
+        object row is already tenant + object_site_id scoped by get_queryset);
+        url-only rows have no file → 404."""
+        from django.http import FileResponse, Http404
+
+        from audit.api import _can_view_object
+
+        doc = self.get_object()  # 404s if outside the caller's scoped queryset
+        # Re-check the target object's view scope (same gate as create) so a
+        # file can't be pulled for an object the caller can no longer view.
+        if not _can_view_object(request, doc.object_type, str(doc.object_id)):
+            raise Http404("Not found.")
+        if not doc.file:
+            raise Http404("This document is a link, not a file.")
+        try:
+            fh = doc.file.open("rb")
+        except (FileNotFoundError, ValueError) as exc:
+            raise Http404("The stored file is missing.") from exc
+        import os
+
+        return FileResponse(
+            fh, as_attachment=True, filename=os.path.basename(doc.file.name)
+        )
 
 
 # ─── Floor plans ─────────────────────────────────────────────────────────────
