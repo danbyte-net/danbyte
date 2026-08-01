@@ -356,8 +356,8 @@ function CredentialForm({
           </FormRow>
 
           <FormCheckbox
-            label="Store the secret in Danbyte's secret manager"
-            hint="On: type the secret here and Danbyte keeps it in the configured store (local or Vault). Off: reference an existing external path you manage yourself."
+            label="Let Danbyte store the secret for me (recommended)"
+            hint="Keep this checked: type the password or key below and Danbyte saves it in the configured secret store for you (right now that's Vault) — you don't deal with Vault paths at all. Only uncheck it if you want to point at a secret you already manage in Vault yourself."
             checked={managed}
             onChange={setManaged}
           />
@@ -393,6 +393,11 @@ function CredentialForm({
               />
             )
           ) : (
+            <div className="space-y-2 rounded-md border border-border p-3">
+              <p className="text-xs text-muted-foreground">
+                Advanced — reference a secret that already exists in your store.
+                Most people should leave the box above checked instead.
+              </p>
             <FormRow>
               <FormSelect
                 label="Store"
@@ -412,6 +417,7 @@ function CredentialForm({
                 error={fieldErrors.secret_path}
               />
             </FormRow>
+            </div>
           )}
 
           <FormFooter
