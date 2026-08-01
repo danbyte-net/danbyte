@@ -23,6 +23,7 @@ nav = [
   { "Home" = "index.md" },
   { "Getting started" = [
     { "Installation"      = "getting-started/installation.md" },
+    { "Deploy with Docker" = "getting-started/docker.md" },
     { "Upgrading"         = "getting-started/upgrading.md" },
     { "Dev workflow"      = "getting-started/dev-workflow.md" },
     { "First-time setup"  = "features/onboarding.md" },

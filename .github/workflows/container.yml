@@ -67,9 +67,13 @@ jobs:
           ref="${{ github.event.inputs.tag || github.ref_name }}"
           ver="${ref#v}"
           base="ghcr.io/${owner}/${{ matrix.image }}"
-          {
-            echo "tags=${base}:${ver},${base}:latest"
-          } >> "$GITHUB_OUTPUT"
+          tags="${base}:${ver}"
+          # Only a real version-tag push moves :latest — a manual/RC dispatch
+          # must not clobber the tag operators track.
+          if [ "${{ github.event_name }}" = "push" ]; then
+            tags="${tags},${base}:latest"
+          fi
+          echo "tags=${tags}" >> "$GITHUB_OUTPUT"
 
       - name: Build + push
         uses: docker/build-push-action@v6

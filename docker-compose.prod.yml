@@ -88,10 +88,19 @@ services:
       start_period: 60s
 
   # WebSockets — a SEPARATE ASGI process (channels never sits in the HTTP path).
+  # Wait for the backend to be healthy: it runs migrate/bootstrap once, so ws
+  # and workers don't crash-loop against an unmigrated schema on a fresh DB.
   ws:
     <<: *app-build
     environment: *app-env
     command: ["daphne", "-b", "0.0.0.0", "-p", "8002", "danbyte.asgi:application"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
 
   # Background jobs (monitoring, discovery, deploys). Pool = parallel workers.
   # The ICMP checker uses icmplib's unprivileged datagram sockets; that needs
@@ -103,6 +112,13 @@ services:
     command: ["python", "manage.py", "rqworker-pool", "default", "high", "low", "--num-workers", "${RQ_WORKERS:-4}"]
     sysctls:
       - net.ipv4.ping_group_range=0 2147483647
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
 
   # The SPA server — TanStack Start SSR build served by vite preview. nginx
   # proxies `/` here (the build has no static index.html to serve directly).
