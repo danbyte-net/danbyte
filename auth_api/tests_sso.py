@@ -98,3 +98,47 @@ class SsoProvisioningTests(TestCase):
     def test_missing_identity_is_rejected(self):
         with self.assertRaises(SsoError):
             resolve_user(self.provider, {"groups": ["NetAdmins"]})
+
+    def test_same_subject_matches_after_username_and_email_change(self):
+        # Binding is by stable subject, so a renamed IdP account stays one user.
+        u1 = resolve_user(self.provider, self._claims(sub="stable-1"))
+        u2 = resolve_user(self.provider, self._claims(
+            sub="stable-1", preferred_username="alice2", email="alice2@x.com"
+        ))
+        self.assertEqual(u1.pk, u2.pk)
+        prof = UserProfile.objects.get(user=u1)
+        self.assertEqual(prof.sso_subject, "stable-1")
+        self.assertEqual(prof.sso_provider_id, self.provider.id)
+
+    def test_local_account_with_password_is_not_hijacked(self):
+        # An IdP asserting an existing local admin's username must NOT seize it.
+        local = User.objects.create_user(
+            "alice", email="alice@example.com", password="s3cret"
+        )
+        with self.assertRaises(SsoError):
+            resolve_user(self.provider, self._claims(sub="attacker-sub"))
+        local.refresh_from_db()
+        self.assertTrue(local.has_usable_password())
+        self.assertFalse(
+            UserProfile.objects.filter(user=local, sso_subject="attacker-sub").exists()
+        )
+
+    def test_unverified_email_does_not_link_existing_account(self):
+        existing = User.objects.create_user("alice-old", email="shared@x.com")
+        existing.set_unusable_password()
+        existing.save()
+        # Different username, same email, no email_verified → new account, no link.
+        user = resolve_user(self.provider, self._claims(
+            preferred_username="newname", email="shared@x.com", sub="s1"
+        ))
+        self.assertNotEqual(user.pk, existing.pk)
+
+    def test_verified_email_links_existing_account(self):
+        existing = User.objects.create_user("alice-old2", email="shared2@x.com")
+        existing.set_unusable_password()
+        existing.save()
+        user = resolve_user(self.provider, self._claims(
+            preferred_username="newname2", email="shared2@x.com",
+            email_verified=True, sub="s2",
+        ))
+        self.assertEqual(user.pk, existing.pk)

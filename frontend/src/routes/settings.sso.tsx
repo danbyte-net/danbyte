@@ -291,6 +291,7 @@ function ProviderDialog({
   const [samlEntityId, setSamlEntityId] = useState("")
   const [samlSsoUrl, setSamlSsoUrl] = useState("")
   const [samlX509, setSamlX509] = useState("")
+  const [samlMetadataUrl, setSamlMetadataUrl] = useState("")
   const [claimEmail, setClaimEmail] = useState("")
   const [claimUsername, setClaimUsername] = useState("")
   const [claimFirstName, setClaimFirstName] = useState("")
@@ -315,6 +316,7 @@ function ProviderDialog({
     setSamlEntityId(provider?.saml_idp_entity_id ?? "")
     setSamlSsoUrl(provider?.saml_idp_sso_url ?? "")
     setSamlX509(provider?.saml_idp_x509 ?? "")
+    setSamlMetadataUrl(provider?.saml_idp_metadata_url ?? "")
     setClaimEmail(provider?.claim_email ?? "")
     setClaimUsername(provider?.claim_username ?? "")
     setClaimFirstName(provider?.claim_first_name ?? "")
@@ -362,6 +364,7 @@ function ProviderDialog({
         saml_idp_entity_id: samlEntityId.trim(),
         saml_idp_sso_url: samlSsoUrl.trim(),
         saml_idp_x509: samlX509.trim(),
+        saml_idp_metadata_url: samlMetadataUrl.trim(),
         claim_email: claimEmail.trim(),
         claim_username: claimUsername.trim(),
         claim_first_name: claimFirstName.trim(),
@@ -395,7 +398,7 @@ function ProviderDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent size="3xl">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? `Edit ${provider.name}` : "Add identity provider"}
@@ -507,6 +510,15 @@ function ProviderDialog({
             <div className="grid gap-4 rounded-lg border border-border bg-card p-3">
               <span className="text-xs font-medium">SAML 2.0</span>
               <FormText
+                label="IdP metadata URL"
+                mono
+                value={samlMetadataUrl}
+                onChange={setSamlMetadataUrl}
+                placeholder="https://login.microsoftonline.com/<tenant>/federationmetadata/2007-06/federationmetadata.xml?appid=<app-id>"
+                error={fieldErrors.saml_idp_metadata_url}
+                hint="Recommended. On save, Danbyte fills the entity ID, SSO URL, and signing cert(s) below from this — and re-reads them so cert rotation just works. Leave blank on fully offline installs and fill the three fields by hand."
+              />
+              <FormText
                 label="IdP entity ID"
                 mono
                 value={samlEntityId}
@@ -540,20 +552,32 @@ function ProviderDialog({
             />
           )}
           {isEdit && protocol === "saml" && (
-            <div className="grid gap-3">
+            <div className="grid gap-3 rounded-lg border border-border bg-muted/30 p-3">
+              <span className="text-xs font-medium">
+                Register these at your IdP
+              </span>
+              <p className="text-xs text-muted-foreground">
+                In Entra these are the three fields under{" "}
+                <span className="font-medium">Basic SAML Configuration</span>.
+              </p>
               <ReadonlyUrl
-                label="ACS / Reply URL"
-                hint="Register as the Assertion Consumer Service (Reply URL) at your IdP"
-                value={provider.acs_url}
-              />
-              <ReadonlyUrl
-                label="SP Identifier (Entity ID)"
-                hint="Register as the SP Identifier / Entity ID at your IdP"
+                label="Identifier (Entity ID)"
+                hint="Entra: Basic SAML Configuration → Identifier (Entity ID)"
                 value={provider.sp_entity_id}
               />
               <ReadonlyUrl
+                label="Reply URL (ACS)"
+                hint="Entra: Basic SAML Configuration → Reply URL (Assertion Consumer Service)"
+                value={provider.acs_url}
+              />
+              <ReadonlyUrl
+                label="Sign on URL"
+                hint="Entra: Basic SAML Configuration → Sign on URL (enables the sign-in button)"
+                value={provider.login_url}
+              />
+              <ReadonlyUrl
                 label="SP metadata URL"
-                hint="Some IdPs can import SP config from this URL"
+                hint="Optional — some IdPs import SP config from this URL"
                 value={provider.metadata_url}
               />
             </div>

@@ -104,12 +104,15 @@ def _validate_id_token(id_token, provider, doc, nonce) -> dict:
     from authlib.jose import JsonWebKey, jwt
     from authlib.jose.errors import JoseError
 
+    jwks_uri = doc.get("jwks_uri")
+    if not jwks_uri:
+        raise SsoError("OIDC discovery document has no jwks_uri.")
     try:
-        jwks = requests.get(doc["jwks_uri"], timeout=HTTP_TIMEOUT).json()
+        jwks = requests.get(jwks_uri, timeout=HTTP_TIMEOUT).json()
         key = JsonWebKey.import_key_set(jwks)
         claims = jwt.decode(id_token, key)
         claims.validate()  # exp / iat / nbf
-    except (requests.RequestException, JoseError, ValueError) as exc:
+    except (requests.RequestException, JoseError, ValueError, KeyError) as exc:
         raise SsoError(f"ID token validation failed: {exc}") from exc
 
     if claims.get("iss") != doc.get("issuer"):
@@ -118,6 +121,11 @@ def _validate_id_token(id_token, provider, doc, nonce) -> dict:
     auds = aud if isinstance(aud, list) else [aud]
     if provider.oidc_client_id not in auds:
         raise SsoError("ID token audience mismatch.")
+    # With multiple audiences the token MUST name the authorized party, and it
+    # must be us — otherwise a token minted for another client could be replayed.
+    if len(auds) > 1:
+        if claims.get("azp") != provider.oidc_client_id:
+            raise SsoError("ID token azp mismatch.")
     if nonce and claims.get("nonce") != nonce:
         raise SsoError("ID token nonce mismatch — possible replay.")
     return dict(claims)
@@ -140,32 +148,87 @@ def _userinfo(doc, access_token) -> dict:
 
 # ── Provisioning ─────────────────────────────────────────────────────────────
 
+def _subject(claims) -> str:
+    """The IdP's stable, immutable identifier for the user — OIDC ``sub`` or SAML
+    ``NameID``. This, not a mutable email, is what an account is bound to."""
+    return (str(claims.get("sub") or claims.get("nameid") or "")).strip()
+
+
+def _email_verified(claims) -> bool:
+    v = claims.get("email_verified")
+    return v is True or str(v).strip().lower() == "true"
+
+
+def _guard_safe_link(user, provider, subject) -> None:
+    """Refuse to attach this SSO identity to an existing account when doing so
+    could hijack it — the core defence against an IdP asserting someone else's
+    email/username to seize their Danbyte account."""
+    prof = getattr(user, "profile", None)
+    if (prof is not None and prof.sso_provider_id == provider.id
+            and prof.sso_subject and subject and prof.sso_subject != subject):
+        raise SsoError("This account is linked to a different SSO identity.")
+    # A usable password means it's a local login already in use; never let an
+    # IdP assertion silently take it over. An admin must link it deliberately.
+    if user.has_usable_password():
+        raise SsoError(
+            "An account with this name already exists. Ask an administrator to "
+            "link it to SSO."
+        )
+
+
 def resolve_user(provider, claims):
     """Match or (JIT) create the Danbyte user for these claims, sync names,
     groups, and tenant. Raises :class:`SsoError` when JIT is off and the user is
-    unknown, or the claims carry no usable identity."""
+    unknown, or the claims carry no usable identity.
+
+    Matching is by the IdP's stable **subject** first; an existing local account
+    is only linked when it is safe to (:func:`_guard_safe_link`), and an
+    unverified email never links an account."""
     from django.contrib.auth.models import User
 
+    from .models import UserProfile
+
+    subject = _subject(claims)
     email = (claims.get(provider.claim_email) or "").strip()
     username = (claims.get(provider.claim_username) or email).strip()
-    if not username:
-        raise SsoError("The identity provider returned no username or email.")
+    if not username and not subject:
+        raise SsoError("The identity provider returned no usable identity.")
 
-    user = User.objects.filter(username__iexact=username).first()
-    if user is None and email:
-        user = User.objects.filter(email__iexact=email).first()
+    user = None
+    # 1. Fast, hijack-proof path: an account already bound to this exact subject.
+    if subject:
+        prof = (
+            UserProfile.objects
+            .filter(sso_provider=provider, sso_subject=subject)
+            .select_related("user").first()
+        )
+        if prof is not None:
+            user = prof.user
+
+    # 2. First login for this subject: link an existing account, but only safely.
+    if user is None:
+        candidate = None
+        if username:
+            candidate = User.objects.filter(username__iexact=username).first()
+        if candidate is None and email and _email_verified(claims):
+            candidate = User.objects.filter(email__iexact=email).first()
+        if candidate is not None:
+            _guard_safe_link(candidate, provider, subject)
+            user = candidate
+
+    # 3. Nothing to link → JIT create, or refuse when JIT is off.
     if user is None:
         if not provider.jit_provisioning:
             raise SsoError(
                 "This account isn't provisioned in Danbyte. Ask an administrator "
                 "to create it first."
             )
-        user = User.objects.create_user(username=username, email=email)
+        user = User.objects.create_user(username=username or subject, email=email)
         user.set_unusable_password()
         user.save()
 
     _sync_names(user, provider, claims)
-    _apply_profile_and_groups(provider, user, claims)
+    _apply_profile_and_groups(provider, user, claims, subject)
     return user
 
 
@@ -187,14 +250,22 @@ def _sync_names(user, provider, claims) -> None:
         user.save(update_fields=changed)
 
 
-def _apply_profile_and_groups(provider, user, claims) -> None:
+def _apply_profile_and_groups(provider, user, claims, subject="") -> None:
     from .ldap import group_is_tenant_safe
     from .models import SsoGroupMapping, UserProfile
 
     prof, _ = UserProfile.objects.get_or_create(user=user)
+    changed = []
     if prof.auth_source != "sso":
         prof.auth_source = "sso"
-        prof.save(update_fields=["auth_source"])
+        changed.append("auth_source")
+    # Bind the stable IdP subject so future logins match by it, not by email.
+    if subject and (prof.sso_subject != subject or prof.sso_provider_id != provider.id):
+        prof.sso_subject = subject
+        prof.sso_provider = provider
+        changed += ["sso_subject", "sso_provider"]
+    if changed:
+        prof.save(update_fields=changed)
 
     # Asserted groups → mapped Danbyte groups. Values compared case-insensitively.
     raw = claims.get(provider.claim_groups) or []
@@ -214,9 +285,17 @@ def _apply_profile_and_groups(provider, user, claims) -> None:
             continue
         groups.append(m.group)
     # A baseline group (if configured) so a new SSO user always has some access,
-    # not just whatever the mappings grant.
+    # not just whatever the mappings grant — but a tenant-scoped provider may not
+    # hand out a group that isn't narrowed to its tenant (same guard as mappings).
     if provider.default_group_id:
-        groups.append(provider.default_group)
+        dg = provider.default_group
+        if tenant is None or group_is_tenant_safe(dg, tenant):
+            groups.append(dg)
+        else:
+            log.warning(
+                "SSO: skipping default group %r for %s — not narrowed to tenant",
+                dg.name, provider.slug,
+            )
     user.groups.set(groups)
 
     prov_tenant = provider.provisioning_tenant()

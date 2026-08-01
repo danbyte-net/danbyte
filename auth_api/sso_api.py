@@ -8,10 +8,12 @@ where we validate and establish the Django session, then land on the SPA. State
 """
 from __future__ import annotations
 
+from datetime import timedelta
 from urllib.parse import quote
 
 from django.contrib.auth import login as auth_login
 from django.http import HttpResponse, HttpResponseRedirect
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 from rest_framework.decorators import api_view, permission_classes
@@ -22,6 +24,8 @@ from .models import IdentityProvider
 from .sso import SsoError, build_authorize_url, exchange_code, resolve_user
 
 MODEL_BACKEND = "django.contrib.auth.backends.ModelBackend"
+# How long a SP-initiated SAML AuthnRequest stays valid for its response.
+SAML_REQUEST_MAX_AGE = timedelta(minutes=10)
 
 
 def _base_url(request) -> str:
@@ -48,9 +52,12 @@ def _callback_uri(request, slug: str) -> str:
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def sso_providers(request):
-    """Enabled SSO providers, for rendering login-page buttons (pre-auth)."""
+    """Enabled SSO providers, for rendering login-page buttons (pre-auth).
+
+    Only deployment-wide providers are advertised on the shared, unauthenticated
+    login page; tenant-scoped providers aren't exposed to anonymous callers."""
     provs = list(
-        IdentityProvider.objects.filter(enabled=True)
+        IdentityProvider.objects.filter(enabled=True, tenant__isnull=True)
         .order_by("name")
         .values("name", "slug", "protocol")
     )
@@ -67,6 +74,7 @@ def sso_login(request, slug):
         return _login_redirect("Unknown or disabled SSO provider.")
 
     if provider.protocol == IdentityProvider.Protocol.SAML:
+        from .models import SamlLoginState
         from .saml import SamlError, build_authn_request_redirect
 
         try:
@@ -75,8 +83,13 @@ def sso_login(request, slug):
             )
         except SamlError as exc:
             return _login_redirect(str(exc))
-        request.session["saml_request_id"] = request_id
-        request.session["sso_slug"] = slug
+        # Record the outstanding request in the DB (not the session) — the IdP's
+        # ACS POST is cross-site and the SameSite=Lax session cookie won't ride
+        # along, so the ACS matches the response by InResponseTo against this row.
+        SamlLoginState.objects.create(request_id=request_id, provider=provider)
+        SamlLoginState.objects.filter(
+            created_at__lt=timezone.now() - SAML_REQUEST_MAX_AGE
+        ).delete()
         return HttpResponseRedirect(url)
 
     state = pysecrets.token_urlsafe(24)
@@ -120,20 +133,34 @@ def sso_acs(request, slug):
     saml_response = request.POST.get("SAMLResponse")
     if not saml_response:
         return _login_redirect("Missing SAML response.")
-    request_id = request.session.get("saml_request_id")
 
+    from .models import SamlLoginState
     from .saml import SamlError, parse_and_validate
+
+    def _consume(in_response_to: str) -> None:
+        """Single-use, atomic check that this response answers a request we
+        issued recently and haven't already consumed (replay protection)."""
+        now = timezone.now()
+        claimed = SamlLoginState.objects.filter(
+            request_id=in_response_to, provider=provider,
+            consumed_at__isnull=True,
+            created_at__gte=now - SAML_REQUEST_MAX_AGE,
+        ).update(consumed_at=now)
+        if not claimed:
+            raise SamlError(
+                "This SAML login is unknown, expired, or already used. Start "
+                "again from Danbyte's sign-in page."
+            )
 
     try:
         claims = parse_and_validate(
             provider, saml_response, _acs_uri(request, slug),
-            _base_url(request), request_id,
+            _base_url(request), consume_request_id=_consume,
         )
         user = resolve_user(provider, claims)
     except (SamlError, SsoError) as exc:
         return _login_redirect(str(exc))
 
-    request.session.pop("saml_request_id", None)
     request.session.pop("sso_slug", None)
     if not user.is_active:
         return _login_redirect("This account is disabled.")

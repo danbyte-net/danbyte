@@ -78,9 +78,21 @@ Danbyte group's permissions on their next login.
 ## SAML 2.0
 
 SAML uses the same provider model, JIT provisioning, default group, and group
-mapping as OIDC. You supply the IdP's **entity ID**, **SSO URL**, and **signing
-certificate** (PEM or base64) instead of an OIDC issuer. When you save a SAML
-provider, its edit screen shows the three values to register at the IdP:
+mapping as OIDC. There are two ways to point Danbyte at the IdP:
+
+- **IdP metadata URL** (recommended): paste the IdP's federation-metadata URL and
+  Danbyte fetches the **entity ID**, **SSO URL**, and **signing certificate(s)**
+  from it on save — and re-reads them hourly, so the login keeps working when the
+  IdP rotates its signing certificate. The fetch goes **directly to the IdP**
+  (same trust tier as the OIDC issuer / LDAP / Vault address); for a cloud IdP it
+  needs internet, for an on-prem IdP it only needs the LAN.
+- **Manual**: supply the IdP's **entity ID**, **SSO URL**, and **signing
+  certificate** (PEM or base64) by hand. Use this on fully offline installs, or
+  any time you'd rather not fetch. The X.509 field accepts several concatenated
+  PEM blocks if the IdP publishes more than one signing cert.
+
+When you save a SAML provider, its edit screen shows the values to register at
+the IdP:
 
 - **ACS / Reply URL** — `https://<danbyte>/api/auth/sso/<slug>/acs/`
 - **SP Identifier (Entity ID)** — `https://<danbyte>/api/auth/sso/<slug>/metadata/`
@@ -103,12 +115,23 @@ registration):
    provider's edit screen).
 4. **Attributes & Claims:** ensure email/username (and a **groups** claim if you
    want group mapping) are emitted.
-5. **SAML Certificates:** download the **Certificate (Base64)**.
-6. Note the **Login URL** (IdP SSO URL) and **Microsoft Entra Identifier** (IdP
-   entity ID) from the setup section.
-7. In Danbyte, create a SAML provider with those three values (paste the cert
-   into *IdP X.509 certificate*), set the claim mapping to the attribute names
-   Entra emits, and assign users/groups to the Enterprise Application in Entra.
+5. **SAML Certificates:** copy the **App Federation Metadata Url** — this is the
+   easy path.
+6. In Danbyte, create a SAML provider, paste that URL into **IdP metadata URL**,
+   and save. Danbyte fills the entity ID, SSO URL, and signing cert for you.
+   Assign users/groups to the Enterprise Application in Entra and you're done.
+
+    !!! tip "Why the metadata URL beats downloading the cert"
+        Entra shows one certificate in *SAML Certificates* but signs assertions
+        with a separate, app-specific signing certificate, and it rotates on its
+        own schedule. Pulling from the metadata URL always has the current
+        signing cert, so you never pick the wrong one or get locked out on
+        rotation. If you must go manual, take the **Login URL** and **Microsoft
+        Entra Identifier** from *Set up*, and be sure the pasted cert is the one
+        actually signing (the metadata lists it).
+
+7. Set the claim mapping to the attribute names Entra emits (the defaults —
+   `emailaddress`, `givenname`, `surname`, `name` — already match).
 
 ### Example: Keycloak
 
@@ -124,8 +147,20 @@ LDAP, so AD accounts sign in via Keycloak:
 
 ## Security notes
 
+- **Account binding is by the IdP's stable subject** (OIDC `sub` / SAML
+  `NameID`), never a mutable email. An existing local account that already has a
+  password is never silently taken over by an SSO assertion — an administrator
+  must link it deliberately. An unverified email never links an account.
 - The OIDC flow uses `state` + `nonce` and validates the ID token against the
-  provider's JWKS (issuer, audience, nonce, expiry).
+  provider's JWKS (issuer, audience, `azp` when multi-audience, nonce, expiry).
+- **SAML is SP-initiated and replay-safe:** every login is started from Danbyte,
+  and each response must carry an `InResponseTo` for a request Danbyte issued and
+  hasn't already consumed (tracked in the database, since the IdP's cross-site
+  ACS POST can't carry the session cookie). Unsolicited/IdP-initiated responses
+  are rejected. The assertion signature, issuer, audience (this SP), recipient
+  (this ACS), and validity window are all mandatory.
 - The client secret is stored encrypted at rest and never returned by the API.
+- Tenant-scoped providers aren't advertised on the public login page, and a
+  tenant provider can only map (or default to) groups narrowed to its tenant.
 - The provider is operator-configured, so Danbyte reaches it directly (TLS-
   verified) — the same trust tier as the LDAP/Vault configuration.

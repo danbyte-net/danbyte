@@ -4963,6 +4963,9 @@ export interface IdentityProvider {
   saml_idp_entity_id: string
   saml_idp_sso_url: string
   saml_idp_x509: string
+  /** Optional. When set, Danbyte fetches entity id / SSO URL / signing cert(s)
+   * from the IdP's federation metadata (rotation-proof; no manual cert). */
+  saml_idp_metadata_url: string
   claim_email: string
   claim_username: string
   claim_first_name: string
@@ -4972,6 +4975,7 @@ export interface IdentityProvider {
   client_secret_set: boolean
   callback_url: string
   /** SAML: the URLs/identifier to register at the IdP (read-only). */
+  login_url: string
   acs_url: string
   metadata_url: string
   sp_entity_id: string
@@ -4982,6 +4986,7 @@ export type IdentityProviderWritePayload = Omit<
   | "id"
   | "client_secret_set"
   | "callback_url"
+  | "login_url"
   | "acs_url"
   | "metadata_url"
   | "sp_entity_id"

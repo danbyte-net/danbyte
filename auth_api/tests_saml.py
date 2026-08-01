@@ -32,6 +32,15 @@ SP_ENTITY = f"{BASE}/api/auth/sso/{SLUG}/metadata/"
 IDP_ENTITY = "https://idp.example/entity"
 
 
+def _expect(rid):
+    """A ``consume_request_id`` stub that accepts exactly one InResponseTo — the
+    unit-test stand-in for the DB-backed single-use check in the ACS view."""
+    def _consume(in_response_to):
+        if in_response_to != rid:
+            raise SamlError("Unknown or replayed InResponseTo.")
+    return _consume
+
+
 def _self_signed():
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test-idp")])
@@ -113,7 +122,9 @@ class SamlRoundtripTests(TestCase):
 
     def test_valid_signed_response_yields_claims_and_provisions(self):
         resp = _signed_response(self.key_pem, self.cert_pem)
-        claims = parse_and_validate(self.provider, resp, ACS, BASE, "_req123")
+        claims = parse_and_validate(
+            self.provider, resp, ACS, BASE, consume_request_id=_expect("_req123")
+        )
         self.assertEqual(claims["email"], "alice@example.com")
         self.assertEqual(claims["groups"], "NetAdmins")
         user = resolve_user(self.provider, claims)
@@ -124,16 +135,117 @@ class SamlRoundtripTests(TestCase):
         other_key, other_cert = _self_signed()
         resp = _signed_response(other_key, other_cert)
         with self.assertRaises(SamlError):
-            parse_and_validate(self.provider, resp, ACS, BASE, "_req123")
+            parse_and_validate(
+                self.provider, resp, ACS, BASE, consume_request_id=_expect("_req123")
+            )
 
     def test_audience_mismatch_is_rejected(self):
         resp = _signed_response(self.key_pem, self.cert_pem)
         with self.assertRaises(SamlError):
             parse_and_validate(
-                self.provider, resp, ACS, "https://evil.example", "_req123"
+                self.provider, resp, ACS, "https://evil.example",
+                consume_request_id=_expect("_req123"),
             )
 
     def test_inresponseto_mismatch_is_rejected(self):
         resp = _signed_response(self.key_pem, self.cert_pem, request_id="_other")
         with self.assertRaises(SamlError):
-            parse_and_validate(self.provider, resp, ACS, BASE, "_req123")
+            parse_and_validate(
+                self.provider, resp, ACS, BASE, consume_request_id=_expect("_req123")
+            )
+
+    def test_unsolicited_response_without_inresponseto_is_rejected(self):
+        # No InResponseTo → IdP-initiated / unsolicited → refused (replay-safety).
+        resp = _signed_response(self.key_pem, self.cert_pem, request_id="")
+        with self.assertRaises(SamlError):
+            parse_and_validate(
+                self.provider, resp, ACS, BASE,
+                consume_request_id=lambda _rid: None,
+            )
+
+    def test_replayed_request_id_is_rejected_by_consumer(self):
+        # The consumer (DB single-use check) refusing → whole login fails.
+        resp = _signed_response(self.key_pem, self.cert_pem)
+
+        def _already_used(_rid):
+            raise SamlError("already used")
+
+        with self.assertRaises(SamlError):
+            parse_and_validate(
+                self.provider, resp, ACS, BASE, consume_request_id=_already_used
+            )
+
+    def test_verifies_against_one_of_several_configured_certs(self):
+        # IdP rotation / multiple signing certs: the x509 field may hold several
+        # concatenated PEMs. A response signed by *any* of them must verify.
+        _, wrong_cert = _self_signed()
+        self.provider.saml_idp_x509 = (
+            wrong_cert.decode() + "\n" + self.cert_pem.decode()
+        )
+        self.provider.save(update_fields=["saml_idp_x509"])
+        resp = _signed_response(self.key_pem, self.cert_pem)
+        claims = parse_and_validate(
+            self.provider, resp, ACS, BASE, consume_request_id=_expect("_req123")
+        )
+        self.assertEqual(claims["email"], "alice@example.com")
+
+
+class SamlMetadataTests(TestCase):
+    def test_parses_entity_sso_and_signing_certs(self):
+        import base64 as _b64
+        from unittest import mock
+
+        from . import saml as saml_mod
+
+        _, cert_pem = _self_signed()
+        cert_b64 = _b64.b64encode(
+            x509.load_pem_x509_certificate(cert_pem).public_bytes(
+                serialization.Encoding.DER
+            )
+        ).decode()
+        md_xml = f"""<?xml version="1.0"?>
+<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
+    xmlns:ds="http://www.w3.org/2000/09/xmldsig#"
+    entityID="https://idp.example/entity">
+  <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <KeyDescriptor use="signing">
+      <ds:KeyInfo><ds:X509Data><ds:X509Certificate>{cert_b64}</ds:X509Certificate></ds:X509Data></ds:KeyInfo>
+    </KeyDescriptor>
+    <SingleSignOnService
+      Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+      Location="https://idp.example/sso"/>
+  </IDPSSODescriptor>
+</EntityDescriptor>""".encode()
+
+        fake = mock.Mock(content=md_xml)
+        fake.raise_for_status = mock.Mock()
+        with mock.patch.object(saml_mod.requests, "get", return_value=fake):
+            md = saml_mod.fetch_idp_metadata(
+                "https://idp.example/meta", use_cache=False
+            )
+        self.assertEqual(md["entity_id"], "https://idp.example/entity")
+        self.assertEqual(md["sso_url"], "https://idp.example/sso")
+        self.assertEqual(len(md["certs"]), 1)
+        self.assertIn("BEGIN CERTIFICATE", md["certs"][0])
+
+    def test_metadata_without_signing_cert_raises(self):
+        from unittest import mock
+
+        from . import saml as saml_mod
+
+        md_xml = b"""<?xml version="1.0"?>
+<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
+    entityID="https://idp.example/entity">
+  <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <SingleSignOnService
+      Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+      Location="https://idp.example/sso"/>
+  </IDPSSODescriptor>
+</EntityDescriptor>"""
+        fake = mock.Mock(content=md_xml)
+        fake.raise_for_status = mock.Mock()
+        with mock.patch.object(saml_mod.requests, "get", return_value=fake):
+            with self.assertRaises(SamlError):
+                saml_mod.fetch_idp_metadata(
+                    "https://idp.example/meta", use_cache=False
+                )

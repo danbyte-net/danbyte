@@ -67,12 +67,23 @@ class UserProfile(TimestampedModel):
     )
 
     # ─── Auth source + MFA ──────────────────────────────────────────────
-    AUTH_SOURCE_CHOICES = [("local", "Local"), ("ldap", "LDAP")]
+    AUTH_SOURCE_CHOICES = [
+        ("local", "Local"), ("ldap", "LDAP"), ("sso", "SSO"),
+    ]
     auth_source = models.CharField(
         max_length=8, choices=AUTH_SOURCE_CHOICES, default="local",
-        help_text="Where this account authenticates. LDAP accounts are "
+        help_text="Where this account authenticates. LDAP/SSO accounts are "
                   "auto-provisioned on first login.",
     )
+    # Stable SSO identity binding. A login is matched to this account by
+    # (sso_provider, sso_subject) — the IdP's immutable subject (SAML NameID /
+    # OIDC sub) — never by a mutable email an IdP could assert to hijack another
+    # account. See auth_api/sso.py resolve_user.
+    sso_provider = models.ForeignKey(
+        "auth_api.IdentityProvider", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="+",
+    )
+    sso_subject = models.CharField(max_length=255, blank=True, default="")
     # Ownership anchor for per-tenant directories: the tenant whose directory
     # this LDAP account belongs to. NULL = deployment directory (or a local
     # account). A tenant directory may only ever bind accounts it owns — the
@@ -102,6 +113,15 @@ class UserProfile(TimestampedModel):
 
     class Meta:
         ordering = ["user__username"]
+        constraints = [
+            # One Danbyte account per (provider, subject); the partial condition
+            # keeps the many local/LDAP accounts (blank subject) unconstrained.
+            models.UniqueConstraint(
+                fields=["sso_provider", "sso_subject"],
+                condition=models.Q(sso_subject__gt=""),
+                name="uniq_sso_provider_subject",
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.user.get_username()
@@ -325,6 +345,11 @@ class IdentityProvider(TimestampedModel):
     saml_idp_entity_id = models.CharField(max_length=255, blank=True, default="")
     saml_idp_sso_url = models.CharField(max_length=255, blank=True, default="")
     saml_idp_x509 = models.TextField(blank=True, default="")
+    # Optional IdP metadata (federation) URL. When set, Danbyte fetches the
+    # entity id, SSO URL, and signing cert(s) from it — rotation-proof, no manual
+    # cert picking. Reaches the IdP directly (cloud → internet, on-prem → LAN);
+    # leave blank on fully offline installs and paste the cert instead.
+    saml_idp_metadata_url = models.CharField(max_length=500, blank=True, default="")
 
     # ── Claim / attribute mapping ───────────────────────────────────────
     claim_email = models.CharField(max_length=64, blank=True, default="email")
@@ -404,6 +429,27 @@ class SsoGroupMapping(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.idp_group} → {self.group.name}"
+
+
+class SamlLoginState(models.Model):
+    """One row per outstanding SP-initiated SAML AuthnRequest. The ACS looks the
+    row up by the response's ``InResponseTo`` and consumes it — enforcing that a
+    response is *solicited* (we issued the request) and *single-use* (replay
+    protection). Lives in the DB, not the session, because the IdP's ACS POST is
+    cross-site and the ``SameSite=Lax`` session cookie doesn't ride along."""
+
+    request_id = models.CharField(max_length=100, primary_key=True)
+    provider = models.ForeignKey(
+        IdentityProvider, on_delete=models.CASCADE, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["created_at"])]
+
+    def __str__(self) -> str:
+        return self.request_id
 
 
 class ApiToken(TimestampedModel):

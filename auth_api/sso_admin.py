@@ -27,6 +27,7 @@ class IdentityProviderSerializer(serializers.ModelSerializer):
     )
     client_secret_set = serializers.SerializerMethodField()
     callback_url = serializers.SerializerMethodField()
+    login_url = serializers.SerializerMethodField()
     acs_url = serializers.SerializerMethodField()
     metadata_url = serializers.SerializerMethodField()
     sp_entity_id = serializers.SerializerMethodField()
@@ -41,6 +42,10 @@ class IdentityProviderSerializer(serializers.ModelSerializer):
     def get_callback_url(self, obj) -> str:
         # OIDC redirect URI to register at the IdP.
         return self._abs(f"/api/auth/sso/{obj.slug}/callback/")
+
+    def get_login_url(self, obj) -> str:
+        # SP-initiated sign-on entry point (the SAML "Sign on URL").
+        return self._abs(f"/api/auth/sso/{obj.slug}/login/")
 
     def get_acs_url(self, obj) -> str:
         # SAML Assertion Consumer Service (Reply URL) to register at the IdP.
@@ -59,16 +64,18 @@ class IdentityProviderSerializer(serializers.ModelSerializer):
             "id", "name", "slug", "protocol", "enabled", "tenant",
             "oidc_issuer", "oidc_client_id", "oidc_scopes",
             "saml_idp_entity_id", "saml_idp_sso_url", "saml_idp_x509",
+            "saml_idp_metadata_url",
             "claim_email", "claim_username", "claim_first_name",
             "claim_last_name", "claim_groups",
             "jit_provisioning", "default_tenant", "default_group",
             "client_secret", "client_secret_set", "callback_url",
-            "acs_url", "metadata_url", "sp_entity_id",
+            "login_url", "acs_url", "metadata_url", "sp_entity_id",
             "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id", "client_secret_set", "callback_url", "acs_url",
-            "metadata_url", "sp_entity_id", "created_at", "updated_at",
+            "id", "client_secret_set", "callback_url", "login_url",
+            "acs_url", "metadata_url", "sp_entity_id", "created_at",
+            "updated_at",
         ]
 
     def _store_secret(self, obj, secret):
@@ -78,16 +85,47 @@ class IdentityProviderSerializer(serializers.ModelSerializer):
             obj.secrets = {**(obj.secrets or {}), "client_secret": secret}
             obj.save(update_fields=["secrets"])
 
+    def _apply_metadata(self, obj):
+        """If a SAML metadata URL is set, fetch it and fill the IdP entity id,
+        SSO URL, and signing cert(s) so the operator doesn't hand-pick a cert."""
+        if obj.protocol != IdentityProvider.Protocol.SAML:
+            return
+        url = (obj.saml_idp_metadata_url or "").strip()
+        if not url:
+            return
+        from .saml import SamlError, fetch_idp_metadata
+
+        try:
+            md = fetch_idp_metadata(url, use_cache=False)
+        except SamlError as exc:
+            raise serializers.ValidationError(
+                {"saml_idp_metadata_url": str(exc)}
+            ) from exc
+        fields = []
+        if md.get("entity_id"):
+            obj.saml_idp_entity_id = md["entity_id"]
+            fields.append("saml_idp_entity_id")
+        if md.get("sso_url"):
+            obj.saml_idp_sso_url = md["sso_url"]
+            fields.append("saml_idp_sso_url")
+        if md.get("certs"):
+            obj.saml_idp_x509 = "\n".join(md["certs"])
+            fields.append("saml_idp_x509")
+        if fields:
+            obj.save(update_fields=fields)
+
     def create(self, validated_data):
         secret = validated_data.pop("client_secret", None)
         obj = super().create(validated_data)
         self._store_secret(obj, secret)
+        self._apply_metadata(obj)
         return obj
 
     def update(self, instance, validated_data):
         secret = validated_data.pop("client_secret", None)
         obj = super().update(instance, validated_data)
         self._store_secret(obj, secret)
+        self._apply_metadata(obj)
         return obj
 
 
