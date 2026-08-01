@@ -282,6 +282,8 @@ export interface Me {
   favicon_url?: string | null
   /** Whether to surface per-tenant human-readable numbers (numid) in the UI. */
   human_ids_enabled?: boolean
+  /** Whether the in-browser SSH terminal is enabled deployment-wide. */
+  ssh_terminal_enabled?: boolean
   /** First-run wizard: true once this tenant has completed or skipped it. */
   onboarding_dismissed?: boolean
   active_tenant?: { id: string; name: string; slug: string } | null
@@ -4788,6 +4790,7 @@ export interface DeploymentSettings {
   config_drift_enabled: boolean
   config_drift_interval_minutes: number
   config_drift_last_run: string | null
+  ssh_terminal_enabled: boolean
   digest_enabled: boolean
   digest_frequency: "daily" | "weekly"
   digest_weekday: number

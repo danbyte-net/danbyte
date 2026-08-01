@@ -34,6 +34,7 @@ function SecurityPage() {
       <SettingsGrid>
         <SecretStoreCard />
         <OutboundCard />
+        <SshTerminalCard />
       </SettingsGrid>
     </div>
   )
@@ -186,6 +187,44 @@ function OutboundCard() {
         The guard stops tenant-supplied URLs (NetBox imports, webhooks, SMTP
         relays) from reaching loopback, cloud-metadata, and private ranges.
         Entries here punch specific holes — keep it as narrow as possible.
+      </p>
+    </SettingsCard>
+  )
+}
+
+function SshTerminalCard() {
+  const { data, save, savingKey } = useDeploymentSettings()
+  const [enabled, setEnabled] = useState(false)
+
+  useEffect(() => {
+    if (data) setEnabled(data.ssh_terminal_enabled ?? false)
+  }, [data])
+
+  if (!data) return null
+  return (
+    <SettingsCard
+      title="In-browser SSH terminal"
+      description="Let operators open a device shell from the browser, brokered by Danbyte."
+      onSave={() =>
+        save.mutate({
+          key: "ssh_terminal",
+          patch: { ssh_terminal_enabled: enabled },
+        })
+      }
+      dirty={enabled !== (data.ssh_terminal_enabled ?? false)}
+      saving={savingKey === "ssh_terminal"}
+      saveLabel="Save terminal setting"
+    >
+      <FormCheckbox
+        label="Enable the in-browser SSH terminal"
+        checked={enabled}
+        onChange={setEnabled}
+        hint="Off by default. When on, a user with the device 'connect' permission can open an SSH session to a device through Danbyte. Each session verifies the device's SSH host key, uses a stored credential without exposing it, and is audited."
+      />
+      <p className="text-[11px] text-muted-foreground">
+        A high-trust capability: it bridges the browser to a device shell. Grant
+        the <span className="font-mono">connect</span> verb narrowly, and record
+        each device&apos;s SSH host key so sessions can be verified.
       </p>
     </SettingsCard>
   )

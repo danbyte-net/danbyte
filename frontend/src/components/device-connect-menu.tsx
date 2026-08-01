@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Plug,
   Terminal,
+  TerminalSquare,
 } from "lucide-react"
 
 import { api } from "@/lib/api"
@@ -15,6 +16,7 @@ import type { ConnectProtocol, Device, Paginated } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { getLucideIcon } from "@/components/dynamic-icon"
+import { DeviceTerminalDialog } from "@/components/device-terminal-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -114,9 +116,11 @@ async function copy(text: string, label: string) {
  * `connect` verb; the protocol catalog itself is managed in Settings.
  */
 export function DeviceConnectMenu({ device }: { device: Device }) {
-  const { canDo } = useMe()
+  const { canDo, me } = useMe()
   const canConnect = canDo("device", "connect")
+  const terminalEnabled = !!me.ssh_terminal_enabled
   const [open, setOpen] = useState(false)
+  const [termOpen, setTermOpen] = useState(false)
 
   const protocolsQ = useQuery({
     queryKey: ["connect-protocols", "enabled"],
@@ -194,6 +198,7 @@ export function DeviceConnectMenu({ device }: { device: Device }) {
   }
 
   return (
+    <>
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm">
@@ -235,6 +240,14 @@ export function DeviceConnectMenu({ device }: { device: Device }) {
           </div>
         )}
         <DropdownMenuSeparator />
+        {terminalEnabled && (
+          <>
+            <DropdownMenuItem onSelect={() => setTermOpen(true)}>
+              <TerminalSquare className="h-3.5 w-3.5" /> Open web terminal
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         {protocolsQ.isLoading ? (
           <div className="px-2 py-1.5 text-xs text-muted-foreground">
             Loading…
@@ -298,5 +311,13 @@ export function DeviceConnectMenu({ device }: { device: Device }) {
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+    {terminalEnabled && (
+      <DeviceTerminalDialog
+        device={device}
+        open={termOpen}
+        onOpenChange={setTermOpen}
+      />
+    )}
+    </>
   )
 }
