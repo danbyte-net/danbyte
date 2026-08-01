@@ -9,7 +9,8 @@ Let people sign in to Danbyte with your identity provider — **OpenID Connect
 (Azure AD), Keycloak, Okta, Google Workspace, AD FS, and any standards-compliant
 provider. It's optional and off until an administrator adds a provider.
 
-SSO sits alongside the existing [LDAP directory](permissions.md#directory-ldap)
+SSO sits alongside the existing
+[LDAP directory](permissions.md#company-directory-ldap-active-directory)
 and local logins; you can run any mix.
 
 ## How it works
