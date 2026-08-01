@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 
-import { api, type Me, type ObjectPerms } from "@/lib/api"
+import { api } from "@/lib/api"
+import type { Me, ObjectPerms, RBACAction } from "@/lib/api"
 
 /**
  * Resolve whether the user may `change`/`delete` a *specific* object, preferring
@@ -38,7 +39,7 @@ export function useMe() {
     can: (perm: string) => me.perms.includes(perm),
     /** Fine-grained: may the user perform `action` on `objectType`?
      * Superusers and the new RBAC map both resolve here. */
-    canDo: (objectType: string, action: "view" | "add" | "change" | "delete") =>
+    canDo: (objectType: string, action: RBACAction) =>
       !!me.is_superuser ||
       (me.permissions?.[objectType]?.includes(action) ?? false),
     /** Can manage users/groups/permissions + this tenant's settings. */

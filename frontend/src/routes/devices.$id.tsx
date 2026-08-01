@@ -146,6 +146,7 @@ import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
 import { AssignIpDialog } from "@/components/assign-ip-dialog"
 import type { AssignIpTarget } from "@/components/assign-ip-dialog"
 import { useMe, objCan } from "@/lib/use-me"
+import { DeviceConnectMenu } from "@/components/device-connect-menu"
 
 const DEVICE_TABS = [
   "overview",
@@ -240,6 +241,7 @@ function Body({ device: d }: { device: Device }) {
             deviceId={d.id}
             hasCoords={d.latitude != null && d.longitude != null}
           />
+          <DeviceConnectMenu device={d} />
           <PrintLabelButton
             objectType="device"
             ids={[d.id]}

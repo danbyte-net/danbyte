@@ -209,6 +209,39 @@ export interface Paginated<T> {
   results: T[]
 }
 
+// ─── Connect protocols (device "Connect" menu catalog) ──────────────────────
+
+/** A tenant catalog entry for the device "Connect" menu — a launchable
+ * protocol whose `url_template` carries `{host}`/`{username}`/`{port}`/`{name}`
+ * placeholders substituted client-side, then handed to the OS scheme handler
+ * (ssh://, rdp://, …). Managing these is gated on the `connectprotocol` verbs;
+ * using the menu on a device is gated on the device `connect` verb. */
+export interface ConnectProtocol {
+  id: string
+  name: string
+  /** Launch URL with {host}/{username}/{port}/{name} placeholders. */
+  url_template: string
+  /** Lucide icon name (kebab-case), or "" for the generic fallback. */
+  icon: string
+  default_port: number | null
+  /** Lower sorts first. */
+  weight: number
+  enabled: boolean
+  description: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ConnectProtocolWritePayload {
+  name: string
+  url_template: string
+  icon?: string
+  default_port?: number | null
+  weight?: number
+  enabled?: boolean
+  description?: string
+}
+
 // ─── Date & time display settings ────────────────────────────────────────
 // Cascade: user pref ("auto" = inherit) → tenant override → deployment
 // default. /api/me/ carries the RESOLVED values; the raw editable ones live

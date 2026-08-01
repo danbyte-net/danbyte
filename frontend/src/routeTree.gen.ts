@@ -205,6 +205,7 @@ import { Route as SettingsLdapRouteImport } from './routes/settings.ldap'
 import { Route as SettingsFloorplanRouteImport } from './routes/settings.floorplan'
 import { Route as SettingsEmailRouteImport } from './routes/settings.email'
 import { Route as SettingsDeviceFieldsRouteImport } from './routes/settings.device-fields'
+import { Route as SettingsConnectRouteImport } from './routes/settings.connect'
 import { Route as SettingsAdminRouteImport } from './routes/settings.admin'
 import { Route as ServicesIdRouteImport } from './routes/services.$id'
 import { Route as ServiceTemplatesNewRouteImport } from './routes/service-templates.new'
@@ -1366,6 +1367,11 @@ const SettingsDeviceFieldsRoute = SettingsDeviceFieldsRouteImport.update({
   path: '/device-fields',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsConnectRoute = SettingsConnectRouteImport.update({
+  id: '/connect',
+  path: '/connect',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsAdminRoute = SettingsAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -2438,6 +2444,7 @@ export interface FileRoutesByFullPath {
   '/service-templates/new': typeof ServiceTemplatesNewRoute
   '/services/$id': typeof ServicesIdRoute
   '/settings/admin': typeof SettingsAdminRoute
+  '/settings/connect': typeof SettingsConnectRoute
   '/settings/device-fields': typeof SettingsDeviceFieldsRoute
   '/settings/email': typeof SettingsEmailRoute
   '/settings/floorplan': typeof SettingsFloorplanRoute
@@ -2758,6 +2765,7 @@ export interface FileRoutesByTo {
   '/service-templates/new': typeof ServiceTemplatesNewRoute
   '/services/$id': typeof ServicesIdRoute
   '/settings/admin': typeof SettingsAdminRoute
+  '/settings/connect': typeof SettingsConnectRoute
   '/settings/device-fields': typeof SettingsDeviceFieldsRoute
   '/settings/email': typeof SettingsEmailRoute
   '/settings/floorplan': typeof SettingsFloorplanRoute
@@ -3135,6 +3143,7 @@ export interface FileRoutesById {
   '/service-templates/new': typeof ServiceTemplatesNewRoute
   '/services/$id': typeof ServicesIdRoute
   '/settings/admin': typeof SettingsAdminRoute
+  '/settings/connect': typeof SettingsConnectRoute
   '/settings/device-fields': typeof SettingsDeviceFieldsRoute
   '/settings/email': typeof SettingsEmailRoute
   '/settings/floorplan': typeof SettingsFloorplanRoute
@@ -3513,6 +3522,7 @@ export interface FileRouteTypes {
     | '/service-templates/new'
     | '/services/$id'
     | '/settings/admin'
+    | '/settings/connect'
     | '/settings/device-fields'
     | '/settings/email'
     | '/settings/floorplan'
@@ -3833,6 +3843,7 @@ export interface FileRouteTypes {
     | '/service-templates/new'
     | '/services/$id'
     | '/settings/admin'
+    | '/settings/connect'
     | '/settings/device-fields'
     | '/settings/email'
     | '/settings/floorplan'
@@ -4209,6 +4220,7 @@ export interface FileRouteTypes {
     | '/service-templates/new'
     | '/services/$id'
     | '/settings/admin'
+    | '/settings/connect'
     | '/settings/device-fields'
     | '/settings/email'
     | '/settings/floorplan'
@@ -5919,6 +5931,13 @@ declare module '@tanstack/react-router' {
       path: '/device-fields'
       fullPath: '/settings/device-fields'
       preLoaderRoute: typeof SettingsDeviceFieldsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/connect': {
+      id: '/settings/connect'
+      path: '/connect'
+      fullPath: '/settings/connect'
+      preLoaderRoute: typeof SettingsConnectRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/admin': {
@@ -7852,6 +7871,7 @@ const RouteTargetsRouteWithChildren = RouteTargetsRoute._addFileChildren(
 
 interface SettingsRouteChildren {
   SettingsAdminRoute: typeof SettingsAdminRoute
+  SettingsConnectRoute: typeof SettingsConnectRoute
   SettingsDeviceFieldsRoute: typeof SettingsDeviceFieldsRoute
   SettingsEmailRoute: typeof SettingsEmailRoute
   SettingsFloorplanRoute: typeof SettingsFloorplanRoute
@@ -7876,6 +7896,7 @@ interface SettingsRouteChildren {
 
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAdminRoute: SettingsAdminRoute,
+  SettingsConnectRoute: SettingsConnectRoute,
   SettingsDeviceFieldsRoute: SettingsDeviceFieldsRoute,
   SettingsEmailRoute: SettingsEmailRoute,
   SettingsFloorplanRoute: SettingsFloorplanRoute,
