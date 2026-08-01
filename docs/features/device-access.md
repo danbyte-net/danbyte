@@ -18,10 +18,21 @@ gated on the device **connect** permission (see [Permissions](permissions.md)).
 
 ## Device credentials
 
-A **device credential** links a device to a secret an operator manages
-elsewhere. Danbyte stores only a *reference* — the provider (the local encrypted
-store or Vault) and a path — never the secret value. Add credentials on the
-device's **Monitoring** tab.
+A **device credential** links a device to a login secret. Add and manage them in
+the **Credentials** card on the device's **Monitoring** tab (SSH password, SSH
+key, or HTTPS login).
+
+Each credential sources its secret one of two ways:
+
+- **Managed** (the default): you type the secret once and Danbyte stores it in
+  the configured [secret store](../monitoring/certificates.md) — the local
+  encrypted store **or** Vault (Vault KV holds the `{username, password}` /
+  `{private_key}` JSON). Danbyte keeps only its own reference.
+- **External**: you point at an existing path you manage yourself (e.g. a Vault
+  path your team already populates). Danbyte reads it at use-time and stores
+  nothing.
+
+Either way the value is never returned in the API.
 
 - The value is returned only by the **reveal** action, which is gated on its own
   **reveal** permission (independent of *change* — being able to edit a
@@ -72,8 +83,13 @@ browser. It is **off by default** — a deployment admin enables it under
 a device shell is a high-trust capability.
 
 When enabled, an **Open web terminal** entry appears in the **Connect** menu for
-users who hold the device *connect* permission. Pick an SSH credential and
-connect.
+users who hold the device *connect* permission. Choose how to authenticate:
+
+- **Stored credential** — use one of the device's saved SSH credentials.
+- **My login** — type your own username (defaulting to your Danbyte account) and
+  password. They are sent once over the (TLS) WebSocket, used only for that
+  session, and never stored — for environments where each operator has their own
+  device account (e.g. an LDAP/AD-backed switch).
 
 Security properties, enforced server-side on every session:
 

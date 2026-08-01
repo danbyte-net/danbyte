@@ -147,6 +147,7 @@ import { AssignIpDialog } from "@/components/assign-ip-dialog"
 import type { AssignIpTarget } from "@/components/assign-ip-dialog"
 import { useMe, objCan } from "@/lib/use-me"
 import { DeviceConnectMenu } from "@/components/device-connect-menu"
+import { DeviceCredentialsCard } from "@/components/device-credentials-card"
 
 const DEVICE_TABS = [
   "overview",
@@ -389,6 +390,7 @@ function Body({ device: d }: { device: Device }) {
               the nine-column interface table, and drift rows that carry their
               own per-row actions. */}
           <DeviceSnmpCard deviceId={d.id} />
+          <DeviceCredentialsCard deviceId={d.id} />
           <DeviceDriftCard deviceId={d.id} />
           {/* Everything narrow pairs up two-across from lg — the two
               three-column observed tables, then the hardware-health
