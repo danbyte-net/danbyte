@@ -6126,17 +6126,23 @@ class LabelTemplateViewSet(TenantScopedViewSet):
     def pdf(self, request, pk=None):
         """Print-ready PDF of the saved template against `?ids=` objects.
 
-        The PDF page is sized to the label's mm dimensions (one label per page),
-        so it prints at exact physical size with no browser chrome — which HTML
-        `window.print()` can't guarantee (the paper size is dialog-controlled).
+        `?paper=` picks the page box: ``label`` (default) makes each page the
+        label's mm size (one per page) for a label printer; ``a4``/``letter``
+        tiles the labels at true size onto that office sheet so an ordinary
+        printer prints them at real size without an "actual size" toggle. Either
+        way the size is baked into the PDF — HTML `window.print()` can't
+        guarantee it (the paper size is dialog-controlled).
         """
         from django.http import HttpResponse
         from jinja2 import TemplateError
 
-        from .label_templates import render_sheet_pdf
+        from .label_templates import PAPER_SIZES, render_sheet_pdf
 
         tmpl = self.get_object()
         ids = [i for i in (request.query_params.get("ids") or "").split(",") if i]
+        paper = (request.query_params.get("paper") or "label").lower()
+        if paper not in ("label", *PAPER_SIZES):
+            paper = "label"
         objs = self._objects(tmpl.object_type, ids) or []
         if not objs:
             return Response(
@@ -6144,7 +6150,9 @@ class LabelTemplateViewSet(TenantScopedViewSet):
                 status=drf_status.HTTP_400_BAD_REQUEST,
             )
         try:
-            pdf = render_sheet_pdf(tmpl, objs, base_url=self._base_url(request))
+            pdf = render_sheet_pdf(
+                tmpl, objs, base_url=self._base_url(request), paper=paper
+            )
         except TemplateError as exc:
             return Response(
                 {"detail": f"Template error: {exc}"},

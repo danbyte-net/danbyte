@@ -162,6 +162,33 @@ class LabelApiTests(TestCase):
         ).render().pages[0]
         self.assertAlmostEqual(page.width / 96 * 25.4, 62.0, delta=0.5)
 
+    def test_pdf_a4_sheet_is_a4_page(self):
+        # paper=a4 tiles labels onto an A4 page (so an office printer prints them
+        # at real size without a scale toggle). Page must be A4, not label-sized.
+        r = self.client.post(
+            "/api/label-templates/",
+            {"name": "A", "object_type": "device", "template_html": "x",
+             "width_mm": 62, "height_mm": 29},
+            content_type="application/json",
+        )
+        tid = r.json()["id"]
+        p = self.client.get(
+            f"/api/label-templates/{tid}/pdf/?ids={self.device.id}&paper=a4"
+        )
+        self.assertEqual(p.status_code, 200, p.content)
+        pdf = p.getvalue() if hasattr(p, "getvalue") else b"".join(p.streaming_content)
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        import weasyprint
+
+        from api.label_templates import _sheet_css
+        from api.models import LabelTemplate
+
+        tmpl = LabelTemplate.objects.get(pk=tid)
+        page = weasyprint.HTML(
+            string=f"<style>{_sheet_css(tmpl, 'a4')}</style><body></body>"
+        ).render().pages[0]
+        self.assertAlmostEqual(page.width / 96 * 25.4, 210.0, delta=1.0)
+
     def test_pdf_no_objects_is_clean_400(self):
         r = self.client.post(
             "/api/label-templates/",

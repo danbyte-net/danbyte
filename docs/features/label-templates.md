@@ -45,13 +45,21 @@ is sized exactly to the label (one label per page), rendered server-side. Your
 browser's PDF viewer previews it and prints it to any office or dedicated label
 printer.
 
-!!! tip "Print at actual size"
-    In the print dialog choose **Actual size / 100%** (not "Fit to page"), and
-    set the printer's media/roll to match the label. A browser can't be made to
-    print an *HTML* page at an exact physical size — the paper size is
-    controlled by the print dialog, not by CSS — so Danbyte prints a PDF with
-    the page dimensions baked in, which is the reliable way to get true label
-    sizing with no browser header/footer.
+Choose a layout from the **Print label** menu:
+
+- **Label roll (exact size)** — one label per page, the page sized to the
+  label. Best for a dedicated label printer with matching media.
+- **A4 sheet** / **Letter sheet** — labels tiled at true size on an office
+  sheet, with dashed cut guides. Best for an ordinary printer: the PDF page
+  already matches the paper, so it prints at real size with nothing to scale.
+
+!!! tip "If a label prints too big on a normal printer"
+    That's the print dialog scaling a small label-roll page up to fill A4/Letter.
+    Either pick the **A4/Letter sheet** layout above, or in the print dialog set
+    **Scale → Actual size** (not "Fit to page"). A browser can't be forced to
+    print at an exact physical size from CSS — the paper size and scale are
+    dialog-controlled — which is why Danbyte bakes the size into a PDF and offers
+    a sheet layout that matches office paper.
 
 Currently wired on **devices** and **racks**; the same action drops onto any
 detail page or bulk bar with one line, so more object types are easy to add.

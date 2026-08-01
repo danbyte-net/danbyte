@@ -243,35 +243,67 @@ def _inject_qr(html: str, qr: str, size_mm: float) -> str:
     return f"{html}{span}" if qr else html
 
 
-def _sheet_css(template) -> str:
-    """Print stylesheet for the PDF sheet: `@page` sized to the label with zero
-    margin, each `.lbl` sized in mm and hard-page-broken, plus the template CSS.
-    WeasyPrint honours `@page { size }` exactly, so the PDF page IS the label."""
+# Office paper sizes for the tiled-sheet layout (mm), used when the target is a
+# normal A4/Letter printer rather than a dedicated label roll.
+PAPER_SIZES = {"a4": "A4", "letter": "Letter"}
+
+
+def _sheet_css(template, paper: str = "label") -> str:
+    """Print stylesheet for the PDF.
+
+    ``paper="label"`` — one label per page, ``@page`` sized to the label with
+    zero margin so a **label printer** produces true physical dimensions.
+
+    ``paper="a4"`` / ``"letter"`` — the page is that office size and labels are
+    **tiled** at their true mm size (dashed cut guides between them). Because the
+    PDF page then matches the printer's paper, the print dialog has nothing to
+    scale up — so labels come out at real size on an ordinary printer even at the
+    default "Fit to page".
+    """
+    lbl_box = (
+        f"width:{template.width_mm}mm;height:{template.height_mm}mm;"
+        f"padding:{template.margin_mm}mm;"
+        "font-family:sans-serif;font-size:9pt;color:#000;background:#fff;"
+        "overflow:hidden;"
+    )
+    if paper in PAPER_SIZES:
+        return f"""
+    *{{box-sizing:border-box}}
+    html,body{{margin:0;padding:0;background:#fff}}
+    @page{{ size:{PAPER_SIZES[paper]}; margin:8mm; }}
+    .lbl{{
+      {lbl_box}
+      display:inline-block;vertical-align:top;margin:2mm;
+      outline:0.2mm dashed #bbb;  /* cut guide */
+    }}
+    {template.css or ""}
+    """
     return f"""
     *{{box-sizing:border-box}}
     html,body{{margin:0;padding:0;background:#fff}}
     @page{{ size:{template.width_mm}mm {template.height_mm}mm; margin:0; }}
     .lbl{{
-      width:{template.width_mm}mm;height:{template.height_mm}mm;
-      padding:{template.margin_mm}mm;
-      font-family:sans-serif;font-size:9pt;color:#000;background:#fff;
-      overflow:hidden;page-break-after:always;
+      {lbl_box}
+      page-break-after:always;
     }}
     .lbl:last-child{{page-break-after:auto}}
     {template.css or ""}
     """
 
 
-def render_sheet_pdf(template, objects, *, base_url: str = "") -> bytes:
-    """Render ``template`` against ``objects`` into a print-ready PDF whose pages
-    are sized exactly to the label (one label per page).
+def render_sheet_pdf(
+    template, objects, *, base_url: str = "", paper: str = "label"
+) -> bytes:
+    """Render ``template`` against ``objects`` into a print-ready PDF.
 
     A browser can't be made to print an HTML page at an exact physical size —
     ``@page { size }`` is advisory and the print dialog's paper size wins — so
-    the reliable path is a PDF with the page box baked in at the label's mm
-    dimensions. Each label reuses :func:`render_label` (sandboxed + sanitized),
-    with the QR composited server-side. Raises ``jinja2.TemplateError`` on a
-    template problem.
+    the reliable path is a PDF with the page box baked in. ``paper`` picks the
+    box: ``"label"`` (default) makes each page the label's mm size, one per page,
+    for a label printer; ``"a4"``/``"letter"`` tiles the labels at true size onto
+    that office sheet so an ordinary printer needs no "actual size" toggle. Each
+    label reuses :func:`render_label` (sandboxed + sanitized), with the QR
+    composited server-side. Raises ``jinja2.TemplateError`` on a template problem.
     """
     import weasyprint
 
@@ -284,7 +316,7 @@ def render_sheet_pdf(template, objects, *, base_url: str = "") -> bytes:
         cells.append(f'<div class="lbl">{body}</div>')
     doc = (
         "<!doctype html><html><head><meta charset='utf-8'>"
-        f"<style>{_sheet_css(template)}</style></head>"
+        f"<style>{_sheet_css(template, paper)}</style></head>"
         f"<body>{''.join(cells)}</body></html>"
     )
     return weasyprint.HTML(string=doc, base_url=base_url or None).write_pdf()

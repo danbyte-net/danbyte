@@ -8,8 +8,23 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+
+// Page layouts the PDF endpoint understands. "label" = one label per page sized
+// to the label (for a dedicated label printer); "a4"/"letter" = labels tiled at
+// true size onto an office sheet, so an ordinary printer prints them at real
+// size without an "actual size" toggle (its paper already matches the PDF page).
+const PAPERS = [
+  { key: "label", label: "Label roll (exact size)" },
+  { key: "a4", label: "A4 sheet (tiled)" },
+  { key: "letter", label: "Letter sheet (tiled)" },
+] as const
 
 /**
  * "Print label" action. Shows only when at least one label template exists for
@@ -17,6 +32,7 @@ import {
  * label-sized PDF for the given object ids in a new tab — the browser's PDF
  * viewer previews it and prints it at exact physical size (a browser can't
  * print an HTML page at an exact size — the paper size is dialog-controlled).
+ * The paper submenu tiles onto A4/Letter for people without a label printer.
  * Used on detail pages (single id) and list bulk bars (many ids).
  */
 export function PrintLabelButton({
@@ -47,8 +63,8 @@ export function PrintLabelButton({
     (a, b) => Number(b.is_default) - Number(a.is_default)
   )
 
-  const open = (templateId: string) => {
-    const params = new URLSearchParams({ ids: ids.join(",") })
+  const open = (templateId: string, paper: string) => {
+    const params = new URLSearchParams({ ids: ids.join(","), paper })
     window.open(
       `/api/label-templates/${templateId}/pdf/?${params.toString()}`,
       "_blank",
@@ -56,15 +72,15 @@ export function PrintLabelButton({
     )
   }
 
-  // One template → straight to print; several → let the operator choose.
-  if (ordered.length === 1) {
-    return (
-      <Button size={size} variant={variant} onClick={() => open(ordered[0].id)}>
-        <Printer className="h-3.5 w-3.5" />
-        {size !== "icon-sm" && ` ${label}`}
-      </Button>
-    )
-  }
+  // One template → a paper menu directly. Several → a template menu, each with a
+  // paper submenu, so the operator picks template then layout.
+  const paperItems = (templateId: string) =>
+    PAPERS.map((p) => (
+      <DropdownMenuItem key={p.key} onClick={() => open(templateId, p.key)}>
+        {p.label}
+      </DropdownMenuItem>
+    ))
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -74,16 +90,31 @@ export function PrintLabelButton({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {ordered.map((t) => (
-          <DropdownMenuItem key={t.id} onClick={() => open(t.id)}>
-            {t.name}
-            {t.is_default && (
-              <span className="ml-2 text-[11px] text-muted-foreground">
-                default
-              </span>
-            )}
-          </DropdownMenuItem>
-        ))}
+        {ordered.length === 1 ? (
+          <>
+            <DropdownMenuLabel>Print as</DropdownMenuLabel>
+            {paperItems(ordered[0].id)}
+          </>
+        ) : (
+          ordered.map((t) => (
+            <DropdownMenuSub key={t.id}>
+              <DropdownMenuSubTrigger>
+                {t.name}
+                {t.is_default && (
+                  <span className="ml-2 text-[11px] text-muted-foreground">
+                    default
+                  </span>
+                )}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>{paperItems(t.id)}</DropdownMenuSubContent>
+            </DropdownMenuSub>
+          ))
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+          Tip: on a normal printer use a sheet layout, or set the print dialog to
+          “Actual size”.
+        </DropdownMenuLabel>
       </DropdownMenuContent>
     </DropdownMenu>
   )
