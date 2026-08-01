@@ -96,7 +96,7 @@ real sample network (sites, racks, cabling, IP space, monitoring), yours for
 <td><img src="https://danbyte.net/readme/site-map.webp" alt="Site map"><br><sub><b>Maps</b> — every site with the circuits and fibre between them</sub></td>
 </tr>
 <tr>
-<td><img src="https://danbyte.net/readme/label-maker.webp" alt="Label maker"><br><sub><b>Label maker</b> — QR labels for any object, printed at true size</sub></td>
+<td><img src="https://danbyte.net/readme/label-editor.webp" alt="Label maker"><br><sub><b>Label maker</b> — QR labels for any object, printed at true size</sub></td>
 <td valign="center"><sub>…and certificates as a source of truth, SAML SSO, attachments, compliance rules, and a NetBox importer. <a href="https://danbyte.net/demo">Try the live demo →</a></sub></td>
 </tr>
 </table>
