@@ -59,6 +59,60 @@ class DeploymentSettingsApiTests(APITestCase):
         self.assertEqual(obj.secrets.get("password"), "keepme")
         self.assertEqual(obj.smtp_host, "smtp.new.com")
 
+    def test_put_sets_session_idle_timeout(self):
+        self.client.force_login(self.admin)
+        r = self.client.put(
+            "/api/deployment/email/",
+            {"session_idle_timeout_minutes": 15},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["session_idle_timeout_minutes"], 15)
+        self.assertEqual(DeploymentSettings.load().session_idle_timeout_minutes, 15)
+
+
+class EndAllSessionsApiTests(APITestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser(
+            "admin", "admin@acme.com", "pw"
+        )
+
+    def test_requires_manage_permission(self):
+        reader = get_user_model().objects.create_user("reader", "r@acme.com", "pw")
+        self.client.force_login(reader)
+        r = self.client.post("/api/deployment/end-all-sessions/")
+        self.assertEqual(r.status_code, 403)
+
+    def test_deletes_all_sessions(self):
+        from django.contrib.sessions.models import Session
+
+        self.client.force_login(self.admin)
+        # force_login created a session row; make sure there's at least one.
+        self.assertGreaterEqual(Session.objects.count(), 1)
+        r = self.client.post("/api/deployment/end-all-sessions/")
+        self.assertEqual(r.status_code, 200)
+        self.assertGreaterEqual(r.json()["ended"], 1)
+        self.assertEqual(Session.objects.count(), 0)
+
+
+class SessionIdleTimeoutMiddlewareTests(APITestCase):
+    def test_authenticated_request_gets_rolling_expiry_when_configured(self):
+        from core.middleware import clear_idle_timeout_cache
+
+        obj = DeploymentSettings.load()
+        obj.session_idle_timeout_minutes = 30
+        obj.save(update_fields=["session_idle_timeout_minutes"])
+        clear_idle_timeout_cache()
+        admin = get_user_model().objects.create_superuser(
+            "a2", "a2@acme.com", "pw"
+        )
+        self.client.force_login(admin)
+        # Any authenticated request runs the middleware; the session's expiry age
+        # should now reflect the configured 30 minutes (1800s), not indefinite.
+        self.client.get("/api/deployment/email/")
+        self.assertLessEqual(self.client.session.get_expiry_age(), 30 * 60)
+        clear_idle_timeout_cache()
+
     def test_singleton_enforced(self):
         a = DeploymentSettings.load()
         b = DeploymentSettings.load()

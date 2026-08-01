@@ -1,8 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
+import { useMutation } from "@tanstack/react-query"
+import { toast } from "sonner"
 
+import { api } from "@/lib/api"
+import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Field, FormCheckbox, FormSelect, FormText } from "@/components/forms"
+import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import {
   SettingsCard,
   SettingsGrid,
@@ -32,6 +48,7 @@ function SecurityPage() {
         Where private keys live, and which internal hosts the server may reach.
       </SettingsHeader>
       <SettingsGrid>
+        <SessionsCard />
         <SecretStoreCard />
         <OutboundCard />
         <SshTerminalCard />
@@ -188,6 +205,85 @@ function OutboundCard() {
         relays) from reaching loopback, cloud-metadata, and private ranges.
         Entries here punch specific holes — keep it as narrow as possible.
       </p>
+    </SettingsCard>
+  )
+}
+
+function SessionsCard() {
+  const { data, save, savingKey } = useDeploymentSettings()
+  const [timeout, setTimeoutMins] = useState("0")
+
+  useEffect(() => {
+    if (data)
+      setTimeoutMins(String(data.session_idle_timeout_minutes ?? 0))
+  }, [data])
+
+  const endAll = useMutation({
+    mutationFn: () =>
+      api<{ ended: number }>("/api/deployment/end-all-sessions/", {
+        method: "POST",
+      }),
+    onSuccess: (r) => {
+      toast.success(
+        `Signed out ${r.ended} session${r.ended === 1 ? "" : "s"} — you'll be asked to sign in again.`
+      )
+      // The caller's own session is gone now; bounce to a clean login.
+      setTimeout(() => {
+        window.location.href = "/login"
+      }, 1200)
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  if (!data) return null
+  const parsed = Math.max(0, Math.floor(Number(timeout) || 0))
+  const dirty = parsed !== (data.session_idle_timeout_minutes ?? 0)
+  return (
+    <SettingsCard
+      title="Sessions"
+      description="Idle sign-out and an emergency switch to end every active session."
+      onSave={() =>
+        save.mutate({
+          key: "sessions",
+          patch: { session_idle_timeout_minutes: parsed },
+        })
+      }
+      dirty={dirty}
+      saving={savingKey === "sessions"}
+      saveLabel="Save session settings"
+      footer={
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button size="sm" variant="destructive" disabled={endAll.isPending}>
+              {endAll.isPending ? "Ending…" : "End all sessions"}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>End all sessions?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Every signed-in user — including you — will be logged out and must
+                sign in again. API tokens keep working. Use this after a suspected
+                compromise or a permissions change.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={() => endAll.mutate()}>
+                End all sessions
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      }
+    >
+      <FormText
+        label="Idle timeout (minutes)"
+        type="number"
+        value={timeout}
+        onChange={setTimeoutMins}
+        hint="Sign a user out after this many minutes without activity. Each request resets the timer. 0 = no idle timeout."
+      />
     </SettingsCard>
   )
 }

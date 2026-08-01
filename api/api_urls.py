@@ -416,6 +416,9 @@ urlpatterns = [
          name="deployment-email"),
     path("deployment/email/test/", deployment.deployment_test_email,
          name="deployment-email-test"),
+    # Emergency "sign everyone out" — deletes all sessions (users.manage).
+    path("deployment/end-all-sessions/", deployment.deployment_end_all_sessions,
+         name="deployment-end-all-sessions"),
     # Custom browser-tab favicon (upload / clear) — users.manage only.
     path("deployment/favicon/", deployment.deployment_favicon,
          name="deployment-favicon"),

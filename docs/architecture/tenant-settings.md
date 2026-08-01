@@ -64,6 +64,22 @@ active content lands on the media origin. `me_json` returns `favicon_url`
 (`__root.tsx`), the same pattern that brands the tab title from
 `deployment_name`.
 
+## Sessions
+
+Two deployment-wide session controls live on `DeploymentSettings` and are set
+from **Settings → Security** (`users.manage`):
+
+- **Idle timeout** (`session_idle_timeout_minutes`, `0` = off). A rolling
+  inactivity timeout: `core.middleware.SessionIdleTimeoutMiddleware` resets each
+  authenticated session's expiry on every request, so a session untouched for
+  the configured span is signed out. The value is cached for ~60s (cleared on
+  save) to keep it off the hot path; API-token requests carry no session and are
+  unaffected.
+- **End all sessions** (`POST /api/deployment/end-all-sessions/`). Deletes every
+  `django_session` row — an emergency "log everyone out" switch after a
+  suspected compromise or a permissions overhaul. It signs the caller out too;
+  API tokens keep working.
+
 ## Plugins & service control
 
 Plugins follow the same tiering. A plugin is **installed** deployment-wide (a

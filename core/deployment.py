@@ -67,6 +67,7 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = DeploymentSettings
         fields = [
+            "session_idle_timeout_minutes",
             "email_enabled",
             "smtp_host",
             "smtp_port",
@@ -230,8 +231,37 @@ def deployment_settings(request):
         ser = DeploymentSettingsSerializer(obj, data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
         ser.save()
+        # A changed idle timeout must take effect promptly, not after the cache
+        # TTL — drop the cached value so the next request re-reads it.
+        from core.middleware import clear_idle_timeout_cache
+
+        clear_idle_timeout_cache()
         return Response(DeploymentSettingsSerializer(obj, context=ctx).data)
     return Response(DeploymentSettingsSerializer(obj, context=ctx).data)
+
+
+@extend_schema(
+    methods=["POST"],
+    summary="Sign out every browser session (force re-login for all users)",
+    tags=["deployment"],
+    request=None,
+    responses=inline_serializer(
+        name="EndAllSessionsResult", fields={"ended": serializers.IntegerField()}
+    ),
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def deployment_end_all_sessions(request):
+    """Delete all active sessions — an emergency "log everyone out" switch (e.g.
+    after a suspected compromise or a permissions overhaul). This signs out the
+    caller too. API tokens are unaffected. Deployment admins only."""
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    from django.contrib.sessions.models import Session
+
+    count = Session.objects.count()
+    Session.objects.all().delete()
+    return Response({"ended": count})
 
 
 # Upload cap — a favicon is tiny; anything larger is a mistake or abuse.

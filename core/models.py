@@ -223,6 +223,17 @@ class DeploymentSettings(TimestampedModel):
 
     id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
 
+    # ─── session security ────────────────────────────────────────────────
+    # Idle timeout: sign a browser session out after this many minutes without a
+    # request. Rolling — each request resets the window. 0 = no idle timeout
+    # (Django's SESSION_COOKIE_AGE default applies). Enforced by
+    # core.middleware.SessionIdleTimeoutMiddleware.
+    session_idle_timeout_minutes = models.PositiveIntegerField(
+        default=120,
+        help_text="Log inactive users out after this many minutes. 0 = no idle "
+                  "timeout. Default 120 (2 hours).",
+    )
+
     # ─── background workers ──────────────────────────────────────────────
     # How many RQ worker processes the pool runs. Applied by writing a systemd
     # drop-in (RQ_WORKERS) and restarting danbyte-workers (Settings → Services,

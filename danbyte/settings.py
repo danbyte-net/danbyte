@@ -137,6 +137,9 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Rolling idle-session timeout (admin-configurable; no-op when unset). After
+    # auth so request.user is resolved.
+    "core.middleware.SessionIdleTimeoutMiddleware",
     # Captures the request user for the change-log signals.
     "audit.middleware.AuditContextMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",

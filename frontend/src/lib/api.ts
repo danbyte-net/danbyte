@@ -4765,6 +4765,8 @@ export interface DeviceSnmp {
 }
 
 export interface DeploymentSettings {
+  /** Sign inactive browser sessions out after N minutes. 0 = no idle timeout. */
+  session_idle_timeout_minutes: number
   email_enabled: boolean
   smtp_host: string
   smtp_port: number
