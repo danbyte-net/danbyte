@@ -99,6 +99,7 @@ nav = [
     { "Site separation"   = "access/site-separation.md" },
     { "Change log"        = "features/change-log.md" },
     { "Journals"          = "features/journals.md" },
+    { "Documents"         = "features/documents.md" },
   ] },
   { "Plugins" = "architecture/plugins.md" },
   { "Architecture" = [
