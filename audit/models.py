@@ -19,6 +19,10 @@ class ChangeAction(models.TextChoices):
     # A read that exposes secret material (e.g. a stored private key). Not a
     # mutation, but it must leave a trail — who pulled the secret, and when.
     REVEAL = "reveal", "Secret revealed"
+    # An interactive session was opened to a device (the in-browser SSH
+    # terminal). Not a data mutation, but a high-trust access event that must
+    # leave a trail — who connected to which device, and when.
+    CONNECT = "connect", "Connected"
 
 
 class ChangeLogEntry(models.Model):

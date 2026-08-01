@@ -98,6 +98,7 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "config_drift_enabled",
             "config_drift_interval_minutes",
             "config_drift_last_run",
+            "ssh_terminal_enabled",
             "digest_enabled",
             "digest_frequency",
             "digest_weekday",

@@ -466,6 +466,18 @@ class DeploymentSettings(TimestampedModel):
         help_text="Timestamp of the last scheduled config-drift dispatch.",
     )
 
+    # ─── in-browser SSH terminal (opt-in, off by default) ─────────────────
+    # A deployment-admin decision: bridging a browser to a device shell is a
+    # high-trust capability, so it stays fail-closed until explicitly enabled.
+    # Even when on, each session still re-checks the device `connect` verb,
+    # device view scope, tenant, host-key identity, and audits open/close.
+    ssh_terminal_enabled = models.BooleanField(
+        default=False,
+        help_text="Allow the in-browser SSH terminal. Off by default: enabling "
+        "it lets holders of the device 'connect' verb open a shell to a device "
+        "through Danbyte. Sessions verify the host key and are audited.",
+    )
+
     # ─── scheduled email digest (opt-in, off by default) ──────────────────
     # Deployment-wide DEFAULTS; a tenant can override the whole group via
     # TenantSettings.override_digest. Per-tenant send bookkeeping

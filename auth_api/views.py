@@ -213,6 +213,10 @@ def me_json(request):
         ),
         # Whether the SPA should surface per-tenant human-readable numbers (numid).
         "human_ids_enabled": ui.human_ids_enabled,
+        # Whether the in-browser SSH terminal is enabled deployment-wide. The SPA
+        # only offers the terminal when this is on; the WS consumer re-checks it
+        # (and the connect verb) server-side regardless.
+        "ssh_terminal_enabled": ds.ssh_terminal_enabled,
         # First-run wizard: dismissed once per tenant (read-only here, no row
         # created — the /api/onboarding/ endpoint owns the write).
         "onboarding_dismissed": bool(
