@@ -41,6 +41,7 @@ from auth_api.ldap_api import (
 )
 from auth_api.token_api import ApiTokenViewSet
 from auth_api.sso_api import sso_callback, sso_login, sso_providers
+from auth_api.sso_admin import IdentityProviderViewSet, SsoGroupMappingViewSet
 from auth_api.api import (
     GroupViewSet,
     ObjectPermissionViewSet,
@@ -321,6 +322,8 @@ router.register(r"users",         UserViewSet,        basename="user")
 router.register(r"groups",        GroupViewSet,       basename="group")
 router.register(r"object-permissions", ObjectPermissionViewSet, basename="object-permission")
 router.register(r"ldap-group-mappings", LDAPGroupMappingViewSet, basename="ldap-group-mapping")
+router.register(r"identity-providers", IdentityProviderViewSet, basename="identity-provider")
+router.register(r"sso-group-mappings", SsoGroupMappingViewSet, basename="sso-group-mapping")
 router.register(r"tenant-ldap-group-mappings", TenantLDAPGroupMappingViewSet, basename="tenant-ldap-group-mapping")
 
 urlpatterns = [
