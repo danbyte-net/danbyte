@@ -1,16 +1,19 @@
 <div align="center">
 
-<img src="docs/assets/readme/danbyte-logo.png" alt="Danbyte" width="360">
+<img src="https://danbyte.net/readme/danbyte-logo.png" alt="Danbyte" width="360">
 
 **A customizable IPAM / DCIM platform — one place for your IP space, your physical gear, and how it all connects.**
 
 [![Version](https://img.shields.io/github/v/tag/danbyte-net/danbyte?label=version&color=0ea5e9)](https://github.com/danbyte-net/danbyte/releases)
+[![Live demo](https://img.shields.io/badge/live_demo-danbyte.net%2Fdemo-0ea5e9)](https://danbyte.net/demo)
+[![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/sDuzc6pufU)
+[![Reddit](https://img.shields.io/badge/Reddit-r%2Fdanbyte-FF4500?logo=reddit&logoColor=white)](https://www.reddit.com/r/danbyte)
 [![Docs](https://img.shields.io/badge/docs-read-0ea5e9)](docs/index.md)
+[![License](https://img.shields.io/badge/license-Apache_2.0-0ea5e9)](LICENSE)
 [![Django](https://img.shields.io/badge/Django-5.2_LTS-092e20)](https://www.djangoproject.com/)
 [![Python](https://img.shields.io/badge/Python-3.13-3776ab)](https://www.python.org/)
 
-<!-- SCREENSHOT: hero — the dashboard in dark mode. See "Screenshots wanted" at the bottom. -->
-<!-- ![Danbyte dashboard](docs/assets/readme/hero.png) -->
+<img src="https://danbyte.net/readme/hero.webp" alt="Danbyte dashboard" width="900">
 
 </div>
 
@@ -31,34 +34,72 @@ that describes *your* network — device types, custom statuses and roles,
 compliance rules, and custom fields — you define yourself, so the system mirrors
 your network instead of a template.
 
+## Try it — no install
+
+Spin up a private, throwaway Danbyte in your browser at
+**[danbyte.net/demo](https://danbyte.net/demo)** — a full instance seeded with a
+real sample network (sites, racks, cabling, IP space, monitoring), yours for
+30 minutes. No sign-up, nothing to install.
+
 ## Highlights
 
 - **IPAM** — subnets with automatic utilization, IP addresses, VLANs, VRFs,
   route targets, and aggregates. Overlap-aware, with per-VRF uniqueness.
 - **DCIM** — devices, racks with elevations, interfaces, cabling (front/rear
   ports, patch panels, modules), power panels & feeds.
-- **Floor plans** — draw a room or site as a grid, drop devices, racks, and
-  cameras (with field-of-view cones) onto it, and nest plans inside each other.
+- **Racks in 3D & faceplates** — walk racks in 3D and trace a cable from any
+  port; map a device type's ports onto its real front/rear photo so faceplates
+  show live status, speed and drift right on the panel.
+- **Floor plans & maps** — draw a room or site as a grid, drop devices, racks,
+  and cameras (with field-of-view cones) onto it, nest plans inside each other,
+  and zoom out to a geographic map with the circuits and fibre between sites.
 - **Topology map** — an interactive graph of how everything connects.
-- **Lifecycle management** — record vendor EoS / EoL dates on hardware types
-  and OS platforms; Danbyte draws a lifetime bar and flags what's aging out,
-  right in the device table.
-- **Monitoring** — multi-protocol health checks for addresses and prefixes,
-  with a live status pipeline.
+- **Certificates & keys as truth** — track TLS certificates and SSH host keys by
+  fingerprint, get drift the moment reality diverges from what you recorded, and
+  issue certs via **ACME** or a secret store (**Vault/OpenBao**).
+- **Monitoring & SNMP drift** — multi-protocol health checks with a live status
+  pipeline, plus a read-only observed layer that surfaces SNMP drift you accept
+  on your own terms.
+- **Lifecycle management** — record vendor EoS / EoL dates on hardware types and
+  OS platforms; Danbyte draws a lifetime bar and flags what's aging out, right
+  in the device table.
+- **Label maker** — design QR labels per object type with a live preview, then
+  print at true physical size (roll, A4 / Letter) or export a selection to Excel.
 - **Compliance & governance** — configuration rules, a full change log,
-  per-object journals, and an audit trail.
+  per-object journals, attachments on any object, and an audit trail.
+- **Identity & access** — **SAML 2.0** SSO alongside local accounts and API
+  tokens, granular role-based permissions, and optional per-site scoping for
+  multi-team setups.
 - **NetBox import** — migrate an existing NetBox instance over its API, with a
   live-progress UI and a safe dry-run preview (including floor plans from the
   netbox-map plugin).
-- **Made yours** — tags and custom fields on everything, granular
-  role-based permissions, and optional per-site scoping for multi-team setups.
+- **Made yours** — tags and custom fields on everything, a customizable
+  dashboard, and models you define instead of a template to delete.
 
-<div align="center">
+## See it in action
 
-<!-- SCREENSHOT: a 2x2 or side-by-side of the canonical list page + a detail page. -->
-<!-- ![Prefixes list](docs/assets/readme/prefixes.png) ![Device detail](docs/assets/readme/device.png) -->
-
-</div>
+<table>
+<tr>
+<td width="50%"><img src="https://danbyte.net/readme/ipam-prefixes.webp" alt="IPAM — prefixes and tree"><br><sub><b>IPAM</b> — prefixes, the derived tree and live utilization</sub></td>
+<td width="50%"><img src="https://danbyte.net/readme/device-detail.webp" alt="Device detail"><br><sub><b>DCIM</b> — a device with interfaces, components and cabling</sub></td>
+</tr>
+<tr>
+<td><img src="https://danbyte.net/readme/racks-3d.webp" alt="Racks in 3D"><br><sub><b>Racks in 3D</b> — walk the hall, trace a cable from any port</sub></td>
+<td><img src="https://danbyte.net/readme/faceplate.webp" alt="Link-state faceplate"><br><sub><b>Faceplates</b> from the real device photo, lit with live status</sub></td>
+</tr>
+<tr>
+<td><img src="https://danbyte.net/readme/floorplan.webp" alt="Floor plan"><br><sub><b>Floor plans</b> — racks, tiles and cameras on a real footprint</sub></td>
+<td><img src="https://danbyte.net/readme/topology.webp" alt="Topology canvas"><br><sub><b>Topology</b> — an interactive graph of how it all connects</sub></td>
+</tr>
+<tr>
+<td><img src="https://danbyte.net/readme/snmp-drift.webp" alt="SNMP drift"><br><sub><b>SNMP drift</b> — observed vs intended, reconciled on your terms</sub></td>
+<td><img src="https://danbyte.net/readme/site-map.webp" alt="Site map"><br><sub><b>Maps</b> — every site with the circuits and fibre between them</sub></td>
+</tr>
+<tr>
+<td><img src="https://danbyte.net/readme/label-maker.webp" alt="Label maker"><br><sub><b>Label maker</b> — QR labels for any object, printed at true size</sub></td>
+<td valign="center"><sub>…and certificates as a source of truth, SAML SSO, attachments, compliance rules, and a NetBox importer. <a href="https://danbyte.net/demo">Try the live demo →</a></sub></td>
+</tr>
+</table>
 
 ## Quick start
 
@@ -83,6 +124,7 @@ It prints the generated admin password when it finishes — open
 > Everything else is bundled — a fresh box needs nothing else, and the bundle
 > works fully offline.
 
+Prefer containers? A production **Docker / Podman** compose stack ships too.
 Building from source or setting up a dev checkout? See the
 **[installation guide](https://docs.danbyte.net/getting-started/installation/)**.
 
