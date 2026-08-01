@@ -31,6 +31,13 @@ function configFor(data: DashDist[]): ChartConfig {
   return cfg
 }
 
+// A chart segment/bar → its filtered-list destination. Returns the route + the
+// search params (built from the datum's `key`) so a click lands on the matching
+// pre-filtered list, or undefined to make the segment non-clickable.
+export type DistLink = (
+  d: DashDist
+) => { to: string; search?: Record<string, string | undefined> } | undefined
+
 /** Donut + side legend that fills its tile height. `link` (optional) turns each
  * legend row into a jump to the matching list page. */
 export function DistDonut({
@@ -40,7 +47,7 @@ export function DistDonut({
 }: {
   data: DashDist[]
   unit?: string
-  link?: (name: string) => string | undefined
+  link?: DistLink
 }) {
   if (!data.length) return <Empty />
   const sum = data.reduce((n, d) => n + d.count, 0)
@@ -95,7 +102,7 @@ export function DistDonut({
       </ChartContainer>
       <ul className="grid w-full grid-cols-2 gap-x-3 gap-y-1 text-[12px] sm:flex-1 sm:grid-cols-1">
         {data.slice(0, 6).map((d) => {
-          const to = link?.(d.name)
+          const target = link?.(d)
           const row = (
             <>
               <span
@@ -110,10 +117,11 @@ export function DistDonut({
           )
           return (
             <li key={d.name}>
-              {to ? (
+              {target ? (
                 <Link
-                  to={to}
-                  className="flex items-center gap-1.5 rounded px-1 -mx-1 hover:bg-muted/50"
+                  to={target.to}
+                  search={target.search}
+                  className="-mx-1 flex items-center gap-1.5 rounded px-1 hover:bg-muted/50"
                 >
                   {row}
                 </Link>
@@ -130,13 +138,7 @@ export function DistDonut({
 
 /** Horizontal bars sized to their content. `link` (optional) makes a bar click
  * jump to the matching list page. */
-export function DistBar({
-  data,
-  link,
-}: {
-  data: DashDist[]
-  link?: (name: string) => string | undefined
-}) {
+export function DistBar({ data, link }: { data: DashDist[]; link?: DistLink }) {
   const navigate = useNavigate()
   if (!data.length) return <Empty />
   const chartData = data.map((d) => ({ ...d, fill: d.color }))
@@ -176,8 +178,9 @@ export function DistBar({
           onClick={
             link
               ? (d: { name?: string }) => {
-                  const to = d?.name ? link(d.name) : undefined
-                  if (to) navigate({ to })
+                  const datum = d as unknown as DashDist
+                  const target = datum?.name ? link(datum) : undefined
+                  if (target) navigate({ to: target.to, search: target.search })
                 }
               : undefined
           }

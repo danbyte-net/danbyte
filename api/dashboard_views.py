@@ -112,7 +112,11 @@ def _ip_by_scope(ips) -> list:
 
 
 def _by(qs, field, label_field=None, color_field=None, limit=None):
-    """Group ``qs`` by ``field`` → [{name, count, color?}], biggest first."""
+    """Group ``qs`` by ``field`` → [{key, name, count, color?}], biggest first.
+
+    ``key`` is the raw grouping value (an id when ``field`` is a ``*_id``), so a
+    dashboard chart segment can deep-link to the matching filtered list —
+    ``name`` alone can't drive a facet, which buckets by id."""
     cols = [field]
     if label_field:
         cols.append(label_field)
@@ -121,9 +125,11 @@ def _by(qs, field, label_field=None, color_field=None, limit=None):
     rows = qs.values(*cols).annotate(n=Count("id")).order_by("-n")
     out = []
     for i, r in enumerate(rows):
-        name = r.get(label_field) if label_field else r.get(field)
+        raw = r.get(field)
+        name = r.get(label_field) if label_field else raw
         out.append(
             {
+                "key": None if raw is None else str(raw),
                 "name": name or "—",
                 "count": r["n"],
                 "color": (color_field and r.get(color_field))
@@ -200,8 +206,8 @@ def dashboard_view(request):
     for cidr in prefixes.values_list("cidr", flat=True):
         fam["6" if ":" in (cidr or "") else "4"] += 1
     prefix_by_family = [
-        {"name": "IPv4", "count": fam["4"], "color": "var(--chart-1)"},
-        {"name": "IPv6", "count": fam["6"], "color": "var(--chart-3)"},
+        {"key": "4", "name": "IPv4", "count": fam["4"], "color": "var(--chart-1)"},
+        {"key": "6", "name": "IPv6", "count": fam["6"], "color": "var(--chart-3)"},
     ]
 
     prefix_by_status = _by(prefixes, "status_id", "status__name", "status__color")
@@ -223,12 +229,15 @@ def dashboard_view(request):
 
     # ── DCIM ────────────────────────────────────────────────────────────
     device_by_status = _by(devices, "status_id", "status__name", "status__color")
-    device_by_type = _by(devices, "device_type__name", limit=6)
+    device_by_type = _by(
+        devices, "device_type_id", "device_type__name", limit=6
+    )
     device_by_site = _by(
-        devices.exclude(site__isnull=True), "site__name", limit=6
+        devices.exclude(site__isnull=True), "site_id", "site__name", limit=6
     )
     device_by_manufacturer = _by(
         devices.exclude(device_type__manufacturer__isnull=True),
+        "device_type__manufacturer_id",
         "device_type__manufacturer__name",
         limit=6,
     )
@@ -366,7 +375,8 @@ def _monitoring_block(tenant) -> dict:
         for r in states.values("status").annotate(n=Count("id"))
     }
     check_by_status = [
-        {"name": _titilise(s), "count": n, "color": status_colors.get(s, "var(--chart-1)")}
+        {"key": s, "name": _titilise(s), "count": n,
+         "color": status_colors.get(s, "var(--chart-1)")}
         for s, n in sorted(by_status.items(), key=lambda kv: -kv[1])
     ]
     total = sum(by_status.values())
@@ -381,7 +391,8 @@ def _monitoring_block(tenant) -> dict:
     }
     alerts = Alert.objects.filter(tenant=tenant, status="firing")
     alerts_by_severity = [
-        {"name": _titilise(r["severity"]), "count": r["n"], "color": sev_colors.get(r["severity"], "var(--chart-1)")}
+        {"key": r["severity"], "name": _titilise(r["severity"]), "count": r["n"],
+         "color": sev_colors.get(r["severity"], "var(--chart-1)")}
         for r in alerts.values("severity").annotate(n=Count("id")).order_by("-n")
     ]
     return {

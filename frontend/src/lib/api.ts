@@ -4291,6 +4291,9 @@ export interface IpUptime {
 }
 
 export interface DashDist {
+  /** Machine value for the bucket (id/slug) — drives deep-link filters; null
+   * for an "unset"/"—" bucket. `name` is only the display label. */
+  key?: string | null
   name: string
   count: number
   color: string

@@ -118,7 +118,14 @@ export const CATALOG: WidgetDef[] = [
     description: "Address status breakdown",
     size: "sq",
     render: (d) => (
-      <DistDonut data={d.ip_by_status} unit="IPs" link={() => "/prefixes"} />
+      <DistDonut
+        data={d.ip_by_status}
+        unit="IPs"
+        link={(x) => ({
+          to: "/ips",
+          search: x.key ? { status: x.key } : undefined,
+        })}
+      />
     ),
   },
   {
@@ -127,7 +134,14 @@ export const CATALOG: WidgetDef[] = [
     description: "Address role breakdown",
     size: "sq",
     render: (d) => (
-      <DistDonut data={d.ip_by_role} unit="IPs" link={() => "/prefixes"} />
+      <DistDonut
+        data={d.ip_by_role}
+        unit="IPs"
+        link={(x) => ({
+          to: "/ips",
+          search: x.key ? { role: x.key } : undefined,
+        })}
+      />
     ),
   },
   {
@@ -135,8 +149,14 @@ export const CATALOG: WidgetDef[] = [
     title: "Public vs private IPs",
     description: "Address reachability split",
     size: "sq",
+    // Scope is a computed classification, not a stored field/facet — so the
+    // segment opens the IP list without a filter (no column to filter on).
     render: (d) => (
-      <DistDonut data={d.ip_by_scope} unit="IPs" link={() => "/prefixes"} />
+      <DistDonut
+        data={d.ip_by_scope}
+        unit="IPs"
+        link={() => ({ to: "/ips" })}
+      />
     ),
   },
   {
@@ -148,7 +168,10 @@ export const CATALOG: WidgetDef[] = [
       <DistDonut
         data={d.prefix_by_family}
         unit="prefixes"
-        link={() => "/prefixes"}
+        link={(x) => ({
+          to: "/prefixes",
+          search: x.key ? { family: x.key } : undefined,
+        })}
       />
     ),
   },
@@ -161,7 +184,10 @@ export const CATALOG: WidgetDef[] = [
       <DistDonut
         data={d.prefix_by_status}
         unit="prefixes"
-        link={() => "/prefixes"}
+        link={(x) => ({
+          to: "/prefixes",
+          search: x.key ? { status: x.key } : undefined,
+        })}
       />
     ),
   },
@@ -181,7 +207,10 @@ export const CATALOG: WidgetDef[] = [
       <DistDonut
         data={d.device_by_status}
         unit="devices"
-        link={() => "/devices"}
+        link={(x) => ({
+          to: "/devices",
+          search: x.key ? { status: x.key } : undefined,
+        })}
       />
     ),
   },
@@ -190,14 +219,30 @@ export const CATALOG: WidgetDef[] = [
     title: "Devices by type",
     description: "Top device types",
     size: "wide",
-    render: (d) => <DistBar data={d.device_by_type} link={() => "/devices"} />,
+    render: (d) => (
+      <DistBar
+        data={d.device_by_type}
+        link={(x) => ({
+          to: "/devices",
+          search: x.key ? { type: x.key } : undefined,
+        })}
+      />
+    ),
   },
   {
     id: "device-site",
     title: "Devices by site",
     description: "Where devices live",
     size: "wide",
-    render: (d) => <DistBar data={d.device_by_site} link={() => "/devices"} />,
+    render: (d) => (
+      <DistBar
+        data={d.device_by_site}
+        link={(x) => ({
+          to: "/devices",
+          search: x.key ? { site: x.key } : undefined,
+        })}
+      />
+    ),
   },
   {
     id: "device-manufacturer",
@@ -205,7 +250,13 @@ export const CATALOG: WidgetDef[] = [
     description: "Vendor split",
     size: "wide",
     render: (d) => (
-      <DistBar data={d.device_by_manufacturer} link={() => "/devices"} />
+      <DistBar
+        data={d.device_by_manufacturer}
+        link={(x) => ({
+          to: "/devices",
+          search: x.key ? { manufacturer: x.key } : undefined,
+        })}
+      />
     ),
   },
   {
@@ -217,7 +268,12 @@ export const CATALOG: WidgetDef[] = [
       <DistDonut
         data={d.check_by_status}
         unit="checks"
-        link={() => "/monitoring"}
+        link={(x) => ({
+          to: "/monitoring",
+          search: x.key
+            ? { view: "checks", status: x.key }
+            : { view: "checks" },
+        })}
       />
     ),
   },
@@ -230,7 +286,12 @@ export const CATALOG: WidgetDef[] = [
       <DistDonut
         data={d.alerts_by_severity}
         unit="alerts"
-        link={() => "/monitoring"}
+        link={(x) => ({
+          to: "/alerts",
+          search: x.key
+            ? { state: "firing", severity: x.key }
+            : { state: "firing" },
+        })}
       />
     ),
   },

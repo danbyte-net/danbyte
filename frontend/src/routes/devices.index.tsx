@@ -22,12 +22,18 @@ import { DeviceBulkBar } from "@/components/device-bulk-bar"
 import { useMe, objCan } from "@/lib/use-me"
 
 export const Route = createFileRoute("/devices/")({
-  // `?type=<device-type-id>` seeds the Type facet so cross-object links (e.g.
-  // the device count on a device-type page) land on the pre-filtered table.
-  // Omit the key when absent so `type` stays optional for plain navigation —
-  // `{ type: undefined }` would force every `Link to="/devices"` to pass search.
-  validateSearch: (search: Record<string, unknown>): { type?: string } =>
-    typeof search.type === "string" ? { type: search.type } : {},
+  // Facet seeds from cross-object / dashboard deep-links, e.g. the "Devices by
+  // status / type / site" dashboard cards. Keys are optional so a plain
+  // `Link to="/devices"` never has to pass search.
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { type?: string; status?: string; site?: string } => {
+    const out: { type?: string; status?: string; site?: string } = {}
+    if (typeof search.type === "string") out.type = search.type
+    if (typeof search.status === "string") out.status = search.status
+    if (typeof search.site === "string") out.site = search.site
+    return out
+  },
   component: DevicesPage,
 })
 
@@ -97,11 +103,18 @@ function DevicesPage() {
       }),
     [handleDelete, canEdit, canDelete, monitoring, humanIds]
   )
-  const { type: typeFilter } = Route.useSearch()
-  const initialEnums = useMemo(
-    () => (typeFilter ? { type: [typeFilter] } : undefined),
-    [typeFilter]
-  )
+  const {
+    type: typeFilter,
+    status: statusFilter,
+    site: siteFilter,
+  } = Route.useSearch()
+  const initialEnums = useMemo(() => {
+    const seed: Record<string, string[]> = {}
+    if (typeFilter) seed.type = [typeFilter]
+    if (statusFilter) seed.status = [statusFilter]
+    if (siteFilter) seed.site = [siteFilter]
+    return Object.keys(seed).length ? seed : undefined
+  }, [typeFilter, statusFilter, siteFilter])
   const { rail, filteredRows } = useTableFilters(columns, allRows, initialEnums)
 
   return (

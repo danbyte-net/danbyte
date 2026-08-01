@@ -24,7 +24,13 @@ import { useViolationMap } from "@/components/compliance/violation-badge"
 import { PrefixBulkBar } from "@/components/prefix-bulk-bar"
 import { useMe, objCan } from "@/lib/use-me"
 
-export const Route = createFileRoute("/prefixes/")({ component: PrefixesPage })
+export const Route = createFileRoute("/prefixes/")({
+  component: PrefixesPage,
+  // `?status=<id>` seeds the Status facet so the dashboard "Prefixes by status"
+  // card lands on the pre-filtered list. Optional so plain /prefixes is valid.
+  validateSearch: (s: Record<string, unknown>): { status?: string } =>
+    typeof s.status === "string" ? { status: s.status } : {},
+})
 
 // Stable empty fallback so `columns` (which depends on `monitoring`) keeps a
 // constant identity while the status query loads — otherwise facets/filteredRows
@@ -66,9 +72,15 @@ function PrefixesPage() {
       }),
     [cfDefs]
   )
+  const { status: statusFilter } = Route.useSearch()
+  const initialEnums = useMemo(
+    () => (statusFilter ? { status: [statusFilter] } : undefined),
+    [statusFilter]
+  )
   const { rail, filteredRows, toggleValue, selectedValues } = useTableFilters(
     facetColumns,
-    allRows
+    allRows,
+    initialEnums
   )
   const tagSelection = selectedValues("tags")
 
