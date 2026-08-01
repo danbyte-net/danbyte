@@ -369,10 +369,9 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
     def _record_host_key(self, ctx, line):
         """Fold the presented host key into the SSH host-key inventory (observed).
         Idempotent per (device, fingerprint); refreshes last_seen otherwise."""
-        from danbyte_checks.ssh_hostkey import SSHKeyParseError, parse_public_key_line
-
         from api.models import Device
         from core.models import Tenant
+        from danbyte_checks.ssh_hostkey import SSHKeyParseError, parse_public_key_line
 
         from .ssh_host_keys import record_host_key
 
