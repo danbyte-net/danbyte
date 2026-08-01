@@ -52,6 +52,12 @@ CLOSE_BADREQ = 4400
 
 
 class SshTerminalConsumer(AsyncWebsocketConsumer):
+    # This is a point-to-point bridge — it never uses groups or channel-layer
+    # sends. Point at an unconfigured alias so ``get_channel_layer`` returns
+    # None and Channels doesn't run the Redis ``receive`` loop, whose ~5s socket
+    # timeout on an idle channel would otherwise kill the session.
+    channel_layer_alias = "ssh-terminal-none"
+
     _conn = None
     _proc = None
     _reader_task = None
