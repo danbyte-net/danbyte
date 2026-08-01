@@ -311,6 +311,17 @@ class AlertAckApiTests(APITestCase):
         self.alert.refresh_from_db()
         self.assertIsNone(self.alert.acknowledged_at)
 
+    def test_kind_filter(self):
+        # A second firing alert of a different kind; ?kind=ssh returns only it.
+        ssh = Alert.objects.create(
+            tenant=self.tenant, target_ip=self.ip, template=self.t, kind="ssh",
+            dedup_key=f"{self.ip.id}:ssh", severity="warning", check_status="down",
+        )
+        r = self.client.get("/api/monitoring/alerts/?status=firing&kind=ssh")
+        self.assertEqual(r.status_code, 200)
+        ids = {row["id"] for row in r.json()["results"]}
+        self.assertEqual(ids, {str(ssh.id)})
+
     def test_list_marks_silenced(self):
         from datetime import timedelta
 

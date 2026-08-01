@@ -42,17 +42,20 @@ function Tile({
   value,
   tone,
   to,
+  search,
   emphasize,
 }: {
   label: string
   value: number
   tone: keyof typeof TONE
   to: string
+  search?: Record<string, string>
   emphasize?: boolean
 }) {
   return (
     <Link
       to={to}
+      search={search}
       className={`flex flex-col rounded-lg border p-3 transition-colors hover:bg-muted/50 ${
         emphasize && value > 0
           ? "border-red-300 bg-red-50/40 dark:border-red-900/60 dark:bg-red-950/20"
@@ -101,6 +104,7 @@ export function CertKeyHealthCard() {
             value={d.expired}
             tone="expired"
             to="/certificates"
+            search={{ expiry: "expired" }}
             emphasize
           />
           <Tile
@@ -108,6 +112,7 @@ export function CertKeyHealthCard() {
             value={d.expiring_critical}
             tone="critical"
             to="/certificates"
+            search={{ expiry: "critical" }}
             emphasize
           />
           <Tile
@@ -115,24 +120,28 @@ export function CertKeyHealthCard() {
             value={d.expiring_warning}
             tone="warning"
             to="/certificates"
+            search={{ expiry: "warning" }}
           />
           <Tile
             label="Healthy"
             value={d.healthy}
             tone="healthy"
             to="/certificates"
+            search={{ expiry: "healthy" }}
           />
           <Tile
             label="Self-signed"
             value={d.self_signed}
             tone="muted"
             to="/certificates"
+            search={{ self_signed: "self" }}
           />
           <Tile
             label="SSH key drift"
             value={d.ssh_host_key_drift}
             tone="critical"
             to="/alerts"
+            search={{ state: "firing", kind: "ssh" }}
             emphasize
           />
           <Tile
@@ -140,6 +149,7 @@ export function CertKeyHealthCard() {
             value={d.firing_alerts}
             tone="expired"
             to="/alerts"
+            search={{ state: "firing" }}
             emphasize
           />
         </div>

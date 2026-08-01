@@ -19,9 +19,21 @@ import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/certificates/")({
   component: CertificatesPage,
+  // Deep-link filters from the monitoring cert-health tiles, e.g.
+  // /certificates?expiry=healthy or ?self_signed=self. Keys are optional so
+  // plain links to /certificates (no filter) stay valid.
+  validateSearch: (
+    s: Record<string, unknown>
+  ): { expiry?: string; self_signed?: string } => {
+    const out: { expiry?: string; self_signed?: string } = {}
+    if (typeof s.expiry === "string") out.expiry = s.expiry
+    if (typeof s.self_signed === "string") out.self_signed = s.self_signed
+    return out
+  },
 })
 
 function CertificatesPage() {
+  const { expiry, self_signed } = Route.useSearch()
   const [q, setQ] = useState("")
   const [uploadOpen, setUploadOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
@@ -49,7 +61,21 @@ function CertificatesPage() {
     () => buildCertificateColumns<Certificate>(),
     []
   )
-  const { rail, filteredRows } = useTableFilters(columns, allRows)
+  // Seed the expiry / trust facets from the URL so a cert-health tile lands on
+  // the pre-filtered list. Facet ids: "expiry" (expired|critical|warning|
+  // healthy) and "self_signed" (self|ca) — see certificate-columns.tsx.
+  const initialEnums = useMemo(() => {
+    const seed: Record<string, string[]> = {}
+    if (
+      expiry &&
+      ["expired", "critical", "warning", "healthy"].includes(expiry)
+    )
+      seed.expiry = [expiry]
+    if (self_signed && ["self", "ca"].includes(self_signed))
+      seed.self_signed = [self_signed]
+    return seed
+  }, [expiry, self_signed])
+  const { rail, filteredRows } = useTableFilters(columns, allRows, initialEnums)
 
   return (
     <ListPageShell

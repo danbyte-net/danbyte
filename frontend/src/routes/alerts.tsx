@@ -48,6 +48,7 @@ interface AlertsSearch {
   ack: AckFilter
   q: string
   site: string
+  kind?: string
 }
 
 export const Route = createFileRoute("/alerts")({
@@ -65,6 +66,7 @@ export const Route = createFileRoute("/alerts")({
       : "all",
     q: typeof s.q === "string" ? s.q : "",
     site: typeof s.site === "string" ? s.site : "all",
+    kind: typeof s.kind === "string" ? s.kind : "",
   }),
 })
 
@@ -81,7 +83,7 @@ const SEV_VARIANT: Record<
 const EMPTY_FACET: Set<string> = new Set()
 
 function AlertsPage() {
-  const { tab, state, severity, ack, q: search, site } = Route.useSearch()
+  const { tab, state, severity, ack, q: search, site, kind } = Route.useSearch()
   const nav = useNavigate()
   const go = (next: Partial<AlertsSearch>) =>
     nav({
@@ -94,6 +96,7 @@ function AlertsPage() {
         ack: next.ack ?? (prev.ack as AckFilter) ?? "all",
         q: next.q ?? (prev.q as string) ?? "",
         site: next.site ?? (prev.site as string) ?? "all",
+        kind: next.kind ?? (prev.kind as string) ?? "",
       }),
       replace: next.q !== undefined, // typing shouldn't spam history
     })
@@ -117,13 +120,14 @@ function AlertsPage() {
   })
 
   const q = useQuery({
-    queryKey: ["alerts", state, severity, ack, search, site],
+    queryKey: ["alerts", state, severity, ack, search, site, kind],
     queryFn: () => {
       const p = new URLSearchParams({ status: state })
       if (severity !== "all") p.set("severity", severity)
       if (ack !== "all") p.set("ack", ack)
       if (search) p.set("q", search)
       if (site !== "all") p.set("site", site)
+      if (kind) p.set("kind", kind)
       return api<AlertsResponse>(`/api/monitoring/alerts/?${p}`)
     },
     placeholderData: keepPreviousData,

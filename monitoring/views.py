@@ -1354,6 +1354,11 @@ def alerts_view(request):
     site = request.query_params.get("site")
     if site:
         qs = qs.filter(target_ip__site_id=site)
+    # Alert kind (ssh, tls_cert, ping, …) — lets the cert/key-health "SSH key
+    # drift" tile deep-link to just those alerts.
+    kind = request.query_params.get("kind")
+    if kind:
+        qs = qs.filter(kind=kind)
     rows = list(qs.order_by("-opened_at")[:200])
 
     # Annotate which firing alerts are currently muted by a silence — one
