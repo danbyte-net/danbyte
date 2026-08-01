@@ -189,6 +189,48 @@ class LabelApiTests(TestCase):
         ).render().pages[0]
         self.assertAlmostEqual(page.width / 96 * 25.4, 210.0, delta=1.0)
 
+    def test_text_and_xlsx_export(self):
+        r = self.client.post(
+            "/api/label-templates/",
+            {"name": "T", "object_type": "device",
+             "template_html": "<div>{{ device.name }}</div><div>{{ device.site.name }}</div>"},
+            content_type="application/json",
+        )
+        tid = r.json()["id"]
+        t = self.client.get(f"/api/label-templates/{tid}/text/?ids={self.device.id}")
+        self.assertEqual(t.status_code, 200, t.content)
+        self.assertIn("rtr1", t.json()["labels"][0]["text"])
+        x = self.client.get(f"/api/label-templates/{tid}/xlsx/?ids={self.device.id}")
+        self.assertEqual(x.status_code, 200, x.content)
+        self.assertIn("spreadsheetml", x["Content-Type"])
+        blob = x.getvalue() if hasattr(x, "getvalue") else b"".join(x.streaming_content)
+        self.assertTrue(blob[:2] == b"PK")  # xlsx is a zip
+
+    def test_targeting_filters_list(self):
+        from api.models import DeviceRole, DeviceType, LabelTemplate
+
+        other_dt = DeviceType.objects.create(
+            tenant=self.tenant, manufacturer=self.device.device_type.manufacturer,
+            name="OtherType", model="OtherType",
+        )
+        # Universal template (no restriction) + one restricted to another type.
+        LabelTemplate.objects.create(
+            tenant=self.tenant, name="Universal", object_type="device"
+        )
+        restricted = LabelTemplate.objects.create(
+            tenant=self.tenant, name="OnlyOther", object_type="device"
+        )
+        restricted.device_types.add(other_dt)
+        # Filtering by this device's type returns the universal one, not the
+        # foreign-type-restricted one.
+        r = self.client.get(
+            f"/api/label-templates/?object_type=device"
+            f"&device_type={self.device.device_type_id}"
+        )
+        names = {t["name"] for t in r.json()["results"]}
+        self.assertIn("Universal", names)
+        self.assertNotIn("OnlyOther", names)
+
     def test_pdf_no_objects_is_clean_400(self):
         r = self.client.post(
             "/api/label-templates/",

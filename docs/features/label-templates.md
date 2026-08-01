@@ -69,6 +69,36 @@ sanitized label HTML, with the QR composited server-side. On container/bare
 deploys this needs the Pango/cairo/GDK-PixBuf system libraries (baked into the
 Docker image and installed by `install.sh`).
 
+## Targeting device types and roles
+
+By default a template applies to **every** object of its type. For device (and
+virtual-machine) templates you can narrow that in the editor's **Applies to**
+section:
+
+- **Device types** — only devices of the chosen types offer this label.
+- **Roles** — only devices/VMs with the chosen roles offer it.
+
+Leave both empty to apply to everything. Restrictions are additive: a device
+must match a named device type **and** a named role (when each is set). Because
+several templates can match one device, a single device can carry **more than
+one label** — the **Print label** menu lists every applicable template. The
+device page filters the menu to exactly the labels that apply to that device.
+
+## Copy text and Excel export
+
+For an external label printer's own software (Phoenix Contact, Weidmüller, DYMO,
+…) you often want the label *text*, not a PDF. Each entry in the **Print label**
+menu offers:
+
+- **Copy text** — copies the label's rendered plain text to the clipboard (one
+  label per block), ready to paste into another program.
+- **Export to Excel** — downloads an `.xlsx` with one row per object: the full
+  label text plus each line split into its own column, so it maps straight onto
+  an import template.
+
+Both work from a single object's page and from the **device list bulk bar** —
+tick the devices you want, choose a template, and export them all at once.
+
 ## Safety
 
 Label HTML is rendered in a **sandboxed** Jinja environment with autoescaping on,

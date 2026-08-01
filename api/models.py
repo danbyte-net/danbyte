@@ -5055,6 +5055,17 @@ class LabelTemplate(NumIdMixin, TimestampedModel):
         default=False,
         help_text="Preselected when printing labels for this object type.",
     )
+    # Optional targeting (device/VM labels): restrict which objects a template
+    # applies to. Empty = applies to every object of the type. A device matches
+    # when its device_type is in `device_types` (if any are set) AND its role is
+    # in `roles` (if any are set); a VM matches on `roles` only. Several
+    # templates can match one object, so a device can carry more than one label.
+    device_types = models.ManyToManyField(
+        "DeviceType", blank=True, related_name="label_templates"
+    )
+    roles = models.ManyToManyField(
+        "DeviceRole", blank=True, related_name="label_templates"
+    )
     created_by = models.ForeignKey(
         "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="+",
@@ -5070,6 +5081,22 @@ class LabelTemplate(NumIdMixin, TimestampedModel):
 
     def __str__(self) -> str:
         return self.name
+
+    def applies_to(self, obj) -> bool:
+        """Whether this template targets ``obj`` given its device-type/role
+        restrictions. Restrictions only constrain objects that actually have the
+        attribute; an unset restriction never excludes anything."""
+        dt_ids = set(self.device_types.values_list("pk", flat=True))
+        role_ids = set(self.roles.values_list("pk", flat=True))
+        if dt_ids:
+            obj_dt = getattr(obj, "device_type_id", None)
+            if obj_dt is None or obj_dt not in dt_ids:
+                return False
+        if role_ids:
+            obj_role = getattr(obj, "role_id", None)
+            if obj_role is None or obj_role not in role_ids:
+                return False
+        return True
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)

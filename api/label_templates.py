@@ -322,6 +322,24 @@ def render_sheet_pdf(
     return weasyprint.HTML(string=doc, base_url=base_url or None).write_pdf()
 
 
+def render_label_text(template, obj, *, base_url: str = "") -> str:
+    """The label's visible text as plain multi-line text — for copying into an
+    external label printer's software (Phoenix Contact, Weidmüller, DYMO, …).
+    Renders the template, drops the markup, and keeps one line per block."""
+    import html as _html
+
+    from django.utils.html import strip_tags
+
+    body = render_label(template, obj, base_url=base_url)["html"]
+    # Turn block boundaries into newlines before stripping tags so the lines
+    # survive (e.g. name / serial / site each on their own line).
+    body = re.sub(r"(?i)<\s*br\s*/?>", "\n", body)
+    body = re.sub(r"(?i)</(div|p|tr|li|h[1-6]|table)\s*>", "\n", body)
+    text = _html.unescape(strip_tags(body))
+    lines = [ln.strip() for ln in text.splitlines()]
+    return "\n".join(ln for ln in lines if ln)
+
+
 def render_label(template, obj, *, base_url: str = "") -> dict:
     """Render ``template`` against ``obj``. Returns ``{"html", "qr"}``.
 

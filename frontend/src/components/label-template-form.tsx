@@ -3,9 +3,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { LabelFields, LabelTemplate, RenderedLabel } from "@/lib/api"
+import type {
+  LabelFields,
+  LabelTemplate,
+  Paginated,
+  RenderedLabel,
+} from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { labelDocument } from "@/lib/label-render"
+import { IdMultiSelect } from "@/components/cells/id-multi-select"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -112,6 +118,10 @@ const BLANK: Draft = {
   qr_content: "",
   qr_size_mm: 18,
   is_default: false,
+  device_type_ids: [],
+  role_ids: [],
+  device_types_detail: [],
+  roles_detail: [],
 }
 
 export function LabelTemplateFormDialog({
@@ -148,6 +158,34 @@ export function LabelTemplateFormDialog({
         ]
   )
   const [fieldSearch, setFieldSearch] = useState("")
+
+  // Optional device/VM targeting is only meaningful for those types.
+  const canTarget =
+    d.object_type === "device" || d.object_type === "virtualmachine"
+  const dtOptQ = useQuery({
+    queryKey: ["device-types-picker"],
+    queryFn: () =>
+      api<Paginated<{ id: string; model: string }>>(
+        "/api/device-types/?picker=1&page_size=500"
+      ),
+    enabled: open && canTarget && d.object_type === "device",
+  })
+  const roleOptQ = useQuery({
+    queryKey: ["device-roles-picker"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>(
+        "/api/device-roles/?picker=1&page_size=500"
+      ),
+    enabled: open && canTarget,
+  })
+  const dtOptions = (dtOptQ.data?.results ?? []).map((o) => ({
+    id: o.id,
+    name: o.model,
+  }))
+  const roleOptions = (roleOptQ.data?.results ?? []).map((o) => ({
+    id: o.id,
+    name: o.name,
+  }))
 
   // Field-reference tokens for the chosen object type.
   const fieldsQ = useQuery({
@@ -280,9 +318,57 @@ export function LabelTemplateFormDialog({
             <FormSelect
               label="Object type"
               value={d.object_type}
-              onChange={(v) => v && set("object_type", v)}
+              onChange={(v) => {
+                if (!v) return
+                // Targeting only applies to devices/VMs — clear it otherwise so
+                // a stray restriction can't hide the template later.
+                setD((prev) => ({
+                  ...prev,
+                  object_type: v,
+                  device_type_ids: v === "device" ? prev.device_type_ids : [],
+                  role_ids:
+                    v === "device" || v === "virtualmachine"
+                      ? prev.role_ids
+                      : [],
+                }))
+              }}
               options={OBJECT_TYPES}
             />
+            {canTarget && (
+              <Field
+                label="Applies to"
+                hint="Leave empty to apply to every object of this type. Restricting by device type and/or role limits which objects offer this label — a device can still match several templates."
+              >
+                <div className="space-y-2">
+                  {d.object_type === "device" && (
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">
+                        Device types
+                      </span>
+                      <IdMultiSelect
+                        options={dtOptions}
+                        value={d.device_type_ids}
+                        onChange={(v) => set("device_type_ids", v)}
+                        placeholder="Any device type"
+                        searchPlaceholder="Search device types…"
+                        emptyText="No device types."
+                      />
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    <span className="text-xs text-muted-foreground">Roles</span>
+                    <IdMultiSelect
+                      options={roleOptions}
+                      value={d.role_ids}
+                      onChange={(v) => set("role_ids", v)}
+                      placeholder="Any role"
+                      searchPlaceholder="Search roles…"
+                      emptyText="No roles."
+                    />
+                  </div>
+                </div>
+              </Field>
+            )}
             <div className="grid grid-cols-3 gap-2">
               <FormText
                 label="Width (mm)"

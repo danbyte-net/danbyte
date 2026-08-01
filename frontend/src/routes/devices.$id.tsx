@@ -238,7 +238,12 @@ function Body({ device: d }: { device: Device }) {
             deviceId={d.id}
             hasCoords={d.latitude != null && d.longitude != null}
           />
-          <PrintLabelButton objectType="device" ids={[d.id]} />
+          <PrintLabelButton
+            objectType="device"
+            ids={[d.id]}
+            deviceTypeId={d.device_type?.id}
+            roleId={d.role?.id}
+          />
           {canEdit && d.device_type && (
             <Button
               variant="outline"

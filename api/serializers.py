@@ -5170,6 +5170,24 @@ class LabelTemplateSerializer(NumIdModelSerializer):
     """A printable per-object label template (Jinja2 HTML + QR, sized in mm)."""
 
     object_type_label = serializers.SerializerMethodField()
+    # Optional device/VM targeting. Empty = applies to every object of the type;
+    # several templates may match one object, so a device can carry more labels.
+    device_type_ids = TenantScopedPrimaryKeyRelatedField(
+        source="device_types", many=True, required=False,
+        queryset=DeviceType.objects.all(),
+    )
+    role_ids = TenantScopedPrimaryKeyRelatedField(
+        source="roles", many=True, required=False,
+        queryset=DeviceRole.objects.all(),
+    )
+    device_types_detail = serializers.SerializerMethodField()
+    roles_detail = serializers.SerializerMethodField()
+
+    def get_device_types_detail(self, obj) -> list:
+        return [{"id": str(d.pk), "name": d.model} for d in obj.device_types.all()]
+
+    def get_roles_detail(self, obj) -> list:
+        return [{"id": str(r.pk), "name": r.name} for r in obj.roles.all()]
 
     def get_object_type_label(self, obj) -> str:
         from auth_api.object_types import _registry
@@ -5213,8 +5231,11 @@ class LabelTemplateSerializer(NumIdModelSerializer):
         fields = ["id", "name", "object_type", "object_type_label", "description",
                   "width_mm", "height_mm", "margin_mm", "template_html", "css",
                   "qr_enabled", "qr_content", "qr_size_mm", "is_default",
+                  "device_type_ids", "role_ids",
+                  "device_types_detail", "roles_detail",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "object_type_label", "created_at", "updated_at"]
+        read_only_fields = ["id", "object_type_label", "device_types_detail",
+                            "roles_detail", "created_at", "updated_at"]
 
 
 # ─── Virtual chassis (switch stacks) ─────────────────────────────────────────

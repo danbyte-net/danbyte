@@ -6003,9 +6003,24 @@ class LabelTemplateViewSet(TenantScopedViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         if self.request:
+            from django.db.models import Q
+
             ot = self.request.query_params.get("object_type")
             if ot:
                 qs = qs.filter(object_type=ot)
+            # Optional targeting filters: return templates that either carry no
+            # restriction OR name this device-type/role — so the print menu on a
+            # given device shows exactly the labels that apply to it (an empty
+            # restriction is universal). AND across the two dimensions mirrors
+            # LabelTemplate.applies_to.
+            dt = self.request.query_params.get("device_type")
+            if dt:
+                qs = qs.filter(
+                    Q(device_types__isnull=True) | Q(device_types=dt)
+                ).distinct()
+            role = self.request.query_params.get("role")
+            if role:
+                qs = qs.filter(Q(roles__isnull=True) | Q(roles=role)).distinct()
         return qs
 
     def _view_scoped(self, model, object_type, qs):
@@ -6121,6 +6136,78 @@ class LabelTemplateViewSet(TenantScopedViewSet):
                 rendered = {"html": f"<pre>{exc}</pre>", "qr": ""}
             out.append({"id": str(obj.pk), **rendered})
         return Response({"labels": out})
+
+    @action(detail=True, methods=["get"])
+    def text(self, request, pk=None):
+        """Plain-text of the label for `?ids=` objects — for copying into an
+        external label-printer program. Returns `{labels:[{id,name,text}]}`."""
+        from jinja2 import TemplateError
+
+        from .label_templates import render_label_text
+
+        tmpl = self.get_object()
+        ids = [i for i in (request.query_params.get("ids") or "").split(",") if i]
+        objs = self._objects(tmpl.object_type, ids) or []
+        base = self._base_url(request)
+        out = []
+        for obj in objs:
+            try:
+                text = render_label_text(tmpl, obj, base_url=base)
+            except TemplateError as exc:
+                text = f"Template error: {exc}"
+            out.append({"id": str(obj.pk), "name": str(obj), "text": text})
+        return Response({"labels": out})
+
+    @action(detail=True, methods=["get"])
+    def xlsx(self, request, pk=None):
+        """Spreadsheet of the label text for `?ids=` objects — one row each, with
+        the text also split line-by-line into columns so it drops straight into
+        an external label program's import. Reuses the sandboxed text render."""
+        import io
+
+        from django.http import HttpResponse
+        from jinja2 import TemplateError
+        from openpyxl import Workbook
+
+        from .label_templates import render_label_text
+
+        tmpl = self.get_object()
+        ids = [i for i in (request.query_params.get("ids") or "").split(",") if i]
+        objs = self._objects(tmpl.object_type, ids) or []
+        if not objs:
+            return Response(
+                {"detail": "No printable objects — none exist or none are viewable."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+        base = self._base_url(request)
+        rows = []
+        max_lines = 0
+        for obj in objs:
+            try:
+                text = render_label_text(tmpl, obj, base_url=base)
+            except TemplateError as exc:
+                text = f"Template error: {exc}"
+            lines = text.split("\n") if text else []
+            max_lines = max(max_lines, len(lines))
+            rows.append((str(obj), text, lines))
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Labels"
+        ws.append(["Object", "Label text", *[f"Line {i + 1}" for i in range(max_lines)]])
+        for name, text, lines in rows:
+            padded = lines + [""] * (max_lines - len(lines))
+            ws.append([name, text, *padded])
+        buf = io.BytesIO()
+        wb.save(buf)
+        resp = HttpResponse(
+            buf.getvalue(),
+            content_type=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
+        )
+        resp["Content-Disposition"] = f'attachment; filename="labels-{tmpl.pk}.xlsx"'
+        return resp
 
     @action(detail=True, methods=["get"])
     def pdf(self, request, pk=None):

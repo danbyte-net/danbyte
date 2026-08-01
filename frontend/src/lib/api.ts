@@ -4134,6 +4134,11 @@ export interface LabelTemplate {
   qr_content: string
   qr_size_mm: number
   is_default: boolean
+  /** Optional targeting: empty = applies to every object of the type. */
+  device_type_ids: string[]
+  role_ids: string[]
+  device_types_detail: { id: string; name: string }[]
+  roles_detail: { id: string; name: string }[]
   created_at: string
   updated_at: string
 }
