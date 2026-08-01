@@ -119,10 +119,19 @@ export const Route = createFileRoute("/site-map")({
 })
 
 function SiteMapPage() {
+  const { canDo } = useMe()
+  const canView = canDo("site", "view")
   const q = useQuery({
     queryKey: ["site-map"],
     queryFn: () => api<SiteMapPayload>("/api/site-map/"),
+    enabled: canView,
   })
+  if (!canView)
+    return (
+      <p className="p-6 text-sm text-muted-foreground">
+        You don't have permission to view the site map.
+      </p>
+    )
   if (q.isLoading)
     return <p className="p-6 text-sm text-muted-foreground">Loading map…</p>
   if (q.isError) return <QueryError error={q.error} />
