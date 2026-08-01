@@ -45,7 +45,7 @@ class IdentityProviderSerializer(serializers.ModelSerializer):
             "saml_idp_entity_id", "saml_idp_sso_url", "saml_idp_x509",
             "claim_email", "claim_username", "claim_first_name",
             "claim_last_name", "claim_groups",
-            "jit_provisioning", "default_tenant",
+            "jit_provisioning", "default_tenant", "default_group",
             "client_secret", "client_secret_set", "callback_url",
             "created_at", "updated_at",
         ]

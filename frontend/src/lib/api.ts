@@ -4956,6 +4956,7 @@ export interface IdentityProvider {
   enabled: boolean
   tenant: string | null
   default_tenant: string | null
+  default_group: number | null
   oidc_issuer: string
   oidc_client_id: string
   oidc_scopes: string

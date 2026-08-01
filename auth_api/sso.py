@@ -213,6 +213,10 @@ def _apply_profile_and_groups(provider, user, claims) -> None:
             )
             continue
         groups.append(m.group)
+    # A baseline group (if configured) so a new SSO user always has some access,
+    # not just whatever the mappings grant.
+    if provider.default_group_id:
+        groups.append(provider.default_group)
     user.groups.set(groups)
 
     prov_tenant = provider.provisioning_tenant()

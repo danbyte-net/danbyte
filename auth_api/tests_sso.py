@@ -81,6 +81,20 @@ class SsoProvisioningTests(TestCase):
         user = resolve_user(self.provider, self._claims(groups=[]))
         self.assertEqual(list(user.groups.all()), [])
 
+    def test_default_group_grants_baseline_access(self):
+        # A provider default group is applied even when no mapping matches, so a
+        # new SSO user isn't stranded with no access.
+        baseline = Group.objects.create(name="All SSO users")
+        self.provider.default_group = baseline
+        self.provider.save(update_fields=["default_group"])
+        user = resolve_user(self.provider, self._claims(groups=["Unmapped"]))
+        self.assertIn(baseline, user.groups.all())
+        # And it stacks with a matched mapping.
+        user2 = resolve_user(self.provider, self._claims())
+        self.assertEqual(
+            {g.name for g in user2.groups.all()}, {"Net Admins", "All SSO users"}
+        )
+
     def test_missing_identity_is_rejected(self):
         with self.assertRaises(SsoError):
             resolve_user(self.provider, {"groups": ["NetAdmins"]})

@@ -349,6 +349,13 @@ class IdentityProvider(TimestampedModel):
         help_text="Tenant a JIT-created user is granted access to. Defaults to "
         "this provider's tenant when it is tenant-scoped.",
     )
+    default_group = models.ForeignKey(
+        "auth.Group", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+        help_text="Baseline Danbyte group every user of this provider gets on "
+        "login (in addition to any group mappings), so a new SSO user isn't "
+        "left with no access. Leave empty to grant nothing but the mappings.",
+    )
 
     # Client secret (OIDC) lives here Fernet-encrypted, never serialised back.
     secrets = EncryptedJSONField(default=dict, blank=True)

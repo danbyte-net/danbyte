@@ -259,6 +259,7 @@ function ProviderDialog({
   const [enabled, setEnabled] = useState(true)
   const [tenant, setTenant] = useState<string | null>(null)
   const [defaultTenant, setDefaultTenant] = useState<string | null>(null)
+  const [defaultGroup, setDefaultGroup] = useState<number | null>(null)
   const [oidcIssuer, setOidcIssuer] = useState("")
   const [oidcClientId, setOidcClientId] = useState("")
   const [oidcScopes, setOidcScopes] = useState("openid email profile")
@@ -282,6 +283,7 @@ function ProviderDialog({
     setEnabled(provider?.enabled ?? true)
     setTenant(provider?.tenant ?? null)
     setDefaultTenant(provider?.default_tenant ?? null)
+    setDefaultGroup(provider?.default_group ?? null)
     setOidcIssuer(provider?.oidc_issuer ?? "")
     setOidcClientId(provider?.oidc_client_id ?? "")
     setOidcScopes(provider?.oidc_scopes ?? "openid email profile")
@@ -308,6 +310,16 @@ function ProviderDialog({
     value: t.id,
     label: t.name,
   }))
+  const groupsQ = useQuery({
+    queryKey: ["groups"],
+    queryFn: () => api<Paginated<RBACGroup>>("/api/groups/"),
+    enabled: open,
+    staleTime: 5 * 60_000,
+  })
+  const groupOptions = (groupsQ.data?.results ?? []).map((g) => ({
+    value: String(g.id),
+    label: g.name,
+  }))
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -318,6 +330,7 @@ function ProviderDialog({
         enabled,
         tenant,
         default_tenant: defaultTenant,
+        default_group: defaultGroup,
         oidc_issuer: oidcIssuer.trim(),
         oidc_client_id: oidcClientId.trim(),
         oidc_scopes: oidcScopes.trim(),
@@ -566,6 +579,16 @@ function ProviderDialog({
             noneLabel="None"
             hint="For JIT users with no other tenant"
             error={fieldErrors.default_tenant}
+          />
+
+          <FormSelect
+            label="Default group"
+            value={defaultGroup != null ? String(defaultGroup) : null}
+            onChange={(v) => setDefaultGroup(v ? Number(v) : null)}
+            options={groupOptions}
+            noneLabel="None"
+            hint="Baseline group every user of this provider gets, so new SSO users aren't left with no access"
+            error={fieldErrors.default_group}
           />
 
           <FormCheckbox
