@@ -24,7 +24,20 @@ import {
   type CheckOption,
 } from "@/components/forms"
 
-const ALL_ACTIONS: RBACAction[] = ["view", "add", "change", "delete"]
+const CRUD_ACTIONS: RBACAction[] = ["view", "add", "change", "delete"]
+// Canonical display order; capability verbs sort after the CRUD verbs.
+const ACTION_ORDER: RBACAction[] = [
+  "view",
+  "add",
+  "change",
+  "delete",
+  "connect",
+  "reveal",
+]
+const ACTION_HINT: Partial<Record<RBACAction, string>> = {
+  connect: "Open an interactive session to the device",
+  reveal: "Read the referenced secret value",
+}
 const WILDCARD = "*"
 
 export interface PermissionFormProps {
@@ -136,6 +149,24 @@ export function PermissionForm({
     sitesQuery.data?.results ?? []
   ).map((s) => ({ value: s.id, label: s.name }))
 
+  // The verbs this grant can offer: CRUD always, plus the capability verbs the
+  // selected types actually honour (the registry advertises them per-type). A
+  // wildcard grant offers every verb. Any verb already on the grant stays
+  // visible so editing never silently drops it.
+  const availableActions = useMemo<RBACAction[]>(() => {
+    const meta = typesQuery.data?.object_types ?? []
+    const set = new Set<RBACAction>(CRUD_ACTIONS)
+    if (allTypes) {
+      for (const a of typesQuery.data?.actions ?? []) set.add(a)
+    } else {
+      const bySlug = new Map(meta.map((t) => [t.slug, t.actions]))
+      for (const slug of objectTypes)
+        for (const a of bySlug.get(slug) ?? []) set.add(a)
+    }
+    for (const a of actions) set.add(a)
+    return ACTION_ORDER.filter((a) => set.has(a))
+  }, [typesQuery.data, allTypes, objectTypes, actions])
+
   const toggleAction = (a: RBACAction) =>
     setActions((prev) =>
       prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]
@@ -232,10 +263,11 @@ export function PermissionForm({
         error={fieldErrors.actions}
       >
         <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-md border border-border p-3">
-          {ALL_ACTIONS.map((a) => (
+          {availableActions.map((a) => (
             <FormCheckbox
               key={a}
               label={a}
+              hint={ACTION_HINT[a]}
               checked={actions.includes(a)}
               onChange={() => toggleAction(a)}
             />

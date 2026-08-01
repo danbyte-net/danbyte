@@ -2223,7 +2223,7 @@ class DeviceCredential(TimestampedModel):
         from .secret_store import SecretStoreError, require_secret_store
 
         store = require_secret_store()
-        value = store.get_at_path(self.secret_path)
+        value = store.get_at_path(self.tenant_id, self.secret_path)
         if value is None:
             raise SecretStoreError(
                 f"No secret found at '{self.secret_path}' in the configured store."

@@ -322,7 +322,13 @@ export const auth = {
 
 // ─── RBAC admin (users / groups / object permissions) ───────────────────────
 
-export type RBACAction = "view" | "add" | "change" | "delete"
+export type RBACAction =
+  | "view"
+  | "add"
+  | "change"
+  | "delete"
+  | "connect"
+  | "reveal"
 
 export interface RBACUser {
   id: number

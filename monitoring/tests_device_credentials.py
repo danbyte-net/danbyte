@@ -215,6 +215,21 @@ class DeviceCredentialRevealRbacTests(_Mixin, APITestCase):
         r = self.client.post(f"{BASE}{self.cred.id}/reveal/")
         self.assertEqual(r.status_code, 400)
 
+    def test_reveal_never_resolves_another_tenants_secret(self):
+        # Another tenant holds a secret at the *same ref path* — the local store
+        # must scope by tenant so this tenant's reveal can never read it. Drop
+        # this tenant's own secret so only the other tenant's remains at the ref.
+        StoredSecret.objects.filter(tenant=self.tenant, ref="creds/sw1/admin").delete()
+        other_org = Organization.objects.create(name="P", slug="p")
+        other = Tenant.objects.create(org=other_org, name="Two", slug="two")
+        StoredSecret.objects.create(
+            tenant=other, ref="creds/sw1/admin", value={"password": "leaked"}
+        )
+        self._login(self._user("root", superuser=True))
+        r = self.client.post(f"{BASE}{self.cred.id}/reveal/")
+        # Nothing at the path *for this tenant* → fail closed, no cross-tenant read.
+        self.assertEqual(r.status_code, 400)
+
 
 class RbacVerbVocabularyTests(_Mixin, APITestCase):
     """The verb extension is additive: connect/reveal are grantable and

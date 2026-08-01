@@ -77,12 +77,15 @@ class VaultSecretStore:
         # KV v2 nests the value under data.data.
         return (r.json().get("data") or {}).get("data")
 
-    def get_at_path(self, path: str) -> dict | None:
+    def get_at_path(self, tenant_id, path: str) -> dict | None:
         """Read an operator-chosen KV path directly, outside Danbyte's
         ``{mount}/{tenant}/{ref}`` namespace — the caller supplies the full
         logical path after ``/v1/`` (e.g. ``kv/data/team/ssh`` for a KV-v2
-        mount). KV v2 nests the value under ``data.data``; KV v1 returns it flat
-        under ``data`` — both are unwrapped. Missing path → ``None``."""
+        mount). ``tenant_id`` is unused here: Vault addresses the operator's
+        external path directly, and cross-tenant isolation is the operator's to
+        enforce via Vault policy on that path. KV v2 nests the value under
+        ``data.data``; KV v1 returns it flat under ``data`` — both are
+        unwrapped. Missing path → ``None``."""
         r = self._req("GET", f"{self.addr}/v1/{path.strip('/')}")
         if r.status_code == 404:
             return None

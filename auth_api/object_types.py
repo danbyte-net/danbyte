@@ -19,8 +19,21 @@ from functools import lru_cache
 from django.apps import apps
 
 # view/add/change/delete are the CRUD verbs; connect/reveal are capability verbs
-# checked only by the viewsets that opt into them. All are grantable generically.
-ACTIONS = ["view", "add", "change", "delete", "connect", "reveal"]
+# checked only by the viewsets that opt into them. ACTIONS is the full grantable
+# universe (used to validate a grant's actions); it is intentionally permissive
+# so a wildcard grant covers every verb.
+CRUD_ACTIONS = ["view", "add", "change", "delete"]
+ACTIONS = [*CRUD_ACTIONS, "connect", "reveal"]
+
+# Which capability verbs a *specific* type actually honours — only these are
+# advertised for that type in the permission form, so the UI never offers e.g.
+# "reveal on a Site". A type absent here advertises the CRUD verbs alone. The
+# verb still has to be checked by the type's viewset to have any effect; this map
+# only governs what the picker surfaces.
+CAPABILITY_VERBS: dict[str, list[str]] = {
+    "devicecredential": ["reveal"],
+    "device": ["connect"],
+}
 
 # (app_label.ModelName, label, group). Order drives the form's grouping.
 _ENTRIES: list[tuple[str, str, str]] = [
@@ -263,8 +276,14 @@ def label_for(value: str) -> str | None:
 
 
 def registry_payload() -> list[dict]:
-    """[{slug, label, group, actions}] for the permission-form pickers."""
+    """[{slug, label, group, actions}] for the permission-form pickers. Each
+    type advertises the CRUD verbs plus only the capability verbs it honours."""
     return [
-        {"slug": slug, "label": e["label"], "group": e["group"], "actions": ACTIONS}
+        {
+            "slug": slug,
+            "label": e["label"],
+            "group": e["group"],
+            "actions": CRUD_ACTIONS + CAPABILITY_VERBS.get(slug, []),
+        }
         for slug, e in _registry().items()
     ]

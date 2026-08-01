@@ -41,9 +41,12 @@ class SecretStore(Protocol):
 
     def delete(self, tenant_id, ref: str) -> None: ...
 
-    def get_at_path(self, path: str) -> dict | None:
+    def get_at_path(self, tenant_id, path: str) -> dict | None:
         """Read an operator-chosen *external* path — a secret authored outside
-        Danbyte's ``{tenant}/{ref}`` namespace. Used by device credentials,
+        Danbyte's ``{tenant}/{ref}`` namespace. ``tenant_id`` scopes the lookup
+        for stores that keep secrets in Danbyte's own DB (the local provider);
+        external stores (Vault) address the operator's path directly. Used by
+        device credentials,
         which store only the reference to a secret an operator manages
         elsewhere. Returns the value dict, or ``None`` if nothing is there."""
         ...
@@ -75,14 +78,14 @@ class LocalFernetSecretStore:
 
         StoredSecret.objects.filter(tenant_id=tenant_id, ref=ref).delete()
 
-    def get_at_path(self, path: str) -> dict | None:
-        """A ``StoredSecret`` whose ``ref`` equals ``path``, regardless of the
-        namespace convention — for the local provider an operator seeds a secret
-        by creating a ``StoredSecret`` with that exact ref. Returns ``None`` when
-        no such secret exists."""
+    def get_at_path(self, tenant_id, path: str) -> dict | None:
+        """A ``StoredSecret`` whose ``ref`` equals ``path`` **within this
+        tenant** — for the local provider an operator seeds a secret by creating
+        a ``StoredSecret`` with that ref. Tenant-scoped so one tenant's path can
+        never resolve another tenant's secret. ``None`` when nothing matches."""
         from .models import StoredSecret
 
-        row = StoredSecret.objects.filter(ref=path).first()
+        row = StoredSecret.objects.filter(tenant_id=tenant_id, ref=path).first()
         return row.value if row is not None else None
 
 
