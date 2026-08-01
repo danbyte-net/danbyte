@@ -105,9 +105,10 @@ function MonitoringPage() {
   const go = (next: Partial<MonitoringSearch>) =>
     nav({
       to: "/monitoring",
-      search: (prev: Partial<MonitoringSearch>): MonitoringSearch => ({
-        view: next.view ?? prev.view ?? "overview",
-        status: next.status ?? prev.status ?? "all",
+      search: (prev): MonitoringSearch => ({
+        view: next.view ?? (prev.view as MonitoringView) ?? "overview",
+        status:
+          next.status ?? (prev.status as MonitoringSearch["status"]) ?? "all",
       }),
     })
 

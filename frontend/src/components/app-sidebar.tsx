@@ -24,6 +24,7 @@ import {
   Boxes,
   Container,
   Rows3,
+  Locate,
   Globe,
   Hash,
   Shield,
@@ -240,6 +241,12 @@ const sections: NavSection[] = [
             url: "/prefixes",
             icon: Network,
             objectType: "prefix",
+          },
+          {
+            title: "IP addresses",
+            url: "/ips",
+            icon: Locate,
+            objectType: "ipaddress",
           },
           {
             title: "IP ranges",

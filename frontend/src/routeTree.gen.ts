@@ -122,6 +122,7 @@ import { Route as LabelTemplatesIndexRouteImport } from './routes/label-template
 import { Route as L2vpnsIndexRouteImport } from './routes/l2vpns.index'
 import { Route as JobsIndexRouteImport } from './routes/jobs.index'
 import { Route as IpsecProfilesIndexRouteImport } from './routes/ipsec-profiles.index'
+import { Route as IpsIndexRouteImport } from './routes/ips.index'
 import { Route as IpRolesIndexRouteImport } from './routes/ip-roles.index'
 import { Route as IpRangesIndexRouteImport } from './routes/ip-ranges.index'
 import { Route as InterfacesIndexRouteImport } from './routes/interfaces.index'
@@ -947,6 +948,11 @@ const IpsecProfilesIndexRoute = IpsecProfilesIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => IpsecProfilesRoute,
+} as any)
+const IpsIndexRoute = IpsIndexRouteImport.update({
+  id: '/ips/',
+  path: '/ips/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const IpRolesIndexRoute = IpRolesIndexRouteImport.update({
   id: '/',
@@ -2514,6 +2520,7 @@ export interface FileRoutesByFullPath {
   '/interfaces/': typeof InterfacesIndexRoute
   '/ip-ranges/': typeof IpRangesIndexRoute
   '/ip-roles/': typeof IpRolesIndexRoute
+  '/ips/': typeof IpsIndexRoute
   '/ipsec-profiles/': typeof IpsecProfilesIndexRoute
   '/jobs/': typeof JobsIndexRoute
   '/l2vpns/': typeof L2vpnsIndexRoute
@@ -2833,6 +2840,7 @@ export interface FileRoutesByTo {
   '/interfaces': typeof InterfacesIndexRoute
   '/ip-ranges': typeof IpRangesIndexRoute
   '/ip-roles': typeof IpRolesIndexRoute
+  '/ips': typeof IpsIndexRoute
   '/ipsec-profiles': typeof IpsecProfilesIndexRoute
   '/jobs': typeof JobsIndexRoute
   '/l2vpns': typeof L2vpnsIndexRoute
@@ -3209,6 +3217,7 @@ export interface FileRoutesById {
   '/interfaces/': typeof InterfacesIndexRoute
   '/ip-ranges/': typeof IpRangesIndexRoute
   '/ip-roles/': typeof IpRolesIndexRoute
+  '/ips/': typeof IpsIndexRoute
   '/ipsec-profiles/': typeof IpsecProfilesIndexRoute
   '/jobs/': typeof JobsIndexRoute
   '/l2vpns/': typeof L2vpnsIndexRoute
@@ -3586,6 +3595,7 @@ export interface FileRouteTypes {
     | '/interfaces/'
     | '/ip-ranges/'
     | '/ip-roles/'
+    | '/ips/'
     | '/ipsec-profiles/'
     | '/jobs/'
     | '/l2vpns/'
@@ -3905,6 +3915,7 @@ export interface FileRouteTypes {
     | '/interfaces'
     | '/ip-ranges'
     | '/ip-roles'
+    | '/ips'
     | '/ipsec-profiles'
     | '/jobs'
     | '/l2vpns'
@@ -4280,6 +4291,7 @@ export interface FileRouteTypes {
     | '/interfaces/'
     | '/ip-ranges/'
     | '/ip-roles/'
+    | '/ips/'
     | '/ipsec-profiles/'
     | '/jobs/'
     | '/l2vpns/'
@@ -4506,6 +4518,7 @@ export interface RootRouteChildren {
   ClusterTypesIndexRoute: typeof ClusterTypesIndexRoute
   ClustersIndexRoute: typeof ClustersIndexRoute
   DeviceRolesIndexRoute: typeof DeviceRolesIndexRoute
+  IpsIndexRoute: typeof IpsIndexRoute
   JobsIndexRoute: typeof JobsIndexRoute
   LabelTemplatesIndexRoute: typeof LabelTemplatesIndexRoute
   PlatformGroupsIndexRoute: typeof PlatformGroupsIndexRoute
@@ -5326,6 +5339,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/ipsec-profiles/'
       preLoaderRoute: typeof IpsecProfilesIndexRouteImport
       parentRoute: typeof IpsecProfilesRoute
+    }
+    '/ips/': {
+      id: '/ips/'
+      path: '/ips'
+      fullPath: '/ips/'
+      preLoaderRoute: typeof IpsIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/ip-roles/': {
       id: '/ip-roles/'
@@ -8262,6 +8282,7 @@ const rootRouteChildren: RootRouteChildren = {
   ClusterTypesIndexRoute: ClusterTypesIndexRoute,
   ClustersIndexRoute: ClustersIndexRoute,
   DeviceRolesIndexRoute: DeviceRolesIndexRoute,
+  IpsIndexRoute: IpsIndexRoute,
   JobsIndexRoute: JobsIndexRoute,
   LabelTemplatesIndexRoute: LabelTemplatesIndexRoute,
   PlatformGroupsIndexRoute: PlatformGroupsIndexRoute,

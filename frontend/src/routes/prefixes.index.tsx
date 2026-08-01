@@ -19,9 +19,6 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { useTableFilters } from "@/components/table-filters"
 import { useCustomFieldDefs } from "@/components/custom-field-display"
-import { Tabs, TabsContent } from "@/components/ui/tabs"
-import { SegmentedTabs } from "@/components/segmented-tabs"
-import { PrefixSpaceOverview } from "@/components/prefix-space-overview"
 import { PrefixDeleteDialog } from "@/components/prefix-delete-dialog"
 import { useViolationMap } from "@/components/compliance/violation-badge"
 import { PrefixBulkBar } from "@/components/prefix-bulk-bar"
@@ -42,7 +39,6 @@ function PrefixesPage() {
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<Prefix | null>(null)
   const [selectedRows, setSelectedRows] = useState<Prefix[]>([])
-  const [tab, setTab] = useState<"prefixes" | "ips" | "map">("prefixes")
 
   const query = useQuery({
     queryKey: ["prefixes", q],
@@ -149,80 +145,51 @@ function PrefixesPage() {
   )
 
   return (
-    // Outer column: detail-style tabs on top, then the row (filter rail +
-    // main). `min-h-0` lets the row honour its own overflow rules instead
-    // of expanding the parent — what makes both columns scroll independently.
-    <Tabs
-      value={tab}
-      onValueChange={(v) => setTab(v as typeof tab)}
-      className="flex min-h-0 min-w-0 flex-1 flex-col"
-    >
-      <div className="flex h-10 items-center border-b border-border px-4 lg:px-6">
-        <SegmentedTabs
-          value={tab}
-          onValueChange={(v) => setTab(v as typeof tab)}
-          items={[
-            { value: "prefixes", label: "Prefixes" },
-            { value: "ips", label: "IPs" },
-            { value: "map", label: "Map" },
-          ]}
+    // The main prefixes page is just the prefix table. IPs live at their own
+    // /ips list, and the space map is on each prefix's detail page.
+    <>
+      <ListPageShell
+        title="Prefixes"
+        count={query.data ? rows.length : undefined}
+        /* Filter rail — derived from the columns' facet metadata. */
+        rail={rail}
+        search={{
+          value: q,
+          onChange: setQ,
+          placeholder: "Filter by CIDR, description…",
+        }}
+        actions={
+          <>
+            <TableActions ioType="prefix" />
+            {canAdd && (
+              <Button size="sm" asChild>
+                <Link
+                  to="/prefixes/new"
+                  search={{
+                    cidr: undefined,
+                    vrf: undefined,
+                    site: undefined,
+                    location: undefined,
+                  }}
+                >
+                  Add prefix
+                </Link>
+              </Button>
+            )}
+          </>
+        }
+        query={query}
+      >
+        <DataTable
+          data={rows}
+          columns={columns}
+          groupBy="vrfName"
+          renderGroupHeader={renderVrfGroupHeader}
+          onSelectedRowsChange={setSelectedRows}
+          initialColumnVisibility={{ vrfName: false }}
+          tableId="prefixes"
         />
-      </div>
-
-      <TabsContent value="prefixes" className="m-0 flex min-h-0 flex-1">
-        <ListPageShell
-          title="Prefixes"
-          count={query.data ? rows.length : undefined}
-          /* Filter rail — derived from the columns' facet metadata. */
-          rail={rail}
-          search={{
-            value: q,
-            onChange: setQ,
-            placeholder: "Filter by CIDR, description…",
-          }}
-          actions={
-            <>
-              <TableActions ioType="prefix" />
-              {canAdd && (
-                <Button size="sm" asChild>
-                  <Link
-                    to="/prefixes/new"
-                    search={{
-                      cidr: undefined,
-                      vrf: undefined,
-                      site: undefined,
-                      location: undefined,
-                    }}
-                  >
-                    Add prefix
-                  </Link>
-                </Button>
-              )}
-            </>
-          }
-          query={query}
-        >
-          <DataTable
-            data={rows}
-            columns={columns}
-            groupBy="vrfName"
-            renderGroupHeader={renderVrfGroupHeader}
-            onSelectedRowsChange={setSelectedRows}
-            initialColumnVisibility={{ vrfName: false }}
-            tableId="prefixes"
-          />
-        </ListPageShell>
-      </TabsContent>
-
-      <TabsContent value="ips" className="m-0 flex-1 overflow-auto p-4 lg:p-6">
-        <p className="text-sm text-muted-foreground">
-          All IP addresses — coming next.
-        </p>
-      </TabsContent>
-
-      <TabsContent value="map" className="m-0 flex-1 overflow-auto p-4 lg:p-6">
-        <PrefixSpaceOverview />
-      </TabsContent>
+      </ListPageShell>
 
       {/* Delete confirm + bulk-action bar at root so the table can unmount
           safely without losing modal state mid-action. Add / edit are
@@ -235,7 +202,7 @@ function PrefixesPage() {
         selected={selectedRows}
         onCleared={() => setSelectedRows([])}
       />
-    </Tabs>
+    </>
   )
 }
 
