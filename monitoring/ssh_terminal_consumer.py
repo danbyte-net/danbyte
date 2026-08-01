@@ -101,8 +101,10 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
             await self._open_ssh(ctx, self._cols, self._rows, self._accept_new)
         except _HostKeyUnknown:
             await self._fail(
-                "This device has no recorded SSH host key. Verify the device, "
-                "then reconnect and accept the new host to continue.",
+                "First connection to this device — its SSH host key isn't on "
+                "record yet. Click “Accept new host & retry” to trust the "
+                "key it presents; it's recorded so future connections are "
+                "verified automatically.",
                 code="hostkey_unknown",
             )
             return
@@ -148,6 +150,18 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
         self._conn = await asyncio.wait_for(
             asyncssh.connect(**connect_kwargs), timeout=CONNECT_TIMEOUT
         )
+        # Record the host key the device presented, so the next connect is
+        # verified against it (TOFU on first accept) and it appears in the SSH
+        # host-key inventory. Best-effort — never break the session over it.
+        try:
+            key = self._conn.get_server_host_key()
+            if key is not None:
+                line = key.export_public_key()
+                if isinstance(line, (bytes, bytearray)):
+                    line = line.decode()
+                await self._record_host_key(ctx, line)
+        except Exception:  # noqa: BLE001
+            pass
         self._proc = await self._conn.create_process(
             term_type="xterm-256color", term_size=(cols, rows), encoding=None
         )
@@ -350,6 +364,35 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
             except (asyncssh.KeyImportError, ValueError):
                 return {"error": "The stored SSH key could not be loaded."}
         return ctx
+
+    @database_sync_to_async
+    def _record_host_key(self, ctx, line):
+        """Fold the presented host key into the SSH host-key inventory (observed).
+        Idempotent per (device, fingerprint); refreshes last_seen otherwise."""
+        from danbyte_checks.ssh_hostkey import SSHKeyParseError, parse_public_key_line
+
+        from api.models import Device
+        from core.models import Tenant
+
+        from .ssh_host_keys import record_host_key
+
+        try:
+            parsed = parse_public_key_line(line)
+        except SSHKeyParseError:
+            return
+        device = Device.objects.filter(
+            pk=ctx["device_id"], tenant_id=ctx["tenant_id"]
+        ).first()
+        tenant = Tenant.objects.filter(pk=ctx["tenant_id"]).first()
+        if device is not None and tenant is not None:
+            record_host_key(
+                tenant, device,
+                {
+                    "fingerprint": parsed["fingerprint"],
+                    "key_type": parsed["key_type"],
+                    "public_key": parsed["public_key"],
+                },
+            )
 
     @database_sync_to_async
     def _audit_connect(self, ctx):
