@@ -75,11 +75,52 @@ On a saved provider, add mappings: the **group value the IdP asserts** → a
 Keycloak/Okta it's usually the group name. Members of a mapped group receive that
 Danbyte group's permissions on their next login.
 
-## SAML
+## SAML 2.0
 
-SAML 2.0 uses the same provider model and JIT/group-mapping behaviour; you supply
-the IdP entity ID, SSO URL, and signing certificate instead of an OIDC issuer.
-See the provider form's SAML fields.
+SAML uses the same provider model, JIT provisioning, default group, and group
+mapping as OIDC. You supply the IdP's **entity ID**, **SSO URL**, and **signing
+certificate** (PEM or base64) instead of an OIDC issuer. When you save a SAML
+provider, its edit screen shows the three values to register at the IdP:
+
+- **ACS / Reply URL** — `https://<danbyte>/api/auth/sso/<slug>/acs/`
+- **SP Identifier (Entity ID)** — `https://<danbyte>/api/auth/sso/<slug>/metadata/`
+- **SP metadata URL** — some IdPs import SP config from it directly.
+
+Danbyte requires the **assertion to be signed** and validates the issuer,
+audience (must be this SP), recipient (must be this ACS), `InResponseTo` (replay
+protection), and the validity window before trusting it.
+
+### Example: Microsoft Entra ID (SAML)
+
+Entra does SAML through an **Enterprise Application** (separate from the OIDC app
+registration):
+
+1. Entra admin center → **Enterprise applications → New application → Create your
+   own application** → *Integrate any other application* → create.
+2. **Single sign-on → SAML.**
+3. **Basic SAML Configuration:** set **Identifier (Entity ID)** to Danbyte's SP
+   Identifier and **Reply URL (ACS)** to Danbyte's ACS URL (both shown on the
+   provider's edit screen).
+4. **Attributes & Claims:** ensure email/username (and a **groups** claim if you
+   want group mapping) are emitted.
+5. **SAML Certificates:** download the **Certificate (Base64)**.
+6. Note the **Login URL** (IdP SSO URL) and **Microsoft Entra Identifier** (IdP
+   entity ID) from the setup section.
+7. In Danbyte, create a SAML provider with those three values (paste the cert
+   into *IdP X.509 certificate*), set the claim mapping to the attribute names
+   Entra emits, and assign users/groups to the Enterprise Application in Entra.
+
+### Example: Keycloak
+
+Keycloak can be the IdP for either protocol and can federate to your AD over
+LDAP, so AD accounts sign in via Keycloak:
+
+- **OIDC:** create a confidential client; issuer is
+  `https://<keycloak>/realms/<realm>`, with the client ID/secret. Redirect URI =
+  Danbyte's OIDC callback URL.
+- **SAML:** create a SAML client with client ID = Danbyte's SP Identifier and a
+  valid redirect/ACS = Danbyte's ACS URL; export the realm's SAML signing
+  certificate into the provider.
 
 ## Security notes
 
