@@ -6122,6 +6122,40 @@ class LabelTemplateViewSet(TenantScopedViewSet):
             out.append({"id": str(obj.pk), **rendered})
         return Response({"labels": out})
 
+    @action(detail=True, methods=["get"])
+    def pdf(self, request, pk=None):
+        """Print-ready PDF of the saved template against `?ids=` objects.
+
+        The PDF page is sized to the label's mm dimensions (one label per page),
+        so it prints at exact physical size with no browser chrome — which HTML
+        `window.print()` can't guarantee (the paper size is dialog-controlled).
+        """
+        from django.http import HttpResponse
+        from jinja2 import TemplateError
+
+        from .label_templates import render_sheet_pdf
+
+        tmpl = self.get_object()
+        ids = [i for i in (request.query_params.get("ids") or "").split(",") if i]
+        objs = self._objects(tmpl.object_type, ids) or []
+        if not objs:
+            return Response(
+                {"detail": "No printable objects — none exist or none are viewable."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            pdf = render_sheet_pdf(tmpl, objs, base_url=self._base_url(request))
+        except TemplateError as exc:
+            return Response(
+                {"detail": f"Template error: {exc}"},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+        resp = HttpResponse(pdf, content_type="application/pdf")
+        # Inline so the browser's PDF viewer opens it (print at 100% / actual
+        # size), not a download.
+        resp["Content-Disposition"] = f'inline; filename="labels-{tmpl.pk}.pdf"'
+        return resp
+
 
 # ─── Floor plans ─────────────────────────────────────────────────────────────
 class FloorTileTypeViewSet(TenantScopedViewSet):

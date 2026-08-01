@@ -244,7 +244,6 @@ import { Route as ManufacturersIdRouteImport } from './routes/manufacturers.$id'
 import { Route as MacsMacRouteImport } from './routes/macs.$mac'
 import { Route as LocationsNewRouteImport } from './routes/locations.new'
 import { Route as LocationsIdRouteImport } from './routes/locations.$id'
-import { Route as LabelsPrintRouteImport } from './routes/labels.print'
 import { Route as L2vpnsNewRouteImport } from './routes/l2vpns.new'
 import { Route as L2vpnsIdRouteImport } from './routes/l2vpns.$id'
 import { Route as JobsIdRouteImport } from './routes/jobs.$id'
@@ -1560,11 +1559,6 @@ const LocationsIdRoute = LocationsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => LocationsRoute,
 } as any)
-const LabelsPrintRoute = LabelsPrintRouteImport.update({
-  id: '/labels/print',
-  path: '/labels/print',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const L2vpnsNewRoute = L2vpnsNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -2392,7 +2386,6 @@ export interface FileRoutesByFullPath {
   '/jobs/$id': typeof JobsIdRoute
   '/l2vpns/$id': typeof L2vpnsIdRoute
   '/l2vpns/new': typeof L2vpnsNewRoute
-  '/labels/print': typeof LabelsPrintRoute
   '/locations/$id': typeof LocationsIdRoute
   '/locations/new': typeof LocationsNewRoute
   '/macs/$mac': typeof MacsMacRoute
@@ -2711,7 +2704,6 @@ export interface FileRoutesByTo {
   '/jobs/$id': typeof JobsIdRoute
   '/l2vpns/$id': typeof L2vpnsIdRoute
   '/l2vpns/new': typeof L2vpnsNewRoute
-  '/labels/print': typeof LabelsPrintRoute
   '/locations/$id': typeof LocationsIdRoute
   '/locations/new': typeof LocationsNewRoute
   '/macs/$mac': typeof MacsMacRoute
@@ -3087,7 +3079,6 @@ export interface FileRoutesById {
   '/jobs/$id': typeof JobsIdRoute
   '/l2vpns/$id': typeof L2vpnsIdRoute
   '/l2vpns/new': typeof L2vpnsNewRoute
-  '/labels/print': typeof LabelsPrintRoute
   '/locations/$id': typeof LocationsIdRoute
   '/locations/new': typeof LocationsNewRoute
   '/macs/$mac': typeof MacsMacRoute
@@ -3464,7 +3455,6 @@ export interface FileRouteTypes {
     | '/jobs/$id'
     | '/l2vpns/$id'
     | '/l2vpns/new'
-    | '/labels/print'
     | '/locations/$id'
     | '/locations/new'
     | '/macs/$mac'
@@ -3783,7 +3773,6 @@ export interface FileRouteTypes {
     | '/jobs/$id'
     | '/l2vpns/$id'
     | '/l2vpns/new'
-    | '/labels/print'
     | '/locations/$id'
     | '/locations/new'
     | '/macs/$mac'
@@ -4158,7 +4147,6 @@ export interface FileRouteTypes {
     | '/jobs/$id'
     | '/l2vpns/$id'
     | '/l2vpns/new'
-    | '/labels/print'
     | '/locations/$id'
     | '/locations/new'
     | '/macs/$mac'
@@ -4484,7 +4472,6 @@ export interface RootRouteChildren {
   IpsBulkEditRoute: typeof IpsBulkEditRoute
   IpsNewRoute: typeof IpsNewRoute
   JobsIdRoute: typeof JobsIdRoute
-  LabelsPrintRoute: typeof LabelsPrintRoute
   PlatformGroupsIdRoute: typeof PlatformGroupsIdRoute
   PlatformGroupsNewRoute: typeof PlatformGroupsNewRoute
   PlatformsIdRoute: typeof PlatformsIdRoute
@@ -6180,13 +6167,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/locations/$id'
       preLoaderRoute: typeof LocationsIdRouteImport
       parentRoute: typeof LocationsRoute
-    }
-    '/labels/print': {
-      id: '/labels/print'
-      path: '/labels/print'
-      fullPath: '/labels/print'
-      preLoaderRoute: typeof LabelsPrintRouteImport
-      parentRoute: typeof rootRouteImport
     }
     '/l2vpns/new': {
       id: '/l2vpns/new'
@@ -8240,7 +8220,6 @@ const rootRouteChildren: RootRouteChildren = {
   IpsBulkEditRoute: IpsBulkEditRoute,
   IpsNewRoute: IpsNewRoute,
   JobsIdRoute: JobsIdRoute,
-  LabelsPrintRoute: LabelsPrintRoute,
   PlatformGroupsIdRoute: PlatformGroupsIdRoute,
   PlatformGroupsNewRoute: PlatformGroupsNewRoute,
   PlatformsIdRoute: PlatformsIdRoute,

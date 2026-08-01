@@ -45,11 +45,15 @@ WORKDIR /app
 # netcat for TCP probes, curl for the healthcheck. ICMP itself goes through
 # icmplib's unprivileged datagram sockets — see the ping_group_range sysctl on
 # the workers service in docker-compose.prod.yml.
+# WeasyPrint (label-template PDFs) renders via Pango/cairo/GDK-PixBuf — these are
+# shared libraries, not pip-installable, so they must be baked into the image.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential libpq-dev libldap2-dev libsasl2-dev libssl-dev \
         curl iputils-ping traceroute mtr-tiny dnsutils snmp fping \
         netcat-openbsd \
+        libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 \
+        libffi8 fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

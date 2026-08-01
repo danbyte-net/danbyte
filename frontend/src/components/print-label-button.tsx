@@ -13,9 +13,11 @@ import {
 
 /**
  * "Print label" action. Shows only when at least one label template exists for
- * ``objectType`` (automatic placement — no per-page config). Picks a template
- * and opens the print sheet for the given object ids in a new tab. Used on
- * detail pages (single id) and list bulk bars (many ids).
+ * ``objectType`` (automatic placement — no per-page config). Opens a
+ * label-sized PDF for the given object ids in a new tab — the browser's PDF
+ * viewer previews it and prints it at exact physical size (a browser can't
+ * print an HTML page at an exact size — the paper size is dialog-controlled).
+ * Used on detail pages (single id) and list bulk bars (many ids).
  */
 export function PrintLabelButton({
   objectType,
@@ -46,11 +48,12 @@ export function PrintLabelButton({
   )
 
   const open = (templateId: string) => {
-    const params = new URLSearchParams({
-      template: templateId,
-      ids: ids.join(","),
-    })
-    window.open(`/labels/print?${params.toString()}`, "_blank", "noopener")
+    const params = new URLSearchParams({ ids: ids.join(",") })
+    window.open(
+      `/api/label-templates/${templateId}/pdf/?${params.toString()}`,
+      "_blank",
+      "noopener"
+    )
   }
 
   // One template → straight to print; several → let the operator choose.

@@ -59,6 +59,7 @@ APP="$SERVICE_HOME/danbyte"
 BUNDLE="$(cd "$(dirname "$0")" && pwd)"
 
 step() { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
+warn() { printf '\033[1;33m! %s\033[0m\n' "$*" >&2; }
 die()  { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo ./install.sh)"
@@ -94,6 +95,17 @@ if [ "$need_pkg" -eq 1 ]; then
   fi
 fi
 systemctl enable --now postgresql redis-server >/dev/null 2>&1 || true
+
+# WeasyPrint (label-template PDFs) renders via Pango/cairo/GDK-PixBuf shared
+# libraries — pip can't provide them. Install idempotently when apt is present so
+# label printing works on fresh installs and existing upgrades alike.
+if command -v apt-get >/dev/null 2>&1; then
+  step "PDF rendering libraries (WeasyPrint: pango/cairo/gdk-pixbuf)"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 \
+    libffi8 fonts-dejavu-core \
+    || warn "Could not install WeasyPrint libraries — label PDF printing may fail until they're present."
+fi
 
 # ── 2. Node runtime (bundled → /usr/bin/node if the host's is missing/too old) ─
 # rolldown-vite's native binding is engine-gated to Node ≥ 20.19; a stale system

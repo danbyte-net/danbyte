@@ -17,6 +17,9 @@ djangorestframework-simplejwt>=5.3.1
 django-taggit>=5.1
 reportlab>=4.0
 nh3>=0.2                  # HTML sanitizer for rendered label templates (XSS-safe)
+weasyprint>=63            # HTML+CSS -> PDF for exact-size label printing (needs
+                          # Pango/cairo/gdk-pixbuf system libs — see Dockerfile)
+segno>=1.6                # pure-Python QR generator for server-side label PDFs
 requests>=2.32
 openpyxl>=3.1
 zensical>=0.0.45

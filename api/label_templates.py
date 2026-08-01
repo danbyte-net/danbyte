@@ -11,6 +11,8 @@ label page IS the printed sheet) without an XSS vector.
 """
 from __future__ import annotations
 
+import re
+
 # object_type slug (model_name) → frontend detail route prefix, so `{{ url }}`
 # and the default QR resolve to the object's page. Only the labelable types need
 # an entry; anything else falls back to the origin.
@@ -197,6 +199,91 @@ def _register_filters(env):
     env.filters["date"] = _fmt_date
     env.filters["datetime"] = _fmt_datetime
     return env
+
+
+def _qr_span(value: str, size_mm: float) -> str:
+    """A QR as an inline SVG wrapped in an mm-sized span — the print counterpart
+    of the frontend's qrcode.react composite, so a PDF label carries a crisp
+    vector QR. Generated with segno (pure-Python, no native deps)."""
+    import io
+
+    import segno
+
+    qr = segno.make(value or " ", error="m")
+    buf = io.BytesIO()
+    # No XML decl (we're embedding), quiet-zone border matching the on-screen QR.
+    qr.save(buf, kind="svg", border=2, xmldecl=False, svgns=True)
+    svg = buf.getvalue().decode("utf-8")
+    # Let the SVG fill the mm-sized wrapper regardless of its intrinsic size.
+    svg = svg.replace(
+        "<svg ", '<svg preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%" ', 1
+    )
+    return (
+        f'<span style="display:inline-block;width:{size_mm}mm;'
+        f'height:{size_mm}mm">{svg}</span>'
+    )
+
+
+# Inject the QR into the first `class="qr"` element — same contract as the
+# frontend's injectQr so HTML authored in the editor prints identically.
+_QR_PLACEHOLDER = re.compile(
+    r'(<([a-z]+)[^>]*class="[^"]*\bqr\b[^"]*"[^>]*>)(</\2>)', re.IGNORECASE
+)
+
+
+def _inject_qr(html: str, qr: str, size_mm: float) -> str:
+    span = _qr_span(qr, size_mm)
+    if _QR_PLACEHOLDER.search(html):
+        return _QR_PLACEHOLDER.sub(lambda m: f"{m.group(1)}{span}{m.group(3)}", html, count=1)
+    # No placeholder in the template → append so the QR is never lost.
+    return f"{html}{span}" if qr else html
+
+
+def _sheet_css(template) -> str:
+    """Print stylesheet for the PDF sheet: `@page` sized to the label with zero
+    margin, each `.lbl` sized in mm and hard-page-broken, plus the template CSS.
+    WeasyPrint honours `@page { size }` exactly, so the PDF page IS the label."""
+    return f"""
+    *{{box-sizing:border-box}}
+    html,body{{margin:0;padding:0;background:#fff}}
+    @page{{ size:{template.width_mm}mm {template.height_mm}mm; margin:0; }}
+    .lbl{{
+      width:{template.width_mm}mm;height:{template.height_mm}mm;
+      padding:{template.margin_mm}mm;
+      font-family:sans-serif;font-size:9pt;color:#000;background:#fff;
+      overflow:hidden;page-break-after:always;
+    }}
+    .lbl:last-child{{page-break-after:auto}}
+    {template.css or ""}
+    """
+
+
+def render_sheet_pdf(template, objects, *, base_url: str = "") -> bytes:
+    """Render ``template`` against ``objects`` into a print-ready PDF whose pages
+    are sized exactly to the label (one label per page).
+
+    A browser can't be made to print an HTML page at an exact physical size —
+    ``@page { size }`` is advisory and the print dialog's paper size wins — so
+    the reliable path is a PDF with the page box baked in at the label's mm
+    dimensions. Each label reuses :func:`render_label` (sandboxed + sanitized),
+    with the QR composited server-side. Raises ``jinja2.TemplateError`` on a
+    template problem.
+    """
+    import weasyprint
+
+    cells = []
+    for obj in objects:
+        rendered = render_label(template, obj, base_url=base_url)
+        body = rendered["html"]
+        if template.qr_enabled:
+            body = _inject_qr(body, rendered["qr"], template.qr_size_mm)
+        cells.append(f'<div class="lbl">{body}</div>')
+    doc = (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        f"<style>{_sheet_css(template)}</style></head>"
+        f"<body>{''.join(cells)}</body></html>"
+    )
+    return weasyprint.HTML(string=doc, base_url=base_url or None).write_pdf()
 
 
 def render_label(template, obj, *, base_url: str = "") -> dict:

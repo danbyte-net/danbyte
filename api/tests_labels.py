@@ -133,6 +133,45 @@ class LabelApiTests(TestCase):
         self.assertEqual(len(labels), 1)
         self.assertIn("rtr1", labels[0]["html"])
 
+    def test_pdf_is_label_sized(self):
+        # The PDF endpoint returns a real PDF whose page is exactly the label's
+        # mm dimensions — that's what makes it print at true physical size.
+        r = self.client.post(
+            "/api/label-templates/",
+            {
+                "name": "Asset",
+                "object_type": "device",
+                "template_html": "<b>{{ device.name }}</b><div class='qr'></div>",
+                "width_mm": 62,
+                "height_mm": 29,
+                "qr_enabled": True,
+            },
+            content_type="application/json",
+        )
+        tid = r.json()["id"]
+        p = self.client.get(f"/api/label-templates/{tid}/pdf/?ids={self.device.id}")
+        self.assertEqual(p.status_code, 200, p.content)
+        self.assertEqual(p["Content-Type"], "application/pdf")
+        pdf = p.getvalue() if hasattr(p, "getvalue") else b"".join(p.streaming_content)
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        # 62mm = 175.7pt, 29mm = 82.2pt — confirm the page box, not A4.
+        import weasyprint
+
+        page = weasyprint.HTML(
+            string="<style>@page{size:62mm 29mm;margin:0}</style><body></body>"
+        ).render().pages[0]
+        self.assertAlmostEqual(page.width / 96 * 25.4, 62.0, delta=0.5)
+
+    def test_pdf_no_objects_is_clean_400(self):
+        r = self.client.post(
+            "/api/label-templates/",
+            {"name": "X", "object_type": "device", "template_html": "x"},
+            content_type="application/json",
+        )
+        tid = r.json()["id"]
+        p = self.client.get(f"/api/label-templates/{tid}/pdf/")  # no ids
+        self.assertEqual(p.status_code, 400, p.content)
+
     def test_preview_falls_back_to_first_object(self):
         # No object_id → preview against the first object of the type (zero-setup
         # editor preview). A device exists in setUp, so this renders.

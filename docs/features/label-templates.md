@@ -40,17 +40,34 @@ name).
 
 A **Print label** action appears on an object's page (and in the list **bulk
 bar** for a multi-select) whenever a template exists for that type — no
-per-page configuration. Pick a template and Danbyte opens a print sheet sized to
-the label; use your browser's print dialog, which drives any office or dedicated
-label printer.
+per-page configuration. Pick a template and Danbyte opens a **PDF** whose page
+is sized exactly to the label (one label per page), rendered server-side. Your
+browser's PDF viewer previews it and prints it to any office or dedicated label
+printer.
+
+!!! tip "Print at actual size"
+    In the print dialog choose **Actual size / 100%** (not "Fit to page"), and
+    set the printer's media/roll to match the label. A browser can't be made to
+    print an *HTML* page at an exact physical size — the paper size is
+    controlled by the print dialog, not by CSS — so Danbyte prints a PDF with
+    the page dimensions baked in, which is the reliable way to get true label
+    sizing with no browser header/footer.
 
 Currently wired on **devices** and **racks**; the same action drops onto any
 detail page or bulk bar with one line, so more object types are easy to add.
+
+The PDF is produced by [WeasyPrint](https://weasyprint.org/) from the same
+sanitized label HTML, with the QR composited server-side. On container/bare
+deploys this needs the Pango/cairo/GDK-PixBuf system libraries (baked into the
+Docker image and installed by `install.sh`).
 
 ## Safety
 
 Label HTML is rendered in a **sandboxed** Jinja environment with autoescaping on,
 so a field value containing markup is escaped rather than injected, and templates
-can't reach code-executing attributes. The rendered label is shown inside a
-scriptless `<iframe sandbox>` as defence in depth. Every object is re-checked for
-your view permission before its label renders, and all queries are tenant-scoped.
+can't reach code-executing attributes. The rendered HTML is then run through an
+HTML sanitizer (`nh3`) that strips scripts, event handlers, and unsafe URLs from
+the template author's own markup. The editor preview additionally renders inside
+a scriptless `<iframe sandbox>` as defence in depth. Every object is re-checked
+for your view permission before its label renders, and all queries are
+tenant-scoped.
