@@ -65,7 +65,6 @@
     "@types/react-dom": "^19",
     "@types/three": "^0.185.1",
     "@vitejs/plugin-react": "^6",
-    "adm-zip": "^0.5.17",
     "eslint": "^9",
     "http-proxy": "^1.18.1",
     "jsdom": "^28",
