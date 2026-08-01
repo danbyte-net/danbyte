@@ -2273,6 +2273,17 @@ class ConnectProtocol(TimestampedModel):
     )
     enabled = models.BooleanField(default=True)
     description = models.TextField(blank=True, default="")
+    # Optional targeting: restrict which devices offer this protocol. Empty =
+    # every device. A device matches when its device_type is in `device_types`
+    # (if any are set) OR its role is in `roles` (if any are set) — a union, so a
+    # protocol can target a set of types plus a set of roles. Untargeted
+    # protocols always show.
+    device_types = models.ManyToManyField(
+        "api.DeviceType", blank=True, related_name="connect_protocols"
+    )
+    roles = models.ManyToManyField(
+        "api.DeviceRole", blank=True, related_name="connect_protocols"
+    )
 
     class Meta:
         ordering = ["weight", "name"]

@@ -228,6 +228,10 @@ export interface ConnectProtocol {
   weight: number
   enabled: boolean
   description: string
+  /** Optional targeting — empty = every device. A device matches when its type
+   * is in device_types OR its role is in roles. */
+  device_types_detail: { id: string; name: string }[]
+  roles_detail: { id: string; name: string }[]
   created_at: string
   updated_at: string
 }
@@ -240,6 +244,8 @@ export interface ConnectProtocolWritePayload {
   weight?: number
   enabled?: boolean
   description?: string
+  device_type_ids?: string[]
+  role_ids?: string[]
 }
 
 // ─── Date & time display settings ────────────────────────────────────────

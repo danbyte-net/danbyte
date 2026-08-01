@@ -42,6 +42,7 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card"
 import {
+  Field,
   FormCheckbox,
   FormFooter,
   FormIcon,
@@ -50,6 +51,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { IdMultiSelect } from "@/components/cells/id-multi-select"
 
 export const Route = createFileRoute("/settings/connect")({
   component: ConnectProtocolsSettingsPage,
@@ -298,6 +300,8 @@ function ProtocolDialog({
   const [weight, setWeight] = useState("100")
   const [enabled, setEnabled] = useState(true)
   const [description, setDescription] = useState("")
+  const [deviceTypeIds, setDeviceTypeIds] = useState<string[]>([])
+  const [roleIds, setRoleIds] = useState<string[]>([])
 
   // Reseed the fields whenever the dialog opens (edit → prefill, add → blank).
   useEffect(() => {
@@ -309,8 +313,36 @@ function ProtocolDialog({
     setWeight(protocol ? String(protocol.weight) : "100")
     setEnabled(protocol?.enabled ?? true)
     setDescription(protocol?.description ?? "")
+    setDeviceTypeIds((protocol?.device_types_detail ?? []).map((d) => d.id))
+    setRoleIds((protocol?.roles_detail ?? []).map((r) => r.id))
     reset()
   }, [open, protocol, reset])
+
+  // Targeting pickers — only fetched while the dialog is open.
+  const dtOptQ = useQuery({
+    queryKey: ["device-types-picker"],
+    queryFn: () =>
+      api<Paginated<{ id: string; model: string }>>(
+        "/api/device-types/?picker=1&page_size=500"
+      ),
+    enabled: open,
+  })
+  const roleOptQ = useQuery({
+    queryKey: ["device-roles-picker"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>(
+        "/api/device-roles/?picker=1&page_size=500"
+      ),
+    enabled: open,
+  })
+  const dtOptions = (dtOptQ.data?.results ?? []).map((o) => ({
+    id: o.id,
+    name: o.model,
+  }))
+  const roleOptions = (roleOptQ.data?.results ?? []).map((o) => ({
+    id: o.id,
+    name: o.name,
+  }))
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -322,6 +354,8 @@ function ProtocolDialog({
         weight: weight.trim() === "" ? 100 : Number(weight),
         enabled,
         description: description.trim(),
+        device_type_ids: deviceTypeIds,
+        role_ids: roleIds,
       }
       if (isEdit)
         return api<ConnectProtocol>(
@@ -408,6 +442,37 @@ function ProtocolDialog({
             onChange={setDescription}
             error={fieldErrors.description}
           />
+          <Field
+            label="Applies to"
+            info="Leave empty to offer this protocol on every device. Restricting by device type and/or role limits which devices show it in the Connect menu — a device matches when its type is in the list OR its role is."
+          >
+            <div className="space-y-2">
+              <div className="space-y-1">
+                <span className="text-xs text-muted-foreground">
+                  Device types
+                </span>
+                <IdMultiSelect
+                  options={dtOptions}
+                  value={deviceTypeIds}
+                  onChange={setDeviceTypeIds}
+                  placeholder="Any device type"
+                  searchPlaceholder="Search device types…"
+                  emptyText="No device types."
+                />
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs text-muted-foreground">Roles</span>
+                <IdMultiSelect
+                  options={roleOptions}
+                  value={roleIds}
+                  onChange={setRoleIds}
+                  placeholder="Any role"
+                  searchPlaceholder="Search roles…"
+                  emptyText="No roles."
+                />
+              </div>
+            </div>
+          </Field>
           <FormCheckbox
             label="Enabled"
             hint="Offered on the device Connect menu"

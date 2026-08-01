@@ -11,7 +11,8 @@ from django.utils.text import slugify
 from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
-from api.models import IPAddress, Status, Prefix
+from api.models import DeviceRole, DeviceType, IPAddress, Status, Prefix
+from api.serializers import TenantScopedPrimaryKeyRelatedField
 
 from .checkers import CheckConfigError, get_checker
 from .models import (
@@ -263,15 +264,40 @@ class ConnectProtocolSerializer(serializers.ModelSerializer):
     """A user-defined device access method (a launch-URL template).
 
     Plain tenant-scoped CRUD — no secret is involved. The template is rendered
-    into a URL client-side at launch; the server only stores the template."""
+    into a URL client-side at launch; the server only stores the template.
+
+    Optional targeting: ``device_type_ids`` / ``role_ids`` restrict which devices
+    offer the protocol (empty = all). A device matches when its device_type is in
+    ``device_types`` OR its role is in ``roles`` — the ``?device=<id>`` list
+    filter applies exactly that union."""
+
+    device_type_ids = TenantScopedPrimaryKeyRelatedField(
+        source="device_types", many=True, required=False,
+        queryset=DeviceType.objects.all(),
+    )
+    role_ids = TenantScopedPrimaryKeyRelatedField(
+        source="roles", many=True, required=False,
+        queryset=DeviceRole.objects.all(),
+    )
+    device_types_detail = serializers.SerializerMethodField()
+    roles_detail = serializers.SerializerMethodField()
+
+    def get_device_types_detail(self, obj) -> list:
+        return [{"id": str(d.pk), "name": d.model} for d in obj.device_types.all()]
+
+    def get_roles_detail(self, obj) -> list:
+        return [{"id": str(r.pk), "name": r.name} for r in obj.roles.all()]
 
     class Meta:
         model = ConnectProtocol
         fields = [
             "id", "name", "url_template", "icon", "default_port", "weight",
-            "enabled", "description", "created_at", "updated_at",
+            "enabled", "description", "device_type_ids", "role_ids",
+            "device_types_detail", "roles_detail", "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = [
+            "id", "device_types_detail", "roles_detail", "created_at", "updated_at",
+        ]
 
 
 class CertificateAssignmentSerializer(serializers.ModelSerializer):

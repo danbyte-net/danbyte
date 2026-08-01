@@ -123,12 +123,13 @@ export function DeviceConnectMenu({ device }: { device: Device }) {
   const [termOpen, setTermOpen] = useState(false)
 
   const protocolsQ = useQuery({
-    queryKey: ["connect-protocols", "enabled"],
+    queryKey: ["connect-protocols", "enabled", device.id],
     queryFn: () =>
       api<Paginated<ConnectProtocol>>(
-        "/api/monitoring/connect-protocols/?enabled=1"
+        // ?device= filters to protocols applicable to this device (untargeted,
+        // or targeted at its type/role). The server already orders by weight,name.
+        `/api/monitoring/connect-protocols/?enabled=1&device=${device.id}`
       ),
-    // The server already orders by weight,name.
     enabled: canConnect && open,
   })
   const credsQ = useQuery({

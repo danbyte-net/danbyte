@@ -597,7 +597,7 @@ class ConnectProtocolViewSet(TenantScopedViewSet):
     Filter: ``?enabled=1`` to list only enabled protocols (what a menu shows).
     """
 
-    queryset = ConnectProtocol.objects.all()
+    queryset = ConnectProtocol.objects.prefetch_related("device_types", "roles")
     serializer_class = ConnectProtocolSerializer
 
     def get_queryset(self):
@@ -605,7 +605,29 @@ class ConnectProtocolViewSet(TenantScopedViewSet):
         enabled = self.request.query_params.get("enabled")
         if enabled in ("1", "true", "True"):
             qs = qs.filter(enabled=True)
+        device_id = self.request.query_params.get("device")
+        if device_id:
+            qs = self._scope_to_device(qs, device_id)
         return qs
+
+    def _scope_to_device(self, qs, device_id):
+        """Only protocols applicable to this device: untargeted ones, plus any
+        whose ``device_types`` includes the device's type OR whose ``roles``
+        includes its role. The device is tenant-checked; an out-of-tenant or
+        missing id yields nothing rather than leaking the whole catalog."""
+        from api.models import Device
+
+        tenant = self._tenant_or_403()
+        device = Device.objects.filter(pk=device_id, tenant_id=tenant.id).first()
+        if device is None:
+            return qs.none()
+        untargeted = Q(device_types__isnull=True) & Q(roles__isnull=True)
+        clauses = untargeted
+        if device.device_type_id:
+            clauses |= Q(device_types=device.device_type_id)
+        if device.role_id:
+            clauses |= Q(roles=device.role_id)
+        return qs.filter(clauses).distinct()
 
 
 class CertificateBindingViewSet(TenantScopedReadViewSet):
