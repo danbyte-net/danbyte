@@ -24,6 +24,16 @@ from .ssh_terminal_consumer import SshTerminalConsumer
 
 
 class SshTerminalGateTests(TransactionTestCase):
+    @classmethod
+    def tearDownClass(cls):
+        # TransactionTestCase's final flush wipes the migration-seeded built-in
+        # RBAC groups from a --keepdb database, breaking later suites that rely
+        # on them. Reseed after the flush. (See the keepdb-flush gotcha.)
+        super().tearDownClass()
+        from auth_api.builtin_groups import ensure_builtin_groups
+
+        ensure_builtin_groups()
+
     def setUp(self):
         org = Organization.objects.create(name="O", slug="o")
         self.tenant = Tenant.objects.create(org=org, name="One", slug="one")
