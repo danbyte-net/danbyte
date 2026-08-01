@@ -144,7 +144,7 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             except ValueError:
                 raise serializers.ValidationError(
                     f"'{entry}' is not a valid address or CIDR "
-                    "(e.g. 10.196.223.134 or 10.196.0.0/16)."
+                    "(e.g. 10.0.0.100 or 10.0.0.0/24)."
                 )
             cleaned.append(entry)
         return cleaned

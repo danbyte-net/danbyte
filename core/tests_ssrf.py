@@ -83,11 +83,11 @@ class DbAllowlistTests(TestCase):
         from core.ssrf import SSRFError, assert_public_host
 
         with self.assertRaises(SSRFError):
-            assert_public_host("10.196.223.134", 443)
+            assert_public_host("10.0.0.100", 443)
         dep = DeploymentSettings.load()
-        dep.ssrf_allowlist = ["10.196.223.134"]
+        dep.ssrf_allowlist = ["10.0.0.100"]
         dep.save()
-        assert_public_host("10.196.223.134", 443)  # no raise
+        assert_public_host("10.0.0.100", 443)  # no raise
         # Other private space stays blocked.
         with self.assertRaises(SSRFError):
             assert_public_host("10.9.9.9", 443)

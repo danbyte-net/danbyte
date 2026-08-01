@@ -172,14 +172,14 @@ function OutboundCard() {
     >
       <Field
         label="Allowed addresses / CIDRs"
-        hint="One per line, e.g. 10.196.223.134 or 10.196.0.0/16. Merged with DANBYTE_SSRF_ALLOWLIST."
+        hint="One per line, e.g. 10.0.0.100 or 10.0.0.0/24. Merged with DANBYTE_SSRF_ALLOWLIST."
       >
         <textarea
           value={list}
           onChange={(e) => setList(e.target.value)}
           rows={4}
           spellCheck={false}
-          placeholder={"10.196.223.134\n192.168.10.0/24"}
+          placeholder={"10.0.0.100\n192.168.10.0/24"}
           className="w-full rounded-md border border-input bg-transparent p-2 font-mono text-[12px] leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-ring"
         />
       </Field>

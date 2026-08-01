@@ -97,6 +97,7 @@ nav = [
   { "Administration" = [
     "access/index.md",
     { "Permissions & access" = "features/permissions.md" },
+    { "Single sign-on (SSO)" = "features/sso.md" },
     { "Site separation"   = "access/site-separation.md" },
     { "Change log"        = "features/change-log.md" },
     { "Journals"          = "features/journals.md" },
