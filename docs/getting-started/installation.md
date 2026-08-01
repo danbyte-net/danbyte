@@ -104,7 +104,29 @@ The other tabs cover building from source and a local dev checkout.
         3. Deploys the app to `<service-home>/danbyte` and builds the venv from the bundle's vendored CPython 3.13 + wheelhouse (no internet needed).
         4. **Generates secrets** with Python's CSPRNG and writes a `chmod 600`, service-user-owned `.env` — `DJANGO_SECRET_KEY` + `MONITORING_SECRET_KEY` (~400-bit), a 24-char DB password, and a 20-char admin password.
         5. Creates the PostgreSQL role + database, runs migrations, and bootstraps the `admin` superuser.
-        6. Installs the systemd units (web, workers, websocket, timers), writes logs to `/var/log/danbyte`, and — unless `--no-nginx` — puts nginx + TLS in front.
+        6. Installs the systemd units (web, workers, websocket, docs, timers), writes logs to `/var/log/danbyte`, and — unless `--no-nginx` — puts nginx + TLS in front.
+        7. Prints the generated **admin password** at the end.
+
+        !!! note "PostgreSQL and Redis are native, not containers"
+
+            A production install uses the distro's `postgresql` and
+            `redis-server` and creates the role and database with `psql`. The
+            `docker-compose.yml` in the repo and the `danbyte-infra` unit that
+            runs it are **development only** — they are never installed on a
+            production host. If you already run PostgreSQL, the installer uses
+            it: point `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` /
+            `DB_PASSWORD` in `.env` at your server and re-run
+            `manage.py migrate`.
+
+            Installs made before this was fixed may have a stray
+            `danbyte-infra` unit and an unused Postgres container. Remove them
+            with:
+
+            ```bash
+            sudo -u danbyte systemctl --user disable --now danbyte-infra
+            rm -f ~danbyte/.config/systemd/user/danbyte-infra.service
+            ```
+
         7. Prints the generated **admin password** at the end.
 
         **Where things land**

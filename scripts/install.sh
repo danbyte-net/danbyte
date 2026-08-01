@@ -269,7 +269,11 @@ as_user bash -lc "cd '$APP' && .venv/bin/python manage.py migrate --noinput \
 
 # ── 9. systemd units ─────────────────────────────────────────────────────────
 step "Installing + (re)starting services"
-as_user bash -lc "cd '$APP' && make install-services install-prod-services >/dev/null"
+# ONLY the production unit set. This used to also run `install-services`, which
+# links the dev units — including danbyte-infra, the docker-compose Postgres +
+# Redis stack. On a host that already ran Postgres that left an idle, empty
+# container competing for 5432 (issue #14).
+as_user bash -lc "cd '$APP' && make install-prod-services >/dev/null"
 DANBYTE_UNITS="danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-docs"
 # enable = start at boot; restart = pick up freshly-deployed code (a plain
 # `enable --now` is a no-op on already-running units, so a re-install/upgrade
