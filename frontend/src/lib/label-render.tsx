@@ -62,6 +62,26 @@ export function labelBody(tmpl: SheetTmpl, label: RenderedLabel): string {
     : label.html
 }
 
+/** A complete standalone HTML document holding every label — opened in a fresh
+ * `window.open()` popup and printed there (the netbox-qrcode approach). A virgin
+ * document carries none of the SPA's global CSS or hydration, so the `@page`
+ * rule in `sheetCss` actually sizes the sheet to the label and drops the
+ * browser's margins/headers — which it silently won't do when the same `<style>`
+ * is injected into the live app document. The QR SVG is already composited into
+ * each label's HTML (trusted qrcode.react), and the label HTML is sanitized
+ * server-side, so writing this string carries no XSS. It self-prints on load. */
+export function labelSheetDocument(
+  tmpl: SheetTmpl,
+  labels: RenderedLabel[]
+): string {
+  const cells = labels
+    .map((l) => `<div class="lbl">${labelBody(tmpl, l)}</div>`)
+    .join("")
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Print labels</title>
+<style>${sheetCss(tmpl)}</style></head>
+<body onload="setTimeout(function(){window.focus();window.print();},80)" onafterprint="window.close()">${cells}</body></html>`
+}
+
 /** The stylesheet for a print sheet: `@page` sized to the label with zero
  * margin (so the browser omits its header/footer), each `.lbl` sized in mm and
  * hard-page-broken, plus the template's own CSS. Injected into the print page's
@@ -85,6 +105,5 @@ export function sheetCss(tmpl: SheetTmpl): string {
       body{padding:16px;display:flex;flex-direction:column;gap:12px;align-items:center;background:#e5e7eb}
       .lbl{border:1px solid #ccc;box-shadow:0 1px 3px rgba(0,0,0,.15)}
     }
-    @media print{ .print-toolbar{display:none!important} }
   `
 }
