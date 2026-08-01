@@ -124,9 +124,34 @@ export function DeviceTerminalDialog({
       const term = new Terminal({
         cursorBlink: true,
         fontSize: 13,
+        scrollback: 5000,
         fontFamily:
           "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-        theme: { background: "#09090b" },
+        // Full 16-colour ANSI palette so coloured output (ls --color, vim,
+        // htop, prompts) renders properly; xterm handles 256-colour/truecolor
+        // on top of this automatically.
+        theme: {
+          background: "#09090b",
+          foreground: "#e4e4e7",
+          cursor: "#e4e4e7",
+          selectionBackground: "#3f3f46",
+          black: "#18181b",
+          red: "#ef4444",
+          green: "#22c55e",
+          yellow: "#eab308",
+          blue: "#3b82f6",
+          magenta: "#a855f7",
+          cyan: "#06b6d4",
+          white: "#e4e4e7",
+          brightBlack: "#52525b",
+          brightRed: "#f87171",
+          brightGreen: "#4ade80",
+          brightYellow: "#facc15",
+          brightBlue: "#60a5fa",
+          brightMagenta: "#c084fc",
+          brightCyan: "#22d3ee",
+          brightWhite: "#fafafa",
+        },
       })
       const fit = new FitAddon()
       term.loadAddon(fit)
