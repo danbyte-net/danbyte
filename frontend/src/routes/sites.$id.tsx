@@ -27,6 +27,7 @@ import { SiteDeleteDialog } from "@/components/site-delete-dialog"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { MiniMap } from "@/components/site-map/mini-map"
 import { ObjectImages } from "@/components/object-images"
+import { ObjectDocuments } from "@/components/object-documents"
 import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
 import { EmbeddedCircuitTable } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -72,6 +73,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
     | "circuits"
     | "contacts"
     | "access"
+    | "documents"
     | "journal"
     | "history"
   >("overview")
@@ -148,6 +150,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
         { value: "circuits", label: "Circuits", count: s.circuit_count },
         { value: "contacts", label: "Contacts", count: s.contact_count },
         ...(showAccess ? [{ value: "access", label: "Access" }] : []),
+        { value: "documents", label: "Documents" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
       ]}
@@ -187,6 +190,9 @@ function SiteDetailBody({ site: s }: { site: Site }) {
           />
         </DetailTab>
       )}
+      <DetailTab value="documents">
+        <ObjectDocuments objectType="api.site" objectId={s.id} />
+      </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.site" objectId={s.id} />
       </DetailTab>

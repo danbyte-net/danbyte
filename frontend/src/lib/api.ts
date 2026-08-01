@@ -1088,6 +1088,45 @@ export interface ImageAttachment {
   updated_at: string
 }
 
+// ─── Documents ──────────────────────────────────────────────────────────
+// A file upload OR an external link attached to any object (device, rack,
+// site, location). Exactly one of `file`/`url` is set per document. Files are
+// streamed through the auth-checked `download_url`; the raw storage path is
+// never exposed.
+export interface DocumentCategory {
+  id: string
+  name: string
+  slug: string
+  color: string
+}
+
+export type DocumentLinkStatus = "unknown" | "ok" | "broken"
+
+export interface Document {
+  id: string
+  /** `app.model` label of the owning object, e.g. "api.device". */
+  object_type: string
+  object_id: string
+  name: string
+  description: string
+  /** Category id, or null when uncategorized. */
+  category: string | null
+  category_detail: { id: string; name: string; color: string } | null
+  /** Set for link documents; null for file documents. */
+  url: string | null
+  /** Set for file documents; null for link documents. */
+  file_name: string | null
+  /** Auth-checked stream at /api/documents/<id>/download/ (file docs only). */
+  download_url: string | null
+  link_status: DocumentLinkStatus
+  link_checked_at: string | null
+  /** Id of the document this one replaces, or null. */
+  supersedes: string | null
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
 export interface Device {
   id: string
   numid: number | null

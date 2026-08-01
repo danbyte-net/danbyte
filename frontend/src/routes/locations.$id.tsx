@@ -21,6 +21,7 @@ import { QueryError } from "@/components/query-error"
 import { LocationDeleteDialog } from "@/components/location-delete-dialog"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { ObjectImages } from "@/components/object-images"
+import { ObjectDocuments } from "@/components/object-documents"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
 import { EmbeddedRackTable } from "@/components/embedded-tables"
@@ -68,7 +69,13 @@ function Body({ location: l }: { location: Location }) {
   const rows = prefixes.data?.results ?? []
   const columns = useMemo<ColumnDef<Prefix>[]>(() => buildColumns(), [])
   const [tab, setTab] = useUrlTab<
-    "overview" | "devices" | "racks" | "prefixes" | "journal" | "history"
+    | "overview"
+    | "devices"
+    | "racks"
+    | "prefixes"
+    | "documents"
+    | "journal"
+    | "history"
   >("overview")
 
   return (
@@ -130,6 +137,7 @@ function Body({ location: l }: { location: Location }) {
         { value: "devices", label: "Devices", count: l.device_count },
         { value: "racks", label: "Racks", count: l.rack_count },
         { value: "prefixes", label: "Prefix ranges", count: rows.length },
+        { value: "documents", label: "Documents" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
       ]}
@@ -191,6 +199,9 @@ function Body({ location: l }: { location: Location }) {
             </div>
           )}
         </div>
+      </DetailTab>
+      <DetailTab value="documents">
+        <ObjectDocuments objectType="api.location" objectId={l.id} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.location" objectId={l.id} />

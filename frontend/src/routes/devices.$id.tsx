@@ -33,6 +33,7 @@ import type {
 } from "@/lib/api"
 import { RackElevation } from "@/components/rack-elevation"
 import { ObjectImages } from "@/components/object-images"
+import { ObjectDocuments } from "@/components/object-documents"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -156,6 +157,7 @@ const DEVICE_TABS = [
   "certificates",
   "contacts",
   "config",
+  "documents",
   "journal",
   "history",
 ] as const
@@ -369,6 +371,7 @@ function Body({ device: d }: { device: Device }) {
         { value: "certificates", label: "Certificates & keys" },
         { value: "contacts", label: "Contacts" },
         { value: "config", label: "Config" },
+        { value: "documents", label: "Documents" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
       ]}
@@ -446,6 +449,9 @@ function Body({ device: d }: { device: Device }) {
       </DetailTab>
       <DetailTab value="contacts">
         <ContactsPanel objectType="api.device" objectId={d.id} />
+      </DetailTab>
+      <DetailTab value="documents">
+        <ObjectDocuments objectType="api.device" objectId={d.id} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.device" objectId={d.id} />
