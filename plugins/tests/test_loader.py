@@ -1,9 +1,9 @@
 """Plugin discovery + version gating (danbyte.plugin_loader)."""
 from __future__ import annotations
 
+from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase
 from rest_framework.test import APITestCase
-from django.contrib.auth import get_user_model
 
 from danbyte.plugin_loader import _compatible, discover
 
@@ -28,6 +28,19 @@ class CompatibilityTests(SimpleTestCase):
 
     def test_unbounded(self):
         self.assertEqual(_compatible("9.9.9", None, None), (True, ""))
+
+    def test_dev_prefixed_running_version_is_parsed(self):
+        # Danbyte's own dev-build version string (e.g. "dev0.10.1") must not lock
+        # every plugin out — it's coerced to 0.10.1 for the comparison.
+        self.assertEqual(_compatible("dev0.10.1", "0.8.0", None), (True, ""))
+        ok, why = _compatible("dev0.10.1", "1.0.0", None)
+        self.assertFalse(ok)
+        self.assertIn(">= 1.0.0", why)
+
+    def test_unparseable_running_version_fails_open(self):
+        # A running version we can't parse at all is our build string, not a
+        # plugin fault: allow the plugin rather than disabling everything.
+        self.assertEqual(_compatible("garbage", "0.8.0", "1.0.0"), (True, ""))
 
 
 class DiscoverTests(SimpleTestCase):

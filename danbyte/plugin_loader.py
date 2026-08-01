@@ -86,10 +86,27 @@ def _find_config_class(module_name: str):
     return candidates[0]
 
 
+def _coerce_version(value: str) -> Version | None:
+    """Parse a Danbyte version string, tolerating the ``dev0.10.1`` dev-build
+    convention (a ``dev`` prefix on the number). ``None`` if it can't be parsed
+    at all."""
+    value = (value or "").strip()
+    for cand in (value, value[3:] if value.lower().startswith("dev") else value):
+        try:
+            return Version(cand)
+        except InvalidVersion:
+            continue
+    return None
+
+
 def _compatible(current: str, minimum: str | None, maximum: str | None) -> tuple[bool, str]:
     """Is ``current`` within the plugin's [min, max] Danbyte version window?"""
+    cur = _coerce_version(current)
+    # An unparseable *running* version is a dev/build string (our own), not a
+    # plugin fault — don't lock every plugin out of a dev build; treat as newest.
+    if cur is None:
+        return True, ""
     try:
-        cur = Version(current)
         if minimum is not None and cur < Version(minimum):
             return False, f"requires Danbyte >= {minimum} (running {current})"
         if maximum is not None and cur > Version(maximum):
