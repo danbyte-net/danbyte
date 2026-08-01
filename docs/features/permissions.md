@@ -27,6 +27,12 @@ Three pieces work together:
 The four things a permission can allow on a type of object are **view**, **add**,
 **change**, and **delete**.
 
+Two extra **capability** verbs apply to a couple of types and are never implied
+by *change*: **connect** (on devices — open a [Connect launcher or the SSH
+terminal](device-access.md)) and **reveal** (on device credentials — read the
+referenced secret). The permission form only offers these on the types that use
+them.
+
 ## Built-in roles
 
 Danbyte ships three ready-made groups so you don't have to build common roles by
