@@ -158,6 +158,7 @@ const DEVICE_TABS = [
   "services",
   "certificates",
   "contacts",
+  "access",
   "config",
   "documents",
   "journal",
@@ -373,6 +374,7 @@ function Body({ device: d }: { device: Device }) {
         },
         { value: "certificates", label: "Certificates & keys" },
         { value: "contacts", label: "Contacts" },
+        { value: "access", label: "Access" },
         { value: "config", label: "Config" },
         { value: "documents", label: "Documents" },
         { value: "journal", label: "Journal" },
@@ -390,7 +392,6 @@ function Body({ device: d }: { device: Device }) {
               the nine-column interface table, and drift rows that carry their
               own per-row actions. */}
           <DeviceSnmpCard deviceId={d.id} />
-          <DeviceCredentialsCard deviceId={d.id} />
           <DeviceDriftCard deviceId={d.id} />
           {/* Everything narrow pairs up two-across from lg — the two
               three-column observed tables, then the hardware-health
@@ -406,6 +407,11 @@ function Body({ device: d }: { device: Device }) {
             />
             <DeviceRedfishCard deviceId={d.id} />
           </div>
+        </div>
+      </DetailTab>
+      <DetailTab value="access">
+        <div className="space-y-6">
+          <DeviceCredentialsCard deviceId={d.id} />
         </div>
       </DetailTab>
       <DetailTab value="config">

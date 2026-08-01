@@ -565,16 +565,25 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
         cred.save(update_fields=["secret_path", "secret_provider"])
 
     def perform_create(self, serializer):
+        from django.db import transaction
+
         self._validate_device(serializer)
         value = self._pop_secret(serializer)
-        super().perform_create(serializer)
-        self._store_secret(serializer.instance, value)
+        # Atomic: if writing the managed secret fails (e.g. no store enabled),
+        # roll back the row so no orphaned credential is left behind — otherwise
+        # a retry collides on the (tenant, device, name) unique constraint.
+        with transaction.atomic():
+            super().perform_create(serializer)
+            self._store_secret(serializer.instance, value)
 
     def perform_update(self, serializer):
+        from django.db import transaction
+
         self._validate_device(serializer)
         value = self._pop_secret(serializer)
-        super().perform_update(serializer)
-        self._store_secret(serializer.instance, value)
+        with transaction.atomic():
+            super().perform_update(serializer)
+            self._store_secret(serializer.instance, value)
 
     def _audit_reveal(self, cred):
         """Record who revealed which credential's secret, when — revealing a

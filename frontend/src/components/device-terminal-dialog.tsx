@@ -265,9 +265,9 @@ export function DeviceTerminalDialog({
                   <p className="text-sm text-muted-foreground">Loading…</p>
                 ) : sshCreds.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    This device has no stored SSH credential — add one in the
-                    device's <span className="font-medium">Credentials</span>{" "}
-                    section, or use <span className="font-medium">My login</span>.
+                    This device has no stored SSH credential — add one on the
+                    device's <span className="font-medium">Access</span> tab, or
+                    use <span className="font-medium">My login</span> above.
                   </p>
                 ) : (
                   <Select value={credentialId} onValueChange={setCredentialId}>
