@@ -2150,6 +2150,87 @@ class SSHHostKey(TimestampedModel):
         return super().save(*args, **kwargs)
 
 
+class DeviceCredential(TimestampedModel):
+    """A named login for a device that points at an **externally-authored**
+    secret — Danbyte stores only a *reference*, never the secret value.
+
+    The credential records *how* to connect (kind, username, port, scheme) and
+    *where the secret lives* (``secret_provider`` + ``secret_path``), so the
+    later Connect / reveal flows can fetch the password or key from the operator's
+    secret store at use-time. There is deliberately **no field for the secret
+    itself**: the value lives in the ``local`` (``StoredSecret``) or ``vault``
+    store under ``secret_path`` and is only ever read by :meth:`resolve_secret`,
+    which the ``reveal`` action (and, later, Connect) call — never list/detail
+    serialization.
+    """
+
+    class Kind(models.TextChoices):
+        SSH_PASSWORD = "ssh_password", "SSH password"
+        SSH_KEY = "ssh_key", "SSH key"
+        HTTPS_LOGIN = "https_login", "HTTPS login"
+
+    class Provider(models.TextChoices):
+        LOCAL = "local", "Local"
+        VAULT = "vault", "Vault"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="device_credentials"
+    )
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, related_name="credentials"
+    )
+    name = models.CharField(max_length=120)
+    kind = models.CharField(max_length=16, choices=Kind.choices)
+    username = models.CharField(max_length=255, blank=True, default="")
+    port = models.PositiveIntegerField(null=True, blank=True)
+    scheme = models.CharField(
+        max_length=8, blank=True, default="",
+        help_text="For https_login: http or https. Ignored for SSH kinds.",
+    )
+    secret_provider = models.CharField(
+        max_length=8, choices=Provider.choices,
+        help_text="Which secret store holds the value referenced by secret_path.",
+    )
+    secret_path = models.CharField(
+        max_length=200,
+        help_text="Reference to the secret in the chosen store — an external "
+        "path/ref Danbyte reads at use-time. The secret value is never stored "
+        "here.",
+    )
+    description = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "device", "name"],
+                name="uniq_device_credential_tenant_device_name",
+            )
+        ]
+        indexes = [models.Index(fields=["tenant", "device"])]
+
+    def __str__(self) -> str:
+        return self.name
+
+    def resolve_secret(self) -> dict:
+        """Fetch the referenced secret from the active store at use-time.
+
+        Fail-closed: raises :class:`SecretStoreDisabled` when no store is
+        enabled, and :class:`SecretStoreError` when the store is reachable but
+        nothing lives at ``secret_path``. Only the ``reveal`` action (and, later,
+        Connect) call this — never list/detail serialization."""
+        from .secret_store import SecretStoreError, require_secret_store
+
+        store = require_secret_store()
+        value = store.get_at_path(self.secret_path)
+        if value is None:
+            raise SecretStoreError(
+                f"No secret found at '{self.secret_path}' in the configured store."
+            )
+        return value
+
+
 class CertificateAssignment(TimestampedModel):
     """Intent: *this certificate should be presented by that object* — the
     source-of-truth half a drift check compares against.

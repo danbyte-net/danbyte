@@ -29,6 +29,7 @@ from .models import (
     AcmeOrder,
     CertificateAssignment,
     CertificateRequest,
+    DeviceCredential,
     Issuer,
     SSHHostKey,
     CertificateBinding,
@@ -49,6 +50,7 @@ from .serializers import (
     AcmeOrderSerializer,
     CertificateAssignmentSerializer,
     CertificateRequestSerializer,
+    DeviceCredentialSerializer,
     IssuerSerializer,
     CertificateBindingSerializer,
     CertificateSerializer,
@@ -493,6 +495,94 @@ class SSHHostKeyViewSet(TenantScopedViewSet):
         key = self.get_object()
         accept_observed(key)
         return Response(self.get_serializer(key).data)
+
+
+class DeviceCredentialViewSet(TenantScopedViewSet):
+    """A device's login credentials — each references an externally-stored secret.
+
+    Standard tenant-scoped CRUD (the secret value is never serialised, only its
+    provider + path). The extra **reveal** action fetches the actual secret from
+    the configured store at call-time — gated on the ``reveal`` RBAC verb (which
+    is independent of ``change``: a user who can edit a credential still can't
+    reveal it without the verb), re-checks that the caller may view the target
+    device, audits the disclosure, and fails closed when no store is enabled.
+
+    Filter: ``?device=<id>``.
+    """
+
+    queryset = DeviceCredential.objects.select_related("device").all()
+    serializer_class = DeviceCredentialSerializer
+    # reveal is its own capability verb; everything else uses the CRUD defaults.
+    rbac_action_map = {"reveal": "reveal"}
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        device_id = self.request.query_params.get("device")
+        if device_id:
+            qs = qs.filter(device_id=device_id)
+        return qs
+
+    def _validate_device(self, serializer):
+        """A credential's device must belong to the active tenant — never trust a
+        posted device UUID to be in-tenant (the picker is only a convenience)."""
+        tenant = self._tenant_or_403()
+        device = serializer.validated_data.get("device")
+        if device is not None and device.tenant_id != tenant.id:
+            raise ValidationError({"device": "Not found in this tenant."})
+
+    def perform_create(self, serializer):
+        self._validate_device(serializer)
+        super().perform_create(serializer)
+
+    def perform_update(self, serializer):
+        self._validate_device(serializer)
+        super().perform_update(serializer)
+
+    def _audit_reveal(self, cred):
+        """Record who revealed which credential's secret, when — revealing a
+        secret writes no model change, so nothing else logs it (mirrors the
+        certificate-request key-reveal trail)."""
+        from audit.context import current_request_id
+        from audit.models import ChangeAction, ChangeLogEntry
+        from audit.site_capture import entry_site_id
+
+        u = getattr(self.request, "user", None)
+        authed = bool(u and u.is_authenticated)
+        ChangeLogEntry.objects.create(
+            tenant_id=getattr(cred, "tenant_id", None),
+            user=u if authed else None,
+            user_name=(u.get_username() if authed else ""),
+            action=ChangeAction.REVEAL,
+            object_type=cred._meta.label_lower,
+            object_label="Device credential",
+            object_id=str(cred.pk),
+            object_repr=str(cred),
+            object_site_id=entry_site_id(cred),
+            changes={"revealed": "secret"},
+            request_id=current_request_id(),
+        )
+
+    @action(detail=True, methods=["post"], url_path="reveal")
+    def reveal(self, request, pk=None):
+        """Fetch and return the referenced secret. Requires the ``reveal`` verb
+        (enforced by ``rbac_action_map`` at both the type and row gates) plus
+        view access to the credential's device; audited; fail-closed when no
+        secret store is enabled."""
+        from .secret_store import SecretStoreDisabled, SecretStoreError
+
+        cred = self.get_object()  # tenant- + reveal-row-scoped already
+        tenant = self._tenant_or_403()
+        if not rbac.can_act_on(request.user, tenant, "device", "view", cred.device):
+            raise PermissionDenied("You do not have access to this credential's device.")
+        try:
+            secret = cred.resolve_secret()
+        except SecretStoreDisabled as exc:
+            # No store configured — fail closed with an actionable message.
+            raise ValidationError({"detail": str(exc)}) from exc
+        except SecretStoreError as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        self._audit_reveal(cred)
+        return Response({"secret": secret})
 
 
 class CertificateBindingViewSet(TenantScopedReadViewSet):

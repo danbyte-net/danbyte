@@ -29,6 +29,7 @@ from .models import (
     CheckResult,
     CheckState,
     CheckTemplate,
+    DeviceCredential,
     DeviceSnmp,
     MonitoringEngine,
     MonitoringDenySubnet,
@@ -234,6 +235,27 @@ class SSHHostKeySerializer(serializers.ModelSerializer):
             "bits", "origin", "observed", "uploaded", "first_seen", "last_seen",
             "created_at", "updated_at",
         ]
+
+
+class DeviceCredentialSerializer(serializers.ModelSerializer):
+    """A device login that references an externally-stored secret.
+
+    The secret value is **never** serialised — only its provider + path are
+    exposed. Fetching the actual secret is the viewset's ``reveal`` action, gated
+    on the ``reveal`` RBAC verb and audited."""
+
+    device_name = serializers.CharField(
+        source="device.name", read_only=True, default=None
+    )
+
+    class Meta:
+        model = DeviceCredential
+        fields = [
+            "id", "device", "device_name", "name", "kind", "username", "port",
+            "scheme", "secret_provider", "secret_path", "description",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class CertificateAssignmentSerializer(serializers.ModelSerializer):

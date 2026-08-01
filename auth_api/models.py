@@ -145,7 +145,8 @@ class ObjectPermission(TimestampedModel):
         help_text="Object-type slugs this permission covers (see object_types registry).",
     )
     actions = models.JSONField(
-        default=list, help_text="Subset of [view, add, change, delete]."
+        default=list,
+        help_text="Subset of [view, add, change, delete, connect, reveal].",
     )
     constraints = models.JSONField(
         null=True, blank=True,

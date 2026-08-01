@@ -41,6 +41,13 @@ class SecretStore(Protocol):
 
     def delete(self, tenant_id, ref: str) -> None: ...
 
+    def get_at_path(self, path: str) -> dict | None:
+        """Read an operator-chosen *external* path — a secret authored outside
+        Danbyte's ``{tenant}/{ref}`` namespace. Used by device credentials,
+        which store only the reference to a secret an operator manages
+        elsewhere. Returns the value dict, or ``None`` if nothing is there."""
+        ...
+
 
 class LocalFernetSecretStore:
     """The ``local`` provider — secrets in the encrypted ``StoredSecret`` table.
@@ -67,6 +74,16 @@ class LocalFernetSecretStore:
         from .models import StoredSecret
 
         StoredSecret.objects.filter(tenant_id=tenant_id, ref=ref).delete()
+
+    def get_at_path(self, path: str) -> dict | None:
+        """A ``StoredSecret`` whose ``ref`` equals ``path``, regardless of the
+        namespace convention — for the local provider an operator seeds a secret
+        by creating a ``StoredSecret`` with that exact ref. Returns ``None`` when
+        no such secret exists."""
+        from .models import StoredSecret
+
+        row = StoredSecret.objects.filter(ref=path).first()
+        return row.value if row is not None else None
 
 
 def _provider() -> str:

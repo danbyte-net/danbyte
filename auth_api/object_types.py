@@ -6,7 +6,11 @@ the slug from each viewset's model automatically, so *registering* a type here i
 what makes it RBAC-controlled; an unregistered model falls back to the legacy
 "any authenticated user in the tenant" behaviour.
 
-Permissions act over four standard actions: view / add / change / delete.
+Permissions act over these actions: view / add / change / delete plus the
+capability verbs connect / reveal. The capability verbs are additive and
+independent — they are never implied by change; a type only honours a verb if
+its viewset checks it (e.g. a credential's ``reveal`` action). Granting an
+unused verb on a type that ignores it is harmless.
 """
 from __future__ import annotations
 
@@ -14,7 +18,9 @@ from functools import lru_cache
 
 from django.apps import apps
 
-ACTIONS = ["view", "add", "change", "delete"]
+# view/add/change/delete are the CRUD verbs; connect/reveal are capability verbs
+# checked only by the viewsets that opt into them. All are grantable generically.
+ACTIONS = ["view", "add", "change", "delete", "connect", "reveal"]
 
 # (app_label.ModelName, label, group). Order drives the form's grouping.
 _ENTRIES: list[tuple[str, str, str]] = [
@@ -128,6 +134,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # SNMP profiles are credentials — unregistered they'd fall back to "any
     # tenant member may write", which is exactly wrong for secrets.
     ("monitoring.SnmpProfile", "SNMP profiles", "Monitoring"),
+    # Device credentials link a device to an externally-stored secret. Danbyte
+    # holds only the reference; revealing the secret is its own `reveal` verb.
+    ("monitoring.DeviceCredential", "Device credentials", "Monitoring"),
     ("monitoring.SnmpSensor", "SNMP sensors", "Monitoring"),
     ("monitoring.RedfishEndpoint", "BMC (Redfish) endpoints", "Monitoring"),
     # Observed certificates are public data, but which endpoints a tenant
