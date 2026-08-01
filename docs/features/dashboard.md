@@ -29,6 +29,12 @@ The page is a mosaic of tiles:
 Colours come from your own statuses and roles where you've set them, so the
 charts speak your network's language.
 
+Every chart segment is a **deep link**: click a slice or bar (or a legend row)
+and it opens the matching list already filtered — *IPs by status* → the IP list
+for that status, *Devices by type* → those devices, *Firing alerts by severity*
+→ the alerts list, and so on. The monitoring **Certificate & key health** tiles
+work the same way.
+
 ## Customizing it
 
 You decide which widgets to show and in what order.

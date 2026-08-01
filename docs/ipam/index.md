@@ -10,6 +10,7 @@ live on it.
 | Page | What it's for |
 |---|---|
 | [Prefixes](../features/prefix-crud.md) | Create and manage subnets (CIDR blocks). |
+| **IP addresses** | Every address across the tenant in one list, filtered by status, role, or scope (public / private / CGNAT / special). |
 | [The prefix tree](../features/tree-and-sections.md) | See your subnets nested by containment, grouped per VRF. |
 | [Space map](../features/space-map.md) | A visual grid of what's used, reserved, and free in a subnet. |
 | [Gateway autospawn](../features/gateway-autospawn.md) | Automatically reserve the gateway IP when a subnet is created. |
@@ -21,3 +22,9 @@ live on it.
     Start with **Prefixes** to create a subnet, then open it to add addresses.
     The [space map](../features/space-map.md) is the quickest way to see what's
     free.
+
+!!! note "Prefixes vs. IP addresses"
+    The **Prefixes** page is the list of subnets. Individual addresses live on
+    their own **IP addresses** page (nav → IP addresses) and inside each
+    prefix's detail page, where the space map also lives. Dashboard cards like
+    *IPs by status* deep-link straight into the IP list with that filter applied.

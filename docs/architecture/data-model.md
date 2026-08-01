@@ -45,9 +45,16 @@ IPAddress (tenant + vrf scoped)            │
   ├─ ip_address                            │
   ├─ status : available | assigned | reserved | dhcp_pool | floating
   ├─ role   : '' | gateway | loopback | vip | hsrp | vrrp | anycast | secondary
+  ├─ scope  : public | private | cgnat | special   (read-only, derived from the address)
   ├─ prefix → Prefix                       │
   └─ vrf    → VRF | NULL                   ┘
 ```
+
+!!! note "Read-only derived API fields"
+    The serialized `IPAddress.scope` (above) and `DeviceType.manufacturer` (the
+    manufacturer's name, echoed on the nested device-type) are **read-only**
+    convenience fields — they back list filters (the IP *scope* facet, the
+    device *manufacturer* facet) and carry no schema/migration of their own.
 
 ## Mixins, by which every domain model gets ...
 
