@@ -337,7 +337,7 @@ export function LabelTemplateFormDialog({
             {canTarget && (
               <Field
                 label="Applies to"
-                hint="Leave empty to apply to every object of this type. Restricting by device type and/or role limits which objects offer this label — a device can still match several templates."
+                info="Leave empty to apply to every object of this type. Restricting by device type and/or role limits which objects offer this label — a device can still match several templates."
               >
                 <div className="space-y-2">
                   {d.object_type === "device" && (
