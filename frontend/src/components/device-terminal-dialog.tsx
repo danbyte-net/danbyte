@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Loader2, TerminalSquare, TriangleAlert } from "lucide-react"
+import {
+  Loader2,
+  Maximize2,
+  Minimize2,
+  TerminalSquare,
+  TriangleAlert,
+} from "lucide-react"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import "@xterm/xterm/css/xterm.css"
@@ -75,6 +81,7 @@ export function DeviceTerminalDialog({
   const [phase, setPhase] = useState<Phase>("picking")
   const [message, setMessage] = useState("")
   const [canAcceptHost, setCanAcceptHost] = useState(false)
+  const [maximized, setMaximized] = useState(false)
 
   // Default the "my login" username to the operator's own account, once.
   useEffect(() => {
@@ -198,19 +205,38 @@ export function DeviceTerminalDialog({
     [authMode, credentialId, myUsername, myPassword, device.id, teardown]
   )
 
-  // Keep the terminal fitted to the dialog while a session is live.
-  useEffect(() => {
-    if (phase !== "open") return
-    const onResize = () => fitRef.current?.fit()
-    window.addEventListener("resize", onResize)
-    return () => window.removeEventListener("resize", onResize)
-  }, [phase])
-
   const showTerminal = phase === "connecting" || phase === "open" || phase === "closed"
+
+  // Keep the PTY sized to the on-screen terminal: refit whenever the host box
+  // changes size (dialog open, maximize toggle, window resize). fit() computes
+  // cols/rows from the box and term.onResize forwards them to the device, so no
+  // clipping regardless of the dialog size.
+  useEffect(() => {
+    if (!showTerminal) return
+    const el = termHostRef.current
+    if (!el || typeof ResizeObserver === "undefined") return
+    const ro = new ResizeObserver(() => {
+      try {
+        fitRef.current?.fit()
+      } catch {
+        // fit() can throw if the box is momentarily 0×0 mid-layout; ignore.
+      }
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [showTerminal, maximized])
+
+  const sizeClass = maximized
+    ? "max-w-none! w-[96vw] h-[94vh]"
+    : showTerminal
+      ? "sm:max-w-5xl w-[92vw] h-[80vh]"
+      : "sm:max-w-lg"
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl">
+      <DialogContent
+        className={`${sizeClass} ${showTerminal ? "flex flex-col" : ""}`}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <TerminalSquare className="h-4 w-4" /> Terminal — {device.name}
@@ -219,6 +245,21 @@ export function DeviceTerminalDialog({
             An SSH session to this device, brokered by Danbyte. The credential's
             secret stays on the server.
           </DialogDescription>
+          {showTerminal && (
+            <button
+              type="button"
+              onClick={() => setMaximized((m) => !m)}
+              // Sits left of the built-in close (X) button.
+              className="absolute right-11 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100"
+              title={maximized ? "Restore" : "Maximize"}
+            >
+              {maximized ? (
+                <Minimize2 className="h-4 w-4" />
+              ) : (
+                <Maximize2 className="h-4 w-4" />
+              )}
+            </button>
+          )}
         </DialogHeader>
 
         {phase === "picking" || phase === "error" ? (
@@ -336,10 +377,10 @@ export function DeviceTerminalDialog({
         ) : null}
 
         {showTerminal && (
-          <div className="space-y-2">
+          <div className="flex min-h-0 flex-1 flex-col gap-2">
             <div
               ref={termHostRef}
-              className="h-[60vh] w-full overflow-hidden rounded-md border border-border bg-[#09090b] p-2"
+              className="min-h-0 w-full flex-1 overflow-hidden rounded-md border border-border bg-[#09090b] p-2"
             />
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               {phase === "connecting" && (
