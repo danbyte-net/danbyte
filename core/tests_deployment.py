@@ -87,12 +87,14 @@ class EndAllSessionsApiTests(APITestCase):
         from django.contrib.sessions.models import Session
 
         self.client.force_login(self.admin)
-        # force_login created a session row; make sure there's at least one.
-        self.assertGreaterEqual(Session.objects.count(), 1)
+        key = self.client.session.session_key
+        self.assertTrue(Session.objects.filter(session_key=key).exists())
         r = self.client.post("/api/deployment/end-all-sessions/")
         self.assertEqual(r.status_code, 200)
         self.assertGreaterEqual(r.json()["ended"], 1)
-        self.assertEqual(Session.objects.count(), 0)
+        # The caller's authenticated session is gone (they must sign in again);
+        # it must not be resurrected by session middleware on this request.
+        self.assertFalse(Session.objects.filter(session_key=key).exists())
 
 
 class SessionIdleTimeoutMiddlewareTests(APITestCase):

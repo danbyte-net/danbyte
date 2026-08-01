@@ -261,6 +261,11 @@ def deployment_end_all_sessions(request):
 
     count = Session.objects.count()
     Session.objects.all().delete()
+    # Flush the caller's own session too. Without this, SessionMiddleware
+    # re-saves it at response time (the idle-timeout middleware marks it
+    # modified), resurrecting the very session we just deleted — so the admin
+    # who hit this button would stay logged in.
+    request.session.flush()
     return Response({"ended": count})
 
 
