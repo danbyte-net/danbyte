@@ -1867,6 +1867,11 @@ class TenantViewSet(viewsets.ModelViewSet):
         # pre-existing tenants, so seed them here too (needed for the gateway
         # role + site gateway-policy autospawn).
         seed_builtin_roles(tenant)
+        # Editable Connect-protocol catalog (SSH/Telnet/RDP/HTTP-S) so the
+        # device Connect menu works out of the box for a new tenant.
+        from monitoring.connect_protocol_seeds import seed_builtin_connect_protocols
+
+        seed_builtin_connect_protocols(tenant)
 
     @action(detail=True, methods=["post"], url_path="switch")
     def switch(self, request, pk=None):

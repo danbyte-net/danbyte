@@ -14,6 +14,7 @@ from .viewsets import (
     CertificateBindingViewSet,
     CertificateRequestViewSet,
     CertificateViewSet,
+    ConnectProtocolViewSet,
     DeviceCredentialViewSet,
     IssuerViewSet,
     SSHHostKeyViewSet,
@@ -96,6 +97,9 @@ router.register(r"acme-orders", AcmeOrderViewSet, basename="acmeorder")
 router.register(r"ssh-host-keys", SSHHostKeyViewSet, basename="ssh-host-key")
 router.register(
     r"device-credentials", DeviceCredentialViewSet, basename="device-credential"
+)
+router.register(
+    r"connect-protocols", ConnectProtocolViewSet, basename="connect-protocol"
 )
 router.register(r"snmp-sensors", SnmpSensorViewSet, basename="snmp-sensor")
 router.register(r"engines", MonitoringEngineViewSet, basename="monitoring-engine")

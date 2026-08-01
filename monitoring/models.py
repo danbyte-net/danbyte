@@ -2231,6 +2231,63 @@ class DeviceCredential(TimestampedModel):
         return value
 
 
+class ConnectProtocol(TimestampedModel):
+    """A user-defined way to *reach* a device — a launch template a Connect menu
+    turns into a URL the operator's browser hands to the OS.
+
+    Danbyte does not hard-code a fixed set of access methods. An operator defines
+    their own (``ssh://``, ``telnet://``, ``rdp://``, ``https://``, or any custom
+    scheme they have registered as an OS protocol handler), so the same device
+    can offer a native SSH client, a web UI, an RDP session, etc. The template is
+    a plain string with ``{placeholders}`` — ``{host}``, ``{username}``,
+    ``{port}``, ``{name}`` — filled from the device (and an optionally chosen
+    credential's username) **client-side** at launch. No secret is ever part of
+    the template or the produced URL; the value stays server-side and is only
+    reachable through :meth:`DeviceCredential.resolve_secret`.
+
+    Tenant-scoped catalog: each tenant curates its own protocols, editable and
+    removable, so this is a customizable catalog rather than a fixed enum.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="connect_protocols"
+    )
+    name = models.CharField(max_length=80)
+    url_template = models.CharField(
+        max_length=500,
+        help_text="Launch URL with {placeholders}: {host}, {username}, {port}, "
+        "{name}. E.g. ssh://{username}@{host} or telnet://{host}:{port}. The "
+        "browser hands the resulting URL to the OS protocol handler.",
+    )
+    icon = models.CharField(
+        max_length=32, blank=True, default="",
+        help_text="Optional Lucide icon name for the menu entry.",
+    )
+    default_port = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Substituted for {port} when the device has no explicit port.",
+    )
+    weight = models.PositiveSmallIntegerField(
+        default=1000, help_text="Lower sorts first in the Connect menu."
+    )
+    enabled = models.BooleanField(default=True)
+    description = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["weight", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"],
+                name="uniq_connect_protocol_tenant_name",
+            )
+        ]
+        indexes = [models.Index(fields=["tenant", "enabled"])]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class CertificateAssignment(TimestampedModel):
     """Intent: *this certificate should be presented by that object* — the
     source-of-truth half a drift check compares against.

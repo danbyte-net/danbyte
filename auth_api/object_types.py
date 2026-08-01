@@ -150,6 +150,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # Device credentials link a device to an externally-stored secret. Danbyte
     # holds only the reference; revealing the secret is its own `reveal` verb.
     ("monitoring.DeviceCredential", "Device credentials", "Monitoring"),
+    ("monitoring.ConnectProtocol", "Connect protocols", "Monitoring"),
     ("monitoring.SnmpSensor", "SNMP sensors", "Monitoring"),
     ("monitoring.RedfishEndpoint", "BMC (Redfish) endpoints", "Monitoring"),
     # Observed certificates are public data, but which endpoints a tenant

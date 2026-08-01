@@ -120,6 +120,7 @@ AUDITED_MODELS = [
     "monitoring.Issuer",
     "monitoring.SSHHostKey",
     "monitoring.DeviceCredential",
+    "monitoring.ConnectProtocol",
     # Org-level objects.
     "core.Tenant",
     "core.TenantGroup",

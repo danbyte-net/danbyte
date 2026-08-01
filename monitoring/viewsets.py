@@ -29,6 +29,7 @@ from .models import (
     AcmeOrder,
     CertificateAssignment,
     CertificateRequest,
+    ConnectProtocol,
     DeviceCredential,
     Issuer,
     SSHHostKey,
@@ -50,6 +51,7 @@ from .serializers import (
     AcmeOrderSerializer,
     CertificateAssignmentSerializer,
     CertificateRequestSerializer,
+    ConnectProtocolSerializer,
     DeviceCredentialSerializer,
     IssuerSerializer,
     CertificateBindingSerializer,
@@ -583,6 +585,27 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
             raise ValidationError({"detail": str(exc)}) from exc
         self._audit_reveal(cred)
         return Response({"secret": secret})
+
+
+class ConnectProtocolViewSet(TenantScopedViewSet):
+    """A tenant's Connect launch templates — plain tenant-scoped CRUD.
+
+    No secret is involved: a protocol is a URL template the Connect menu renders
+    client-side. Managing them uses the CRUD verbs; *using* one (the device
+    Connect menu) is gated separately on the device ``connect`` verb.
+
+    Filter: ``?enabled=1`` to list only enabled protocols (what a menu shows).
+    """
+
+    queryset = ConnectProtocol.objects.all()
+    serializer_class = ConnectProtocolSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        enabled = self.request.query_params.get("enabled")
+        if enabled in ("1", "true", "True"):
+            qs = qs.filter(enabled=True)
+        return qs
 
 
 class CertificateBindingViewSet(TenantScopedReadViewSet):

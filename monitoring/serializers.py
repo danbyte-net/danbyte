@@ -29,6 +29,7 @@ from .models import (
     CheckResult,
     CheckState,
     CheckTemplate,
+    ConnectProtocol,
     DeviceCredential,
     DeviceSnmp,
     MonitoringEngine,
@@ -254,6 +255,21 @@ class DeviceCredentialSerializer(serializers.ModelSerializer):
             "id", "device", "device_name", "name", "kind", "username", "port",
             "scheme", "secret_provider", "secret_path", "description",
             "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class ConnectProtocolSerializer(serializers.ModelSerializer):
+    """A user-defined device access method (a launch-URL template).
+
+    Plain tenant-scoped CRUD — no secret is involved. The template is rendered
+    into a URL client-side at launch; the server only stores the template."""
+
+    class Meta:
+        model = ConnectProtocol
+        fields = [
+            "id", "name", "url_template", "icon", "default_port", "weight",
+            "enabled", "description", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 

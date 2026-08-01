@@ -55,6 +55,7 @@ class Command(BaseCommand):
             self._ensure_default_tenant(opts["tenant_name"])
         self._seed_statuses()
         self._seed_roles()
+        self._seed_connect_protocols()
         self._maybe_create_superuser()
 
     def _ensure_default_tenant(self, name):
@@ -99,6 +100,17 @@ class Command(BaseCommand):
             created = seed_builtin_roles(tenant)
             self.stdout.write(
                 self.style.SUCCESS(f"Seeded IP roles for {tenant.name}: {created} new.")
+            )
+
+    def _seed_connect_protocols(self):
+        from monitoring.connect_protocol_seeds import seed_builtin_connect_protocols
+
+        for tenant in Tenant.objects.all():
+            created = seed_builtin_connect_protocols(tenant)
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Seeded Connect protocols for {tenant.name}: {created} new."
+                )
             )
 
     def _maybe_create_superuser(self):
