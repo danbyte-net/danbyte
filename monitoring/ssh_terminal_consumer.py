@@ -66,7 +66,6 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
             await self.close(code=CLOSE_UNAUTH)
             return
         session = self.scope.get("session")
-        tenant_id = session.get("current_tenant_id") if session else None
         qs = parse_qs(self.scope.get("query_string", b"").decode())
         credential_id = (qs.get("credential", [""])[0]).strip()
         self._accept_new = qs.get("accept_new", ["0"])[0] in ("1", "true")
@@ -75,7 +74,7 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
         interactive = qs.get("mode", [""])[0] == "interactive"
 
         ctx = await self._load_context(
-            user.id, tenant_id, self.device_id, credential_id, interactive=interactive
+            user.id, session, self.device_id, credential_id, interactive=interactive
         )
         # Accept the socket so we can deliver a readable error before closing.
         await self.accept()
@@ -251,28 +250,32 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
     # ── DB / authz (all sync work runs in the DB thread) ─────────────────────
 
     @database_sync_to_async
-    def _load_context(self, user_id, tenant_id, device_id, credential_id,
+    def _load_context(self, user_id, session, device_id, credential_id,
                       *, interactive=False):
         """Resolve + authorize everything the SSH connection needs, or return
         ``{"error": msg}``. Runs in a DB thread (no async ORM here)."""
         from django.contrib.auth.models import User
 
         from api.models import Device
+        from api.views import _get_active_tenant
         from auth_api import rbac
-        from core.models import DeploymentSettings, Tenant
+        from core.models import DeploymentSettings
 
         from .models import DeviceCredential, SSHHostKey
         from .secret_store import SecretStoreDisabled, SecretStoreError
 
         if not DeploymentSettings.load().ssh_terminal_enabled:
             return {"error": "The in-browser SSH terminal is disabled."}
-        if not tenant_id:
-            return {"error": "No active tenant."}
         try:
             user = User.objects.get(pk=user_id)
-            tenant = Tenant.objects.get(pk=tenant_id)
-        except (User.DoesNotExist, Tenant.DoesNotExist):
+        except User.DoesNotExist:
             return {"error": "Not authorized."}
+        # Resolve the active tenant the same way the HTTP layer does — session
+        # choice, else the profile's home tenant, else the first allowed — so a
+        # fresh login with no explicit tenant switch still resolves one.
+        tenant = _get_active_tenant(_ShimRequest(user, session))
+        if tenant is None:
+            return {"error": "No active tenant."}
 
         device = Device.objects.filter(pk=device_id, tenant_id=tenant.id).first()
         if device is None:
@@ -366,6 +369,18 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
             changes={"connected": "ssh_terminal", "host": ctx["host"]},
             request_id=current_request_id(),
         )
+
+
+class _ShimRequest:
+    """A minimal request-like object so the WS consumer can reuse the HTTP
+    layer's ``_get_active_tenant`` (which reads ``.user``, ``.session``,
+    ``.auth``). WS sessions have no DRF token, so ``auth`` is always None."""
+
+    auth = None
+
+    def __init__(self, user, session):
+        self.user = user
+        self.session = session or {}
 
 
 class _HostKeyUnknown(Exception):
