@@ -13,32 +13,35 @@ import { useTableFilters } from "@/components/table-filters"
 
 export const Route = createFileRoute("/ips/")({
   component: IpsPage,
-  // Deep-link filters from the dashboard "IPs by status / role" cards, e.g.
-  // /ips?status=<id> or /ips?role=<id>. Keys optional so a plain /ips is valid.
+  // Deep-link filters from the dashboard "IPs by status / role / scope" cards,
+  // e.g. /ips?status=<id>, ?role=<id>, or ?scope=public. Keys optional so a
+  // plain /ips is valid.
   validateSearch: (
     s: Record<string, unknown>
-  ): { status?: string; role?: string } => {
-    const out: { status?: string; role?: string } = {}
+  ): { status?: string; role?: string; scope?: string } => {
+    const out: { status?: string; role?: string; scope?: string } = {}
     if (typeof s.status === "string") out.status = s.status
     if (typeof s.role === "string") out.role = s.role
+    if (typeof s.scope === "string") out.scope = s.scope
     return out
   },
 })
 
 function IpsPage() {
-  const { status, role } = Route.useSearch()
+  const { status, role, scope } = Route.useSearch()
   const [q, setQ] = useState("")
 
-  // Filter server-side (the address space can be very large): the status/role
-  // deep-link and the search box narrow before rows are shipped. The facet rail
-  // then refines the returned set client-side.
+  // Filter server-side (the address space can be very large): the
+  // status/role/scope deep-links and the search box narrow before rows are
+  // shipped. The facet rail then refines the returned set client-side.
   const query = useQuery({
-    queryKey: ["ips-list", q, status ?? "", role ?? ""],
+    queryKey: ["ips-list", q, status ?? "", role ?? "", scope ?? ""],
     queryFn: () => {
       const p = new URLSearchParams({ page_size: "1000" })
       if (q) p.set("search", q)
       if (status) p.set("status", status)
       if (role) p.set("role", role)
+      if (scope) p.set("scope", scope)
       return api<Paginated<IPAddress>>(`/api/ips/?${p.toString()}`)
     },
   })
@@ -48,14 +51,15 @@ function IpsPage() {
     () => buildIpColumns<IPAddress>({ copyButton: true }),
     []
   )
-  // Seed the status / role facets from the URL so the active filter is visible
-  // in the rail (the server already applied it — see the query above).
+  // Seed the status / role / scope facets from the URL so the active filter is
+  // visible in the rail (the server already applied it — see the query above).
   const initialEnums = useMemo(() => {
     const seed: Record<string, string[]> = {}
     if (status) seed.status = [status]
     if (role) seed.role = [role]
+    if (scope) seed.scope = [scope]
     return seed
-  }, [status, role])
+  }, [status, role, scope])
   const { rail, filteredRows } = useTableFilters(columns, allRows, initialEnums)
 
   return (

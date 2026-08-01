@@ -715,6 +715,8 @@ export interface IPAddress {
   } | null
   mac_address: string
   dns_name: string
+  /** Reachability bucket derived from the address: public/private/cgnat/special. */
+  scope: string | null
   last_seen: string | null
   discovered: boolean
   flap_exclude: boolean
@@ -1093,6 +1095,7 @@ export interface Device {
   device_type: {
     id: string
     name: string
+    manufacturer: string | null
     u_height: number
     rack_width: "full" | "half"
     is_full_depth: boolean

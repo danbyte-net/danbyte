@@ -39,6 +39,7 @@ export type DeviceColumnId =
   | "role"
   | "platform"
   | "type"
+  | "manufacturer"
   | "site"
   | "serial"
   | "ips"
@@ -57,6 +58,7 @@ const CANONICAL_ORDER: DeviceColumnId[] = [
   "role",
   "platform",
   "type",
+  "manufacturer",
   "site",
   "serial",
   "ips",
@@ -261,6 +263,24 @@ export function buildDeviceColumns<T extends Device = Device>(
           formatValue: (_v, sample) => ({
             label: sample.device_type?.name ?? "No type",
           }),
+        },
+      },
+    }),
+    manufacturer: () => ({
+      id: "manufacturer",
+      accessorFn: (r) => r.device_type?.manufacturer ?? "",
+      header: ({ column }) => (
+        <SortHeader column={column} label="Manufacturer" />
+      ),
+      cell: ({ row }) => row.original.device_type?.manufacturer ?? dash,
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Manufacturer",
+          // Rows carry the manufacturer NAME (not id), so the facet buckets by
+          // name — matching the dashboard "Devices by manufacturer" deep-link.
+          get: (r: T) => r.device_type?.manufacturer ?? "__none__",
+          formatValue: (v) => ({ label: v }),
         },
       },
     }),

@@ -31,6 +31,7 @@ export type IpColumnId =
   | "ip"
   | "status"
   | "role"
+  | "scope"
   | "dns"
   | "assigned"
   | "switch"
@@ -43,6 +44,7 @@ const CANONICAL_ORDER: IpColumnId[] = [
   "ip",
   "status",
   "role",
+  "scope",
   "dns",
   "assigned",
   "switch",
@@ -192,6 +194,25 @@ export function buildIpColumns<T = IPAddress>(
               textColor: role?.text_color ?? undefined,
             }
           },
+        },
+      },
+    }),
+    scope: () => ({
+      id: "scope",
+      accessorFn: (r) => getIp(r)?.scope ?? "",
+      header: "Scope",
+      cell: ({ row }) => {
+        const s = getIp(row.original)?.scope
+        return s ? s[0].toUpperCase() + s.slice(1) : dash
+      },
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Scope",
+          get: (r: T) => getIp(r)?.scope ?? "__none__",
+          formatValue: (v) => ({
+            label: v ? v[0].toUpperCase() + v.slice(1) : "—",
+          }),
         },
       },
     }),

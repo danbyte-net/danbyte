@@ -26,10 +26,17 @@ import { useMe, objCan } from "@/lib/use-me"
 
 export const Route = createFileRoute("/prefixes/")({
   component: PrefixesPage,
-  // `?status=<id>` seeds the Status facet so the dashboard "Prefixes by status"
-  // card lands on the pre-filtered list. Optional so plain /prefixes is valid.
-  validateSearch: (s: Record<string, unknown>): { status?: string } =>
-    typeof s.status === "string" ? { status: s.status } : {},
+  // `?status=<id>` / `?family=4|6` seed the Status / Family facets so the
+  // dashboard "Prefixes by status" and "Prefixes by family" cards land on the
+  // pre-filtered list. Keys optional so a plain /prefixes stays valid.
+  validateSearch: (
+    s: Record<string, unknown>
+  ): { status?: string; family?: string } => {
+    const out: { status?: string; family?: string } = {}
+    if (typeof s.status === "string") out.status = s.status
+    if (typeof s.family === "string") out.family = s.family
+    return out
+  },
 })
 
 // Stable empty fallback so `columns` (which depends on `monitoring`) keeps a
@@ -72,11 +79,13 @@ function PrefixesPage() {
       }),
     [cfDefs]
   )
-  const { status: statusFilter } = Route.useSearch()
-  const initialEnums = useMemo(
-    () => (statusFilter ? { status: [statusFilter] } : undefined),
-    [statusFilter]
-  )
+  const { status: statusFilter, family: familyFilter } = Route.useSearch()
+  const initialEnums = useMemo(() => {
+    const seed: Record<string, string[]> = {}
+    if (statusFilter) seed.status = [statusFilter]
+    if (familyFilter) seed.family = [familyFilter]
+    return Object.keys(seed).length ? seed : undefined
+  }, [statusFilter, familyFilter])
   const { rail, filteredRows, toggleValue, selectedValues } = useTableFilters(
     facetColumns,
     allRows,

@@ -37,6 +37,7 @@ import {
 
 export type PrefixColumnId =
   | "cidr"
+  | "family"
   | "status"
   | "monitoring"
   | "vrf"
@@ -50,6 +51,7 @@ export type PrefixColumnId =
 
 const CANONICAL_ORDER: PrefixColumnId[] = [
   "cidr",
+  "family",
   "status",
   "monitoring",
   "vrf",
@@ -151,6 +153,27 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
             )}
           </div>
         )
+      },
+    }),
+    family: () => ({
+      id: "family",
+      accessorFn: (r) => (r.family ? String(r.family) : ""),
+      header: "Family",
+      cell: ({ row }) =>
+        row.original.family === 6
+          ? "IPv6"
+          : row.original.family === 4
+            ? "IPv4"
+            : dash,
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Family",
+          get: (r: T) => (r.family ? String(r.family) : "__none__"),
+          formatValue: (v) => ({
+            label: v === "6" ? "IPv6" : v === "4" ? "IPv4" : "Unknown",
+          }),
+        },
       },
     }),
     status: () => ({

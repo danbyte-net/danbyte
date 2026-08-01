@@ -1062,6 +1062,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
     is_primary_for_device = serializers.SerializerMethodField()
     is_secondary_for_device = serializers.SerializerMethodField()
     is_oob_for_device = serializers.SerializerMethodField()
+    scope = serializers.SerializerMethodField()
 
     # Write-side ids — same pattern as PrefixSerializer.
     status_id = TenantScopedPrimaryKeyRelatedField(
@@ -1144,6 +1145,18 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
         dev = obj.assigned_device
         return bool(dev and dev.oob_ip_id == obj.id)
 
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_scope(self, obj) -> str | None:
+        # Reachability bucket derived from the address alone
+        # (public/private/cgnat/special). Reuse the dashboard's classifier so
+        # the facet, the ``?scope=`` server filter, and the dashboard counts all
+        # agree. Imported lazily: dashboard_views imports api.views, which
+        # imports this module, so a top-level import would be circular.
+        from api.dashboard_views import _classify_ip_scope
+
+        bucket = _classify_ip_scope(obj.ip_address)
+        return bucket.lower() if bucket else None
+
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_assigned_interface(self, obj):
         i = obj.assigned_interface
@@ -1216,6 +1229,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
             "is_primary_for_device",
             "is_secondary_for_device",
             "is_oob_for_device",
+            "scope",
             "description", "reservation_note",
             "custom_fields",
             "tags", "tag_ids",
@@ -1434,6 +1448,9 @@ class DeviceTypeMiniSerializer(NumIdModelSerializer):
     front_image = serializers.SerializerMethodField()
     rear_image = serializers.SerializerMethodField()
     lifecycle_state = serializers.ReadOnlyField()
+    # Manufacturer NAME (not the nested object) — enough to drive the device
+    # list's Manufacturer facet, which deep-links from the dashboard by name.
+    manufacturer = serializers.SerializerMethodField()
 
     def get_front_image(self, obj) -> str | None:
         return _img_url(self, obj.front_image)
@@ -1441,9 +1458,14 @@ class DeviceTypeMiniSerializer(NumIdModelSerializer):
     def get_rear_image(self, obj) -> str | None:
         return _img_url(self, obj.rear_image)
 
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_manufacturer(self, obj) -> str | None:
+        return obj.manufacturer.name if obj.manufacturer_id else None
+
     class Meta:
         model = DeviceType
-        fields = ["id", "name", "u_height", "rack_width", "is_full_depth",
+        fields = ["id", "name", "manufacturer",
+                  "u_height", "rack_width", "is_full_depth",
                   "front_image", "rear_image",
                   "release_date", "end_of_support", "lifecycle_state"]
 

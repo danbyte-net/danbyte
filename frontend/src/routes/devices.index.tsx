@@ -23,15 +23,27 @@ import { useMe, objCan } from "@/lib/use-me"
 
 export const Route = createFileRoute("/devices/")({
   // Facet seeds from cross-object / dashboard deep-links, e.g. the "Devices by
-  // status / type / site" dashboard cards. Keys are optional so a plain
-  // `Link to="/devices"` never has to pass search.
+  // status / type / site / manufacturer" dashboard cards. Keys are optional so a
+  // plain `Link to="/devices"` never has to pass search.
   validateSearch: (
     search: Record<string, unknown>
-  ): { type?: string; status?: string; site?: string } => {
-    const out: { type?: string; status?: string; site?: string } = {}
+  ): {
+    type?: string
+    status?: string
+    site?: string
+    manufacturer?: string
+  } => {
+    const out: {
+      type?: string
+      status?: string
+      site?: string
+      manufacturer?: string
+    } = {}
     if (typeof search.type === "string") out.type = search.type
     if (typeof search.status === "string") out.status = search.status
     if (typeof search.site === "string") out.site = search.site
+    if (typeof search.manufacturer === "string")
+      out.manufacturer = search.manufacturer
     return out
   },
   component: DevicesPage,
@@ -107,14 +119,16 @@ function DevicesPage() {
     type: typeFilter,
     status: statusFilter,
     site: siteFilter,
+    manufacturer: manufacturerFilter,
   } = Route.useSearch()
   const initialEnums = useMemo(() => {
     const seed: Record<string, string[]> = {}
     if (typeFilter) seed.type = [typeFilter]
     if (statusFilter) seed.status = [statusFilter]
     if (siteFilter) seed.site = [siteFilter]
+    if (manufacturerFilter) seed.manufacturer = [manufacturerFilter]
     return Object.keys(seed).length ? seed : undefined
-  }, [typeFilter, statusFilter, siteFilter])
+  }, [typeFilter, statusFilter, siteFilter, manufacturerFilter])
   const { rail, filteredRows } = useTableFilters(columns, allRows, initialEnums)
 
   return (

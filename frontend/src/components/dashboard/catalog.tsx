@@ -149,13 +149,16 @@ export const CATALOG: WidgetDef[] = [
     title: "Public vs private IPs",
     description: "Address reachability split",
     size: "sq",
-    // Scope is a computed classification, not a stored field/facet — so the
-    // segment opens the IP list without a filter (no column to filter on).
+    // Scope is a computed classification (public/private/cgnat/special). The
+    // IP list applies it server-side via ?scope= and seeds the Scope facet.
     render: (d) => (
       <DistDonut
         data={d.ip_by_scope}
         unit="IPs"
-        link={() => ({ to: "/ips" })}
+        link={(x) => ({
+          to: "/ips",
+          search: x.key ? { scope: x.key } : undefined,
+        })}
       />
     ),
   },

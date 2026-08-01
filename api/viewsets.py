@@ -1218,6 +1218,19 @@ class IPAddressViewSet(CloneableMixin, TenantScopedViewSet):
             qs = qs.filter(role_id=role)
         if status := p.get("status"):
             qs = qs.filter(status_id=status)
+        if scope := p.get("scope"):
+            # Scope is derived from the address, not a DB column, so it can't be
+            # a plain ``.filter()``. Classify only the already-narrowed set and
+            # restrict to the matching pks. Reuse the dashboard classifier so the
+            # facet, this filter, and the dashboard counts agree.
+            from api.dashboard_views import _classify_ip_scope
+
+            ids = [
+                pk
+                for pk, addr in qs.values_list("pk", "ip_address")
+                if (_classify_ip_scope(addr) or "").lower() == scope
+            ]
+            qs = qs.filter(pk__in=ids)
         return _apply_custom_field_scope(self.request, qs, "ipaddress")
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
@@ -2594,7 +2607,8 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
         # DeviceSerializer getters). Pulling them into the join keeps the list
         # to a handful of queries.
         Device.objects.select_related(
-            "device_type", "device_type__platform", "site", "primary_ip",
+            "device_type", "device_type__platform", "device_type__manufacturer",
+            "site", "primary_ip",
             "role", "rack", "status", "platform", "location", "cluster",
         )
         .prefetch_related("tags")

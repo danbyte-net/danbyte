@@ -105,7 +105,12 @@ def _ip_by_scope(ips) -> list:
         if bucket is not None:
             counts[bucket] += 1
     return [
-        {"name": name, "count": counts[name], "color": _SCOPE_COLORS[name]}
+        {
+            "key": name.lower(),
+            "name": name,
+            "count": counts[name],
+            "color": _SCOPE_COLORS[name],
+        }
         for name in _SCOPE_ORDER
         if counts[name]
     ]
@@ -237,7 +242,6 @@ def dashboard_view(request):
     )
     device_by_manufacturer = _by(
         devices.exclude(device_type__manufacturer__isnull=True),
-        "device_type__manufacturer_id",
         "device_type__manufacturer__name",
         limit=6,
     )
