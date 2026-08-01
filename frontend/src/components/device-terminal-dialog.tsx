@@ -7,7 +7,9 @@ import "@xterm/xterm/css/xterm.css"
 
 import { api } from "@/lib/api"
 import type { Device, Paginated } from "@/lib/api"
+import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogContent,
@@ -65,10 +67,19 @@ export function DeviceTerminalDialog({
     [credsQ.data]
   )
 
+  const { me } = useMe()
+  const [authMode, setAuthMode] = useState<"stored" | "mine">("stored")
   const [credentialId, setCredentialId] = useState("")
+  const [myUsername, setMyUsername] = useState("")
+  const [myPassword, setMyPassword] = useState("")
   const [phase, setPhase] = useState<Phase>("picking")
   const [message, setMessage] = useState("")
   const [canAcceptHost, setCanAcceptHost] = useState(false)
+
+  // Default the "my login" username to the operator's own account, once.
+  useEffect(() => {
+    if (open && !myUsername && me.username) setMyUsername(me.username)
+  }, [open, me.username, myUsername])
 
   const termHostRef = useRef<HTMLDivElement | null>(null)
   const termRef = useRef<Terminal | null>(null)
@@ -96,7 +107,8 @@ export function DeviceTerminalDialog({
 
   const connect = useCallback(
     (acceptNew: boolean) => {
-      if (!credentialId) return
+      const interactive = authMode === "mine"
+      if (interactive ? !myUsername.trim() : !credentialId) return
       teardown()
       setPhase("connecting")
       setMessage("")
@@ -125,10 +137,11 @@ export function DeviceTerminalDialog({
       const cols = 80
       const rows = 24
       const params = new URLSearchParams({
-        credential: credentialId,
         cols: String(cols),
         rows: String(rows),
       })
+      if (interactive) params.set("mode", "interactive")
+      else params.set("credential", credentialId)
       if (acceptNew) params.set("accept_new", "1")
       const ws = new WebSocket(
         `${proto}://${window.location.host}/ws/ssh/${device.id}/?${params}`
@@ -142,7 +155,16 @@ export function DeviceTerminalDialog({
         } catch {
           return
         }
-        if (msg.t === "o" && msg.d != null) {
+        if (msg.t === "need_auth") {
+          // Interactive mode: the server is waiting for the operator's login.
+          ws.send(
+            JSON.stringify({
+              t: "auth",
+              username: myUsername.trim(),
+              password: myPassword,
+            })
+          )
+        } else if (msg.t === "o" && msg.d != null) {
           term.write(msg.d)
         } else if (msg.t === "ready") {
           setPhase("open")
@@ -173,7 +195,7 @@ export function DeviceTerminalDialog({
         }
       })
     },
-    [credentialId, device.id, teardown]
+    [authMode, credentialId, myUsername, myPassword, device.id, teardown]
   )
 
   // Keep the terminal fitted to the dialog while a session is live.
@@ -207,45 +229,109 @@ export function DeviceTerminalDialog({
                 <span>{message}</span>
               </div>
             )}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">SSH credential</label>
-              {credsQ.isLoading ? (
-                <p className="text-sm text-muted-foreground">Loading…</p>
-              ) : sshCreds.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  This device has no SSH credential. Add one on the device's
-                  Monitoring tab first.
+            {/* How to authenticate: a shared stored credential, or the
+                operator's own login typed here (never stored). */}
+            <div className="inline-flex rounded-md border border-border p-0.5 text-sm">
+              <button
+                type="button"
+                onClick={() => setAuthMode("stored")}
+                className={
+                  "rounded px-3 py-1 " +
+                  (authMode === "stored"
+                    ? "bg-accent font-medium"
+                    : "text-muted-foreground")
+                }
+              >
+                Stored credential
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthMode("mine")}
+                className={
+                  "rounded px-3 py-1 " +
+                  (authMode === "mine"
+                    ? "bg-accent font-medium"
+                    : "text-muted-foreground")
+                }
+              >
+                My login
+              </button>
+            </div>
+
+            {authMode === "stored" ? (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">SSH credential</label>
+                {credsQ.isLoading ? (
+                  <p className="text-sm text-muted-foreground">Loading…</p>
+                ) : sshCreds.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    This device has no stored SSH credential — add one in the
+                    device's <span className="font-medium">Credentials</span>{" "}
+                    section, or use <span className="font-medium">My login</span>.
+                  </p>
+                ) : (
+                  <Select value={credentialId} onValueChange={setCredentialId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a credential" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sshCreds.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                          {c.username ? ` (${c.username})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Username</label>
+                  <Input
+                    value={myUsername}
+                    onChange={(e) => setMyUsername(e.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Password</label>
+                  <Input
+                    type="password"
+                    value={myPassword}
+                    onChange={(e) => setMyPassword(e.target.value)}
+                    autoComplete="off"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && myUsername.trim()) connect(false)
+                    }}
+                  />
+                </div>
+                <p className="col-span-2 text-xs text-muted-foreground">
+                  Your login is used only for this session and is never stored.
                 </p>
-              ) : (
-                <Select value={credentialId} onValueChange={setCredentialId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a credential" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {sshCreds.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                        {c.username ? ` (${c.username})` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-            <div className="flex justify-end gap-2">
-              {canAcceptHost && (
-                <Button
-                  variant="outline"
-                  onClick={() => connect(true)}
-                  disabled={!credentialId}
-                >
-                  Accept new host & retry
-                </Button>
-              )}
-              <Button onClick={() => connect(false)} disabled={!credentialId}>
-                Connect
-              </Button>
-            </div>
+              </div>
+            )}
+            {(() => {
+              const ready =
+                authMode === "mine" ? !!myUsername.trim() : !!credentialId
+              return (
+                <div className="flex justify-end gap-2">
+                  {canAcceptHost && (
+                    <Button
+                      variant="outline"
+                      onClick={() => connect(true)}
+                      disabled={!ready}
+                    >
+                      Accept new host & retry
+                    </Button>
+                  )}
+                  <Button onClick={() => connect(false)} disabled={!ready}>
+                    Connect
+                  </Button>
+                </div>
+              )
+            })()}
           </div>
         ) : null}
 
