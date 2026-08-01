@@ -11,7 +11,11 @@ from django.db.models import Count, Q
 from django.utils.text import slugify
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import permissions, status as drf_status, viewsets
-from rest_framework.decorators import action
+from rest_framework.decorators import (
+    action,
+    api_view,
+    permission_classes as drf_permission_classes,
+)
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -6250,6 +6254,65 @@ class LabelTemplateViewSet(TenantScopedViewSet):
         # size), not a download.
         resp["Content-Disposition"] = f'inline; filename="labels-{tmpl.pk}.pdf"'
         return resp
+
+
+@api_view(["GET"])
+@drf_permission_classes([permissions.IsAuthenticated])
+def resolve_shortlink(request):
+    """Resolve a label short-link (``/l/<tenant>/<type>/<numid>``) to its object.
+
+    Scanning a small QR (or typing a short id) opens the object without carrying
+    the full UUID. Because ``numid`` is only unique within a tenant, the link
+    names the tenant: the resolver switches the session's active tenant to it (so
+    the SPA then loads the object in the right context) — but only after the
+    object resolves **view-scoped for this user**, so it never switches a caller
+    into a tenant/object they can't see. Anything unresolvable is a 404, leaking
+    nothing. Returns ``{object_type, id, tenant, switched}``.
+    """
+    from core.models import Tenant
+
+    from auth_api import rbac
+    from auth_api.object_types import model_for
+
+    otype = (request.query_params.get("type") or "").strip()
+    numid = (request.query_params.get("numid") or "").strip()
+    tslug = (request.query_params.get("tenant") or "").strip()
+    model = model_for(otype)
+    not_found = Response({"detail": "Not found."}, status=drf_status.HTTP_404_NOT_FOUND)
+    if model is None or not numid.isdigit():
+        return not_found
+    if not any(f.name == "numid" for f in model._meta.concrete_fields):
+        return not_found  # this type has no human number
+
+    # The named tenant (compact links always carry it); fall back to the active
+    # tenant for a bare link.
+    if tslug:
+        tenant = Tenant.objects.filter(slug=tslug, is_active=True).first()
+    else:
+        tenant = _get_active_tenant(request)
+    if tenant is None:
+        return not_found
+
+    qs = model.objects.all()
+    if any(f.name == "tenant" for f in model._meta.concrete_fields):
+        qs = qs.filter(tenant=tenant)
+    qs = rbac.restrict_queryset(qs, request.user, tenant, otype, "view")
+    obj = qs.filter(numid=int(numid)).first()
+    if obj is None:
+        return not_found
+
+    # Point the session at the label's tenant so the SPA opens the object in the
+    # right context (only reached once the user has proven view access above).
+    switched = request.session.get("current_tenant_id") != str(tenant.id)
+    request.session["current_tenant_id"] = str(tenant.id)
+    return Response(
+        {
+            "object_type": obj._meta.label_lower,
+            "id": str(obj.pk),
+            "tenant": {"id": str(tenant.id), "name": tenant.name, "slug": tenant.slug},
+            "switched": switched,
+        }
+    )
 
 
 # ─── Floor plans ─────────────────────────────────────────────────────────────

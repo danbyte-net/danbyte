@@ -87,6 +87,7 @@ from .io_views import (
 from .inventory_views import ansible_inventory
 from .terraform_views import vm_render_view
 from .viewsets import (
+    resolve_shortlink,
     ClusterTypeViewSet,
     ClusterGroupViewSet,
     ClusterViewSet,
@@ -329,6 +330,7 @@ urlpatterns = [
     path("site-map/", site_map, name="site-map"),
     path("site-map/connections/", site_map_connections, name="site-map-connections"),
     path("site-map/cables/", site_map_cables, name="site-map-cables"),
+    path("resolve/", resolve_shortlink, name="resolve-shortlink"),
     path("presence/heartbeat/", presence_heartbeat, name="presence-heartbeat"),
     path("presence/leave/", presence_leave, name="presence-leave"),
     path("presence/", presence_list, name="presence-list"),

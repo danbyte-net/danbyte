@@ -381,6 +381,7 @@ import { Route as AutomationTargetsIdEditRouteImport } from './routes/automation
 import { Route as AsnsIdEditRouteImport } from './routes/asns.$id_.edit'
 import { Route as AlertRulesIdEditRouteImport } from './routes/alert-rules.$id_.edit'
 import { Route as AggregatesIdEditRouteImport } from './routes/aggregates.$id_.edit'
+import { Route as LTenantTypeNumidRouteImport } from './routes/l.$tenant.$type.$numid'
 
 const ZonesRoute = ZonesRouteImport.update({
   id: '/zones',
@@ -2244,6 +2245,11 @@ const AggregatesIdEditRoute = AggregatesIdEditRouteImport.update({
   path: '/$id/edit',
   getParentRoute: () => AggregatesRoute,
 } as any)
+const LTenantTypeNumidRoute = LTenantTypeNumidRouteImport.update({
+  id: '/l/$tenant/$type/$numid',
+  path: '/l/$tenant/$type/$numid',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -2618,6 +2624,7 @@ export interface FileRoutesByFullPath {
   '/wireless-lan-groups/$id/edit': typeof WirelessLanGroupsIdEditRoute
   '/wireless-lans/$id/edit': typeof WirelessLansIdEditRoute
   '/zones/$id/edit': typeof ZonesIdEditRoute
+  '/l/$tenant/$type/$numid': typeof LTenantTypeNumidRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -2936,6 +2943,7 @@ export interface FileRoutesByTo {
   '/wireless-lan-groups/$id/edit': typeof WirelessLanGroupsIdEditRoute
   '/wireless-lans/$id/edit': typeof WirelessLansIdEditRoute
   '/zones/$id/edit': typeof ZonesIdEditRoute
+  '/l/$tenant/$type/$numid': typeof LTenantTypeNumidRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -3311,6 +3319,7 @@ export interface FileRoutesById {
   '/wireless-lan-groups/$id_/edit': typeof WirelessLanGroupsIdEditRoute
   '/wireless-lans/$id_/edit': typeof WirelessLansIdEditRoute
   '/zones/$id_/edit': typeof ZonesIdEditRoute
+  '/l/$tenant/$type/$numid': typeof LTenantTypeNumidRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -3687,6 +3696,7 @@ export interface FileRouteTypes {
     | '/wireless-lan-groups/$id/edit'
     | '/wireless-lans/$id/edit'
     | '/zones/$id/edit'
+    | '/l/$tenant/$type/$numid'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -4005,6 +4015,7 @@ export interface FileRouteTypes {
     | '/wireless-lan-groups/$id/edit'
     | '/wireless-lans/$id/edit'
     | '/zones/$id/edit'
+    | '/l/$tenant/$type/$numid'
   id:
     | '__root__'
     | '/'
@@ -4379,6 +4390,7 @@ export interface FileRouteTypes {
     | '/wireless-lan-groups/$id_/edit'
     | '/wireless-lans/$id_/edit'
     | '/zones/$id_/edit'
+    | '/l/$tenant/$type/$numid'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -4519,6 +4531,7 @@ export interface RootRouteChildren {
   ServiceTemplatesIdEditRoute: typeof ServiceTemplatesIdEditRoute
   SilencesIdEditRoute: typeof SilencesIdEditRoute
   VirtualMachinesIdEditRoute: typeof VirtualMachinesIdEditRoute
+  LTenantTypeNumidRoute: typeof LTenantTypeNumidRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -7127,6 +7140,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AggregatesIdEditRouteImport
       parentRoute: typeof AggregatesRoute
     }
+    '/l/$tenant/$type/$numid': {
+      id: '/l/$tenant/$type/$numid'
+      path: '/l/$tenant/$type/$numid'
+      fullPath: '/l/$tenant/$type/$numid'
+      preLoaderRoute: typeof LTenantTypeNumidRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -8267,6 +8287,7 @@ const rootRouteChildren: RootRouteChildren = {
   ServiceTemplatesIdEditRoute: ServiceTemplatesIdEditRoute,
   SilencesIdEditRoute: SilencesIdEditRoute,
   VirtualMachinesIdEditRoute: VirtualMachinesIdEditRoute,
+  LTenantTypeNumidRoute: LTenantTypeNumidRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

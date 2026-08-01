@@ -69,6 +69,28 @@ sanitized label HTML, with the QR composited server-side. On container/bare
 deploys this needs the Pango/cairo/GDK-PixBuf system libraries (baked into the
 Docker image and installed by `install.sh`).
 
+## Short id and QR links
+
+A full UUID is long and makes for a dense QR. Every object also has a
+**per-tenant human number** (`numid`, e.g. `27`) — enable it with
+**human-readable object numbers** in deployment settings. Labels can use:
+
+- `{{ short_id }}` — the human number, to print alongside the name.
+- `{{ short_url }}` — a compact link, `…/l/<tenant>/<type>/<number>`, that
+  resolves to the object's page.
+
+The default QR now encodes `short_url` (falling back to the full URL when an
+object has no number), so scanned codes are smaller. Scanning opens
+`/l/<tenant>/<type>/<number>`, which looks the object up and redirects to it.
+
+!!! info "Which tenant a scan opens"
+    The short link includes the tenant, because the human number is only unique
+    within a tenant. When you scan a label, Danbyte switches your active tenant
+    to the one on the label (only if you're allowed to see that object — an
+    unknown or forbidden code just 404s) and then opens the object. On a
+    single-tenant install this is invisible; on a multi-tenant one it means a
+    label always opens the right object regardless of which tenant you were in.
+
 ## Targeting device types and roles
 
 By default a template applies to **every** object of its type. For device (and

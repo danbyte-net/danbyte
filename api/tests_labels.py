@@ -64,9 +64,13 @@ class LabelRenderTests(TestCase):
     def test_url_and_default_qr(self):
         tmpl = LabelTemplate(object_type="device", template_html="{{ url }}")
         out = render_label(tmpl, self.device, base_url="https://x.example")
-        expected = f"https://x.example/devices/{self.device.pk}"
-        self.assertEqual(out["html"], expected)
-        self.assertEqual(out["qr"], expected)  # blank qr_content → the URL
+        # `{{ url }}` is the full detail URL; the default QR is the compact short
+        # link (smaller QR) when the object has a numid.
+        self.assertEqual(out["html"], f"https://x.example/devices/{self.device.pk}")
+        self.assertEqual(
+            out["qr"],
+            f"https://x.example/l/{self.tenant.slug}/device/{self.device.numid}",
+        )
 
     def test_custom_qr_expression(self):
         tmpl = LabelTemplate(
@@ -230,6 +234,36 @@ class LabelApiTests(TestCase):
         names = {t["name"] for t in r.json()["results"]}
         self.assertIn("Universal", names)
         self.assertNotIn("OnlyOther", names)
+
+    def test_short_url_and_resolver(self):
+        # The default QR uses the compact /l/<type>/<numid> short link, and the
+        # resolver turns that numid back into the object (tenant/view scoped).
+        from api.label_templates import render_label
+
+        self.assertIsNotNone(self.device.numid)
+        out = render_label(self.device_template(), self.device, base_url="https://x")
+        self.assertEqual(
+            out["qr"], f"https://x/l/{self.tenant.slug}/device/{self.device.numid}"
+        )
+        r = self.client.get(
+            f"/api/resolve/?tenant={self.tenant.slug}"
+            f"&type=device&numid={self.device.numid}"
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["object_type"], "api.device")
+        self.assertEqual(r.json()["id"], str(self.device.id))
+        self.assertEqual(r.json()["tenant"]["slug"], self.tenant.slug)
+
+    def test_resolver_unknown_is_404(self):
+        r = self.client.get(
+            f"/api/resolve/?tenant={self.tenant.slug}&type=device&numid=99999"
+        )
+        self.assertEqual(r.status_code, 404, r.content)
+
+    def device_template(self):
+        from api.models import LabelTemplate
+
+        return LabelTemplate(object_type="device", template_html="{{ device.name }}")
 
     def test_pdf_no_objects_is_clean_400(self):
         r = self.client.post(

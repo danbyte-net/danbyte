@@ -100,7 +100,10 @@ def available_fields(object_type, tenant=None) -> dict | None:
         "object": name,
         "tokens": sorted(set(tokens)),
         # Always in the render context, plus any per-type extras.
-        "special": ["url", "qr", "obj", *_TYPE_SPECIALS.get(name, [])],
+        "special": [
+            "url", "short_url", "short_id", "qr", "obj",
+            *_TYPE_SPECIALS.get(name, []),
+        ],
     }
 
 
@@ -108,6 +111,24 @@ def detail_path(obj) -> str:
     """Frontend detail path for an object, e.g. ``/devices/<id>`` (or "")."""
     prefix = FRONTEND_ROUTES.get(obj._meta.model_name)
     return f"{prefix}/{obj.pk}" if prefix else ""
+
+
+def short_link_path(obj) -> str:
+    """Compact SPA path keyed on the object's per-tenant human number (numid) —
+    ``/l/<tenant>/<type>/<numid>`` — which the ``/l`` route resolves to the real
+    detail page. Encoding this instead of the full UUID URL keeps the QR small.
+
+    The tenant slug is part of the path because ``numid`` is only unique *within*
+    a tenant: without it, scanning a label while a different tenant is active
+    would 404 or, worse, resolve a different tenant's object with the same
+    number. With it the resolver switches to the label's tenant. Empty when the
+    object has no numid/tenant (e.g. not yet backfilled)."""
+    numid = getattr(obj, "numid", None)
+    tenant = getattr(obj, "tenant", None)
+    slug = getattr(tenant, "slug", "") if tenant else ""
+    if not (numid and slug):
+        return ""
+    return f"/l/{slug}/{obj._meta.model_name}/{numid}"
 
 
 def _cable_ends(cable) -> dict:
@@ -350,7 +371,13 @@ def render_label(template, obj, *, base_url: str = "") -> dict:
     from jinja2.sandbox import SandboxedEnvironment
 
     url = f"{base_url}{detail_path(obj)}" if base_url else detail_path(obj)
+    short_path = short_link_path(obj)
+    short_url = f"{base_url}{short_path}" if (base_url and short_path) else short_path
     ctx = _context(obj, url)
+    # `short_id` = the per-tenant human number; `short_url` = the compact `/l/…`
+    # link that resolves to this object (keeps the QR small).
+    ctx["short_id"] = getattr(obj, "numid", None) or ""
+    ctx["short_url"] = short_url
 
     # HTML body: autoescape ON so a field value with markup is escaped, not
     # injected into the label. `date`/`datetime` filters tame raw timestamps.
@@ -368,5 +395,7 @@ def render_label(template, obj, *, base_url: str = "") -> dict:
         qr_env = _register_filters(SandboxedEnvironment(autoescape=False))
         qr = qr_env.from_string(template.qr_content).render(**ctx)
     else:
-        qr = url  # default: the object's own URL
+        # Default QR: the compact short link when the object has a numid (smaller
+        # QR), else fall back to the full URL.
+        qr = short_url or url
     return {"html": html, "qr": qr}
