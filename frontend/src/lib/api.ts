@@ -3597,6 +3597,7 @@ export interface WatchedEndpoint {
   last_detail: Record<string, unknown>
   last_certificate: string | null
   last_certificate_fingerprint: string | null
+  last_certificate_subject_cn: string | null
   created_at: string
   updated_at: string
 }

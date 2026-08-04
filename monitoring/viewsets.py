@@ -2006,3 +2006,13 @@ class WatchedEndpointViewSet(TenantScopedViewSet):
             raise ValidationError({"detail": f"Check failed: {exc}"}) from exc
         ep.refresh_from_db()
         return Response(self.get_serializer(ep).data)
+
+    @action(detail=False, methods=["post"], url_path="bulk-delete")
+    def bulk_delete(self, request):
+        ids = request.data.get("ids") or []
+        if not isinstance(ids, list) or not ids:
+            raise ValidationError({"ids": "Provide a non-empty list of ids."})
+        # get_queryset already scopes to the tenant + RBAC, so this can only
+        # ever delete the caller's own endpoints.
+        deleted, _ = self.get_queryset().filter(id__in=ids).delete()
+        return Response({"deleted": deleted})

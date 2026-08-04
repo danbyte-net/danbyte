@@ -9,7 +9,7 @@ import { api } from "@/lib/api"
 import type { Paginated, WatchedEndpoint } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { EmptyState } from "@/components/empty-state"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -44,9 +44,28 @@ function StatusBadge({ ep }: { ep: WatchedEndpoint }) {
   return <Badge variant={STATUS_VARIANT[ep.last_status]}>{label}</Badge>
 }
 
+/** Plain-language reason behind the status, from the last observation. */
+function statusReason(ep: WatchedEndpoint): string {
+  const d = ep.last_detail ?? {}
+  if (ep.last_status === "up") return "chain verified, in validity window"
+  if (ep.last_status === "down")
+    return (d.error as string) || "no TLS — connection refused or timed out"
+  if (ep.last_status === "degraded") {
+    if (d.expired) return "certificate has expired"
+    if (d.not_yet_valid) return "certificate is not yet valid"
+    if (d.self_signed) return "self-signed certificate"
+    if (d.validity === "unverified") return "chain does not verify (untrusted)"
+    return "reachable but the certificate is not trusted"
+  }
+  if (ep.last_status === "unknown")
+    return (d.error as string) || "check could not run (config/policy)"
+  return "not checked yet"
+}
+
 function WatchedEndpointsPage() {
   const { canDo } = useMe()
   const [formOpen, setFormOpen] = useState(false)
+  const [selected, setSelected] = useState<WatchedEndpoint[]>([])
 
   const query = useQuery({
     queryKey: ["watched-endpoints"],
@@ -60,6 +79,7 @@ function WatchedEndpointsPage() {
 
   const columns = useMemo<ColumnDef<WatchedEndpoint>[]>(
     () => [
+      ...(canManage ? [selectionColumn<WatchedEndpoint>()] : []),
       {
         id: "endpoint",
         accessorFn: (r) => `${r.host}:${r.port}`,
@@ -80,36 +100,47 @@ function WatchedEndpointsPage() {
         id: "status",
         header: "Status",
         cell: ({ row }) => (
-          <span className="flex items-center gap-1.5">
-            <StatusBadge ep={row.original} />
-            {row.original.last_detail?.fingerprint_changed ? (
-              <Badge
-                variant="secondary"
-                className="text-amber-600 dark:text-amber-400"
-                title="The served certificate changed since the last check"
-              >
-                cert changed
-              </Badge>
-            ) : null}
-          </span>
+          <div className="flex flex-col gap-0.5">
+            <span className="flex items-center gap-1.5">
+              <StatusBadge ep={row.original} />
+              {row.original.last_detail?.fingerprint_changed ? (
+                <Badge
+                  variant="secondary"
+                  className="text-amber-600 dark:text-amber-400"
+                  title="The served certificate changed since the last check"
+                >
+                  cert changed
+                </Badge>
+              ) : null}
+            </span>
+            {row.original.last_status && (
+              <span className="text-[11px] text-muted-foreground">
+                {statusReason(row.original)}
+              </span>
+            )}
+          </div>
         ),
       },
       {
         id: "certificate",
         header: "Certificate",
-        cell: ({ row }) =>
-          row.original.last_certificate ? (
+        cell: ({ row }) => {
+          const r = row.original
+          if (!r.last_certificate)
+            return <span className="text-muted-foreground">—</span>
+          const label =
+            r.last_certificate_subject_cn?.trim() || "View certificate"
+          return (
             <Link
               to="/certificates/$id"
-              params={{ id: row.original.last_certificate }}
-              className="font-mono text-[12px] text-primary hover:underline"
+              params={{ id: r.last_certificate }}
+              className="text-primary hover:underline"
+              title={r.last_certificate_fingerprint ?? undefined}
             >
-              {(row.original.last_certificate_fingerprint ?? "").slice(0, 12) ||
-                "view"}…
+              {label}
             </Link>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          ),
+          )
+        },
       },
       {
         id: "expires",
@@ -181,11 +212,19 @@ function WatchedEndpointsPage() {
       title="Watched endpoints"
       count={rows.length}
       actions={
-        canDo("watchedendpoint", "add") ? (
-          <Button size="sm" onClick={() => setFormOpen(true)}>
-            <Plus className="h-3.5 w-3.5" /> Watch an endpoint
-          </Button>
-        ) : undefined
+        <div className="flex items-center gap-2">
+          {canManage && selected.length > 0 && (
+            <BulkDeleteButton
+              endpoints={selected}
+              onDone={() => setSelected([])}
+            />
+          )}
+          {canDo("watchedendpoint", "add") && (
+            <Button size="sm" onClick={() => setFormOpen(true)}>
+              <Plus className="h-3.5 w-3.5" /> Watch an endpoint
+            </Button>
+          )}
+        </div>
       }
     >
       {rows.length === 0 ? (
@@ -196,10 +235,70 @@ function WatchedEndpointsPage() {
           chain state.
         </EmptyState>
       ) : (
-        <DataTable data={rows} columns={columns} />
+        <DataTable
+          data={rows}
+          columns={columns}
+          onSelectedRowsChange={canManage ? setSelected : undefined}
+          tableId="watched-endpoints"
+        />
       )}
       <EndpointFormDialog open={formOpen} onOpenChange={setFormOpen} />
     </ListPageShell>
+  )
+}
+
+function BulkDeleteButton({
+  endpoints,
+  onDone,
+}: {
+  endpoints: WatchedEndpoint[]
+  onDone: () => void
+}) {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const m = useMutation({
+    mutationFn: () =>
+      api("/api/monitoring/watched-endpoints/bulk-delete/", {
+        method: "POST",
+        body: JSON.stringify({ ids: endpoints.map((e) => e.id) }),
+      }),
+    onSuccess: () => {
+      toast.success(`Removed ${endpoints.length} endpoint(s)`)
+      qc.invalidateQueries({ queryKey: ["watched-endpoints"] })
+      setOpen(false)
+      onDone()
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  return (
+    <>
+      <Button size="sm" variant="destructive" onClick={() => setOpen(true)}>
+        <Trash2 className="h-3.5 w-3.5" /> Delete {endpoints.length}
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>Remove {endpoints.length} endpoint(s)?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Their schedules stop. Certificates already observed stay in the
+            inventory.
+          </p>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={m.isPending}
+              onClick={() => m.mutate()}
+            >
+              {m.isPending ? "Removing…" : "Remove"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 

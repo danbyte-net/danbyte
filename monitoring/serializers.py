@@ -1056,6 +1056,9 @@ class WatchedEndpointSerializer(serializers.ModelSerializer):
     last_certificate_fingerprint = serializers.CharField(
         source="last_certificate.fingerprint_sha256", read_only=True, default=None
     )
+    last_certificate_subject_cn = serializers.CharField(
+        source="last_certificate.subject_cn", read_only=True, default=None
+    )
 
     class Meta:
         model = WatchedEndpoint
@@ -1063,11 +1066,13 @@ class WatchedEndpointSerializer(serializers.ModelSerializer):
             "id", "host", "port", "server_name", "interval_seconds", "enabled",
             "last_run_at", "last_status", "last_detail",
             "last_certificate", "last_certificate_fingerprint",
+            "last_certificate_subject_cn",
             "created_at", "updated_at",
         ]
         read_only_fields = [
             "last_run_at", "last_status", "last_detail",
             "last_certificate", "last_certificate_fingerprint",
+            "last_certificate_subject_cn",
             "created_at", "updated_at",
         ]
 
