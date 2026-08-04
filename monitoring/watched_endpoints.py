@@ -29,12 +29,23 @@ _DETAIL_KEYS = (
 )
 
 
-def _status(obs: dict) -> str:
-    """Same mapping as ``danbyte_checks.tls_cert``'s checker ``run``."""
+def _status(obs: dict, *, allow_self_signed: bool = False) -> str:
+    """Same mapping as ``danbyte_checks.tls_cert``'s checker ``run``.
+
+    ``allow_self_signed`` accepts a chain that only failed trust verification
+    *because the leaf is self-signed* (self-signed by design) — it reads ``up``
+    instead of ``degraded``. Expiry / not-yet-valid still degrade, and an
+    untrusted chain that is **not** self-signed (e.g. an unknown CA or a
+    hostname mismatch) still degrades, so this never blesses a real trust gap.
+    """
     if obs.get("validity") == UNKNOWN:
         # A policy refusal is a config problem, not an outage.
         return "unknown" if obs.get("error_kind") == ERR_POLICY else "down"
-    if obs.get("validity") != VERIFIED or obs.get("expired") or obs.get("not_yet_valid"):
+    if obs.get("expired") or obs.get("not_yet_valid"):
+        return "degraded"
+    if obs.get("validity") != VERIFIED:
+        if allow_self_signed and obs.get("self_signed"):
+            return "up"
         return "degraded"
     return "up"
 
@@ -46,7 +57,7 @@ def run_watched_endpoint(ep: WatchedEndpoint, now=None) -> str:
     obs, rows = observe_endpoint(
         ep.tenant, ep.host, ep.port, server_name=ep.server_name or None
     )
-    status = _status(obs)
+    status = _status(obs, allow_self_signed=ep.allow_self_signed)
 
     leaf_fp = (obs.get("chain") or [{}])[0].get("fingerprint_sha256")
     leaf = next((r for r in rows if r.fingerprint_sha256 == leaf_fp), None)

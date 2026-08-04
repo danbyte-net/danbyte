@@ -3592,6 +3592,7 @@ export interface WatchedEndpoint {
   server_name: string
   interval_seconds: number
   enabled: boolean
+  allow_self_signed: boolean
   last_run_at: string | null
   last_status: "" | "up" | "degraded" | "down" | "unknown"
   last_detail: Record<string, unknown>

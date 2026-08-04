@@ -30,39 +30,51 @@ from django.utils.html import escape
 
 logger = logging.getLogger("danbyte.email")
 
-# ── palette (resolved from the SPA's zinc/blue design tokens) ────────────────
+# ── palette (resolved from the SPA's zinc/blue design tokens in styles.css) ───
+# White ground, zinc structure, one restrained blue accent — the app's actual
+# look, not a coloured-hero email template.
 PALETTE = {
-    "brand": "#1667e6",       # --primary
-    "brand_dark": "#1252b8",  # header gradient foot
+    "brand": "#2563c9",       # --primary (medium, desaturated blue)
+    "brand_dark": "#1e50a8",
     "ink": "#18181b",         # zinc-900 — body text
     "muted": "#71717a",       # zinc-500 — secondary text
     "faint": "#a1a1aa",       # zinc-400
     "line": "#e4e4e7",        # zinc-200 — borders
-    "hair": "#f4f4f5",        # zinc-100 — row separators
+    "hair": "#f1f1f3",        # zinc-100 — row separators
     "panel": "#fafafa",       # zinc-50 — footer / stat fill
-    "page": "#f4f4f5",        # page backdrop
+    "page": "#f4f4f5",        # zinc-100 page backdrop
     "card": "#ffffff",
 }
 
-# Status → (background, foreground). Mirrors the digest's old map + the app's
-# STATUS_COLOR so a badge in an email is the same green/red/amber as the UI.
-STATUS_BG = {
-    "up": "#10b981", "ok": "#10b981", "success": "#10b981",
-    "down": "#ef4444", "critical": "#ef4444", "expired": "#ef4444",
-    "stale": "#991b1b",
-    "degraded": "#f59e0b", "warning": "#f59e0b", "expiring": "#f59e0b",
-    "info": "#1667e6",
-    "unknown": "#a1a1aa",
-    "skipped": "#d4d4d8",
+# Danbyte badges are TINTED, not solid — a ~15%-opacity status colour behind
+# darker text (the app's Badge success/warning/info families + destructive).
+# These hexes are those tints flattened over white, so they render the same in
+# every email client. STATUS_BG is the *strong* status colour, used only for a
+# meaningful accent (a red number, a callout rule) — never a saturated fill.
+STATUS_TINT = {
+    "up": "#e8f8f1", "ok": "#e8f8f1", "success": "#e8f8f1",
+    "down": "#fdecec", "critical": "#fdecec", "expired": "#fdecec",
+    "stale": "#fbe3e3",
+    "degraded": "#fdf3e3", "warning": "#fdf3e3", "expiring": "#fdf3e3",
+    "info": "#e7f1fb",
+    "unknown": "#efeff1", "skipped": "#f4f4f5",
 }
-STATUS_FG = {
-    "up": "#ffffff", "ok": "#ffffff", "success": "#ffffff",
-    "down": "#ffffff", "critical": "#ffffff", "expired": "#ffffff",
-    "stale": "#ffffff",
-    "degraded": "#422006", "warning": "#422006", "expiring": "#422006",
-    "info": "#ffffff",
-    "unknown": "#ffffff",
-    "skipped": "#3f3f46",
+STATUS_TEXT = {
+    "up": "#047857", "ok": "#047857", "success": "#047857",
+    "down": "#b91c1c", "critical": "#b91c1c", "expired": "#b91c1c",
+    "stale": "#7f1d1d",
+    "degraded": "#92400e", "warning": "#92400e", "expiring": "#92400e",
+    "info": "#1d4ed8",
+    "unknown": "#3f3f46", "skipped": "#52525b",
+}
+# Strong status colour for meaningful accents (a nonzero down/expired count).
+STATUS_BG = {
+    "up": "#059669", "ok": "#059669", "success": "#059669",
+    "down": "#dc2626", "critical": "#dc2626", "expired": "#dc2626",
+    "stale": "#991b1b",
+    "degraded": "#d97706", "warning": "#d97706", "expiring": "#d97706",
+    "info": "#2563c9",
+    "unknown": "#71717a", "skipped": "#a1a1aa",
 }
 
 _FONT = ("-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,"
@@ -105,13 +117,14 @@ def muted(text: str) -> str:
 
 
 def pill(text: str, kind: str = "unknown") -> str:
-    """A coloured status badge — the same treatment as the app's StatusBadge."""
-    bg = STATUS_BG.get(kind, STATUS_BG["unknown"])
-    fg = STATUS_FG.get(kind, "#ffffff")
+    """A status badge matching the app's StatusBadge: a tinted background with
+    darker text and the app's ~5px radius — never a solid or fully-round pill."""
+    bg = STATUS_TINT.get(kind, STATUS_TINT["unknown"])
+    fg = STATUS_TEXT.get(kind, STATUS_TEXT["unknown"])
     return (
         f'<span style="display:inline-block;background:{bg};color:{fg};'
-        f'font-size:11px;font-weight:600;line-height:1;padding:4px 9px;'
-        f'border-radius:999px;white-space:nowrap;">{escape(text)}</span>'
+        f'font-size:11.5px;font-weight:600;line-height:1.35;padding:2px 8px;'
+        f'border-radius:5px;white-space:nowrap;">{escape(text)}</span>'
     )
 
 
@@ -128,10 +141,11 @@ def stat_grid(cells: list) -> str:
             f'<td style="padding:0 6px 0 0;vertical-align:top;width:{100 // len(cells)}%;">'
             f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
             f'style="background:{PALETTE["panel"]};border:1px solid {PALETTE["line"]};'
-            f'border-radius:10px;"><tr><td style="padding:12px 14px;">'
-            f'<div style="font-size:24px;font-weight:700;line-height:1.1;'
+            f'border-radius:8px;"><tr><td style="padding:12px 14px;">'
+            f'<div style="font-size:23px;font-weight:700;line-height:1.1;'
             f'color:{accent};">{escape(str(value))}</div>'
-            f'<div style="margin-top:3px;font-size:12px;color:{PALETTE["muted"]};">'
+            f'<div style="margin-top:4px;font-size:11px;font-weight:500;'
+            f'letter-spacing:.02em;color:{PALETTE["muted"]};">'
             f'{escape(str(label))}</div>'
             f'</td></tr></table></td>'
         )
@@ -183,7 +197,7 @@ def data_table(headers: list, rows: list) -> str:
     )
     return (
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'style="border:1px solid {PALETTE["line"]};border-radius:10px;'
+        f'style="border:1px solid {PALETTE["line"]};border-radius:8px;'
         f'border-collapse:separate;overflow:hidden;">'
         f'<tr>{ths}</tr>{trs}</table>'
     )
@@ -294,24 +308,24 @@ def render_layout(
 <body style="margin:0;padding:0;background:{PALETTE['page']};
  font-family:{_FONT};color:{PALETTE['ink']};-webkit-font-smoothing:antialiased;">
 {preheader_html}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{PALETTE['page']};padding:28px 0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{PALETTE['page']};padding:32px 0;">
 <tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0"
- style="width:600px;max-width:100%;background:{PALETTE['card']};border:1px solid {PALETTE['line']};border-radius:14px;overflow:hidden;">
-  <tr><td style="background:{PALETTE['brand']};padding:18px 28px;">
-    <span style="color:#ffffff;font-size:16px;font-weight:700;letter-spacing:.01em;">{name}</span>
+ style="width:600px;max-width:100%;background:{PALETTE['card']};border:1px solid {PALETTE['line']};border-top:3px solid {PALETTE['brand']};border-radius:12px;overflow:hidden;">
+  <tr><td style="padding:20px 30px;border-bottom:1px solid {PALETTE['line']};">
+    <span style="color:{PALETTE['ink']};font-size:15px;font-weight:700;letter-spacing:-.01em;">{name}</span>
   </td></tr>
-  <tr><td style="padding:26px 28px 28px;">
+  <tr><td style="padding:28px 30px 30px;">
     {kicker_html}
-    <h1 style="margin:0 0 18px;font-size:21px;font-weight:700;line-height:1.3;color:{PALETTE['ink']};">{heading}</h1>
+    <h1 style="margin:0 0 18px;font-size:20px;font-weight:700;line-height:1.3;letter-spacing:-.01em;color:{PALETTE['ink']};">{heading}</h1>
     {body_html}
   </td></tr>
-  <tr><td style="padding:18px 28px;border-top:1px solid {PALETTE['line']};background:{PALETTE['panel']};">
+  <tr><td style="padding:18px 30px;border-top:1px solid {PALETTE['line']};background:{PALETTE['panel']};">
     {footer}
   </td></tr>
 </table>
-<div style="max-width:600px;margin:14px auto 0;color:{PALETTE['faint']};font-size:11px;text-align:center;">
-  {name} · network operations
+<div style="max-width:600px;margin:16px auto 0;color:{PALETTE['faint']};font-size:11px;text-align:center;">
+  {name}
 </div>
 </td></tr></table>
 </body></html>"""

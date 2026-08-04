@@ -14,12 +14,13 @@ from monitoring import watched_endpoints as we
 from monitoring.models import WatchedEndpoint
 
 
-def _obs(validity="verified", expired=False, not_yet=False, error_kind=""):
+def _obs(validity="verified", expired=False, not_yet=False, error_kind="",
+         self_signed=False):
     return {
         "validity": validity,
         "expired": expired,
         "not_yet_valid": not_yet,
-        "self_signed": False,
+        "self_signed": self_signed,
         "expires_in_days": 30,
         "tls_version": "TLSv1.3",
         "error": "",
@@ -43,6 +44,23 @@ class StatusMappingTests(TestCase):
 
     def test_unreachable_is_down(self):
         self.assertEqual(we._status({"validity": "unknown", "error_kind": "connect"}), "down")
+
+    def test_self_signed_degrades_by_default(self):
+        obs = _obs(validity="unverified", self_signed=True)
+        self.assertEqual(we._status(obs), "degraded")
+
+    def test_allow_self_signed_makes_self_signed_up(self):
+        obs = _obs(validity="unverified", self_signed=True)
+        self.assertEqual(we._status(obs, allow_self_signed=True), "up")
+
+    def test_allow_self_signed_still_degrades_expired(self):
+        obs = _obs(validity="unverified", self_signed=True, expired=True)
+        self.assertEqual(we._status(obs, allow_self_signed=True), "degraded")
+
+    def test_allow_self_signed_does_not_bless_other_untrusted(self):
+        # Untrusted but NOT self-signed (e.g. unknown CA) still degrades.
+        obs = _obs(validity="unverified", self_signed=False)
+        self.assertEqual(we._status(obs, allow_self_signed=True), "degraded")
 
 
 class PollerTests(TestCase):

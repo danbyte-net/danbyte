@@ -2653,6 +2653,12 @@ class WatchedEndpoint(TimestampedModel):
         default=86400, help_text="How often to re-read the certificate."
     )
     enabled = models.BooleanField(default=True)
+    allow_self_signed = models.BooleanField(
+        default=False,
+        help_text="Treat a self-signed certificate as healthy (up) instead of "
+        "degraded — for endpoints that are self-signed by design. Expiry and "
+        "not-yet-valid still degrade.",
+    )
     last_run_at = models.DateTimeField(null=True, blank=True)
     last_status = models.CharField(max_length=12, blank=True, default="")
     last_detail = models.JSONField(default=dict, blank=True)

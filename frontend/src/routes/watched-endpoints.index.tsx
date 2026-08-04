@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
-import { Plus, RefreshCw, Trash2 } from "lucide-react"
+import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -47,7 +47,11 @@ function StatusBadge({ ep }: { ep: WatchedEndpoint }) {
 /** Plain-language reason behind the status, from the last observation. */
 function statusReason(ep: WatchedEndpoint): string {
   const d = ep.last_detail ?? {}
-  if (ep.last_status === "up") return "chain verified, in validity window"
+  if (ep.last_status === "up") {
+    if (ep.allow_self_signed && d.self_signed)
+      return "self-signed, accepted (in validity window)"
+    return "chain verified, in validity window"
+  }
   if (ep.last_status === "down")
     return (d.error as string) || "no TLS — connection refused or timed out"
   if (ep.last_status === "degraded") {
@@ -65,6 +69,7 @@ function statusReason(ep: WatchedEndpoint): string {
 function WatchedEndpointsPage() {
   const { canDo } = useMe()
   const [formOpen, setFormOpen] = useState(false)
+  const [editing, setEditing] = useState<WatchedEndpoint | null>(null)
   const [selected, setSelected] = useState<WatchedEndpoint[]>([])
 
   const query = useQuery({
@@ -203,6 +208,13 @@ function WatchedEndpointsPage() {
           canManage ? (
             <div className="flex justify-end gap-1">
               <CheckNowButton ep={row.original} />
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setEditing(row.original)}
+              >
+                <Pencil className="h-3.5 w-3.5" /> Edit
+              </Button>
               <DeleteButton ep={row.original} />
             </div>
           ) : null,
@@ -247,6 +259,12 @@ function WatchedEndpointsPage() {
         />
       )}
       <EndpointFormDialog open={formOpen} onOpenChange={setFormOpen} />
+      <EndpointFormDialog
+        key={editing?.id ?? "none"}
+        open={!!editing}
+        onOpenChange={(o) => !o && setEditing(null)}
+        endpoint={editing}
+      />
     </ListPageShell>
   )
 }
@@ -393,36 +411,47 @@ function DeleteButton({ ep }: { ep: WatchedEndpoint }) {
 function EndpointFormDialog({
   open,
   onOpenChange,
+  endpoint,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
+  endpoint?: WatchedEndpoint | null
 }) {
   const qc = useQueryClient()
-  const [host, setHost] = useState("")
-  const [port, setPort] = useState("443")
-  const [sni, setSni] = useState("")
-  const [interval, setInterval] = useState("86400")
-  const [enabled, setEnabled] = useState(true)
+  const editing = !!endpoint
+  const [host, setHost] = useState(endpoint?.host ?? "")
+  const [port, setPort] = useState(String(endpoint?.port ?? 443))
+  const [sni, setSni] = useState(endpoint?.server_name ?? "")
+  const [interval, setInterval] = useState(
+    String(endpoint?.interval_seconds ?? 86400)
+  )
+  const [enabled, setEnabled] = useState(endpoint?.enabled ?? true)
+  const [allowSelfSigned, setAllowSelfSigned] = useState(
+    endpoint?.allow_self_signed ?? false
+  )
 
   const save = useMutation({
     mutationFn: () =>
-      api("/api/monitoring/watched-endpoints/", {
-        method: "POST",
-        body: JSON.stringify({
-          host: host.trim(),
-          port: Number(port) || 443,
-          server_name: sni.trim(),
-          interval_seconds: Number(interval) || 86400,
-          enabled,
-        }),
-      }),
+      api(
+        editing
+          ? `/api/monitoring/watched-endpoints/${endpoint!.id}/`
+          : "/api/monitoring/watched-endpoints/",
+        {
+          method: editing ? "PATCH" : "POST",
+          body: JSON.stringify({
+            host: host.trim(),
+            port: Number(port) || 443,
+            server_name: sni.trim(),
+            interval_seconds: Number(interval) || 86400,
+            enabled,
+            allow_self_signed: allowSelfSigned,
+          }),
+        }
+      ),
     onSuccess: () => {
-      toast.success("Watching endpoint")
+      toast.success(editing ? "Endpoint updated" : "Watching endpoint")
       qc.invalidateQueries({ queryKey: ["watched-endpoints"] })
       onOpenChange(false)
-      setHost("")
-      setPort("443")
-      setSni("")
     },
     onError: (e) => apiErrorToast(e),
   })
@@ -431,7 +460,9 @@ function EndpointFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="md">
         <DialogHeader>
-          <DialogTitle>Watch an endpoint</DialogTitle>
+          <DialogTitle>
+            {editing ? "Edit watched endpoint" : "Watch an endpoint"}
+          </DialogTitle>
         </DialogHeader>
         <div className="grid gap-3">
           <FormText
@@ -469,6 +500,12 @@ function EndpointFormDialog({
             checked={enabled}
             onChange={setEnabled}
           />
+          <FormCheckbox
+            label="Accept self-signed certificate"
+            checked={allowSelfSigned}
+            onChange={setAllowSelfSigned}
+            hint="For endpoints that are self-signed by design — reads healthy instead of degraded. Expiry is still flagged."
+          />
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
@@ -478,7 +515,13 @@ function EndpointFormDialog({
             disabled={!host.trim() || save.isPending}
             onClick={() => save.mutate()}
           >
-            {save.isPending ? "Adding…" : "Watch"}
+            {save.isPending
+              ? editing
+                ? "Saving…"
+                : "Adding…"
+              : editing
+                ? "Save"
+                : "Watch"}
           </Button>
         </DialogFooter>
       </DialogContent>

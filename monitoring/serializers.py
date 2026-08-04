@@ -1064,6 +1064,7 @@ class WatchedEndpointSerializer(serializers.ModelSerializer):
         model = WatchedEndpoint
         fields = [
             "id", "host", "port", "server_name", "interval_seconds", "enabled",
+            "allow_self_signed",
             "last_run_at", "last_status", "last_detail",
             "last_certificate", "last_certificate_fingerprint",
             "last_certificate_subject_cn",
