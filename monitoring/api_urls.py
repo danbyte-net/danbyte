@@ -29,6 +29,7 @@ from .viewsets import (
     SilenceViewSet,
     SnmpProfileViewSet,
     SnmpSensorViewSet,
+    WatchedEndpointViewSet,
 )
 from .views import (
     alert_ack_view,
@@ -102,6 +103,7 @@ router.register(
     r"connect-protocols", ConnectProtocolViewSet, basename="connect-protocol"
 )
 router.register(r"snmp-sensors", SnmpSensorViewSet, basename="snmp-sensor")
+router.register(r"watched-endpoints", WatchedEndpointViewSet, basename="watched-endpoint")
 router.register(r"engines", MonitoringEngineViewSet, basename="monitoring-engine")
 router.register(r"outpost-releases", OutpostReleaseViewSet, basename="outpost-release")
 

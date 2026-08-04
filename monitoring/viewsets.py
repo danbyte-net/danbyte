@@ -45,6 +45,7 @@ from .models import (
     Silence,
     SnmpProfile,
     SnmpSensor,
+    WatchedEndpoint,
 )
 from .serializers import (
     AlertRuleSerializer,
@@ -69,6 +70,7 @@ from .serializers import (
     SilenceSerializer,
     SnmpProfileSerializer,
     SnmpSensorSerializer,
+    WatchedEndpointSerializer,
 )
 
 logger = logging.getLogger("monitoring.viewsets")
@@ -1974,3 +1976,26 @@ class OutpostReleaseViewSet(viewsets.ModelViewSet):
         return Response(
             OutpostReleaseSerializer(release).data, status=201
         )
+
+
+class WatchedEndpointViewSet(TenantScopedViewSet):
+    """CRUD for bare TLS endpoints watched on a schedule (host:port + SNI, no
+    device). Tenant-scoped + RBAC via the registered object type. A ``check
+    now`` action reads the certificate immediately."""
+
+    queryset = WatchedEndpoint.objects.select_related("last_certificate").order_by(
+        "host", "port"
+    )
+    serializer_class = WatchedEndpointSerializer
+
+    @action(detail=True, methods=["post"], url_path="check-now")
+    def check_now(self, request, pk=None):
+        ep = self.get_object()  # tenant + RBAC scoped by get_queryset
+        from .watched_endpoints import run_watched_endpoint
+
+        try:
+            run_watched_endpoint(ep)
+        except Exception as exc:  # noqa: BLE001
+            raise ValidationError({"detail": f"Check failed: {exc}"}) from exc
+        ep.refresh_from_db()
+        return Response(self.get_serializer(ep).data)

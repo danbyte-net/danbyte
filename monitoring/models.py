@@ -2627,3 +2627,50 @@ class AcmeOrder(TimestampedModel):
 
     def __str__(self) -> str:
         return f"ACME order {', '.join(self.identifiers or [])} ({self.status})"
+
+
+class WatchedEndpoint(TimestampedModel):
+    """A bare TLS endpoint (``host:port`` [+ SNI]) whose certificate Danbyte
+    polls on a schedule, with **no device or IP modelled**. It reuses the
+    ``tls_cert`` collector via :mod:`monitoring.watched_endpoints`; observed
+    certificates land in the Certificates inventory like any other ``tls_cert``
+    observation. Deliberately isolated from the IP-anchored check engine.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="watched_endpoints"
+    )
+    host = models.CharField(
+        max_length=255, help_text="Hostname or IP to connect to."
+    )
+    port = models.PositiveIntegerField(default=443)
+    server_name = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="SNI / server name to request; blank uses the host.",
+    )
+    interval_seconds = models.PositiveIntegerField(
+        default=86400, help_text="How often to re-read the certificate."
+    )
+    enabled = models.BooleanField(default=True)
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    last_status = models.CharField(max_length=12, blank=True, default="")
+    last_detail = models.JSONField(default=dict, blank=True)
+    last_certificate = models.ForeignKey(
+        "Certificate", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        ordering = ["host", "port"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "host", "port", "server_name"],
+                name="uniq_watched_endpoint",
+            )
+        ]
+        indexes = [models.Index(fields=["tenant", "enabled"])]
+
+    def __str__(self) -> str:
+        sni = f" ({self.server_name})" if self.server_name else ""
+        return f"{self.host}:{self.port}{sni}"

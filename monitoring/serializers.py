@@ -44,6 +44,7 @@ from .models import (
     SnmpProfile,
     SnmpSensor,
     StateTransition,
+    WatchedEndpoint,
 )
 
 
@@ -1046,3 +1047,37 @@ class OutpostReleaseSerializer(serializers.ModelSerializer):
                 {"artifact": "Upload a build file for a file release."}
             )
         return attrs
+
+
+class WatchedEndpointSerializer(serializers.ModelSerializer):
+    """A bare TLS endpoint (host:port + SNI) watched on a schedule — no device
+    required. Poll state is read-only; the poller stamps it."""
+
+    last_certificate_fingerprint = serializers.CharField(
+        source="last_certificate.fingerprint_sha256", read_only=True, default=None
+    )
+
+    class Meta:
+        model = WatchedEndpoint
+        fields = [
+            "id", "host", "port", "server_name", "interval_seconds", "enabled",
+            "last_run_at", "last_status", "last_detail",
+            "last_certificate", "last_certificate_fingerprint",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "last_run_at", "last_status", "last_detail",
+            "last_certificate", "last_certificate_fingerprint",
+            "created_at", "updated_at",
+        ]
+
+    def validate_port(self, value):
+        if not (1 <= int(value) <= 65535):
+            raise serializers.ValidationError("Port must be 1–65535.")
+        return value
+
+    def validate_host(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("Host is required.")
+        return value

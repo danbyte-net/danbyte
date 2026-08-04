@@ -25,6 +25,18 @@ class Command(BaseCommand):
     def handle(self, *args, **opts):
         with record_run("dispatch", "Check engine (dispatch)") as run:
             result = dispatch(sync=opts["sync"])
+            # Watched-endpoint TLS polling piggybacks the minute beat — isolated
+            # from the IP check engine and guarded so it can never block dispatch.
+            try:
+                from monitoring.watched_endpoints import run_due_watched_endpoints
+
+                run_due_watched_endpoints()
+            except Exception:  # noqa: BLE001
+                import logging
+
+                logging.getLogger("monitoring.watched_endpoints").exception(
+                    "watched-endpoint poll pass failed"
+                )
             run.note(
                 f"dispatched {result['due']} due check(s) in {result['jobs']} job(s)",
                 due=result["due"],

@@ -105,6 +105,7 @@ AUDITED_MODELS = [
     "customization.CustomField",
     "customization.CustomFieldGroup",
     "monitoring.CheckTemplate",
+    "monitoring.WatchedEndpoint",
     "monitoring.CheckAssignment",
     "monitoring.AlertRule",
     "monitoring.NotificationChannel",
