@@ -409,13 +409,24 @@ def _alert_detail_rows(alert, ip: str):
     return rows
 
 
+def _alert_lead(alert, event: str) -> str:
+    """One plain sentence describing the alert — no severity/verb prefix (the
+    title and the Severity pill already carry those)."""
+    specific = _alert_specific(alert)
+    name = alert.template.name if getattr(alert, "template_id", None) else alert.kind
+    desc = specific or f"{name} is {alert.check_status}"
+    if event == "resolved":
+        return f"This alert has resolved — {desc}."
+    if event in ("reminder", "escalated"):
+        return f"{_EVENT_VERB[event].title().replace('_', ' ')} — {desc}."
+    return f"{desc}."
+
+
 def _alert_email_html(alert, event: str, ip: str, url: str | None) -> str:
     from core import email as ek
 
-    text = _alert_summary(alert, event, ip)
-    kind = _EVENT_KIND.get(event, "critical")
     parts = [
-        ek.callout(text, "success" if event == "resolved" else kind),
+        ek.lead(_alert_lead(alert, event)),
         ek.kv_table(_alert_detail_rows(alert, ip)),
     ]
     if url:
@@ -426,15 +437,20 @@ def _alert_email_html(alert, event: str, ip: str, url: str | None) -> str:
         "".join(parts),
         deployment_name=_deployment_name(),
         kicker="Monitoring alert",
-        preheader=text,
+        preheader=_alert_summary(alert, event, ip),
     )
 
 
 def _alert_group_email_html(alerts: list, event: str, url: str | None) -> str:
     from core import email as ek
 
-    text = _group_summary(alerts, event)
-    kind = "success" if event == "resolved" else "critical"
+    worst = max((a.severity for a in alerts), key=lambda s: _SEV_RANK.get(s, 0))
+    verb_word = {"resolved": "resolved", "reminder": "still firing",
+                 "escalated": "escalated"}.get(event, "firing")
+    lead_text = (
+        f"{len(alerts)} alert{'s' if len(alerts) != 1 else ''} {verb_word} — "
+        f"worst severity {worst}."
+    )
     rows = [
         [
             ek.escape(a.target_ip.ip_address),
@@ -443,7 +459,7 @@ def _alert_group_email_html(alerts: list, event: str, url: str | None) -> str:
         ]
         for a in alerts
     ]
-    parts = [ek.callout(text, kind),
+    parts = [ek.lead(lead_text),
              ek.data_table(["Target", "Severity", "Detail"], rows)]
     if url:
         parts.append(ek.email_button(url, "View in Danbyte"))
@@ -453,7 +469,7 @@ def _alert_group_email_html(alerts: list, event: str, url: str | None) -> str:
         "".join(parts),
         deployment_name=_deployment_name(),
         kicker="Monitoring alerts",
-        preheader=text,
+        preheader=_group_summary(alerts, event),
     )
 
 

@@ -273,11 +273,6 @@ def render_html(summary: dict, tenant_name: str, deployment_name: str) -> str:
         ]),
     ]
 
-    if d["expired"]:
-        parts.append(ek.callout(
-            f"{d['expired']} certificate(s) are expired and still being served — "
-            f"anything validating against them is failing now.", "critical"))
-
     blocks = [
         (EXPIRED, "Expired — still served", d["buckets"][EXPIRED]),
         (EXPIRING_CRITICAL, "Expiring — critical", d["buckets"][EXPIRING_CRITICAL]),
