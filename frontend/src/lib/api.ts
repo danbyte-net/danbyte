@@ -5082,6 +5082,9 @@ export interface NotificationChannelSummary {
   send_status_changes: boolean
   status_change_mode: "instant" | "batched"
   match_prefix_cidr: string | null
+  scope_kind: "prefix" | "ip" | null
+  scope_id: string | null
+  scope_label: string | null
 }
 
 export interface NotificationMeRow {

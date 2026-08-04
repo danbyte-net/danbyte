@@ -1740,7 +1740,15 @@ class NotificationSubscriptionViewSet(TenantScopedViewSet):
 
 
 def _channel_summary(ch) -> dict:
-    """The compact channel shape the Notifications page shows for each row."""
+    """The compact channel shape the Notifications page shows for each row —
+    including the monitored object so the UI can deep-link to it."""
+    scope_kind = scope_id = scope_label = None
+    if ch.match_ip_id:
+        scope_kind, scope_id = "ip", str(ch.match_ip_id)
+        scope_label = str(ch.match_ip.ip_address)
+    elif ch.match_prefix_id:
+        scope_kind, scope_id = "prefix", str(ch.match_prefix_id)
+        scope_label = ch.match_prefix.cidr
     return {
         "id": str(ch.id),
         "name": ch.name,
@@ -1749,9 +1757,10 @@ def _channel_summary(ch) -> dict:
         "on_statuses": ch.on_statuses or [],
         "send_status_changes": ch.send_status_changes,
         "status_change_mode": ch.status_change_mode,
-        "match_prefix_cidr": (
-            ch.match_prefix.cidr if ch.match_prefix_id else None
-        ),
+        "match_prefix_cidr": scope_label if scope_kind == "prefix" else None,
+        "scope_kind": scope_kind,
+        "scope_id": scope_id,
+        "scope_label": scope_label,
     }
 
 
@@ -1774,7 +1783,9 @@ def notifications_me(request):
     group_ids = list(user.groups.values_list("id", flat=True))
     subs = (
         NotificationSubscription.objects.filter(tenant=tenant)
-        .select_related("channel", "channel__match_prefix", "group")
+        .select_related(
+            "channel", "channel__match_prefix", "channel__match_ip", "group"
+        )
         .filter(Q(user=user) | Q(group_id__in=group_ids))
     )
     rows, subscribed_ids = [], set()
@@ -1796,7 +1807,7 @@ def notifications_me(request):
     if email:
         for ch in NotificationChannel.objects.filter(
             tenant=tenant, kind="email", enabled=True
-        ).select_related("match_prefix"):
+        ).select_related("match_prefix", "match_ip"):
             if ch.id in subscribed_ids:
                 continue
             recips = [r.lower() for r in (ch.config or {}).get("recipients") or []]
@@ -1812,7 +1823,7 @@ def notifications_me(request):
         _channel_summary(ch)
         for ch in NotificationChannel.objects.filter(
             tenant=tenant, self_subscribable=True, enabled=True
-        ).select_related("match_prefix")
+        ).select_related("match_prefix", "match_ip")
         if ch.id not in subscribed_ids
     ]
     return Response(

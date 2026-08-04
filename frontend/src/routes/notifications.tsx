@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { type ReactNode, useMemo, useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
@@ -54,6 +54,38 @@ function scopeLabel(ch: NotificationChannelSummary): string {
   if (ch.match_prefix_cidr) parts.push(ch.match_prefix_cidr)
   if (ch.on_statuses?.length) parts.push(ch.on_statuses.join("/"))
   return parts.join(" · ") || "all"
+}
+
+function ScopeLink({
+  ch,
+  children,
+  className,
+}: {
+  ch: NotificationChannelSummary
+  children: ReactNode
+  className?: string
+}) {
+  if (ch.scope_kind === "prefix" && ch.scope_id)
+    return (
+      <Link
+        to="/prefixes/$id"
+        params={{ id: ch.scope_id }}
+        className={className ?? "text-primary hover:underline"}
+      >
+        {children}
+      </Link>
+    )
+  if (ch.scope_kind === "ip" && ch.scope_id)
+    return (
+      <Link
+        to="/ips/$id"
+        params={{ id: ch.scope_id }}
+        className={className ?? "text-primary hover:underline"}
+      >
+        {children}
+      </Link>
+    )
+  return <>{children}</>
 }
 
 function SourceBadge({ source }: { source: string }) {
@@ -137,7 +169,12 @@ function ForYouTab() {
         id: "channel",
         header: "Channel",
         cell: ({ row }) => (
-          <span className="font-medium">{row.original.channel.name}</span>
+          <ScopeLink
+            ch={row.original.channel}
+            className="font-medium hover:underline"
+          >
+            {row.original.channel.name}
+          </ScopeLink>
         ),
       },
       {
@@ -153,9 +190,12 @@ function ForYouTab() {
         id: "scope",
         header: "Scope",
         cell: ({ row }) => (
-          <span className="font-mono text-[12px] text-muted-foreground">
+          <ScopeLink
+            ch={row.original.channel}
+            className="font-mono text-[12px] text-primary hover:underline"
+          >
             {scopeLabel(row.original.channel)}
-          </span>
+          </ScopeLink>
         ),
       },
       {
@@ -217,7 +257,9 @@ function ForYouTab() {
                 className="flex items-center justify-between gap-4 px-4 py-3"
               >
                 <div>
-                  <div className="font-medium">{ch.name}</div>
+                  <ScopeLink ch={ch} className="font-medium hover:underline">
+                    {ch.name}
+                  </ScopeLink>
                   <div className="text-[12px] text-muted-foreground">
                     {sendsLabel(ch)} · {scopeLabel(ch)}
                   </div>
