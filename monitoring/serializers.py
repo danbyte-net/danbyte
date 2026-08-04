@@ -935,9 +935,12 @@ class NotificationChannelSerializer(serializers.ModelSerializer):
             "id", "name", "kind", "config", "on_statuses", "min_severity",
             "enabled", "self_subscribable", "send_status_changes",
             "status_change_mode", "status_change_interval_minutes",
-            "status_change_last_run", "match_prefix", "created_at", "updated_at",
+            "status_change_last_run", "match_prefix", "match_ip", "auto_created",
+            "created_at", "updated_at",
         ]
-        read_only_fields = ["created_at", "updated_at", "status_change_last_run"]
+        read_only_fields = [
+            "created_at", "updated_at", "status_change_last_run", "auto_created",
+        ]
 
     # config validation per transport: which key the channel needs to deliver.
     _URL_KINDS = {"webhook", "slack", "teams", "discord"}

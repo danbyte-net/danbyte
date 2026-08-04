@@ -28,6 +28,7 @@ import { CheckStatusBadge } from "./status-badge"
 import { MixedStatusBadge } from "./mixed-status-badge"
 import { Sparkline } from "./sparkline"
 import { AddCheckDialog } from "./add-check-dialog"
+import { NotifyMeButton } from "./notify-me-button"
 import { CheckHistory } from "./check-history"
 import { UptimePanel } from "./uptime-panel"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -123,6 +124,7 @@ export function IpMonitoring({
               <Play className="h-3.5 w-3.5" />
               {checkNow.isPending ? "Checking…" : "Check now"}
             </Button>
+            <NotifyMeButton ip={ip.id} />
             <Button size="sm" onClick={() => setAdding(true)}>
               <Plus className="h-3.5 w-3.5" /> Add check
             </Button>

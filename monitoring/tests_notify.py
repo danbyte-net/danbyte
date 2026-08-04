@@ -292,6 +292,79 @@ class SubscriptionAdminApiTests(_SubApiBase):
         self.assertEqual(r.status_code, 400)
 
 
+class WatchApiTests(APITestCase):
+    def setUp(self):
+        org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        self.prefix = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.10.0.0/16",
+            status=status_for(self.tenant, "container"),
+        )
+        self.ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.10.0.5", prefix=self.prefix
+        )
+        self.tpl = CheckTemplate.objects.create(
+            tenant=self.tenant, name="ping", slug="ping", kind=CheckKind.ICMP
+        )
+        self.admin = User.objects.create_superuser("admin", "a@x.com", "x")
+        self.client.force_login(self.admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def _transition(self, ip, to_status="down"):
+        return StateTransition.objects.create(
+            tenant=self.tenant, target_ip=ip, template=self.tpl, kind="icmp",
+            from_status="up", to_status=to_status, at=timezone.now(), detail={},
+        )
+
+    def test_watch_creates_channel_and_subscription(self):
+        r = self.client.post("/api/monitoring/notifications/watch/",
+                             {"prefix": str(self.prefix.id)}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.json()["watching"])
+        ch = NotificationChannel.objects.get(
+            tenant=self.tenant, auto_created=True, match_prefix=self.prefix
+        )
+        self.assertTrue(ch.send_status_changes)
+        self.assertTrue(NotificationSubscription.objects.filter(
+            channel=ch, user=self.admin).exists())
+        state = self.client.get(
+            "/api/monitoring/notifications/watch-state/",
+            {"prefix": str(self.prefix.id)},
+        ).json()
+        self.assertTrue(state["watching"])
+
+    def test_unwatch_cleans_up_empty_auto_channel(self):
+        self.client.post("/api/monitoring/notifications/watch/",
+                        {"prefix": str(self.prefix.id)}, format="json")
+        r = self.client.post("/api/monitoring/notifications/unwatch/",
+                            {"prefix": str(self.prefix.id)}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.json()["watching"])
+        self.assertFalse(NotificationChannel.objects.filter(
+            tenant=self.tenant, auto_created=True, match_prefix=self.prefix
+        ).exists())
+
+    def test_watch_delivers_only_in_scope(self):
+        self.client.post("/api/monitoring/notifications/watch/",
+                        {"prefix": str(self.prefix.id)}, format="json")
+        # In-scope IP → the watcher is emailed.
+        notify.dispatch_status_changes([self._transition(self.ip)])
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("a@x.com", mail.outbox[0].to)
+        # Out-of-scope IP → nothing more.
+        other_pfx = Prefix.objects.create(
+            tenant=self.tenant, cidr="192.168.0.0/24",
+            status=status_for(self.tenant, "container"),
+        )
+        other_ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="192.168.0.9", prefix=other_pfx
+        )
+        notify.dispatch_status_changes([self._transition(other_ip)])
+        self.assertEqual(len(mail.outbox), 1)
+
+
 class RetentionTests(Base):
     def _result(self, days_old):
         return CheckResult.objects.create(

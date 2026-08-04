@@ -507,6 +507,14 @@ The top-level **Notifications** page has two views:
 - **All channels** (admins): every subscription across channels — the groups and
   users each one reaches — with add/remove.
 
+**The quickest path — "Notify me":** a prefix or IP **Monitoring** tab has a
+**Notify me** button. One click emails you (your account address) whenever that
+prefix/IP changes status — no channel setup. Behind the scenes it reuses a
+shared, auto-created email channel scoped to that prefix/IP and adds you as a
+self subscription (visible under Notifications → For you, where you can turn it
+off again). A scoped channel only ever fires for its own IP/subnet, for both
+status changes and alerts.
+
 Self-service opt-in/opt-out is gated by the **`subscribe`** capability on
 notification channels; grant it to the users/groups who should manage their own
 subscriptions (like `reveal`/`connect`, it isn't in the default Administrator

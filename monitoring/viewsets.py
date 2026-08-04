@@ -1686,6 +1686,15 @@ class NotificationChannelViewSet(TenantScopedViewSet):
     queryset = NotificationChannel.objects.all().order_by("name")
     serializer_class = NotificationChannelSerializer
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        # Auto-created per-prefix/IP watch channels are managed from the
+        # prefix/IP page + the Notifications "for you" view — keep them out of
+        # the manual channel list unless explicitly asked for.
+        if self.request.query_params.get("auto") != "1":
+            qs = qs.filter(auto_created=False)
+        return qs
+
     @action(detail=True, methods=["post"])
     def test(self, request, pk=None):
         """Send a synthetic test alert through this channel."""
@@ -1716,6 +1725,10 @@ class NotificationSubscriptionViewSet(TenantScopedViewSet):
         channel = self.request.query_params.get("channel")
         if channel:
             qs = qs.filter(channel_id=channel)
+        # Per-prefix/IP watch subscriptions (on auto channels) are personal and
+        # numerous — keep them out of the admin overview unless asked for.
+        elif self.request.query_params.get("auto") != "1":
+            qs = qs.filter(channel__auto_created=False)
         return qs
 
     def perform_create(self, serializer):
@@ -1855,6 +1868,112 @@ def notifications_unsubscribe(request):
         })
     sub.delete()
     return Response({"ok": True})
+
+
+# ─── per-prefix / per-IP "Notify me" shortcut ────────────────────────────────
+# The simple case: "email me when this prefix/IP changes". Backed by a shared,
+# auto-created email channel scoped to that prefix/IP (one per scope, reused by
+# every watcher) plus a self subscription — so channels stay invisible here.
+
+
+def _watch_scope(request, create=False):
+    """Resolve the (prefix, ip) target from the request and the auto channel for
+    it. Returns (tenant, prefix, ip, channel|None). ``create`` makes the channel."""
+    from api.models import IPAddress, Prefix
+
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        raise PermissionDenied("No active tenant selected.")
+    data = request.data if request.method == "POST" else request.query_params
+    prefix_id = data.get("prefix")
+    ip_id = data.get("ip")
+    if bool(prefix_id) == bool(ip_id):
+        raise ValidationError({"detail": "Provide exactly one of prefix or ip."})
+
+    prefix = ip = None
+    if prefix_id:
+        prefix = Prefix.objects.filter(tenant=tenant, id=prefix_id).first()
+        if prefix is None:
+            raise ValidationError({"prefix": "Not found."})
+        scope_q = {"match_prefix": prefix}
+        name = f"Prefix {prefix.cidr}"
+    else:
+        ip = IPAddress.objects.filter(tenant=tenant, id=ip_id).first()
+        if ip is None:
+            raise ValidationError({"ip": "Not found."})
+        scope_q = {"match_ip": ip}
+        name = f"IP {ip.ip_address}"
+
+    channel = NotificationChannel.objects.filter(
+        tenant=tenant, auto_created=True, kind="email", **scope_q
+    ).first()
+    if channel is None and create:
+        channel = NotificationChannel.objects.create(
+            tenant=tenant, name=name, kind="email", config={},
+            auto_created=True, send_status_changes=True,
+            status_change_mode="instant", created_by=request.user, **scope_q,
+        )
+    return tenant, prefix, ip, channel
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def notifications_watch_state(request):
+    """Whether the current user is watching a given prefix/IP, and whether they
+    may (needs the subscribe verb + an account email)."""
+    tenant, _prefix, _ip, channel = _watch_scope(request)
+    watching = bool(channel) and NotificationSubscription.objects.filter(
+        channel=channel, user=request.user
+    ).exists()
+    return Response({
+        "watching": watching,
+        "can_watch": _can_subscribe(request.user, tenant)
+        and bool((request.user.email or "").strip()),
+    })
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def notifications_watch(request):
+    """Start emailing the current user about a prefix/IP's status changes."""
+    tenant, _prefix, _ip, _channel = _watch_scope(request)
+    if not _can_subscribe(request.user, tenant):
+        return Response({"detail": "notificationchannel:subscribe required."},
+                        status=403)
+    if not (request.user.email or "").strip():
+        raise ValidationError(
+            {"detail": "Your account has no email address to notify."}
+        )
+    _tenant, _p, _i, channel = _watch_scope(request, create=True)
+    NotificationSubscription.objects.get_or_create(
+        tenant=tenant, channel=channel, user=request.user,
+        defaults={"mandatory": False, "created_by": request.user},
+    )
+    return Response({"ok": True, "watching": True})
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def notifications_unwatch(request):
+    """Stop the current user's per-prefix/IP watch (only their own self row)."""
+    tenant, _prefix, _ip, channel = _watch_scope(request)
+    if not _can_subscribe(request.user, tenant):
+        return Response({"detail": "notificationchannel:subscribe required."},
+                        status=403)
+    if channel is None:
+        return Response({"ok": True, "watching": False})
+    NotificationSubscription.objects.filter(
+        channel=channel, user=request.user, mandatory=False
+    ).delete()
+    # Tidy up: an auto channel with no subscribers left and no direct recipients
+    # serves nobody — remove it so it doesn't linger.
+    if (
+        channel.auto_created
+        and not channel.subscriptions.exists()
+        and not (channel.config or {}).get("recipients")
+    ):
+        channel.delete()
+    return Response({"ok": True, "watching": False})
 
 
 class AlertRuleViewSet(_TargetScopedConfigurationMixin, TenantScopedViewSet):

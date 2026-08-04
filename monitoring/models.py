@@ -1105,8 +1105,20 @@ class NotificationChannel(TimestampedModel):
         null=True,
         blank=True,
         related_name="notification_channels",
-        help_text="Only status changes for IPs inside this subnet; blank = all.",
+        help_text="Only notify for IPs inside this subnet; blank = all.",
     )
+    match_ip = models.ForeignKey(
+        "api.IPAddress",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notification_channels",
+        help_text="Only notify for this single IP; blank = all.",
+    )
+    # Auto-created by the per-prefix/IP "Notify me" shortcut — one shared channel
+    # per scope, hidden from the manual channel list and cleaned up when its last
+    # subscriber leaves. Distinguishes managed watches from admin-built channels.
+    auto_created = models.BooleanField(default=False)
     enabled = models.BooleanField(default=True)
     # Whether ordinary users may opt themselves into this channel from the
     # Notifications page (self-assigned subscriptions). Admin/group subscriptions

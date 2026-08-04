@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { Plus, Trash2 } from "lucide-react"
@@ -339,8 +339,17 @@ function AdminTab() {
       </div>
       {rows.length === 0 ? (
         <EmptyState title="No subscriptions yet.">
-          Attach a group or a user to a channel so they receive its
-          notifications.
+          Attach a group or user to an email channel so they receive its
+          notifications. No channels yet?{" "}
+          <Link
+            to="/channels/new"
+            className="font-medium text-primary underline"
+          >
+            Create one
+          </Link>
+          . For a single prefix or IP, the quickest path is the{" "}
+          <span className="font-medium">Notify me</span> button on its
+          Monitoring tab.
         </EmptyState>
       ) : (
         <DataTable data={rows} columns={columns} tableId="subscriptions" />
@@ -416,13 +425,32 @@ function AddSubscriptionDialog({
           <DialogTitle>Add subscription</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4">
-          <FormSelect
-            label="Channel"
-            value={channel}
-            onChange={setChannel}
-            placeholder="Pick an email channel"
-            options={emailChannels.map((c) => ({ value: c.id, label: c.name }))}
-          />
+          {emailChannels.length === 0 ? (
+            <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-[13px] text-muted-foreground">
+              No email channels yet. A channel is the email list a subscription
+              points at.{" "}
+              <Link
+                to="/channels/new"
+                className="font-medium text-primary underline"
+              >
+                Create one
+              </Link>{" "}
+              first, or use the per-prefix/IP{" "}
+              <span className="font-medium">Notify me</span> button on a
+              prefix's Monitoring tab.
+            </div>
+          ) : (
+            <FormSelect
+              label="Channel"
+              value={channel}
+              onChange={setChannel}
+              placeholder="Pick an email channel"
+              options={emailChannels.map((c) => ({
+                value: c.id,
+                label: c.name,
+              }))}
+            />
+          )}
           <FormSelect
             label="Subscriber type"
             value={kind}

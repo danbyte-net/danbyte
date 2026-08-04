@@ -29,6 +29,7 @@ import { MixedStatusBadge } from "./mixed-status-badge"
 import { STATUS_COLOR, STATUS_LABEL } from "./charts"
 import { AddCheckDialog } from "./add-check-dialog"
 import { DiscoverNowButton } from "./auto-discover-button"
+import { NotifyMeButton } from "./notify-me-button"
 import { apiErrorToast } from "@/lib/api-toast"
 
 const SCHEDULE_LABELS: Record<ScheduleMode, string> = {
@@ -78,6 +79,7 @@ export function PrefixMonitoring({
           initial={prefix.auto_discover ?? false}
         />
         <DiscoverNowButton prefixId={prefix.id} onDone={() => q.refetch()} />
+        <NotifyMeButton prefix={prefix.id} />
         <Button size="sm" onClick={() => setAdding(true)}>
           <Plus className="h-3.5 w-3.5" /> Add prefix check
         </Button>

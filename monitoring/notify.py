@@ -153,17 +153,23 @@ def _send_email(channel, events: list[dict]) -> None:
     log.info("email digest %s → %s recipients (%s changes)", channel.name, len(recipients), len(events))
 
 
-def _prefix_allows(channel, ip_addr) -> bool:
-    """Whether a channel's subnet scope admits this IP (blank scope = all)."""
-    if not channel.match_prefix_id:
-        return True
-    net = getattr(channel.match_prefix, "network", None)
-    if net is None or not ip_addr:
-        return False
-    try:
-        return ipaddress.ip_address(str(ip_addr)) in net
-    except (ValueError, TypeError):
-        return False
+def _scope_allows(channel, ip_addr) -> bool:
+    """Whether a channel's scope admits this IP. A channel may be scoped to a
+    single IP (``match_ip``) or a subnet (``match_prefix``); with neither it
+    matches everything. Applies to both status changes and alerts, so a scoped
+    channel only ever fires for its own IP/subnet."""
+    if channel.match_ip_id:
+        served = getattr(channel.match_ip, "ip_address", None)
+        return bool(ip_addr) and str(served) == str(ip_addr)
+    if channel.match_prefix_id:
+        net = getattr(channel.match_prefix, "network", None)
+        if net is None or not ip_addr:
+            return False
+        try:
+            return ipaddress.ip_address(str(ip_addr)) in net
+        except (ValueError, TypeError):
+            return False
+    return True
 
 
 def _status_channels(tenant_id, mode):
@@ -172,7 +178,7 @@ def _status_channels(tenant_id, mode):
     return NotificationChannel.objects.filter(
         tenant_id=tenant_id, enabled=True, send_status_changes=True,
         status_change_mode=mode,
-    ).select_related("match_prefix")
+    ).select_related("match_prefix", "match_ip")
 
 
 def dispatch_status_changes(transitions: list, now=None) -> None:
@@ -196,7 +202,7 @@ def dispatch_status_changes(transitions: list, now=None) -> None:
             relevant = [
                 e for e in tenant_events
                 if (not wanted or e["to_status"] in wanted)
-                and _prefix_allows(ch, e["target_ip"])
+                and _scope_allows(ch, e["target_ip"])
             ]
             if not relevant:
                 continue
@@ -225,7 +231,7 @@ def run_due_status_change_digests(now=None) -> int:
     channels = NotificationChannel.objects.filter(
         enabled=True, send_status_changes=True,
         status_change_mode="batched",
-    ).select_related("match_prefix")
+    ).select_related("match_prefix", "match_ip")
     for ch in channels:
         interval = timedelta(minutes=ch.status_change_interval_minutes or 30)
         if ch.status_change_last_run and now - ch.status_change_last_run < interval:
@@ -241,7 +247,7 @@ def run_due_status_change_digests(now=None) -> int:
         wanted = ch.on_statuses or []
         if wanted:
             qs = qs.filter(to_status__in=wanted)
-        rows = [t for t in qs if _prefix_allows(ch, getattr(t.target_ip, "ip_address", None))]
+        rows = [t for t in qs if _scope_allows(ch, getattr(t.target_ip, "ip_address", None))]
         if rows:
             try:
                 _send_status_digest(ch, rows, since, now)
@@ -669,7 +675,7 @@ def active_silence(alert, now=None):
     now = now or timezone.now()
     silences = Silence.objects.filter(
         tenant_id=alert.tenant_id, starts_at__lte=now, ends_at__gt=now
-    ).select_related("match_prefix")
+    ).select_related("match_prefix", "match_ip")
     ip = alert.target_ip
     for s in silences:
         if s.match_kinds and alert.kind not in s.match_kinds:
@@ -699,11 +705,13 @@ def notify_alert(alert, event: str) -> None:
     ip = alert.target_ip.ip_address
     channels = NotificationChannel.objects.filter(
         tenant_id=alert.tenant_id, enabled=True
-    )
+    ).select_related("match_prefix", "match_ip")
     for ch in channels:
         if _SEV_RANK.get(alert.severity, 0) < _SEV_RANK.get(ch.min_severity, 0):
             continue
         if ch.on_statuses and alert.check_status not in ch.on_statuses:
+            continue
+        if not _scope_allows(ch, ip):
             continue
         try:
             _dispatch_to_channel(ch, alert, event, ip)
@@ -787,13 +795,16 @@ def notify_alert_group(tenant_id, alerts: list, event: str) -> None:
     if not live:
         return
     dep = _deployment()
-    channels = NotificationChannel.objects.filter(tenant_id=tenant_id, enabled=True)
+    channels = NotificationChannel.objects.filter(
+        tenant_id=tenant_id, enabled=True
+    ).select_related("match_prefix", "match_ip")
     for ch in channels:
         matched = [
             a
             for a in live
             if _SEV_RANK.get(a.severity, 0) >= _SEV_RANK.get(ch.min_severity, 0)
             and (not ch.on_statuses or a.check_status in ch.on_statuses)
+            and _scope_allows(ch, a.target_ip.ip_address)
         ]
         if not matched:
             continue
