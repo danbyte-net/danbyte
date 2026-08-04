@@ -3555,6 +3555,7 @@ export type CheckKind =
   | "ssh"
   | "telnet"
   | "exec"
+  | "tls_cert"
 export type CheckStatus =
   | "up"
   | "down"

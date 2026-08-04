@@ -18,6 +18,7 @@ export const KINDS: { value: CheckKind; label: string }[] = [
   { value: "snmp", label: "SNMP" },
   { value: "ssh", label: "SSH" },
   { value: "telnet", label: "Telnet" },
+  { value: "tls_cert", label: "TLS certificate" },
   { value: "exec", label: "Script / exec" },
 ]
 
@@ -197,6 +198,15 @@ export const SPECS: Record<CheckKind, Spec[]> = {
   telnet: [
     { key: "port", label: "Port", type: "number", default: "23" },
     { key: "expect", label: "Expect banner (regex, optional)", type: "text" },
+  ],
+  tls_cert: [
+    { key: "port", label: "Port", type: "number", default: "443" },
+    {
+      key: "server_name",
+      label: "Server name (SNI, optional)",
+      type: "text",
+      placeholder: "defaults to the target address",
+    },
   ],
   exec: [
     {
