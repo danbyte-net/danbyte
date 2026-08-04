@@ -84,6 +84,7 @@ import { Route as ZonesIndexRouteImport } from './routes/zones.index'
 import { Route as WirelessLansIndexRouteImport } from './routes/wireless-lans.index'
 import { Route as WirelessLanGroupsIndexRouteImport } from './routes/wireless-lan-groups.index'
 import { Route as WebhooksIndexRouteImport } from './routes/webhooks.index'
+import { Route as WatchedEndpointsIndexRouteImport } from './routes/watched-endpoints.index'
 import { Route as VrfsIndexRouteImport } from './routes/vrfs.index'
 import { Route as VlansIndexRouteImport } from './routes/vlans.index'
 import { Route as VlanGroupsIndexRouteImport } from './routes/vlan-groups.index'
@@ -760,6 +761,11 @@ const WebhooksIndexRoute = WebhooksIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => WebhooksRoute,
+} as any)
+const WatchedEndpointsIndexRoute = WatchedEndpointsIndexRouteImport.update({
+  id: '/watched-endpoints/',
+  path: '/watched-endpoints/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const VrfsIndexRoute = VrfsIndexRouteImport.update({
   id: '/',
@@ -2573,6 +2579,7 @@ export interface FileRoutesByFullPath {
   '/vlan-groups/': typeof VlanGroupsIndexRoute
   '/vlans/': typeof VlansIndexRoute
   '/vrfs/': typeof VrfsIndexRoute
+  '/watched-endpoints/': typeof WatchedEndpointsIndexRoute
   '/webhooks/': typeof WebhooksIndexRoute
   '/wireless-lan-groups/': typeof WirelessLanGroupsIndexRoute
   '/wireless-lans/': typeof WirelessLansIndexRoute
@@ -2895,6 +2902,7 @@ export interface FileRoutesByTo {
   '/vlan-groups': typeof VlanGroupsIndexRoute
   '/vlans': typeof VlansIndexRoute
   '/vrfs': typeof VrfsIndexRoute
+  '/watched-endpoints': typeof WatchedEndpointsIndexRoute
   '/webhooks': typeof WebhooksIndexRoute
   '/wireless-lan-groups': typeof WirelessLanGroupsIndexRoute
   '/wireless-lans': typeof WirelessLansIndexRoute
@@ -3274,6 +3282,7 @@ export interface FileRoutesById {
   '/vlan-groups/': typeof VlanGroupsIndexRoute
   '/vlans/': typeof VlansIndexRoute
   '/vrfs/': typeof VrfsIndexRoute
+  '/watched-endpoints/': typeof WatchedEndpointsIndexRoute
   '/webhooks/': typeof WebhooksIndexRoute
   '/wireless-lan-groups/': typeof WirelessLanGroupsIndexRoute
   '/wireless-lans/': typeof WirelessLansIndexRoute
@@ -3654,6 +3663,7 @@ export interface FileRouteTypes {
     | '/vlan-groups/'
     | '/vlans/'
     | '/vrfs/'
+    | '/watched-endpoints/'
     | '/webhooks/'
     | '/wireless-lan-groups/'
     | '/wireless-lans/'
@@ -3976,6 +3986,7 @@ export interface FileRouteTypes {
     | '/vlan-groups'
     | '/vlans'
     | '/vrfs'
+    | '/watched-endpoints'
     | '/webhooks'
     | '/wireless-lan-groups'
     | '/wireless-lans'
@@ -4354,6 +4365,7 @@ export interface FileRouteTypes {
     | '/vlan-groups/'
     | '/vlans/'
     | '/vrfs/'
+    | '/watched-endpoints/'
     | '/webhooks/'
     | '/wireless-lan-groups/'
     | '/wireless-lans/'
@@ -4552,6 +4564,7 @@ export interface RootRouteChildren {
   ServiceTemplatesIndexRoute: typeof ServiceTemplatesIndexRoute
   ServicesIndexRoute: typeof ServicesIndexRoute
   VirtualMachinesIndexRoute: typeof VirtualMachinesIndexRoute
+  WatchedEndpointsIndexRoute: typeof WatchedEndpointsIndexRoute
   AlertRulesIdEditRoute: typeof AlertRulesIdEditRoute
   ChannelsIdEditRoute: typeof ChannelsIdEditRoute
   ClusterGroupsIdEditRoute: typeof ClusterGroupsIdEditRoute
@@ -5097,6 +5110,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/webhooks/'
       preLoaderRoute: typeof WebhooksIndexRouteImport
       parentRoute: typeof WebhooksRoute
+    }
+    '/watched-endpoints/': {
+      id: '/watched-endpoints/'
+      path: '/watched-endpoints'
+      fullPath: '/watched-endpoints/'
+      preLoaderRoute: typeof WatchedEndpointsIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/vrfs/': {
       id: '/vrfs/'
@@ -8334,6 +8354,7 @@ const rootRouteChildren: RootRouteChildren = {
   ServiceTemplatesIndexRoute: ServiceTemplatesIndexRoute,
   ServicesIndexRoute: ServicesIndexRoute,
   VirtualMachinesIndexRoute: VirtualMachinesIndexRoute,
+  WatchedEndpointsIndexRoute: WatchedEndpointsIndexRoute,
   AlertRulesIdEditRoute: AlertRulesIdEditRoute,
   ChannelsIdEditRoute: ChannelsIdEditRoute,
   ClusterGroupsIdEditRoute: ClusterGroupsIdEditRoute,

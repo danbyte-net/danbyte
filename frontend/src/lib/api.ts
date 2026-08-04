@@ -3584,6 +3584,23 @@ export interface CheckTemplate {
   updated_at: string
 }
 
+/** A bare TLS endpoint (host:port + SNI) watched on a schedule, no device. */
+export interface WatchedEndpoint {
+  id: string
+  host: string
+  port: number
+  server_name: string
+  interval_seconds: number
+  enabled: boolean
+  last_run_at: string | null
+  last_status: "" | "up" | "degraded" | "down" | "unknown"
+  last_detail: Record<string, unknown>
+  last_certificate: string | null
+  last_certificate_fingerprint: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface CheckResultRow {
   id: number
   template: string | null

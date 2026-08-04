@@ -656,6 +656,12 @@ const sections: NavSection[] = [
             objectType: "issuer",
           },
           {
+            title: "Watched endpoints",
+            url: "/watched-endpoints",
+            icon: Globe,
+            objectType: "watchedendpoint",
+          },
+          {
             title: "Compliance",
             url: "/compliance",
             icon: ShieldCheck,
