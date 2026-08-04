@@ -1115,6 +1115,14 @@ class NotificationChannel(TimestampedModel):
         related_name="notification_channels",
         help_text="Only notify for this single IP; blank = all.",
     )
+    match_device = models.ForeignKey(
+        "api.Device",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notification_channels",
+        help_text="Only notify for IPs assigned to this device; blank = all.",
+    )
     # Auto-created by the per-prefix/IP "Notify me" shortcut — one shared channel
     # per scope, hidden from the manual channel list and cleaned up when its last
     # subscriber leaves. Distinguishes managed watches from admin-built channels.

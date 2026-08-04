@@ -935,8 +935,8 @@ class NotificationChannelSerializer(serializers.ModelSerializer):
             "id", "name", "kind", "config", "on_statuses", "min_severity",
             "enabled", "self_subscribable", "send_status_changes",
             "status_change_mode", "status_change_interval_minutes",
-            "status_change_last_run", "match_prefix", "match_ip", "auto_created",
-            "created_at", "updated_at",
+            "status_change_last_run", "match_prefix", "match_ip", "match_device",
+            "auto_created", "created_at", "updated_at",
         ]
         read_only_fields = [
             "created_at", "updated_at", "status_change_last_run", "auto_created",
@@ -959,6 +959,14 @@ class NotificationChannelSerializer(serializers.ModelSerializer):
         if kind == "pagerduty" and not config.get("routing_key"):
             raise serializers.ValidationError(
                 {"config": "pagerduty needs an Events v2 'routing_key'."}
+            )
+        scopes = [
+            attrs.get(f, getattr(self.instance, f, None))
+            for f in ("match_prefix", "match_ip", "match_device")
+        ]
+        if sum(1 for s in scopes if s) > 1:
+            raise serializers.ValidationError(
+                "Scope to at most one of subnet, IP or device."
             )
         return attrs
 

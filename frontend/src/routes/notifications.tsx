@@ -51,7 +51,7 @@ function sendsLabel(ch: NotificationChannelSummary): string {
 
 function scopeLabel(ch: NotificationChannelSummary): string {
   const parts: string[] = []
-  if (ch.match_prefix_cidr) parts.push(ch.match_prefix_cidr)
+  if (ch.scope_label) parts.push(ch.scope_label)
   if (ch.on_statuses?.length) parts.push(ch.on_statuses.join("/"))
   return parts.join(" · ") || "all"
 }
@@ -79,6 +79,16 @@ function ScopeLink({
     return (
       <Link
         to="/ips/$id"
+        params={{ id: ch.scope_id }}
+        className={className ?? "text-primary hover:underline"}
+      >
+        {children}
+      </Link>
+    )
+  if (ch.scope_kind === "device" && ch.scope_id)
+    return (
+      <Link
+        to="/devices/$id"
         params={{ id: ch.scope_id }}
         className={className ?? "text-primary hover:underline"}
       >

@@ -5055,6 +5055,9 @@ export interface NotificationChannel {
   status_change_interval_minutes: number
   status_change_last_run: string | null
   match_prefix: string | null
+  match_ip: string | null
+  match_device: string | null
+  auto_created: boolean
   created_at: string
   updated_at: string
 }
@@ -5082,7 +5085,7 @@ export interface NotificationChannelSummary {
   send_status_changes: boolean
   status_change_mode: "instant" | "batched"
   match_prefix_cidr: string | null
-  scope_kind: "prefix" | "ip" | null
+  scope_kind: "prefix" | "ip" | "device" | null
   scope_id: string | null
   scope_label: string | null
 }

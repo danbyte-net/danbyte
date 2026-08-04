@@ -6,19 +6,21 @@ import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { apiErrorToast } from "@/lib/api-toast"
 
-/** A one-click "email me about this prefix/IP" toggle. Backed by an auto-created
- * scoped channel + a self subscription — the user never has to think about
- * channels. Pass exactly one of `prefix` / `ip` (the object id). */
+/** A one-click "email me about this prefix/IP/device" toggle. Backed by an
+ * auto-created scoped channel + a self subscription — the user never has to
+ * think about channels. Pass exactly one of `prefix` / `ip` / `device`. */
 export function NotifyMeButton({
   prefix,
   ip,
+  device,
 }: {
   prefix?: string
   ip?: string
+  device?: string
 }) {
   const qc = useQueryClient()
-  const qs = prefix ? `prefix=${prefix}` : `ip=${ip}`
-  const key = ["watch-state", prefix ?? ip]
+  const qs = prefix ? `prefix=${prefix}` : ip ? `ip=${ip}` : `device=${device}`
+  const key = ["watch-state", prefix ?? ip ?? device]
 
   const q = useQuery({
     queryKey: key,

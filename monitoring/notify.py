@@ -153,14 +153,36 @@ def _send_email(channel, events: list[dict]) -> None:
     log.info("email digest %s → %s recipients (%s changes)", channel.name, len(recipients), len(events))
 
 
-def _scope_allows(channel, ip_addr) -> bool:
+def _device_ip_ids(channel) -> set[str]:
+    """The IP ids a device-scoped channel covers (assigned to the device),
+    resolved once per channel instance and cached on it for the batch."""
+    cached = getattr(channel, "_device_ip_ids", None)
+    if cached is None:
+        from api.models import IPAddress
+
+        cached = {
+            str(pk)
+            for pk in IPAddress.objects.filter(
+                assigned_device_id=channel.match_device_id
+            ).values_list("id", flat=True)
+        }
+        channel._device_ip_ids = cached
+    return cached
+
+
+def _scope_allows(channel, ip_addr, ip_id=None) -> bool:
     """Whether a channel's scope admits this IP. A channel may be scoped to a
-    single IP (``match_ip``) or a subnet (``match_prefix``); with neither it
-    matches everything. Applies to both status changes and alerts, so a scoped
-    channel only ever fires for its own IP/subnet."""
+    single IP (``match_ip``), a device (``match_device`` — any IP assigned to
+    it), or a subnet (``match_prefix``); with none it matches everything.
+    Applies to both status changes and alerts, so a scoped channel only ever
+    fires for its own target."""
     if channel.match_ip_id:
+        if ip_id is not None:
+            return str(ip_id) == str(channel.match_ip_id)
         served = getattr(channel.match_ip, "ip_address", None)
         return bool(ip_addr) and str(served) == str(ip_addr)
+    if channel.match_device_id:
+        return ip_id is not None and str(ip_id) in _device_ip_ids(channel)
     if channel.match_prefix_id:
         net = getattr(channel.match_prefix, "network", None)
         if net is None or not ip_addr:
@@ -202,7 +224,7 @@ def dispatch_status_changes(transitions: list, now=None) -> None:
             relevant = [
                 e for e in tenant_events
                 if (not wanted or e["to_status"] in wanted)
-                and _scope_allows(ch, e["target_ip"])
+                and _scope_allows(ch, e["target_ip"], e["target_ip_id"])
             ]
             if not relevant:
                 continue
@@ -247,7 +269,12 @@ def run_due_status_change_digests(now=None) -> int:
         wanted = ch.on_statuses or []
         if wanted:
             qs = qs.filter(to_status__in=wanted)
-        rows = [t for t in qs if _scope_allows(ch, getattr(t.target_ip, "ip_address", None))]
+        rows = [
+            t for t in qs
+            if _scope_allows(
+                ch, getattr(t.target_ip, "ip_address", None), t.target_ip_id
+            )
+        ]
         if rows:
             try:
                 _send_status_digest(ch, rows, since, now)
@@ -711,7 +738,7 @@ def notify_alert(alert, event: str) -> None:
             continue
         if ch.on_statuses and alert.check_status not in ch.on_statuses:
             continue
-        if not _scope_allows(ch, ip):
+        if not _scope_allows(ch, ip, alert.target_ip_id):
             continue
         try:
             _dispatch_to_channel(ch, alert, event, ip)
@@ -804,7 +831,7 @@ def notify_alert_group(tenant_id, alerts: list, event: str) -> None:
             for a in live
             if _SEV_RANK.get(a.severity, 0) >= _SEV_RANK.get(ch.min_severity, 0)
             and (not ch.on_statuses or a.check_status in ch.on_statuses)
-            and _scope_allows(ch, a.target_ip.ip_address)
+            and _scope_allows(ch, a.target_ip.ip_address, a.target_ip_id)
         ]
         if not matched:
             continue
@@ -815,7 +842,10 @@ def notify_alert_group(tenant_id, alerts: list, event: str) -> None:
 
 
 def send_test(channel) -> None:
-    """Send a synthetic test alert through a channel (for the 'Send test' button)."""
+    """Send a synthetic test alert through a channel (for the 'Send test'
+    button). Raises on failure so the UI can show WHY a channel is silent —
+    for email that means surfacing the actual SMTP error instead of the
+    best-effort swallow the production paths use."""
 
     class _Fake:
         id = "00000000-0000-0000-0000-000000000000"
@@ -826,5 +856,41 @@ def send_test(channel) -> None:
         template_id = None
         template = None
         opened_at = None
+        detail = {}
+        target_ip_id = None
+
+    if channel.kind == "email":
+        from django.core.mail import EmailMultiAlternatives
+
+        from core.effective_settings import effective_email
+
+        eff = effective_email(channel.tenant_id)
+        if not eff.email_enabled:
+            raise RuntimeError(
+                "Email delivery is disabled (Settings → Email & Delivery)."
+            )
+        recipients = resolve_recipients(channel)
+        if not recipients:
+            raise RuntimeError(
+                "No recipients: add addresses or subscriptions to this channel."
+            )
+        alert = _Fake()
+        ip = "203.0.113.1 (test)"
+        subject = f"[Test] {_alert_summary(alert, 'firing', ip)}"
+        # No fail_silently here — a bad SMTP host/credential must surface.
+        msg = EmailMultiAlternatives(
+            subject,
+            _alert_summary(alert, "firing", ip) + "\n",
+            getattr(eff, "email_from", "") or None,
+            recipients,
+            connection=build_email_connection(eff),
+        )
+        msg.attach_alternative(
+            _alert_email_html(alert, "firing", ip, _alert_url(_deployment())),
+            "text/html",
+        )
+        msg.send(fail_silently=False)
+        log.info("test email for channel %s → %s", channel.name, recipients)
+        return
 
     _dispatch_to_channel(channel, _Fake(), "firing", "203.0.113.1 (test)")

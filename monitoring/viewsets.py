@@ -1746,6 +1746,9 @@ def _channel_summary(ch) -> dict:
     if ch.match_ip_id:
         scope_kind, scope_id = "ip", str(ch.match_ip_id)
         scope_label = str(ch.match_ip.ip_address)
+    elif ch.match_device_id:
+        scope_kind, scope_id = "device", str(ch.match_device_id)
+        scope_label = ch.match_device.name
     elif ch.match_prefix_id:
         scope_kind, scope_id = "prefix", str(ch.match_prefix_id)
         scope_label = ch.match_prefix.cidr
@@ -1784,7 +1787,8 @@ def notifications_me(request):
     subs = (
         NotificationSubscription.objects.filter(tenant=tenant)
         .select_related(
-            "channel", "channel__match_prefix", "channel__match_ip", "group"
+            "channel", "channel__match_prefix", "channel__match_ip",
+            "channel__match_device", "group"
         )
         .filter(Q(user=user) | Q(group_id__in=group_ids))
     )
@@ -1807,7 +1811,7 @@ def notifications_me(request):
     if email:
         for ch in NotificationChannel.objects.filter(
             tenant=tenant, kind="email", enabled=True
-        ).select_related("match_prefix", "match_ip"):
+        ).select_related("match_prefix", "match_ip", "match_device"):
             if ch.id in subscribed_ids:
                 continue
             recips = [r.lower() for r in (ch.config or {}).get("recipients") or []]
@@ -1823,7 +1827,7 @@ def notifications_me(request):
         _channel_summary(ch)
         for ch in NotificationChannel.objects.filter(
             tenant=tenant, self_subscribable=True, enabled=True
-        ).select_related("match_prefix", "match_ip")
+        ).select_related("match_prefix", "match_ip", "match_device")
         if ch.id not in subscribed_ids
     ]
     return Response(
@@ -1888,32 +1892,36 @@ def notifications_unsubscribe(request):
 
 
 def _watch_scope(request, create=False):
-    """Resolve the (prefix, ip) target from the request and the auto channel for
-    it. Returns (tenant, prefix, ip, channel|None). ``create`` makes the channel."""
-    from api.models import IPAddress, Prefix
+    """Resolve the (prefix, ip, device) target from the request and the auto
+    channel for it. Returns (tenant, channel|None). ``create`` makes the
+    channel. Exactly one of ``prefix`` / ``ip`` / ``device`` must be given."""
+    from api.models import Device, IPAddress, Prefix
 
     tenant = _get_active_tenant(request)
     if tenant is None:
         raise PermissionDenied("No active tenant selected.")
     data = request.data if request.method == "POST" else request.query_params
-    prefix_id = data.get("prefix")
-    ip_id = data.get("ip")
-    if bool(prefix_id) == bool(ip_id):
-        raise ValidationError({"detail": "Provide exactly one of prefix or ip."})
+    given = {k: data.get(k) for k in ("prefix", "ip", "device") if data.get(k)}
+    if len(given) != 1:
+        raise ValidationError(
+            {"detail": "Provide exactly one of prefix, ip or device."}
+        )
 
-    prefix = ip = None
-    if prefix_id:
-        prefix = Prefix.objects.filter(tenant=tenant, id=prefix_id).first()
-        if prefix is None:
+    if "prefix" in given:
+        obj = Prefix.objects.filter(tenant=tenant, id=given["prefix"]).first()
+        if obj is None:
             raise ValidationError({"prefix": "Not found."})
-        scope_q = {"match_prefix": prefix}
-        name = f"Prefix {prefix.cidr}"
-    else:
-        ip = IPAddress.objects.filter(tenant=tenant, id=ip_id).first()
-        if ip is None:
+        scope_q, name = {"match_prefix": obj}, f"Prefix {obj.cidr}"
+    elif "ip" in given:
+        obj = IPAddress.objects.filter(tenant=tenant, id=given["ip"]).first()
+        if obj is None:
             raise ValidationError({"ip": "Not found."})
-        scope_q = {"match_ip": ip}
-        name = f"IP {ip.ip_address}"
+        scope_q, name = {"match_ip": obj}, f"IP {obj.ip_address}"
+    else:
+        obj = Device.objects.filter(tenant=tenant, id=given["device"]).first()
+        if obj is None:
+            raise ValidationError({"device": "Not found."})
+        scope_q, name = {"match_device": obj}, f"Device {obj.name}"
 
     channel = NotificationChannel.objects.filter(
         tenant=tenant, auto_created=True, kind="email", **scope_q
@@ -1924,7 +1932,7 @@ def _watch_scope(request, create=False):
             auto_created=True, send_status_changes=True,
             status_change_mode="instant", created_by=request.user, **scope_q,
         )
-    return tenant, prefix, ip, channel
+    return tenant, channel
 
 
 @api_view(["GET"])
@@ -1932,7 +1940,7 @@ def _watch_scope(request, create=False):
 def notifications_watch_state(request):
     """Whether the current user is watching a given prefix/IP, and whether they
     may (needs the subscribe verb + an account email)."""
-    tenant, _prefix, _ip, channel = _watch_scope(request)
+    tenant, channel = _watch_scope(request)
     watching = bool(channel) and NotificationSubscription.objects.filter(
         channel=channel, user=request.user
     ).exists()
@@ -1947,7 +1955,7 @@ def notifications_watch_state(request):
 @permission_classes([permissions.IsAuthenticated])
 def notifications_watch(request):
     """Start emailing the current user about a prefix/IP's status changes."""
-    tenant, _prefix, _ip, _channel = _watch_scope(request)
+    tenant, _channel = _watch_scope(request)
     if not _can_subscribe(request.user, tenant):
         return Response({"detail": "notificationchannel:subscribe required."},
                         status=403)
@@ -1955,7 +1963,7 @@ def notifications_watch(request):
         raise ValidationError(
             {"detail": "Your account has no email address to notify."}
         )
-    _tenant, _p, _i, channel = _watch_scope(request, create=True)
+    _tenant, channel = _watch_scope(request, create=True)
     NotificationSubscription.objects.get_or_create(
         tenant=tenant, channel=channel, user=request.user,
         defaults={"mandatory": False, "created_by": request.user},
@@ -1967,7 +1975,7 @@ def notifications_watch(request):
 @permission_classes([permissions.IsAuthenticated])
 def notifications_unwatch(request):
     """Stop the current user's per-prefix/IP watch (only their own self row)."""
-    tenant, _prefix, _ip, channel = _watch_scope(request)
+    tenant, channel = _watch_scope(request)
     if not _can_subscribe(request.user, tenant):
         return Response({"detail": "notificationchannel:subscribe required."},
                         status=403)

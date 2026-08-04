@@ -346,6 +346,48 @@ class WatchApiTests(APITestCase):
             tenant=self.tenant, auto_created=True, match_prefix=self.prefix
         ).exists())
 
+    def _device(self, name="dev1", ip=None):
+        from api.models import Device, DeviceRole, DeviceType, Manufacturer, Site
+
+        site = Site.objects.create(tenant=self.tenant, name="S")
+        mfr = Manufacturer.objects.create(tenant=self.tenant, name="M", slug="m")
+        dtype = DeviceType.objects.create(
+            tenant=self.tenant, manufacturer=mfr, model="X"
+        )
+        role = DeviceRole.objects.create(tenant=self.tenant, name="R", slug="r")
+        dev = Device.objects.create(
+            tenant=self.tenant, name=name, device_type=dtype, site=site,
+            role=role, status=status_for(self.tenant),
+        )
+        if ip is not None:
+            ip.assigned_device = dev
+            ip.save(update_fields=["assigned_device"])
+        return dev
+
+    def test_watch_device_creates_scoped_channel(self):
+        dev = self._device(ip=self.ip)
+        r = self.client.post("/api/monitoring/notifications/watch/",
+                             {"device": str(dev.id)}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        ch = NotificationChannel.objects.get(
+            tenant=self.tenant, auto_created=True, match_device=dev
+        )
+        self.assertEqual(ch.name, f"Device {dev.name}")
+
+    def test_device_scope_delivers_only_its_ips(self):
+        dev = self._device(ip=self.ip)
+        self.client.post("/api/monitoring/notifications/watch/",
+                        {"device": str(dev.id)}, format="json")
+        # The device's IP → email.
+        notify.dispatch_status_changes([self._transition(self.ip)])
+        self.assertEqual(len(mail.outbox), 1)
+        # Another IP, not assigned to the device → nothing more.
+        other = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.10.0.99", prefix=self.prefix
+        )
+        notify.dispatch_status_changes([self._transition(other)])
+        self.assertEqual(len(mail.outbox), 1)
+
     def test_watch_delivers_only_in_scope(self):
         self.client.post("/api/monitoring/notifications/watch/",
                         {"prefix": str(self.prefix.id)}, format="json")

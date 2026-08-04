@@ -507,13 +507,19 @@ The top-level **Notifications** page has two views:
 - **All channels** (admins): every subscription across channels — the groups and
   users each one reaches — with add/remove.
 
-**The quickest path — "Notify me":** a prefix or IP **Monitoring** tab has a
-**Notify me** button. One click emails you (your account address) whenever that
-prefix/IP changes status — no channel setup. Behind the scenes it reuses a
-shared, auto-created email channel scoped to that prefix/IP and adds you as a
-self subscription (visible under Notifications → For you, where you can turn it
-off again). A scoped channel only ever fires for its own IP/subnet, for both
-status changes and alerts.
+**The quickest path — "Notify me":** a prefix or IP **Monitoring** tab — and a
+device's Monitoring strip — has a **Notify me** button. One click emails you
+(your account address) whenever that prefix/IP/device changes status — no
+channel setup. Behind the scenes it reuses a shared, auto-created email channel
+scoped to that object and adds you as a self subscription (visible under
+Notifications → For you, where you can turn it off again). A scoped channel only
+ever fires for its own target — a device scope covers every IP assigned to the
+device — for both status changes and alerts. Manually-created channels can be
+scoped the same way in the channel form (Everything / a subnet / a device).
+
+Channel **Send test** now surfaces delivery errors instead of always reporting
+success — for an email channel that means the actual SMTP error, so a silent
+channel can be diagnosed from the UI.
 
 Self-service opt-in/opt-out is gated by the **`subscribe`** capability on
 notification channels; grant it to the users/groups who should manage their own

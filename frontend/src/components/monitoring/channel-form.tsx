@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FormSelect } from "@/components/forms"
 import { PrefixPicker } from "@/components/prefix-picker"
+import { DevicePicker } from "@/components/device-picker"
 import { CHANNEL_KINDS } from "./channels-list"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -66,6 +67,12 @@ export function ChannelForm({
   const [matchPrefix, setMatchPrefix] = useState<string | null>(
     channel?.match_prefix ?? null
   )
+  const [matchDevice, setMatchDevice] = useState<string | null>(
+    channel?.match_device ?? null
+  )
+  const [scopeKind, setScopeKind] = useState<"all" | "prefix" | "device">(
+    channel?.match_device ? "device" : channel?.match_prefix ? "prefix" : "all"
+  )
 
   const buildConfig = (): Record<string, unknown> => {
     if (URL_KINDS.includes(kind)) return { url: url.trim() }
@@ -92,7 +99,8 @@ export function ChannelForm({
         send_status_changes: sendStatusChanges,
         status_change_mode: statusMode,
         status_change_interval_minutes: Number(statusInterval) || 30,
-        match_prefix: matchPrefix,
+        match_prefix: scopeKind === "prefix" ? matchPrefix : null,
+        match_device: scopeKind === "device" ? matchDevice : null,
       }
       return isEdit
         ? api(`/api/monitoring/channels/${channel!.id}/`, {
@@ -265,11 +273,32 @@ export function ChannelForm({
                 />
               </Field>
             )}
-            <PrefixPicker
-              label="Only this subnet (optional)"
-              value={matchPrefix}
-              onChange={setMatchPrefix}
+            <FormSelect
+              label="Scope"
+              value={scopeKind}
+              onChange={(v) =>
+                setScopeKind((v as "all" | "prefix" | "device") ?? "all")
+              }
+              options={[
+                { value: "all", label: "Everything" },
+                { value: "prefix", label: "Only a subnet" },
+                { value: "device", label: "Only a device" },
+              ]}
             />
+            {scopeKind === "prefix" && (
+              <PrefixPicker
+                label="Subnet"
+                value={matchPrefix}
+                onChange={setMatchPrefix}
+              />
+            )}
+            {scopeKind === "device" && (
+              <DevicePicker
+                label="Device"
+                value={matchDevice}
+                onChange={setMatchDevice}
+              />
+            )}
             <p className="text-[12px] text-muted-foreground">
               The status filter above also applies here — leave it unticked to
               notify on every change.

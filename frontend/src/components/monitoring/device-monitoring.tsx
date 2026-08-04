@@ -4,6 +4,7 @@ import { Activity } from "lucide-react"
 
 import { api, type DeviceChecksResponse } from "@/lib/api"
 import { MixedStatusBadge } from "./mixed-status-badge"
+import { NotifyMeButton } from "./notify-me-button"
 
 // Shared query so the header badge, the Overview summary, and the IPs tab all
 // dedupe onto one fetch.
@@ -90,6 +91,9 @@ export function DeviceMonitoring({ deviceId }: { deviceId: string }) {
             +{hiddenCount} more
           </span>
         )}
+      </div>
+      <div className="ml-auto">
+        <NotifyMeButton device={deviceId} />
       </div>
     </section>
   )
