@@ -416,6 +416,12 @@ urlpatterns = [
          name="deployment-email"),
     path("deployment/email/test/", deployment.deployment_test_email,
          name="deployment-email-test"),
+    # Preview the redesigned email templates: list + send a sample (or all) to
+    # an entered address using Danbyte's SMTP config.
+    path("deployment/email/templates/", deployment.email_templates,
+         name="deployment-email-templates"),
+    path("deployment/email/preview/", deployment.email_send_preview,
+         name="deployment-email-preview"),
     # Emergency "sign everyone out" — deletes all sessions (users.manage).
     path("deployment/end-all-sessions/", deployment.deployment_end_all_sessions,
          name="deployment-end-all-sessions"),

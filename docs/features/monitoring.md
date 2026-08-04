@@ -498,7 +498,19 @@ permission). Email channels all deliver through this one server.
 | **Webhook timeout** | How long to wait for outbound webhook POSTs. |
 | **Outbound proxy** | Optional HTTP(S) proxy for outbound webhooks. |
 
-A **Send test email** action confirms the mail settings work.
+A **Send test email** action confirms the mail settings work. A misconfigured
+or unreachable SMTP host fails fast (a bounded connection timeout,
+`EMAIL_SMTP_TIMEOUT`, default 10s) and returns the SMTP error, rather than
+hanging the request.
+
+**Preview email templates.** A **Preview email templates** card sends a sample
+of any email Danbyte produces — monitoring digest, certificate digest, alert and
+grouped-alert notifications, the sign-in code, and the invite — filled with
+example data, to an address you choose (or **All templates** at once). Subjects
+are prefixed with `[Preview]` and delivery uses the same SMTP config, so you can
+see exactly how each email looks before it goes out for real. Every email shares
+one branded, inline-styled HTML layout (with a plain-text alternative) using
+Danbyte's status palette.
 
 ## Auto-discovery and cleanup
 
@@ -582,6 +594,39 @@ HTML email with a plain-text fallback. Sending is driven by a daily systemd
 timer (`danbyte-digest`) → `manage.py send_digest`, which gates each tenant on
 its frequency, weekday, and last-sent date; nothing is sent twice in a day. Send
 one by hand with:
+
+```bash
+.venv/bin/python manage.py send_digest --tenant <slug> --force
+```
+
+The digest also carries a compact **Certificates** strip — expired, expiring
+(critical / warning), and recently-changed counts — so the overall certificate
+picture rides along with the status summary.
+
+## Certificate digest
+
+A **separate**, certificate-focused digest, because expiry is the one class of
+problem where "you find out when it breaks" is an outage. Immediate,
+per-certificate expiry alerts already fire in real time through the notification
+channels (see [Certificates](../monitoring/certificates.md)); this is the
+recurring "everything approaching expiry, at a glance" companion email, sent as
+its own message rather than buried in the monitoring digest.
+
+Each certificate digest covers, per tenant:
+
+- **Expired** and **expiring** (critical / warning) leaf certificates actually
+  served on the wire.
+- **Declared** certificates (uploaded and assigned, not yet observed) approaching
+  expiry.
+- **Recent changes** — endpoints now serving a different certificate than before.
+
+Enable it under **Settings → Deployment → General → Email digest → Certificate
+digest**. It runs on the same cadence as the monitoring digest (the daily
+`danbyte-digest` timer) but is gated by its own flag and tracked separately, so a
+tenant can run one, both, or neither. Recipients default to the digest
+recipients; set **Certificate-digest recipients** to send it elsewhere (e.g. a
+security team). A scheduled certificate digest with nothing to report is skipped;
+`--force` sends it anyway:
 
 ```bash
 .venv/bin/python manage.py send_digest --tenant <slug> --force

@@ -90,7 +90,10 @@ function WatchedEndpointsPage() {
             <span className="font-mono text-[13px]">
               {r.host}:{r.port}
               {r.server_name && r.server_name !== r.host && (
-                <span className="text-muted-foreground"> (SNI {r.server_name})</span>
+                <span className="text-muted-foreground">
+                  {" "}
+                  (SNI {r.server_name})
+                </span>
               )}
             </span>
           )
@@ -149,7 +152,8 @@ function WatchedEndpointsPage() {
           const days = row.original.last_detail?.expires_in_days as
             | number
             | undefined
-          if (days === undefined) return <span className="text-muted-foreground">—</span>
+          if (days === undefined)
+            return <span className="text-muted-foreground">—</span>
           const cls =
             days < 0
               ? "text-destructive"
@@ -229,10 +233,10 @@ function WatchedEndpointsPage() {
     >
       {rows.length === 0 ? (
         <EmptyState title="No watched endpoints yet.">
-          Add a <span className="font-mono">host:port</span> and Danbyte reads its
-          TLS certificate on a schedule — no device needed. Observed certificates
-          land in the Certificates inventory, with expiry, fingerprint-change and
-          chain state.
+          Add a <span className="font-mono">host:port</span> and Danbyte reads
+          its TLS certificate on a schedule — no device needed. Observed
+          certificates land in the Certificates inventory, with expiry,
+          fingerprint-change and chain state.
         </EmptyState>
       ) : (
         <DataTable
@@ -325,7 +329,9 @@ function CheckNowButton({ ep }: { ep: WatchedEndpoint }) {
       disabled={m.isPending}
       onClick={() => m.mutate()}
     >
-      <RefreshCw className={`h-3.5 w-3.5 ${m.isPending ? "animate-spin" : ""}`} />
+      <RefreshCw
+        className={`h-3.5 w-3.5 ${m.isPending ? "animate-spin" : ""}`}
+      />
     </Button>
   )
 }
@@ -436,7 +442,13 @@ function EndpointFormDialog({
             placeholder="example.com"
             mono
           />
-          <FormText label="Port" value={port} onChange={setPort} type="number" mono />
+          <FormText
+            label="Port"
+            value={port}
+            onChange={setPort}
+            type="number"
+            mono
+          />
           <FormText
             label="Server name (SNI, optional)"
             value={sni}
@@ -452,7 +464,11 @@ function EndpointFormDialog({
             mono
             hint="How often to re-read the certificate. Daily (86400) is plenty."
           />
-          <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
+          <FormCheckbox
+            label="Enabled"
+            checked={enabled}
+            onChange={setEnabled}
+          />
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>

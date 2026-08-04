@@ -104,6 +104,8 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "digest_frequency",
             "digest_weekday",
             "digest_recipients",
+            "cert_digest_enabled",
+            "cert_digest_recipients",
             "human_ids_enabled",
             "date_format",
             "time_style",
@@ -754,3 +756,72 @@ def deployment_test_email(request):
     except Exception as exc:  # noqa: BLE001 — surface the SMTP error to the admin
         return Response({"ok": False, "error": str(exc)}, status=502)
     return Response({"ok": True, "to": to})
+
+
+@extend_schema(
+    summary="List the email templates available to preview",
+    tags=["deployment"],
+    request=None,
+    responses=OpenApiResponse(response=OpenApiTypes.OBJECT),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def email_templates(request):
+    """The templates a user can send a sample of, for the preview UI."""
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    from core.email_samples import TEMPLATES
+
+    return Response({"templates": [{"key": k, "label": lbl} for k, lbl in TEMPLATES]})
+
+
+@extend_schema(
+    summary="Send a sample of one (or all) email templates to preview it",
+    tags=["deployment"],
+    request=inline_serializer(
+        name="EmailPreviewRequest",
+        fields={
+            "to": serializers.EmailField(required=False),
+            "template": serializers.CharField(required=False),
+        },
+    ),
+    responses=OpenApiResponse(response=OpenApiTypes.OBJECT),
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def email_send_preview(request):
+    """Render one template (or ``"all"``) with sample data and send it, using
+    Danbyte's effective SMTP config, so an admin can see how the emails look."""
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    from core.email import send_html_email
+    from core.email_samples import TEMPLATE_KEYS, render_sample
+
+    to = (request.data or {}).get("to") or request.user.email
+    if not to:
+        return Response({"ok": False, "error": "No recipient address."}, status=400)
+    template = (request.data or {}).get("template") or "all"
+    keys = TEMPLATE_KEYS if template == "all" else [template]
+    if template != "all" and template not in TEMPLATE_KEYS:
+        return Response({"ok": False, "error": "Unknown template."}, status=400)
+
+    # Use the active tenant's effective SMTP (falls back to the deployment relay),
+    # so the preview reflects the config the operator is actually testing.
+    from api.views import _get_active_tenant
+
+    tenant = _get_active_tenant(request)
+    sent, errors = [], {}
+    for key in keys:
+        try:
+            subject, html, text = render_sample(key)
+            ok = send_html_email(
+                f"[Preview] {subject}", [to],
+                html_body=html, text_body=text, tenant=tenant,
+            )
+            (sent.append(key) if ok else errors.setdefault(key, "send failed"))
+        except Exception as exc:  # noqa: BLE001 — report per-template, keep going
+            errors[key] = str(exc)
+    if not sent and errors:
+        return Response({"ok": False, "to": to, "sent": sent, "errors": errors},
+                        status=502)
+    return Response({"ok": True, "to": to, "sent": sent, "errors": errors})

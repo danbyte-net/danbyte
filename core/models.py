@@ -510,6 +510,20 @@ class DeploymentSettings(TimestampedModel):
         blank=True, default="",
         help_text="Digest recipients — comma/newline-separated email addresses.",
     )
+    # Separate, certificate-focused digest — expiry/renewal summary — fired
+    # independently of the monitoring digest (own enable flag + own recipients,
+    # falling back to the digest recipients when blank). Same cadence/override
+    # group as the monitoring digest.
+    cert_digest_enabled = models.BooleanField(
+        default=False,
+        help_text="Email a periodic certificate-expiry digest, separate from the "
+        "monitoring digest.",
+    )
+    cert_digest_recipients = models.TextField(
+        blank=True, default="",
+        help_text="Certificate-digest recipients. Blank uses the digest "
+        "recipients above.",
+    )
 
     # ─── date & time display ──────────────────────────────────────────────
     # Deployment-wide defaults for how the UI renders dates and times. A
@@ -822,9 +836,13 @@ class TenantSettings(TimestampedModel):
     )
     digest_weekday = models.PositiveSmallIntegerField(default=0)
     digest_recipients = models.TextField(blank=True, default="")
+    # Certificate digest (mirrors DeploymentSettings; shares override_digest).
+    cert_digest_enabled = models.BooleanField(default=False)
+    cert_digest_recipients = models.TextField(blank=True, default="")
     # Per-tenant send bookkeeping — used regardless of override, so each tenant
     # is gated independently even when they share the deployment schedule.
     digest_last_run = models.DateTimeField(null=True, blank=True)
+    cert_digest_last_run = models.DateTimeField(null=True, blank=True)
 
     # ─── LDAP / Active Directory (mirrors DeploymentSettings) ──────────────
     ldap_enabled = models.BooleanField(default=False)

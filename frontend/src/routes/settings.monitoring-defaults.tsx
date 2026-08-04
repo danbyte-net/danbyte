@@ -132,6 +132,8 @@ function EmailDigestCard() {
   const [frequency, setFrequency] = useState("weekly")
   const [weekday, setWeekday] = useState("0")
   const [recipients, setRecipients] = useState("")
+  const [certEnabled, setCertEnabled] = useState(false)
+  const [certRecipients, setCertRecipients] = useState("")
 
   useEffect(() => {
     if (data) {
@@ -139,6 +141,8 @@ function EmailDigestCard() {
       setFrequency(data.digest_frequency)
       setWeekday(String(data.digest_weekday))
       setRecipients(data.digest_recipients)
+      setCertEnabled(data.cert_digest_enabled)
+      setCertRecipients(data.cert_digest_recipients)
     }
   }, [data])
 
@@ -162,6 +166,8 @@ function EmailDigestCard() {
             digest_frequency: frequency as "daily" | "weekly",
             digest_weekday: Math.max(0, Math.min(6, Number(weekday) || 0)),
             digest_recipients: recipients,
+            cert_digest_enabled: certEnabled,
+            cert_digest_recipients: certRecipients,
           },
         })
       }
@@ -169,7 +175,9 @@ function EmailDigestCard() {
         enabled !== data.digest_enabled ||
         frequency !== data.digest_frequency ||
         weekday !== String(data.digest_weekday) ||
-        recipients !== data.digest_recipients
+        recipients !== data.digest_recipients ||
+        certEnabled !== data.cert_digest_enabled ||
+        certRecipients !== data.cert_digest_recipients
       }
       saving={savingKey === "digest"}
       saveLabel="Save digest"
@@ -233,6 +241,29 @@ function EmailDigestCard() {
           </div>
         </>
       )}
+
+      <div className="mt-2 border-t border-border pt-4">
+        <FormCheckbox
+          label="Certificate digest (separate email)"
+          checked={certEnabled}
+          onChange={setCertEnabled}
+          hint="A dedicated certificate-expiry summary, sent on the same schedule but as its own email. Immediate expiry alerts still fire through notification channels."
+        />
+        {certEnabled && (
+          <Field
+            label="Certificate-digest recipients"
+            hint="Blank uses the digest recipients above."
+            className="mt-3"
+          >
+            <textarea
+              className="min-h-16 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm"
+              value={certRecipients}
+              onChange={(e) => setCertRecipients(e.target.value)}
+              placeholder="security@example.com"
+            />
+          </Field>
+        )}
+      </div>
     </SettingsCard>
   )
 }

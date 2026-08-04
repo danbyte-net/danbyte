@@ -96,13 +96,11 @@ def _send_webhook(channel, events: list[dict]) -> None:
 
 
 def _send_email(channel, events: list[dict]) -> None:
-    from core.effective_settings import effective_email
+    from core import email as ek
 
     recipients = (channel.config or {}).get("recipients") or []
     if not recipients:
         return
-    # Per-tenant SMTP override, else the deployment default (issue: settings split).
-    eff = effective_email(channel.tenant_id)
     lines = [
         f"  {e['target_ip']} · {e['template'] or e['kind']}: "
         f"{e['from_status']} → {e['to_status']}"
@@ -111,17 +109,28 @@ def _send_email(channel, events: list[dict]) -> None:
     body = (
         f"{len(events)} monitoring status change(s):\n\n" + "\n".join(lines) + "\n"
     )
-    subject = f"[Danbyte] {len(events)} monitoring status change(s)"
-    from django.core.mail import EmailMessage
-
-    EmailMessage(
-        subject=subject,
-        body=body,
-        from_email=eff.email_from
-        or getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@danbyte.com"),
-        to=recipients,
-        connection=build_email_connection(eff),
-    ).send(fail_silently=True)
+    subject = f"{_deployment_name()} — {len(events)} monitoring status change(s)"
+    rows = [
+        [
+            ek.escape(str(e["target_ip"])),
+            ek.escape(str(e["template"] or e["kind"])),
+            ek.pill(e["from_status"], e["from_status"]) + " &rarr; "
+            + ek.pill(e["to_status"], e["to_status"]),
+        ]
+        for e in events
+    ]
+    html = ek.render_layout(
+        f"{len(events)} status change(s)",
+        ek.lead("The following monitored targets changed status.")
+        + ek.data_table(["Target", "Check", "Change"], rows),
+        deployment_name=_deployment_name(),
+        kicker="Monitoring",
+        preheader=f"{len(events)} status change(s)",
+    )
+    ek.send_html_email(
+        subject, recipients, html_body=html, text_body=body,
+        tenant=channel.tenant_id,
+    )
     log.info("email digest %s → %s recipients (%s changes)", channel.name, len(recipients), len(events))
 
 
@@ -187,19 +196,19 @@ def notify_event(
             elif ch.kind == "email":
                 recipients = (ch.config or {}).get("recipients") or []
                 if recipients:
-                    from django.core.mail import EmailMessage
+                    from core import email as ek
 
-                    from core.effective_settings import effective_email
-
-                    eff = effective_email(tenant_id, site=site_id)
-                    EmailMessage(
-                        subject=subject,
-                        body=body,
-                        from_email=eff.email_from
-                        or getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@danbyte.com"),
-                        to=recipients,
-                        connection=build_email_connection(eff),
-                    ).send(fail_silently=True)
+                    html = ek.render_layout(
+                        subject,
+                        ek.callout(body, "warning"),
+                        deployment_name=_deployment_name(),
+                        kicker="Monitoring",
+                        preheader=body[:120],
+                    )
+                    ek.send_html_email(
+                        subject, recipients, html_body=html, text_body=body + "\n",
+                        tenant=tenant_id, site=site_id,
+                    )
         except Exception:  # noqa: BLE001 — one channel must not break others
             log.exception("notify_event channel %s (%s) failed", ch.name, ch.kind)
 
@@ -324,11 +333,19 @@ def _alert_url(dep) -> str | None:
 def build_email_connection(dep):
     """Build an SMTP connection from a settings object — the deployment
     singleton or a TenantSettings override (same field names) — falling back to
-    Django's configured backend when SMTP host is unset."""
+    Django's configured backend when SMTP host is unset.
+
+    A bounded socket timeout is essential: without it a wrong/unreachable
+    ``smtp_host`` makes ``send()`` block until the OS TCP timeout (minutes),
+    which outlives the gunicorn worker timeout and surfaces to the user as an
+    nginx **502** on the "send test email" button. With the timeout the send
+    fails fast and the caller can report the SMTP error instead.
+    """
     from django.core.mail import get_connection
 
     if not dep.smtp_host:
         return get_connection()  # console/env backend — dev default
+    timeout = getattr(settings, "EMAIL_SMTP_TIMEOUT", 10)
     # TENANT and SITE admins (untrusted customers / local IT) control their
     # smtp_host/port via overrides — SSRF-guard those so the connect can't
     # scan internal services or reach cloud metadata. A DEPLOYMENT admin is a
@@ -352,6 +369,91 @@ def build_email_connection(dep):
         password=password or None,
         use_tls=use_tls,
         use_ssl=use_ssl,
+        timeout=timeout,
+    )
+
+
+_EVENT_KIND = {
+    "resolved": "success",
+    "reminder": "warning",
+    "escalated": "critical",
+    "firing": "critical",
+}
+
+
+def _severity_kind(severity: str) -> str:
+    return {"critical": "critical", "warning": "warning"}.get(severity, "info")
+
+
+def _deployment_name() -> str:
+    return _deployment().deployment_name or "Danbyte"
+
+
+def _alert_detail_rows(alert, ip: str):
+    """Label/value rows for one alert, as email HTML (values pre-escaped)."""
+    from core import email as ek
+
+    detail = getattr(alert, "detail", None) or {}
+    rows = [("Target", ek.escape(ip))]
+    name = alert.template.name if getattr(alert, "template_id", None) else alert.kind
+    rows.append(("Check", ek.escape(str(name))))
+    rows.append(("Severity", ek.pill(alert.severity, _severity_kind(alert.severity))))
+    rows.append(("Status", ek.pill(alert.check_status, alert.check_status)))
+    if detail.get("subject_cn"):
+        rows.append(("Certificate", ek.escape(detail["subject_cn"])))
+    if detail.get("not_after"):
+        rows.append(("Expires", ek.escape(str(detail["not_after"])[:19])))
+    if detail.get("fingerprint_sha256"):
+        rows.append(("Fingerprint",
+                     ek.escape(detail["fingerprint_sha256"][:24] + "…")))
+    return rows
+
+
+def _alert_email_html(alert, event: str, ip: str, url: str | None) -> str:
+    from core import email as ek
+
+    text = _alert_summary(alert, event, ip)
+    kind = _EVENT_KIND.get(event, "critical")
+    parts = [
+        ek.callout(text, "success" if event == "resolved" else kind),
+        ek.kv_table(_alert_detail_rows(alert, ip)),
+    ]
+    if url:
+        parts.append(ek.email_button(url, "View in Danbyte"))
+    verb = _EVENT_VERB.get(event, "FIRING").title()
+    return ek.render_layout(
+        f"Alert {verb.lower()}: {ip}",
+        "".join(parts),
+        deployment_name=_deployment_name(),
+        kicker="Monitoring alert",
+        preheader=text,
+    )
+
+
+def _alert_group_email_html(alerts: list, event: str, url: str | None) -> str:
+    from core import email as ek
+
+    text = _group_summary(alerts, event)
+    kind = "success" if event == "resolved" else "critical"
+    rows = [
+        [
+            ek.escape(a.target_ip.ip_address),
+            ek.pill(a.severity, _severity_kind(a.severity)),
+            ek.escape(_alert_specific(a) or f"{a.kind} {a.check_status}"),
+        ]
+        for a in alerts
+    ]
+    parts = [ek.callout(text, kind),
+             ek.data_table(["Target", "Severity", "Detail"], rows)]
+    if url:
+        parts.append(ek.email_button(url, "View in Danbyte"))
+    verb = _EVENT_VERB.get(event, "FIRING").title()
+    return ek.render_layout(
+        f"{len(alerts)} alerts {verb.lower()}",
+        "".join(parts),
+        deployment_name=_deployment_name(),
+        kicker="Monitoring alerts",
+        preheader=text,
     )
 
 
@@ -369,19 +471,18 @@ def _dispatch_to_channel(channel, alert, event: str, ip: str) -> None:
 
     if kind == "email":
         from core.effective_settings import effective_email
+        from core.email import send_html_email
 
         eff = effective_email(channel.tenant_id)  # tenant SMTP override or dep
         recipients = cfg.get("recipients") or []
         if recipients and eff.email_enabled:
-            from django.core.mail import EmailMessage
-
-            EmailMessage(
-                subject=text,
-                body=(linked + "\n"),
-                from_email=eff.email_from or None,
-                to=recipients,
-                connection=build_email_connection(eff),
-            ).send(fail_silently=True)
+            send_html_email(
+                text,
+                recipients,
+                html_body=_alert_email_html(alert, event, ip, url),
+                text_body=(linked + "\n"),
+                tenant=channel.tenant_id,
+            )
     elif kind == "slack":
         if cfg.get("url"):
             safe_post(
@@ -510,24 +611,23 @@ def _dispatch_group_to_channel(channel, alerts: list, event: str, dep) -> None:
 
     if channel.kind == "email":
         from core.effective_settings import effective_email
+        from core.email import send_html_email
 
         eff = effective_email(channel.tenant_id)  # tenant SMTP override or dep
         recipients = cfg.get("recipients") or []
         if recipients and eff.email_enabled:
-            from django.core.mail import EmailMessage
-
             body = linked + "\n\n" + "\n".join(
                 f"- {a.target_ip.ip_address}: "
                 f"{_alert_specific(a) or f'{a.kind} {a.check_status}'}"
                 for a in alerts
             )
-            EmailMessage(
-                subject=text,
-                body=body,
-                from_email=eff.email_from or None,
-                to=recipients,
-                connection=build_email_connection(eff),
-            ).send(fail_silently=True)
+            send_html_email(
+                text,
+                recipients,
+                html_body=_alert_group_email_html(alerts, event, url),
+                text_body=body + "\n",
+                tenant=channel.tenant_id,
+            )
     elif channel.kind in ("slack", "teams"):
         if cfg.get("url"):
             safe_post(cfg["url"], json={"text": linked}, timeout=timeout, proxies=proxies)

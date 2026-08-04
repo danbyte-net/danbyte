@@ -71,6 +71,66 @@ class DeploymentSettingsApiTests(APITestCase):
         self.assertEqual(DeploymentSettings.load().session_idle_timeout_minutes, 15)
 
 
+class EmailPreviewApiTests(APITestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser(
+            "admin", "admin@acme.com", "pw"
+        )
+
+    def test_requires_manage_permission(self):
+        reader = get_user_model().objects.create_user("reader", "r@acme.com", "pw")
+        self.client.force_login(reader)
+        self.assertEqual(
+            self.client.get("/api/deployment/email/templates/").status_code, 403
+        )
+        self.assertEqual(
+            self.client.post("/api/deployment/email/preview/").status_code, 403
+        )
+
+    def test_lists_templates(self):
+        self.client.force_login(self.admin)
+        r = self.client.get("/api/deployment/email/templates/")
+        self.assertEqual(r.status_code, 200)
+        keys = {t["key"] for t in r.json()["templates"]}
+        self.assertIn("cert_digest", keys)
+        self.assertIn("monitoring_digest", keys)
+
+    def test_preview_all_sends_every_template(self):
+        from django.core import mail
+
+        self.client.force_login(self.admin)
+        r = self.client.post(
+            "/api/deployment/email/preview/",
+            {"to": "me@acme.com", "template": "all"}, format="json",
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()["ok"])
+        self.assertEqual(len(r.json()["sent"]), 7)
+        self.assertEqual(len(mail.outbox), 7)
+        self.assertTrue(all(m.subject.startswith("[Preview]") for m in mail.outbox))
+        self.assertTrue(all(m.alternatives for m in mail.outbox))  # multipart HTML
+
+    def test_preview_single_template(self):
+        from django.core import mail
+
+        self.client.force_login(self.admin)
+        r = self.client.post(
+            "/api/deployment/email/preview/",
+            {"to": "me@acme.com", "template": "cert_digest"}, format="json",
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["sent"], ["cert_digest"])
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_unknown_template_is_rejected(self):
+        self.client.force_login(self.admin)
+        r = self.client.post(
+            "/api/deployment/email/preview/",
+            {"template": "nope"}, format="json",
+        )
+        self.assertEqual(r.status_code, 400)
+
+
 class EndAllSessionsApiTests(APITestCase):
     def setUp(self):
         self.admin = get_user_model().objects.create_superuser(

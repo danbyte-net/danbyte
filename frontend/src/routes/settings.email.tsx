@@ -7,7 +7,7 @@ import { api, type DeploymentSettings } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Field } from "@/components/forms"
+import { Field, FormSelect } from "@/components/forms"
 import {
   SettingsCard,
   SettingsGrid,
@@ -33,6 +33,38 @@ function EmailSettingsPage() {
   const [form, setForm] = useState<DeploymentSettings | null>(null)
   const [password, setPassword] = useState("")
   const [testTo, setTestTo] = useState("")
+  const [previewTo, setPreviewTo] = useState("")
+  const [previewTemplate, setPreviewTemplate] = useState("all")
+
+  const templatesQ = useQuery({
+    queryKey: ["email-templates"],
+    queryFn: () =>
+      api<{ templates: { key: string; label: string }[] }>(
+        "/api/deployment/email/templates/"
+      ),
+    enabled: canManageDeployment,
+  })
+
+  const preview = useMutation({
+    mutationFn: () =>
+      api<{ ok: boolean; to?: string; sent?: string[] }>(
+        "/api/deployment/email/preview/",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            to: previewTo || undefined,
+            template: previewTemplate,
+          }),
+        }
+      ),
+    onSuccess: (r) =>
+      toast.success(
+        `Sent ${r.sent?.length ?? 0} preview email${
+          (r.sent?.length ?? 0) === 1 ? "" : "s"
+        } to ${r.to}`
+      ),
+    onError: (err) => apiErrorToast(err),
+  })
   useEffect(() => {
     if (q.data) setForm(q.data)
   }, [q.data])
@@ -169,6 +201,48 @@ function EmailSettingsPage() {
               Enable email delivery and save to send a test.
             </p>
           )}
+        </SettingsCard>
+
+        <SettingsCard
+          title="Preview email templates"
+          description="Send a sample of any email — digest, certificate digest, alerts, sign-in code, invite — filled with example data, so you can see how they look before they go out for real."
+        >
+          <FormSelect
+            label="Template"
+            value={previewTemplate}
+            onChange={(v) => v && setPreviewTemplate(v)}
+            options={[
+              { value: "all", label: "All templates" },
+              ...(templatesQ.data?.templates ?? []).map((t) => ({
+                value: t.key,
+                label: t.label,
+              })),
+            ]}
+          />
+          <div className="flex items-end gap-2">
+            <Field label="Recipient" className="flex-1">
+              <Input
+                type="email"
+                value={previewTo}
+                onChange={(e) => setPreviewTo(e.target.value)}
+                placeholder="you@acme.com (defaults to your account email)"
+                className="font-mono text-[13px]"
+              />
+            </Field>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => preview.mutate()}
+              disabled={preview.isPending || !form.email_enabled}
+            >
+              {preview.isPending ? "Sending…" : "Send preview"}
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Subjects are prefixed with{" "}
+            <span className="font-mono">[Preview]</span>. Uses the SMTP config
+            above (or a tenant relay if you're scoped to one).
+          </p>
         </SettingsCard>
       </SettingsGrid>
 

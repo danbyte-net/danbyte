@@ -106,6 +106,14 @@ def build_digest(tenant, since) -> dict:
     except Exception:  # noqa: BLE001
         pass
 
+    certs = None
+    try:
+        from monitoring.cert_digest import cert_summary
+
+        certs = cert_summary(tenant, now=timezone.now())
+    except Exception:  # noqa: BLE001 — cert strip must never break the digest
+        logger.exception("digest certificate summary failed")
+
     return {
         "tenant": tenant,
         "since": since,
@@ -123,6 +131,7 @@ def build_digest(tenant, since) -> dict:
         "went_stale": tally.get("stale", 0),
         "chains": chains,
         "changes": changes,
+        "certs": certs,
     }
 
 
@@ -200,6 +209,15 @@ def render_text(data: dict) -> str:
             lines.append(f"  [{pfx}]")
             for c in chain_list:
                 lines.append(f"    {c['label']}: {_chain_text(c['segments'])}")
+    certs = d.get("certs")
+    if certs and (certs["expired"] or certs["expiring_critical"]
+                  or certs["expiring_warning"] or certs["changes"]):
+        lines += [
+            "",
+            f"Certificates: {certs['expired']} expired, "
+            f"{certs['expiring_critical']} critical, "
+            f"{certs['expiring_warning']} warning, {certs['changes']} changed",
+        ]
     lines += ["", f"Configuration changes in window: {d['changes']}"]
     return "\n".join(lines)
 
@@ -265,37 +283,54 @@ def _chain_html(segments) -> str:
 
 
 def render_html(data: dict, deployment_name: str) -> str:
-    from core.email import render_layout
+    from core import email as ek
 
     d = data
     reach = f"{d['reachable_pct']}%" if d["reachable_pct"] is not None else "—"
+    down_accent = ek.STATUS_BG["down"] if d["down"] else ek.PALETTE["ink"]
+    fire_accent = ek.STATUS_BG["warning"] if d["firing_total"] else ek.PALETTE["ink"]
     parts = [
-        '<table role="presentation" cellspacing="8" cellpadding="0" style="margin:-8px 0 8px;"><tr>',
-        _stat("checks", str(d["total"])),
-        _stat("reachable", reach),
-        _stat("down/stale", str(d["down"])),
-        _stat("firing alerts", str(d["firing_total"])),
-        "</tr></table>",
-        '<table role="presentation" cellspacing="8" cellpadding="0" style="margin:0 0 8px;"><tr>',
-        _stat("went down", str(d["went_down"])),
-        _stat("came up", str(d["came_up"])),
-        _stat("went stale", str(d["went_stale"])),
-        "</tr></table>",
+        ek.lead(
+            f"Status for {d['tenant'].name} over "
+            f"{d['since']:%b %-d} – {d['now']:%b %-d}."
+        ),
+        ek.stat_grid([
+            (d["total"], "checks"),
+            (reach, "reachable"),
+            (d["down"], "down/stale", down_accent),
+            (d["firing_total"], "firing alerts", fire_accent),
+        ]),
+        ek.stat_grid([
+            (d["went_down"], "went down"),
+            (d["came_up"], "came up"),
+            (d["went_stale"], "went stale"),
+        ]),
     ]
 
+    certs = d.get("certs")
+    if certs and (certs["expired"] or certs["expiring_critical"]
+                  or certs["expiring_warning"] or certs["changes"]):
+        parts.append(ek.section("Certificates"))
+        parts.append(ek.stat_grid([
+            (certs["expired"], "expired",
+             ek.STATUS_BG["expired"] if certs["expired"] else ek.PALETTE["ink"]),
+            (certs["expiring_critical"], "critical",
+             ek.STATUS_BG["critical"] if certs["expiring_critical"] else ek.PALETTE["ink"]),
+            (certs["expiring_warning"], "warning",
+             ek.STATUS_BG["warning"] if certs["expiring_warning"] else ek.PALETTE["ink"]),
+            (certs["changes"], "changed", ek.PALETTE["brand"]),
+        ]))
+
     if d["top_alerts"]:
-        parts.append('<h2 style="font-size:14px;margin:20px 0 8px;">Open alerts</h2>')
-        rows = "".join(
-            f'<tr><td style="padding:6px 8px;border-bottom:1px solid #f4f4f5;">'
-            f'<span style="font-weight:600;">{escape(a.severity)}</span></td>'
-            f'<td style="padding:6px 8px;border-bottom:1px solid #f4f4f5;">'
-            f'{escape(_target_label(a))}</td></tr>'
+        parts.append(ek.section("Open alerts"))
+        rows = [
+            [ek.pill(a.severity, a.severity), escape(_target_label(a))]
             for a in d["top_alerts"]
-        )
-        parts.append(f'<table role="presentation" width="100%" cellspacing="0">{rows}</table>')
+        ]
+        parts.append(ek.data_table(["Severity", "Target"], rows))
 
     if d["chains"]:
-        parts.append('<h2 style="font-size:14px;margin:20px 0 8px;">State changes</h2>')
+        parts.append(ek.section("State changes"))
         for pfx, chain_list in d["chains"]:
             parts.append(
                 f'<div style="margin:14px 0 4px;font-size:12px;font-weight:600;'
@@ -316,13 +351,18 @@ def render_html(data: dict, deployment_name: str) -> str:
                 f'cellpadding="0">{rows}</table>'
             )
 
-    parts.append(
-        f'<p style="margin:20px 0 0;color:#71717a;font-size:13px;">'
-        f'{d["changes"]} configuration change(s) recorded in this window.</p>'
-    )
+    parts.append(ek.muted(
+        f"{d['changes']} configuration change(s) recorded in this window."))
 
     title = f"Monitoring digest — {d['tenant'].name}"
-    return render_layout(title, "".join(parts), deployment_name=deployment_name)
+    return ek.render_layout(
+        title, "".join(parts), deployment_name=deployment_name,
+        kicker="Monitoring digest",
+        preheader=(
+            f"{d['total']} checks · {reach} reachable · "
+            f"{d['firing_total']} firing alerts"
+        ),
+    )
 
 
 def send_tenant_digest(tenant, *, force: bool = False, recipients=None) -> bool:

@@ -135,29 +135,39 @@ def _gen_code() -> str:
 
 
 def _send_email_code(user, code: str) -> None:
-    from django.core.mail import EmailMessage
-
-    from core.effective_settings import effective_email
+    from core import email as ek
     from core.models import DeploymentSettings
-    from monitoring.notify import build_email_connection
 
     dep = DeploymentSettings.load()
     name = dep.deployment_name or "Danbyte"
+    minutes = EMAIL_CODE_TTL // 60
+    text = (
+        f"Your {name} verification code is {code}.\n\n"
+        f"It expires in {minutes} minutes. If you didn't try to sign in, you "
+        f"can safely ignore this email.\n"
+    )
+    html = ek.render_layout(
+        "Your sign-in code",
+        ek.paragraph("Enter this code to finish signing in:")
+        + ek.code_line(code)
+        + ek.muted(
+            f"It expires in {minutes} minutes. If you didn't try to sign in, "
+            f"you can safely ignore this email."
+        ),
+        deployment_name=name,
+        kicker="Sign-in",
+        preheader=f"Your {name} verification code",
+    )
     # No active tenant at login time — best-effort: the user's last tenant's
     # SMTP override, else the deployment relay. (No-tenant users → deployment.)
     profile = getattr(user, "profile", None)
-    eff = effective_email(profile.current_tenant_id if profile else None)
-    EmailMessage(
-        subject=f"{name} sign-in code: {code}",
-        body=(
-            f"Your {name} verification code is {code}.\n\n"
-            f"It expires in {EMAIL_CODE_TTL // 60} minutes. If you didn't try to "
-            f"sign in, you can safely ignore this email.\n"
-        ),
-        from_email=eff.email_from or None,
-        to=[user.email],
-        connection=build_email_connection(eff),
-    ).send(fail_silently=True)
+    ek.send_html_email(
+        f"{name} sign-in code: {code}",
+        [user.email],
+        html_body=html,
+        text_body=text,
+        tenant=profile.current_tenant_id if profile else None,
+    )
 
 
 def _begin_email_challenge(request, user) -> None:
@@ -342,31 +352,40 @@ def send_invite_email(request, user) -> None:
     """Email a new user a link to choose their own password. The admin never
     sets or sees a credential — the account stays login-disabled until the user
     follows the link."""
-    from django.core.mail import EmailMessage
-
-    from core.effective_settings import effective_email
+    from core import email as ek
     from core.models import DeploymentSettings
-    from monitoring.notify import build_email_connection
 
     dep = DeploymentSettings.load()
     name = dep.deployment_name or "Danbyte"
     # The inviting admin acts inside a tenant — use its SMTP override if any.
     from api.views import _get_active_tenant
 
-    eff = effective_email(_get_active_tenant(request))
     url = build_set_password_url(request, user)
-    EmailMessage(
-        subject=f"You've been invited to {name}",
-        body=(
+    text = (
+        f"An administrator created a {name} account for you "
+        f"({user.get_username()}).\n\n"
+        f"Choose your password to activate it:\n{url}\n\n"
+        f"If you weren't expecting this, you can ignore this email.\n"
+    )
+    html = ek.render_layout(
+        f"You've been invited to {name}",
+        ek.paragraph(
             f"An administrator created a {name} account for you "
-            f"({user.get_username()}).\n\n"
-            f"Choose your password to activate it:\n{url}\n\n"
-            f"If you weren't expecting this, you can ignore this email.\n"
-        ),
-        from_email=eff.email_from or None,
-        to=[user.email],
-        connection=build_email_connection(eff),
-    ).send(fail_silently=True)
+            f"({user.get_username()}). Choose a password to activate it."
+        )
+        + ek.email_button(url, "Choose your password")
+        + ek.muted("If you weren't expecting this, you can ignore this email."),
+        deployment_name=name,
+        kicker="Invitation",
+        preheader=f"Activate your {name} account",
+    )
+    ek.send_html_email(
+        f"You've been invited to {name}",
+        [user.email],
+        html_body=html,
+        text_body=text,
+        tenant=_get_active_tenant(request),
+    )
 
 
 @require_POST

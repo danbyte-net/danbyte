@@ -76,9 +76,12 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
             "digest_weekday",
             "digest_recipients",
             "digest_last_run",
+            "cert_digest_enabled",
+            "cert_digest_recipients",
+            "cert_digest_last_run",
             "updated_at",
         ]
-        read_only_fields = ["updated_at", "digest_last_run"]
+        read_only_fields = ["updated_at", "digest_last_run", "cert_digest_last_run"]
 
     def get_smtp_password_set(self, obj) -> bool:
         return bool((obj.secrets or {}).get("password"))

@@ -34,6 +34,11 @@ class Command(BaseCommand):
             from core.models import Tenant
             from monitoring.digest import run_scheduled_digests, send_tenant_digest
 
+            from monitoring.cert_digest import (
+                run_scheduled_cert_digests,
+                send_cert_digest,
+            )
+
             slug = opts.get("tenant")
             if slug:
                 tenant = (
@@ -42,9 +47,13 @@ class Command(BaseCommand):
                 )
                 if tenant is None:
                     raise CommandError(f"No tenant matching {slug!r}")
-                ok = send_tenant_digest(tenant, force=opts.get("force", False))
-                if ok:
-                    self.stdout.write(self.style.SUCCESS(f"digest sent for {tenant.name}"))
+                force = opts.get("force", False)
+                ok = send_tenant_digest(tenant, force=force)
+                cert_ok = send_cert_digest(tenant, force=force)
+                if ok or cert_ok:
+                    self.stdout.write(self.style.SUCCESS(
+                        f"digest sent for {tenant.name} "
+                        f"(monitoring={ok}, certificate={cert_ok})"))
                     run.note(f"one-off digest sent for {tenant.name}", count=1)
                 else:
                     self.stdout.write(
@@ -58,8 +67,13 @@ class Command(BaseCommand):
                 return
 
             count = run_scheduled_digests()
-            self.stdout.write(self.style.SUCCESS(f"sent {count} digest(s)"))
-            if count:
-                run.note(f"sent {count} scheduled digest(s)", count=count)
+            cert_count = run_scheduled_cert_digests()
+            self.stdout.write(self.style.SUCCESS(
+                f"sent {count} monitoring + {cert_count} certificate digest(s)"))
+            total = count + cert_count
+            if total:
+                run.note(
+                    f"sent {count} monitoring + {cert_count} certificate digest(s)",
+                    count=total)
             else:
                 run.skip("no tenants due this cycle")

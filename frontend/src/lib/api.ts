@@ -4822,6 +4822,8 @@ export interface DeploymentSettings {
   digest_frequency: "daily" | "weekly"
   digest_weekday: number
   digest_recipients: string
+  cert_digest_enabled: boolean
+  cert_digest_recipients: string
   human_ids_enabled: boolean
   date_format: DateFormat
   time_style: TimeStyle
