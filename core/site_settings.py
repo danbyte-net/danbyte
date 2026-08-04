@@ -213,7 +213,12 @@ def site_test_email(request, site_id):
             connection=conn,
         ).send(fail_silently=False)
     except Exception as exc:  # noqa: BLE001 — surface the SMTP error to the admin
-        return Response({"ok": False, "error": str(exc)}, status=502)
+        from core.email import describe_smtp_error
+
+        return Response(
+            {"ok": False, "detail": describe_smtp_error(exc), "error": str(exc)},
+            status=502,
+        )
     via = "deployment"
     if isinstance(eff, SiteSettings):
         via = "site"

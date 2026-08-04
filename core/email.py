@@ -395,6 +395,7 @@ def send_html_email(
     text_body: str,
     tenant=None,
     site=None,
+    fail_silently: bool = True,
 ) -> bool:
     """Send a multipart HTML+text email via the effective SMTP for the tenant/
     site. Returns True if a send was attempted with at least one recipient.
@@ -422,9 +423,51 @@ def send_html_email(
         msg.attach_alternative(html_body, "text/html")
         msg.send(fail_silently=False)
         return True
-    except Exception as exc:  # noqa: BLE001 — best-effort, never break the caller
+    except Exception as exc:  # noqa: BLE001 — best-effort by default
+        if not fail_silently:
+            raise
         logger.warning("send_html_email failed (%s): %s", subject, exc)
         return False
+
+
+def describe_smtp_error(exc: Exception) -> str:
+    """A human sentence for an SMTP failure — what went wrong and what to do.
+
+    The raw exceptions ("(421, b'Service not available')") are useless in a
+    toast; every test/preview endpoint routes its error through here so the UI
+    can say something actionable.
+    """
+    text = str(exc) or exc.__class__.__name__
+    code = getattr(exc, "smtp_code", None)
+    if code is None:
+        import re
+
+        m = re.search(r"\b(4\d\d|5\d\d)\b", text)
+        code = int(m.group(1)) if m else None
+
+    if code == 421:
+        return (
+            "The mail server refused the connection (421 Service not "
+            "available). This usually means the server has temporarily "
+            "blocked this machine's IP — often after repeated failed logins. "
+            "Wait a while before retrying; more attempts extend the block."
+        )
+    if code in (534, 535):
+        return (
+            "The mail server rejected the login (535 Authentication failed). "
+            "Check the SMTP username and password in Settings → Email & "
+            "Delivery."
+        )
+    if code in (450, 451, 452):
+        return f"The mail server deferred the message ({code}). Try again later."
+    if code in (550, 551, 553):
+        return f"The mail server rejected the recipient ({code}): {text}"
+    if isinstance(exc, (TimeoutError, OSError)) and code is None:
+        return (
+            f"Couldn't reach the mail server: {text}. Check the SMTP host and "
+            "port, and that this machine can reach it."
+        )
+    return f"Sending failed: {text}"
 
 
 def parse_recipients(raw: str) -> list[str]:

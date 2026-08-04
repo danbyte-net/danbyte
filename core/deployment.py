@@ -754,7 +754,12 @@ def deployment_test_email(request):
             connection=conn,
         ).send(fail_silently=False)
     except Exception as exc:  # noqa: BLE001 — surface the SMTP error to the admin
-        return Response({"ok": False, "error": str(exc)}, status=502)
+        from core.email import describe_smtp_error
+
+        return Response(
+            {"ok": False, "detail": describe_smtp_error(exc), "error": str(exc)},
+            status=502,
+        )
     return Response({"ok": True, "to": to})
 
 
@@ -808,20 +813,30 @@ def email_send_preview(request):
     # Use the active tenant's effective SMTP (falls back to the deployment relay),
     # so the preview reflects the config the operator is actually testing.
     from api.views import _get_active_tenant
+    from core.email import describe_smtp_error
 
     tenant = _get_active_tenant(request)
     sent, errors = [], {}
     for key in keys:
         try:
             subject, html, text = render_sample(key)
-            ok = send_html_email(
+            send_html_email(
                 f"[Preview] {subject}", [to],
                 html_body=html, text_body=text, tenant=tenant,
+                fail_silently=False,
             )
-            (sent.append(key) if ok else errors.setdefault(key, "send failed"))
-        except Exception as exc:  # noqa: BLE001 — report per-template, keep going
-            errors[key] = str(exc)
+            sent.append(key)
+        except Exception as exc:  # noqa: BLE001 — report per-template
+            errors[key] = describe_smtp_error(exc)
+            # An SMTP-level failure will fail every template the same way —
+            # stop instead of hammering the relay (repeated failed attempts
+            # can get this server's IP temporarily blocked).
+            break
     if not sent and errors:
-        return Response({"ok": False, "to": to, "sent": sent, "errors": errors},
-                        status=502)
+        detail = next(iter(errors.values()))
+        return Response(
+            {"ok": False, "detail": detail, "to": to, "sent": sent,
+             "errors": errors},
+            status=502,
+        )
     return Response({"ok": True, "to": to, "sent": sent, "errors": errors})

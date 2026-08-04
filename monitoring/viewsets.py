@@ -1706,7 +1706,14 @@ class NotificationChannelViewSet(TenantScopedViewSet):
         try:
             send_test(channel)
         except Exception as exc:  # noqa: BLE001 — surface the transport error
-            return Response({"ok": False, "error": str(exc)}, status=502)
+            from core.email import describe_smtp_error
+
+            detail = (
+                describe_smtp_error(exc) if channel.kind == "email" else str(exc)
+            )
+            return Response(
+                {"ok": False, "detail": detail, "error": str(exc)}, status=502
+            )
         return Response({"ok": True})
 
 
