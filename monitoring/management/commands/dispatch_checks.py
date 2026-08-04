@@ -37,6 +37,18 @@ class Command(BaseCommand):
                 logging.getLogger("monitoring.watched_endpoints").exception(
                     "watched-endpoint poll pass failed"
                 )
+            # Batched raw status-change mini-digests also ride the minute beat;
+            # each channel fires only once its own interval has elapsed. Guarded.
+            try:
+                from monitoring.notify import run_due_status_change_digests
+
+                run_due_status_change_digests()
+            except Exception:  # noqa: BLE001
+                import logging
+
+                logging.getLogger("monitoring.notify").exception(
+                    "status-change digest pass failed"
+                )
             run.note(
                 f"dispatched {result['due']} due check(s) in {result['jobs']} job(s)",
                 due=result["due"],

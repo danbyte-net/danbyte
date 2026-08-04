@@ -1077,6 +1077,36 @@ class NotificationChannel(TimestampedModel):
         default="info",
         help_text="Only alerts at or above this severity reach this channel.",
     )
+    # ── raw status-change notifications (independent of alert rules) ─────────
+    # Opt-in: email/post every status change for matching IPs, without needing
+    # an AlertRule. Either instantly (coalesced per check batch) or as a
+    # periodic mini-digest every ``status_change_interval_minutes``.
+    class StatusChangeMode(models.TextChoices):
+        INSTANT = "instant", "Instant"
+        BATCHED = "batched", "Batched (mini-digest)"
+
+    send_status_changes = models.BooleanField(
+        default=False,
+        help_text="Send every status change for matching IPs, independent of "
+        "alert rules.",
+    )
+    status_change_mode = models.CharField(
+        max_length=8, choices=StatusChangeMode.choices,
+        default=StatusChangeMode.BATCHED,
+    )
+    status_change_interval_minutes = models.PositiveIntegerField(
+        default=30,
+        help_text="Batched mode: how often to send the mini-digest.",
+    )
+    status_change_last_run = models.DateTimeField(null=True, blank=True)
+    match_prefix = models.ForeignKey(
+        "api.Prefix",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notification_channels",
+        help_text="Only status changes for IPs inside this subnet; blank = all.",
+    )
     enabled = models.BooleanField(default=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

@@ -53,63 +53,100 @@ class Base(TestCase):
         )
 
 
-class WebhookTests(Base):
-    def test_webhook_fires_with_payload(self):
-        NotificationChannel.objects.create(
+class StatusChangeInstantTests(Base):
+    """Opt-in raw status changes, instant mode (dispatch_status_changes)."""
+
+    def _channel(self, **kw):
+        base = dict(
             tenant=self.tenant, name="hook", kind="webhook",
             config={"url": "https://example.test/hook"},
+            send_status_changes=True, status_change_mode="instant",
         )
+        base.update(kw)
+        return NotificationChannel.objects.create(**base)
+
+    def test_webhook_fires_with_payload(self):
+        self._channel()
         tr = self._transition(to_status="down")
         with patch("monitoring.notify.safe_post") as post:
             post.return_value.status_code = 200
-            notify.dispatch_transitions([tr])
+            notify.dispatch_status_changes([tr])
             post.assert_called_once()
             payload = post.call_args.kwargs["json"]
             self.assertEqual(payload["count"], 1)
             self.assertEqual(payload["transitions"][0]["to_status"], "down")
             self.assertEqual(payload["transitions"][0]["target_ip"], "127.0.0.1")
 
+    def test_not_opted_in_channel_is_skipped(self):
+        self._channel(send_status_changes=False)
+        with patch("monitoring.notify.safe_post") as post:
+            notify.dispatch_status_changes([self._transition(to_status="down")])
+            post.assert_not_called()
+
+    def test_batched_channel_not_sent_instantly(self):
+        self._channel(status_change_mode="batched")
+        with patch("monitoring.notify.safe_post") as post:
+            notify.dispatch_status_changes([self._transition(to_status="down")])
+            post.assert_not_called()
+
     def test_on_statuses_filter_skips_unwanted(self):
-        NotificationChannel.objects.create(
-            tenant=self.tenant, name="hook", kind="webhook",
-            config={"url": "https://example.test/hook"}, on_statuses=["down"],
-        )
+        self._channel(on_statuses=["down"])
         tr = self._transition(to_status="up")  # not in [down]
         with patch("monitoring.notify.safe_post") as post:
-            notify.dispatch_transitions([tr])
+            notify.dispatch_status_changes([tr])
+            post.assert_not_called()
+
+    def test_prefix_scope_filters_out_other_subnets(self):
+        other = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.9.0.0/16",
+            status=status_for(self.tenant, "container"),
+        )
+        self._channel(match_prefix=other)  # our IP is 127.0.0.1, not in 10.9/16
+        with patch("monitoring.notify.safe_post") as post:
+            notify.dispatch_status_changes([self._transition(to_status="down")])
             post.assert_not_called()
 
     def test_disabled_channel_skipped(self):
-        NotificationChannel.objects.create(
-            tenant=self.tenant, name="hook", kind="webhook",
-            config={"url": "https://example.test/hook"}, enabled=False,
-        )
+        self._channel(enabled=False)
         with patch("monitoring.notify.safe_post") as post:
-            notify.dispatch_transitions([self._transition()])
+            notify.dispatch_status_changes([self._transition()])
             post.assert_not_called()
 
     def test_webhook_failure_does_not_raise(self):
-        NotificationChannel.objects.create(
-            tenant=self.tenant, name="hook", kind="webhook",
-            config={"url": "https://example.test/hook"},
-        )
+        self._channel()
         with patch("monitoring.notify.safe_post", side_effect=RuntimeError("boom")):
             # Must swallow — a notifier error can't fail the check run.
-            notify.dispatch_transitions([self._transition()])
+            notify.dispatch_status_changes([self._transition()])
 
-
-class EmailDigestTests(Base):
-    def test_email_digest_sent(self):
-        NotificationChannel.objects.create(
-            tenant=self.tenant, name="ops", kind="email",
-            config={"recipients": ["ops@example.test"]},
-        )
-        notify.dispatch_transitions([self._transition(to_status="down")])
+    def test_instant_email_sent(self):
+        self._channel(kind="email", config={"recipients": ["ops@example.test"]})
+        notify.dispatch_status_changes([self._transition(to_status="down")])
         self.assertEqual(len(mail.outbox), 1)
         msg = mail.outbox[0]
         self.assertIn("ops@example.test", msg.to)
         self.assertIn("up → down", msg.body)
         self.assertIn("127.0.0.1", msg.body)
+
+
+class StatusChangeBatchedTests(Base):
+    """Batched mini-digest (run_due_status_change_digests)."""
+
+    def test_batched_digest_sends_and_stamps_last_run(self):
+        ch = NotificationChannel.objects.create(
+            tenant=self.tenant, name="ops", kind="email",
+            config={"recipients": ["ops@example.test"]},
+            send_status_changes=True, status_change_mode="batched",
+            status_change_interval_minutes=30,
+        )
+        self._transition(to_status="down")
+        sent = notify.run_due_status_change_digests()
+        self.assertEqual(sent, 1)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("status change", mail.outbox[0].subject.lower())
+        ch.refresh_from_db()
+        self.assertIsNotNone(ch.status_change_last_run)
+        # Second run inside the interval → nothing (last_run gates it).
+        self.assertEqual(notify.run_due_status_change_digests(), 0)
 
 
 class RetentionTests(Base):

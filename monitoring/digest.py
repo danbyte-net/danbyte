@@ -282,6 +282,87 @@ def _chain_html(segments) -> str:
     )
 
 
+def build_chains_from_rows(rows):
+    """Group an iterable of StateTransition rows into per-IP badge chains keyed
+    by prefix — the list-based twin of :func:`_build_chains`, for a supplied set
+    of transitions (e.g. one channel's batched window)."""
+    def _key(t):
+        ip = t.target_ip
+        pfx = ip.prefix.cidr if (ip and ip.prefix_id) else "~"
+        return (str(pfx), str(getattr(ip, "ip_address", "")), t.at)
+
+    groups: OrderedDict = OrderedDict()
+    for t in sorted(rows, key=_key):
+        ip = t.target_ip
+        pfx = ip.prefix.cidr if (ip and ip.prefix_id) else "—"
+        chains = groups.setdefault(pfx, OrderedDict())
+        entry = chains.get(ip.id)
+        if entry is None:
+            entry = {"label": _ip_label(ip),
+                     "segments": [{"status": t.from_status, "at": None}]}
+            chains[ip.id] = entry
+        entry["segments"].append({"status": t.to_status, "at": t.at})
+    return [(pfx, list(ch.values())) for pfx, ch in groups.items()]
+
+
+def _chains_html(chains) -> str:
+    """The per-prefix chain tables (no section heading) — shared by the full
+    digest and the batched status mini-digest."""
+    out = []
+    for pfx, chain_list in chains:
+        out.append(
+            f'<div style="margin:14px 0 4px;font-size:12px;font-weight:600;'
+            f'color:#3f3f46;">[{escape(pfx)}]</div>'
+        )
+        rows = "".join(
+            f'<tr>'
+            f'<td style="padding:8px;border-bottom:1px solid #f4f4f5;'
+            f'vertical-align:top;white-space:nowrap;font-size:13px;">'
+            f'{escape(c["label"])}</td>'
+            f'<td style="padding:8px;border-bottom:1px solid #f4f4f5;">'
+            f'{_chain_html(c["segments"])}</td></tr>'
+            for c in chain_list
+        )
+        out.append(
+            f'<table role="presentation" width="100%" cellspacing="0" '
+            f'cellpadding="0">{rows}</table>'
+        )
+    return "".join(out)
+
+
+def render_status_digest(rows, since, now, deployment_name: str) -> str:
+    """A batched status-change mini-digest email for one notification channel —
+    the recent transitions rendered as the same per-prefix badge chains as the
+    monitoring digest's State-changes section."""
+    from core import email as ek
+
+    chains = build_chains_from_rows(rows)
+    body = (
+        ek.lead(
+            f"{len(rows)} status change(s) between {since:%b %-d %H:%M} and "
+            f"{now:%b %-d %H:%M}."
+        )
+        + _chains_html(chains)
+    )
+    return ek.render_layout(
+        "Status changes", body, deployment_name=deployment_name,
+        kicker="Monitoring", preheader=f"{len(rows)} status change(s)",
+    )
+
+
+def render_status_digest_text(rows, since, now) -> str:
+    lines = [
+        f"Status changes — {len(rows)} between "
+        f"{since:%Y-%m-%d %H:%M} and {now:%Y-%m-%d %H:%M}",
+        "",
+    ]
+    for pfx, chain_list in build_chains_from_rows(rows):
+        lines.append(f"[{pfx}]")
+        for c in chain_list:
+            lines.append(f"  {c['label']}: {_chain_text(c['segments'])}")
+    return "\n".join(lines) + "\n"
+
+
 def render_html(data: dict, deployment_name: str) -> str:
     from core import email as ek
 

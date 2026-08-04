@@ -5049,6 +5049,11 @@ export interface NotificationChannel {
   on_statuses: CheckStatus[]
   min_severity: MinSeverity
   enabled: boolean
+  send_status_changes: boolean
+  status_change_mode: "instant" | "batched"
+  status_change_interval_minutes: number
+  status_change_last_run: string | null
+  match_prefix: string | null
   created_at: string
   updated_at: string
 }

@@ -174,6 +174,16 @@ def process_transitions(transitions, now) -> dict:
 
     _dispatch_notifications(opened_by_tenant, individual)
 
+    # Opt-in raw status-change channels (instant mode) get the whole batch,
+    # independent of alert rules. Isolated so a delivery error can't fail the
+    # batch or the alert reconciliation above.
+    try:
+        from .notify import dispatch_status_changes
+
+        dispatch_status_changes(transitions, now)
+    except Exception:  # noqa: BLE001 — notification must not break the engine
+        log.exception("status-change dispatch failed")
+
     if opened or resolved:
         log.info("alerts: %s opened, %s updated, %s resolved", opened, updated, resolved)
     return {"opened": opened, "updated": updated, "resolved": resolved}

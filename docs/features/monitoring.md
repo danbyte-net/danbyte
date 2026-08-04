@@ -482,6 +482,24 @@ Notifications are best-effort: a failing channel is logged and never breaks a
 check run. When a **public base URL** is configured (see below), messages include
 a clickable link straight back to the alert.
 
+### Raw status-change notifications (no alert rules)
+
+A channel can also send **every status change** for the IPs it matches, without
+setting up any alert rule — for operators who just want "email me when something
+in this subnet goes down". Enable **Send raw status changes** on the channel and
+pick a delivery mode:
+
+- **Instant** — one message per check batch, carrying all of that batch's
+  matching changes (coalesced, so a big flap is one email, not fifty).
+- **Batched** — a periodic **mini-digest** every *N* minutes (default 30),
+  summarising the window's changes as the same per-prefix status-badge chains the
+  monitoring digest uses. Nothing is sent for an empty window.
+
+Scope it with the channel's existing **On statuses** filter (e.g. only `down`)
+and an optional **subnet** — only IPs inside that prefix notify. This rides the
+same delivery gates and the same effective SMTP as everything else; instant fires
+from the check batch, batched from the minute beat, so neither needs a new timer.
+
 ### Email and outbound delivery (deployment-wide)
 
 Mail server and outbound options are a **single deployment-wide setting**, edited

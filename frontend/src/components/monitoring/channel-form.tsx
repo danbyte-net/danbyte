@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FormSelect } from "@/components/forms"
+import { PrefixPicker } from "@/components/prefix-picker"
 import { CHANNEL_KINDS } from "./channels-list"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -53,6 +54,18 @@ export function ChannelForm({
   const [recipients, setRecipients] = useState(
     Array.isArray(cfg.recipients) ? (cfg.recipients as string[]).join("\n") : ""
   )
+  const [sendStatusChanges, setSendStatusChanges] = useState(
+    channel?.send_status_changes ?? false
+  )
+  const [statusMode, setStatusMode] = useState<"instant" | "batched">(
+    channel?.status_change_mode ?? "batched"
+  )
+  const [statusInterval, setStatusInterval] = useState(
+    String(channel?.status_change_interval_minutes ?? 30)
+  )
+  const [matchPrefix, setMatchPrefix] = useState<string | null>(
+    channel?.match_prefix ?? null
+  )
 
   const buildConfig = (): Record<string, unknown> => {
     if (URL_KINDS.includes(kind)) return { url: url.trim() }
@@ -76,6 +89,10 @@ export function ChannelForm({
         min_severity: minSeverity,
         on_statuses: statuses,
         config: buildConfig(),
+        send_status_changes: sendStatusChanges,
+        status_change_mode: statusMode,
+        status_change_interval_minutes: Number(statusInterval) || 30,
+        match_prefix: matchPrefix,
       }
       return isEdit
         ? api(`/api/monitoring/channels/${channel!.id}/`, {
@@ -202,6 +219,64 @@ export function ChannelForm({
           ))}
         </div>
       </Field>
+
+      <div className="grid gap-4 border-t border-border pt-4">
+        <label className="flex items-start gap-2 text-sm">
+          <Checkbox
+            checked={sendStatusChanges}
+            onCheckedChange={(v) => setSendStatusChanges(!!v)}
+            className="mt-0.5"
+          />
+          <span>
+            Send raw status changes
+            <span className="block text-[12px] text-muted-foreground">
+              Email/post every status change for matching IPs, independent of
+              alert rules.
+            </span>
+          </span>
+        </label>
+        {sendStatusChanges && (
+          <div className="grid gap-4 pl-6">
+            <FormSelect
+              label="Delivery"
+              value={statusMode}
+              onChange={(v) =>
+                setStatusMode((v as "instant" | "batched") ?? "batched")
+              }
+              options={[
+                { value: "instant", label: "Instant (per check batch)" },
+                {
+                  value: "batched",
+                  label: "Batched — a periodic mini-digest",
+                },
+              ]}
+            />
+            {statusMode === "batched" && (
+              <Field
+                label="Digest interval (minutes)"
+                hint="How often to summarize and send the mini-digest."
+              >
+                <Input
+                  type="number"
+                  min={1}
+                  value={statusInterval}
+                  onChange={(e) => setStatusInterval(e.target.value)}
+                  className="w-32 font-mono text-[13px]"
+                />
+              </Field>
+            )}
+            <PrefixPicker
+              label="Only this subnet (optional)"
+              value={matchPrefix}
+              onChange={setMatchPrefix}
+            />
+            <p className="text-[12px] text-muted-foreground">
+              The status filter above also applies here — leave it unticked to
+              notify on every change.
+            </p>
+          </div>
+        )}
+      </div>
 
       <div className="flex items-center justify-between border-t border-border pt-4">
         <label className="flex items-center gap-2 text-sm">

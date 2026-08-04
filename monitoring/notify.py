@@ -1,44 +1,33 @@
-"""Notification dispatch — pluggable registry + built-in channels.
+"""Notification dispatch — alerts and opt-in raw status changes.
 
-After every batch that produced status changes, the worker calls
-``dispatch_transitions(transitions)``. Each registered notifier gets the whole
-batch; the built-in ``channel_notifier`` groups it by tenant and fans out to
-that tenant's enabled ``NotificationChannel`` rows (webhook + email digest).
+Two independent notification paths feed ``NotificationChannel`` rows:
 
-Channels are a registry so websocket push / MCP / chat can be added later
-without touching the worker. All sends are **best-effort**: a failing channel is
-logged, never raised — a notifier error must not fail the check run.
+1. **Alerts** (the primary path) — :mod:`monitoring.alerts` opens/resolves
+   ``Alert`` rows from an AlertRule and routes them via ``notify_alert`` /
+   ``notify_alert_group`` (severity + status gated, silence-aware).
+
+2. **Raw status changes** (opt-in, no alert rules) — a channel with
+   ``send_status_changes=True`` receives every status transition for the IPs it
+   matches (``on_statuses`` + ``match_prefix`` subnet scope). Either **instant**
+   (``dispatch_status_changes``, coalesced per check batch) or **batched**
+   (``run_due_status_change_digests``, a periodic mini-digest driven by the
+   minute beat). This is for operators who want transition emails without the
+   full alert-rule machinery.
+
+All sends are **best-effort**: a failing channel is logged, never raised — a
+notification error must not fail the check run.
 """
 from __future__ import annotations
 
+import ipaddress
 import logging
 from collections import defaultdict
-from typing import Callable
 
 from django.conf import settings
-from django.core.mail import send_mail
 
-from core.ssrf import safe_get, safe_post, safe_request  # SSRF-guarded outbound
+from core.ssrf import safe_post  # SSRF-guarded outbound
 
 log = logging.getLogger("monitoring.notify")
-
-# name -> callable(list[StateTransition]) -> None
-NOTIFIERS: dict[str, Callable] = {}
-
-
-def register_notifier(name: str, fn: Callable) -> None:
-    NOTIFIERS[name] = fn
-
-
-def dispatch_transitions(transitions: list) -> None:
-    """Fan a batch of status changes out to every registered notifier."""
-    if not transitions:
-        return
-    for name, fn in NOTIFIERS.items():
-        try:
-            fn(transitions)
-        except Exception:  # noqa: BLE001
-            log.exception("notifier %s failed", name)
 
 
 # ─── payload building ─────────────────────────────────────────────────────
@@ -134,26 +123,51 @@ def _send_email(channel, events: list[dict]) -> None:
     log.info("email digest %s → %s recipients (%s changes)", channel.name, len(recipients), len(events))
 
 
-def channel_notifier(transitions: list) -> None:
-    """Group transitions by tenant and dispatch to each tenant's channels."""
+def _prefix_allows(channel, ip_addr) -> bool:
+    """Whether a channel's subnet scope admits this IP (blank scope = all)."""
+    if not channel.match_prefix_id:
+        return True
+    net = getattr(channel.match_prefix, "network", None)
+    if net is None or not ip_addr:
+        return False
+    try:
+        return ipaddress.ip_address(str(ip_addr)) in net
+    except (ValueError, TypeError):
+        return False
+
+
+def _status_channels(tenant_id, mode):
     from .models import NotificationChannel
 
+    return NotificationChannel.objects.filter(
+        tenant_id=tenant_id, enabled=True, send_status_changes=True,
+        status_change_mode=mode,
+    ).select_related("match_prefix")
+
+
+def dispatch_status_changes(transitions: list, now=None) -> None:
+    """Instant path: email/post the just-observed status changes to every
+    ``send_status_changes`` channel in **instant** mode. Coalesced per batch:
+    one message per channel carrying all of the batch's matching changes.
+
+    Called at the end of ``process_transitions`` (every check batch). Best-effort
+    per channel — a delivery error can never fail the batch.
+    """
+    if not transitions:
+        return
     events = _enrich(transitions)
     by_tenant: dict[str, list[dict]] = defaultdict(list)
     for e in events:
         by_tenant[e["tenant_id"]].append(e)
 
     for tenant_id, tenant_events in by_tenant.items():
-        channels = NotificationChannel.objects.filter(
-            tenant_id=tenant_id, enabled=True
-        )
-        for ch in channels:
+        for ch in _status_channels(tenant_id, "instant"):
             wanted = ch.on_statuses or []
-            relevant = (
-                [e for e in tenant_events if e["to_status"] in wanted]
-                if wanted
-                else tenant_events
-            )
+            relevant = [
+                e for e in tenant_events
+                if (not wanted or e["to_status"] in wanted)
+                and _prefix_allows(ch, e["target_ip"])
+            ]
             if not relevant:
                 continue
             try:
@@ -162,10 +176,77 @@ def channel_notifier(transitions: list) -> None:
                 elif ch.kind == "email":
                     _send_email(ch, relevant)
             except Exception:  # noqa: BLE001 — one channel must not break others
-                log.exception("channel %s (%s) failed", ch.name, ch.kind)
+                log.exception("status channel %s (%s) failed", ch.name, ch.kind)
 
 
-register_notifier("channels", channel_notifier)
+def run_due_status_change_digests(now=None) -> int:
+    """Batched path: for each ``send_status_changes`` channel in **batched**
+    mode whose interval has elapsed, send a mini-digest of the status changes in
+    the window and stamp ``status_change_last_run``. Driven by the minute beat.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from .models import NotificationChannel, StateTransition
+
+    now = now or timezone.now()
+    sent = 0
+    channels = NotificationChannel.objects.filter(
+        enabled=True, send_status_changes=True,
+        status_change_mode="batched",
+    ).select_related("match_prefix")
+    for ch in channels:
+        interval = timedelta(minutes=ch.status_change_interval_minutes or 30)
+        if ch.status_change_last_run and now - ch.status_change_last_run < interval:
+            continue
+        since = ch.status_change_last_run or (now - interval)
+        qs = (
+            StateTransition.objects.filter(
+                tenant_id=ch.tenant_id, at__gt=since, at__lte=now
+            )
+            .select_related("target_ip", "target_ip__prefix", "template")
+            .order_by("at")
+        )
+        wanted = ch.on_statuses or []
+        if wanted:
+            qs = qs.filter(to_status__in=wanted)
+        rows = [t for t in qs if _prefix_allows(ch, getattr(t.target_ip, "ip_address", None))]
+        if rows:
+            try:
+                _send_status_digest(ch, rows, since, now)
+                sent += 1
+            except Exception:  # noqa: BLE001 — one channel must not break others
+                log.exception("status digest %s (%s) failed", ch.name, ch.kind)
+        ch.status_change_last_run = now
+        ch.save(update_fields=["status_change_last_run", "updated_at"])
+    return sent
+
+
+def _send_status_digest(channel, rows: list, since, now) -> None:
+    """Deliver a batched mini-digest of status changes for one channel."""
+    if channel.kind == "webhook":
+        events = _enrich(rows)
+        _send_webhook(channel, events)
+        return
+    if channel.kind != "email":
+        return
+    recipients = (channel.config or {}).get("recipients") or []
+    if not recipients:
+        return
+    from core.email import send_html_email
+    from monitoring.digest import render_status_digest, render_status_digest_text
+
+    name = _deployment_name()
+    html, text = (
+        render_status_digest(rows, since, now, name),
+        render_status_digest_text(rows, since, now),
+    )
+    subject = f"{name} — {len(rows)} status change(s) in the last window"
+    send_html_email(
+        subject, recipients, html_body=html, text_body=text,
+        tenant=channel.tenant_id,
+    )
 
 
 def notify_event(
