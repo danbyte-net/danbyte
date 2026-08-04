@@ -1988,6 +1988,13 @@ class WatchedEndpointViewSet(TenantScopedViewSet):
     )
     serializer_class = WatchedEndpointSerializer
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        cert = self.request.query_params.get("certificate")
+        if cert:
+            qs = qs.filter(last_certificate_id=cert)
+        return qs
+
     @action(detail=True, methods=["post"], url_path="check-now")
     def check_now(self, request, pk=None):
         ep = self.get_object()  # tenant + RBAC scoped by get_queryset

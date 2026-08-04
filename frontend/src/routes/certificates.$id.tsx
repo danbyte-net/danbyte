@@ -11,6 +11,7 @@ import type {
   CertificateAssignment,
   CertificateBinding,
   Paginated,
+  WatchedEndpoint,
 } from "@/lib/api"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
@@ -437,8 +438,50 @@ function CertificateOverview({ cert }: { cert: Certificate }) {
         <KvCard title="Record" rows={record} />
       </div>
 
+      <WatchedBySection certificateId={cert.id} />
+
       {cert.pem && <PemSection cert={cert} />}
     </div>
+  )
+}
+
+/** Watched endpoints currently serving this certificate — closes the loop from
+ * a cert back to the host:port monitor that observed it. */
+function WatchedBySection({ certificateId }: { certificateId: string }) {
+  const q = useQuery({
+    queryKey: ["certificate-watchers", certificateId],
+    queryFn: () =>
+      api<Paginated<WatchedEndpoint>>(
+        `/api/monitoring/watched-endpoints/?certificate=${certificateId}`
+      ),
+  })
+  const rows = q.data?.results ?? []
+  if (rows.length === 0) return null
+  return (
+    <section>
+      <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
+        Watched by
+      </h2>
+      <div className="grid gap-1.5">
+        {rows.map((ep) => (
+          <Link
+            key={ep.id}
+            to="/watched-endpoints"
+            className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
+          >
+            <span className="font-mono text-[13px]">
+              {ep.host}:{ep.port}
+              {ep.server_name && ep.server_name !== ep.host
+                ? ` (SNI ${ep.server_name})`
+                : ""}
+            </span>
+            {ep.last_status && (
+              <span className="text-muted-foreground">· {ep.last_status}</span>
+            )}
+          </Link>
+        ))}
+      </div>
+    </section>
   )
 }
 

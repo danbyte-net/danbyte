@@ -51,9 +51,17 @@ def run_watched_endpoint(ep: WatchedEndpoint, now=None) -> str:
     leaf_fp = (obs.get("chain") or [{}])[0].get("fingerprint_sha256")
     leaf = next((r for r in rows if r.fingerprint_sha256 == leaf_fp), None)
 
+    # Mismatch = the endpoint now serves a different leaf than last poll. Only
+    # meaningful once we've seen one before (the first read isn't a change).
+    prev_fp = ep.last_certificate.fingerprint_sha256 if ep.last_certificate_id else None
+    changed = bool(prev_fp and leaf_fp and leaf_fp != prev_fp)
+
     ep.last_run_at = now
     ep.last_status = status
     ep.last_detail = {k: obs.get(k) for k in _DETAIL_KEYS if obs.get(k) is not None}
+    if changed:
+        ep.last_detail["fingerprint_changed"] = True
+        ep.last_detail["previous_fingerprint"] = prev_fp
     ep.last_certificate = leaf
     ep.save(
         update_fields=[

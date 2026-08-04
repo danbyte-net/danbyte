@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
@@ -79,7 +79,37 @@ function WatchedEndpointsPage() {
       {
         id: "status",
         header: "Status",
-        cell: ({ row }) => <StatusBadge ep={row.original} />,
+        cell: ({ row }) => (
+          <span className="flex items-center gap-1.5">
+            <StatusBadge ep={row.original} />
+            {row.original.last_detail?.fingerprint_changed ? (
+              <Badge
+                variant="secondary"
+                className="text-amber-600 dark:text-amber-400"
+                title="The served certificate changed since the last check"
+              >
+                cert changed
+              </Badge>
+            ) : null}
+          </span>
+        ),
+      },
+      {
+        id: "certificate",
+        header: "Certificate",
+        cell: ({ row }) =>
+          row.original.last_certificate ? (
+            <Link
+              to="/certificates/$id"
+              params={{ id: row.original.last_certificate }}
+              className="font-mono text-[12px] text-primary hover:underline"
+            >
+              {(row.original.last_certificate_fingerprint ?? "").slice(0, 12) ||
+                "view"}…
+            </Link>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
       },
       {
         id: "expires",
