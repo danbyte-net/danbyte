@@ -286,7 +286,6 @@ def render_html(data: dict, deployment_name: str) -> str:
     from core import email as ek
 
     d = data
-    reach = f"{d['reachable_pct']}%" if d["reachable_pct"] is not None else "—"
     down_accent = ek.STATUS_BG["down"] if d["down"] else ek.PALETTE["ink"]
     fire_accent = ek.STATUS_BG["warning"] if d["firing_total"] else ek.PALETTE["ink"]
     parts = [
@@ -294,10 +293,13 @@ def render_html(data: dict, deployment_name: str) -> str:
             f"Status for {d['tenant'].name} over "
             f"{d['since']:%b %-d} – {d['now']:%b %-d}."
         ),
+    ]
+    if d["reachable_pct"] is not None:
+        parts.append(ek.progress_bar(d["reachable_pct"], "Reachable"))
+    parts += [
         ek.stat_grid([
             (d["total"], "checks"),
-            (reach, "reachable"),
-            (d["down"], "down/stale", down_accent),
+            (d["down"], "down / stale", down_accent),
             (d["firing_total"], "firing alerts", fire_accent),
         ]),
         ek.stat_grid([
@@ -359,8 +361,10 @@ def render_html(data: dict, deployment_name: str) -> str:
         title, "".join(parts), deployment_name=deployment_name,
         kicker="Monitoring digest",
         preheader=(
-            f"{d['total']} checks · {reach} reachable · "
-            f"{d['firing_total']} firing alerts"
+            f"{d['total']} checks · "
+            + (f"{d['reachable_pct']}% reachable · "
+               if d["reachable_pct"] is not None else "")
+            + f"{d['firing_total']} firing alerts"
         ),
     )
 

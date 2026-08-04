@@ -129,29 +129,66 @@ def pill(text: str, kind: str = "unknown") -> str:
 
 
 def stat_grid(cells: list) -> str:
-    """A row of stat tiles. ``cells`` = ``[(value, label)]`` or
-    ``[(value, label, accent_hex)]``. Wraps by rendering as a table row."""
+    """A single metric strip — one rounded card, values divided by hairlines.
+
+    ``cells`` = ``[(value, label)]`` or ``[(value, label, accent_hex)]``. Reads
+    like the app's summary bars: a big tabular number over a small tracked label,
+    no boxy per-tile borders.
+    """
     if not cells:
         return ""
+    n = len(cells)
     tds = []
-    for cell in cells:
+    for i, cell in enumerate(cells):
         value, label = cell[0], cell[1]
         accent = cell[2] if len(cell) > 2 else PALETTE["ink"]
+        divider = (
+            f"border-left:1px solid {PALETTE['line']};" if i else ""
+        )
         tds.append(
-            f'<td style="padding:0 6px 0 0;vertical-align:top;width:{100 // len(cells)}%;">'
-            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-            f'style="background:{PALETTE["panel"]};border:1px solid {PALETTE["line"]};'
-            f'border-radius:8px;"><tr><td style="padding:12px 14px;">'
-            f'<div style="font-size:23px;font-weight:700;line-height:1.1;'
-            f'color:{accent};">{escape(str(value))}</div>'
-            f'<div style="margin-top:4px;font-size:11px;font-weight:500;'
-            f'letter-spacing:.02em;color:{PALETTE["muted"]};">'
-            f'{escape(str(label))}</div>'
-            f'</td></tr></table></td>'
+            f'<td style="width:{100 // n}%;padding:16px 18px;{divider}'
+            f'vertical-align:top;text-align:left;">'
+            f'<div style="font-size:26px;font-weight:700;line-height:1;'
+            f'letter-spacing:-.01em;color:{accent};">{escape(str(value))}</div>'
+            f'<div style="margin-top:6px;font-size:10.5px;font-weight:600;'
+            f'letter-spacing:.06em;text-transform:uppercase;'
+            f'color:{PALETTE["muted"]};">{escape(str(label))}</div>'
+            f'</td>'
         )
     return (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        'style="margin:0 0 8px;table-layout:fixed;"><tr>' + "".join(tds) + "</tr></table>"
+        f'style="margin:4px 0 18px;table-layout:fixed;border:1px solid '
+        f'{PALETTE["line"]};border-radius:10px;background:{PALETTE["card"]};'
+        f'border-collapse:separate;overflow:hidden;"><tr>'
+        + "".join(tds) + "</tr></table>"
+    )
+
+
+def progress_bar(pct: int, label: str = "", *, accent: str = "") -> str:
+    """A slim track with a filled portion — for a single headline ratio
+    (reachability, coverage). ``pct`` is 0–100; ``accent`` overrides the fill."""
+    pct = max(0, min(100, int(pct)))
+    fill = accent or (
+        STATUS_BG["up"] if pct >= 90 else
+        STATUS_BG["warning"] if pct >= 60 else STATUS_BG["down"]
+    )
+    head = (
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'style="margin:0 0 8px;"><tr>'
+        f'<td style="font-size:13px;color:{PALETTE["muted"]};">{escape(label)}</td>'
+        f'<td style="text-align:right;font-size:14px;font-weight:700;'
+        f'color:{PALETTE["ink"]};">{pct}%</td></tr></table>'
+        if label else ""
+    )
+    return (
+        f'<div style="margin:0 0 18px;">{head}'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'style="background:{PALETTE["hair"]};border-radius:999px;">'
+        f'<tr><td style="height:8px;line-height:8px;font-size:0;">'
+        f'<table role="presentation" width="{pct}%" cellpadding="0" cellspacing="0" '
+        f'style="min-width:8px;"><tr><td style="height:8px;line-height:8px;'
+        f'font-size:0;background:{fill};border-radius:999px;">&nbsp;</td></tr>'
+        f'</table></td></tr></table></div>'
     )
 
 
@@ -181,45 +218,55 @@ def data_table(headers: list, rows: list) -> str:
     """A bordered data table. ``headers`` = ``[str]``; ``rows`` =
     ``[[cell_html, …]]`` — cells are pre-built HTML, headers escaped."""
     ths = "".join(
-        f'<th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;'
-        f'letter-spacing:.03em;text-transform:uppercase;color:{PALETTE["muted"]};'
-        f'background:{PALETTE["panel"]};border-bottom:1px solid {PALETTE["line"]};">'
+        f'<th style="text-align:left;padding:10px 14px;font-size:10.5px;'
+        f'font-weight:600;letter-spacing:.06em;text-transform:uppercase;'
+        f'color:{PALETTE["faint"]};border-bottom:1px solid {PALETTE["line"]};">'
         f'{escape(str(h))}</th>'
         for h in headers
     )
     trs = "".join(
         "<tr>" + "".join(
-            f'<td style="padding:8px 12px;font-size:13px;color:{PALETTE["ink"]};'
-            f'border-bottom:1px solid {PALETTE["hair"]};vertical-align:top;">{c}</td>'
+            f'<td style="padding:11px 14px;font-size:13px;color:{PALETTE["ink"]};'
+            f'border-bottom:1px solid {PALETTE["hair"]};vertical-align:middle;">{c}</td>'
             for c in row
         ) + "</tr>"
         for row in rows
     )
     return (
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'style="border:1px solid {PALETTE["line"]};border-radius:8px;'
+        f'style="margin:0 0 6px;border:1px solid {PALETTE["line"]};border-radius:10px;'
         f'border-collapse:separate;overflow:hidden;">'
         f'<tr>{ths}</tr>{trs}</table>'
     )
 
 
 _CALLOUT = {
-    "info": ("#eff4ff", "#1252b8", PALETTE["brand"]),
-    "success": ("#ecfdf5", "#065f46", "#10b981"),
-    "warning": ("#fffbeb", "#92400e", "#f59e0b"),
-    "critical": ("#fef2f2", "#991b1b", "#ef4444"),
+    # (background tint, text colour, dot/rule colour, small label)
+    "info": (STATUS_TINT["info"], "#1e40af", STATUS_BG["info"], "Note"),
+    "success": (STATUS_TINT["up"], "#065f46", STATUS_BG["up"], "Healthy"),
+    "warning": (STATUS_TINT["warning"], "#92400e", STATUS_BG["warning"], "Warning"),
+    "critical": (STATUS_TINT["critical"], "#991b1b", STATUS_BG["down"], "Attention"),
 }
 
 
-def callout(text: str, kind: str = "info") -> str:
-    """A tinted box with a coloured left rule — for the one thing that matters."""
-    bg, fg, bar = _CALLOUT.get(kind, _CALLOUT["info"])
+def callout(text: str, kind: str = "info", *, label: str = "") -> str:
+    """A tinted panel with a small coloured label — the headline fact.
+
+    Softer than a heavy left-rule box: a rounded tinted card with a tiny
+    uppercase status label above the message.
+    """
+    bg, fg, dot, default_label = _CALLOUT.get(kind, _CALLOUT["info"])
+    lbl = label or default_label
     return (
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'style="margin:0 0 16px;background:{bg};border-radius:8px;">'
-        f'<tr><td style="width:4px;background:{bar};border-radius:8px 0 0 8px;"></td>'
-        f'<td style="padding:12px 14px;font-size:14px;line-height:1.5;color:{fg};">'
-        f'{escape(text)}</td></tr></table>'
+        f'style="margin:0 0 18px;background:{bg};border-radius:10px;">'
+        f'<tr><td style="padding:14px 16px;">'
+        f'<div style="margin:0 0 4px;font-size:10.5px;font-weight:700;'
+        f'letter-spacing:.06em;text-transform:uppercase;color:{dot};">'
+        f'{escape(lbl)}</div>'
+        f'<div style="font-size:14px;line-height:1.5;color:{fg};font-weight:500;">'
+        f'{escape(text)}</div>'
+        f'</td></tr></table>'
     )
 
 
@@ -284,6 +331,7 @@ def render_layout(
     small label above the title (e.g. "Monitoring digest").
     """
     name = escape(deployment_name or "Danbyte")
+    monogram = name[:1].upper() or "D"
     heading = escape(title)
     pre = escape(preheader) if preheader else ""
     preheader_html = (
@@ -312,15 +360,21 @@ def render_layout(
 <tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0"
  style="width:600px;max-width:100%;background:{PALETTE['card']};border:1px solid {PALETTE['line']};border-top:3px solid {PALETTE['brand']};border-radius:12px;overflow:hidden;">
-  <tr><td style="padding:20px 30px;border-bottom:1px solid {PALETTE['line']};">
-    <span style="color:{PALETTE['ink']};font-size:15px;font-weight:700;letter-spacing:-.01em;">{name}</span>
+  <tr><td style="padding:22px 32px;border-bottom:1px solid {PALETTE['line']};">
+    <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+      <td style="width:30px;height:30px;background:{PALETTE['brand']};border-radius:8px;
+        text-align:center;vertical-align:middle;color:#ffffff;font-size:15px;
+        font-weight:700;line-height:30px;">{monogram}</td>
+      <td style="padding-left:11px;color:{PALETTE['ink']};font-size:16px;
+        font-weight:700;letter-spacing:-.01em;vertical-align:middle;">{name}</td>
+    </tr></table>
   </td></tr>
-  <tr><td style="padding:28px 30px 30px;">
+  <tr><td style="padding:34px 32px 36px;">
     {kicker_html}
-    <h1 style="margin:0 0 18px;font-size:20px;font-weight:700;line-height:1.3;letter-spacing:-.01em;color:{PALETTE['ink']};">{heading}</h1>
+    <h1 style="margin:0 0 20px;font-size:22px;font-weight:700;line-height:1.25;letter-spacing:-.02em;color:{PALETTE['ink']};">{heading}</h1>
     {body_html}
   </td></tr>
-  <tr><td style="padding:18px 30px;border-top:1px solid {PALETTE['line']};background:{PALETTE['panel']};">
+  <tr><td style="padding:20px 32px;border-top:1px solid {PALETTE['line']};background:{PALETTE['panel']};">
     {footer}
   </td></tr>
 </table>
