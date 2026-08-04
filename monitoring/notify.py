@@ -84,10 +84,40 @@ def _send_webhook(channel, events: list[dict]) -> None:
     log.info("webhook %s → %s (%s changes)", channel.name, resp.status_code, len(events))
 
 
+def resolve_recipients(channel) -> list[str]:
+    """Every email address a channel delivers to: its free-text
+    ``config.recipients`` plus each subscription — a subscribed user's email, and
+    every member email of a subscribed group. Deduped, blanks dropped, order
+    stable (config first). Subscriptions only add *people*, so this is meaningful
+    for email channels; other transports ignore it.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def _add(addr):
+        a = (addr or "").strip()
+        if a and a.lower() not in seen:
+            seen.add(a.lower())
+            out.append(a)
+
+    for addr in (channel.config or {}).get("recipients") or []:
+        _add(addr)
+    subs = channel.subscriptions.select_related("user", "group")
+    for sub in subs:
+        if sub.user_id:
+            _add(getattr(sub.user, "email", ""))
+        elif sub.group_id:
+            for email in sub.group.user_set.exclude(email="").values_list(
+                "email", flat=True
+            ):
+                _add(email)
+    return out
+
+
 def _send_email(channel, events: list[dict]) -> None:
     from core import email as ek
 
-    recipients = (channel.config or {}).get("recipients") or []
+    recipients = resolve_recipients(channel)
     if not recipients:
         return
     lines = [
@@ -231,7 +261,7 @@ def _send_status_digest(channel, rows: list, since, now) -> None:
         return
     if channel.kind != "email":
         return
-    recipients = (channel.config or {}).get("recipients") or []
+    recipients = resolve_recipients(channel)
     if not recipients:
         return
     from core.email import send_html_email
@@ -275,7 +305,7 @@ def notify_event(
                         timeout=getattr(settings, "MONITORING_WEBHOOK_TIMEOUT", 5),
                     )
             elif ch.kind == "email":
-                recipients = (ch.config or {}).get("recipients") or []
+                recipients = resolve_recipients(ch)
                 if recipients:
                     from core import email as ek
 
@@ -571,7 +601,7 @@ def _dispatch_to_channel(channel, alert, event: str, ip: str) -> None:
         from core.email import send_html_email
 
         eff = effective_email(channel.tenant_id)  # tenant SMTP override or dep
-        recipients = cfg.get("recipients") or []
+        recipients = resolve_recipients(channel)
         if recipients and eff.email_enabled:
             send_html_email(
                 text,
@@ -711,7 +741,7 @@ def _dispatch_group_to_channel(channel, alerts: list, event: str, dep) -> None:
         from core.email import send_html_email
 
         eff = effective_email(channel.tenant_id)  # tenant SMTP override or dep
-        recipients = cfg.get("recipients") or []
+        recipients = resolve_recipients(channel)
         if recipients and eff.email_enabled:
             body = linked + "\n\n" + "\n".join(
                 f"- {a.target_ip.ip_address}: "

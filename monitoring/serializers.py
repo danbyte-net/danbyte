@@ -39,6 +39,7 @@ from .models import (
     MonitoringProfile,
     MonitoringSettings,
     NotificationChannel,
+    NotificationSubscription,
     OutpostRelease,
     Silence,
     SnmpProfile,
@@ -932,9 +933,9 @@ class NotificationChannelSerializer(serializers.ModelSerializer):
         model = NotificationChannel
         fields = [
             "id", "name", "kind", "config", "on_statuses", "min_severity",
-            "enabled", "send_status_changes", "status_change_mode",
-            "status_change_interval_minutes", "status_change_last_run",
-            "match_prefix", "created_at", "updated_at",
+            "enabled", "self_subscribable", "send_status_changes",
+            "status_change_mode", "status_change_interval_minutes",
+            "status_change_last_run", "match_prefix", "created_at", "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at", "status_change_last_run"]
 
@@ -955,6 +956,33 @@ class NotificationChannelSerializer(serializers.ModelSerializer):
         if kind == "pagerduty" and not config.get("routing_key"):
             raise serializers.ValidationError(
                 {"config": "pagerduty needs an Events v2 'routing_key'."}
+            )
+        return attrs
+
+
+class NotificationSubscriptionSerializer(serializers.ModelSerializer):
+    channel_name = serializers.CharField(source="channel.name", read_only=True)
+    user_username = serializers.CharField(
+        source="user.username", read_only=True, default=None
+    )
+    group_name = serializers.CharField(
+        source="group.name", read_only=True, default=None
+    )
+
+    class Meta:
+        model = NotificationSubscription
+        fields = [
+            "id", "channel", "channel_name", "user", "user_username",
+            "group", "group_name", "mandatory", "created_at", "updated_at",
+        ]
+        read_only_fields = ["created_at", "updated_at"]
+
+    def validate(self, attrs):
+        user = attrs.get("user", getattr(self.instance, "user", None))
+        group = attrs.get("group", getattr(self.instance, "group", None))
+        if bool(user) == bool(group):
+            raise serializers.ValidationError(
+                "Set exactly one of user or group."
             )
         return attrs
 

@@ -1108,6 +1108,10 @@ class NotificationChannel(TimestampedModel):
         help_text="Only status changes for IPs inside this subnet; blank = all.",
     )
     enabled = models.BooleanField(default=True)
+    # Whether ordinary users may opt themselves into this channel from the
+    # Notifications page (self-assigned subscriptions). Admin/group subscriptions
+    # do not require this.
+    self_subscribable = models.BooleanField(default=False)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -1122,6 +1126,65 @@ class NotificationChannel(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.kind})"
+
+
+class NotificationSubscription(TimestampedModel):
+    """Who receives a channel's emails — a user or a whole group, on one channel.
+
+    Subscriptions *add* recipients on top of the channel's free-text
+    ``config.recipients``; :func:`monitoring.notify.resolve_recipients` merges
+    them. ``mandatory`` marks an admin/group-assigned subscription that a member
+    may **not** self-remove (the NOC-gets-DC-events case); a self-assigned
+    subscription (``mandatory=False``, created by the user themselves) can be
+    dropped from the Notifications page. Exactly one of ``user`` / ``group`` is
+    set — a group subscription fans out to its members' emails at send time and
+    is always mandatory from a member's point of view.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="notification_subscriptions"
+    )
+    channel = models.ForeignKey(
+        NotificationChannel, on_delete=models.CASCADE, related_name="subscriptions"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="notification_subscriptions",
+    )
+    group = models.ForeignKey(
+        "auth.Group", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="notification_subscriptions",
+    )
+    mandatory = models.BooleanField(
+        default=False,
+        help_text="Admin/group-assigned — the subscriber cannot remove it.",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="created_notification_subscriptions",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["channel", "user"], name="uniq_channel_user_subscription"
+            ),
+            models.UniqueConstraint(
+                fields=["channel", "group"], name="uniq_channel_group_subscription"
+            ),
+        ]
+        indexes = [models.Index(fields=["tenant", "channel"])]
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if bool(self.user_id) == bool(self.group_id):
+            raise ValidationError("Set exactly one of user or group.")
+
+    def __str__(self) -> str:
+        who = self.user_id and str(self.user) or f"group:{self.group_id}"
+        return f"{who} → {self.channel_id}"
 
 
 class AlertSeverity(models.TextChoices):

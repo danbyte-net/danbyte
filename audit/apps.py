@@ -109,6 +109,7 @@ AUDITED_MODELS = [
     "monitoring.CheckAssignment",
     "monitoring.AlertRule",
     "monitoring.NotificationChannel",
+    "monitoring.NotificationSubscription",
     "monitoring.Silence",
     "monitoring.MonitoringEngine",
     "monitoring.MonitoringEngineBinding",

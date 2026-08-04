@@ -482,6 +482,38 @@ Notifications are best-effort: a failing channel is logged and never breaks a
 check run. When a **public base URL** is configured (see below), messages include
 a clickable link straight back to the alert.
 
+### Subscriptions and the Notifications page
+
+Beyond a channel's free-text recipient list, you can **subscribe** a user or a
+whole **group** to a channel — the channel then also emails that user, or every
+member of that group. Subscriptions are additive: they merge with the recipient
+list at send time.
+
+Two kinds:
+
+- **Mandatory** (admin- or group-assigned) — the subscriber **cannot** remove it
+  themselves. This is the "the NOC group is on DC-event notifications and members
+  can't opt out" case. Group subscriptions are always mandatory for members.
+- **Self-assigned** — a user opted themselves in and can leave again.
+
+The top-level **Notifications** page has two views:
+
+- **For you** (every user): what you're subscribed to — your own, your groups',
+  and any channel that lists your address directly — each tagged with its source
+  (Self / Assigned / via *group* / Direct). Self-assigned rows have an
+  **Unsubscribe** button; mandatory and group ones are read-only. Channels marked
+  **self-subscribable** show up under "Available to join" with a **Subscribe**
+  button.
+- **All channels** (admins): every subscription across channels — the groups and
+  users each one reaches — with add/remove.
+
+Self-service opt-in/opt-out is gated by the **`subscribe`** capability on
+notification channels; grant it to the users/groups who should manage their own
+subscriptions (like `reveal`/`connect`, it isn't in the default Administrator
+set — superusers always have it). Managing *other* people's subscriptions uses
+ordinary add/change/delete on notification subscriptions. Mark a channel
+**self-subscribable** in its form to let permitted users join it.
+
 ### Raw status-change notifications (no alert rules)
 
 A channel can also send **every status change** for the IPs it matches, without

@@ -39,6 +39,7 @@ import { Route as PrefixesRouteImport } from './routes/prefixes'
 import { Route as PowerPanelsRouteImport } from './routes/power-panels'
 import { Route as PowerFeedsRouteImport } from './routes/power-feeds'
 import { Route as PermissionsRouteImport } from './routes/permissions'
+import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as MonitoringEnginesRouteImport } from './routes/monitoring-engines'
 import { Route as MonitoringRouteImport } from './routes/monitoring'
 import { Route as ModuleTypesRouteImport } from './routes/module-types'
@@ -535,6 +536,11 @@ const PowerFeedsRoute = PowerFeedsRouteImport.update({
 const PermissionsRoute = PermissionsRouteImport.update({
   id: '/permissions',
   path: '/permissions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotificationsRoute = NotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MonitoringEnginesRoute = MonitoringEnginesRouteImport.update({
@@ -2317,6 +2323,7 @@ export interface FileRoutesByFullPath {
   '/module-types': typeof ModuleTypesRouteWithChildren
   '/monitoring': typeof MonitoringRoute
   '/monitoring-engines': typeof MonitoringEnginesRoute
+  '/notifications': typeof NotificationsRoute
   '/permissions': typeof PermissionsRouteWithChildren
   '/power-feeds': typeof PowerFeedsRouteWithChildren
   '/power-panels': typeof PowerPanelsRouteWithChildren
@@ -2667,6 +2674,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/monitoring': typeof MonitoringRoute
   '/monitoring-engines': typeof MonitoringEnginesRoute
+  '/notifications': typeof NotificationsRoute
   '/search': typeof SearchRoute
   '/set-password': typeof SetPasswordRoute
   '/site-map': typeof SiteMapRoute
@@ -3020,6 +3028,7 @@ export interface FileRoutesById {
   '/module-types': typeof ModuleTypesRouteWithChildren
   '/monitoring': typeof MonitoringRoute
   '/monitoring-engines': typeof MonitoringEnginesRoute
+  '/notifications': typeof NotificationsRoute
   '/permissions': typeof PermissionsRouteWithChildren
   '/power-feeds': typeof PowerFeedsRouteWithChildren
   '/power-panels': typeof PowerPanelsRouteWithChildren
@@ -3401,6 +3410,7 @@ export interface FileRouteTypes {
     | '/module-types'
     | '/monitoring'
     | '/monitoring-engines'
+    | '/notifications'
     | '/permissions'
     | '/power-feeds'
     | '/power-panels'
@@ -3751,6 +3761,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/monitoring'
     | '/monitoring-engines'
+    | '/notifications'
     | '/search'
     | '/set-password'
     | '/site-map'
@@ -4103,6 +4114,7 @@ export interface FileRouteTypes {
     | '/module-types'
     | '/monitoring'
     | '/monitoring-engines'
+    | '/notifications'
     | '/permissions'
     | '/power-feeds'
     | '/power-panels'
@@ -4483,6 +4495,7 @@ export interface RootRouteChildren {
   ModuleTypesRoute: typeof ModuleTypesRouteWithChildren
   MonitoringRoute: typeof MonitoringRoute
   MonitoringEnginesRoute: typeof MonitoringEnginesRoute
+  NotificationsRoute: typeof NotificationsRoute
   PermissionsRoute: typeof PermissionsRouteWithChildren
   PowerFeedsRoute: typeof PowerFeedsRouteWithChildren
   PowerPanelsRoute: typeof PowerPanelsRouteWithChildren
@@ -4794,6 +4807,13 @@ declare module '@tanstack/react-router' {
       path: '/permissions'
       fullPath: '/permissions'
       preLoaderRoute: typeof PermissionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notifications': {
+      id: '/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof NotificationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/monitoring-engines': {
@@ -8273,6 +8293,7 @@ const rootRouteChildren: RootRouteChildren = {
   ModuleTypesRoute: ModuleTypesRouteWithChildren,
   MonitoringRoute: MonitoringRoute,
   MonitoringEnginesRoute: MonitoringEnginesRoute,
+  NotificationsRoute: NotificationsRoute,
   PermissionsRoute: PermissionsRouteWithChildren,
   PowerFeedsRoute: PowerFeedsRouteWithChildren,
   PowerPanelsRoute: PowerPanelsRouteWithChildren,

@@ -23,7 +23,7 @@ from django.apps import apps
 # universe (used to validate a grant's actions); it is intentionally permissive
 # so a wildcard grant covers every verb.
 CRUD_ACTIONS = ["view", "add", "change", "delete"]
-ACTIONS = [*CRUD_ACTIONS, "connect", "reveal"]
+ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe"]
 
 # Which capability verbs a *specific* type actually honours — only these are
 # advertised for that type in the permission form, so the UI never offers e.g.
@@ -33,6 +33,8 @@ ACTIONS = [*CRUD_ACTIONS, "connect", "reveal"]
 CAPABILITY_VERBS: dict[str, list[str]] = {
     "devicecredential": ["reveal"],
     "device": ["connect"],
+    # Self-service opt-in/opt-out on the Notifications page.
+    "notificationchannel": ["subscribe"],
 }
 
 # (app_label.ModelName, label, group). Order drives the form's grouping.
@@ -168,6 +170,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("monitoring.AcmeOrder", "ACME orders", "Monitoring"),
     ("monitoring.SSHHostKey", "SSH host keys", "Monitoring"),
     ("monitoring.NotificationChannel", "Notification channels", "Monitoring"),
+    ("monitoring.NotificationSubscription", "Notification subscriptions", "Monitoring"),
     ("monitoring.AlertRule", "Alert rules", "Monitoring"),
     ("monitoring.Silence", "Silences", "Monitoring"),
     ("monitoring.MonitoringPolicy", "Monitoring policies", "Monitoring"),

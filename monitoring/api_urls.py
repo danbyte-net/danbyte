@@ -25,6 +25,10 @@ from .viewsets import (
     MonitoringPolicyViewSet,
     MonitoringProfileViewSet,
     NotificationChannelViewSet,
+    NotificationSubscriptionViewSet,
+    notifications_me,
+    notifications_subscribe,
+    notifications_unsubscribe,
     OutpostReleaseViewSet,
     SilenceViewSet,
     SnmpProfileViewSet,
@@ -76,6 +80,10 @@ router.register(r"profiles", MonitoringProfileViewSet, basename="monitoring-prof
 router.register(r"policies", MonitoringPolicyViewSet, basename="monitoring-policy")
 router.register(r"deny-subnets", MonitoringDenySubnetViewSet, basename="monitoring-deny-subnet")
 router.register(r"channels", NotificationChannelViewSet, basename="notification-channel")
+router.register(
+    r"subscriptions", NotificationSubscriptionViewSet,
+    basename="notification-subscription",
+)
 router.register(r"alert-rules", AlertRuleViewSet, basename="alert-rule")
 router.register(r"silences", SilenceViewSet, basename="silence")
 router.register(r"snmp-profiles", SnmpProfileViewSet, basename="snmp-profile")
@@ -108,6 +116,12 @@ router.register(r"engines", MonitoringEngineViewSet, basename="monitoring-engine
 router.register(r"outpost-releases", OutpostReleaseViewSet, basename="outpost-release")
 
 urlpatterns = [
+    # Self-service subscription management (what am I signed up for / opt in-out).
+    path("notifications/me/", notifications_me, name="monitoring-notifications-me"),
+    path("notifications/subscribe/", notifications_subscribe,
+         name="monitoring-notifications-subscribe"),
+    path("notifications/unsubscribe/", notifications_unsubscribe,
+         name="monitoring-notifications-unsubscribe"),
     path("engine-binding/<str:scope>/<uuid:object_id>/", engine_binding_view, name="monitoring-engine-binding"),
     path("engine-health/", engine_health_view, name="monitoring-engine-health"),
     path("ips/<uuid:ip_id>/checks/", ip_checks_view, name="monitoring-ip-checks"),

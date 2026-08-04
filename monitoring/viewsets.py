@@ -13,7 +13,7 @@ from secrets import token_urlsafe
 from django.core.exceptions import FieldError
 from django.db.models import Exists, OuterRef, Q
 from rest_framework import permissions, viewsets
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
@@ -41,6 +41,7 @@ from .models import (
     MonitoringPolicy,
     MonitoringProfile,
     NotificationChannel,
+    NotificationSubscription,
     OutpostRelease,
     Silence,
     SnmpProfile,
@@ -66,6 +67,7 @@ from .serializers import (
     MonitoringPolicySerializer,
     MonitoringProfileSerializer,
     NotificationChannelSerializer,
+    NotificationSubscriptionSerializer,
     OutpostReleaseSerializer,
     SilenceSerializer,
     SnmpProfileSerializer,
@@ -1697,6 +1699,162 @@ class NotificationChannelViewSet(TenantScopedViewSet):
         except Exception as exc:  # noqa: BLE001 — surface the transport error
             return Response({"ok": False, "error": str(exc)}, status=502)
         return Response({"ok": True})
+
+
+class NotificationSubscriptionViewSet(TenantScopedViewSet):
+    """Admin CRUD for channel subscriptions — a user or a group attached to a
+    channel. Tenant-scoped + RBAC via the registered object type. Ordinary users
+    manage their own via the self-service endpoints below, not this viewset."""
+
+    queryset = NotificationSubscription.objects.select_related(
+        "channel", "user", "group"
+    ).order_by("channel__name")
+    serializer_class = NotificationSubscriptionSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        channel = self.request.query_params.get("channel")
+        if channel:
+            qs = qs.filter(channel_id=channel)
+        return qs
+
+    def perform_create(self, serializer):
+        tenant = self._tenant_or_403()
+        channel = serializer.validated_data.get("channel")
+        if channel is None or channel.tenant_id != tenant.id:
+            raise ValidationError({"channel": "Channel is not in this tenant."})
+        serializer.save(tenant=tenant, created_by=self.request.user)
+
+
+def _channel_summary(ch) -> dict:
+    """The compact channel shape the Notifications page shows for each row."""
+    return {
+        "id": str(ch.id),
+        "name": ch.name,
+        "kind": ch.kind,
+        "min_severity": ch.min_severity,
+        "on_statuses": ch.on_statuses or [],
+        "send_status_changes": ch.send_status_changes,
+        "status_change_mode": ch.status_change_mode,
+        "match_prefix_cidr": (
+            ch.match_prefix.cidr if ch.match_prefix_id else None
+        ),
+    }
+
+
+def _can_subscribe(user, tenant) -> bool:
+    return rbac.has_action(user, tenant, "notificationchannel", "subscribe")
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def notifications_me(request):
+    """What the current user is signed up for (their own + their groups'
+    subscriptions, plus any channel that lists their address directly), and the
+    self-subscribable channels they could join. Visible to any signed-in user;
+    the ``subscribe`` permission only gates whether they can act."""
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        raise PermissionDenied("No active tenant selected.")
+    user = request.user
+    can_sub = _can_subscribe(user, tenant)
+    group_ids = list(user.groups.values_list("id", flat=True))
+    subs = (
+        NotificationSubscription.objects.filter(tenant=tenant)
+        .select_related("channel", "channel__match_prefix", "group")
+        .filter(Q(user=user) | Q(group_id__in=group_ids))
+    )
+    rows, subscribed_ids = [], set()
+    for s in subs:
+        subscribed_ids.add(s.channel_id)
+        if s.user_id == user.id:
+            source = "assigned" if s.mandatory else "self"
+        else:
+            source = f"group:{s.group.name}"
+        rows.append({
+            "channel": _channel_summary(s.channel),
+            "source": source,
+            "mandatory": s.mandatory,
+            "can_unsubscribe": source == "self" and can_sub,
+        })
+    # Channels that list the user's address directly in config.recipients — shown
+    # read-only (admin-managed), not a subscription row.
+    email = (user.email or "").strip().lower()
+    if email:
+        for ch in NotificationChannel.objects.filter(
+            tenant=tenant, kind="email", enabled=True
+        ).select_related("match_prefix"):
+            if ch.id in subscribed_ids:
+                continue
+            recips = [r.lower() for r in (ch.config or {}).get("recipients") or []]
+            if email in recips:
+                rows.append({
+                    "channel": _channel_summary(ch),
+                    "source": "direct",
+                    "mandatory": True,
+                    "can_unsubscribe": False,
+                })
+                subscribed_ids.add(ch.id)
+    available = [
+        _channel_summary(ch)
+        for ch in NotificationChannel.objects.filter(
+            tenant=tenant, self_subscribable=True, enabled=True
+        ).select_related("match_prefix")
+        if ch.id not in subscribed_ids
+    ]
+    return Response(
+        {"subscriptions": rows, "available": available, "can_subscribe": can_sub}
+    )
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def notifications_subscribe(request):
+    """Opt myself into a self-subscribable channel. Gated by the ``subscribe``
+    verb on notification channels."""
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        raise PermissionDenied("No active tenant selected.")
+    if not _can_subscribe(request.user, tenant):
+        return Response({"detail": "notificationchannel:subscribe required."},
+                        status=403)
+    channel = NotificationChannel.objects.filter(
+        tenant=tenant, id=(request.data or {}).get("channel"),
+        self_subscribable=True, enabled=True,
+    ).first()
+    if channel is None:
+        raise ValidationError(
+            {"channel": "Channel is not available for self-subscription."}
+        )
+    _, created = NotificationSubscription.objects.get_or_create(
+        tenant=tenant, channel=channel, user=request.user,
+        defaults={"mandatory": False, "created_by": request.user},
+    )
+    return Response({"ok": True, "created": created})
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def notifications_unsubscribe(request):
+    """Drop my own self-assigned subscription. Admin/group-assigned ones cannot
+    be self-removed — they return a clear 400."""
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        raise PermissionDenied("No active tenant selected.")
+    if not _can_subscribe(request.user, tenant):
+        return Response({"detail": "notificationchannel:subscribe required."},
+                        status=403)
+    sub = NotificationSubscription.objects.filter(
+        tenant=tenant, channel_id=(request.data or {}).get("channel"),
+        user=request.user, mandatory=False,
+    ).first()
+    if sub is None:
+        raise ValidationError({
+            "detail": "No self-assigned subscription to remove. Group or "
+            "admin-assigned subscriptions can't be removed here."
+        })
+    sub.delete()
+    return Response({"ok": True})
 
 
 class AlertRuleViewSet(_TargetScopedConfigurationMixin, TenantScopedViewSet):

@@ -4,9 +4,11 @@ from __future__ import annotations
 from datetime import timedelta
 from unittest.mock import patch
 
+from django.contrib.auth.models import Group, User
 from django.core import mail
 from django.test import TestCase
 from django.utils import timezone
+from rest_framework.test import APITestCase
 
 from api.models import IPAddress, Prefix
 from core.models import Organization, Tenant
@@ -18,6 +20,7 @@ from .models import (
     CheckStatus,
     CheckTemplate,
     NotificationChannel,
+    NotificationSubscription,
     StateTransition,
 )
 from .retention import prune
@@ -147,6 +150,146 @@ class StatusChangeBatchedTests(Base):
         self.assertIsNotNone(ch.status_change_last_run)
         # Second run inside the interval → nothing (last_run gates it).
         self.assertEqual(notify.run_due_status_change_digests(), 0)
+
+
+class RecipientResolverTests(Base):
+    def _channel(self, recipients=None):
+        return NotificationChannel.objects.create(
+            tenant=self.tenant, name="e", kind="email",
+            config={"recipients": recipients or []},
+        )
+
+    def test_config_only_deduped_blanks_dropped(self):
+        ch = self._channel(["a@x.com", "a@x.com", "", "b@x.com"])
+        self.assertEqual(notify.resolve_recipients(ch), ["a@x.com", "b@x.com"])
+
+    def test_user_and_group_members_merge(self):
+        ch = self._channel(["a@x.com"])
+        u = User.objects.create_user("u1", "u1@x.com", "x")
+        NotificationSubscription.objects.create(
+            tenant=self.tenant, channel=ch, user=u
+        )
+        g = Group.objects.create(name="noc")
+        User.objects.create_user("m1", "m1@x.com", "x").groups.add(g)
+        User.objects.create_user("m2", "", "x").groups.add(g)  # blank → skipped
+        NotificationSubscription.objects.create(
+            tenant=self.tenant, channel=ch, group=g
+        )
+        self.assertEqual(
+            set(notify.resolve_recipients(ch)),
+            {"a@x.com", "u1@x.com", "m1@x.com"},
+        )
+
+
+class GroupDeliveryTests(Base):
+    def test_group_subscription_emails_members(self):
+        ch = NotificationChannel.objects.create(
+            tenant=self.tenant, name="noc", kind="email", config={},
+            send_status_changes=True, status_change_mode="instant",
+        )
+        g = Group.objects.create(name="noc")
+        User.objects.create_user("noc1", "noc1@x.com", "x").groups.add(g)
+        NotificationSubscription.objects.create(
+            tenant=self.tenant, channel=ch, group=g
+        )
+        notify.dispatch_status_changes([self._transition(to_status="down")])
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("noc1@x.com", mail.outbox[0].to)
+
+
+class _SubApiBase(APITestCase):
+    def setUp(self):
+        org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        self.admin = User.objects.create_superuser("admin", "a@x.com", "x")
+
+    def _login(self, user):
+        self.client.force_login(user)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def _channel(self, **kw):
+        base = dict(
+            tenant=self.tenant, name="ops", kind="email",
+            config={"recipients": []}, self_subscribable=True,
+        )
+        base.update(kw)
+        return NotificationChannel.objects.create(**base)
+
+
+class SelfServiceApiTests(_SubApiBase):
+    def test_me_lists_available_self_subscribable(self):
+        self._channel()
+        self._login(self.admin)
+        r = self.client.get("/api/monitoring/notifications/me/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.json()["available"]), 1)
+        self.assertTrue(r.json()["can_subscribe"])
+
+    def test_subscribe_then_unsubscribe(self):
+        ch = self._channel()
+        self._login(self.admin)
+        r = self.client.post("/api/monitoring/notifications/subscribe/",
+                             {"channel": str(ch.id)}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(NotificationSubscription.objects.filter(
+            channel=ch, user=self.admin, mandatory=False).exists())
+        me = self.client.get("/api/monitoring/notifications/me/").json()
+        row = next(x for x in me["subscriptions"]
+                   if x["channel"]["id"] == str(ch.id))
+        self.assertEqual(row["source"], "self")
+        self.assertTrue(row["can_unsubscribe"])
+        r = self.client.post("/api/monitoring/notifications/unsubscribe/",
+                             {"channel": str(ch.id)}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(NotificationSubscription.objects.filter(
+            channel=ch, user=self.admin).exists())
+
+    def test_cannot_unsubscribe_mandatory(self):
+        ch = self._channel()
+        self._login(self.admin)
+        NotificationSubscription.objects.create(
+            tenant=self.tenant, channel=ch, user=self.admin, mandatory=True)
+        r = self.client.post("/api/monitoring/notifications/unsubscribe/",
+                             {"channel": str(ch.id)}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertTrue(NotificationSubscription.objects.filter(
+            channel=ch, user=self.admin).exists())
+
+    def test_subscribe_requires_permission(self):
+        ch = self._channel()
+        self._login(User.objects.create_user("reader", "r@x.com", "x"))
+        r = self.client.post("/api/monitoring/notifications/subscribe/",
+                             {"channel": str(ch.id)}, format="json")
+        self.assertEqual(r.status_code, 403)
+
+    def test_cannot_subscribe_non_self_subscribable(self):
+        ch = self._channel(self_subscribable=False)
+        self._login(self.admin)
+        r = self.client.post("/api/monitoring/notifications/subscribe/",
+                             {"channel": str(ch.id)}, format="json")
+        self.assertEqual(r.status_code, 400)
+
+
+class SubscriptionAdminApiTests(_SubApiBase):
+    def test_admin_creates_group_subscription(self):
+        ch = self._channel()
+        g = Group.objects.create(name="noc")
+        self._login(self.admin)
+        r = self.client.post("/api/monitoring/subscriptions/",
+                             {"channel": str(ch.id), "group": g.id,
+                              "mandatory": True}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertTrue(NotificationSubscription.objects.filter(
+            channel=ch, group=g, mandatory=True).exists())
+
+    def test_exactly_one_of_user_or_group(self):
+        ch = self._channel()
+        self._login(self.admin)
+        r = self.client.post("/api/monitoring/subscriptions/",
+                             {"channel": str(ch.id)}, format="json")
+        self.assertEqual(r.status_code, 400)
 
 
 class RetentionTests(Base):

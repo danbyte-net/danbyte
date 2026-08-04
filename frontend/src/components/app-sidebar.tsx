@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Activity,
   Radio,
+  Bell,
   BellRing,
   History,
   SquareStack,
@@ -897,6 +898,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <Link to="/" activeOptions={{ exact: true }}>
                     <LayoutDashboard />
                     <span>Dashboard</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  size="sm"
+                  className="h-6"
+                  tooltip="Notifications"
+                >
+                  <Link to="/notifications" search={{ tab: "you" }}>
+                    <Bell />
+                    <span>Notifications</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

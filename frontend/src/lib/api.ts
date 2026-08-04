@@ -5049,6 +5049,7 @@ export interface NotificationChannel {
   on_statuses: CheckStatus[]
   min_severity: MinSeverity
   enabled: boolean
+  self_subscribable: boolean
   send_status_changes: boolean
   status_change_mode: "instant" | "batched"
   status_change_interval_minutes: number
@@ -5056,6 +5057,44 @@ export interface NotificationChannel {
   match_prefix: string | null
   created_at: string
   updated_at: string
+}
+
+export interface NotificationSubscription {
+  id: string
+  channel: string
+  channel_name: string
+  user: number | null
+  user_username: string | null
+  group: number | null
+  group_name: string | null
+  mandatory: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** Compact channel shape the Notifications "for you" page shows per row. */
+export interface NotificationChannelSummary {
+  id: string
+  name: string
+  kind: ChannelKind
+  min_severity: MinSeverity
+  on_statuses: CheckStatus[]
+  send_status_changes: boolean
+  status_change_mode: "instant" | "batched"
+  match_prefix_cidr: string | null
+}
+
+export interface NotificationMeRow {
+  channel: NotificationChannelSummary
+  source: string // "self" | "assigned" | "group:<name>" | "direct"
+  mandatory: boolean
+  can_unsubscribe: boolean
+}
+
+export interface NotificationMe {
+  subscriptions: NotificationMeRow[]
+  available: NotificationChannelSummary[]
+  can_subscribe: boolean
 }
 
 // ─── Circuits ──────────────────────────────────────────────────────────
