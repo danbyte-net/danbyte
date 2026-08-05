@@ -76,6 +76,7 @@ nav = [
       { "Device access (Connect & terminal)" = "features/device-access.md" },
       { "SNMP discovery"    = "features/snmp-discovery.md" },
       { "Compliance"        = "features/compliance.md" },
+      { "Planning boards"   = "features/planning.md" },
     ] },
   ] },
   { "Customization" = [

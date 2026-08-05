@@ -115,6 +115,7 @@ import { Route as PowerPanelsIndexRouteImport } from './routes/power-panels.inde
 import { Route as PowerFeedsIndexRouteImport } from './routes/power-feeds.index'
 import { Route as PlatformsIndexRouteImport } from './routes/platforms.index'
 import { Route as PlatformGroupsIndexRouteImport } from './routes/platform-groups.index'
+import { Route as PlanningIndexRouteImport } from './routes/planning.index'
 import { Route as PermissionsIndexRouteImport } from './routes/permissions.index'
 import { Route as ModuleTypesIndexRouteImport } from './routes/module-types.index'
 import { Route as ManufacturersIndexRouteImport } from './routes/manufacturers.index'
@@ -241,6 +242,7 @@ import { Route as PlatformsNewRouteImport } from './routes/platforms.new'
 import { Route as PlatformsIdRouteImport } from './routes/platforms.$id'
 import { Route as PlatformGroupsNewRouteImport } from './routes/platform-groups.new'
 import { Route as PlatformGroupsIdRouteImport } from './routes/platform-groups.$id'
+import { Route as PlanningBoardIdRouteImport } from './routes/planning.$boardId'
 import { Route as PermissionsNewRouteImport } from './routes/permissions.new'
 import { Route as ModuleTypesNewRouteImport } from './routes/module-types.new'
 import { Route as ModuleTypesIdRouteImport } from './routes/module-types.$id'
@@ -918,6 +920,11 @@ const PlatformGroupsIndexRoute = PlatformGroupsIndexRouteImport.update({
   path: '/platform-groups/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlanningIndexRoute = PlanningIndexRouteImport.update({
+  id: '/planning/',
+  path: '/planning/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PermissionsIndexRoute = PermissionsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -1548,6 +1555,11 @@ const PlatformGroupsNewRoute = PlatformGroupsNewRouteImport.update({
 const PlatformGroupsIdRoute = PlatformGroupsIdRouteImport.update({
   id: '/platform-groups/$id',
   path: '/platform-groups/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlanningBoardIdRoute = PlanningBoardIdRouteImport.update({
+  id: '/planning/$boardId',
+  path: '/planning/$boardId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PermissionsNewRoute = PermissionsNewRouteImport.update({
@@ -2431,6 +2443,7 @@ export interface FileRoutesByFullPath {
   '/module-types/$id': typeof ModuleTypesIdRoute
   '/module-types/new': typeof ModuleTypesNewRoute
   '/permissions/new': typeof PermissionsNewRoute
+  '/planning/$boardId': typeof PlanningBoardIdRoute
   '/platform-groups/$id': typeof PlatformGroupsIdRoute
   '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
@@ -2557,6 +2570,7 @@ export interface FileRoutesByFullPath {
   '/manufacturers/': typeof ManufacturersIndexRoute
   '/module-types/': typeof ModuleTypesIndexRoute
   '/permissions/': typeof PermissionsIndexRoute
+  '/planning/': typeof PlanningIndexRoute
   '/platform-groups/': typeof PlatformGroupsIndexRoute
   '/platforms/': typeof PlatformsIndexRoute
   '/power-feeds/': typeof PowerFeedsIndexRoute
@@ -2755,6 +2769,7 @@ export interface FileRoutesByTo {
   '/module-types/$id': typeof ModuleTypesIdRoute
   '/module-types/new': typeof ModuleTypesNewRoute
   '/permissions/new': typeof PermissionsNewRoute
+  '/planning/$boardId': typeof PlanningBoardIdRoute
   '/platform-groups/$id': typeof PlatformGroupsIdRoute
   '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
@@ -2881,6 +2896,7 @@ export interface FileRoutesByTo {
   '/manufacturers': typeof ManufacturersIndexRoute
   '/module-types': typeof ModuleTypesIndexRoute
   '/permissions': typeof PermissionsIndexRoute
+  '/planning': typeof PlanningIndexRoute
   '/platform-groups': typeof PlatformGroupsIndexRoute
   '/platforms': typeof PlatformsIndexRoute
   '/power-feeds': typeof PowerFeedsIndexRoute
@@ -3136,6 +3152,7 @@ export interface FileRoutesById {
   '/module-types/$id': typeof ModuleTypesIdRoute
   '/module-types/new': typeof ModuleTypesNewRoute
   '/permissions/new': typeof PermissionsNewRoute
+  '/planning/$boardId': typeof PlanningBoardIdRoute
   '/platform-groups/$id': typeof PlatformGroupsIdRoute
   '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
@@ -3262,6 +3279,7 @@ export interface FileRoutesById {
   '/manufacturers/': typeof ManufacturersIndexRoute
   '/module-types/': typeof ModuleTypesIndexRoute
   '/permissions/': typeof PermissionsIndexRoute
+  '/planning/': typeof PlanningIndexRoute
   '/platform-groups/': typeof PlatformGroupsIndexRoute
   '/platforms/': typeof PlatformsIndexRoute
   '/power-feeds/': typeof PowerFeedsIndexRoute
@@ -3518,6 +3536,7 @@ export interface FileRouteTypes {
     | '/module-types/$id'
     | '/module-types/new'
     | '/permissions/new'
+    | '/planning/$boardId'
     | '/platform-groups/$id'
     | '/platform-groups/new'
     | '/platforms/$id'
@@ -3644,6 +3663,7 @@ export interface FileRouteTypes {
     | '/manufacturers/'
     | '/module-types/'
     | '/permissions/'
+    | '/planning/'
     | '/platform-groups/'
     | '/platforms/'
     | '/power-feeds/'
@@ -3842,6 +3862,7 @@ export interface FileRouteTypes {
     | '/module-types/$id'
     | '/module-types/new'
     | '/permissions/new'
+    | '/planning/$boardId'
     | '/platform-groups/$id'
     | '/platform-groups/new'
     | '/platforms/$id'
@@ -3968,6 +3989,7 @@ export interface FileRouteTypes {
     | '/manufacturers'
     | '/module-types'
     | '/permissions'
+    | '/planning'
     | '/platform-groups'
     | '/platforms'
     | '/power-feeds'
@@ -4222,6 +4244,7 @@ export interface FileRouteTypes {
     | '/module-types/$id'
     | '/module-types/new'
     | '/permissions/new'
+    | '/planning/$boardId'
     | '/platform-groups/$id'
     | '/platform-groups/new'
     | '/platforms/$id'
@@ -4348,6 +4371,7 @@ export interface FileRouteTypes {
     | '/manufacturers/'
     | '/module-types/'
     | '/permissions/'
+    | '/planning/'
     | '/platform-groups/'
     | '/platforms/'
     | '/power-feeds/'
@@ -4545,6 +4569,7 @@ export interface RootRouteChildren {
   IpsBulkEditRoute: typeof IpsBulkEditRoute
   IpsNewRoute: typeof IpsNewRoute
   JobsIdRoute: typeof JobsIdRoute
+  PlanningBoardIdRoute: typeof PlanningBoardIdRoute
   PlatformGroupsIdRoute: typeof PlatformGroupsIdRoute
   PlatformGroupsNewRoute: typeof PlatformGroupsNewRoute
   PlatformsIdRoute: typeof PlatformsIdRoute
@@ -4570,6 +4595,7 @@ export interface RootRouteChildren {
   IpsIndexRoute: typeof IpsIndexRoute
   JobsIndexRoute: typeof JobsIndexRoute
   LabelTemplatesIndexRoute: typeof LabelTemplatesIndexRoute
+  PlanningIndexRoute: typeof PlanningIndexRoute
   PlatformGroupsIndexRoute: typeof PlatformGroupsIndexRoute
   PlatformsIndexRoute: typeof PlatformsIndexRoute
   RackRolesIndexRoute: typeof RackRolesIndexRoute
@@ -5339,6 +5365,13 @@ declare module '@tanstack/react-router' {
       path: '/platform-groups'
       fullPath: '/platform-groups/'
       preLoaderRoute: typeof PlatformGroupsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/planning/': {
+      id: '/planning/'
+      path: '/planning'
+      fullPath: '/planning/'
+      preLoaderRoute: typeof PlanningIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/permissions/': {
@@ -6221,6 +6254,13 @@ declare module '@tanstack/react-router' {
       path: '/platform-groups/$id'
       fullPath: '/platform-groups/$id'
       preLoaderRoute: typeof PlatformGroupsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/planning/$boardId': {
+      id: '/planning/$boardId'
+      path: '/planning/$boardId'
+      fullPath: '/planning/$boardId'
+      preLoaderRoute: typeof PlanningBoardIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/permissions/new': {
@@ -8343,6 +8383,7 @@ const rootRouteChildren: RootRouteChildren = {
   IpsBulkEditRoute: IpsBulkEditRoute,
   IpsNewRoute: IpsNewRoute,
   JobsIdRoute: JobsIdRoute,
+  PlanningBoardIdRoute: PlanningBoardIdRoute,
   PlatformGroupsIdRoute: PlatformGroupsIdRoute,
   PlatformGroupsNewRoute: PlatformGroupsNewRoute,
   PlatformsIdRoute: PlatformsIdRoute,
@@ -8368,6 +8409,7 @@ const rootRouteChildren: RootRouteChildren = {
   IpsIndexRoute: IpsIndexRoute,
   JobsIndexRoute: JobsIndexRoute,
   LabelTemplatesIndexRoute: LabelTemplatesIndexRoute,
+  PlanningIndexRoute: PlanningIndexRoute,
   PlatformGroupsIndexRoute: PlatformGroupsIndexRoute,
   PlatformsIndexRoute: PlatformsIndexRoute,
   RackRolesIndexRoute: RackRolesIndexRoute,

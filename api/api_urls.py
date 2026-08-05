@@ -379,6 +379,7 @@ urlpatterns = [
     path("macs/<str:mac>/", mac_detail_view, name="mac-detail"),
     path("dcim/choices/", dcim_choices_view, name="dcim-choices"),
     path("monitoring/", include("monitoring.api_urls")),
+    path("planning/", include("planning.api_urls")),
     path("outpost/", include("monitoring.outpost_urls")),
     # Background job queue admin (RQ introspection) — gated on jobs.manage.
     path("jobs/", include("jobs.api_urls")),

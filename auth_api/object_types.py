@@ -199,6 +199,12 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("integrations.DeployRun", "Config deploy runs", "Integrations"),
     ("integrations.DeviceConfigSnapshot", "Device config snapshots", "Integrations"),
     ("integrations.DeviceConfigState", "Device config state", "Integrations"),
+    # ─── Planning ───────────────────────────────────────────────────
+    ("planning.Board", "Boards", "Planning"),
+    ("planning.TaskStatus", "Task statuses", "Planning"),
+    ("planning.TaskLabel", "Task labels", "Planning"),
+    ("planning.Task", "Tasks", "Planning"),
+    ("planning.TaskLink", "Task links", "Planning"),
     # ─── Access (RBAC itself) ───────────────────────────────────────
     ("auth.User", "Users", "Access"),
     ("auth.Group", "Groups", "Access"),

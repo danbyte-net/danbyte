@@ -20,11 +20,43 @@ import { Slider } from "@/components/ui/slider"
 import { LocalityBadge } from "@/components/locality-badge"
 import { IpStatusDeleteDialog } from "@/components/ip-status-delete-dialog"
 import { RowActions } from "@/components/row-actions"
+import { SegmentedTabs } from "@/components/segmented-tabs"
+import { TaskStatusManager } from "@/components/planning/task-status-manager"
 import { useMe, objCan } from "@/lib/use-me"
 
 export const Route = createFileRoute("/statuses/")({
-  component: IpStatusesPage,
+  component: StatusesPage,
 })
+
+/** Every kind of status is managed here: object statuses (IPs, devices, …)
+ * and planning task statuses (kanban columns, per board). */
+function StatusesPage() {
+  const { canDo } = useMe()
+  const [tab, setTab] = useState<"objects" | "tasks">("objects")
+  const showTasks = canDo("taskstatus", "view")
+  if (!showTasks) return <IpStatusesPage />
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="border-b border-border px-4 pt-3 pb-2 lg:px-6">
+        <SegmentedTabs
+          items={[
+            { value: "objects", label: "Object statuses" },
+            { value: "tasks", label: "Task statuses" },
+          ]}
+          value={tab}
+          onValueChange={(v) => setTab(v as "objects" | "tasks")}
+        />
+      </div>
+      {tab === "objects" ? (
+        <IpStatusesPage />
+      ) : (
+        <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
+          <TaskStatusManager />
+        </div>
+      )}
+    </div>
+  )
+}
 
 const MODEL_LABELS: Record<string, string> = Object.fromEntries(
   STATUSABLE_MODELS.map((m) => [m.value, m.label])

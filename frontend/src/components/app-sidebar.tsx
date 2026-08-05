@@ -17,6 +17,7 @@ import {
   Radio,
   Bell,
   BellRing,
+  SquareKanban,
   History,
   SquareStack,
   Workflow,
@@ -667,6 +668,12 @@ const sections: NavSection[] = [
             url: "/compliance",
             icon: ShieldCheck,
             objectType: "compliancerule",
+          },
+          {
+            title: "Planning",
+            url: "/planning",
+            icon: SquareKanban,
+            objectType: "board",
           },
           {
             title: "Audit log",

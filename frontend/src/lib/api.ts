@@ -5103,6 +5103,77 @@ export interface NotificationMe {
   can_subscribe: boolean
 }
 
+// ─── Planning (boards / tasks) ─────────────────────────────────────────
+export interface PlanningBoard {
+  id: string
+  name: string
+  slug: string
+  description: string
+  task_count: number
+  created_at: string
+  updated_at: string
+}
+
+export type PlanningSemanticGroup =
+  | "backlog"
+  | "unstarted"
+  | "started"
+  | "completed"
+  | "cancelled"
+
+export interface PlanningStatus {
+  id: string
+  board: string
+  name: string
+  semantic_group: PlanningSemanticGroup
+  color: string
+  weight: number
+}
+
+export interface PlanningLabel {
+  id: string
+  name: string
+  color: string
+  weight: number
+}
+
+export type PlanningPriority = "none" | "low" | "medium" | "high" | "urgent"
+
+export interface PlanningAssignee {
+  id: number
+  username: string
+  email: string
+}
+
+export interface PlanningTaskLink {
+  id: string
+  task: string
+  object_type: string
+  object_id: string
+  note: string
+}
+
+export interface PlanningTask {
+  id: string
+  board: string
+  board_name: string
+  status: string
+  status_name: string
+  title: string
+  description: string
+  priority: PlanningPriority
+  assignees: number[]
+  assignee_detail: PlanningAssignee[]
+  labels: string[]
+  label_detail: PlanningLabel[]
+  start_date: string | null
+  due_date: string | null
+  weight: number
+  links: PlanningTaskLink[]
+  created_at: string
+  updated_at: string
+}
+
 // ─── Circuits ──────────────────────────────────────────────────────────
 export interface ProviderOption {
   id: string

@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     "integrations.apps.IntegrationsConfig",
     "search.apps.SearchConfig",
     "monitoring.apps.MonitoringConfig",
+    "planning.apps.PlanningConfig",
 ]
 
 # ─── Plugins ─────────────────────────────────────────────────────────────────
