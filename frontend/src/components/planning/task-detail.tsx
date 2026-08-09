@@ -1,16 +1,23 @@
 import { useState } from "react"
+import { Link } from "@tanstack/react-router"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { Trash2 } from "lucide-react"
+import { CalendarClock, Flag, Trash2 } from "lucide-react"
 import { toast } from "sonner"
+
+import { useQuery } from "@tanstack/react-query"
 
 import {
   api,
+  type Paginated,
+  type PlanningMilestone,
   type PlanningPriority,
   type PlanningStatus,
   type PlanningTask,
 } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
+import { useDateFormat } from "@/lib/datetime"
 import { Button } from "@/components/ui/button"
+import { ColorBadge } from "@/components/cells/color-badge"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Sheet,
@@ -23,6 +30,7 @@ import { Markdown } from "@/components/markdown"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { apiErrorToast } from "@/lib/api-toast"
+import { PriorityBadge, scheduleLabel } from "./task-card"
 import { TaskLinkPanel } from "./task-link-panel"
 import { UserPicker } from "./user-picker"
 
@@ -56,9 +64,23 @@ export function TaskDetailSheet({
   const [assignees, setAssignees] = useState<number[]>(task.assignees)
   const [startDate, setStartDate] = useState<string | null>(task.start_date)
   const [dueDate, setDueDate] = useState<string | null>(task.due_date)
+  const [milestone, setMilestone] = useState<string | null>(task.milestone)
+
+  const milestonesQ = useQuery({
+    queryKey: ["planning-milestones", task.board],
+    queryFn: () =>
+      api<Paginated<PlanningMilestone>>(
+        `/api/planning/milestones/?board=${task.board}&page_size=100`
+      ),
+  })
+  const milestones = milestonesQ.data?.results ?? []
   const [descTab, setDescTab] = useState<"write" | "preview">(
     task.description ? "preview" : "write"
   )
+
+  const { formatDate, today } = useDateFormat()
+  const schedule = scheduleLabel(task, today, formatDate)
+  const statusColor = statuses.find((s) => s.id === task.status)?.color ?? ""
 
   const dirty =
     title !== task.title ||
@@ -67,6 +89,7 @@ export function TaskDetailSheet({
     priority !== task.priority ||
     startDate !== task.start_date ||
     dueDate !== task.due_date ||
+    milestone !== task.milestone ||
     JSON.stringify([...assignees].sort()) !==
       JSON.stringify([...task.assignees].sort())
 
@@ -80,6 +103,7 @@ export function TaskDetailSheet({
           status,
           priority,
           assignees,
+          milestone,
           start_date: startDate,
           due_date: dueDate,
         }),
@@ -112,6 +136,33 @@ export function TaskDetailSheet({
           <SheetTitle className="sr-only">{task.title}</SheetTitle>
         </SheetHeader>
 
+        <div className="mb-4 flex flex-wrap items-center gap-2 border-b border-border pb-3">
+          <ColorBadge
+            name={task.status_name}
+            color={statusColor || undefined}
+          />
+          <PriorityBadge priority={task.priority} />
+          {schedule && (
+            <span
+              className={`inline-flex items-center gap-1 text-[11px] ${schedule.tone}`}
+            >
+              <CalendarClock className="h-3 w-3" /> {schedule.text}
+            </span>
+          )}
+          {task.milestone_name && (
+            <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Flag className="h-3 w-3" /> {task.milestone_name}
+            </span>
+          )}
+          <Link
+            to="/planning/$boardId"
+            params={{ boardId: task.board }}
+            className="ml-auto text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            {task.board_name}
+          </Link>
+        </div>
+
         <div className="grid gap-4">
           <FormText label="Title" value={title} onChange={setTitle} required />
 
@@ -131,6 +182,19 @@ export function TaskDetailSheet({
           </div>
 
           <UserPicker value={assignees} onChange={setAssignees} />
+
+          {milestones.length > 0 && (
+            <FormSelect
+              label="Milestone"
+              value={milestone}
+              onChange={setMilestone}
+              noneLabel="No milestone"
+              options={milestones.map((m) => ({
+                value: m.id,
+                label: m.due_date ? `${m.name} · ${m.due_date}` : m.name,
+              }))}
+            />
+          )}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <FormDate

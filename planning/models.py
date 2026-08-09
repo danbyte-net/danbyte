@@ -126,6 +126,35 @@ class TaskLabel(TimestampedModel):
         return self.name
 
 
+class Milestone(TimestampedModel):
+    """A named target on a board — "Rack A cutover", "Q3 audit" — that tasks
+    roll up to. Optional due date; surfaces on cards and (phase 2) on the
+    planning calendar."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="planning_milestones"
+    )
+    board = models.ForeignKey(
+        Board, on_delete=models.CASCADE, related_name="milestones"
+    )
+    name = models.CharField(max_length=120)
+    due_date = models.DateField(null=True, blank=True)
+    color = models.CharField(max_length=7, blank=True, default="")
+    weight = models.PositiveIntegerField(default=100)
+
+    class Meta:
+        ordering = ["weight", "due_date", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["board", "name"], name="uniq_milestone_name_per_board"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class TaskPriority(models.TextChoices):
     NONE = "none", "None"
     LOW = "low", "Low"
@@ -158,6 +187,10 @@ class Task(TimestampedModel):
         settings.AUTH_USER_MODEL, blank=True, related_name="planning_tasks"
     )
     labels = models.ManyToManyField(TaskLabel, blank=True, related_name="tasks")
+    milestone = models.ForeignKey(
+        Milestone, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="tasks",
+    )
     start_date = models.DateField(null=True, blank=True)
     due_date = models.DateField(null=True, blank=True)
     weight = models.PositiveIntegerField(

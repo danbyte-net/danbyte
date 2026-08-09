@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { Plus, X } from "lucide-react"
+import { Link2, Plus, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { api, type PlanningTaskLink } from "@/lib/api"
@@ -9,11 +9,16 @@ import { Button } from "@/components/ui/button"
 import { FormSelect } from "@/components/forms"
 import { CfObjectPicker } from "@/components/cf-object-picker"
 import { apiErrorToast } from "@/lib/api-toast"
-import { ObjectChip, slugFromObjectType } from "./object-chip"
+import { DeviceFaceplate } from "./device-faceplate"
+import { ObjectRow, objectIcon, slugFromObjectType } from "./object-chip"
 
 /** Attach any registered Danbyte object to a task: pick a type, pick the
- * object, link it. Existing links render as label chips that deep-link to the
- * object's detail page. */
+ * object, link it.
+ *
+ * Links render grouped by object type — one card per type with its own icon and
+ * count — rather than as a flat chip soup, because a task about four devices
+ * and a prefix reads as exactly that. Linked devices additionally show their
+ * faceplate, turning the sheet into a picture of the work. */
 export function TaskLinkPanel({
   taskId,
   links,
@@ -31,6 +36,26 @@ export function TaskLinkPanel({
 
   const refModels = meta.data?.reference_models ?? []
   const refMeta = refModels.find((r) => r.value === typeSlug) ?? null
+
+  // Group by type, keeping the registry's own ordering so Devices always sit
+  // where Devices sat last time.
+  const groups = useMemo(() => {
+    const order = new Map(refModels.map((r, i) => [r.value, i]))
+    const bySlug = new Map<string, PlanningTaskLink[]>()
+    for (const l of links) {
+      const slug = slugFromObjectType(l.object_type)
+      const bucket = bySlug.get(slug)
+      if (bucket) bucket.push(l)
+      else bySlug.set(slug, [l])
+    }
+    return [...bySlug.entries()]
+      .map(([slug, items]) => ({
+        slug,
+        label: refModels.find((r) => r.value === slug)?.label ?? slug,
+        items,
+      }))
+      .sort((a, b) => (order.get(a.slug) ?? 99) - (order.get(b.slug) ?? 99))
+  }, [links, refModels])
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["planning-tasks"] })
@@ -72,6 +97,9 @@ export function TaskLinkPanel({
       <div className="flex items-center justify-between">
         <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
           Linked objects
+          {links.length > 0 && (
+            <span className="num ml-1.5 font-normal">{links.length}</span>
+          )}
         </h3>
         {canEdit && !adding && (
           <Button size="sm" variant="ghost" onClick={() => setAdding(true)}>
@@ -81,31 +109,63 @@ export function TaskLinkPanel({
       </div>
 
       {links.length === 0 && !adding && (
-        <p className="text-[13px] text-muted-foreground">
-          Nothing linked yet. Attach the devices, prefixes or circuits this task
-          is about.
-        </p>
+        <div className="flex items-center gap-3 rounded-lg border border-dashed border-border px-3 py-4">
+          <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <p className="text-[13px] text-muted-foreground">
+            Nothing linked yet. Attach the devices, interfaces, prefixes or
+            circuits this task is about and they show up here with their
+            faceplates and deep links.
+          </p>
+        </div>
       )}
 
-      <div className="flex flex-wrap gap-1.5">
-        {links.map((l) => (
-          <span key={l.id} className="inline-flex items-center gap-1">
-            <ObjectChip
-              slug={slugFromObjectType(l.object_type)}
-              id={l.object_id}
-            />
-            {canEdit && (
-              <button
-                type="button"
-                className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-                title="Remove link"
-                onClick={() => remove.mutate(l.id)}
-              >
-                <X className="h-3 w-3" />
-              </button>
-            )}
-          </span>
-        ))}
+      <div className="space-y-2">
+        {groups.map((g) => {
+          const Icon = objectIcon(g.slug)
+          return (
+            <div
+              key={g.slug}
+              className="overflow-hidden rounded-lg border border-border"
+            >
+              <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-3 py-1.5">
+                <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-[11px] font-semibold tracking-wide uppercase">
+                  {g.label}
+                </span>
+                <span className="num text-[11px] text-muted-foreground">
+                  {g.items.length}
+                </span>
+              </div>
+              <div className="divide-y divide-border">
+                {g.items.map((l) => (
+                  <div key={l.id}>
+                    <ObjectRow
+                      slug={g.slug}
+                      id={l.object_id}
+                      typeLabel={g.label}
+                      note={l.note || undefined}
+                      action={
+                        canEdit && (
+                          <button
+                            type="button"
+                            className="rounded p-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
+                            title="Remove link"
+                            onClick={() => remove.mutate(l.id)}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )
+                      }
+                    />
+                    {g.slug === "device" && (
+                      <DeviceFaceplate deviceId={l.object_id} />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       {adding && (
@@ -137,7 +197,7 @@ export function TaskLinkPanel({
               disabled={!typeSlug || !objectId || add.isPending}
               onClick={() => add.mutate()}
             >
-              {add.isPending ? "Linking…" : "Link"}
+              {add.isPending ? "Linking..." : "Link"}
             </Button>
           </div>
         </div>

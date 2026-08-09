@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from .models import Board, Task, TaskLabel, TaskLink, TaskStatus
+from .models import Board, Milestone, Task, TaskLabel, TaskLink, TaskStatus
 
 
 class BoardSerializer(serializers.ModelSerializer):
@@ -32,6 +32,18 @@ class TaskLabelSerializer(serializers.ModelSerializer):
     class Meta:
         model = TaskLabel
         fields = ["id", "name", "color", "weight", "created_at", "updated_at"]
+        read_only_fields = ["created_at", "updated_at"]
+
+
+class MilestoneSerializer(serializers.ModelSerializer):
+    task_count = serializers.IntegerField(read_only=True, default=0)
+
+    class Meta:
+        model = Milestone
+        fields = [
+            "id", "board", "name", "due_date", "color", "weight", "task_count",
+            "created_at", "updated_at",
+        ]
         read_only_fields = ["created_at", "updated_at"]
 
 
@@ -76,6 +88,12 @@ class TaskLinkSerializer(serializers.ModelSerializer):
 class TaskSerializer(serializers.ModelSerializer):
     status_name = serializers.CharField(source="status.name", read_only=True)
     board_name = serializers.CharField(source="board.name", read_only=True)
+    milestone_name = serializers.CharField(
+        source="milestone.name", read_only=True, default=None
+    )
+    milestone_due = serializers.DateField(
+        source="milestone.due_date", read_only=True, default=None
+    )
     assignee_detail = TaskAssigneeSerializer(
         source="assignees", many=True, read_only=True
     )
@@ -87,7 +105,8 @@ class TaskSerializer(serializers.ModelSerializer):
         fields = [
             "id", "board", "board_name", "status", "status_name", "title",
             "description", "priority", "assignees", "assignee_detail",
-            "labels", "label_detail", "start_date", "due_date", "weight",
+            "labels", "label_detail", "milestone", "milestone_name",
+            "milestone_due", "start_date", "due_date", "weight",
             "links", "created_by", "created_at", "updated_at",
         ]
         read_only_fields = ["created_by", "created_at", "updated_at"]
@@ -100,6 +119,15 @@ class TaskSerializer(serializers.ModelSerializer):
         if board is not None and status is not None and status.board_id != board.id:
             raise serializers.ValidationError(
                 {"status": "Status belongs to a different board."}
+            )
+        milestone = attrs.get("milestone", getattr(self.instance, "milestone", None))
+        if (
+            board is not None
+            and milestone is not None
+            and milestone.board_id != board.id
+        ):
+            raise serializers.ValidationError(
+                {"milestone": "Milestone belongs to a different board."}
             )
         start = attrs.get("start_date", getattr(self.instance, "start_date", None))
         due = attrs.get("due_date", getattr(self.instance, "due_date", None))

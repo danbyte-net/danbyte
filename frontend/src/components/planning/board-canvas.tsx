@@ -19,6 +19,7 @@ import { toast } from "sonner"
 
 import { api, type PlanningStatus, type PlanningTask } from "@/lib/api"
 import { Input } from "@/components/ui/input"
+import { ColorBadge } from "@/components/cells/color-badge"
 import { apiErrorToast } from "@/lib/api-toast"
 import { TaskCard } from "./task-card"
 
@@ -178,16 +179,10 @@ function Column({
   })
 
   return (
-    <div className="flex w-72 shrink-0 flex-col rounded-lg border border-border bg-muted/30">
-      <div className="flex items-center gap-2 px-3 py-2.5">
-        {status.color && (
-          <span
-            className="h-2.5 w-2.5 rounded-[3px]"
-            style={{ backgroundColor: status.color }}
-          />
-        )}
-        <span className="text-[13px] font-semibold">{status.name}</span>
-        <span className="text-[11px] text-muted-foreground">
+    <div className="flex w-80 shrink-0 flex-col rounded-lg border border-border bg-muted/20">
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+        <ColorBadge name={status.name} color={status.color || undefined} />
+        <span className="num text-[11px] text-muted-foreground">
           {tasks.length}
         </span>
         {canEdit && (
@@ -203,7 +198,7 @@ function Column({
       </div>
       <div
         ref={drop.setNodeRef}
-        className={`flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2 transition-colors ${
+        className={`flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto p-2 transition-colors ${
           drop.isOver ? "bg-primary/10" : ""
         }`}
       >
@@ -236,6 +231,20 @@ function Column({
         {tasks.map((t) => (
           <TaskCard key={t.id} task={t} onOpen={onOpenTask} />
         ))}
+        {tasks.length === 0 && !adding && (
+          <p className="px-1 py-3 text-[12px] text-muted-foreground">
+            {drop.isOver ? "Drop here" : "Nothing here yet."}
+          </p>
+        )}
+        {canEdit && !adding && (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="flex items-center justify-center gap-1 rounded-lg border border-dashed border-border py-2 text-[12px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add task
+          </button>
+        )}
       </div>
     </div>
   )

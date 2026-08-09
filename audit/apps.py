@@ -116,6 +116,7 @@ AUDITED_MODELS = [
     "planning.TaskLabel",
     "planning.Task",
     "planning.TaskLink",
+    "planning.Milestone",
     "monitoring.MonitoringEngine",
     "monitoring.MonitoringEngineBinding",
     "monitoring.OutpostRelease",

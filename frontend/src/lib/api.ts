@@ -5153,6 +5153,16 @@ export interface PlanningTaskLink {
   note: string
 }
 
+export interface PlanningMilestone {
+  id: string
+  board: string
+  name: string
+  due_date: string | null
+  color: string
+  weight: number
+  task_count: number
+}
+
 export interface PlanningTask {
   id: string
   board: string
@@ -5166,6 +5176,9 @@ export interface PlanningTask {
   assignee_detail: PlanningAssignee[]
   labels: string[]
   label_detail: PlanningLabel[]
+  milestone: string | null
+  milestone_name: string | null
+  milestone_due: string | null
   start_date: string | null
   due_date: string | null
   weight: number

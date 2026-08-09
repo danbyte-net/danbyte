@@ -13,9 +13,18 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from api.viewsets import TenantScopedViewSet
 
-from .models import Board, Task, TaskLabel, TaskLink, TaskStatus, seed_default_statuses
+from .models import (
+    Board,
+    Milestone,
+    Task,
+    TaskLabel,
+    TaskLink,
+    TaskStatus,
+    seed_default_statuses,
+)
 from .serializers import (
     BoardSerializer,
+    MilestoneSerializer,
     TaskLabelSerializer,
     TaskLinkSerializer,
     TaskSerializer,
@@ -67,6 +76,27 @@ class TaskStatusViewSet(TenantScopedViewSet):
             ) from None
 
 
+class MilestoneViewSet(TenantScopedViewSet):
+    queryset = Milestone.objects.select_related("board").order_by(
+        "weight", "due_date", "name"
+    )
+    serializer_class = MilestoneSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset().annotate(task_count=Count("tasks"))
+        board = self.request.query_params.get("board")
+        if board:
+            qs = qs.filter(board_id=board)
+        return qs
+
+    def perform_create(self, serializer):
+        tenant = self._tenant_or_403()
+        board = serializer.validated_data.get("board")
+        if board is None or board.tenant_id != tenant.id:
+            raise ValidationError({"board": "Board is not in this tenant."})
+        serializer.save(tenant=tenant)
+
+
 class TaskLabelViewSet(TenantScopedViewSet):
     queryset = TaskLabel.objects.all().order_by("weight", "name")
     serializer_class = TaskLabelSerializer
@@ -74,7 +104,7 @@ class TaskLabelViewSet(TenantScopedViewSet):
 
 class TaskViewSet(TenantScopedViewSet):
     queryset = (
-        Task.objects.select_related("board", "status")
+        Task.objects.select_related("board", "status", "milestone")
         .prefetch_related("assignees", "labels", "links")
         .order_by("weight", "created_at")
     )
@@ -91,6 +121,8 @@ class TaskViewSet(TenantScopedViewSet):
             qs = qs.filter(assignees__id=p["assignee"])
         if p.get("label"):
             qs = qs.filter(labels__id=p["label"])
+        if p.get("milestone"):
+            qs = qs.filter(milestone_id=p["milestone"])
         if p.get("q"):
             qs = qs.filter(
                 Q(title__icontains=p["q"]) | Q(description__icontains=p["q"])

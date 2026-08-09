@@ -1,20 +1,67 @@
 import { useDraggable } from "@dnd-kit/core"
 import { CSS } from "@dnd-kit/utilities"
+import {
+  AlignLeft,
+  CalendarClock,
+  ChevronDown,
+  ChevronUp,
+  ChevronsUp,
+  Equal,
+  Flag,
+  type LucideIcon,
+} from "lucide-react"
 
 import { type PlanningPriority, type PlanningTask } from "@/lib/api"
+import { daysBetween, useDateFormat } from "@/lib/datetime"
 import {
   Avatar,
   AvatarFallback,
   AvatarGroup,
   AvatarGroupCount,
 } from "@/components/ui/avatar"
+import { ObjectChip, slugFromObjectType } from "./object-chip"
 
-const PRIORITY_DOT: Record<PlanningPriority, string> = {
-  none: "",
-  low: "bg-zinc-400",
-  medium: "bg-sky-500",
-  high: "bg-amber-500",
-  urgent: "bg-red-500",
+// Priority reads as a labelled badge, never a colored dot: the icon carries the
+// direction, the tint carries the urgency, and the word says which is which.
+const PRIORITY: Record<
+  PlanningPriority,
+  { label: string; icon: LucideIcon; className: string } | null
+> = {
+  none: null,
+  low: {
+    label: "Low",
+    icon: ChevronDown,
+    className: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
+  },
+  medium: {
+    label: "Medium",
+    icon: Equal,
+    className: "bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300",
+  },
+  high: {
+    label: "High",
+    icon: ChevronUp,
+    className:
+      "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300",
+  },
+  urgent: {
+    label: "Urgent",
+    icon: ChevronsUp,
+    className: "bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300",
+  },
+}
+
+export function PriorityBadge({ priority }: { priority: PlanningPriority }) {
+  const p = PRIORITY[priority]
+  if (!p) return null
+  const Icon = p.icon
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-[5px] px-1.5 py-0.5 text-[10px] font-medium ${p.className}`}
+    >
+      <Icon className="h-3 w-3" /> {p.label}
+    </span>
+  )
 }
 
 function initials(name: string): string {
@@ -24,16 +71,47 @@ function initials(name: string): string {
     : name.slice(0, 2).toUpperCase()
 }
 
-function dueTone(due: string | null): string {
-  if (!due) return ""
-  const today = new Date().toISOString().slice(0, 10)
-  if (due < today) return "text-red-600 dark:text-red-400"
-  if (due === today) return "text-amber-600 dark:text-amber-400"
-  return "text-muted-foreground"
+/** Schedule wording that answers "when?" without opening the card: how far off
+ * the due date is, plus the date itself once it is more than a week out. */
+export function scheduleLabel(
+  task: Pick<PlanningTask, "start_date" | "due_date">,
+  today: string,
+  formatDate: (v: string) => string
+): { text: string; tone: string } | null {
+  if (!task.due_date) {
+    if (!task.start_date) return null
+    const d = daysBetween(today, task.start_date)
+    return {
+      text: d > 0 ? `Starts ${formatDate(task.start_date)}` : "Started",
+      tone: "text-muted-foreground",
+    }
+  }
+  const d = daysBetween(today, task.due_date)
+  const date = formatDate(task.due_date)
+  if (d < 0)
+    return {
+      text: `${-d} day${d === -1 ? "" : "s"} overdue · ${date}`,
+      tone: "text-red-600 dark:text-red-400",
+    }
+  if (d === 0)
+    return {
+      text: `Due today · ${date}`,
+      tone: "text-amber-600 dark:text-amber-400",
+    }
+  if (d === 1)
+    return {
+      text: `Due tomorrow · ${date}`,
+      tone: "text-amber-600 dark:text-amber-400",
+    }
+  if (d <= 7)
+    return { text: `Due in ${d} days · ${date}`, tone: "text-muted-foreground" }
+  return { text: `Due ${date}`, tone: "text-muted-foreground" }
 }
 
 /** One kanban card. Draggable via dnd-kit (6px activation upstream keeps plain
- * clicks working); clicking opens the detail sheet. */
+ * clicks working); clicking opens the detail sheet. The card is meant to answer
+ * "what, which object, and when" on its own — linked inventory renders as real
+ * chips so the board reads as part of Danbyte, not beside it. */
 export function TaskCard({
   task,
   onOpen,
@@ -42,66 +120,42 @@ export function TaskCard({
   onOpen: (task: PlanningTask) => void
 }) {
   const drag = useDraggable({ id: `task|${task.id}` })
+  const { formatDate, today } = useDateFormat()
   const style = drag.transform
     ? { transform: CSS.Translate.toString(drag.transform) }
     : undefined
 
-  const dot = PRIORITY_DOT[task.priority]
-  const hasMeta =
-    task.due_date || task.label_detail.length > 0 || task.links.length > 0
+  const shownLinks = task.links.slice(0, 3)
+  const extraLinks = task.links.length - shownLinks.length
+  const schedule = scheduleLabel(task, today, formatDate)
+  const hasTopRow =
+    task.priority !== "none" ||
+    task.label_detail.length > 0 ||
+    task.assignee_detail.length > 0
 
   return (
-    <button
-      type="button"
+    <div
       ref={drag.setNodeRef}
       {...drag.attributes}
       {...drag.listeners}
       style={style}
       onClick={() => onOpen(task)}
-      className={`w-full touch-none rounded-lg border border-border bg-card p-3 text-left shadow-none transition-colors hover:border-primary/40 ${
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") onOpen(task)
+      }}
+      className={`w-full cursor-pointer touch-none space-y-2 rounded-lg border border-border bg-card p-3 text-left shadow-none transition-colors hover:border-primary/40 ${
         drag.isDragging ? "opacity-40" : ""
       }`}
     >
-      <div className="flex items-start gap-2">
-        {dot && (
-          <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dot}`} />
-        )}
-        <span className="min-w-0 flex-1 text-[13px] leading-snug font-medium">
-          {task.title}
-        </span>
-        {task.assignee_detail.length > 0 && (
-          <AvatarGroup className="shrink-0">
-            {task.assignee_detail.slice(0, 3).map((a) => (
-              <Avatar key={a.id} size="sm">
-                <AvatarFallback className="text-[9px]">
-                  {initials(a.username)}
-                </AvatarFallback>
-              </Avatar>
-            ))}
-            {task.assignee_detail.length > 3 && (
-              <AvatarGroupCount>
-                +{task.assignee_detail.length - 3}
-              </AvatarGroupCount>
-            )}
-          </AvatarGroup>
-        )}
-      </div>
-      {hasMeta && (
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-          {task.due_date && (
-            <span className={`text-[11px] ${dueTone(task.due_date)}`}>
-              {task.due_date}
-            </span>
-          )}
-          {task.links.length > 0 && (
-            <span className="text-[11px] text-muted-foreground">
-              {task.links.length} linked
-            </span>
-          )}
-          {task.label_detail.map((l) => (
+      {hasTopRow && (
+        <div className="flex items-center gap-1.5">
+          <PriorityBadge priority={task.priority} />
+          {task.label_detail.slice(0, 2).map((l) => (
             <span
               key={l.id}
-              className="rounded-[5px] px-1.5 py-0.5 text-[10px] font-medium"
+              className="max-w-[7rem] truncate rounded-[5px] px-1.5 py-0.5 text-[10px] font-medium"
               style={{
                 backgroundColor: l.color ? `${l.color}26` : undefined,
                 color: l.color || undefined,
@@ -110,8 +164,70 @@ export function TaskCard({
               {l.name}
             </span>
           ))}
+          {task.assignee_detail.length > 0 && (
+            <AvatarGroup className="ml-auto shrink-0">
+              {task.assignee_detail.slice(0, 3).map((a) => (
+                <Avatar key={a.id} size="sm" title={a.username}>
+                  <AvatarFallback className="text-[9px]">
+                    {initials(a.username)}
+                  </AvatarFallback>
+                </Avatar>
+              ))}
+              {task.assignee_detail.length > 3 && (
+                <AvatarGroupCount>
+                  +{task.assignee_detail.length - 3}
+                </AvatarGroupCount>
+              )}
+            </AvatarGroup>
+          )}
         </div>
       )}
-    </button>
+
+      <p className="text-[13px] leading-snug font-medium">{task.title}</p>
+
+      {shownLinks.length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-1"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {shownLinks.map((l) => (
+            <ObjectChip
+              key={l.id}
+              slug={slugFromObjectType(l.object_type)}
+              id={l.object_id}
+            />
+          ))}
+          {extraLinks > 0 && (
+            <span className="text-[11px] text-muted-foreground">
+              +{extraLinks} more
+            </span>
+          )}
+        </div>
+      )}
+
+      {(schedule || task.milestone_name || task.description) && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-2">
+          {schedule && (
+            <span
+              className={`inline-flex items-center gap-1 text-[11px] ${schedule.tone}`}
+            >
+              <CalendarClock className="h-3 w-3" /> {schedule.text}
+            </span>
+          )}
+          {task.milestone_name && (
+            <span className="inline-flex max-w-[10rem] items-center gap-1 text-[11px] text-muted-foreground">
+              <Flag className="h-3 w-3 shrink-0" />
+              <span className="truncate">{task.milestone_name}</span>
+            </span>
+          )}
+          {task.description && (
+            <AlignLeft
+              className="h-3 w-3 text-muted-foreground"
+              aria-label="Has a description"
+            />
+          )}
+        </div>
+      )}
+    </div>
   )
 }

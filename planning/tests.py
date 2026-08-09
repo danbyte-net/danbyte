@@ -8,7 +8,14 @@ from api.models import Device, DeviceRole, DeviceType, Manufacturer, Site
 from api.test_utils import status_for
 from core.models import Organization, Tenant
 
-from .models import Board, Task, TaskLink, TaskStatus, seed_default_statuses
+from .models import (
+    Board,
+    Milestone,
+    Task,
+    TaskLink,
+    TaskStatus,
+    seed_default_statuses,
+)
 
 
 class Base(APITestCase):
@@ -112,6 +119,59 @@ class TaskApiTests(Base):
         r = self.client.delete(f"/api/planning/statuses/{st.id}/")
         self.assertEqual(r.status_code, 400)
         self.assertTrue(TaskStatus.objects.filter(id=st.id).exists())
+
+
+class MilestoneApiTests(Base):
+    def test_milestone_lifecycle_and_task_rollup(self):
+        board = self._board()
+        r = self.client.post(
+            "/api/planning/milestones/",
+            {"board": str(board.id), "name": "Rack A cutover",
+             "due_date": "2026-09-01"}, format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        ms_id = r.json()["id"]
+
+        task = Task.objects.create(
+            tenant=self.tenant, board=board,
+            status=board.statuses.get(name="To do"), title="t",
+            milestone_id=ms_id,
+        )
+        listing = self.client.get(f"/api/planning/milestones/?board={board.id}")
+        self.assertEqual(listing.json()["results"][0]["task_count"], 1)
+        detail = self.client.get(f"/api/planning/tasks/{task.id}/").json()
+        self.assertEqual(detail["milestone_name"], "Rack A cutover")
+        self.assertEqual(detail["milestone_due"], "2026-09-01")
+
+        # Deleting the milestone keeps the task (SET_NULL), unlike a status.
+        self.assertEqual(
+            self.client.delete(f"/api/planning/milestones/{ms_id}/").status_code,
+            204,
+        )
+        task.refresh_from_db()
+        self.assertIsNone(task.milestone_id)
+
+    def test_milestone_from_another_board_rejected(self):
+        board = self._board()
+        other = self._board(name="Second", slug="second")
+        ms = Milestone.objects.create(
+            tenant=self.tenant, board=other, name="Elsewhere"
+        )
+        r = self.client.post(
+            "/api/planning/tasks/",
+            {"board": str(board.id),
+             "status": str(board.statuses.get(name="To do").id),
+             "title": "t", "milestone": str(ms.id)}, format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_milestone_tenant_isolation(self):
+        foreign = self._board(tenant=self.other, name="Theirs", slug="theirs")
+        Milestone.objects.create(
+            tenant=self.other, board=foreign, name="Not mine"
+        )
+        r = self.client.get("/api/planning/milestones/")
+        self.assertEqual(r.json()["count"], 0)
 
 
 class TaskLinkApiTests(Base):

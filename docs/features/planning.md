@@ -32,30 +32,51 @@ alongside every other status catalog. Each row has:
 
 A status that still has tasks can't be deleted — move them first.
 
+## Milestones
+
+A milestone is a named target on a board that tasks roll up to — "Rack A
+cutover", "Q3 audit". Open **Milestones** in the board header to create, rename,
+recolor, redate or delete them; each row shows how many tasks point at it.
+Assign one from the task sheet.
+
+Deleting a milestone keeps its tasks — they simply lose the milestone. (A status
+behaves differently: it can't be deleted while tasks still use it.)
+
 ## Tasks
 
 A card carries a title, a markdown description (same subset as compliance
-guides), a priority, **assignees**, tenant-wide colored **labels**, optional
-start/due dates, and:
+guides), a priority, **assignees**, tenant-wide colored **labels**, an optional
+milestone, optional start/due dates, and:
 
 - **Linked objects** — attach anything Danbyte knows about via the same object
-  picker custom fields use. Chips deep-link to the object's detail page. Links
-  are RBAC-gated: you can only link objects you can view, and a link can't be
-  retargeted afterwards (delete and re-add).
+  picker custom fields use, including interfaces. In the task sheet links are
+  grouped by object type, deep-link to the object's detail page, and a linked
+  **device also shows its front/rear faceplate** so "replace this switch" comes
+  with a picture of the switch. Links are RBAC-gated: you can only link objects
+  you can view, and a link can't be retargeted afterwards (delete and re-add).
 - **Comments** — the shared Journal, exactly like the Journal tab on any detail
   page.
 
+The card itself is meant to answer *what, which object, and when* without being
+opened: priority and labels as badges, linked-object chips with their type icon
+and real name, assignee avatars, and a schedule line that says how far off the
+due date is (`Due today`, `Due in 3 days`, `2 days overdue`) next to the date
+itself. "Today" is evaluated in **your effective display timezone** — the same
+user → tenant → deployment resolution the rest of Danbyte uses — so an overdue
+card is overdue by your calendar, not the server's.
+
 Drag cards between columns — one small write per drop, so the board stays fast.
-Click a card to open the detail sheet. The **+** in a column header quick-adds a
-task by title alone.
+Click a card to open the detail sheet. The **+** in a column header (or the
+dashed **Add task** row) quick-adds a task by title alone.
 
 ## API
 
 Everything lives under `/api/planning/`: `boards/`, `statuses/`, `labels/`,
-`tasks/` (filter by `board`, `status`, `assignee`, `label`, `q`), and `links/`
-(filter by `task`, or reverse-look-up with `object_type` + `object_id` to find
-every task referencing an object). All endpoints are tenant-scoped and
-default-closed; all planning models are audited.
+`milestones/` (filter by `board`), `tasks/` (filter by `board`, `status`,
+`assignee`, `label`, `milestone`, `q`), and `links/` (filter by `task`, or
+reverse-look-up with `object_type` + `object_id` to find every task referencing
+an object). All endpoints are tenant-scoped and default-closed; all planning
+models are audited.
 
 ## Coming next
 

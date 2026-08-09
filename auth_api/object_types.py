@@ -205,6 +205,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("planning.TaskLabel", "Task labels", "Planning"),
     ("planning.Task", "Tasks", "Planning"),
     ("planning.TaskLink", "Task links", "Planning"),
+    ("planning.Milestone", "Milestones", "Planning"),
     # ─── Access (RBAC itself) ───────────────────────────────────────
     ("auth.User", "Users", "Access"),
     ("auth.Group", "Groups", "Access"),

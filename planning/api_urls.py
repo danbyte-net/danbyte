@@ -5,6 +5,7 @@ from rest_framework.routers import DefaultRouter
 
 from .viewsets import (
     BoardViewSet,
+    MilestoneViewSet,
     TaskLabelViewSet,
     TaskLinkViewSet,
     TaskStatusViewSet,
@@ -15,6 +16,7 @@ router = DefaultRouter()
 router.register(r"boards", BoardViewSet, basename="planning-board")
 router.register(r"statuses", TaskStatusViewSet, basename="planning-status")
 router.register(r"labels", TaskLabelViewSet, basename="planning-label")
+router.register(r"milestones", MilestoneViewSet, basename="planning-milestone")
 router.register(r"tasks", TaskViewSet, basename="planning-task")
 router.register(r"links", TaskLinkViewSet, basename="planning-link")
 

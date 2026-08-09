@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { ChevronLeft } from "lucide-react"
+import { ChevronLeft, Flag } from "lucide-react"
 
 import {
   api,
@@ -11,8 +11,10 @@ import {
   type PlanningTask,
 } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
+import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
 import { BoardCanvas } from "@/components/planning/board-canvas"
+import { MilestoneManagerDialog } from "@/components/planning/milestone-manager"
 import { TaskDetailSheet } from "@/components/planning/task-detail"
 
 export const Route = createFileRoute("/planning/$boardId")({
@@ -24,6 +26,7 @@ function BoardPage() {
   const { canDo } = useMe()
   const canEdit = canDo("task", "change") || canDo("task", "add")
   const [openTask, setOpenTask] = useState<PlanningTask | null>(null)
+  const [milestonesOpen, setMilestonesOpen] = useState(false)
 
   const boardQ = useQuery({
     queryKey: ["planning-board", boardId],
@@ -66,6 +69,14 @@ function BoardPage() {
         <span className="text-[12px] text-muted-foreground">
           {tasks.length} task{tasks.length === 1 ? "" : "s"}
         </span>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="ml-auto"
+          onClick={() => setMilestonesOpen(true)}
+        >
+          <Flag className="h-3.5 w-3.5" /> Milestones
+        </Button>
       </header>
       <div className="min-h-0 flex-1">
         {statusesQ.isLoading || tasksQ.isLoading ? (
@@ -80,6 +91,13 @@ function BoardPage() {
           />
         )}
       </div>
+      {milestonesOpen && (
+        <MilestoneManagerDialog
+          boardId={boardId}
+          open={milestonesOpen}
+          onOpenChange={setMilestonesOpen}
+        />
+      )}
       {openTaskLive && (
         <TaskDetailSheet
           key={openTaskLive.id}

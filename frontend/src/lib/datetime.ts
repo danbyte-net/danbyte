@@ -127,6 +127,24 @@ export function formatDateTime(value: DateInput, s: DateTimeSettings): string {
   return `${assembleDate(d, s.date_format, tz)} ${assembleTime(d, s.time_style, tz)}`
 }
 
+/** Today's calendar date as `YYYY-MM-DD` **in the given timezone** — the
+ * reference point for "overdue", "due today" and calendar highlighting. Using
+ * the effective display zone (not the browser's) keeps a Copenhagen team and a
+ * Denver team agreeing on which cell is today. */
+export function todayIso(timezone: string): string {
+  const { y, m, d } = dateParts(new Date(), timezone)
+  return `${y}-${m}-${d}`
+}
+
+/** Whole days from `from` to `to`, both bare `YYYY-MM-DD` dates. Negative when
+ * `to` is in the past. Compared at UTC midnight, so no DST drift. */
+export function daysBetween(from: string, to: string): number {
+  const a = Date.parse(`${from}T00:00:00Z`)
+  const b = Date.parse(`${to}T00:00:00Z`)
+  if (isNaN(a) || isNaN(b)) return 0
+  return Math.round((b - a) / 86_400_000)
+}
+
 /** The effective settings + bound formatters. Reads `me.datetime` (already
  * resolved user → tenant → deployment on the server). */
 export function useDateFormat() {
@@ -136,6 +154,8 @@ export function useDateFormat() {
     const s = settings ?? defaultDateTimeSettings()
     return {
       settings: s,
+      /** Today in the effective timezone, as `YYYY-MM-DD`. */
+      today: todayIso(s.timezone),
       formatDate: (v: DateInput) => formatDate(v, s),
       formatTime: (v: DateInput) => formatTime(v, s),
       formatDateTime: (v: DateInput) => formatDateTime(v, s),
