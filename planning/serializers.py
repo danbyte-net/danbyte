@@ -95,8 +95,9 @@ class TaskLinkSerializer(serializers.ModelSerializer):
 
 
 class PlannedChangeSerializer(serializers.ModelSerializer):
-    """A planned field change. ``current_*`` and ``*_display`` are captured
-    server-side at plan time — a client may not assert what the old value was."""
+    """A staged change set. ``payload`` arrives as the *complete* form payload;
+    the viewset diffs it against the live object and stores only what differs, so
+    ``before``/``display`` are server-computed and never client-asserted."""
 
     effective_date = serializers.DateField(read_only=True)
     stale = serializers.SerializerMethodField()
@@ -110,37 +111,22 @@ class PlannedChangeSerializer(serializers.ModelSerializer):
     class Meta:
         model = PlannedChange
         fields = [
-            "id", "task", "object_type", "object_id", "field",
-            "new_value", "new_display", "current_value", "current_display",
+            "id", "task", "kind", "object_type", "object_id",
+            "payload", "before", "display", "created_object_id",
             "planned_for", "effective_date", "state", "note", "stale",
             "created_by", "created_by_username",
             "applied_at", "applied_by", "applied_by_username",
             "created_at", "updated_at",
         ]
         read_only_fields = [
-            "new_display", "current_value", "current_display", "state",
-            "created_by", "applied_at", "applied_by", "created_at", "updated_at",
+            "before", "display", "created_object_id", "state", "created_by",
+            "applied_at", "applied_by", "created_at", "updated_at",
         ]
-        # DRF derives a UniqueTogetherValidator from the model's partial unique
-        # constraint, which then demands `state` in the payload — but `state` is
-        # read-only, so every write 500'd with KeyError. The viewset checks for
-        # an existing open plan explicitly (clearer message), and the DB
-        # constraint remains the backstop.
-        validators = []
 
     def get_stale(self, obj) -> bool:
-        """Has the target's live value moved since this was planned?
+        from .planned_changes import is_stale
 
-        Computed, never stored: a column would need a writer, and the only
-        honest writer is a hook on every save of every audited model. Apply
-        re-checks this synchronously and refuses with a 409, which is stronger
-        than a flag that can go out of date."""
-        if obj.state != PlannedChangeState.PLANNED:
-            return False
-        from .planned_changes import _MISSING, live_value_for
-
-        live = live_value_for(obj)
-        return live is not _MISSING and live != obj.current_value
+        return is_stale(obj)
 
     def validate_object_type(self, value):
         from auth_api.object_types import label_for
@@ -151,19 +137,20 @@ class PlannedChangeSerializer(serializers.ModelSerializer):
         return label
 
     def validate(self, attrs):
-        # The target and the field are immutable: retargeting would move the
-        # plan onto an object the caller was never checked against, and an
-        # applied/cancelled row is history.
+        # The target and the kind are immutable: retargeting would move the plan
+        # onto an object the caller was never checked against, and an
+        # applied/cancelled row is history. Editing a staged change means
+        # re-opening the form, which replaces the row.
         if self.instance is not None:
             if self.instance.state != PlannedChangeState.PLANNED:
                 raise serializers.ValidationError(
                     "This change is no longer open; it can't be edited."
                 )
-            for field in ("task", "object_type", "object_id", "field"):
+            for field in ("task", "kind", "object_type", "object_id", "payload"):
                 if field in attrs and attrs[field] != getattr(self.instance, field):
                     raise serializers.ValidationError({
-                        field: "A planned change can't be retargeted; "
-                               "delete it and plan a new one.",
+                        field: "A planned change can't be retargeted or "
+                               "rewritten; delete it and plan again.",
                     })
         return attrs
 

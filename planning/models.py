@@ -248,24 +248,33 @@ class PlannedChangeState(models.TextChoices):
     CANCELLED = "cancelled", "Cancelled"
 
 
+class PlannedChangeKind(models.TextChoices):
+    UPDATE = "update", "Edit an object"
+    CREATE = "create", "Create an object"
+
+
 class PlannedChange(TimestampedModel):
-    """One field of one object that a task says will change.
+    """A change a task says it will make to the inventory — one saved edit.
 
-    "Interface Gi2/1: Enabled Yes → No". The task tells engineers what will
-    happen, the target object's own page warns that a change is coming, and when
-    the work is done an operator **applies** it and Danbyte writes the value into
-    its own record. Applying updates *Danbyte's* record — pushing configuration
-    to hardware is the separate automation/deploy path.
+    Planning *is* editing: the operator opens the object's own edit form, changes
+    whatever they want, and saves. Nothing is written; the fields that actually
+    differ land here as a change set. "Create" works the same way through the
+    object's create form. When the work is done an operator **applies** it and
+    Danbyte writes the values through the target's normal serializer.
 
-    Nothing applies itself. A plan is documentation until a human confirms the
-    work happened, so there is no scheduler here.
+    Applying updates *Danbyte's* record — pushing configuration to hardware is
+    the separate automation/deploy path. Nothing applies itself: a plan is
+    documentation until a human confirms the work happened, so there is no
+    scheduler here.
 
-    Values live in JSON rather than typed columns because the field descriptor
-    (:mod:`api.editable_fields`) already knows the type; four nullable columns
-    would let row and descriptor disagree. SQL NULL means "clear the field".
-    The ``*_display`` strings are captured at plan time so the task still reads
-    "Status Active → Decommissioning" after that Status row is renamed or
-    deleted — the same denormalisation rationale as ``object_site_id``.
+    ``payload`` is write-shaped (the same keys the API accepts) and, for an
+    update, holds **only the keys that differ** — the server diffs the submitted
+    form against the live object so no diff logic is duplicated per form.
+    ``before`` snapshots just those keys, which drives both the displayed diff
+    and the staleness check at apply time. ``display`` is rendered at plan time
+    so the task still reads "Status: Active → Decommissioning" after the
+    referenced Status row is renamed or deleted — the same denormalisation
+    rationale as ``object_site_id``.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -276,24 +285,32 @@ class PlannedChange(TimestampedModel):
         Task, on_delete=models.CASCADE, related_name="planned_changes"
     )
 
-    # Generic reference — the Document/TaskLink triple.
+    kind = models.CharField(
+        max_length=6, choices=PlannedChangeKind.choices,
+        default=PlannedChangeKind.UPDATE,
+    )
+    # Generic reference — the Document/TaskLink triple. For a create this names
+    # the model to create and object_id is empty until it is applied.
     object_type = models.CharField(
         max_length=64, help_text="Model label, e.g. api.interface."
     )
-    object_id = models.UUIDField()
+    object_id = models.UUIDField(null=True, blank=True)
     object_site_id = models.UUIDField(null=True, blank=True, db_index=True)
 
-    field = models.CharField(
-        max_length=64,
-        help_text="Payload key from /api/editable-fields/, e.g. enabled, status_id.",
+    payload = models.JSONField(
+        default=dict,
+        help_text="Write-shaped fields. For an edit, only what differs.",
     )
-    new_value = models.JSONField(null=True, blank=True)
-    new_display = models.CharField(max_length=255, blank=True, default="")
-    # The target's value when the change was planned. Displayed as the "from"
-    # side, and compared at apply time: if the live value has moved since, the
-    # plan's premise is gone and apply returns a conflict.
-    current_value = models.JSONField(null=True, blank=True)
-    current_display = models.CharField(max_length=255, blank=True, default="")
+    before = models.JSONField(
+        default=dict, blank=True,
+        help_text="The live values of payload's keys when this was planned.",
+    )
+    display = models.JSONField(
+        default=list, blank=True,
+        help_text="[{field, label, from, to}] rendered at plan time.",
+    )
+    # Stamped when a create is applied, so the plan points at what it made.
+    created_object_id = models.UUIDField(null=True, blank=True)
 
     # Optional per-change implementation date. One task often changes several
     # things on different days ("Friday disable the port, Monday decommission
@@ -319,18 +336,9 @@ class PlannedChange(TimestampedModel):
 
     class Meta:
         ordering = ["planned_for", "created_at"]
-        constraints = [
-            # One OPEN plan per (task, object, field). Partial, so applied and
-            # cancelled rows accumulate as history and the same field can be
-            # planned again on a later task. Deliberately NOT global across
-            # tasks: two tasks proposing the same change is real, and the
-            # badge's count says more than a 400 would.
-            models.UniqueConstraint(
-                fields=["task", "object_type", "object_id", "field"],
-                condition=models.Q(state="planned"),
-                name="uniq_open_planned_change_per_target_field",
-            ),
-        ]
+        # No uniqueness: a task may legitimately stage several edits to one
+        # object (and two tasks may propose the same change — the badge's count
+        # says more about that than a 400 would).
         indexes = [
             # The badge's reverse lookup only ever asks about open plans.
             models.Index(
@@ -346,7 +354,10 @@ class PlannedChange(TimestampedModel):
         ]
 
     def __str__(self) -> str:
-        return f"{self.object_type}:{self.object_id} {self.field} → {self.new_display}"
+        what = ", ".join(str(d.get("label") or d.get("field")) for d in self.display)
+        if self.kind == PlannedChangeKind.CREATE:
+            return f"new {self.object_type}: {what}"
+        return f"{self.object_type}:{self.object_id} {what}"
 
     @property
     def effective_date(self):

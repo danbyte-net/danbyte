@@ -9,6 +9,7 @@ retargeting is rejected outright.
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Count, ProtectedError, Q
 from rest_framework import permissions
 from rest_framework import status as drf_status
@@ -25,6 +26,7 @@ from .models import (
     Board,
     Milestone,
     PlannedChange,
+    PlannedChangeKind,
     PlannedChangeState,
     Task,
     TaskLabel,
@@ -220,60 +222,80 @@ class PlannedChangeViewSet(TenantScopedViewSet):
         return qs
 
     def perform_create(self, serializer):
+        """Stage a change set from a submitted form payload.
+
+        The payload is the form's *complete* write body. We validate it through
+        the target's own serializer — so a plan is held to the same rules a real
+        write would be — then keep only the keys that actually differ.
+        """
         from audit.api import _can_view_object, _object_site_id
 
-        from .editable import descriptor_or_400
-        from .planned_changes import model_for_label, snapshot
+        from .diffing import describe_create, diff_update, validate_payload
+        from .planned_changes import model_for_label
 
         tenant = self._tenant_or_403()
         data = serializer.validated_data
         task = data.get("task")
         if task is None or task.tenant_id != tenant.id:
             raise ValidationError({"task": "Task is not in this tenant."})
-        otype, oid = data.get("object_type"), data.get("object_id")
-        if not _can_view_object(self.request, otype, str(oid)):
-            raise PermissionDenied("You can't plan a change on an object you "
-                                   "can't view.")
+
+        otype = data.get("object_type")
         model = model_for_label(otype)
         if model is None:
             raise ValidationError({"object_type": "Unknown object type."})
-        spec = descriptor_or_400(model, data.get("field"))
-        obj = model._default_manager.filter(pk=oid).first()
-        if obj is None:
-            raise ValidationError({"object_id": "That object no longer exists."})
-        if PlannedChange.objects.filter(
-            task=task, object_type=otype, object_id=oid, field=spec.key,
-            state=PlannedChangeState.PLANNED,
-        ).exists():
-            raise ValidationError({
-                "field": "This task already plans a change to that field. "
-                         "Edit the existing plan instead.",
-            })
+        payload = data.get("payload")
+        if not isinstance(payload, dict) or not payload:
+            raise ValidationError({"payload": "Provide the form's field values."})
 
-        new_value, new_display, current_value, current_display = snapshot(
-            model, spec, obj, tenant, data.get("new_value")
-        )
-        from django.db import transaction
+        kind = data.get("kind") or PlannedChangeKind.UPDATE
+        if kind == PlannedChangeKind.CREATE:
+            validate_payload(model, payload, request=self.request)
+            changed, before = payload, {}
+            display = describe_create(model, payload)
+            site_id = None
+        else:
+            oid = data.get("object_id")
+            if oid is None:
+                raise ValidationError(
+                    {"object_id": "An edit needs the object it edits."}
+                )
+            # Planning requires only *view* — describing desired work is the
+            # workflow; the gate that matters is on the apply.
+            if not _can_view_object(self.request, otype, str(oid)):
+                raise PermissionDenied(
+                    "You can't plan a change on an object you can't view."
+                )
+            obj = model._default_manager.filter(pk=oid).first()
+            if obj is None:
+                raise ValidationError(
+                    {"object_id": "That object no longer exists."}
+                )
+            validate_payload(model, payload, instance=obj,
+                             request=self.request)
+            changed, before, display = diff_update(obj, payload)
+            if not changed:
+                raise ValidationError(
+                    {"payload": "Nothing changed — no plan was recorded."}
+                )
+            site_id = _object_site_id(otype, str(oid))
 
         with transaction.atomic():
             serializer.save(
                 tenant=tenant,
                 created_by=self.request.user,
-                object_site_id=_object_site_id(otype, str(oid)),
-                new_value=new_value,
-                new_display=new_display,
-                current_value=current_value,
-                current_display=current_display,
+                object_site_id=site_id,
+                payload=changed,
+                before=before,
+                display=display,
             )
-            # Keep the sheet's two panels honest: an object a task plans a
-            # change on is, by definition, an object the task touches.
-            TaskLink.objects.get_or_create(
-                task=task, object_type=otype, object_id=oid,
-                defaults={
-                    "tenant": tenant,
-                    "object_site_id": _object_site_id(otype, str(oid)),
-                },
-            )
+            if kind != PlannedChangeKind.CREATE:
+                # Keep the sheet's two panels honest: an object a task plans a
+                # change on is, by definition, an object the task touches.
+                TaskLink.objects.get_or_create(
+                    task=task, object_type=otype,
+                    object_id=data.get("object_id"),
+                    defaults={"tenant": tenant, "object_site_id": site_id},
+                )
 
     def perform_destroy(self, instance):
         if instance.state != PlannedChangeState.PLANNED:
@@ -299,10 +321,8 @@ class PlannedChangeViewSet(TenantScopedViewSet):
                 {
                     "detail": str(stale),
                     "stale": True,
-                    "current_value": stale.live_value,
+                    "stale_fields": stale.keys,
                     "current_display": stale.live_display,
-                    "planned_from_display": stale.current_display,
-                    "new_display": pc.new_display,
                 },
                 status=drf_status.HTTP_409_CONFLICT,
             )
@@ -349,11 +369,13 @@ class PlannedChangeViewSet(TenantScopedViewSet):
             ):
                 row["task_id"] = str(pc.task_id)
                 row["task_title"] = pc.task.title
-            if len(row["samples"]) < 3:
+            for d in pc.display or []:
+                if len(row["samples"]) >= 3:
+                    break
                 row["samples"].append({
-                    "field": pc.field,
-                    "from": pc.current_display,
-                    "to": pc.new_display,
+                    "field": d.get("label") or d.get("field"),
+                    "from": d.get("from", ""),
+                    "to": d.get("to", ""),
                 })
         for row in targets.values():
             row["tasks"] = len(row.pop("task_ids"))
