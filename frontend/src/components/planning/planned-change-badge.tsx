@@ -133,7 +133,11 @@ export function PlannedChangeMarker({
           <CalendarClock className="h-3.5 w-3.5" />
         </span>
       </TooltipTrigger>
-      <TooltipContent className="max-w-xs text-[11px]">
+      <TooltipContent
+        side="top"
+        variant="panel"
+        className="max-w-xs flex-col items-start gap-0.5 text-[11px]"
+      >
         <Body row={row} />
       </TooltipContent>
     </Tooltip>
@@ -176,7 +180,11 @@ export function PlannedChangeBadge({
           {row.count} planned
         </Link>
       </TooltipTrigger>
-      <TooltipContent className="max-w-xs text-[11px]">
+      <TooltipContent
+        side="top"
+        variant="panel"
+        className="max-w-xs flex-col items-start gap-0.5 text-[11px]"
+      >
         <Body row={row} />
       </TooltipContent>
     </Tooltip>

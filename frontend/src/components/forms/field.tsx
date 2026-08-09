@@ -2,6 +2,7 @@ import { type ReactNode } from "react"
 
 import { Label } from "@/components/ui/label"
 import { InfoTip } from "@/components/ui/info-tip"
+import { PendingFieldMark } from "@/lib/pending-fields"
 import { cn } from "@/lib/utils"
 
 // Shared field wrapper. Renders label + optional hint + the field
@@ -46,6 +47,9 @@ export function Field({
             </span>
           )}
           {info && <InfoTip>{info}</InfoTip>}
+          {/* "A change to this value is already planned" — renders
+              nothing unless a PendingFieldsProvider says so. */}
+          <PendingFieldMark label={label} />
         </Label>
         {hint && (
           <span className="text-[10px] text-muted-foreground">{hint}</span>

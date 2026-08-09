@@ -33,7 +33,11 @@ const NOT_OBJECT_SAVES = [
 
 /** Forms still writing directly. Each entry is a form yet to be migrated onto
  *  `useSaveObject`; its object type must therefore stay OUT of PLAN_CAPABLE.
- *  Shrink this list as forms migrate — never grow it. */
+ *
+ *  The assertion is **directional**: the scan must be a SUBSET of this list. A
+ *  migration therefore needs no edit here (the scan just shrinks), which is what
+ *  lets several people migrate different domains without fighting over this
+ *  file — while a brand-new form that writes directly still fails the test. */
 const UNMIGRATED_FORMS = new Set<string>([
   // The E3 worklist, produced by this very scan. Every entry is a form that
   // still writes directly, so its object type must stay out of PLAN_CAPABLE.
@@ -180,16 +184,15 @@ describe("plan-capable forms", () => {
     ).toEqual([])
   })
 
-  it("keeps un-migrated forms out of plan mode", () => {
-    const stragglers = formsWritingDirectly()
-    // Anything still writing directly must not be reachable in plan mode. The
-    // registry lists object types, the scan lists files; the contract we can
-    // assert cheaply is that the straggler list matches the declared one.
+  it("never introduces a new form that writes directly", () => {
+    const unexpected = formsWritingDirectly().filter(
+      (f) => !UNMIGRATED_FORMS.has(f)
+    )
     expect(
-      stragglers,
-      "A form writes directly without useSaveObject. Either migrate it, or " +
-        "add it to UNMIGRATED_FORMS and keep its type out of PLAN_CAPABLE."
-    ).toEqual([...UNMIGRATED_FORMS].sort())
+      unexpected,
+      "This form writes straight to the API. Route it through useSaveObject " +
+        "so planning can reuse it — see any *-form.tsx for the pattern."
+    ).toEqual([])
   })
 
   it("isPlanCapable is exact, not prefix-matched", () => {

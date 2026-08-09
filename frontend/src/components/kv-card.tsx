@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { copyText } from "@/lib/clipboard"
 import { dash } from "@/components/cells/dash"
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
+import { PendingFieldMark } from "@/lib/pending-fields"
 
 export { dash } from "@/components/cells/dash"
 
@@ -41,7 +42,10 @@ export function KvCard({ title, rows }: { title: string; rows: KvRow[] }) {
                 className={i % 2 === 1 ? "bg-muted/30" : undefined}
               >
                 <TableCell className="w-40 py-2 align-top text-xs text-muted-foreground">
-                  {r.label}
+                  <span className="inline-flex items-center gap-1">
+                    {r.label}
+                    <PendingFieldMark label={r.label} />
+                  </span>
                 </TableCell>
                 <TableCell className="py-2 text-[13px] text-foreground">
                   {r.value}

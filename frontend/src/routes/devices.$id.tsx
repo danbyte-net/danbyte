@@ -68,6 +68,7 @@ import {
   PlannedChangeBadge,
   usePlannedChangeMap,
 } from "@/components/planning/planned-change-badge"
+import { PendingFieldsProvider } from "@/lib/pending-fields"
 import { DeviceDeleteDialog } from "@/components/device-delete-dialog"
 import { DeviceSyncTypeDialog } from "@/components/device-sync-type-dialog"
 import { StatusBadge } from "@/components/status-badge"
@@ -395,7 +396,11 @@ function Body({ device: d }: { device: Device }) {
       onTabChange={(v) => setTab(v as DeviceTab)}
     >
       <DetailTab value="overview">
-        <DeviceOverview device={d} onTab={setTab} />
+        {/* Marks any attribute a task plans to change, so the Overview says
+            "this value might change soon" where the value actually is. */}
+        <PendingFieldsProvider objectType="api.device" objectId={d.id}>
+          <DeviceOverview device={d} onTab={setTab} />
+        </PendingFieldsProvider>
       </DetailTab>
       <DetailTab value="snmp">
         <div className="space-y-6">
