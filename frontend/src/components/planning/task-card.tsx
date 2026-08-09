@@ -6,8 +6,8 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronsUp,
-  Equal,
   Flag,
+  Minus,
   type LucideIcon,
 } from "lucide-react"
 
@@ -35,7 +35,7 @@ const PRIORITY: Record<
   },
   medium: {
     label: "Medium",
-    icon: Equal,
+    icon: Minus,
     className: "bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300",
   },
   high: {

@@ -7,6 +7,7 @@ import { api, type Paginated, type PlanningMilestone } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { ColorPicker } from "@/components/ui/color-picker"
 import { DatePicker } from "@/components/ui/date-picker"
 import {
   Dialog,
@@ -156,19 +157,17 @@ function MilestoneRow({
   onDelete: () => void
 }) {
   const [name, setName] = useState(milestone.name)
-  const [color, setColor] = useState(milestone.color || "#a1a1aa")
+  const [color, setColor] = useState(milestone.color)
   const [weight, setWeight] = useState(String(milestone.weight))
 
   return (
     <div className="flex flex-wrap items-center gap-3 px-4 py-2.5">
-      <input
-        type="color"
+      <ColorPicker
         value={color}
-        disabled={!canEdit}
-        onChange={(e) => setColor(e.target.value)}
-        onBlur={() => color !== milestone.color && onPatch({ color })}
-        className="h-6 w-8 cursor-pointer rounded border border-border bg-transparent"
-        title="Milestone color"
+        onChange={(v) => {
+          setColor(v)
+          if (v !== milestone.color) onPatch({ color: v })
+        }}
       />
       <Input
         value={name}

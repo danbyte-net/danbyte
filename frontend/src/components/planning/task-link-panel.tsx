@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { FormSelect } from "@/components/forms"
 import { CfObjectPicker } from "@/components/cf-object-picker"
 import { apiErrorToast } from "@/lib/api-toast"
-import { DeviceFaceplate } from "./device-faceplate"
+import { LinkedDeviceCard } from "./linked-device-card"
 import { ObjectRow, objectIcon, slugFromObjectType } from "./object-chip"
 
 /** Attach any registered Danbyte object to a task: pick a type, pick the
@@ -137,31 +137,35 @@ export function TaskLinkPanel({
                 </span>
               </div>
               <div className="divide-y divide-border">
-                {g.items.map((l) => (
-                  <div key={l.id}>
+                {g.items.map((l) => {
+                  const removeButton = canEdit && (
+                    <button
+                      type="button"
+                      className="rounded p-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
+                      title="Remove link"
+                      onClick={() => remove.mutate(l.id)}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )
+                  // Devices get the full treatment: faceplate, hardware, IP.
+                  return g.slug === "device" ? (
+                    <LinkedDeviceCard
+                      key={l.id}
+                      deviceId={l.object_id}
+                      action={removeButton}
+                    />
+                  ) : (
                     <ObjectRow
+                      key={l.id}
                       slug={g.slug}
                       id={l.object_id}
                       typeLabel={g.label}
                       note={l.note || undefined}
-                      action={
-                        canEdit && (
-                          <button
-                            type="button"
-                            className="rounded p-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
-                            title="Remove link"
-                            onClick={() => remove.mutate(l.id)}
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        )
-                      }
+                      action={removeButton}
                     />
-                    {g.slug === "device" && (
-                      <DeviceFaceplate deviceId={l.object_id} />
-                    )}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )

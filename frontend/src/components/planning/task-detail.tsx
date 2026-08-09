@@ -111,6 +111,9 @@ export function TaskDetailSheet({
     onSuccess: () => {
       toast.success("Task saved")
       qc.invalidateQueries({ queryKey: ["planning-tasks"] })
+      // Milestone task_count is a server-side roll-up: moving a task between
+      // milestones changes two of them, so refresh the whole list.
+      qc.invalidateQueries({ queryKey: ["planning-milestones"] })
     },
     onError: (e) => apiErrorToast(e),
   })
@@ -121,6 +124,7 @@ export function TaskDetailSheet({
     onSuccess: () => {
       toast.success("Task deleted")
       qc.invalidateQueries({ queryKey: ["planning-tasks"] })
+      qc.invalidateQueries({ queryKey: ["planning-milestones"] })
       onOpenChange(false)
     },
     onError: (e) => apiErrorToast(e),
