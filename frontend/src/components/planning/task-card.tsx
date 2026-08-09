@@ -165,20 +165,32 @@ export function TaskCard({
             </span>
           ))}
           {task.assignee_detail.length > 0 && (
-            <AvatarGroup className="ml-auto shrink-0">
-              {task.assignee_detail.slice(0, 3).map((a) => (
-                <Avatar key={a.id} size="sm" title={a.username}>
-                  <AvatarFallback className="text-[9px]">
-                    {initials(a.username)}
-                  </AvatarFallback>
-                </Avatar>
-              ))}
-              {task.assignee_detail.length > 3 && (
-                <AvatarGroupCount>
-                  +{task.assignee_detail.length - 3}
-                </AvatarGroupCount>
-              )}
-            </AvatarGroup>
+            <span
+              className="ml-auto flex min-w-0 shrink items-center gap-1.5"
+              title={task.assignee_detail.map((a) => a.username).join(", ")}
+            >
+              <AvatarGroup className="shrink-0">
+                {task.assignee_detail.slice(0, 3).map((a) => (
+                  <Avatar key={a.id} size="sm">
+                    <AvatarFallback className="text-[9px]">
+                      {initials(a.username)}
+                    </AvatarFallback>
+                  </Avatar>
+                ))}
+                {task.assignee_detail.length > 3 && (
+                  <AvatarGroupCount>
+                    +{task.assignee_detail.length - 3}
+                  </AvatarGroupCount>
+                )}
+              </AvatarGroup>
+              {/* Initials alone don't answer "who has this?" — name the single
+                  assignee, and count the rest rather than a row of riddles. */}
+              <span className="truncate text-[11px] text-muted-foreground">
+                {task.assignee_detail.length === 1
+                  ? task.assignee_detail[0].username
+                  : `${task.assignee_detail.length} assignees`}
+              </span>
+            </span>
           )}
         </div>
       )}

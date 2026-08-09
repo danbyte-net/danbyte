@@ -32,6 +32,21 @@ alongside every other status catalog. Each row has:
 
 A status that still has tasks can't be deleted — move them first.
 
+## Assignees
+
+Assign a task to one or more people from the task sheet. The picker reads
+`/api/planning/assignable-users/`, which lists active users **of the current
+tenant** and is gated on *task* rights rather than user-administration rights —
+so an engineer who can edit tasks can assign them without also being able to
+administer accounts. Email addresses are included only for callers who may
+already read users.
+
+On the board, the faces of everyone with work on that board sit in the header:
+click one to filter the board to their tasks, click **Unassigned** for the
+orphans, click again to clear. The task count reads `3 of 12` while a filter is
+active. Cards name their assignee (or say `3 assignees`) rather than showing
+initials alone.
+
 ## Milestones
 
 A milestone is a named target on a board that tasks roll up to — "Rack A

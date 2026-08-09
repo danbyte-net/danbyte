@@ -5153,6 +5153,16 @@ export interface PlanningTaskLink {
   note: string
 }
 
+/** A candidate task assignee, from /api/planning/assignable-users/. Gated on
+ * task rights rather than user-administration rights, so email is only filled
+ * in for callers who may already read users. */
+export interface PlanningAssignableUser {
+  id: number
+  username: string
+  display_name: string
+  email: string
+}
+
 export interface PlanningMilestone {
   id: string
   board: string

@@ -121,6 +121,82 @@ class TaskApiTests(Base):
         self.assertTrue(TaskStatus.objects.filter(id=st.id).exists())
 
 
+class AssignableUsersTests(Base):
+    """Assignment must work for someone who can edit tasks but is not a user
+    administrator — /api/users/ requires `user.view`, which made the assignee
+    picker silently empty (and assignment impossible) for exactly the people
+    who do the work."""
+
+    def _tenant_member(self, username, tenant=None, actions=("view", "change")):
+        from auth_api.models import ObjectPermission, UserProfile
+
+        user = User.objects.create_user(username, f"{username}@x.com", "x")
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.tenants.add(tenant or self.tenant)
+        perm = ObjectPermission.objects.create(
+            name=f"tasks-{username}", enabled=True,
+            object_types=["task"], actions=list(actions),
+        )
+        perm.users.add(user)
+        perm.tenants.add(tenant or self.tenant)
+        return user
+
+    def _as(self, user):
+        self.client.force_login(user)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def test_task_editor_without_user_view_can_list_assignees(self):
+        noc = self._tenant_member("noc1")
+        self._as(noc)
+        # The old path, for contrast: listing users is denied.
+        self.assertEqual(self.client.get("/api/users/").status_code, 403)
+        r = self.client.get("/api/planning/assignable-users/")
+        self.assertEqual(r.status_code, 200, r.content)
+        names = {u["username"] for u in r.json()["results"]}
+        self.assertIn("noc1", names)
+
+    def test_email_withheld_without_user_view(self):
+        noc = self._tenant_member("noc2")
+        self._as(noc)
+        rows = self.client.get("/api/planning/assignable-users/").json()["results"]
+        self.assertTrue(all(u["email"] == "" for u in rows))
+        # A superuser (who may read users) still gets addresses.
+        self.client.force_login(self.admin)
+        rows = self.client.get("/api/planning/assignable-users/").json()["results"]
+        self.assertTrue(any(u["email"] for u in rows))
+
+    def test_other_tenants_users_are_not_listed(self):
+        self._tenant_member("theirs", tenant=self.other)
+        noc = self._tenant_member("mine")
+        self._as(noc)
+        rows = self.client.get("/api/planning/assignable-users/").json()["results"]
+        self.assertNotIn("theirs", {u["username"] for u in rows})
+
+    def test_without_task_rights_denied(self):
+        from auth_api.models import ObjectPermission, UserProfile
+
+        outsider = User.objects.create_user("nobody", "n@x.com", "x")
+        profile, _ = UserProfile.objects.get_or_create(user=outsider)
+        profile.tenants.add(self.tenant)
+        perm = ObjectPermission.objects.create(
+            name="boards-only", enabled=True,
+            object_types=["board"], actions=["view"],
+        )
+        perm.users.add(outsider)
+        perm.tenants.add(self.tenant)
+        self._as(outsider)
+        self.assertEqual(
+            self.client.get("/api/planning/assignable-users/").status_code, 403
+        )
+
+    def test_search_filters(self):
+        self._tenant_member("alice")
+        r = self.client.get("/api/planning/assignable-users/?search=alic")
+        self.assertEqual({u["username"] for u in r.json()["results"]}, {"alice"})
+
+
 class MilestoneApiTests(Base):
     def test_milestone_lifecycle_and_task_rollup(self):
         board = self._board()

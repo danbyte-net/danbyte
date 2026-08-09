@@ -1,6 +1,7 @@
 """Planning API URLs — mounted under /api/planning/ by api/api_urls.py."""
 from __future__ import annotations
 
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .viewsets import (
@@ -10,6 +11,7 @@ from .viewsets import (
     TaskLinkViewSet,
     TaskStatusViewSet,
     TaskViewSet,
+    assignable_users,
 )
 
 router = DefaultRouter()
@@ -20,4 +22,7 @@ router.register(r"milestones", MilestoneViewSet, basename="planning-milestone")
 router.register(r"tasks", TaskViewSet, basename="planning-task")
 router.register(r"links", TaskLinkViewSet, basename="planning-link")
 
-urlpatterns = [*router.urls]
+urlpatterns = [
+    path("assignable-users/", assignable_users, name="planning-assignable-users"),
+    *router.urls,
+]

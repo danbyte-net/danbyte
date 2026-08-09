@@ -2,7 +2,8 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronsUpDown } from "lucide-react"
 
-import { api, type Paginated, type RBACUser } from "@/lib/api"
+import { api, type PlanningAssignableUser } from "@/lib/api"
+import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -13,7 +14,11 @@ import {
 } from "@/components/ui/popover"
 import { Field } from "@/components/forms"
 
-/** Multi-select assignee picker over /api/users/. Value is user ids. */
+/** Multi-select assignee picker. Value is user ids.
+ *
+ * Reads /api/planning/assignable-users/, not /api/users/ — the latter is gated
+ * on `user.view`, so anyone with task rights but no user-administration grant
+ * got a 403 and an empty picker, making assignment quietly admin-only. */
 export function UserPicker({
   label = "Assignees",
   value,
@@ -25,28 +30,36 @@ export function UserPicker({
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState("")
+  const { me } = useMe()
   const usersQ = useQuery({
-    queryKey: ["users", ""],
-    queryFn: () => api<Paginated<RBACUser>>("/api/users/"),
+    queryKey: ["planning-assignable-users"],
+    queryFn: () =>
+      api<{ results: PlanningAssignableUser[] }>(
+        "/api/planning/assignable-users/"
+      ),
     staleTime: 60_000,
   })
-  const users = (usersQ.data?.results ?? []).filter(
+  const all = usersQ.data?.results ?? []
+  const users = all.filter(
     (u) =>
       !q ||
       u.username.toLowerCase().includes(q.toLowerCase()) ||
+      u.display_name.toLowerCase().includes(q.toLowerCase()) ||
       (u.email ?? "").toLowerCase().includes(q.toLowerCase())
   )
   const selected = new Set(value)
   const summary =
     value.length === 0
       ? "Unassigned"
-      : (usersQ.data?.results ?? [])
+      : all
           .filter((u) => selected.has(u.id))
-          .map((u) => u.username)
+          .map((u) => u.display_name)
           .join(", ") || `${value.length} selected`
 
   const toggle = (id: number) =>
     onChange(selected.has(id) ? value.filter((v) => v !== id) : [...value, id])
+
+  const self = all.find((u) => u.username === me.username)
 
   return (
     <Field label={label}>
@@ -62,12 +75,25 @@ export function UserPicker({
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-72 p-2" align="start">
-          <Input
-            placeholder="Search users…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            className="mb-2 h-8"
-          />
+          <div className="mb-2 flex items-center gap-2">
+            <Input
+              placeholder="Search users…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="h-8"
+            />
+            {self && !selected.has(self.id) && (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="shrink-0"
+                onClick={() => toggle(self.id)}
+              >
+                Me
+              </Button>
+            )}
+          </div>
           <div className="max-h-56 space-y-0.5 overflow-y-auto">
             {users.map((u) => (
               <label
@@ -78,7 +104,7 @@ export function UserPicker({
                   checked={selected.has(u.id)}
                   onCheckedChange={() => toggle(u.id)}
                 />
-                <span className="truncate">{u.username}</span>
+                <span className="truncate">{u.display_name}</span>
                 {u.email && (
                   <span className="ml-auto truncate text-[11px] text-muted-foreground">
                     {u.email}
@@ -88,7 +114,7 @@ export function UserPicker({
             ))}
             {users.length === 0 && (
               <p className="px-2 py-3 text-center text-[12px] text-muted-foreground">
-                No users match.
+                {usersQ.isLoading ? "Loading..." : "No users match."}
               </p>
             )}
           </div>

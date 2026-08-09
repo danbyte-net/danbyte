@@ -8,10 +8,17 @@ retargeting is rejected outright.
 """
 from __future__ import annotations
 
+from django.contrib.auth import get_user_model
 from django.db.models import Count, ProtectedError, Q
+from rest_framework import permissions
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.response import Response
 
+from api.views import _get_active_tenant
 from api.viewsets import TenantScopedViewSet
+from auth_api import rbac
+from auth_api.permissions import can_manage_deployment
 
 from .models import (
     Board,
@@ -174,3 +181,53 @@ class TaskLinkViewSet(TenantScopedViewSet):
         serializer.save(
             tenant=tenant, object_site_id=_object_site_id(otype, str(oid))
         )
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def assignable_users(request):
+    """Who can be assigned a task in the active tenant.
+
+    Deliberately NOT ``/api/users/``: that endpoint is gated on ``user.view``,
+    so a NOC engineer with full task rights but no user-administration grant got
+    a 403 and an empty assignee picker — assignment was effectively
+    admin-only. Being able to *change tasks* is the right gate for "show me who
+    to assign", and the payload is narrowed to match: id, username and display
+    name for members of this tenant only.
+
+    Email is included only for callers who may already read users, since it is
+    personal data the task board has no need for.
+    """
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        raise PermissionDenied("No active tenant selected.")
+    if not (
+        rbac.has_action(request.user, tenant, "task", "change")
+        or rbac.has_action(request.user, tenant, "task", "add")
+    ):
+        raise PermissionDenied("task:change required.")
+
+    User = get_user_model()
+    qs = User.objects.filter(is_active=True)
+    # Superusers and deployment admins operate across tenants; everyone else
+    # sees only users who are members of this tenant.
+    if not (request.user.is_superuser or can_manage_deployment(request.user)):
+        qs = qs.filter(profile__tenants=tenant).distinct()
+    search = (request.query_params.get("search") or "").strip()
+    if search:
+        qs = qs.filter(
+            Q(username__icontains=search)
+            | Q(first_name__icontains=search)
+            | Q(last_name__icontains=search)
+        )
+    with_email = rbac.has_action(request.user, tenant, "user", "view")
+    rows = []
+    for u in qs.order_by("username")[:200]:
+        full = f"{u.first_name} {u.last_name}".strip()
+        rows.append({
+            "id": u.id,
+            "username": u.username,
+            "display_name": full or u.username,
+            "email": u.email if with_email else "",
+        })
+    return Response({"results": rows})

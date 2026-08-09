@@ -13,6 +13,11 @@ import {
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
+import {
+  AssigneeFilterStrip,
+  filterByAssignee,
+  type AssigneeFilter,
+} from "@/components/planning/assignee-filter"
 import { BoardCanvas } from "@/components/planning/board-canvas"
 import { MilestoneManagerDialog } from "@/components/planning/milestone-manager"
 import { TaskDetailSheet } from "@/components/planning/task-detail"
@@ -27,6 +32,7 @@ function BoardPage() {
   const canEdit = canDo("task", "change") || canDo("task", "add")
   const [openTask, setOpenTask] = useState<PlanningTask | null>(null)
   const [milestonesOpen, setMilestonesOpen] = useState(false)
+  const [assignee, setAssignee] = useState<AssigneeFilter>(null)
 
   const boardQ = useQuery({
     queryKey: ["planning-board", boardId],
@@ -51,6 +57,7 @@ function BoardPage() {
   const board = boardQ.data
   const statuses = statusesQ.data?.results ?? []
   const tasks = tasksQ.data?.results ?? []
+  const shown = filterByAssignee(tasks, assignee)
   // Keep the sheet's task fresh after edits.
   const openTaskLive = openTask
     ? (tasks.find((t) => t.id === openTask.id) ?? openTask)
@@ -67,8 +74,15 @@ function BoardPage() {
         </Link>
         <h1 className="text-sm font-semibold">{board?.name ?? "…"}</h1>
         <span className="text-[12px] text-muted-foreground">
-          {tasks.length} task{tasks.length === 1 ? "" : "s"}
+          {assignee === null
+            ? `${tasks.length} task${tasks.length === 1 ? "" : "s"}`
+            : `${shown.length} of ${tasks.length}`}
         </span>
+        <AssigneeFilterStrip
+          tasks={tasks}
+          value={assignee}
+          onChange={setAssignee}
+        />
         <Button
           size="sm"
           variant="ghost"
@@ -85,7 +99,7 @@ function BoardPage() {
           <BoardCanvas
             boardId={boardId}
             statuses={statuses}
-            tasks={tasks}
+            tasks={shown}
             onOpenTask={setOpenTask}
             canEdit={canEdit}
           />
