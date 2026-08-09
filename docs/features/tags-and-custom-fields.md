@@ -81,6 +81,27 @@ role.
     work with zero frontend changes. Call both from your
     `AppConfig.ready()`.
 
+    Three `ReferenceModel` fields decide how your model is scoped and
+    labelled:
+
+    - `tenant_field` — the ORM path from your model to its Tenant. A
+      **lookup path** is fine, not just a local field: a model with no
+      tenant FK of its own says something like `"device__tenant"`
+      (interfaces do). `None` means the model is global and skips tenant
+      filtering entirely — never use it to work around a path that doesn't
+      resolve, because that turns a scoping bug into a cross-tenant leak.
+    - `label_field` — the attribute holding the display label, or `None` to
+      use the model's `__str__`. Prefer `None` when the bare field is
+      ambiguous: an interface name is unique only per device, so `Gi2/1`
+      means nothing without `sw-01` in front of it.
+    - `select_related` — joins to follow while resolving labels, so a
+      `__str__` that reaches through a relation isn't an N+1 across a
+      200-id batch.
+
+    `customization/tests_reference_registry.py` walks every registered entry
+    and fails if a `tenant_field`, `label_field` or `select_related` doesn't
+    resolve — including entries added by plugins.
+
 ### Adding a custom field
 
 1. Go to **Customize → Custom fields** and click **Add custom field**.

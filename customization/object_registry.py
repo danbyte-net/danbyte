@@ -59,10 +59,20 @@ class ReferenceModel:
     label: str
     app_model: str          # "api.Device" — resolved lazily via apps registry
     endpoint: str           # SPA list endpoint
-    label_field: str = "name"
+    # The attribute holding the display label. None → the model's own __str__,
+    # for models whose bare field is ambiguous (an interface name is unique only
+    # per device, so "Gi2/1" needs its device to mean anything).
+    label_field: str | None = "name"
     picker: bool = True     # endpoint supports ?picker=1
-    tenant_field: str | None = "tenant"  # None → global (users, groups)
+    # ORM lookup from this model to its Tenant. A *lookup path* is allowed, not
+    # just a local field: models with indirect tenancy (Interface and friends
+    # have no tenant FK) say "device__tenant". None → global (users, groups) and
+    # skips tenant filtering entirely, so never use it to paper over a bad path.
+    tenant_field: str | None = "tenant"
     route: str | None = None  # SPA detail route template ("/devices/$id")
+    # Joins resolve_labels should follow — needed when the label comes from
+    # __str__ and reaches through a relation, or a 200-id batch is an N+1.
+    select_related: tuple[str, ...] = ()
 
     @property
     def model(self):
@@ -122,8 +132,13 @@ for _e in [
                    label_field="cidr", picker=False, route="/prefixes/$id"),
     ReferenceModel("ipaddress", "IP addresses", "api.IPAddress", "/api/ips/",
                    label_field="ip_address", picker=False, route="/ips/$id"),
+    # Interfaces carry no tenant FK — scope through the device, exactly as
+    # InterfaceViewSet does. The label is the device-qualified __str__ because
+    # "Gi2/1" alone doesn't identify anything (unique_together device+name).
     ReferenceModel("interface", "Interfaces", "api.Interface",
-                   "/api/interfaces/", route="/interfaces/$id"),
+                   "/api/interfaces/", label_field=None,
+                   tenant_field="device__tenant", select_related=("device",),
+                   route="/interfaces/$id"),
     ReferenceModel("cluster", "Clusters", "api.Cluster", "/api/clusters/",
                    route="/clusters/$id"),
     ReferenceModel("virtualmachine", "Virtual machines", "api.VirtualMachine",
@@ -145,11 +160,14 @@ def resolve_labels(slug: str, ids: list[str], tenant=None) -> list[dict]:
     if ref is None or not ids:
         return []
     qs = ref.model.objects.filter(pk__in=ids)
+    if ref.select_related:
+        qs = qs.select_related(*ref.select_related)
     if ref.tenant_field and tenant is not None:
         qs = qs.filter(**{ref.tenant_field: tenant})
     out = []
     for obj in qs:
-        label = getattr(obj, ref.label_field, None) or str(obj)
+        label = getattr(obj, ref.label_field, None) if ref.label_field else None
+        label = label or str(obj)
         out.append({
             "id": str(obj.pk),
             "label": str(label),
