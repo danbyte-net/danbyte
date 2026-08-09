@@ -44,6 +44,37 @@ remaining operational endpoints (monitoring, compliance, import/export, system,
 settings, …) are annotated with `@extend_schema` so they appear with proper
 summaries, request bodies, and responses.
 
+## Asking the API what it accepts
+
+Two endpoints describe the API's own vocabulary so a client never has to
+hard-code a list that can go stale:
+
+- **`GET /api/dcim/choices/`** — the option lists behind the long taxonomy
+  dropdowns (interface and cable types, duplex, 802.1Q modes, PoE, connector
+  fibre counts, common speeds). Each option carries `value`, `label` and a
+  `group` so a UI can render sub-categorised dropdowns.
+- **`GET /api/editable-fields/`** — which fields of a model a *field-level*
+  write path may set, and what editor each needs. `?model=interface` (registry
+  slug or `api.interface`) returns descriptors:
+
+  ```json
+  {"key": "mtu",       "label": "MTU",           "kind": "int",    "nullable": true}
+  {"key": "type",      "label": "Type",          "kind": "choice", "choices": "interface_types"}
+  {"key": "status_id", "label": "Status",        "kind": "status", "status_model": "device"}
+  {"key": "site_id",   "label": "Site",          "kind": "object", "object_model": "site",
+                                                 "endpoint": "/api/sites/"}
+  ```
+
+  `kind` names the editor to render; `choices`/`suggestions` name a list in
+  `/api/dcim/choices/`. Omitting `?model=` lists the covered models. The
+  response is **filtered by the caller's `change` permission** — it describes
+  writes, so a caller who cannot change devices does not see `device` at all.
+
+  The field names come from each viewset's own write allow-list (the same
+  declaration `bulk-update` enforces); everything else — label, editor kind,
+  option list, nullability — is derived from the model definition, so this
+  endpoint cannot drift from what a write will actually accept.
+
 ## Generating the schema offline
 
 To export the schema to a file (for client generation, diffing, or CI):

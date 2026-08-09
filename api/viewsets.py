@@ -482,7 +482,47 @@ class CatalogLocalityMixin:
         return Response(self.get_serializer(obj).data)
 
 
-class ComponentBulkMixin:
+class FieldWriteAllowList:
+    """Which model fields a *field-level* write path may set on this model.
+
+    Two consumers read this declaration:
+
+    * :meth:`ComponentBulkMixin.bulk_update`, which **enforces** it, and
+    * :mod:`api.editable_fields`, which turns it into editor metadata for bulk
+      edit and for planning's planned changes.
+
+    Declaring it in one place rather than inside either consumer is what stops
+    the metadata endpoint becoming a third list that can silently disagree with
+    the two that already exist.
+
+    ``editable_*`` is the current spelling. The ``bulk_*`` names predate it and
+    stay authoritative, so the existing component viewsets need no edit. Note
+    the consequence: adding ``editable_*`` to a viewset that *does* have a
+    ``bulk-update`` endpoint also makes those fields bulk-editable.
+    """
+
+    editable_str_fields: tuple = ()
+    editable_bool_fields: tuple = ()
+    editable_int_fields: tuple = ()
+    editable_fk_fields: dict = {}
+
+    bulk_str_fields: tuple = ()
+    bulk_bool_fields: tuple = ()
+    bulk_int_fields: tuple = ()          # nullable ints
+    bulk_fk_fields: dict = {}            # "vlan_id" → tenant-scoped model
+
+    @classmethod
+    def field_write_allow_list(cls) -> dict:
+        """``{"str": (...), "bool": (...), "int": (...), "fk": {...}}``."""
+        return {
+            "str": (*cls.editable_str_fields, *cls.bulk_str_fields),
+            "bool": (*cls.editable_bool_fields, *cls.bulk_bool_fields),
+            "int": (*cls.editable_int_fields, *cls.bulk_int_fields),
+            "fk": {**cls.editable_fk_fields, **cls.bulk_fk_fields},
+        }
+
+
+class ComponentBulkMixin(FieldWriteAllowList):
     """``bulk-update`` + ``bulk-delete`` for component viewsets (interfaces,
     ports, VM interfaces, device-type component templates).
 
@@ -493,13 +533,11 @@ class ComponentBulkMixin:
     the serializer's scoped fields. Selection is scoped by ``get_queryset``
     (tenant + RBAC rows), so foreign ids silently fall out.
 
+    The allow-list itself lives on :class:`FieldWriteAllowList`.
+
     POST ``bulk-delete`` {ids: [...]} — same scoping; audited.
     """
 
-    bulk_str_fields: tuple = ()
-    bulk_bool_fields: tuple = ()
-    bulk_int_fields: tuple = ()          # nullable ints
-    bulk_fk_fields: dict = {}            # "vlan_id" → tenant-scoped model
     bulk_tags = False                    # add_tag_ids / remove_tag_ids
     # The FK column that scopes name-uniqueness for rename/clone, e.g.
     # "device_type_id" (templates) or "device_id" (device components). None
@@ -525,10 +563,8 @@ class ComponentBulkMixin:
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
-        allowed = {
-            *self.bulk_str_fields, *self.bulk_bool_fields,
-            *self.bulk_int_fields, *self.bulk_fk_fields,
-        }
+        spec = self.field_write_allow_list()
+        allowed = {*spec["str"], *spec["bool"], *spec["int"], *spec["fk"]}
         tag_keys = {"add_tag_ids", "remove_tag_ids"} if self.bulk_tags else set()
         unknown = set(fields) - allowed - tag_keys
         if unknown:
@@ -540,7 +576,7 @@ class ComponentBulkMixin:
         tenant = _get_active_tenant(request)
         model = self.get_queryset().model
         updates = {}
-        for k in self.bulk_str_fields:
+        for k in spec["str"]:
             if k in fields:
                 v = "" if fields[k] is None else str(fields[k])
                 # Choice-backed CharFields validate against the model's own
@@ -560,18 +596,18 @@ class ComponentBulkMixin:
                         {k: f"'{v}' is not a valid choice. Options: {hint}"}
                     )
                 updates[k] = v
-        for k in self.bulk_bool_fields:
+        for k in spec["bool"]:
             if k in fields:
                 if not isinstance(fields[k], bool):
                     raise ValidationError({k: "Must be true or false."})
                 updates[k] = fields[k]
-        for k in self.bulk_int_fields:
+        for k in spec["int"]:
             if k in fields:
                 v = fields[k]
                 if v is not None and not isinstance(v, int):
                     raise ValidationError({k: "Must be an integer or null."})
                 updates[k] = v
-        for k, model in self.bulk_fk_fields.items():
+        for k, model in spec["fk"].items():
             if k in fields:
                 v = fields[k]
                 if v and not model.objects.filter(pk=v, tenant=tenant).exists():
@@ -861,7 +897,14 @@ class ImageAttachmentMixin:
         return Response(ser.data)
 
 
-class PrefixViewSet(CloneableMixin, TenantScopedViewSet):
+class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+    # Mirrors what this viewset's own bulk_update action already accepts, so
+    # api.editable_fields can describe prefixes without a second list. The
+    # bespoke action stays the enforcer; a test asserts the two agree.
+    editable_str_fields = ("description",)
+    editable_fk_fields = {
+        "status_id": Status, "vrf_id": VRF, "site_id": Site, "vlan_id": VLAN,
+    }
     queryset = (
         Prefix.objects
         .select_related("site", "vlan__zone", "vrf", "location")
@@ -1174,7 +1217,10 @@ class PrefixViewSet(CloneableMixin, TenantScopedViewSet):
         return Response({"updated": updated_count}, status=drf_status.HTTP_200_OK)
 
 
-class IPAddressViewSet(CloneableMixin, TenantScopedViewSet):
+class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+    # Mirrors this viewset's own bulk_update action (see PrefixViewSet).
+    editable_str_fields = ("description",)
+    editable_fk_fields = {"status_id": Status, "role_id": IPRole}
     queryset = (
         IPAddress.objects
         # prefix__vlan__zone: PrefixMiniSerializer nests the VLAN (+ its zone
@@ -1459,7 +1505,10 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         return Response({"updated": updated_count}, status=drf_status.HTTP_200_OK)
 
 
-class VLANViewSet(CloneableMixin, TenantScopedViewSet):
+class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+    # Mirrors this viewset's own bulk_update action (see PrefixViewSet).
+    editable_str_fields = ("description",)
+    editable_fk_fields = {"site_id": Site, "zone_id": Zone}
     queryset = VLAN.objects.select_related("site", "group", "zone").prefetch_related("tags").all().order_by("vlan_id")
     serializer_class = VLANSerializer
     pagination_class = StandardPagination
@@ -2607,7 +2656,9 @@ def _region_and_descendant_ids(region_id):
     return ids
 
 
-class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
+class DeviceViewSet(
+    FieldWriteAllowList, CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet
+):
     queryset = (
         # select_related every FK the serializer dereferences per row — role,
         # rack, status, platform, location, cluster were method-field lookups
@@ -2630,6 +2681,18 @@ class DeviceViewSet(CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet):
     )
     serializer_class = DeviceSerializer
     pagination_class = StandardPagination
+    # Field-level write allow-list, read by api.editable_fields — devices have
+    # NO bulk-update endpoint, so this only powers planned changes and any
+    # future single-field write path. Rack *placement* scalars (position, face,
+    # rack_side, mount) are deliberately absent: they interact, so they need a
+    # multi-field write, and the serializer rejects an inconsistent one.
+    editable_str_fields = (
+        "description", "comments", "serial_number", "asset_tag", "airflow",
+    )
+    editable_fk_fields = {
+        "status_id": Status, "role_id": DeviceRole, "platform_id": Platform,
+        "site_id": Site, "location_id": Location, "rack_id": Rack,
+    }
     # Name/serial/asset-tag/IPs are identity; rack placement is left blank so the
     # clone doesn't fight for the source's rack unit. Carry type/role/site/etc.
     clone_fields = (
@@ -3953,6 +4016,10 @@ class DeviceBayTemplateViewSet(_ComponentTemplateViewSet):
 
 
 class DeviceBayViewSet(_DevicePortViewSet):
+    # Bays have no `type` field — the shared port base declares one for
+    # front/rear ports, and bulk-updating `type` here used to 500 inside
+    # the choices lookup instead of returning a 400.
+    bulk_str_fields = ("description",)
     queryset = (
         DeviceBay.objects.select_related("device", "installed_device")
         .prefetch_related("tags")
@@ -4047,6 +4114,10 @@ class ModuleInterfaceTemplateViewSet(TenantScopedViewSet):
 
 
 class ModuleBayViewSet(_DevicePortViewSet):
+    # Bays have no `type` field — the shared port base declares one for
+    # front/rear ports, and bulk-updating `type` here used to 500 inside
+    # the choices lookup instead of returning a 400.
+    bulk_str_fields = ("description",)
     queryset = (
         ModuleBay.objects.select_related("device")
         .prefetch_related("tags", "module__module_type")

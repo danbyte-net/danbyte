@@ -89,6 +89,7 @@ from compliance.api import (
 from .topology_views import topology_view
 from .mac_views import mac_list_view, mac_detail_view
 from .dcim_choices import dcim_choices_view
+from .editable_fields import editable_fields_view
 from .io_views import (
     io_types_view, io_fields_view, io_export_view, io_import_view,
 )
@@ -378,6 +379,7 @@ urlpatterns = [
     path("macs/", mac_list_view, name="macs"),
     path("macs/<str:mac>/", mac_detail_view, name="mac-detail"),
     path("dcim/choices/", dcim_choices_view, name="dcim-choices"),
+    path("editable-fields/", editable_fields_view, name="editable-fields"),
     path("monitoring/", include("monitoring.api_urls")),
     path("planning/", include("planning.api_urls")),
     path("outpost/", include("monitoring.outpost_urls")),
