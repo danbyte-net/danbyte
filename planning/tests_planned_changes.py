@@ -169,6 +169,32 @@ class DiffTests(_PlanBase):
         self.assertEqual(row["to"], "Decommissioning")
         self.assertEqual(row["from"], str(dev.status))
 
+    def test_list_and_json_valued_fields_do_not_crash(self):
+        """A real DeviceForm payload carries `tag_ids` (a list) and
+        `custom_fields` (a dict). Rendering those through a choices lookup raised
+        `unhashable type: \'list\'` and 500'd the whole plan — taggit's
+        TaggableManager reports many_to_many but is not a ManyToManyField, so the
+        m2m branch was skipped."""
+        dev = self._device()
+        payload = self._device_payload(
+            dev, description="planned tweak", tag_ids=[], custom_fields={},
+        )
+        r = self._plan(self._task(), "device", dev.id, payload)
+        self.assertEqual(r.status_code, 201, r.content)
+        # Unchanged list/dict keys must not show up as changes.
+        self.assertEqual(set(r.json()["payload"]), {"description"})
+
+    def test_changing_tags_renders_their_names(self):
+        from core.models import Tag
+
+        dev = self._device()
+        tag = Tag.objects.create(tenant=self.tenant, name="to-replace", slug="tr")
+        r = self._plan(self._task(), "device", dev.id,
+                       self._device_payload(dev, tag_ids=[str(tag.pk)]))
+        self.assertEqual(r.status_code, 201, r.content)
+        row = next(d for d in r.json()["display"] if d["field"] == "tag_ids")
+        self.assertEqual(row["to"], "to-replace")
+
     def test_payload_is_validated_at_plan_time(self):
         """A plan is held to the same rules a real write would be."""
         dev = self._device()

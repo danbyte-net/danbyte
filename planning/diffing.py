@@ -23,6 +23,41 @@ from api.editable_fields import field_for, serializer_for
 _ABSENT = object()
 
 
+def _is_m2m(field) -> bool:
+    """Many-to-many by *behaviour*, not by class.
+
+    ``isinstance(field, ManyToManyField)`` is not enough: taggit's
+    ``TaggableManager`` sets ``many_to_many = True`` without subclassing it, and
+    checking the class let a list value fall through to the scalar branch, where
+    a choices lookup raised ``unhashable type: 'list'``.
+    """
+    return bool(getattr(field, "many_to_many", False))
+
+
+def _plain(value) -> str:
+    """Last-resort rendering for a value with no field-specific treatment.
+
+    Lists and dicts get a readable summary rather than a repr — and, crucially,
+    never reach a dict lookup, which would raise on an unhashable value.
+    """
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v) for v in value) if value else "none"
+    if isinstance(value, dict):
+        if not value:
+            return "none"
+        return ", ".join(f"{k}: {v}" for k, v in sorted(value.items()))[:200]
+    return str(value)
+
+
+def _related_names(field, value) -> str:
+    related = getattr(field, "related_model", None)
+    ids = list(value) if isinstance(value, (list, tuple)) else [value]
+    if related is None:
+        return _plain(value)
+    names = [str(o) for o in related._default_manager.filter(pk__in=ids)]
+    return ", ".join(names) if names else _plain(value)
+
+
 def _display_of(model, key: str, value):
     """A human string for one write value.
 
@@ -33,18 +68,18 @@ def _display_of(model, key: str, value):
         return ""
     field = _model_field(model, key)
     if field is None:
-        return str(value)
+        return _plain(value)
     if isinstance(field, models.BooleanField):
         return "Yes" if value else "No"
-    if isinstance(field, models.ManyToManyField):
-        related = field.related_model
-        names = [
-            str(o) for o in related._default_manager.filter(pk__in=list(value))
-        ]
-        return ", ".join(names)
+    if _is_m2m(field):
+        return _related_names(field, value)
     if isinstance(field, models.ForeignKey):
         obj = field.related_model._default_manager.filter(pk=value).first()
-        return str(obj) if obj is not None else str(value)
+        return str(obj) if obj is not None else _plain(value)
+    # Only scalars can index a choices map; anything else (JSON blobs, lists)
+    # renders generically.
+    if isinstance(value, (list, tuple, dict)):
+        return _plain(value)
     flat = dict(getattr(field, "flatchoices", []) or [])
     return str(flat.get(value, value))
 
@@ -88,10 +123,11 @@ def current_write_value(obj, key: str):
     field = _model_field(model, key)
     if field is None:
         return getattr(obj, key, _ABSENT)
-    if isinstance(field, models.ManyToManyField):
-        return sorted(
-            str(pk) for pk in getattr(obj, field.name).values_list("pk", flat=True)
-        )
+    if _is_m2m(field):
+        manager = getattr(obj, field.name, None)
+        if manager is None:
+            return _ABSENT
+        return sorted(str(pk) for pk in manager.values_list("pk", flat=True))
     if isinstance(field, models.ForeignKey):
         value = getattr(obj, field.attname, _ABSENT)
         return str(value) if value not in (None, _ABSENT) else value

@@ -47,7 +47,7 @@ export function PlanActions({
         asChild
         size="sm"
         variant="ghost"
-        className="shrink-0"
+        className="shrink-0 whitespace-nowrap"
         title="Open this object's edit form and record what you change"
       >
         <Link to={editUrl} search={search}>
@@ -61,19 +61,27 @@ export function PlanActions({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size="sm" variant="ghost" className="shrink-0">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="shrink-0 whitespace-nowrap"
+        >
           <CalendarClock className="h-3.5 w-3.5" /> Plan
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="end" className="min-w-52">
         <DropdownMenuItem asChild>
-          <Link to={editUrl} search={search}>
+          <Link to={editUrl} search={search} className="whitespace-nowrap">
             <CalendarClock className="h-3.5 w-3.5" /> Plan a change
           </Link>
         </DropdownMenuItem>
         {DEVICE_CHILDREN.map((child) => (
           <DropdownMenuItem key={child.to} asChild>
-            <Link to={child.to} search={{ ...search, device: objectId }}>
+            <Link
+              to={child.to}
+              search={{ ...search, device: objectId }}
+              className="whitespace-nowrap"
+            >
               <Plus className="h-3.5 w-3.5" /> Plan a new {child.label}
             </Link>
           </DropdownMenuItem>

@@ -165,7 +165,7 @@ export function TaskLinkPanel({
                       key={l.id}
                       deviceId={l.object_id}
                       action={
-                        <span className="flex items-center gap-1">
+                        <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
                           {planActions}
                           {removeButton}
                         </span>
@@ -179,7 +179,7 @@ export function TaskLinkPanel({
                       typeLabel={g.label}
                       note={l.note || undefined}
                       action={
-                        <span className="flex items-center gap-1">
+                        <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
                           {planActions}
                           {removeButton}
                         </span>
