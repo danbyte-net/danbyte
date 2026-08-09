@@ -1,11 +1,11 @@
 import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Building2, Locate, Server } from "lucide-react"
 
 import { api, type StatusMini } from "@/lib/api"
 import { StatusBadge } from "@/components/status-badge"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { SegmentedTabs } from "@/components/segmented-tabs"
 
 interface DeviceCardData {
   id: string
@@ -22,11 +22,29 @@ interface DeviceCardData {
   primary_ip: { id: string; ip_address: string } | null
 }
 
-/** A linked device rendered as the device itself: its faceplate photo standing
- * in for an icon, its name, what it is, and where to reach it. Falls back to the
- * device glyph in the same tile so a type without photos keeps the shape.
- *
- * Used in the task sheet, where "replace this switch" should show the switch. */
+/** One labelled fact. Micro-label plus value beats a guessable glyph — nobody
+ * should have to decode an icon to find an IP address. */
+function Fact({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <span className="inline-flex items-baseline gap-1.5">
+      <span className="text-[10px] tracking-wide text-muted-foreground/70 uppercase">
+        {label}
+      </span>
+      {children}
+    </span>
+  )
+}
+
+/** A linked device rendered as the device itself: identity, what it is, its
+ * faceplate photo at a size you can actually read, then the facts you need to
+ * go do the work. The photo row is skipped entirely when the device type has no
+ * images, so a card never shows an empty picture frame. */
 export function LinkedDeviceCard({
   deviceId,
   action,
@@ -51,76 +69,74 @@ export function LinkedDeviceCard({
     : ""
 
   return (
-    <div className="group flex items-start gap-3 px-3 py-2.5">
-      <span className="flex h-11 w-28 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
-        {src ? (
-          <img
-            src={src}
-            alt={`${dev?.name ?? "Device"} ${side}`}
-            className="h-full w-full bg-zinc-950 object-contain"
+    <div className="group space-y-2 p-3">
+      <div className="flex items-center gap-2">
+        <Link
+          to="/devices/$id"
+          params={{ id: deviceId }}
+          className="truncate text-[13px] font-medium text-primary hover:underline"
+        >
+          {dev?.name ?? (q.isLoading ? "Loading..." : "Unavailable")}
+        </Link>
+        {dev?.status && <StatusBadge status={dev.status} />}
+        {dev?.role && (
+          <ColorBadge
+            name={dev.role.name}
+            color={dev.role.color || undefined}
           />
-        ) : (
-          <Server className="h-4 w-4 text-muted-foreground" />
         )}
-      </span>
+        <span className="ml-auto shrink-0">{action}</span>
+      </div>
 
-      <div className="min-w-0 flex-1 space-y-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            to="/devices/$id"
-            params={{ id: deviceId }}
-            className="truncate text-[13px] font-medium text-primary hover:underline"
-          >
-            {dev?.name ?? (q.isLoading ? "Loading..." : "Unavailable")}
-          </Link>
-          {dev?.status && <StatusBadge status={dev.status} />}
-          {dev?.role && (
-            <ColorBadge
-              name={dev.role.name}
-              color={dev.role.color || undefined}
+      {hardware && (
+        <p className="truncate text-[12px] text-muted-foreground">{hardware}</p>
+      )}
+
+      {src && (
+        <img
+          src={src}
+          alt={`${dev?.name ?? "Device"} ${side}`}
+          className="max-h-24 w-full rounded-md border border-border bg-zinc-950 object-contain"
+        />
+      )}
+
+      {(dev?.primary_ip || dev?.site || (front && rear)) && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px]">
+          {dev?.primary_ip && (
+            <Fact label="IP">
+              <Link
+                to="/ips/$id"
+                params={{ id: dev.primary_ip.id }}
+                className="num text-primary hover:underline"
+              >
+                {dev.primary_ip.ip_address}
+              </Link>
+            </Fact>
+          )}
+          {dev?.site && (
+            <Fact label="Site">
+              <Link
+                to="/sites/$id"
+                params={{ id: dev.site.id }}
+                className="text-primary hover:underline"
+              >
+                {dev.site.name}
+              </Link>
+            </Fact>
+          )}
+          {front && rear && (
+            <SegmentedTabs
+              className="ml-auto"
+              items={[
+                { value: "front", label: "Front" },
+                { value: "rear", label: "Rear" },
+              ]}
+              value={side}
+              onValueChange={(v) => setSide(v as "front" | "rear")}
             />
           )}
         </div>
-
-        {hardware && (
-          <p className="truncate text-[11px] text-muted-foreground">
-            {hardware}
-          </p>
-        )}
-
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
-          {dev?.primary_ip && (
-            <Link
-              to="/ips/$id"
-              params={{ id: dev.primary_ip.id }}
-              className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
-            >
-              <Locate className="h-3 w-3" />
-              <span className="num">{dev.primary_ip.ip_address}</span>
-            </Link>
-          )}
-          {dev?.site && (
-            <Link
-              to="/sites/$id"
-              params={{ id: dev.site.id }}
-              className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
-            >
-              <Building2 className="h-3 w-3" /> {dev.site.name}
-            </Link>
-          )}
-          {front && rear && (
-            <button
-              type="button"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={() => setSide(side === "front" ? "rear" : "front")}
-            >
-              {side === "front" ? "Show rear" : "Show front"}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {action}
+      )}
     </div>
   )
 }
