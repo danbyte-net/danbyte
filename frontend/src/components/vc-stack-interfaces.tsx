@@ -20,6 +20,7 @@ import {
 } from "@/components/columns/interface-columns"
 import { cableTint } from "@/components/cable-status-control"
 import { useInterfaceDriftMap } from "@/components/monitoring/device-drift-badge"
+import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
 import { QueryError } from "@/components/query-error"
 
 export interface StackInterfaceRow {
@@ -117,6 +118,7 @@ export function StackInterfacesTable({
   // query (which the "This member" table uses) can only cover one of them. The
   // fleet map is one request for all members' ports.
   const drift = useInterfaceDriftMap()
+  const plannedMap = usePlannedChangeMap()
   const columns = useMemo<ColumnDef<StackRow>[]>(() => {
     const actionsCol =
       onTrace && onAssignIp
@@ -158,6 +160,7 @@ export function StackInterfacesTable({
       // table. Widened to StackRow (a superset of NestedInterface) — the cells
       // only read interface fields, so this is safe.
       ...(buildInterfaceColumns({
+        planned: plannedMap,
         include: DEVICE_INTERFACE_COLUMNS,
         drift,
       }) as ColumnDef<StackRow>[]),

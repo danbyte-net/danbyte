@@ -19,6 +19,7 @@ import {
 import { ListPageShell } from "@/components/list-page-shell"
 import { InterfaceDeleteDialog } from "@/components/interface-delete-dialog"
 import { useInterfaceDriftMap } from "@/components/monitoring/device-drift-badge"
+import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/interfaces/")({
@@ -74,11 +75,13 @@ function InterfacesPage() {
   // devices list marks drifted devices, and interfaces are what drift actually
   // references (MAC / admin-status / speed / VLAN, stale ports, discovered IPs).
   const drift = useInterfaceDriftMap()
+  const planned = usePlannedChangeMap()
   const columns = useMemo<ColumnDef<Interface>[]>(
     () =>
       buildInterfaceColumns<Interface>({
         selection: true,
         drift,
+        planned,
         include: [
           "device",
           "name",

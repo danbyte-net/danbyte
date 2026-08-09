@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { useDriftMap } from "@/components/monitoring/device-drift-badge"
+import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -97,6 +98,7 @@ function DevicesPage() {
 
   const handleDelete = useCallback((d: Device) => setDeleting(d), [])
   const driftMap = useDriftMap()
+  const plannedMap = usePlannedChangeMap()
   const columns = useMemo<ColumnDef<Device>[]>(
     () =>
       buildDeviceColumns<Device>({
@@ -104,6 +106,7 @@ function DevicesPage() {
         humanIds,
         violations: true,
         drift: driftMap,
+        planned: plannedMap,
         monitoring,
         actions: {
           editTo: "/devices/$id/edit",

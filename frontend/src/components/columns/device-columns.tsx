@@ -10,6 +10,10 @@ import {
   DeviceDriftMarker,
   type DeviceDriftRow,
 } from "@/components/monitoring/device-drift-badge"
+import {
+  PlannedChangeMarker,
+  type PlannedTargetRow,
+} from "@/components/planning/planned-change-badge"
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -87,6 +91,9 @@ export interface DeviceColumnOpts<T extends Device = Device> {
   /** Fleet drift map from `useDriftMap()` — one request per table, shared by
    * every row. Omit on views that are already about drift. */
   drift?: Map<string, DeviceDriftRow>
+  /** Open planned changes keyed by "api.device:<id>", from
+   * `usePlannedChangeMap()` — one request per table. */
+  planned?: Map<string, PlannedTargetRow>
   /** Monitoring status per device id — enables the "Monitoring" column. */
   monitoring?: Record<string, BulkStatusEntry>
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
@@ -173,6 +180,13 @@ export function buildDeviceColumns<T extends Device = Device>(
               only ever showing the first. Distinct glyph, distinct tooltip. */}
           {opts.drift && (
             <DeviceDriftMarker deviceId={row.original.id} map={opts.drift} />
+          )}
+          {opts.planned && (
+            <PlannedChangeMarker
+              objectType="api.device"
+              objectId={row.original.id}
+              map={opts.planned}
+            />
           )}
         </span>
       ),

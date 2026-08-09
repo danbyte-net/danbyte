@@ -6,6 +6,7 @@ import { DeviceForm } from "@/components/device-form"
 import { EditPageShell } from "@/components/edit-page-shell"
 import { QueryError } from "@/components/query-error"
 import { PlanModeBanner } from "@/components/planning/plan-mode-banner"
+import { PendingChangesNotice } from "@/components/planning/pending-changes-notice"
 import { planSearch } from "@/lib/save-object"
 
 export const Route = createFileRoute("/devices/$id_/edit")({
@@ -37,6 +38,7 @@ function EditDevicePage() {
       title={q.data ? `Edit ${q.data.name}` : "Edit device"}
     >
       <PlanModeBanner />
+      <PendingChangesNotice objectType="api.device" objectId={id} />
       {q.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {q.isError && <QueryError error={q.error} />}
       {q.data && <DeviceForm device={q.data} onSaved={back} onCancel={back} />}

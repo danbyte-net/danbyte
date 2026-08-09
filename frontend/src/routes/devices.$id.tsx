@@ -64,6 +64,10 @@ import { Section } from "@/components/ui/section"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { QueryError } from "@/components/query-error"
+import {
+  PlannedChangeBadge,
+  usePlannedChangeMap,
+} from "@/components/planning/planned-change-badge"
 import { DeviceDeleteDialog } from "@/components/device-delete-dialog"
 import { DeviceSyncTypeDialog } from "@/components/device-sync-type-dialog"
 import { StatusBadge } from "@/components/status-badge"
@@ -294,6 +298,13 @@ function Body({ device: d }: { device: Device }) {
             <>
               <ViolationBadge objectId={d.id} objectType="device" prominent />
               <DeviceDriftBadge deviceId={d.id} prominent />
+              {/* Third indicator, deliberately not a fourth amber triangle:
+                  a planned change means nothing is wrong yet. */}
+              <PlannedChangeBadge
+                objectType="api.device"
+                objectId={d.id}
+                prominent
+              />
             </>
           }
           subtitle={
@@ -1453,6 +1464,7 @@ function DeviceInterfacesPane({
         `/api/monitoring/devices/${deviceId}/snmp/drift/`
       ),
   })
+  const plannedMap = usePlannedChangeMap()
   const driftByIface = useMemo(() => {
     const m = new Map<string, SnmpDriftItem[]>()
     for (const it of driftQ.data?.drift ?? []) {
@@ -1479,6 +1491,7 @@ function DeviceInterfacesPane({
       ...buildInterfaceColumns({
         include: DEVICE_INTERFACE_COLUMNS,
         driftByIface,
+        planned: plannedMap,
       }),
       ...(actions ? [actions] : []),
     ]

@@ -349,12 +349,14 @@ class PlannedChangeViewSet(TenantScopedViewSet):
         endpoint exists to avoid.
         """
         qs = self.get_queryset().filter(state=PlannedChangeState.PLANNED)
+        qs = qs.select_related("task")
         targets: dict[str, dict] = {}
         for pc in qs:
             key = f"{pc.object_type}:{pc.object_id}"
             row = targets.setdefault(key, {
                 "count": 0, "task_ids": set(), "task_id": None,
-                "task_title": "", "next_due": None, "samples": [],
+                "board_id": None, "task_title": "", "next_due": None,
+                "samples": [],
             })
             row["count"] += 1
             row["task_ids"].add(str(pc.task_id))
@@ -368,6 +370,7 @@ class PlannedChangeViewSet(TenantScopedViewSet):
                 due is not None and str(due) == row["next_due"]
             ):
                 row["task_id"] = str(pc.task_id)
+                row["board_id"] = str(pc.task.board_id)
                 row["task_title"] = pc.task.title
             for d in pc.display or []:
                 if len(row["samples"]) >= 3:

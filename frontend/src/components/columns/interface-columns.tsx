@@ -13,6 +13,10 @@ import {
   InterfaceDriftMarker,
   type InterfaceDriftEntry,
 } from "@/components/monitoring/device-drift-badge"
+import {
+  PlannedChangeMarker,
+  type PlannedTargetRow,
+} from "@/components/planning/planned-change-badge"
 
 import type { Interface, SnmpDriftItem } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
@@ -133,6 +137,8 @@ export interface InterfaceColumnOpts<T extends Interface> {
    * drift query and its popover names the exact differences, so the page that
    * already has it must not also show the summarised marker. */
   drift?: Map<string, InterfaceDriftEntry>
+  /** Open planned changes keyed by "api.interface:<id>". */
+  planned?: Map<string, PlannedTargetRow>
   /** Cabled rows show an editable cable-status control instead of the plain
    * cable count. The per-device tables put that control in their actions
    * column, so they leave this off. */
@@ -234,6 +240,13 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
                   map={opts.drift}
                 />
               )
+            )}
+            {opts.planned && (
+              <PlannedChangeMarker
+                objectType="api.interface"
+                objectId={row.original.id}
+                map={opts.planned}
+              />
             )}
             {row.original.tunnel_terminations.map((tt) => (
               <Link

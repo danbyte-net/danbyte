@@ -6,6 +6,7 @@ import { InterfaceForm } from "@/components/interface-form"
 import { EditPageShell } from "@/components/edit-page-shell"
 import { QueryError } from "@/components/query-error"
 import { PlanModeBanner } from "@/components/planning/plan-mode-banner"
+import { PendingChangesNotice } from "@/components/planning/pending-changes-notice"
 import { planSearch } from "@/lib/save-object"
 
 export const Route = createFileRoute("/interfaces/$id_/edit")({
@@ -35,6 +36,7 @@ function EditInterfacePage() {
       title={q.data ? `Edit ${q.data.name}` : "Edit interface"}
     >
       <PlanModeBanner />
+      <PendingChangesNotice objectType="api.interface" objectId={id} />
       {q.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {q.isError && <QueryError error={q.error} />}
       {q.data && (
