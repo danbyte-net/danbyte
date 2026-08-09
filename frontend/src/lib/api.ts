@@ -5153,6 +5153,33 @@ export interface PlanningTaskLink {
   note: string
 }
 
+export type PlanningPlannedChangeState = "planned" | "applied" | "cancelled"
+
+/** One field of one object that a task says will change. Applying writes the
+ * value into Danbyte's record — it does not push config to the device. */
+export interface PlanningPlannedChange {
+  id: string
+  task: string
+  object_type: string
+  object_id: string
+  field: string
+  new_value: unknown
+  new_display: string
+  current_value: unknown
+  current_display: string
+  /** Optional per-change implementation date. */
+  planned_for: string | null
+  /** planned_for, else the task's due date. */
+  effective_date: string | null
+  state: PlanningPlannedChangeState
+  note: string
+  /** True when the target's live value moved since this was planned. */
+  stale: boolean
+  created_by_username: string | null
+  applied_at: string | null
+  applied_by_username: string | null
+}
+
 /** A candidate task assignee, from /api/planning/assignable-users/. Gated on
  * task rights rather than user-administration rights, so email is only filled
  * in for callers who may already read users. */
@@ -5193,6 +5220,7 @@ export interface PlanningTask {
   due_date: string | null
   weight: number
   links: PlanningTaskLink[]
+  planned_changes: PlanningPlannedChange[]
   created_at: string
   updated_at: string
 }

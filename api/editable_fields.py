@@ -58,10 +58,19 @@ DCIM_CHOICE_KEYS: dict[tuple[str, str], str] = {
     ("api.cable", "type"): "cable_types",
 }
 
-# Free-text fields with well-known values worth offering as suggestions.
-SUGGESTION_SOURCES: dict[tuple[str, str], str] = {
-    ("api.interface", "speed"): "common_speeds",
-    ("api.vminterface", "speed"): "common_speeds",
+# Free-text fields with well-known values worth offering as suggestions. The
+# resolved list travels with the descriptor (a handful of short strings) rather
+# than a key the client must look up — `suggestions` is a value list on both the
+# wire type and the frontend's authored spec union.
+def _speed_suggestions() -> list[str]:
+    from api.dcim_choices import COMMON_SPEEDS
+
+    return list(COMMON_SPEEDS)
+
+
+SUGGESTION_SOURCES: dict[tuple[str, str], callable] = {
+    ("api.interface", "speed"): _speed_suggestions,
+    ("api.vminterface", "speed"): _speed_suggestions,
 }
 
 # verbose_name is right almost everywhere; these read badly capitalised, and
@@ -100,7 +109,7 @@ class EditableField:
     hint: str = ""
     choices: str | None = None                 # /api/dcim/choices/ list key
     options: list[dict] | None = None          # inline [{value, label}]
-    suggestions: str | None = None             # /api/dcim/choices/ list key
+    suggestions: list[str] | None = None       # offered values, field stays free text
     status_model: str | None = None            # Status.available_to slug
     object_model: str | None = None            # customization reference slug
     endpoint: str | None = None
@@ -227,10 +236,9 @@ def _describe(model, key: str, target_model=None, *, is_fk=False) -> EditableFie
                 options=[{"value": v, "label": str(text)} for v, text in flat],
                 **common,
             )
+        source = SUGGESTION_SOURCES.get((label, f.name))
         return EditableField(
-            kind="text",
-            suggestions=SUGGESTION_SOURCES.get((label, f.name)),
-            **common,
+            kind="text", suggestions=source() if source else None, **common,
         )
 
     # Anything else (dates, JSON, decimals) is not offered rather than guessed at.
