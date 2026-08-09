@@ -2,11 +2,17 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 
 import { InterfaceForm } from "@/components/interface-form"
 import { EditPageShell } from "@/components/edit-page-shell"
+import { PlanModeBanner } from "@/components/planning/plan-mode-banner"
+import { planSearch } from "@/lib/save-object"
 
 export const Route = createFileRoute("/interfaces/new")({
   component: NewInterfacePage,
-  validateSearch: (s: Record<string, unknown>): { device?: string } =>
-    typeof s.device === "string" ? { device: s.device } : {},
+  // `device` pre-selects the parent; `plan`/`planBoard` stage the new interface
+  // on a task instead of creating it.
+  validateSearch: (s: Record<string, unknown>) => ({
+    ...(typeof s.device === "string" ? { device: s.device } : {}),
+    ...planSearch(s),
+  }),
 })
 
 function NewInterfacePage() {
@@ -18,6 +24,7 @@ function NewInterfacePage() {
       title="Add interface"
       subtitle="A network interface (port) on a device."
     >
+      <PlanModeBanner />
       <InterfaceForm
         initialDeviceId={device}
         onSaved={(i, count) =>

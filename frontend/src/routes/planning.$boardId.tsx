@@ -23,11 +23,16 @@ import { MilestoneManagerDialog } from "@/components/planning/milestone-manager"
 import { TaskDetailSheet } from "@/components/planning/task-detail"
 
 export const Route = createFileRoute("/planning/$boardId")({
+  // ?task=<id> opens that task's sheet — how a staged planned change returns
+  // you to the task you were planning for, and a linkable task in general.
+  validateSearch: (s: Record<string, unknown>): { task?: string } =>
+    typeof s.task === "string" ? { task: s.task } : {},
   component: BoardPage,
 })
 
 function BoardPage() {
   const { boardId } = Route.useParams()
+  const { task: deepLinkTask } = Route.useSearch()
   const { canDo } = useMe()
   const canEdit = canDo("task", "change") || canDo("task", "add")
   const [openTask, setOpenTask] = useState<PlanningTask | null>(null)
@@ -58,10 +63,11 @@ function BoardPage() {
   const statuses = statusesQ.data?.results ?? []
   const tasks = tasksQ.data?.results ?? []
   const shown = filterByAssignee(tasks, assignee)
-  // Keep the sheet's task fresh after edits.
+  // Keep the sheet's task fresh after edits. `?task=` opens one directly, which
+  // is what a staged planned change navigates back to.
   const openTaskLive = openTask
     ? (tasks.find((t) => t.id === openTask.id) ?? openTask)
-    : null
+    : (tasks.find((t) => t.id === deepLinkTask) ?? null)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">

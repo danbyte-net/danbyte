@@ -20,6 +20,7 @@ import {
   FormText,
   useFieldErrors,
 } from "@/components/forms"
+import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DevicePicker } from "@/components/device-picker"
 import { VlanPicker } from "@/components/vlan-picker"
@@ -47,6 +48,8 @@ export function InterfaceForm({
   const isEdit = !!iface
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
+  const isPlanning = !!usePlanTarget()
   const choices = useDcimChoices()
 
   const [deviceId, setDeviceId] = useState<string | null>(
@@ -167,16 +170,29 @@ export function InterfaceForm({
         bridge_id: bridgeId,
       }
       if (isEdit)
-        return api<Interface>(`/api/interfaces/${iface!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
+        return saveObject<Interface>({
+          objectType: "api.interface",
+          endpoint: "/api/interfaces/",
+          id: iface!.id,
+          payload,
         }).then((saved) => ({ saved, count: 1 }))
       // A [a-b] range in the name fans out — "eth[0-3]" adds four ports. For a
-      // whole switch face, /interfaces/bulk does it server-side.
-      return createEach(expandNameRange(payload.name), (n) =>
-        api<Interface>("/api/interfaces/", {
-          method: "POST",
-          body: JSON.stringify({ ...payload, name: n }),
+      // whole switch face, /interfaces/bulk does it server-side. In plan mode
+      // saveObject stages one create per expanded name, so a planned range
+      // records four new interfaces rather than one.
+      const names = expandNameRange(payload.name)
+      if (names.length > 1 && isPlanning)
+        return saveObject<Interface>({
+          objectType: "api.interface",
+          endpoint: "/api/interfaces/",
+          payload,
+          names,
+        }).then((saved) => ({ saved, count: names.length }))
+      return createEach(names, (n) =>
+        saveObject<Interface>({
+          objectType: "api.interface",
+          endpoint: "/api/interfaces/",
+          payload: { ...payload, name: n },
         })
       ).then(({ last, count }) => ({ saved: last, count }))
     },

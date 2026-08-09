@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { FormSelect } from "@/components/forms"
 import { CfObjectPicker } from "@/components/cf-object-picker"
 import { apiErrorToast } from "@/lib/api-toast"
+import { PlanActions } from "./plan-actions"
 import { LinkedDeviceCard } from "./linked-device-card"
 import { ObjectRow, objectIcon, slugFromObjectType } from "./object-chip"
 
@@ -21,10 +22,12 @@ import { ObjectRow, objectIcon, slugFromObjectType } from "./object-chip"
  * faceplate, turning the sheet into a picture of the work. */
 export function TaskLinkPanel({
   taskId,
+  boardId,
   links,
   canEdit,
 }: {
   taskId: string
+  boardId: string
   links: PlanningTaskLink[]
   canEdit: boolean
 }) {
@@ -149,11 +152,24 @@ export function TaskLinkPanel({
                     </button>
                   )
                   // Devices get the full treatment: faceplate, hardware, IP.
+                  const planActions = canEdit && (
+                    <PlanActions
+                      objectType={l.object_type}
+                      objectId={l.object_id}
+                      taskId={taskId}
+                      boardId={boardId}
+                    />
+                  )
                   return g.slug === "device" ? (
                     <LinkedDeviceCard
                       key={l.id}
                       deviceId={l.object_id}
-                      action={removeButton}
+                      action={
+                        <span className="flex items-center gap-1">
+                          {planActions}
+                          {removeButton}
+                        </span>
+                      }
                     />
                   ) : (
                     <ObjectRow
@@ -162,7 +178,12 @@ export function TaskLinkPanel({
                       id={l.object_id}
                       typeLabel={g.label}
                       note={l.note || undefined}
-                      action={removeButton}
+                      action={
+                        <span className="flex items-center gap-1">
+                          {planActions}
+                          {removeButton}
+                        </span>
+                      }
                     />
                   )
                 })}

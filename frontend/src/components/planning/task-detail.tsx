@@ -269,6 +269,7 @@ export function TaskDetailSheet({
 
           <TaskLinkPanel
             taskId={task.id}
+            boardId={task.board}
             links={task.links}
             canEdit={canEdit}
           />

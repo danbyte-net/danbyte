@@ -5,8 +5,13 @@ import { api, type Interface } from "@/lib/api"
 import { InterfaceForm } from "@/components/interface-form"
 import { EditPageShell } from "@/components/edit-page-shell"
 import { QueryError } from "@/components/query-error"
+import { PlanModeBanner } from "@/components/planning/plan-mode-banner"
+import { planSearch } from "@/lib/save-object"
 
 export const Route = createFileRoute("/interfaces/$id_/edit")({
+  // Plan mode: ?plan=<taskId>&planBoard=<boardId> turns this form into
+  // "record what changed on that task" instead of writing.
+  validateSearch: (s: Record<string, unknown>) => planSearch(s),
   component: EditInterfacePage,
 })
 
@@ -29,6 +34,7 @@ function EditInterfacePage() {
       ]}
       title={q.data ? `Edit ${q.data.name}` : "Edit interface"}
     >
+      <PlanModeBanner />
       {q.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {q.isError && <QueryError error={q.error} />}
       {q.data && (

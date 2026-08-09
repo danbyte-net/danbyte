@@ -29,6 +29,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 import { RackPicker } from "@/components/rack-picker"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
@@ -88,6 +89,7 @@ export function DeviceForm({
   const seed = device ?? clone
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(device?.name ?? "")
   const [deviceTypeId, setDeviceTypeId] = useState<string | null>(
@@ -415,14 +417,11 @@ export function DeviceForm({
         vc_priority:
           vcId && vcPriority.trim() !== "" ? Number(vcPriority) : null,
       }
-      if (isEdit)
-        return api<Device>(`/api/devices/${device!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Device>("/api/devices/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Device>({
+        objectType: "api.device",
+        endpoint: "/api/devices/",
+        id: isEdit ? device!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

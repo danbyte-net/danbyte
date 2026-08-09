@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react"
 
 import { ApiError } from "@/lib/api"
+import { PlanStaged } from "@/lib/save-object"
 
 // Manages the per-field error map that DRF 400 responses populate.
 // Pass the result of `catch(handleApiError)` into the mutation's onError.
@@ -14,6 +15,10 @@ export function useFieldErrors() {
   const reset = useCallback(() => setFieldErrors({}), [])
 
   const handleApiError = useCallback((err: unknown): string | null => {
+    // A staged planned change is not an error: useSaveObject already reported
+    // it and navigated away. Returning null means the form shows no toast and
+    // its onSaved never runs, which is exactly right — nothing was saved.
+    if (err instanceof PlanStaged) return null
     if (
       err instanceof ApiError &&
       err.status === 400 &&
