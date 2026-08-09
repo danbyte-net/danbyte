@@ -5154,26 +5154,41 @@ export interface PlanningTaskLink {
 }
 
 export type PlanningPlannedChangeState = "planned" | "applied" | "cancelled"
+export type PlanningPlannedChangeKind = "update" | "create"
 
-/** One field of one object that a task says will change. Applying writes the
- * value into Danbyte's record — it does not push config to the device. */
+/** One rendered line of a planned change's diff, computed server-side at plan
+ *  time so it still reads correctly after a referenced row is renamed. */
+export interface PlanningChangeLine {
+  field: string
+  label: string
+  from: string
+  to: string
+}
+
+/** A change set a task says it will make: one saved submission of the object's
+ *  own edit (or create) form. Applying writes it into Danbyte's record — it does
+ *  not push config to the device. */
 export interface PlanningPlannedChange {
   id: string
   task: string
+  kind: PlanningPlannedChangeKind
   object_type: string
-  object_id: string
-  field: string
-  new_value: unknown
-  new_display: string
-  current_value: unknown
-  current_display: string
+  /** Null for a create until it is applied. */
+  object_id: string | null
+  /** Write-shaped fields; for an edit, only the ones that differ. */
+  payload: Record<string, unknown>
+  /** The live values of payload's keys when this was planned. */
+  before: Record<string, unknown>
+  display: PlanningChangeLine[]
+  /** Stamped when a create is applied. */
+  created_object_id: string | null
   /** Optional per-change implementation date. */
   planned_for: string | null
   /** planned_for, else the task's due date. */
   effective_date: string | null
   state: PlanningPlannedChangeState
   note: string
-  /** True when the target's live value moved since this was planned. */
+  /** True when values this change touches moved since it was planned. */
   stale: boolean
   created_by_username: string | null
   applied_at: string | null

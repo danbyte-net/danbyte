@@ -30,6 +30,7 @@ import { Markdown } from "@/components/markdown"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { apiErrorToast } from "@/lib/api-toast"
+import { PlannedChangePanel } from "./planned-change-panel"
 import { PriorityBadge, scheduleLabel } from "./task-card"
 import { TaskLinkPanel } from "./task-link-panel"
 import { UserPicker } from "./user-picker"
@@ -273,6 +274,8 @@ export function TaskDetailSheet({
             links={task.links}
             canEdit={canEdit}
           />
+
+          <PlannedChangePanel task={task} canEdit={canEdit} />
 
           <section className="space-y-2">
             <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
