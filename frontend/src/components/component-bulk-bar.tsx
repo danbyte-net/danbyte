@@ -1,18 +1,9 @@
 import { useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Copy, Pencil, Replace, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 
-import {
-  api,
-  STORAGE_UNITS,
-  type DcimChoice,
-  type DcimChoices,
-  type Paginated,
-  type StorageUnit,
-  type TagOption,
-} from "@/lib/api"
-import { useDcimChoices } from "@/lib/use-dcim-choices"
+import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -33,20 +24,12 @@ import {
 } from "@/components/ui/alert-dialog"
 import {
   Field,
+  FieldEditor,
   FormCheckbox,
-  FormCombobox,
-  FormSelect,
+  useFieldEditorOptions,
 } from "@/components/forms"
-import { Checkbox } from "@/components/ui/checkbox"
+import type { BulkFieldSpec } from "@/components/forms"
 import { Input } from "@/components/ui/input"
-import { SuggestInput } from "@/components/ui/suggest-input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -63,56 +46,11 @@ import { apiErrorToast } from "@/lib/api-toast"
 //     tags
 //   />
 
-/** Keys of `/api/dcim/choices/` that hold a selectable option list. */
-export type DcimChoiceListKey = {
-  [K in keyof DcimChoices]: DcimChoices[K] extends DcimChoice[] ? K : never
-}[keyof DcimChoices]
-
-// A union, not a flat interface: `choices` is required when kind is "choice",
-// so a choice-backed field can't be declared without saying where its options
-// come from (which is how they used to silently render as text boxes).
-export type BulkFieldSpec =
-  | {
-      key: string
-      label: string
-      kind: "text" | "int" | "bool" | "vlan" | "vrf"
-      /** Common values offered as a dropdown; the field stays free text. */
-      suggestions?: string[]
-      hint?: string
-    }
-  | {
-      key: string
-      label: string
-      kind: "choice"
-      /** Which `/api/dcim/choices/` list populates the dropdown. */
-      choices: DcimChoiceListKey
-      hint?: string
-    }
-  | {
-      key: string
-      label: string
-      /** A caller-supplied static option list (model choices without a
-       * /api/dcim/choices/ entry — inventory kind/media etc.). */
-      kind: "options"
-      options: { value: string; label: string }[]
-      hint?: string
-    }
-  | {
-      key: string
-      label: string
-      /** The tenant Status catalog, filtered to one object type. Sends the
-       * status id (or null to clear). */
-      kind: "status"
-      statusModel: string
-      hint?: string
-    }
-  | {
-      key: string
-      label: string
-      /** A byte quantity entered as value + KB…PB unit (stored as bytes). */
-      kind: "bytes"
-      hint?: string
-    }
+// The spec union and the per-kind editor now live in @/components/forms
+// (field-spec / field-editor) so single-object forms can render the same
+// controls. Re-exported here because the component panes import the type
+// alongside <ComponentBulkBar/>.
+export type { BulkFieldSpec, DcimChoiceListKey } from "@/components/forms"
 
 export interface ComponentBulkBarProps {
   endpoint: string
@@ -126,9 +64,6 @@ export interface ComponentBulkBarProps {
   /** Hide the delete button (e.g. read-only contexts). */
   canDelete?: boolean
 }
-
-const KEEP = "__keep__"
-const NONE = "__none__"
 
 export function ComponentBulkBar({
   endpoint,
@@ -340,48 +275,11 @@ function BulkEditDialog({
   onDone: () => void
 }) {
   const qc = useQueryClient()
-  const dcimChoices = useDcimChoices()
   // Which fields the user chose to SET, and their values. Untouched = KEEP.
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [addTags, setAddTags] = useState<number[]>([])
   const [removeTags, setRemoveTags] = useState<number[]>([])
-
-  const tagOptions = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    enabled: tags,
-    staleTime: 10 * 60_000,
-  })
-  const vlanOptions = useQuery({
-    queryKey: ["vlans-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; vlan_id: number; name: string }>>(
-        "/api/vlans/?picker=1"
-      ),
-    enabled: fields.some((f) => f.kind === "vlan"),
-    staleTime: 5 * 60_000,
-  })
-  const vrfOptions = useQuery({
-    queryKey: ["vrfs-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>("/api/vrfs/?picker=1"),
-    enabled: fields.some((f) => f.kind === "vrf"),
-    staleTime: 5 * 60_000,
-  })
-  const statusModel = fields.find(
-    (f): f is Extract<BulkFieldSpec, { kind: "status" }> => f.kind === "status"
-  )?.statusModel
-  const statusOptions = useQuery({
-    queryKey: ["statuses", statusModel],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        `/api/statuses/?available_to=${statusModel}&picker=1`
-      ),
-    enabled: !!statusModel,
-    staleTime: 5 * 60_000,
-  })
-  // Byte fields are entered as value + unit; the unit rides beside the value.
-  const [byteUnits, setByteUnits] = useState<Record<string, StorageUnit>>({})
+  const options = useFieldEditorOptions(fields, { tags })
 
   const save = useMutation({
     mutationFn: () => {
@@ -432,245 +330,29 @@ function BulkEditDialog({
           untouched. Everything else is applied to every selected row.
         </p>
         <div className="grid gap-3">
-          {fields.map((f) => {
-            const active = f.key in values
-            if (f.kind === "bool") {
-              return (
-                <FormSelect
-                  key={f.key}
-                  label={f.label}
-                  value={active ? (values[f.key] ? "yes" : "no") : KEEP}
-                  onChange={(v) =>
-                    v === KEEP || v === null
-                      ? unset(f.key)
-                      : set(f.key, v === "yes")
-                  }
-                  options={[
-                    { value: KEEP, label: "Keep current" },
-                    { value: "yes", label: "Yes" },
-                    { value: "no", label: "No" },
-                  ]}
-                />
-              )
-            }
-            if (f.kind === "choice") {
-              // Searchable + optgroup-aware: the type lists run to hundreds of
-              // entries, and they carry their own `group`.
-              return (
-                <FormCombobox
-                  key={f.key}
-                  label={f.label}
-                  hint={f.hint}
-                  value={
-                    active ? ((values[f.key] as string | null) ?? NONE) : KEEP
-                  }
-                  onChange={(v) =>
-                    v === KEEP || v === null
-                      ? unset(f.key)
-                      : set(f.key, v === NONE ? null : v)
-                  }
-                  options={[
-                    { value: KEEP, label: "Keep current" },
-                    { value: NONE, label: `Clear ${f.label.toLowerCase()}` },
-                    // `?? []`: a backend older than this build omits newer
-                    // lists entirely, and spreading undefined would throw.
-                    ...(dcimChoices[f.choices] ?? []),
-                  ]}
-                  searchPlaceholder={`Search ${f.label.toLowerCase()}…`}
-                  emptyText="No matches."
-                />
-              )
-            }
-            if (f.kind === "options" || f.kind === "status") {
-              const opts =
-                f.kind === "options"
-                  ? f.options
-                  : (statusOptions.data?.results ?? []).map((s) => ({
-                      value: s.id,
-                      label: s.name,
-                    }))
-              return (
-                <FormSelect
-                  key={f.key}
-                  label={f.label}
-                  hint={f.hint}
-                  value={
-                    active ? ((values[f.key] as string | null) ?? NONE) : KEEP
-                  }
-                  onChange={(v) =>
-                    v === KEEP || v === null
-                      ? unset(f.key)
-                      : set(f.key, v === NONE ? null : v)
-                  }
-                  options={[
-                    { value: KEEP, label: "Keep current" },
-                    ...(f.kind === "status"
-                      ? [{ value: NONE, label: "Clear status" }]
-                      : []),
-                    ...opts,
-                  ]}
-                />
-              )
-            }
-            if (f.kind === "bytes") {
-              const unit = byteUnits[f.key] ?? "GB"
-              const factor =
-                STORAGE_UNITS.find((u) => u.value === unit)?.factor ?? 1e9
-              const raw = values[f.key]
-              return (
-                <Field key={f.key} label={f.label} hint={f.hint}>
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      checked={active}
-                      onCheckedChange={(v) =>
-                        v ? set(f.key, null) : unset(f.key)
-                      }
-                      title={active ? "Will be set" : "Keep current"}
-                    />
-                    <Input
-                      type="number"
-                      value={
-                        active && typeof raw === "number"
-                          ? String(Number((raw / factor).toFixed(3)))
-                          : ""
-                      }
-                      onChange={(e) =>
-                        set(
-                          f.key,
-                          e.target.value === ""
-                            ? null
-                            : Math.round(Number(e.target.value) * factor)
-                        )
-                      }
-                      placeholder={active ? "" : "Keep current"}
-                      disabled={!active}
-                    />
-                    <Select
-                      value={unit}
-                      disabled={!active}
-                      onValueChange={(v) => {
-                        const next = v as StorageUnit
-                        // Re-interpret the shown number in the new unit.
-                        const shown =
-                          typeof raw === "number" ? raw / factor : null
-                        setByteUnits((cur) => ({ ...cur, [f.key]: next }))
-                        if (shown != null) {
-                          const nf =
-                            STORAGE_UNITS.find((u) => u.value === next)
-                              ?.factor ?? 1e9
-                          set(f.key, Math.round(shown * nf))
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="w-[88px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {STORAGE_UNITS.map((u) => (
-                          <SelectItem key={u.value} value={u.value}>
-                            {u.value}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </Field>
-              )
-            }
-            if (f.kind === "vlan" || f.kind === "vrf") {
-              const opts =
-                f.kind === "vlan"
-                  ? (vlanOptions.data?.results ?? []).map((v) => ({
-                      value: v.id,
-                      label: `${v.vlan_id} · ${v.name}`,
-                    }))
-                  : (vrfOptions.data?.results ?? []).map((v) => ({
-                      value: v.id,
-                      label: v.name,
-                    }))
-              return (
-                <FormSelect
-                  key={f.key}
-                  label={f.label}
-                  value={
-                    active ? ((values[f.key] as string | null) ?? NONE) : KEEP
-                  }
-                  onChange={(v) =>
-                    v === KEEP || v === null
-                      ? unset(f.key)
-                      : set(f.key, v === NONE ? null : v)
-                  }
-                  options={[
-                    { value: KEEP, label: "Keep current" },
-                    { value: NONE, label: `Clear ${f.label.toLowerCase()}` },
-                    ...opts,
-                  ]}
-                />
-              )
-            }
-            // text / int: a checkbox arms the field, the input carries it.
-            return (
-              <Field key={f.key} label={f.label} hint={f.hint}>
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    checked={active}
-                    onCheckedChange={(v) =>
-                      v
-                        ? set(f.key, f.kind === "int" ? null : "")
-                        : unset(f.key)
-                    }
-                    title={active ? "Will be set" : "Keep current"}
-                  />
-                  {f.suggestions && f.suggestions.length > 0 ? (
-                    <SuggestInput
-                      value={
-                        active && values[f.key] !== null
-                          ? String(values[f.key])
-                          : ""
-                      }
-                      onChange={(v) => set(f.key, v)}
-                      suggestions={f.suggestions}
-                      placeholder={active ? "" : "Keep current"}
-                      disabled={!active}
-                    />
-                  ) : (
-                    <Input
-                      type={f.kind === "int" ? "number" : "text"}
-                      value={
-                        active && values[f.key] !== null
-                          ? String(values[f.key])
-                          : ""
-                      }
-                      onChange={(e) =>
-                        set(
-                          f.key,
-                          f.kind === "int"
-                            ? e.target.value === ""
-                              ? null
-                              : Number(e.target.value)
-                            : e.target.value
-                        )
-                      }
-                      placeholder={active ? "" : "Keep current"}
-                      disabled={!active}
-                    />
-                  )}
-                </div>
-              </Field>
-            )
-          })}
+          {fields.map((f) => (
+            <FieldEditor
+              key={f.key}
+              spec={f}
+              mode="keep"
+              value={values[f.key]}
+              onChange={(v) => set(f.key, v)}
+              onClear={() => unset(f.key)}
+              options={options}
+            />
+          ))}
           {tags && (
             <>
               <Field label="Add tags">
                 <TagMultiSelect
-                  options={tagOptions.data?.results ?? []}
+                  options={options.tags}
                   value={addTags}
                   onChange={setAddTags}
                 />
               </Field>
               <Field label="Remove tags">
                 <TagMultiSelect
-                  options={tagOptions.data?.results ?? []}
+                  options={options.tags}
                   value={removeTags}
                   onChange={setRemoveTags}
                 />

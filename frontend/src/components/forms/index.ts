@@ -18,6 +18,13 @@ export { FormSelect } from "./select"
 export type { FormSelectProps, SelectOption } from "./select"
 export { FormCombobox } from "./combobox"
 export type { FormComboboxProps } from "./combobox"
+export type {
+  BulkFieldSpec,
+  DcimChoiceListKey,
+  EditableFieldSpec,
+} from "./field-spec"
+export { FieldEditor, useFieldEditorOptions } from "./field-editor"
+export type { FieldEditorOptions, FieldEditorProps } from "./field-editor"
 export { QuickAddDialog } from "./quick-add"
 export type { QuickAddField } from "./quick-add"
 export { UnitInput, MEMORY_UNITS, DISK_UNITS } from "./unit-input"
