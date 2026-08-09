@@ -242,6 +242,119 @@ class TaskLink(TimestampedModel):
         return f"{self.task_id} → {self.object_type}:{self.object_id}"
 
 
+class PlannedChangeState(models.TextChoices):
+    PLANNED = "planned", "Planned"
+    APPLIED = "applied", "Applied"
+    CANCELLED = "cancelled", "Cancelled"
+
+
+class PlannedChange(TimestampedModel):
+    """One field of one object that a task says will change.
+
+    "Interface Gi2/1: Enabled Yes → No". The task tells engineers what will
+    happen, the target object's own page warns that a change is coming, and when
+    the work is done an operator **applies** it and Danbyte writes the value into
+    its own record. Applying updates *Danbyte's* record — pushing configuration
+    to hardware is the separate automation/deploy path.
+
+    Nothing applies itself. A plan is documentation until a human confirms the
+    work happened, so there is no scheduler here.
+
+    Values live in JSON rather than typed columns because the field descriptor
+    (:mod:`api.editable_fields`) already knows the type; four nullable columns
+    would let row and descriptor disagree. SQL NULL means "clear the field".
+    The ``*_display`` strings are captured at plan time so the task still reads
+    "Status Active → Decommissioning" after that Status row is renamed or
+    deleted — the same denormalisation rationale as ``object_site_id``.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="planning_planned_changes"
+    )
+    task = models.ForeignKey(
+        Task, on_delete=models.CASCADE, related_name="planned_changes"
+    )
+
+    # Generic reference — the Document/TaskLink triple.
+    object_type = models.CharField(
+        max_length=64, help_text="Model label, e.g. api.interface."
+    )
+    object_id = models.UUIDField()
+    object_site_id = models.UUIDField(null=True, blank=True, db_index=True)
+
+    field = models.CharField(
+        max_length=64,
+        help_text="Payload key from /api/editable-fields/, e.g. enabled, status_id.",
+    )
+    new_value = models.JSONField(null=True, blank=True)
+    new_display = models.CharField(max_length=255, blank=True, default="")
+    # The target's value when the change was planned. Displayed as the "from"
+    # side, and compared at apply time: if the live value has moved since, the
+    # plan's premise is gone and apply returns a conflict.
+    current_value = models.JSONField(null=True, blank=True)
+    current_display = models.CharField(max_length=255, blank=True, default="")
+
+    # Optional per-change implementation date. One task often changes several
+    # things on different days ("Friday disable the port, Monday decommission
+    # the device"), and the target's badge needs *that* object's date. Null
+    # falls back to the task's due date — see `effective_date`.
+    planned_for = models.DateField(null=True, blank=True)
+
+    state = models.CharField(
+        max_length=9, choices=PlannedChangeState.choices,
+        default=PlannedChangeState.PLANNED,
+    )
+    note = models.CharField(max_length=255, blank=True, default="")
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+        blank=True, related_name="+",
+    )
+    applied_at = models.DateTimeField(null=True, blank=True)
+    applied_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+        blank=True, related_name="+",
+    )
+
+    class Meta:
+        ordering = ["planned_for", "created_at"]
+        constraints = [
+            # One OPEN plan per (task, object, field). Partial, so applied and
+            # cancelled rows accumulate as history and the same field can be
+            # planned again on a later task. Deliberately NOT global across
+            # tasks: two tasks proposing the same change is real, and the
+            # badge's count says more than a 400 would.
+            models.UniqueConstraint(
+                fields=["task", "object_type", "object_id", "field"],
+                condition=models.Q(state="planned"),
+                name="uniq_open_planned_change_per_target_field",
+            ),
+        ]
+        indexes = [
+            # The badge's reverse lookup only ever asks about open plans.
+            models.Index(
+                fields=["object_type", "object_id"],
+                condition=models.Q(state="planned"),
+                name="idx_pchange_open_target",
+            ),
+            models.Index(fields=["object_type", "object_id"],
+                         name="idx_pchange_target"),
+            models.Index(fields=["tenant", "state"],
+                         name="idx_pchange_tenant_state"),
+            models.Index(fields=["task", "state"], name="idx_pchange_task_state"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.object_type}:{self.object_id} {self.field} → {self.new_display}"
+
+    @property
+    def effective_date(self):
+        """When this change is expected to land: its own date, else the task's
+        due date. What the target's badge counts down to."""
+        return self.planned_for or self.task.due_date
+
+
 def seed_default_statuses(board: Board) -> None:
     """Create the four bootstrap statuses for a new board. Deterministic and
     idempotent — safe to call twice; existing names are left alone."""

@@ -84,14 +84,72 @@ Drag cards between columns — one small write per drop, so the board stays fast
 Click a card to open the detail sheet. The **+** in a column header (or the
 dashed **Add task** row) quick-adds a task by title alone.
 
+## Planned changes
+
+A task can declare **what will change**, field by field: *interface Gi2/1 —
+Enabled: Yes → No*, *device sw-01 — Status: Active → Decommissioning*. Three
+things follow from that:
+
+- the task tells engineers exactly what is going to happen,
+- the **target object's own page** warns that a change is coming, and
+- when the work is done an operator clicks **Apply** and Danbyte writes the value
+  into its record.
+
+!!! important "Apply updates Danbyte, not the device"
+    Applying writes the new value into Danbyte's own record — it does not push
+    configuration to hardware. That is the separate automation/deploy path.
+    Nothing applies itself either: a planned change is documentation until a
+    human confirms the work happened. There is no scheduler.
+
+**Which fields** you can plan comes from `GET /api/editable-fields/?model=…`,
+derived from each viewset's own write allow-list, so the form only ever offers
+fields a write would actually accept. Devices, interfaces and other components,
+prefixes, IPs and VLANs are covered today.
+
+**An optional implementation date** (`planned_for`) sits on each change, because
+one task often changes several things on different days — disable the port on
+Friday, decommission the device on Monday. Leave it empty and the change inherits
+the task's due date; either way the target's badge counts down to the right one.
+
+**Permissions split deliberately.** Planning a change needs **view** on the
+target — an engineer describing desired work is the workflow, and they could
+already write it in the task description. Applying needs **change** on the
+target itself, not on the task. Applying also cannot move an object outside your
+own site scope: that is re-checked after the write and rolled back.
+
+**If the world moved on**, apply refuses. The current value is snapshotted when
+the change is planned; if someone edits the object in the meantime the plan's
+premise is gone, so Apply returns a conflict showing what the value is *now* and
+offers to overwrite anyway.
+
+Applying leaves two trails: the normal **change-log** entry on the object, plus a
+**journal note** naming the task — so the object's own history explains why it
+changed.
+
 ## API
 
 Everything lives under `/api/planning/`: `boards/`, `statuses/`, `labels/`,
 `milestones/` (filter by `board`), `tasks/` (filter by `board`, `status`,
-`assignee`, `label`, `milestone`, `q`), and `links/` (filter by `task`, or
+`assignee`, `label`, `milestone`, `q`), `links/` (filter by `task`, or
 reverse-look-up with `object_type` + `object_id` to find every task referencing
-an object). All endpoints are tenant-scoped and default-closed; all planning
-models are audited.
+an object), `assignable-users/`, and `planned-changes/`:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET planned-changes/?task=` | What this task will change |
+| `GET planned-changes/?object_type=&object_id=` | What is planned for this object |
+| `GET planned-changes/map/` | Every open plan grouped by target — one request per table, for the per-row badge |
+| `POST planned-changes/` | Plan one (`task`, `object_type`, `object_id`, `field`, `new_value`, optional `planned_for`) |
+| `POST planned-changes/{id}/apply/` | Write it. `409` when the live value moved; repeat with `{"force": true}` to overwrite |
+| `POST planned-changes/{id}/cancel/` | Decide against it; writes nothing to the target |
+
+`current_value`/`current_display` are captured server-side — a client cannot
+assert what the old value was — and `stale` is computed per read rather than
+stored. Target and field are immutable once planned; applied and cancelled rows
+are history and can be neither edited nor deleted.
+
+All endpoints are tenant-scoped and default-closed; all planning models are
+audited.
 
 ## Coming next
 

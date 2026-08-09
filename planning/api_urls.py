@@ -7,6 +7,7 @@ from rest_framework.routers import DefaultRouter
 from .viewsets import (
     BoardViewSet,
     MilestoneViewSet,
+    PlannedChangeViewSet,
     TaskLabelViewSet,
     TaskLinkViewSet,
     TaskStatusViewSet,
@@ -21,6 +22,9 @@ router.register(r"labels", TaskLabelViewSet, basename="planning-label")
 router.register(r"milestones", MilestoneViewSet, basename="planning-milestone")
 router.register(r"tasks", TaskViewSet, basename="planning-task")
 router.register(r"links", TaskLinkViewSet, basename="planning-link")
+router.register(
+    r"planned-changes", PlannedChangeViewSet, basename="planning-planned-change"
+)
 
 urlpatterns = [
     path("assignable-users/", assignable_users, name="planning-assignable-users"),

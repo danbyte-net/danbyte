@@ -11,7 +11,8 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from django.db.models import Count, ProtectedError, Q
 from rest_framework import permissions
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework import status as drf_status
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
@@ -23,6 +24,8 @@ from auth_api.permissions import can_manage_deployment
 from .models import (
     Board,
     Milestone,
+    PlannedChange,
+    PlannedChangeState,
     Task,
     TaskLabel,
     TaskLink,
@@ -32,6 +35,7 @@ from .models import (
 from .serializers import (
     BoardSerializer,
     MilestoneSerializer,
+    PlannedChangeSerializer,
     TaskLabelSerializer,
     TaskLinkSerializer,
     TaskSerializer,
@@ -112,7 +116,7 @@ class TaskLabelViewSet(TenantScopedViewSet):
 class TaskViewSet(TenantScopedViewSet):
     queryset = (
         Task.objects.select_related("board", "status", "milestone")
-        .prefetch_related("assignees", "labels", "links")
+        .prefetch_related("assignees", "labels", "links", "planned_changes")
         .order_by("weight", "created_at")
     )
     serializer_class = TaskSerializer
@@ -181,6 +185,179 @@ class TaskLinkViewSet(TenantScopedViewSet):
         serializer.save(
             tenant=tenant, object_site_id=_object_site_id(otype, str(oid))
         )
+
+
+class PlannedChangeViewSet(TenantScopedViewSet):
+    """Planned field changes on inventory objects.
+
+    Planning requires **view** on the target; applying requires **change** on
+    it. An engineer describing a desired change is the workflow — they could
+    already write it in the task description — so the gate that matters is the
+    one on the write. Nothing here schedules or auto-applies.
+    """
+
+    queryset = PlannedChange.objects.select_related("task").order_by(
+        "planned_for", "created_at"
+    )
+    serializer_class = PlannedChangeSerializer
+    rbac_action_map = {"apply": "change", "cancel": "change", "map": "view"}
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        p = self.request.query_params
+        if p.get("task"):
+            qs = qs.filter(task_id=p["task"])
+        if p.get("state"):
+            qs = qs.filter(state=p["state"])
+        # Reverse lookup: "what's planned for this object?"
+        if p.get("object_type") and p.get("object_id"):
+            from auth_api.object_types import label_for
+
+            label = label_for(p["object_type"])
+            if label is None:
+                return qs.none()
+            qs = qs.filter(object_type=label, object_id=p["object_id"])
+        return qs
+
+    def perform_create(self, serializer):
+        from audit.api import _can_view_object, _object_site_id
+
+        from .editable import descriptor_or_400
+        from .planned_changes import model_for_label, snapshot
+
+        tenant = self._tenant_or_403()
+        data = serializer.validated_data
+        task = data.get("task")
+        if task is None or task.tenant_id != tenant.id:
+            raise ValidationError({"task": "Task is not in this tenant."})
+        otype, oid = data.get("object_type"), data.get("object_id")
+        if not _can_view_object(self.request, otype, str(oid)):
+            raise PermissionDenied("You can't plan a change on an object you "
+                                   "can't view.")
+        model = model_for_label(otype)
+        if model is None:
+            raise ValidationError({"object_type": "Unknown object type."})
+        spec = descriptor_or_400(model, data.get("field"))
+        obj = model._default_manager.filter(pk=oid).first()
+        if obj is None:
+            raise ValidationError({"object_id": "That object no longer exists."})
+        if PlannedChange.objects.filter(
+            task=task, object_type=otype, object_id=oid, field=spec.key,
+            state=PlannedChangeState.PLANNED,
+        ).exists():
+            raise ValidationError({
+                "field": "This task already plans a change to that field. "
+                         "Edit the existing plan instead.",
+            })
+
+        new_value, new_display, current_value, current_display = snapshot(
+            model, spec, obj, tenant, data.get("new_value")
+        )
+        from django.db import transaction
+
+        with transaction.atomic():
+            serializer.save(
+                tenant=tenant,
+                created_by=self.request.user,
+                object_site_id=_object_site_id(otype, str(oid)),
+                new_value=new_value,
+                new_display=new_display,
+                current_value=current_value,
+                current_display=current_display,
+            )
+            # Keep the sheet's two panels honest: an object a task plans a
+            # change on is, by definition, an object the task touches.
+            TaskLink.objects.get_or_create(
+                task=task, object_type=otype, object_id=oid,
+                defaults={
+                    "tenant": tenant,
+                    "object_site_id": _object_site_id(otype, str(oid)),
+                },
+            )
+
+    def perform_destroy(self, instance):
+        if instance.state != PlannedChangeState.PLANNED:
+            raise ValidationError(
+                "Applied and cancelled changes are history — they can't be "
+                "deleted."
+            )
+        instance.delete()
+
+    @action(detail=True, methods=["post"], url_path="apply")
+    def apply(self, request, pk=None):
+        """Write the planned value into Danbyte's record.
+
+        409 when the live value moved since the plan was written; repeat with
+        ``{"force": true}`` to overwrite anyway."""
+        from .planned_changes import StaleValue, apply_change
+
+        pc = self.get_object()
+        try:
+            apply_change(pc, request, force=bool(request.data.get("force")))
+        except StaleValue as stale:
+            return Response(
+                {
+                    "detail": str(stale),
+                    "stale": True,
+                    "current_value": stale.live_value,
+                    "current_display": stale.live_display,
+                    "planned_from_display": stale.current_display,
+                    "new_display": pc.new_display,
+                },
+                status=drf_status.HTTP_409_CONFLICT,
+            )
+        pc.refresh_from_db()
+        return Response(self.get_serializer(pc).data)
+
+    @action(detail=True, methods=["post"], url_path="cancel")
+    def cancel(self, request, pk=None):
+        """Decide not to do it. Writes nothing to the target."""
+        pc = self.get_object()
+        if pc.state != PlannedChangeState.PLANNED:
+            raise ValidationError("This change is no longer open.")
+        pc.state = PlannedChangeState.CANCELLED
+        pc.save(update_fields=["state", "updated_at"])
+        return Response(self.get_serializer(pc).data)
+
+    @action(detail=False, methods=["get"], url_path="map")
+    def map(self, request):
+        """Every open plan grouped by target, for per-row badges.
+
+        ONE request for a whole table — the indicator is affordable only because
+        this never becomes an N+1. ``stale`` is deliberately absent: computing it
+        means a live read per distinct model, which is the very thing this
+        endpoint exists to avoid.
+        """
+        qs = self.get_queryset().filter(state=PlannedChangeState.PLANNED)
+        targets: dict[str, dict] = {}
+        for pc in qs:
+            key = f"{pc.object_type}:{pc.object_id}"
+            row = targets.setdefault(key, {
+                "count": 0, "task_ids": set(), "task_id": None,
+                "task_title": "", "next_due": None, "samples": [],
+            })
+            row["count"] += 1
+            row["task_ids"].add(str(pc.task_id))
+            due = pc.effective_date
+            if due is not None and (
+                row["next_due"] is None or str(due) < row["next_due"]
+            ):
+                row["next_due"] = str(due)
+            # Link to the earliest-dated task; fall back to the first seen.
+            if row["task_id"] is None or (
+                due is not None and str(due) == row["next_due"]
+            ):
+                row["task_id"] = str(pc.task_id)
+                row["task_title"] = pc.task.title
+            if len(row["samples"]) < 3:
+                row["samples"].append({
+                    "field": pc.field,
+                    "from": pc.current_display,
+                    "to": pc.new_display,
+                })
+        for row in targets.values():
+            row["tasks"] = len(row.pop("task_ids"))
+        return Response({"targets": targets})
 
 
 @api_view(["GET"])

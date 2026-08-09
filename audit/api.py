@@ -9,8 +9,8 @@ from rest_framework import serializers, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 
-from api.viewsets import StandardPagination
 from api.views import _get_active_tenant
+from api.viewsets import StandardPagination
 
 from .models import ChangeLogEntry, JournalEntry
 
@@ -40,18 +40,24 @@ def _viewable_types(request):
     return labels
 
 
-def _can_view_object(request, object_type_label, object_id) -> bool:
-    """True if the caller may *view* the specific (object_type, object_id) —
-    row/site-scoped, not just type-level. Resolves the stored ``app.model``
-    label to its model and runs the exact row through restrict_queryset, so a
-    Site-A-scoped user can't read a Site-B object's history/notes or attach a
-    journal note to it.
+def _can_act_on_object(request, object_type_label, object_id, action="view") -> bool:
+    """True if the caller may perform ``action`` on the specific
+    (object_type, object_id) — row/site-scoped, not just type-level. Resolves
+    the stored ``app.model`` label to its model and runs the exact row through
+    restrict_queryset, so a Site-A-scoped user can't read a Site-B object's
+    history/notes, attach a journal note to it, or apply a planned change to it.
+
+    ``action`` is an RBAC verb: ``"view"`` for read-ish surfaces (journal notes,
+    generic links), ``"change"`` before writing the target (planned-change
+    apply). The verb is the only difference — the tenant clamp, the tenant-less
+    site binding and the fail-closed rules are identical, which is exactly why
+    they live in one function.
 
     Fail **closed**: superuser → allowed; a non-model type, an unregistered
-    slug, or an object that no longer exists → denied (you can't attach a note
-    to something the RBAC engine can't vouch for). Reading *history* of a
+    slug, or an object that no longer exists → denied (you can't act on
+    something the RBAC engine can't vouch for). Reading *history* of a
     deleted object is handled separately by the stored ``object_site_id`` — this
-    guard is for "act on the live object" (journal create)."""
+    guard is for "act on the live object"."""
     from auth_api import rbac
     from auth_api.object_types import is_registered
 
@@ -92,8 +98,14 @@ def _can_view_object(request, object_type_label, object_id) -> bool:
         sp = site_path_for(slug, tenant)
         if sp and sp != "id":
             base = base.filter(**{f"{sp}__tenant": tenant})
-    scoped = rbac.restrict_queryset(base, request.user, tenant, slug, "view")
+    scoped = rbac.restrict_queryset(base, request.user, tenant, slug, action)
     return scoped.filter(pk=object_id).exists()
+
+
+def _can_view_object(request, object_type_label, object_id) -> bool:
+    """``_can_act_on_object`` with the ``view`` verb — the long-standing name,
+    kept because four call sites and their tests read better this way."""
+    return _can_act_on_object(request, object_type_label, object_id, "view")
 
 
 def _object_site_id(object_type_label, object_id):
