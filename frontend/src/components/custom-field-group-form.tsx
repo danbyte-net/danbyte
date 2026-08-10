@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type CustomFieldGroup,
   type CustomFieldGroupWritePayload,
 } from "@/lib/api"
@@ -14,6 +13,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface CustomFieldGroupFormProps {
   group?: CustomFieldGroup
@@ -29,6 +29,7 @@ export function CustomFieldGroupForm({
   const isEdit = !!group
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(group?.name ?? "")
   const [slug, setSlug] = useState(group?.slug ?? "")
@@ -55,14 +56,11 @@ export function CustomFieldGroupForm({
         weight: weight.trim() === "" ? 0 : Number(weight),
         collapsed,
       }
-      if (isEdit)
-        return api<CustomFieldGroup>(`/api/custom-field-groups/${group!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<CustomFieldGroup>("/api/custom-field-groups/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<CustomFieldGroup>({
+        objectType: "customization.customfieldgroup",
+        endpoint: "/api/custom-field-groups/",
+        id: isEdit ? group!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

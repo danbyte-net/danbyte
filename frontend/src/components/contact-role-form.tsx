@@ -2,13 +2,14 @@ import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type ContactRole, type ContactRoleWritePayload } from "@/lib/api"
+import { type ContactRole, type ContactRoleWritePayload } from "@/lib/api"
 import {
   FormFooter,
   FormText,
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface ContactRoleFormProps {
   item?: ContactRole
@@ -32,6 +33,7 @@ export function ContactRoleForm({
   const isEdit = !!item
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
   const [name, setName] = useState(item?.name ?? "")
   const [slug, setSlug] = useState(item?.slug ?? "")
   const [slugDirty, setSlugDirty] = useState(isEdit)
@@ -58,14 +60,11 @@ export function ContactRoleForm({
         slug: slug.trim() || slugify(name),
         description: description.trim(),
       }
-      if (isEdit)
-        return api<ContactRole>(`/api/contact-roles/${item!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<ContactRole>("/api/contact-roles/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<ContactRole>({
+        objectType: "api.contactrole",
+        endpoint: "/api/contact-roles/",
+        id: isEdit ? item!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

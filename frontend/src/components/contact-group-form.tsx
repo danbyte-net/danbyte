@@ -15,6 +15,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface ContactGroupFormProps {
   item?: ContactGroup
@@ -38,6 +39,7 @@ export function ContactGroupForm({
   const isEdit = !!item
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
   const [name, setName] = useState(item?.name ?? "")
   const [slug, setSlug] = useState(item?.slug ?? "")
   const [slugDirty, setSlugDirty] = useState(isEdit)
@@ -78,14 +80,11 @@ export function ContactGroupForm({
         parent_id: parentId,
         description: description.trim(),
       }
-      if (isEdit)
-        return api<ContactGroup>(`/api/contact-groups/${item!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<ContactGroup>("/api/contact-groups/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<ContactGroup>({
+        objectType: "api.contactgroup",
+        endpoint: "/api/contact-groups/",
+        id: isEdit ? item!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

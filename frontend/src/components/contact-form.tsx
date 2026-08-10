@@ -21,6 +21,7 @@ import {
   QuickAddDialog,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface ContactFormProps {
   contact?: Contact
@@ -32,6 +33,7 @@ export function ContactForm({ contact, onSaved, onCancel }: ContactFormProps) {
   const isEdit = !!contact
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(contact?.name ?? "")
   const [title, setTitle] = useState(contact?.title ?? "")
@@ -91,14 +93,11 @@ export function ContactForm({ contact, onSaved, onCancel }: ContactFormProps) {
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<Contact>(`/api/contacts/${contact!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Contact>("/api/contacts/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Contact>({
+        objectType: "api.contact",
+        endpoint: "/api/contacts/",
+        id: isEdit ? contact!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

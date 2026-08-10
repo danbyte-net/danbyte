@@ -20,6 +20,7 @@ import {
   useFieldErrors,
   type CheckOption,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 const METHODS: { value: WebhookMethod; label: string }[] = [
   { value: "POST", label: "POST" },
@@ -38,6 +39,7 @@ export function WebhookForm({ webhook, onSaved, onCancel }: WebhookFormProps) {
   const isEdit = !!webhook
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(webhook?.name ?? "")
   const [enabled, setEnabled] = useState(webhook?.enabled ?? true)
@@ -110,14 +112,11 @@ export function WebhookForm({ webhook, onSaved, onCancel }: WebhookFormProps) {
         ssl_verification: sslVerify,
       }
       if (secret.trim()) payload.secret = secret
-      if (isEdit)
-        return api<Webhook>(`/api/webhooks/${webhook!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Webhook>("/api/webhooks/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Webhook>({
+        objectType: "integrations.webhook",
+        endpoint: "/api/webhooks/",
+        id: isEdit ? webhook!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

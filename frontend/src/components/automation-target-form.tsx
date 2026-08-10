@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type AutomationKind,
   type AutomationTarget,
   type AutomationTargetWritePayload,
@@ -16,6 +15,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface AutomationTargetFormProps {
   target?: AutomationTarget
@@ -31,6 +31,7 @@ export function AutomationTargetForm({
   const isEdit = !!target
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(target?.name ?? "")
   const [kind, setKind] = useState<AutomationKind>(target?.kind ?? "awx")
@@ -93,14 +94,11 @@ export function AutomationTargetForm({
         object_types: ["device"],
       }
       if (token.trim()) payload.token = token
-      if (isEdit)
-        return api<AutomationTarget>(`/api/automation-targets/${target!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<AutomationTarget>("/api/automation-targets/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<AutomationTarget>({
+        objectType: "integrations.automationtarget",
+        endpoint: "/api/automation-targets/",
+        id: isEdit ? target!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

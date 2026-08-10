@@ -18,6 +18,7 @@ import {
   useFieldErrors,
   type CheckOption,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 interface NamedRow {
   id: string
@@ -46,6 +47,7 @@ export function ConfigContextForm({
   const isEdit = !!context
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(context?.name ?? "")
   const [weight, setWeight] = useState(
@@ -126,14 +128,11 @@ export function ConfigContextForm({
         device_role_ids: roleIds,
         platform_ids: platformIds,
       }
-      if (isEdit)
-        return api<ConfigContext>(`/api/config-contexts/${context!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<ConfigContext>("/api/config-contexts/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<ConfigContext>({
+        objectType: "api.configcontext",
+        endpoint: "/api/config-contexts/",
+        id: isEdit ? context!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

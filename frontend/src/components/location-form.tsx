@@ -18,6 +18,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 import { MonitoringEngineField } from "@/components/monitoring-engine-field"
 import { SnmpBindingControl } from "@/components/snmp-binding-control"
 
@@ -41,6 +42,7 @@ export function LocationForm({
   const isEdit = !!location
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(location?.name ?? "")
   const [siteId, setSiteId] = useState<string | null>(
@@ -102,14 +104,11 @@ export function LocationForm({
         status_id: statusId,
         description: description.trim(),
       }
-      if (isEdit)
-        return api<Location>(`/api/locations/${location.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Location>("/api/locations/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Location>({
+        objectType: "api.location",
+        endpoint: "/api/locations/",
+        id: isEdit ? location.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

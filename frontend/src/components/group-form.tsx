@@ -21,6 +21,7 @@ import {
   useFieldErrors,
   type CheckOption,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { useMe } from "@/lib/use-me"
 
@@ -34,6 +35,7 @@ export function GroupForm({ group, onSaved, onCancel }: GroupFormProps) {
   const isEdit = !!group
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
   const [name, setName] = useState(group?.name ?? "")
   const [description, setDescription] = useState(group?.description ?? "")
 
@@ -72,14 +74,11 @@ export function GroupForm({ group, onSaved, onCancel }: GroupFormProps) {
           ...(siteRole === "editor" && siteSilo ? { silo: true } : {}),
         }
       }
-      if (isEdit)
-        return api<RBACGroup>(`/api/groups/${group!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<RBACGroup>("/api/groups/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<RBACGroup>({
+        objectType: "auth.group",
+        endpoint: "/api/groups/",
+        id: isEdit ? String(group!.id) : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

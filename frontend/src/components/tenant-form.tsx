@@ -19,6 +19,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface TenantFormProps {
   tenant?: Tenant
@@ -38,6 +39,7 @@ export function TenantForm({ tenant, onSaved, onCancel }: TenantFormProps) {
   const isEdit = !!tenant
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(tenant?.name ?? "")
   const [slug, setSlug] = useState(tenant?.slug ?? "")
@@ -81,14 +83,11 @@ export function TenantForm({ tenant, onSaved, onCancel }: TenantFormProps) {
         is_active: isActive,
         group_id: groupId,
       }
-      if (isEdit)
-        return api<Tenant>(`/api/tenants/${tenant!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Tenant>("/api/tenants/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Tenant>({
+        objectType: "core.tenant",
+        endpoint: "/api/tenants/",
+        id: isEdit ? tenant!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

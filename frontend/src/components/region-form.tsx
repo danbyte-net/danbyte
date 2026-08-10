@@ -16,6 +16,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface RegionFormProps {
   region?: Region
@@ -35,6 +36,7 @@ export function RegionForm({ region, onSaved, onCancel }: RegionFormProps) {
   const isEdit = !!region
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
   const [name, setName] = useState(region?.name ?? "")
   const [slug, setSlug] = useState(region?.slug ?? "")
   const [slugDirty, setSlugDirty] = useState(isEdit)
@@ -76,14 +78,11 @@ export function RegionForm({ region, onSaved, onCancel }: RegionFormProps) {
         parent_id: parentId,
         description: description.trim(),
       }
-      if (isEdit)
-        return api<Region>(`/api/regions/${region!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Region>("/api/regions/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Region>({
+        objectType: "api.region",
+        endpoint: "/api/regions/",
+        id: isEdit ? region!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

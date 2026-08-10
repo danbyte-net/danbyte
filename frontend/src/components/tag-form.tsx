@@ -2,13 +2,14 @@ import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type Tag, type TagWritePayload } from "@/lib/api"
+import { type Tag, type TagWritePayload } from "@/lib/api"
 import {
   FormText,
   FormColor,
   FormFooter,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface TagFormProps {
   tag?: Tag
@@ -20,6 +21,7 @@ export function TagForm({ tag, onSaved, onCancel }: TagFormProps) {
   const isEdit = !!tag
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(tag?.name ?? "")
   const [color, setColor] = useState(tag?.color ?? "")
@@ -34,14 +36,11 @@ export function TagForm({ tag, onSaved, onCancel }: TagFormProps) {
   const mutation = useMutation({
     mutationFn: async () => {
       const payload: TagWritePayload = { name: name.trim(), color: color || "" }
-      if (isEdit)
-        return api<Tag>(`/api/tags/${tag!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Tag>("/api/tags/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Tag>({
+        objectType: "core.tag",
+        endpoint: "/api/tags/",
+        id: isEdit ? String(tag!.id) : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

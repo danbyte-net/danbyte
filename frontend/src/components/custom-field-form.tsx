@@ -26,6 +26,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 // Sentinel thrown to abort the mutation on client-side validation failure so
 // onError can skip the generic toast (the field error is already surfaced).
@@ -45,6 +46,7 @@ export function CustomFieldForm({
   const isEdit = !!field
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [key, setKey] = useState(field?.key ?? "")
   const [label, setLabel] = useState(field?.label ?? "")
@@ -136,14 +138,11 @@ export function CustomFieldForm({
         group,
         scope_rules: scopeRules,
       }
-      if (isEdit)
-        return api<CustomField>(`/api/custom-fields/${field!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<CustomField>("/api/custom-fields/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<CustomField>({
+        objectType: "customization.customfield",
+        endpoint: "/api/custom-fields/",
+        id: isEdit ? field!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

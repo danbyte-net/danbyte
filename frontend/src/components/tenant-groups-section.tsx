@@ -43,6 +43,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { QueryError } from "@/components/query-error"
+import { useSaveObject } from "@/lib/save-object"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -245,6 +246,7 @@ function TenantGroupDialog({
   const isEdit = !!group
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState("")
   const [slug, setSlug] = useState("")
@@ -275,14 +277,11 @@ function TenantGroupDialog({
         parent_id: parentId,
         description: description.trim(),
       }
-      if (isEdit)
-        return api<TenantGroup>(`/api/tenant-groups/${group!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<TenantGroup>("/api/tenant-groups/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<TenantGroup>({
+        objectType: "core.tenantgroup",
+        endpoint: "/api/tenant-groups/",
+        id: isEdit ? group!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

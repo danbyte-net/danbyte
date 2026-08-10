@@ -44,6 +44,7 @@ import {
 import { cn } from "@/lib/utils"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { FormCombobox, FormSelect, useFieldErrors } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface SiteFormProps {
   site?: Site
@@ -61,6 +62,7 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
   const isEdit = !!site
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(site?.name ?? "")
   const [regionId, setRegionId] = useState<string | null>(
@@ -147,14 +149,11 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<Site>(`/api/sites/${site.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Site>("/api/sites/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Site>({
+        objectType: "api.site",
+        endpoint: "/api/sites/",
+        id: isEdit ? site.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

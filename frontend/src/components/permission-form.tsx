@@ -23,6 +23,7 @@ import {
   useFieldErrors,
   type CheckOption,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 const CRUD_ACTIONS: RBACAction[] = ["view", "add", "change", "delete"]
 // Canonical display order; capability verbs sort after the CRUD verbs.
@@ -54,6 +55,7 @@ export function PermissionForm({
   const isEdit = !!permission
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(permission?.name ?? "")
   const [description, setDescription] = useState(permission?.description ?? "")
@@ -204,14 +206,11 @@ export function PermissionForm({
         tenant_ids: tenantIds,
         site_ids: siteIds,
       }
-      if (isEdit)
-        return api<ObjectPermission>(
-          `/api/object-permissions/${permission!.id}/`,
-          { method: "PATCH", body: JSON.stringify(payload) }
-        )
-      return api<ObjectPermission>("/api/object-permissions/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<ObjectPermission>({
+        objectType: "auth_api.objectpermission",
+        endpoint: "/api/object-permissions/",
+        id: isEdit ? permission!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

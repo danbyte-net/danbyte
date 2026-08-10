@@ -21,6 +21,7 @@ import {
   useFieldErrors,
   type CheckOption,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { useMe } from "@/lib/use-me"
 
@@ -34,6 +35,7 @@ export function UserForm({ user, onSaved, onCancel }: UserFormProps) {
   const isEdit = !!user
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [username, setUsername] = useState(user?.username ?? "")
   const [email, setEmail] = useState(user?.email ?? "")
@@ -134,14 +136,11 @@ export function UserForm({ user, onSaved, onCancel }: UserFormProps) {
           ...(siteRole === "editor" && siteSilo ? { silo: true } : {}),
         }
       }
-      if (isEdit)
-        return api<RBACUser>(`/api/users/${user!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<RBACUser>("/api/users/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<RBACUser>({
+        objectType: "auth.user",
+        endpoint: "/api/users/",
+        id: isEdit ? String(user!.id) : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

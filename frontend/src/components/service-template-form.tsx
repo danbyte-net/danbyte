@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type ServiceProtocol,
   type ServiceTemplate,
   type ServiceTemplateWritePayload,
@@ -15,6 +14,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 import { parsePorts } from "@/components/services-pane"
 
 // Sentinel thrown to abort the mutation on client-side validation failure so
@@ -35,6 +35,7 @@ export function ServiceTemplateForm({
   const isEdit = !!template
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(template?.name ?? "")
   const [protocol, setProtocol] = useState<ServiceProtocol>(
@@ -80,14 +81,11 @@ export function ServiceTemplateForm({
         ports,
         description: description.trim(),
       }
-      if (isEdit)
-        return api<ServiceTemplate>(`/api/service-templates/${template!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<ServiceTemplate>("/api/service-templates/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<ServiceTemplate>({
+        objectType: "api.servicetemplate",
+        endpoint: "/api/service-templates/",
+        id: isEdit ? template!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {
