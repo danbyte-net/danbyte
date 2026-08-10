@@ -32,7 +32,8 @@ import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { DevicePicker } from "@/components/device-picker"
 import { useFieldErrors } from "@/components/forms"
-import { useSaveObject } from "@/lib/save-object"
+import { InfoTip } from "@/components/ui/info-tip"
+import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 
 export interface IpFormInitial {
   address?: string
@@ -61,6 +62,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const saveObject = useSaveObject()
+  const planning = !!usePlanTarget()
   // Cloneable fields read from the edit object or the clone seed; the address
   // and device/interface assignment read from `ip`/`initial` only, so a clone
   // starts unaddressed and unassigned.
@@ -519,12 +521,26 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
       </div>
 
       {deviceId && (
-        <label className="flex cursor-pointer items-center gap-2 text-xs">
+        <label
+          className={`flex items-center gap-2 text-xs ${
+            planning ? "text-muted-foreground" : "cursor-pointer"
+          }`}
+        >
+          {/* Primary IP is a field on the *device*, written by a second request
+              that plan mode never reaches. Rather than silently drop it from a
+              plan, the box is unavailable here and says where it lives. */}
           <Checkbox
-            checked={isPrimary}
+            checked={isPrimary && !planning}
+            disabled={planning}
             onCheckedChange={(v) => setIsPrimary(!!v)}
           />
           Make this the device's primary IP
+          {planning && (
+            <InfoTip>
+              Primary IP is stored on the device, not the address. Plan it from
+              the device's own form.
+            </InfoTip>
+          )}
         </label>
       )}
 

@@ -14,6 +14,8 @@ serializer the single authority on what a valid write is.
 """
 from __future__ import annotations
 
+import re
+
 from django.db import models
 from rest_framework.exceptions import ValidationError
 
@@ -169,6 +171,42 @@ def validate_payload(model, payload: dict, instance=None, *, request=None) -> di
     )
     ser.is_valid(raise_exception=True)
     return payload
+
+
+# A credential-shaped write key. `write_only` alone is NOT this signal: the
+# serializers use it for every `*_id` input alias (``tag_ids``, ``device_id``),
+# so keying off it stripped real fields and made every FK edit a no-op.
+_SECRET_KEY = re.compile(
+    r"(?:^|_)(password|passwd|secret|token|passphrase|credential|private_key)(?:$|_|s$)",
+    re.IGNORECASE,
+)
+
+
+def strip_secrets(model, payload: dict) -> dict:
+    """Drop credential fields the target serializer accepts but never returns.
+
+    A plan is *stored* and readable by everyone who can see the task, so a payload
+    may never carry a secret: ``password`` on a user, a webhook signing key. Both
+    conditions must hold — the name looks like a credential **and** the serializer
+    is write-only for it, i.e. the API itself refuses to read it back. A readable
+    field can be diffed and shown, so it is not one of these.
+
+    Validation still runs on the full payload, so a plan is held to the same rules
+    a real write would be; only what gets persisted is narrowed.
+    """
+    serializer_cls = serializer_for(model)
+    if serializer_cls is None:
+        return dict(payload)
+    try:
+        fields = serializer_cls().fields
+    except Exception:
+        return dict(payload)
+    secret = {
+        name
+        for name, field in fields.items()
+        if getattr(field, "write_only", False) and _SECRET_KEY.search(name)
+    }
+    return {k: v for k, v in payload.items() if k not in secret}
 
 
 def diff_update(obj, payload: dict) -> tuple[dict, dict, list[dict]]:

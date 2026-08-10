@@ -140,6 +140,24 @@ def _viewsets():
         yield model.model, viewset, spec
 
 
+def _routed_viewsets():
+    """``(model, viewset)`` for every routed viewset that has a queryset.
+
+    Broader than :func:`_viewsets` on purpose. That one answers "which fields can
+    be bulk-edited", so it is limited to viewsets carrying an allow-list. Deciding
+    *which serializer owns a model's writes* needs no allow-list — every routed
+    model has exactly one — and planning needs the wider answer, since a plan can
+    target anything an edit form can.
+    """
+    from api.api_urls import router
+
+    for _prefix, viewset, _basename in router.registry:
+        queryset = getattr(viewset, "queryset", None)
+        if queryset is None:
+            continue
+        yield queryset.model, viewset
+
+
 def _label_for_field(label: str, f) -> str:
     override = LABEL_OVERRIDES.get((label, f.name))
     if override:
@@ -273,8 +291,12 @@ def field_for(model, key: str) -> EditableField | None:
 
 def serializer_for(model):
     """The viewset serializer that owns this model's write invariants — the
-    planned-change apply path writes through it rather than setattr."""
-    for m, viewset, _spec in _viewsets():
+    planned-change apply path writes through it rather than setattr.
+
+    Resolved from the router alone, so any model the API exposes can be planned;
+    the per-field allow-list is a bulk-edit concern and has no say here.
+    """
+    for m, viewset in _routed_viewsets():
         if m is model:
             return getattr(viewset, "serializer_class", None)
     return None

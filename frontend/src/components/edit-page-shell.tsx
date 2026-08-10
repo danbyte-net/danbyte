@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useRegisterPresence } from "@/lib/presence-context"
+import { PlanModeBanner } from "@/components/planning/plan-mode-banner"
 
 // Shared shell for every /new and /$id/edit page. Owns the breadcrumb
 // header, the centered max-width container, and the title block so each
@@ -95,6 +96,10 @@ export function EditPageShell({
               <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
             )}
           </div>
+          {/* Every form is plan-capable, so the "this will not be written"
+              notice belongs to the shell rather than to 139 route files.
+              Renders nothing outside plan mode. */}
+          <PlanModeBanner />
           {children}
         </div>
       </main>

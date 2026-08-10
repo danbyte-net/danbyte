@@ -2,7 +2,6 @@ import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
 import type { ConsolePort, ConsolePortWritePayload } from "@/lib/api"
 import {
   Dialog,
@@ -19,6 +18,7 @@ import {
 import { NameRangeHint } from "@/components/name-range-hint"
 import { createEach, expandNameRange } from "@/lib/name-range"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
+import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 
 export type ConsolePortKind = "port" | "server-port"
 
@@ -29,6 +29,10 @@ const ENDPOINT: Record<ConsolePortKind, string> = {
 const QUERY_KEY: Record<ConsolePortKind, string> = {
   port: "device-console-ports",
   "server-port": "device-console-server-ports",
+}
+const OBJECT_TYPE: Record<ConsolePortKind, string> = {
+  port: "api.consoleport",
+  "server-port": "api.consoleserverport",
 }
 const NOUN: Record<ConsolePortKind, string> = {
   port: "console port",
@@ -57,6 +61,8 @@ export function ConsolePortDialog({
   const isEdit = !!port
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
+  const isPlanning = !!usePlanTarget()
   const choices = useDcimChoices()
 
   const [name, setName] = useState("")
@@ -83,17 +89,24 @@ export function ConsolePortDialog({
         speed: speed.trim() === "" ? null : Number(speed),
         description: description.trim(),
       }
+      const target = {
+        objectType: OBJECT_TYPE[kind],
+        endpoint: `/api/${ENDPOINT[kind]}/`,
+      }
       if (isEdit)
-        return api<ConsolePort>(`/api/${ENDPOINT[kind]}/${port!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
+        return saveObject<ConsolePort>({
+          ...target,
+          id: port!.id,
+          payload,
         }).then((saved) => ({ saved, count: 1 }))
       // A [a-b] range in the name fans out — "console[0-3]" adds four ports.
-      return createEach(expandNameRange(payload.name), (n) =>
-        api<ConsolePort>(`/api/${ENDPOINT[kind]}/`, {
-          method: "POST",
-          body: JSON.stringify({ ...payload, name: n }),
-        })
+      const names = expandNameRange(payload.name)
+      if (names.length > 1 && isPlanning)
+        return saveObject<ConsolePort>({ ...target, payload, names }).then(
+          (saved) => ({ saved, count: names.length })
+        )
+      return createEach(names, (n) =>
+        saveObject<ConsolePort>({ ...target, payload: { ...payload, name: n } })
       ).then(({ last, count }) => ({ saved: last, count }))
     },
     onSuccess: ({ saved, count }) => {

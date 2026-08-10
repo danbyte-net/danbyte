@@ -5,6 +5,7 @@ import { EditPageShell } from "@/components/edit-page-shell"
 import { Spinner } from "@/components/ui/spinner"
 import type { Device } from "@/lib/api"
 import { useCloneSeed } from "@/lib/use-clone"
+import { planSearch, type PlanSearch } from "@/lib/save-object"
 
 export const Route = createFileRoute("/devices/new")({
   component: NewDevicePage,
@@ -19,7 +20,7 @@ export const Route = createFileRoute("/devices/new")({
     mount?: "side_left" | "side_right"
     device_type?: string
     clone?: string
-  } => ({
+  } & PlanSearch => ({
     ...(typeof s.rack === "string" ? { rack: s.rack } : {}),
     ...(s.mount === "side_left" || s.mount === "side_right"
       ? { mount: s.mount }
@@ -32,6 +33,7 @@ export const Route = createFileRoute("/devices/new")({
       : {}),
     ...(s.face === "front" || s.face === "rear" ? { face: s.face } : {}),
     ...(typeof s.clone === "string" ? { clone: s.clone } : {}),
+    ...planSearch(s),
   }),
 })
 

@@ -2,12 +2,16 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 
 import { RackForm } from "@/components/rack-form"
 import { EditPageShell } from "@/components/edit-page-shell"
+import { planSearch, type PlanSearch } from "@/lib/save-object"
 
 export const Route = createFileRoute("/racks/new")({
   // ?rack_type=<id> pre-picks the cabinet model — how the rack-type page's
   // "Add rack" lands here with the profile already chosen.
-  validateSearch: (s: Record<string, unknown>): { rack_type?: string } => ({
+  validateSearch: (
+    s: Record<string, unknown>
+  ): { rack_type?: string } & PlanSearch => ({
     rack_type: typeof s.rack_type === "string" ? s.rack_type : undefined,
+    ...planSearch(s),
   }),
   component: NewRackPage,
 })

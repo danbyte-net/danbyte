@@ -1,4 +1,4 @@
-import { useNavigate, useSearch } from "@tanstack/react-router"
+import { useNavigate, useRouterState } from "@tanstack/react-router"
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
@@ -34,10 +34,89 @@ export class PlanStaged extends Error {
  *  This is a **fail-safe**, not a feature flag: a form that still writes
  *  directly must never be reachable in plan mode, or saving it would change the
  *  live object while the banner promised nothing would be written. Add a type
- *  here only once its form is migrated. */
+ *  here only once its form is migrated — `save-object.test.ts` checks that every
+ *  entry has one.
+ *
+ *  Deliberate absences: `api.cable`, whose payload carries `a`/`b` termination
+ *  arrays rather than plain writable fields; anything whose "form" is a
+ *  multi-step wizard; and users, groups and tags, whose integer primary keys a
+ *  planned change cannot reference (`object_id` is a UUID column). */
 export const PLAN_CAPABLE: ReadonlySet<string> = new Set([
+  "api.aggregate",
+  "api.asn",
+  "api.circuit",
+  "api.circuittermination",
+  "api.circuittype",
+  "api.cluster",
+  "api.clustergroup",
+  "api.clustertype",
+  "api.configcontext",
+  "api.consoleport",
+  "api.consoleserverport",
+  "api.contact",
+  "api.contactgroup",
+  "api.contactrole",
   "api.device",
+  "api.devicerole",
+  "api.devicetype",
+  "api.devicetypeservice",
+  "api.exporttemplate",
+  "api.fhrpgroup",
+  "api.floorplan",
+  "api.floortiletype",
+  "api.frontport",
   "api.interface",
+  "api.inventoryitem",
+  "api.ipaddress",
+  "api.iprange",
+  "api.iprole",
+  "api.ipsecprofile",
+  "api.location",
+  "api.macaddress",
+  "api.manufacturer",
+  "api.module",
+  "api.moduleinterfacetemplate",
+  "api.moduletype",
+  "api.platform",
+  "api.platformgroup",
+  "api.powerfeed",
+  "api.poweroutlet",
+  "api.powerpanel",
+  "api.powerport",
+  "api.prefix",
+  "api.provider",
+  "api.providernetwork",
+  "api.rack",
+  "api.rackrole",
+  "api.racktype",
+  "api.racktypeaccessory",
+  "api.rearport",
+  "api.region",
+  "api.rir",
+  "api.routetarget",
+  "api.service",
+  "api.servicetemplate",
+  "api.site",
+  "api.status",
+  "api.tunnel",
+  "api.tunnelgroup",
+  "api.tunneltermination",
+  "api.virtualchassis",
+  "api.virtualmachine",
+  "api.vlan",
+  "api.vlangroup",
+  "api.vminterface",
+  "api.vrf",
+  "api.wirelesslan",
+  "api.wirelesslangroup",
+  "api.zone",
+  "auth_api.objectpermission",
+  "core.tenant",
+  "core.tenantgroup",
+  "customization.customfield",
+  "customization.customfieldgroup",
+  "integrations.automationtarget",
+  "integrations.webhook",
 ])
 
 export function isPlanCapable(objectType: string): boolean {
@@ -49,7 +128,13 @@ export function isPlanCapable(objectType: string): boolean {
  *  Both ids ride in the URL because the entry point always knows them and the
  *  helper needs the board to navigate back to the task afterwards. */
 export function usePlanTarget(): { taskId: string; boardId: string } | null {
-  const search = useSearch({ strict: false }) as Record<string, unknown>
+  // Read the LOCATION's search, not the route's validated search. A route that
+  // validates its own params returns only those, which would silently drop
+  // `plan` — and a form that thinks it isn't planning writes to the live object
+  // while the banner promises it won't. The location is unfiltered.
+  const search = useRouterState({
+    select: (state) => state.location.search as Record<string, unknown>,
+  })
   const taskId = typeof search.plan === "string" ? search.plan : ""
   const boardId = typeof search.planBoard === "string" ? search.planBoard : ""
   return taskId && boardId ? { taskId, boardId } : null
@@ -83,6 +168,11 @@ export interface SaveObjectArgs {
   names?: string[]
   /** Field the names fan out over. Defaults to "name". */
   nameField?: string
+  /** Create-only, and takes precedence over `names`: the complete bodies a range
+   *  would have created, for forms whose range advances more than the name —
+   *  front ports step the rear strand too. Ignored outside plan mode, where the
+   *  form still posts them one at a time so a clash names the offender. */
+  bodies?: unknown[]
 }
 
 export function useSaveObject() {
@@ -97,14 +187,17 @@ export function useSaveObject() {
     payload,
     names,
     nameField = "name",
+    bodies,
   }: SaveObjectArgs): Promise<T> {
     if (plan) {
       const body = payload as Record<string, unknown>
-      const bodies =
-        !id && names && names.length > 1
-          ? names.map((n) => ({ ...body, [nameField]: n }))
-          : [body]
-      for (const one of bodies) {
+      const staged =
+        !id && bodies && bodies.length
+          ? bodies
+          : !id && names && names.length > 1
+            ? names.map((n) => ({ ...body, [nameField]: n }))
+            : [body]
+      for (const one of staged) {
         await api("/api/planning/planned-changes/", {
           method: "POST",
           body: JSON.stringify({
@@ -119,8 +212,8 @@ export function useSaveObject() {
       qc.invalidateQueries({ queryKey: ["planning-tasks"] })
       qc.invalidateQueries({ queryKey: ["planned-changes-map"] })
       toast.success(
-        bodies.length > 1
-          ? `${bodies.length} changes planned`
+        staged.length > 1
+          ? `${staged.length} changes planned`
           : "Change planned — nothing written yet"
       )
       // Back to the task, with its sheet open, so the staged change is right

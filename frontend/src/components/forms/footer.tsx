@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { usePlanTarget } from "@/lib/save-object"
 
 export interface FormFooterProps {
   onCancel: () => void
@@ -37,6 +38,13 @@ export function FormFooter({
   cancelLabel = "Cancel",
   className,
 }: FormFooterProps) {
+  // In plan mode this button does not write, so it must not say "Save". Done
+  // here rather than in each form: every form's footer is this component.
+  const planning = !!usePlanTarget()
+  if (planning) {
+    submitLabel = "Save as planned change"
+    submittingLabel = "Planning…"
+  }
   return (
     // flex-col-reverse on mobile matches DialogFooter, so buttons stack the
     // same way whichever footer a dialog happens to use.

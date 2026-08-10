@@ -208,6 +208,57 @@ class DiffTests(_PlanBase):
                        self._device_payload(dev, site_id=str(foreign_site.id)))
         self.assertEqual(r.status_code, 400, r.content)
 
+    def test_a_plan_never_stores_a_credential(self):
+        """A plan is readable by everyone who can see the task, so a secret in
+        the submitted payload must not survive into the stored change set."""
+        from integrations.models import Webhook
+
+        hook = Webhook.objects.create(
+            tenant=self.tenant, name="Deploy hook",
+            payload_url="https://hooks.example.com/a", secret="original",
+        )
+        r = self._plan(
+            self._task(), "webhook", hook.id,
+            {"name": "Deploy hook", "payload_url": "https://hooks.example.com/b",
+             "secret": "sup3r-s3cret"},
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        change = PlannedChange.objects.get(pk=r.json()["id"])
+        self.assertNotIn("secret", change.payload)
+        self.assertNotIn("secret", change.before)
+        self.assertEqual(
+            change.payload.get("payload_url"), "https://hooks.example.com/b"
+        )
+        self.assertNotIn(
+            "sup3r-s3cret", str(change.payload) + str(change.display),
+        )
+        hook.refresh_from_db()
+        self.assertEqual(hook.secret, "original")
+
+    def test_id_aliases_are_not_mistaken_for_secrets(self):
+        """`write_only` marks every `*_id` input alias, so it can't be the test
+        for a secret on its own — an FK edit must still be recorded."""
+        dev = self._device()
+        other = Status.objects.create(
+            tenant=self.tenant, name="Planned maintenance", slug="planned-maint",
+            available_to=["device"],
+        )
+        r = self._plan(self._task(), "device", dev.id,
+                       self._device_payload(dev, status_id=str(other.id)))
+        self.assertEqual(r.status_code, 201, r.content)
+        change = PlannedChange.objects.get(pk=r.json()["id"])
+        self.assertEqual(list(change.payload), ["status_id"])
+
+    def test_any_routed_model_can_be_planned(self):
+        """Plan capability follows the router, not the bulk-edit allow-list — a
+        site has no per-field allow-list and must still be plannable."""
+        site = Site.objects.create(tenant=self.tenant, name="Planned site")
+        r = self._plan(self._task(), "site", site.id,
+                       {"name": "Planned site", "description": "moving racks"})
+        self.assertEqual(r.status_code, 201, r.content)
+        change = PlannedChange.objects.get(pk=r.json()["id"])
+        self.assertEqual(list(change.payload), ["description"])
+
 
 class ApplyUpdateTests(_PlanBase):
     def test_apply_writes_the_change_set(self):

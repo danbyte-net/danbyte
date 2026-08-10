@@ -6,13 +6,17 @@ import { IpForm } from "@/components/ip-form"
 import { EditPageShell } from "@/components/edit-page-shell"
 import { QueryError } from "@/components/query-error"
 import { useReturnTo } from "@/lib/return-to"
+import { planSearch, type PlanSearch } from "@/lib/save-object"
 
 export const Route = createFileRoute("/ips/$id_/edit")({
   component: EditIpPage,
   // ?from=<href> — e.g. a prefix's IPs tab sends the user back there on save,
   // instead of always landing on the IP detail page.
-  validateSearch: (s: Record<string, unknown>): { from?: string } => ({
+  validateSearch: (
+    s: Record<string, unknown>
+  ): { from?: string } & PlanSearch => ({
     ...(typeof s.from === "string" ? { from: s.from } : {}),
+    ...planSearch(s),
   }),
 })
 

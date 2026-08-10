@@ -5,6 +5,7 @@ import { EditPageShell } from "@/components/edit-page-shell"
 import { Spinner } from "@/components/ui/spinner"
 import type { Prefix } from "@/lib/api"
 import { useCloneSeed } from "@/lib/use-clone"
+import { planSearch } from "@/lib/save-object"
 
 export const Route = createFileRoute("/prefixes/new")({
   // `clone` is spread in so it stays an OPTIONAL search key — the other four are
@@ -17,6 +18,7 @@ export const Route = createFileRoute("/prefixes/new")({
     site: typeof s.site === "string" ? s.site : undefined,
     location: typeof s.location === "string" ? s.location : undefined,
     ...(typeof s.clone === "string" ? { clone: s.clone } : {}),
+    ...planSearch(s),
   }),
   component: NewPrefixPage,
 })

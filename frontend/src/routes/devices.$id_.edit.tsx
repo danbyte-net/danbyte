@@ -5,7 +5,6 @@ import { api, type Device } from "@/lib/api"
 import { DeviceForm } from "@/components/device-form"
 import { EditPageShell } from "@/components/edit-page-shell"
 import { QueryError } from "@/components/query-error"
-import { PlanModeBanner } from "@/components/planning/plan-mode-banner"
 import { PendingFieldsProvider } from "@/lib/pending-fields"
 import { planSearch } from "@/lib/save-object"
 
@@ -37,7 +36,6 @@ function EditDevicePage() {
       ]}
       title={q.data ? `Edit ${q.data.name}` : "Edit device"}
     >
-      <PlanModeBanner />
       {q.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {q.isError && <QueryError error={q.error} />}
       <PendingFieldsProvider objectType="api.device" objectId={id}>

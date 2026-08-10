@@ -5,6 +5,7 @@ import { EditPageShell } from "@/components/edit-page-shell"
 import { Spinner } from "@/components/ui/spinner"
 import type { IPAddress } from "@/lib/api"
 import { useCloneSeed } from "@/lib/use-clone"
+import { planSearch, type PlanSearch } from "@/lib/save-object"
 
 export const Route = createFileRoute("/ips/new")({
   // Keys are optional so partial callers (the prefix flow passes only
@@ -17,13 +18,14 @@ export const Route = createFileRoute("/ips/new")({
     device?: string
     interface?: string
     clone?: string
-  } => ({
+  } & PlanSearch => ({
     address: typeof s.address === "string" ? s.address : undefined,
     prefix: typeof s.prefix === "string" ? s.prefix : undefined,
     // Prefill the assignment when adding an IP from a device's interface.
     device: typeof s.device === "string" ? s.device : undefined,
     interface: typeof s.interface === "string" ? s.interface : undefined,
     clone: typeof s.clone === "string" ? s.clone : undefined,
+    ...planSearch(s),
   }),
   component: NewIpPage,
 })

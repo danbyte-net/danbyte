@@ -8,6 +8,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { DetailActions } from "@/components/detail-actions"
 import { useRegisterPresence } from "@/lib/presence-context"
+import { PlanFromObject } from "@/components/planning/plan-from-object"
 import { useDefaultTabPref } from "@/lib/use-url-tab"
 import {
   Tooltip,
@@ -111,6 +112,9 @@ export function DetailShell({
         </nav>
         <div className="ml-auto flex items-center gap-1.5">
           <DetailActions />
+          {/* Route-derived like DetailActions: renders only on a detail page
+              whose type can be planned. */}
+          <PlanFromObject />
           {actions}
         </div>
       </header>

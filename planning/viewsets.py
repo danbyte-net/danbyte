@@ -230,7 +230,12 @@ class PlannedChangeViewSet(TenantScopedViewSet):
         """
         from audit.api import _can_view_object, _object_site_id
 
-        from .diffing import describe_create, diff_update, validate_payload
+        from .diffing import (
+            describe_create,
+            diff_update,
+            strip_secrets,
+            validate_payload,
+        )
         from .planned_changes import model_for_label
 
         tenant = self._tenant_or_403()
@@ -250,6 +255,13 @@ class PlannedChangeViewSet(TenantScopedViewSet):
         kind = data.get("kind") or PlannedChangeKind.UPDATE
         if kind == PlannedChangeKind.CREATE:
             validate_payload(model, payload, request=self.request)
+            # Validated in full, stored without secrets — a plan is readable by
+            # everyone who can see the task.
+            payload = strip_secrets(model, payload)
+            if not payload:
+                raise ValidationError(
+                    {"payload": "Nothing here can be planned."}
+                )
             changed, before = payload, {}
             display = describe_create(model, payload)
             site_id = None
@@ -272,6 +284,7 @@ class PlannedChangeViewSet(TenantScopedViewSet):
                 )
             validate_payload(model, payload, instance=obj,
                              request=self.request)
+            payload = strip_secrets(model, payload)
             changed, before, display = diff_update(obj, payload)
             if not changed:
                 raise ValidationError(

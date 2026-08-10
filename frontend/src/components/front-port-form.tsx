@@ -22,7 +22,7 @@ import { NameRangeHint } from "@/components/name-range-hint"
 import { createEach, expandNameRange } from "@/lib/name-range"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { useStrandModelling } from "@/components/fiber/use-fiber-palette"
-import { useSaveObject } from "@/lib/save-object"
+import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 
 export interface FrontPortFormProps {
   port?: FrontPort
@@ -42,6 +42,7 @@ export function FrontPortForm({
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const saveObject = useSaveObject()
+  const planning = !!usePlanTarget()
 
   const [name, setName] = useState(port?.name ?? "")
   const [rearPortId, setRearPortId] = useState<string | null>(
@@ -142,15 +143,26 @@ export function FrontPortForm({
       const names = expandNameRange(payload.name)
       const width = payload.positions ?? 1
       const start = payload.rear_port_position ?? 1
+      const bodyFor = (n: string, i: number) => ({
+        ...payload,
+        name: n,
+        rear_port_position: start + i * width,
+      })
+      // Planning stages the whole range in one call: the helper throws once the
+      // first body is recorded, so posting them one by one would plan a single
+      // port and quietly drop the other 23.
+      if (planning && names.length > 1)
+        return saveObject<FrontPort>({
+          objectType: "api.frontport",
+          endpoint: "/api/front-ports/",
+          payload: bodyFor(names[0], 0),
+          bodies: names.map(bodyFor),
+        }).then((saved) => ({ saved, count: names.length }))
       return createEach(names, (n) =>
         saveObject<FrontPort>({
           objectType: "api.frontport",
           endpoint: "/api/front-ports/",
-          payload: {
-            ...payload,
-            name: n,
-            rear_port_position: start + names.indexOf(n) * width,
-          },
+          payload: bodyFor(n, names.indexOf(n)),
         })
       ).then(({ last, count }) => ({ saved: last, count }))
     },

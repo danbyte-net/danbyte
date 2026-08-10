@@ -18,7 +18,9 @@ export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
   "api.ipaddress": "/ips/$id",
   "api.iprange": "/ip-ranges/$id",
   "api.iprole": "/ip-roles/$id",
+  // Renamed model: rows written as api.IPStatus predate api.Status.
   "api.ipstatus": "/statuses/$id",
+  "api.status": "/statuses/$id",
   "api.location": "/locations/$id",
   "api.manufacturer": "/manufacturers/$id",
   "api.platform": "/platforms/$id",

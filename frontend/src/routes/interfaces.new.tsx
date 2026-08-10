@@ -2,7 +2,6 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 
 import { InterfaceForm } from "@/components/interface-form"
 import { EditPageShell } from "@/components/edit-page-shell"
-import { PlanModeBanner } from "@/components/planning/plan-mode-banner"
 import { planSearch } from "@/lib/save-object"
 
 export const Route = createFileRoute("/interfaces/new")({
@@ -24,7 +23,6 @@ function NewInterfacePage() {
       title="Add interface"
       subtitle="A network interface (port) on a device."
     >
-      <PlanModeBanner />
       <InterfaceForm
         initialDeviceId={device}
         onSaved={(i, count) =>

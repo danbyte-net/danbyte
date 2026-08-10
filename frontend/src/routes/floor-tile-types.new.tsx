@@ -2,13 +2,17 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 
 import { EditPageShell } from "@/components/edit-page-shell"
 import { FloorTileTypeForm } from "@/components/floor-tile-type-form"
+import { planSearch, type PlanSearch } from "@/lib/save-object"
 
 export const Route = createFileRoute("/floor-tile-types/new")({
   component: NewFloorTileTypePage,
   // ?from=<floor plan id> — arriving from a plan's palette "+" sends the
   // user straight back to that plan after save/cancel.
-  validateSearch: (s: Record<string, unknown>): { from?: string } => ({
+  validateSearch: (
+    s: Record<string, unknown>
+  ): { from?: string } & PlanSearch => ({
     ...(typeof s.from === "string" ? { from: s.from } : {}),
+    ...planSearch(s),
   }),
 })
 

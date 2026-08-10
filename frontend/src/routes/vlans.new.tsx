@@ -2,10 +2,12 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 
 import { VlanForm } from "@/components/vlan-form"
 import { EditPageShell } from "@/components/edit-page-shell"
+import { planSearch } from "@/lib/save-object"
 
 export const Route = createFileRoute("/vlans/new")({
   validateSearch: (s: Record<string, unknown>) => ({
     vlan_id: typeof s.vlan_id === "string" ? Number(s.vlan_id) : undefined,
+    ...planSearch(s),
   }),
   component: NewVlanPage,
 })

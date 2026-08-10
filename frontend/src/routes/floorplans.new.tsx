@@ -2,11 +2,15 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 
 import { EditPageShell } from "@/components/edit-page-shell"
 import { FloorPlanForm } from "@/components/floor-plan-form"
+import { planSearch, type PlanSearch } from "@/lib/save-object"
 
 export const Route = createFileRoute("/floorplans/new")({
   component: NewFloorPlanPage,
-  validateSearch: (s: Record<string, unknown>): { location?: string } => ({
+  validateSearch: (
+    s: Record<string, unknown>
+  ): { location?: string } & PlanSearch => ({
     ...(typeof s.location === "string" ? { location: s.location } : {}),
+    ...planSearch(s),
   }),
 })
 

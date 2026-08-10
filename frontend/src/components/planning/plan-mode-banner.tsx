@@ -43,8 +43,3 @@ export function PlanModeBanner() {
     </div>
   )
 }
-
-/** The submit label a form should show. Plan mode never says "Save". */
-export function usePlanSubmitLabel(fallback = "Save") {
-  return usePlanTarget() ? "Save as planned change" : fallback
-}

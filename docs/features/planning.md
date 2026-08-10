@@ -103,6 +103,21 @@ Because it is literally the same form, every field is editable, with the same
 validation and the same layout — there is no second implementation to keep in
 sync and no "which fields are plannable" question.
 
+**What can be planned** is anything the API exposes as an editable object: every
+IPAM, DCIM, connectivity, organization and customization form goes through the one
+save path, so its type is plan-capable. The exceptions are deliberate — a **cable
+connection**, whose form is a pair of termination pickers rather than a set of
+fields; the multi-step **wizards** (onboarding, automation target), which build
+several objects in sequence; and **users, groups and tags**, which a planned
+change can't point at because their primary keys aren't UUIDs.
+
+!!! note "Secrets are never stored in a plan"
+    A plan is readable by everyone who can see the task, so any field the API
+    treats as write-only — a password, a webhook signing secret — is dropped
+    before the change set is stored. The payload is still validated in full, so
+    the form behaves normally; the secret simply is not part of the plan, and
+    such a value has to be set by editing the object directly.
+
 !!! important "Apply updates Danbyte, not the device"
     Applying writes the values into Danbyte's own record — it does not push
     configuration to hardware. That is the separate automation/deploy path.

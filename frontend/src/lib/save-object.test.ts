@@ -31,102 +31,26 @@ const NOT_OBJECT_SAVES = [
   "table-io.tsx",
 ]
 
-/** Forms still writing directly. Each entry is a form yet to be migrated onto
- *  `useSaveObject`; its object type must therefore stay OUT of PLAN_CAPABLE.
+/** The last files whose PATCH/POST is **not** an object edit form, so no plan
+ *  path leads to them. Kept as an explicit list rather than a pattern so a new
+ *  form that writes directly still fails the test below.
  *
- *  The assertion is **directional**: the scan must be a SUBSET of this list. A
- *  migration therefore needs no edit here (the scan just shrinks), which is what
- *  lets several people migrate different domains without fighting over this
- *  file — while a brand-new form that writes directly still fails the test. */
+ *  The assertion is **directional**: the scan must be a SUBSET of this list, so
+ *  migrating a form needs no edit here (the scan just shrinks). */
 const UNMIGRATED_FORMS = new Set<string>([
-  // The E3 worklist, produced by this very scan. Every entry is a form that
-  // still writes directly, so its object type must stay out of PLAN_CAPABLE.
-  // Delete lines as forms migrate; a new form should be born migrated.
-  "components/aggregate-form.tsx",
-  "components/asn-form.tsx",
-  "components/assign-ip-dialog.tsx",
-  "components/automation-target-form.tsx",
+  // Multi-step wizards: they create several objects in sequence, which is not a
+  // single-object save and has no meaning as one planned change.
   "components/automation-target-wizard.tsx",
-  "components/cable-form.tsx",
-  "components/circuit-form.tsx",
-  "components/circuit-termination-dialog.tsx",
-  "components/circuit-type-form.tsx",
-  "components/cluster-form.tsx",
-  "components/cluster-group-form.tsx",
-  "components/cluster-type-form.tsx",
-  "components/config-context-form.tsx",
-  "components/contact-form.tsx",
-  "components/contact-group-form.tsx",
-  "components/contact-role-form.tsx",
-  "components/custom-field-form.tsx",
-  "components/custom-field-group-form.tsx",
-  "components/device-inventory-pane.tsx",
-  "components/device-modules-pane.tsx",
-  "components/device-role-form.tsx",
-  "components/device-type-form.tsx",
-  "components/device-type-services-section.tsx",
-  "components/export-template-form.tsx",
-  "components/fhrp-group-form.tsx",
-  "components/floor-plan-form.tsx",
-  "components/floor-tile-type-form.tsx",
-  "components/floorplan3d/scene.tsx",
-  "components/front-port-form.tsx",
-  "components/group-form.tsx",
-  "components/ip-form.tsx",
-  "components/ip-range-form.tsx",
-  "components/ip-role-form.tsx",
-  "components/ip-status-form.tsx",
-  "components/ipsec-profile-form.tsx",
-  "components/location-form.tsx",
-  "components/mac-object-dialog.tsx",
-  "components/manufacturer-form.tsx",
-  "components/module-type-form.tsx",
-  "components/object-documents.tsx",
   "components/onboarding-wizard.tsx",
-  "components/permission-form.tsx",
-  "components/platform-form.tsx",
-  "components/platform-group-form.tsx",
-  "components/power-feed-form.tsx",
-  "components/power-outlet-dialog.tsx",
-  "components/power-panel-form.tsx",
-  "components/power-port-dialog.tsx",
-  "components/prefix-form.tsx",
-  "components/provider-form.tsx",
-  "components/provider-network-form.tsx",
-  "components/rack-form.tsx",
-  "components/rack-role-form.tsx",
-  "components/rack-type-form.tsx",
-  "components/rear-port-form.tsx",
-  "components/region-form.tsx",
-  "components/rir-form.tsx",
-  "components/rt-form.tsx",
-  "components/service-template-form.tsx",
-  "components/services-pane.tsx",
-  "components/site-assign-prefix-dialog.tsx",
-  "components/site-form.tsx",
-  "components/tag-form.tsx",
-  "components/tenant-form.tsx",
-  "components/tenant-groups-section.tsx",
-  "components/tunnel-form.tsx",
-  "components/tunnel-group-form.tsx",
-  "components/tunnel-termination-dialog.tsx",
-  "components/user-form.tsx",
-  "components/vc-add-member-dialog.tsx",
-  "components/vc-membership-dialog.tsx",
-  "components/virtual-chassis-form.tsx",
-  "components/vlan-form.tsx",
-  "components/vlan-group-form.tsx",
-  "components/vm-form.tsx",
-  "components/vm-interfaces-pane.tsx",
-  "components/vrf-form.tsx",
-  "components/webhook-form.tsx",
-  "components/wireless-lan-form.tsx",
-  "components/wlan-group-form.tsx",
-  "components/zone-form.tsx",
+  // Direct manipulation, not a form: dragging a device in the 3D scene and
+  // editing floor-plan tiles both write positions as you move things.
+  "components/floorplan3d/scene.tsx",
   "routes/floorplans.$id.tsx",
-  "routes/module-types.$id.tsx",
-  "routes/rack-types.$id.tsx",
+  // Uploads a file to a generic attachment endpoint.
+  "components/object-documents.tsx",
+  // Row action, not the object's form: flips `monitored` on one service.
   "routes/services.$id.tsx",
+  // Deployment settings, not a domain object.
   "routes/settings.sso.tsx",
 ])
 
@@ -174,6 +98,14 @@ describe("plan-capable forms", () => {
       for (const m of src.matchAll(/objectType:\s*"([^"]+)"/g)) {
         migrated.add(m[1])
       }
+      // A dialog shared by two kinds keeps its types in a lookup map rather than
+      // inline (console ports vs console server ports), so also count any
+      // app-label literal in a file that routes writes through the helper.
+      for (const m of src.matchAll(
+        /"((?:api|core|auth|auth_api|customization|integrations)\.[a-z]+)"/g
+      )) {
+        migrated.add(m[1])
+      }
     }
     const claimed = [...PLAN_CAPABLE].sort()
     const missing = claimed.filter((t) => !migrated.has(t))
@@ -197,7 +129,9 @@ describe("plan-capable forms", () => {
 
   it("isPlanCapable is exact, not prefix-matched", () => {
     expect(isPlanCapable("api.device")).toBe(true)
-    expect(isPlanCapable("api.devicetype")).toBe(false)
+    // Excluded on purpose — a cable's payload is termination arrays, not fields.
+    expect(isPlanCapable("api.cable")).toBe(false)
+    expect(isPlanCapable("api.dev")).toBe(false)
     expect(isPlanCapable("")).toBe(false)
   })
 })
