@@ -2,7 +2,6 @@ import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
 import type { PowerPort, PowerPortWritePayload } from "@/lib/api"
 import {
   Dialog,
@@ -19,6 +18,7 @@ import {
 import { NameRangeHint } from "@/components/name-range-hint"
 import { createEach, expandNameRange } from "@/lib/name-range"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
+import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 
 export interface PowerPortDialogProps {
   deviceId: string
@@ -39,6 +39,8 @@ export function PowerPortDialog({
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const choices = useDcimChoices()
+  const saveObject = useSaveObject()
+  const isPlanning = !!usePlanTarget()
 
   const [name, setName] = useState("")
   const [type, setType] = useState("")
@@ -71,15 +73,28 @@ export function PowerPortDialog({
         description: description.trim(),
       }
       if (isEdit)
-        return api<PowerPort>(`/api/power-ports/${port!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
+        return saveObject<PowerPort>({
+          objectType: "api.powerport",
+          endpoint: "/api/power-ports/",
+          id: port!.id,
+          payload,
         }).then((saved) => ({ saved, count: 1 }))
-      // A [a-b] range in the name fans out — "PSU[1-2]" adds both inlets.
-      return createEach(expandNameRange(payload.name), (n) =>
-        api<PowerPort>("/api/power-ports/", {
-          method: "POST",
-          body: JSON.stringify({ ...payload, name: n }),
+      // A [a-b] range in the name fans out — "PSU[1-2]" adds both inlets. In
+      // plan mode saveObject stages one create per expanded name, so a planned
+      // range records both inlets rather than one.
+      const names = expandNameRange(payload.name)
+      if (names.length > 1 && isPlanning)
+        return saveObject<PowerPort>({
+          objectType: "api.powerport",
+          endpoint: "/api/power-ports/",
+          payload,
+          names,
+        }).then((saved) => ({ saved, count: names.length }))
+      return createEach(names, (n) =>
+        saveObject<PowerPort>({
+          objectType: "api.powerport",
+          endpoint: "/api/power-ports/",
+          payload: { ...payload, name: n },
         })
       ).then(({ last, count }) => ({ saved: last, count }))
     },

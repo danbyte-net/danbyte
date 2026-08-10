@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type Zone, type ZoneWritePayload } from "@/lib/api"
+import type { Zone, ZoneWritePayload } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import {
   FormColor,
@@ -13,6 +13,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface ZoneFormProps {
   zone?: Zone
@@ -24,6 +25,7 @@ export function ZoneForm({ zone, onSaved, onCancel }: ZoneFormProps) {
   const isEdit = !!zone
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(zone?.name ?? "")
   const [color, setColor] = useState(zone?.color ?? "")
@@ -60,14 +62,11 @@ export function ZoneForm({ zone, onSaved, onCancel }: ZoneFormProps) {
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<Zone>(`/api/zones/${zone!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Zone>("/api/zones/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Zone>({
+        objectType: "api.zone",
+        endpoint: "/api/zones/",
+        id: isEdit ? zone!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

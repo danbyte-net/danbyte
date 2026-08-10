@@ -25,6 +25,7 @@ import {
 } from "@/components/forms"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface ExportTemplateFormProps {
   template?: ExportTemplate
@@ -45,6 +46,7 @@ export function ExportTemplateForm({
   const isEdit = !!template
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(template?.name ?? "")
   const [objectType, setObjectType] = useState<string | null>(
@@ -143,14 +145,11 @@ export function ExportTemplateForm({
         file_extension: ext.trim() || "txt",
         as_attachment: asAttachment,
       }
-      if (isEdit)
-        return api<ExportTemplate>(`/api/export-templates/${template!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<ExportTemplate>("/api/export-templates/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<ExportTemplate>({
+        objectType: "api.exporttemplate",
+        endpoint: "/api/export-templates/",
+        id: isEdit ? template!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

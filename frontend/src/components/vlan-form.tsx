@@ -27,6 +27,7 @@ import {
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useFieldErrors } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface VlanFormInitial {
   vlanId?: number
@@ -45,6 +46,7 @@ export function VlanForm({ vlan, initial, onSaved, onCancel }: VlanFormProps) {
   const isEdit = !!vlan
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [vlanId, setVlanId] = useState<string>(
     vlan ? String(vlan.vlan_id) : initial?.vlanId ? String(initial.vlanId) : ""
@@ -118,15 +120,11 @@ export function VlanForm({ vlan, initial, onSaved, onCancel }: VlanFormProps) {
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit) {
-        return api<VLAN>(`/api/vlans/${vlan!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      }
-      return api<VLAN>("/api/vlans/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<VLAN>({
+        objectType: "api.vlan",
+        endpoint: "/api/vlans/",
+        id: isEdit ? vlan!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

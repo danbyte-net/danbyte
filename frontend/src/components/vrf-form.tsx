@@ -20,6 +20,7 @@ import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { ColorPicker } from "@/components/ui/color-picker"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useFieldErrors } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface VrfFormProps {
   vrf?: VRF
@@ -31,6 +32,7 @@ export function VrfForm({ vrf, onSaved, onCancel }: VrfFormProps) {
   const isEdit = !!vrf
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(vrf?.name ?? "")
   const [rd, setRd] = useState(vrf?.rd ?? "")
@@ -91,14 +93,11 @@ export function VrfForm({ vrf, onSaved, onCancel }: VrfFormProps) {
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<VRF>(`/api/vrfs/${vrf!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<VRF>("/api/vrfs/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<VRF>({
+        objectType: "api.vrf",
+        endpoint: "/api/vrfs/",
+        id: isEdit ? vrf!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

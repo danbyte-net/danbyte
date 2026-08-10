@@ -27,6 +27,7 @@ import {
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useFieldErrors } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 import { cidrHostRange } from "@/lib/prefix-tree"
 import { PrefixPicker, prefixDetailKey } from "@/components/prefix-picker"
 
@@ -42,6 +43,7 @@ export function IpRangeForm({ range, onSaved, onCancel }: IpRangeFormProps) {
   const isEdit = !!range
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [startAddress, setStartAddress] = useState(range?.start_address ?? "")
   const [endAddress, setEndAddress] = useState(range?.end_address ?? "")
@@ -110,14 +112,11 @@ export function IpRangeForm({ range, onSaved, onCancel }: IpRangeFormProps) {
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<IPRange>(`/api/ip-ranges/${range!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<IPRange>("/api/ip-ranges/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<IPRange>({
+        objectType: "api.iprange",
+        endpoint: "/api/ip-ranges/",
+        id: isEdit ? range!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

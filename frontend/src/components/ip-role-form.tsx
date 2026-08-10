@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type IPRole, type IPRoleWritePayload } from "@/lib/api"
+import type { IPRole, IPRoleWritePayload } from "@/lib/api"
 import {
   FormCheckbox,
   FormColor,
@@ -11,6 +11,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface IpRoleFormProps {
   role?: IPRole
@@ -22,6 +23,7 @@ export function IpRoleForm({ role, onSaved, onCancel }: IpRoleFormProps) {
   const isEdit = !!role
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(role?.name ?? "")
   const [color, setColor] = useState(role?.color ?? "")
@@ -54,14 +56,11 @@ export function IpRoleForm({ role, onSaved, onCancel }: IpRoleFormProps) {
         is_gateway: isGateway,
         is_virtual: isVirtual,
       }
-      if (isEdit)
-        return api<IPRole>(`/api/ip-roles/${role!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<IPRole>("/api/ip-roles/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<IPRole>({
+        objectType: "api.iprole",
+        endpoint: "/api/ip-roles/",
+        id: isEdit ? role!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

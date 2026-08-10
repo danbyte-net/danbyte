@@ -28,6 +28,7 @@ import {
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useFieldErrors, FormCheckbox } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 // Pure form body — no dialog chrome. Rendered by /prefixes/new and
 // /prefixes/$id/edit routes. Replaces PrefixFormDialog.
@@ -63,6 +64,7 @@ export function PrefixForm({
   const isEdit = !!prefix
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
   // Cloneable fields read from the edit object or the clone seed; the CIDR reads
   // from `prefix`/`initial` only, so a clone starts it blank.
   const seed = prefix ?? clone
@@ -162,15 +164,11 @@ export function PrefixForm({
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit) {
-        return api<Prefix>(`/api/prefixes/${prefix!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      }
-      return api<Prefix>("/api/prefixes/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Prefix>({
+        objectType: "api.prefix",
+        endpoint: "/api/prefixes/",
+        id: isEdit ? prefix!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

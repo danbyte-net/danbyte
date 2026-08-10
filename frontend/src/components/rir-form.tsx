@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type RIR, type RIRWritePayload } from "@/lib/api"
+import type { RIR, RIRWritePayload } from "@/lib/api"
 import {
   FormCheckbox,
   FormFooter,
@@ -10,6 +10,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface RirFormProps {
   rir?: RIR
@@ -29,6 +30,7 @@ export function RirForm({ rir, onSaved, onCancel }: RirFormProps) {
   const isEdit = !!rir
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(rir?.name ?? "")
   const [slug, setSlug] = useState(rir?.slug ?? "")
@@ -59,14 +61,11 @@ export function RirForm({ rir, onSaved, onCancel }: RirFormProps) {
         is_private: isPrivate,
         description: description.trim(),
       }
-      if (isEdit)
-        return api<RIR>(`/api/rirs/${rir!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<RIR>("/api/rirs/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<RIR>({
+        objectType: "api.rir",
+        endpoint: "/api/rirs/",
+        id: isEdit ? rir!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

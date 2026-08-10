@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   STATUSABLE_MODELS,
   type Status,
   type StatusWritePayload,
@@ -17,6 +16,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface IpStatusFormProps {
   status?: Status
@@ -28,6 +28,7 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
   const isEdit = !!status
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(status?.name ?? "")
   const [color, setColor] = useState(status?.color ?? "")
@@ -84,14 +85,11 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
         is_available: isAvailable,
         requires_note: requiresNote,
       }
-      if (isEdit)
-        return api<Status>(`/api/statuses/${status!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Status>("/api/statuses/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Status>({
+        objectType: "api.status",
+        endpoint: "/api/statuses/",
+        id: isEdit ? status!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

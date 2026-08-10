@@ -19,6 +19,7 @@ import {
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { NameRangeHint } from "@/components/name-range-hint"
 import { createEach, expandNameRange } from "@/lib/name-range"
+import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 
 export interface RearPortFormProps {
   port?: RearPort
@@ -37,6 +38,8 @@ export function RearPortForm({
   const isEdit = !!port
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
+  const isPlanning = !!usePlanTarget()
 
   const [name, setName] = useState(port?.name ?? "")
   const [positions, setPositions] = useState(
@@ -78,16 +81,28 @@ export function RearPortForm({
         tag_ids: tagIds,
       }
       if (isEdit)
-        return api<RearPort>(`/api/rear-ports/${port!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
+        return saveObject<RearPort>({
+          objectType: "api.rearport",
+          endpoint: "/api/rear-ports/",
+          id: port!.id,
+          payload,
         }).then((saved) => ({ saved, count: 1 }))
       // A [a-b] range in the name fans out — "Rear[1-12]" adds a whole panel
-      // row, each port with its own strands.
-      return createEach(expandNameRange(payload.name), (n) =>
-        api<RearPort>("/api/rear-ports/", {
-          method: "POST",
-          body: JSON.stringify({ ...payload, name: n }),
+      // row, each port with its own strands. In plan mode saveObject stages one
+      // create per expanded name, so a planned range records the whole row.
+      const names = expandNameRange(payload.name)
+      if (names.length > 1 && isPlanning)
+        return saveObject<RearPort>({
+          objectType: "api.rearport",
+          endpoint: "/api/rear-ports/",
+          payload,
+          names,
+        }).then((saved) => ({ saved, count: names.length }))
+      return createEach(names, (n) =>
+        saveObject<RearPort>({
+          objectType: "api.rearport",
+          endpoint: "/api/rear-ports/",
+          payload: { ...payload, name: n },
         })
       ).then(({ last, count }) => ({ saved: last, count }))
     },

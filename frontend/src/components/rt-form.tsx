@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useFieldErrors } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface RtFormProps {
   rt?: RouteTarget
@@ -27,6 +28,7 @@ export function RtForm({ rt, onSaved, onCancel }: RtFormProps) {
   const isEdit = !!rt
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(rt?.name ?? "")
   const [description, setDescription] = useState(rt?.description ?? "")
@@ -60,14 +62,11 @@ export function RtForm({ rt, onSaved, onCancel }: RtFormProps) {
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<RouteTarget>(`/api/route-targets/${rt!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<RouteTarget>("/api/route-targets/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<RouteTarget>({
+        objectType: "api.routetarget",
+        endpoint: "/api/route-targets/",
+        id: isEdit ? rt!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

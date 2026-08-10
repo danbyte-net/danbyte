@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useFieldErrors } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface VlanGroupFormProps {
   group?: VLANGroup
@@ -40,6 +41,7 @@ export function VlanGroupForm({
   const isEdit = !!group
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(group?.name ?? "")
   const [siteId, setSiteId] = useState<string | null>(group?.site?.id ?? null)
@@ -82,14 +84,11 @@ export function VlanGroupForm({
         max_vid: Number(maxVid),
         description: description.trim(),
       }
-      if (isEdit)
-        return api<VLANGroup>(`/api/vlan-groups/${group!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<VLANGroup>("/api/vlan-groups/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<VLANGroup>({
+        objectType: "api.vlangroup",
+        endpoint: "/api/vlan-groups/",
+        id: isEdit ? group!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

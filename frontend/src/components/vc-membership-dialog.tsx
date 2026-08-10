@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type Device, type VirtualChassisMember } from "@/lib/api"
+import type { Device, VirtualChassisMember } from "@/lib/api"
 import {
   Dialog,
   DialogContent,
@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { FormFooter, FormText, useFieldErrors } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface VcMembershipDialogProps {
   /** The chassis whose member list should refresh after saving. */
@@ -30,6 +31,7 @@ export function VcMembershipDialog({
 }: VcMembershipDialogProps) {
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
   const [position, setPosition] = useState("")
   const [priority, setPriority] = useState("")
 
@@ -43,12 +45,14 @@ export function VcMembershipDialog({
 
   const mutation = useMutation({
     mutationFn: () =>
-      api<Device>(`/api/devices/${member!.id}/`, {
-        method: "PATCH",
-        body: JSON.stringify({
+      saveObject<Device>({
+        objectType: "api.device",
+        endpoint: "/api/devices/",
+        id: member!.id,
+        payload: {
           vc_position: position.trim() === "" ? null : Number(position),
           vc_priority: priority.trim() === "" ? null : Number(priority),
-        }),
+        },
       }),
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["virtual-chassis", chassisId] })

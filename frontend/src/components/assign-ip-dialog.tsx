@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Combobox } from "@/components/ui/combobox"
 import { apiErrorToast } from "@/lib/api-toast"
+import { PlanStaged, useSaveObject } from "@/lib/save-object"
 
 export interface AssignIpTarget {
   deviceId: string
@@ -55,6 +56,7 @@ export function AssignIpDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const qc = useQueryClient()
+  const saveObject = useSaveObject()
   const open = !!target
 
   const [site, setSite] = useState<string | null>(null)
@@ -124,13 +126,15 @@ export function AssignIpDialog({
 
   const m = useMutation({
     mutationFn: () =>
-      api<IPAddress>(`/api/ips/${ipId}/`, {
-        method: "PATCH",
-        body: JSON.stringify({
+      saveObject<IPAddress>({
+        objectType: "api.ipaddress",
+        endpoint: "/api/ips/",
+        id: ipId!,
+        payload: {
           assigned_device_id: target!.deviceId,
           // null → attach to the device itself (no interface).
           assigned_interface_id: target!.interfaceId ?? null,
-        }),
+        },
       }),
     onSuccess: (ip) => {
       const where = target!.interfaceName ?? target!.deviceName ?? "this device"
@@ -154,7 +158,10 @@ export function AssignIpDialog({
       }
       close(false)
     },
-    onError: (err) => apiErrorToast(err),
+    onError: (err) => {
+      if (err instanceof PlanStaged) return
+      apiErrorToast(err)
+    },
   })
 
   const rows = ips.data?.results ?? []

@@ -26,6 +26,7 @@ import { SiteMultiSelect } from "@/components/cells/site-multi-select"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useFieldErrors } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface AsnFormProps {
   asn?: ASN
@@ -39,6 +40,7 @@ export function AsnForm({ asn, onSaved, onCancel }: AsnFormProps) {
   const isEdit = !!asn
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [number, setNumber] = useState(asn ? String(asn.asn) : "")
   const [rirId, setRirId] = useState<string | null>(asn?.rir?.id ?? null)
@@ -86,14 +88,11 @@ export function AsnForm({ asn, onSaved, onCancel }: AsnFormProps) {
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<ASN>(`/api/asns/${asn!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<ASN>("/api/asns/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<ASN>({
+        objectType: "api.asn",
+        endpoint: "/api/asns/",
+        id: isEdit ? asn!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { apiErrorToast } from "@/lib/api-toast"
+import { PlanStaged, useSaveObject } from "@/lib/save-object"
 
 /**
  * Pull an *existing* prefix into a site (sets its `site`). Complements
@@ -31,6 +32,7 @@ export function SiteAssignPrefixDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const qc = useQueryClient()
+  const saveObject = useSaveObject()
   const [q, setQ] = useState("")
 
   const prefixesQuery = useQuery({
@@ -55,9 +57,11 @@ export function SiteAssignPrefixDialog({
 
   const assign = useMutation({
     mutationFn: (prefix: Prefix) =>
-      api<Prefix>(`/api/prefixes/${prefix.id}/`, {
-        method: "PATCH",
-        body: JSON.stringify({ site_id: siteId }),
+      saveObject<Prefix>({
+        objectType: "api.prefix",
+        endpoint: "/api/prefixes/",
+        id: prefix.id,
+        payload: { site_id: siteId },
       }),
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["site-prefixes", siteId] })
@@ -65,7 +69,10 @@ export function SiteAssignPrefixDialog({
       qc.invalidateQueries({ queryKey: ["site", siteId] })
       toast.success(`Assigned ${saved.cidr} to ${siteName}`)
     },
-    onError: (err) => apiErrorToast(err),
+    onError: (err) => {
+      if (err instanceof PlanStaged) return
+      apiErrorToast(err)
+    },
   })
 
   return (

@@ -25,6 +25,7 @@ import {
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useFieldErrors } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface AggregateFormProps {
   aggregate?: Aggregate
@@ -40,6 +41,7 @@ export function AggregateForm({
   const isEdit = !!aggregate
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [prefix, setPrefix] = useState(aggregate?.prefix ?? "")
   const [rirId, setRirId] = useState<string | null>(aggregate?.rir?.id ?? null)
@@ -84,14 +86,11 @@ export function AggregateForm({
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<Aggregate>(`/api/aggregates/${aggregate!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Aggregate>("/api/aggregates/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Aggregate>({
+        objectType: "api.aggregate",
+        endpoint: "/api/aggregates/",
+        id: isEdit ? aggregate!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

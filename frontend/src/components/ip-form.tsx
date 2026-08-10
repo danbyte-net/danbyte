@@ -32,6 +32,7 @@ import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { DevicePicker } from "@/components/device-picker"
 import { useFieldErrors } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface IpFormInitial {
   address?: string
@@ -59,6 +60,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   const isEdit = !!ip
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
   // Cloneable fields read from the edit object or the clone seed; the address
   // and device/interface assignment read from `ip`/`initial` only, so a clone
   // starts unaddressed and unassigned.
@@ -240,15 +242,12 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
         custom_fields: customFields,
       }
       if (!isEdit && prefixId) payload.prefix_id = prefixId
-      const saved = isEdit
-        ? await api<IPAddress>(`/api/ips/${ip!.id}/`, {
-            method: "PATCH",
-            body: JSON.stringify(payload),
-          })
-        : await api<IPAddress>("/api/ips/", {
-            method: "POST",
-            body: JSON.stringify(payload),
-          })
+      const saved = await saveObject<IPAddress>({
+        objectType: "api.ipaddress",
+        endpoint: "/api/ips/",
+        id: isEdit ? ip!.id : undefined,
+        payload,
+      })
       if (isPrimary && saved.assigned_device) {
         await api(`/api/devices/${saved.assigned_device.id}/`, {
           method: "PATCH",
