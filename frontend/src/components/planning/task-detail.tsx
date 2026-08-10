@@ -1,16 +1,13 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Link } from "@tanstack/react-router"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { Maximize2, Minimize2, Trash2 } from "lucide-react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Maximize2, Minimize2, MoreHorizontal, Trash2 } from "lucide-react"
 import { toast } from "sonner"
-
-import { useQuery } from "@tanstack/react-query"
 
 import {
   api,
   type Paginated,
   type PlanningMilestone,
-  type PlanningPriority,
   type PlanningStatus,
   type PlanningTask,
 } from "@/lib/api"
@@ -19,27 +16,31 @@ import { useDateFormat } from "@/lib/datetime"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { Field, FormDate, FormSelect, FormText } from "@/components/forms"
 import { Markdown } from "@/components/markdown"
-import { SegmentedTabs } from "@/components/segmented-tabs"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { apiErrorToast } from "@/lib/api-toast"
 import { PlannedChangePanel } from "./planned-change-panel"
+import { scheduleLabel } from "./task-card"
 import { TaskLinkPanel } from "./task-link-panel"
+import {
+  DateRange,
+  MilestonePicker,
+  PriorityPicker,
+  PropertyRow,
+  StatusPicker,
+} from "./task-properties"
 import { UserPicker } from "./user-picker"
-
-const PRIORITIES: { value: PlanningPriority; label: string }[] = [
-  { value: "none", label: "None" },
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "urgent", label: "Urgent" },
-]
 
 const WIDE_KEY = "danbyte.planning.task-sheet-wide"
 
@@ -51,8 +52,15 @@ const readWide = () => {
   }
 }
 
-/** The task detail sheet: edit fields on the left, everything *about* the task
- *  (linked objects, planned changes, comments) on the right once expanded. */
+/**
+ * The task, not a form for the task.
+ *
+ * Title reads as the heading it is, the properties are chips you click, and the
+ * description is prose until you click into it. Every property writes on pick —
+ * the same one-small-PATCH behaviour as dragging a card between columns — so
+ * there is no Save button and nothing to forget to press. Title and description
+ * are the two free-text fields, and they commit on blur.
+ */
 export function TaskDetailSheet({
   task,
   statuses,
@@ -66,16 +74,21 @@ export function TaskDetailSheet({
   const canEdit = canDo("task", "change")
   const canDelete = canDo("task", "delete")
   const qc = useQueryClient()
+  const { formatDate, today } = useDateFormat()
 
+  const [wide, setWide] = useState(readWide)
   const [title, setTitle] = useState(task.title)
   const [description, setDescription] = useState(task.description)
-  const [status, setStatus] = useState<string | null>(task.status)
-  const [priority, setPriority] = useState<PlanningPriority>(task.priority)
-  const [assignees, setAssignees] = useState<number[]>(task.assignees)
-  const [startDate, setStartDate] = useState<string | null>(task.start_date)
-  const [dueDate, setDueDate] = useState<string | null>(task.due_date)
-  const [milestone, setMilestone] = useState<string | null>(task.milestone)
-  const [wide, setWide] = useState(readWide)
+  const [editingDesc, setEditingDesc] = useState(false)
+  const descRef = useRef<HTMLTextAreaElement>(null)
+
+  // Another writer (or an applied planned change) can move the task underneath
+  // us; the sheet stays mounted, so pull the new values in.
+  useEffect(() => setTitle(task.title), [task.title])
+  useEffect(() => setDescription(task.description), [task.description])
+  useEffect(() => {
+    if (editingDesc) descRef.current?.focus()
+  }, [editingDesc])
 
   const milestonesQ = useQuery({
     queryKey: ["planning-milestones", task.board],
@@ -85,47 +98,45 @@ export function TaskDetailSheet({
       ),
   })
   const milestones = milestonesQ.data?.results ?? []
-  const [descTab, setDescTab] = useState<"write" | "preview">(
-    task.description ? "preview" : "write"
-  )
 
-  const { formatDate } = useDateFormat()
-
-  const dirty =
-    title !== task.title ||
-    description !== task.description ||
-    status !== task.status ||
-    priority !== task.priority ||
-    startDate !== task.start_date ||
-    dueDate !== task.due_date ||
-    milestone !== task.milestone ||
-    JSON.stringify([...assignees].sort()) !==
-      JSON.stringify([...task.assignees].sort())
-
-  const save = useMutation({
-    mutationFn: () =>
+  const patch = useMutation({
+    mutationFn: (body: Partial<PlanningTask>) =>
       api(`/api/planning/tasks/${task.id}/`, {
         method: "PATCH",
-        body: JSON.stringify({
-          title: title.trim(),
-          description,
-          status,
-          priority,
-          assignees,
-          milestone,
-          start_date: startDate,
-          due_date: dueDate,
-        }),
+        body: JSON.stringify(body),
       }),
+    // Paint the new value straight away. Everything here renders from the
+    // board's task list, so without this a chip would keep showing the old
+    // value until the refetch lands.
+    onMutate: (body) => {
+      qc.setQueriesData<Paginated<PlanningTask>>(
+        { queryKey: ["planning-tasks"] },
+        (old) =>
+          old?.results
+            ? {
+                ...old,
+                results: old.results.map((t) =>
+                  t.id === task.id ? { ...t, ...body } : t
+                ),
+              }
+            : old
+      )
+    },
     onSuccess: () => {
-      toast.success("Task saved")
       qc.invalidateQueries({ queryKey: ["planning-tasks"] })
       // Milestone task_count is a server-side roll-up: moving a task between
       // milestones changes two of them, so refresh the whole list.
       qc.invalidateQueries({ queryKey: ["planning-milestones"] })
     },
-    onError: (e) => apiErrorToast(e),
+    onError: (e) => {
+      apiErrorToast(e)
+      // The optimistic value was a guess; the server's answer wins.
+      qc.invalidateQueries({ queryKey: ["planning-tasks"] })
+    },
   })
+  const set = (body: Partial<PlanningTask>) => {
+    if (canEdit) patch.mutate(body)
+  }
 
   const del = useMutation({
     mutationFn: () =>
@@ -139,26 +150,162 @@ export function TaskDetailSheet({
     onError: (e) => apiErrorToast(e),
   })
 
+  const commitTitle = () => {
+    const next = title.trim()
+    if (!next) return setTitle(task.title)
+    if (next !== task.title) set({ title: next })
+  }
+  const commitDescription = () => {
+    setEditingDesc(false)
+    if (description !== task.description) set({ description })
+  }
+
+  const toggleWide = () =>
+    setWide((w) => {
+      try {
+        window.localStorage.setItem(WIDE_KEY, w ? "0" : "1")
+      } catch {
+        /* private mode — the toggle still works for this session */
+      }
+      return !w
+    })
+
+  const properties = (
+    <div className="grid gap-1">
+      <PropertyRow label="Status">
+        <StatusPicker
+          statuses={statuses}
+          value={task.status}
+          onChange={(id) => set({ status: id })}
+          canEdit={canEdit}
+        />
+      </PropertyRow>
+      <PropertyRow label="Priority">
+        <PriorityPicker
+          value={task.priority}
+          onChange={(v) => set({ priority: v })}
+          canEdit={canEdit}
+        />
+      </PropertyRow>
+      <PropertyRow label="Assignees">
+        {canEdit ? (
+          <UserPicker
+            bare
+            value={task.assignees}
+            onChange={(ids) => set({ assignees: ids })}
+          />
+        ) : (
+          <span className="pt-1 text-[12px]">
+            {task.assignee_detail.length ? (
+              task.assignee_detail.map((a) => a.username).join(", ")
+            ) : (
+              <span className="text-muted-foreground">Unassigned</span>
+            )}
+          </span>
+        )}
+      </PropertyRow>
+      <PropertyRow label="Milestone">
+        <MilestonePicker
+          milestones={milestones}
+          value={task.milestone}
+          onChange={(id) => set({ milestone: id })}
+          canEdit={canEdit}
+          formatDate={formatDate}
+        />
+      </PropertyRow>
+      <PropertyRow label="Dates">
+        <DateRange
+          start={task.start_date}
+          due={task.due_date}
+          onChange={set}
+          canEdit={canEdit}
+          schedule={scheduleLabel(task, today, formatDate)}
+        />
+      </PropertyRow>
+    </div>
+  )
+
+  const body = (
+    <div className="grid gap-5">
+      {editingDesc ? (
+        <Textarea
+          ref={descRef}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          onBlur={commitDescription}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setDescription(task.description)
+              setEditingDesc(false)
+            }
+          }}
+          className="min-h-32 font-mono text-[13px]"
+          placeholder="What needs to happen? Markdown works."
+        />
+      ) : (
+        <div
+          role={canEdit ? "button" : undefined}
+          tabIndex={canEdit ? 0 : undefined}
+          onClick={(e) => {
+            // Markdown bodies contain links; following one must not also drop
+            // the reader into the editor.
+            if ((e.target as HTMLElement).closest("a")) return
+            if (canEdit) setEditingDesc(true)
+          }}
+          onKeyDown={(e) => {
+            if (canEdit && (e.key === "Enter" || e.key === " ")) {
+              e.preventDefault()
+              setEditingDesc(true)
+            }
+          }}
+          className={`-mx-2 rounded-md px-2 py-1 ${
+            canEdit ? "cursor-text hover:bg-muted/50" : ""
+          }`}
+        >
+          {description ? (
+            <Markdown source={description} />
+          ) : (
+            <p className="text-[13px] text-muted-foreground">
+              {canEdit ? "Add a description" : "No description"}
+            </p>
+          )}
+        </div>
+      )}
+
+      <TaskLinkPanel
+        taskId={task.id}
+        boardId={task.board}
+        links={task.links}
+        canEdit={canEdit}
+      />
+
+      <PlannedChangePanel task={task} canEdit={canEdit} />
+
+      <section className="space-y-2">
+        <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+          Comments
+        </h3>
+        <JournalPanel objectType="planning.task" objectId={task.id} />
+      </section>
+    </div>
+  )
+
   return (
     <Sheet open onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
         className={
           wide
-            ? "w-full overflow-y-auto p-5 data-[side=right]:sm:max-w-[min(1400px,96vw)]"
-            : "w-full overflow-y-auto p-5 data-[side=right]:sm:max-w-xl"
+            ? "w-full gap-0 overflow-y-auto p-0 data-[side=right]:sm:max-w-[min(1200px,95vw)]"
+            : "w-full gap-0 overflow-y-auto p-0 data-[side=right]:sm:max-w-xl"
         }
       >
         <SheetHeader className="p-0">
           <SheetTitle className="sr-only">{task.title}</SheetTitle>
         </SheetHeader>
 
-        {/* Status, priority, milestone and both dates are editable fields a few
-            pixels below. Repeating them as badges up here doubled the reading
-            load for no new information, so the header carries only what the
-            fields cannot: where this task lives, and room to breathe. */}
-        {/* pr-10 keeps the toggle clear of the sheet's own absolute close X. */}
-        <div className="mb-4 flex items-center gap-2 border-b border-border pr-10 pb-3">
+        {/* Board link left, controls right — pr-14 clears the sheet's own X. */}
+        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-5 pr-14">
           <Link
             to="/planning/$boardId"
             params={{ boardId: task.board }}
@@ -166,168 +313,83 @@ export function TaskDetailSheet({
           >
             {task.board_name}
           </Link>
+          {patch.isPending && (
+            <span className="text-[11px] text-muted-foreground">Saving...</span>
+          )}
           <Button
-            size="sm"
+            size="icon-sm"
             variant="ghost"
             className="ml-auto text-muted-foreground"
             title={wide ? "Collapse to a side panel" : "Expand to full width"}
-            onClick={() =>
-              setWide((w) => {
-                try {
-                  window.localStorage.setItem(WIDE_KEY, w ? "0" : "1")
-                } catch {
-                  /* private mode — the toggle still works for this session */
-                }
-                return !w
-              })
-            }
+            onClick={toggleWide}
           >
             {wide ? (
               <Minimize2 className="h-3.5 w-3.5" />
             ) : (
               <Maximize2 className="h-3.5 w-3.5" />
             )}
-            {wide ? "Collapse" : "Expand"}
           </Button>
+          {canDelete && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="text-muted-foreground"
+                  title="More"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  disabled={del.isPending}
+                  onSelect={() => del.mutate()}
+                  className="text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />{" "}
+                  {del.isPending ? "Deleting..." : "Delete task"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
 
-        <div
-          className={
-            wide
-              ? "grid items-start gap-x-8 gap-y-4 lg:grid-cols-2"
-              : "grid gap-4"
-          }
-        >
-          <div className="grid content-start gap-4">
-            {/* The panels on the other side are all `<section>` + uppercase
-                heading; the form gets one too, so both columns read alike. */}
-            <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-              Details
-            </h3>
-            <FormText
-              label="Title"
-              value={title}
-              onChange={setTitle}
-              required
-            />
+        <div className="px-5 py-4">
+          {/* The heading *is* the input: no border, no label, sized like a
+              title, so the sheet opens with the task's name rather than a
+              field called Title. */}
+          <textarea
+            value={title}
+            readOnly={!canEdit}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault()
+                e.currentTarget.blur()
+              }
+              if (e.key === "Escape") {
+                setTitle(task.title)
+                e.currentTarget.blur()
+              }
+            }}
+            rows={1}
+            className="mb-4 field-sizing-content w-full resize-none bg-transparent text-lg leading-snug font-semibold tracking-tight outline-none placeholder:text-muted-foreground focus:outline-none"
+            placeholder="Untitled task"
+          />
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormSelect
-                label="Status"
-                value={status}
-                onChange={setStatus}
-                options={statuses.map((s) => ({ value: s.id, label: s.name }))}
-              />
-              <FormSelect
-                label="Priority"
-                value={priority}
-                onChange={(v) => setPriority((v as PlanningPriority) ?? "none")}
-                options={PRIORITIES}
-              />
+          {wide ? (
+            <div className="grid gap-8 lg:grid-cols-[1fr_260px]">
+              <div className="min-w-0 lg:order-1">{body}</div>
+              <div className="lg:order-2 lg:pt-1">{properties}</div>
             </div>
-
-            <UserPicker value={assignees} onChange={setAssignees} />
-
-            {milestones.length > 0 && (
-              <FormSelect
-                label="Milestone"
-                value={milestone}
-                onChange={setMilestone}
-                noneLabel="No milestone"
-                options={milestones.map((m) => ({
-                  value: m.id,
-                  label: m.due_date
-                    ? `${m.name} · ${formatDate(m.due_date)}`
-                    : m.name,
-                }))}
-              />
-            )}
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormDate
-                label="Start"
-                value={startDate ?? ""}
-                onChange={(v) => setStartDate(v || null)}
-              />
-              <FormDate
-                label="Due"
-                value={dueDate ?? ""}
-                onChange={(v) => setDueDate(v || null)}
-              />
+          ) : (
+            <div className="grid gap-5">
+              {properties}
+              <div className="border-t border-border pt-4">{body}</div>
             </div>
-
-            <Field label="Description" hint="Markdown subset supported.">
-              <SegmentedTabs
-                className="mb-2"
-                items={[
-                  { value: "write", label: "Write" },
-                  { value: "preview", label: "Preview" },
-                ]}
-                value={descTab}
-                onValueChange={(v) => setDescTab(v as "write" | "preview")}
-              />
-              {descTab === "write" ? (
-                <Textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="min-h-28 font-mono text-[13px]"
-                  placeholder="What needs to happen?"
-                />
-              ) : (
-                <div className="rounded-md border border-border p-3">
-                  {description ? (
-                    <Markdown source={description} />
-                  ) : (
-                    <p className="text-[13px] text-muted-foreground">
-                      Nothing written yet.
-                    </p>
-                  )}
-                </div>
-              )}
-            </Field>
-
-            {canEdit && (
-              <div className="flex items-center justify-between">
-                {canDelete ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={del.isPending}
-                    onClick={() => del.mutate()}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" /> Delete
-                  </Button>
-                ) : (
-                  <span />
-                )}
-                <Button
-                  size="sm"
-                  disabled={!dirty || !title.trim() || save.isPending}
-                  onClick={() => save.mutate()}
-                >
-                  {save.isPending ? "Saving…" : "Save"}
-                </Button>
-              </div>
-            )}
-          </div>
-
-          <div className="grid content-start gap-4">
-            <TaskLinkPanel
-              taskId={task.id}
-              boardId={task.board}
-              links={task.links}
-              canEdit={canEdit}
-            />
-
-            <PlannedChangePanel task={task} canEdit={canEdit} />
-
-            <section className="space-y-2">
-              <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-                Comments
-              </h3>
-              <JournalPanel objectType="planning.task" objectId={task.id} />
-            </section>
-          </div>
+          )}
         </div>
       </SheetContent>
     </Sheet>

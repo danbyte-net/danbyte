@@ -23,10 +23,14 @@ export function UserPicker({
   label = "Assignees",
   value,
   onChange,
+  /** Drop the labelled `Field` wrapper and the full-width outline button — for
+   *  the task sheet's property list, where the value itself is the control. */
+  bare = false,
 }: {
   label?: string
   value: number[]
   onChange: (ids: number[]) => void
+  bare?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState("")
@@ -61,17 +65,32 @@ export function UserPicker({
 
   const self = all.find((u) => u.username === me.username)
 
-  return (
-    <Field label={label}>
+  const picker = (
+    <>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
             type="button"
-            variant="outline"
-            className="w-full justify-between font-normal"
+            variant={bare ? "ghost" : "outline"}
+            size={bare ? "sm" : "default"}
+            className={
+              bare
+                ? "-ml-1.5 h-7 max-w-full justify-start gap-1 px-1.5 font-normal"
+                : "w-full justify-between font-normal"
+            }
           >
-            <span className="truncate">{summary}</span>
-            <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+            <span
+              className={
+                bare && value.length === 0
+                  ? "truncate text-[12px] text-muted-foreground"
+                  : "truncate"
+              }
+            >
+              {summary}
+            </span>
+            {!bare && (
+              <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+            )}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-72 p-2" align="start">
@@ -120,6 +139,7 @@ export function UserPicker({
           </div>
         </PopoverContent>
       </Popover>
-    </Field>
+    </>
   )
+  return bare ? picker : <Field label={label}>{picker}</Field>
 }

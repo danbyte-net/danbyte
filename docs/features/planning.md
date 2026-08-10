@@ -84,11 +84,16 @@ Drag cards between columns — one small write per drop, so the board stays fast
 Click a card to open the detail sheet. The **+** in a column header (or the
 dashed **Add task** row) quick-adds a task by title alone.
 
-The sheet keeps the editable fields under **Details** and everything *about* the
-task — linked objects, planned changes, comments — beside them. **Expand** widens
-it to full width and splits those two halves into columns, which is the mode to
-use when a task carries several planned changes; **Collapse** returns it to a
-side panel. The choice is remembered per browser.
+The sheet shows the task rather than a form for it. The title is the heading —
+click it and type. Status, priority, assignees, milestone and the dates are
+values you click to change, and each one writes immediately, the same single
+small PATCH a drag between columns makes; there is no Save button. The
+description is prose until you click into it, and commits when you click away
+(`Esc` abandons an edit). Delete lives in the **⋯** menu.
+
+**Expand** widens the sheet to full width and moves the properties into a side
+rail, which is the mode to use when a task carries several planned changes;
+**Collapse** returns it to a side panel. The choice is remembered per browser.
 
 ## Planned changes
 
