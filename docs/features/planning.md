@@ -84,6 +84,12 @@ Drag cards between columns — one small write per drop, so the board stays fast
 Click a card to open the detail sheet. The **+** in a column header (or the
 dashed **Add task** row) quick-adds a task by title alone.
 
+The sheet keeps the editable fields under **Details** and everything *about* the
+task — linked objects, planned changes, comments — beside them. **Expand** widens
+it to full width and splits those two halves into columns, which is the mode to
+use when a task carries several planned changes; **Collapse** returns it to a
+side panel. The choice is remembered per browser.
+
 ## Planned changes
 
 A task can declare **what will change**. Planning is editing: from a linked
