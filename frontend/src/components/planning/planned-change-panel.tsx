@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
@@ -19,6 +19,16 @@ import {
 import { useMe } from "@/lib/use-me"
 import { useDateFormat } from "@/lib/datetime"
 import { useCustomizationMeta } from "@/lib/custom-fields"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -147,6 +157,8 @@ function ChangeSetRow({
 }) {
   const qc = useQueryClient()
   const { formatDate, today } = useDateFormat()
+  /** Field key → its live value, when apply came back 409. */
+  const [conflict, setConflict] = useState<Record<string, string> | null>(null)
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["planning-tasks"] })
@@ -181,8 +193,9 @@ function ChangeSetRow({
       c.object_id ? "Change applied" : "Created — the object now exists"
     )
 
-  /** A 409 means the object moved since planning; name what changed and offer
-   *  to overwrite rather than just failing. */
+  /** A 409 means the object moved since planning. Rather than failing, collect
+   *  what changed and ask — in a real dialog, since this is a decision about
+   *  overwriting someone else's edit. */
   const applyNow = () =>
     act.mutate(
       { path: "apply/" },
@@ -198,21 +211,23 @@ function ChangeSetRow({
                     }
                   | undefined)
               : undefined
-          if (!body) return apiErrorToast(e)
-          const now = Object.entries(body.current_display ?? {})
-            .map(([k, v]) => `${k} is now "${v || "empty"}"`)
-            .join("\n")
-          if (
-            window.confirm(
-              `This object changed since the plan was written:\n\n${now}\n\n` +
-                `Apply anyway and overwrite?`
-            )
-          ) {
-            act.mutate(
-              { path: "apply/", body: { force: true } },
-              { onSuccess: applied, onError: (err) => apiErrorToast(err) }
-            )
-          }
+          if (!body?.current_display) return apiErrorToast(e)
+          setConflict(body.current_display)
+        },
+      }
+    )
+
+  const forceApply = () =>
+    act.mutate(
+      { path: "apply/", body: { force: true } },
+      {
+        onSuccess: () => {
+          setConflict(null)
+          applied()
+        },
+        onError: (err) => {
+          setConflict(null)
+          apiErrorToast(err)
         },
       }
     )
@@ -345,6 +360,60 @@ function ChangeSetRow({
           </span>
         )}
       </div>
+
+      <AlertDialog
+        open={!!conflict}
+        onOpenChange={(open) => !open && setConflict(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              This object changed since the plan was written
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Someone edited the same fields. Applying now overwrites their
+              values with the planned ones.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="divide-y divide-border rounded-lg border border-border text-[13px]">
+            {Object.entries(conflict ?? {}).map(([field, live]) => {
+              const row = rows.find((d) => d.field === field)
+              return (
+                <div key={field} className="grid gap-0.5 px-3 py-2">
+                  <span className="text-[11px] tracking-wide text-muted-foreground uppercase">
+                    {row?.label || field}
+                  </span>
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-muted-foreground">now</span>
+                    <span className="font-mono">{live || "—"}</span>
+                    <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    <span className="text-muted-foreground">planned</span>
+                    <span className="font-mono font-medium">
+                      {row?.to || "—"}
+                    </span>
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={act.isPending}>
+              Leave it alone
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={act.isPending}
+              onClick={(e) => {
+                e.preventDefault()
+                forceApply()
+              }}
+            >
+              {act.isPending ? "Applying..." : "Overwrite and apply"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
