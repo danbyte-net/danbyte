@@ -25,6 +25,7 @@ import {
 import { NameRangeHint } from "@/components/name-range-hint"
 import { createEach, expandNameRange } from "@/lib/name-range"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
+import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 
 type FeedLeg = "" | "A" | "B" | "C"
 
@@ -52,6 +53,8 @@ export function PowerOutletDialog({
   const isEdit = !!outlet
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
+  const isPlanning = !!usePlanTarget()
   const choices = useDcimChoices()
 
   const [name, setName] = useState("")
@@ -90,16 +93,28 @@ export function PowerOutletDialog({
         description: description.trim(),
       }
       if (isEdit)
-        return api<PowerOutlet>(`/api/power-outlets/${outlet!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
+        return saveObject<PowerOutlet>({
+          objectType: "api.poweroutlet",
+          endpoint: "/api/power-outlets/",
+          id: outlet!.id,
+          payload,
         }).then((saved) => ({ saved, count: 1 }))
       // A [a-b] range in the name fans out — "Outlet[1-24]" wires a whole PDU
-      // bank to the same inlet and feed leg.
-      return createEach(expandNameRange(payload.name), (n) =>
-        api<PowerOutlet>("/api/power-outlets/", {
-          method: "POST",
-          body: JSON.stringify({ ...payload, name: n }),
+      // bank to the same inlet and feed leg. In plan mode saveObject stages one
+      // create per expanded name, so a planned range records the whole bank.
+      const names = expandNameRange(payload.name)
+      if (names.length > 1 && isPlanning)
+        return saveObject<PowerOutlet>({
+          objectType: "api.poweroutlet",
+          endpoint: "/api/power-outlets/",
+          payload,
+          names,
+        }).then((saved) => ({ saved, count: names.length }))
+      return createEach(names, (n) =>
+        saveObject<PowerOutlet>({
+          objectType: "api.poweroutlet",
+          endpoint: "/api/power-outlets/",
+          payload: { ...payload, name: n },
         })
       ).then(({ last, count }) => ({ saved: last, count }))
     },

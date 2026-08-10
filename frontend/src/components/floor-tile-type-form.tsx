@@ -2,7 +2,6 @@ import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
 import type { FloorTileType, FloorTileTypeWritePayload } from "@/lib/api"
 import {
   FormCheckbox,
@@ -14,6 +13,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface FloorTileTypeFormProps {
   tileType?: FloorTileType
@@ -29,6 +29,7 @@ export function FloorTileTypeForm({
   const isEdit = !!tileType
   const qc = useQueryClient()
   const { fieldErrors, handleApiError } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(tileType?.name ?? "")
   const [color, setColor] = useState(tileType?.color ?? "")
@@ -57,14 +58,11 @@ export function FloorTileTypeForm({
         perforated,
         description,
       }
-      if (isEdit)
-        return api<FloorTileType>(`/api/floor-tile-types/${tileType.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<FloorTileType>("/api/floor-tile-types/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<FloorTileType>({
+        objectType: "api.floortiletype",
+        endpoint: "/api/floor-tile-types/",
+        id: isEdit ? tileType!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

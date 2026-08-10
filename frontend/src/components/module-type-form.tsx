@@ -16,6 +16,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface ModuleTypeFormProps {
   moduleType?: ModuleType
@@ -31,6 +32,7 @@ export function ModuleTypeForm({
   const isEdit = !!moduleType
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(moduleType?.name ?? "")
   const [manufacturerId, setManufacturerId] = useState<string | null>(
@@ -63,14 +65,11 @@ export function ModuleTypeForm({
         part_number: partNumber.trim(),
         description: description.trim(),
       }
-      if (isEdit)
-        return api<ModuleType>(`/api/module-types/${moduleType!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<ModuleType>("/api/module-types/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<ModuleType>({
+        objectType: "api.moduletype",
+        endpoint: "/api/module-types/",
+        id: isEdit ? moduleType!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

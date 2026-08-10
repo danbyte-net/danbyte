@@ -41,6 +41,7 @@ import { FormCombobox, FormText, useFieldErrors } from "@/components/forms"
 import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useSaveObject } from "@/lib/save-object"
 
 /** The device's module bays and what's installed in them. Installing a
  * module stamps its interfaces onto the device ({module} → bay position);
@@ -225,6 +226,7 @@ export function InstallModuleDialog({
 }) {
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
   const [moduleTypeId, setModuleTypeId] = useState<string | null>(null)
   const [serial, setSerial] = useState("")
 
@@ -251,9 +253,10 @@ export function InstallModuleDialog({
         module_type_id: moduleTypeId!,
         serial_number: serial.trim(),
       }
-      return api<{ created_interfaces?: number }>("/api/modules/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<{ created_interfaces?: number }>({
+        objectType: "api.module",
+        endpoint: "/api/modules/",
+        payload,
       })
     },
     onSuccess: (r) => {

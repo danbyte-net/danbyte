@@ -18,6 +18,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface FloorPlanFormProps {
   plan?: FloorPlan
@@ -36,6 +37,7 @@ export function FloorPlanForm({
   const isEdit = !!plan
   const qc = useQueryClient()
   const { fieldErrors, handleApiError } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(plan?.name ?? "")
   const [siteId, setSiteId] = useState<string | null>(plan?.site.id ?? null)
@@ -76,14 +78,11 @@ export function FloorPlanForm({
         ),
         description,
       }
-      if (isEdit)
-        return api<FloorPlan>(`/api/floor-plans/${plan.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<FloorPlan>("/api/floor-plans/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<FloorPlan>({
+        objectType: "api.floorplan",
+        endpoint: "/api/floor-plans/",
+        id: isEdit ? plan!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

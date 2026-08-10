@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type Device } from "@/lib/api"
+import { type Device } from "@/lib/api"
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog"
 import { FormFooter, FormText, useFieldErrors } from "@/components/forms"
 import { DevicePicker } from "@/components/device-picker"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface VcAddMemberDialogProps {
   /** The chassis the picked device joins. */
@@ -36,6 +37,7 @@ export function VcAddMemberDialog({
 }: VcAddMemberDialogProps) {
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
   const [deviceId, setDeviceId] = useState<string | null>(null)
   const [position, setPosition] = useState("")
   const [priority, setPriority] = useState("")
@@ -51,15 +53,19 @@ export function VcAddMemberDialog({
   }, [open, suggestedPosition, reset])
 
   const mutation = useMutation({
-    mutationFn: () =>
-      api<Device>(`/api/devices/${deviceId}/`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          virtual_chassis_id: chassisId,
-          vc_position: position.trim() === "" ? null : Number(position),
-          vc_priority: priority.trim() === "" ? null : Number(priority),
-        }),
-      }),
+    mutationFn: () => {
+      const payload = {
+        virtual_chassis_id: chassisId,
+        vc_position: position.trim() === "" ? null : Number(position),
+        vc_priority: priority.trim() === "" ? null : Number(priority),
+      }
+      return saveObject<Device>({
+        objectType: "api.device",
+        endpoint: "/api/devices/",
+        id: deviceId!,
+        payload,
+      })
+    },
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["virtual-chassis", chassisId] })
       qc.invalidateQueries({ queryKey: ["virtual-chassis"] })

@@ -43,6 +43,7 @@ import { ModuleTypeDeleteDialog } from "@/routes/module-types.index"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useSaveObject } from "@/lib/save-object"
 
 export const Route = createFileRoute("/module-types/$id")({
   component: ModuleTypeDetail,
@@ -309,6 +310,7 @@ function ModuleInterfaceTemplateDialog({
 }) {
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
   const choices = useDcimChoices()
   const [name, setName] = useState("")
   const [type, setType] = useState("")
@@ -334,14 +336,11 @@ function ModuleInterfaceTemplateDialog({
         enabled,
         mgmt_only: mgmtOnly,
       }
-      if (editing)
-        return api<ModuleInterfaceTemplate>(
-          `/api/module-interface-templates/${template!.id}/`,
-          { method: "PATCH", body: JSON.stringify(payload) }
-        )
-      return api<ModuleInterfaceTemplate>("/api/module-interface-templates/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<ModuleInterfaceTemplate>({
+        objectType: "api.moduleinterfacetemplate",
+        endpoint: "/api/module-interface-templates/",
+        id: editing ? template!.id : undefined,
+        payload,
       })
     },
     onSuccess: () => {

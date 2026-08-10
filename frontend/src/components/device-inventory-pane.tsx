@@ -46,6 +46,7 @@ import { QueryError } from "@/components/query-error"
 import { createEach, expandNameRange } from "@/lib/name-range"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 
 const KIND_LABEL = Object.fromEntries(
   INVENTORY_KIND_OPTIONS.map((k) => [k.value, k.label])
@@ -359,6 +360,8 @@ export function InventoryItemDialog({
 }) {
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
+  const isPlanning = !!usePlanTarget()
   const [name, setName] = useState("")
   const [parentId, setParentId] = useState<string | null>(null)
   const [manufacturerId, setManufacturerId] = useState<string | null>(null)
@@ -428,15 +431,27 @@ export function InventoryItemDialog({
         status_id: statusId,
       }
       if (editing)
-        return api<InventoryItemRow>(`/api/inventory-items/${item!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
+        return saveObject<InventoryItemRow>({
+          objectType: "api.inventoryitem",
+          endpoint: "/api/inventory-items/",
+          id: item!.id,
+          payload,
         }).then(() => ({ count: 1 }))
-      // A [a-b] range in the name fans out — "Disk[1-5]" adds five bays.
-      return createEach(expandNameRange(payload.name), (n) =>
-        api<InventoryItemRow>("/api/inventory-items/", {
-          method: "POST",
-          body: JSON.stringify({ ...payload, name: n }),
+      // A [a-b] range in the name fans out — "Disk[1-5]" adds five bays. In plan
+      // mode saveObject stages one create per expanded name.
+      const names = expandNameRange(payload.name)
+      if (names.length > 1 && isPlanning)
+        return saveObject<InventoryItemRow>({
+          objectType: "api.inventoryitem",
+          endpoint: "/api/inventory-items/",
+          payload,
+          names,
+        }).then(() => ({ count: names.length }))
+      return createEach(names, (n) =>
+        saveObject<InventoryItemRow>({
+          objectType: "api.inventoryitem",
+          endpoint: "/api/inventory-items/",
+          payload: { ...payload, name: n },
         })
       ).then(({ count }) => ({ count }))
     },

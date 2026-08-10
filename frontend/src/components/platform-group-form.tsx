@@ -16,6 +16,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface PlatformGroupFormProps {
   group?: PlatformGroup
@@ -39,6 +40,7 @@ export function PlatformGroupForm({
   const isEdit = !!group
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(group?.name ?? "")
   const [slug, setSlug] = useState(group?.slug ?? "")
@@ -78,14 +80,11 @@ export function PlatformGroupForm({
         parent_id: parentId,
         description: description.trim(),
       }
-      if (isEdit)
-        return api<PlatformGroup>(`/api/platform-groups/${group!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<PlatformGroup>("/api/platform-groups/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<PlatformGroup>({
+        objectType: "api.platformgroup",
+        endpoint: "/api/platform-groups/",
+        id: isEdit ? group!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

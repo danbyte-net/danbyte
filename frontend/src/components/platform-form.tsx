@@ -25,6 +25,7 @@ import {
   lifecycleFormValue,
   lifecyclePayload,
 } from "@/components/lifecycle-fields"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface PlatformFormProps {
   platform?: Platform
@@ -48,6 +49,7 @@ export function PlatformForm({
   const isEdit = !!platform
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(platform?.name ?? "")
   const [slug, setSlug] = useState(platform?.slug ?? "")
@@ -119,14 +121,11 @@ export function PlatformForm({
         tag_ids: tagIds,
         ...lifecyclePayload(lifecycle),
       }
-      if (isEdit)
-        return api<Platform>(`/api/platforms/${platform!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Platform>("/api/platforms/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Platform>({
+        objectType: "api.platform",
+        endpoint: "/api/platforms/",
+        id: isEdit ? platform!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

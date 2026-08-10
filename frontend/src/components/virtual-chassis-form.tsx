@@ -2,11 +2,7 @@ import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type VirtualChassis,
-  type VirtualChassisWritePayload,
-} from "@/lib/api"
+import { type VirtualChassis, type VirtualChassisWritePayload } from "@/lib/api"
 import {
   FormFooter,
   FormText,
@@ -14,6 +10,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface VirtualChassisFormProps {
   item?: VirtualChassis
@@ -32,6 +29,7 @@ export function VirtualChassisForm({
   const isEdit = !!item
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
   const [name, setName] = useState(item?.name ?? "")
   const [domain, setDomain] = useState(item?.domain ?? "")
   const [description, setDescription] = useState(item?.description ?? "")
@@ -59,14 +57,11 @@ export function VirtualChassisForm({
         comments: comments.trim(),
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<VirtualChassis>(`/api/virtual-chassis/${item!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<VirtualChassis>("/api/virtual-chassis/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<VirtualChassis>({
+        objectType: "api.virtualchassis",
+        endpoint: "/api/virtual-chassis/",
+        id: isEdit ? item!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

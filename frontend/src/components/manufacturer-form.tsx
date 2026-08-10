@@ -2,11 +2,7 @@ import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type Manufacturer,
-  type ManufacturerWritePayload,
-} from "@/lib/api"
+import { type Manufacturer, type ManufacturerWritePayload } from "@/lib/api"
 import {
   FormFooter,
   FormTags,
@@ -14,6 +10,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface ManufacturerFormProps {
   manufacturer?: Manufacturer
@@ -29,6 +26,7 @@ export function ManufacturerForm({
   const isEdit = !!manufacturer
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(manufacturer?.name ?? "")
   const [url, setUrl] = useState(manufacturer?.url ?? "")
@@ -56,14 +54,11 @@ export function ManufacturerForm({
         description: description.trim(),
         tag_ids: tagIds,
       }
-      if (isEdit)
-        return api<Manufacturer>(`/api/manufacturers/${manufacturer!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Manufacturer>("/api/manufacturers/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Manufacturer>({
+        objectType: "api.manufacturer",
+        endpoint: "/api/manufacturers/",
+        id: isEdit ? manufacturer!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

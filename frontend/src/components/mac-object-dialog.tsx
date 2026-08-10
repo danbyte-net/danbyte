@@ -25,6 +25,7 @@ import {
 } from "@/components/forms"
 import { DevicePicker } from "@/components/device-picker"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { useSaveObject } from "@/lib/save-object"
 
 /**
  * Create or edit a first-class MAC address object — its address, the interface
@@ -48,6 +49,7 @@ export function MacObjectDialog({
   const qc = useQueryClient()
   const isEdit = !!object
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [mac, setMac] = useState("")
   const [deviceId, setDeviceId] = useState<string | null>(null)
@@ -98,14 +100,11 @@ export function MacObjectDialog({
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<MACAddress>(`/api/mac-addresses/${object!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<MACAddress>("/api/mac-addresses/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<MACAddress>({
+        objectType: "api.macaddress",
+        endpoint: "/api/mac-addresses/",
+        id: isEdit ? object!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

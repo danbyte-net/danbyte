@@ -45,6 +45,7 @@ import { QueryError } from "@/components/query-error"
 import { apiErrorToast } from "@/lib/api-toast"
 import { dash } from "@/components/cells/dash"
 import { parsePorts } from "@/components/services-pane"
+import { useSaveObject } from "@/lib/save-object"
 
 const QUERY_KEY = "dt-service-templates"
 
@@ -230,6 +231,7 @@ function ServiceTemplateForm({
   const qc = useQueryClient()
   const editing = !!service
   const { fieldErrors, handleApiError } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(service?.name ?? "")
   const [protocol, setProtocol] = useState<ServiceProtocol>(
@@ -277,14 +279,11 @@ function ServiceTemplateForm({
         monitor,
         description: description.trim(),
       }
-      if (editing)
-        return api<DeviceTypeService>(
-          `/api/device-type-services/${service.id}/`,
-          { method: "PATCH", body: JSON.stringify(payload) }
-        )
-      return api<DeviceTypeService>("/api/device-type-services/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<DeviceTypeService>({
+        objectType: "api.devicetypeservice",
+        endpoint: "/api/device-type-services/",
+        id: editing ? service!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

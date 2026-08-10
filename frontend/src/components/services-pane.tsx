@@ -44,6 +44,7 @@ import { DataTable } from "@/components/data-table"
 import { IpPicker } from "@/components/ip-picker"
 import { QueryError } from "@/components/query-error"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useSaveObject } from "@/lib/save-object"
 
 type Parent = { kind: "device" | "vm"; id: string }
 
@@ -287,6 +288,7 @@ function ServiceForm({
 }) {
   const isEdit = !!service
   const { fieldErrors, handleApiError } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(service?.name ?? "")
   const [protocol, setProtocol] = useState<ServiceProtocol>(
@@ -342,14 +344,11 @@ function ServiceForm({
         if (parent.kind === "device") payload.device_id = parent.id
         else payload.virtual_machine_id = parent.id
       }
-      if (isEdit)
-        return api<Service>(`/api/services/${service!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Service>("/api/services/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Service>({
+        objectType: "api.service",
+        endpoint: "/api/services/",
+        id: isEdit ? service!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

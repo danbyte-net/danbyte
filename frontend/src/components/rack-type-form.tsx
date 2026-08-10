@@ -20,6 +20,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 const WIDTHS: { value: RackWidth; label: string }[] = [
   { value: 10, label: '10"' },
@@ -42,6 +43,7 @@ export function RackTypeForm({
   const isEdit = !!rackType
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(rackType?.name ?? "")
   const [manufacturerId, setManufacturerId] = useState<string | null>(
@@ -114,14 +116,11 @@ export function RackTypeForm({
         description: description.trim(),
         tag_ids: tagIds,
       }
-      if (isEdit)
-        return api<RackType>(`/api/rack-types/${rackType.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<RackType>("/api/rack-types/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<RackType>({
+        objectType: "api.racktype",
+        endpoint: "/api/rack-types/",
+        id: isEdit ? rackType!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

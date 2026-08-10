@@ -28,6 +28,7 @@ import {
   lifecycleFormValue,
   lifecyclePayload,
 } from "@/components/lifecycle-fields"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface DeviceTypeFormProps {
   deviceType?: DeviceType
@@ -43,6 +44,7 @@ export function DeviceTypeForm({
   const isEdit = !!deviceType
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(deviceType?.name ?? "")
   const [manufacturerId, setManufacturerId] = useState<string | null>(
@@ -142,14 +144,11 @@ export function DeviceTypeForm({
         custom_fields: customFields,
         ...lifecyclePayload(lifecycle),
       }
-      if (isEdit)
-        return api<DeviceType>(`/api/device-types/${deviceType!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<DeviceType>("/api/device-types/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<DeviceType>({
+        objectType: "api.devicetype",
+        endpoint: "/api/device-types/",
+        id: isEdit ? deviceType!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

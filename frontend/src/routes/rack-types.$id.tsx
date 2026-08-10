@@ -47,6 +47,7 @@ import { QueryError } from "@/components/query-error"
 import { RackTypeDeleteDialog } from "@/routes/rack-types.index"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useSaveObject } from "@/lib/save-object"
 
 export const Route = createFileRoute("/rack-types/$id")({
   component: RackTypeDetail,
@@ -330,6 +331,7 @@ function AccessoryDialog({
 }) {
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
   const [label, setLabel] = useState("")
   const [deviceTypeId, setDeviceTypeId] = useState<string | null>(null)
   const [mount, setMount] = useState<RackMount>("side_left")
@@ -379,14 +381,11 @@ function AccessoryDialog({
         mount_offset_mm: offset.trim() === "" ? null : Number(offset),
         mount_span_u: span.trim() === "" ? null : Number(span),
       }
-      if (editing)
-        return api<RackTypeAccessory>(
-          `/api/rack-type-accessories/${accessory.id}/`,
-          { method: "PATCH", body: JSON.stringify(payload) }
-        )
-      return api<RackTypeAccessory>("/api/rack-type-accessories/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<RackTypeAccessory>({
+        objectType: "api.racktypeaccessory",
+        endpoint: "/api/rack-type-accessories/",
+        id: editing ? accessory!.id : undefined,
+        payload,
       })
     },
     onSuccess: () => {

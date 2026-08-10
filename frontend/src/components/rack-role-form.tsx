@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type RackRole, type RackRoleWritePayload } from "@/lib/api"
+import { type RackRole, type RackRoleWritePayload } from "@/lib/api"
 import {
   FormColor,
   FormFooter,
@@ -11,6 +11,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface RackRoleFormProps {
   role?: RackRole
@@ -30,6 +31,7 @@ export function RackRoleForm({ role, onSaved, onCancel }: RackRoleFormProps) {
   const isEdit = !!role
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(role?.name ?? "")
   const [slug, setSlug] = useState(role?.slug ?? "")
@@ -60,14 +62,11 @@ export function RackRoleForm({ role, onSaved, onCancel }: RackRoleFormProps) {
         color: color || "",
         description: description.trim(),
       }
-      if (isEdit)
-        return api<RackRole>(`/api/rack-roles/${role!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<RackRole>("/api/rack-roles/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<RackRole>({
+        objectType: "api.rackrole",
+        endpoint: "/api/rack-roles/",
+        id: isEdit ? role!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

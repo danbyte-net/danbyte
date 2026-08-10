@@ -20,6 +20,7 @@ import {
 } from "@/components/forms"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface PowerPanelFormProps {
   panel?: PowerPanel
@@ -35,6 +36,7 @@ export function PowerPanelForm({
   const isEdit = !!panel
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(panel?.name ?? "")
   const [siteId, setSiteId] = useState<string | null>(panel?.site?.id ?? null)
@@ -72,14 +74,11 @@ export function PowerPanelForm({
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<PowerPanel>(`/api/power-panels/${panel!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<PowerPanel>("/api/power-panels/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<PowerPanel>({
+        objectType: "api.powerpanel",
+        endpoint: "/api/power-panels/",
+        id: isEdit ? panel!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

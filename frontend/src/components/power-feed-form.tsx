@@ -26,6 +26,7 @@ import {
 } from "@/components/forms"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { useSaveObject } from "@/lib/save-object"
 
 const TYPES: { value: PowerFeedType; label: string }[] = [
   { value: "primary", label: "Primary" },
@@ -50,6 +51,7 @@ export function PowerFeedForm({ feed, onSaved, onCancel }: PowerFeedFormProps) {
   const isEdit = !!feed
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(feed?.name ?? "")
   const [panelId, setPanelId] = useState<string | null>(
@@ -139,14 +141,11 @@ export function PowerFeedForm({ feed, onSaved, onCancel }: PowerFeedFormProps) {
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<PowerFeed>(`/api/power-feeds/${feed!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<PowerFeed>("/api/power-feeds/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<PowerFeed>({
+        objectType: "api.powerfeed",
+        endpoint: "/api/power-feeds/",
+        id: isEdit ? feed!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

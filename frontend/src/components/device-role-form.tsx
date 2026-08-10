@@ -21,6 +21,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface DeviceRoleFormProps {
   role?: DeviceRole
@@ -44,6 +45,7 @@ export function DeviceRoleForm({
   const isEdit = !!role
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(role?.name ?? "")
   const [slug, setSlug] = useState(role?.slug ?? "")
@@ -106,14 +108,11 @@ export function DeviceRoleForm({
         custom_fields: customFields,
         tag_ids: tagIds,
       }
-      if (isEdit)
-        return api<DeviceRole>(`/api/device-roles/${role.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<DeviceRole>("/api/device-roles/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<DeviceRole>({
+        objectType: "api.devicerole",
+        endpoint: "/api/device-roles/",
+        id: isEdit ? role!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

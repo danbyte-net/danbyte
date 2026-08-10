@@ -27,6 +27,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { useSaveObject } from "@/lib/save-object"
 
 const WIDTHS: { value: RackWidth; label: string }[] = [
   { value: 10, label: '10"' },
@@ -52,6 +53,7 @@ export function RackForm({
   const isEdit = !!rack
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(rack?.name ?? "")
   const [facilityId, setFacilityId] = useState(rack?.facility_id ?? "")
@@ -221,14 +223,11 @@ export function RackForm({
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<Rack>(`/api/racks/${rack!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Rack>("/api/racks/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Rack>({
+        objectType: "api.rack",
+        endpoint: "/api/racks/",
+        id: isEdit ? rack!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {
