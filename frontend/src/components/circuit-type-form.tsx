@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type CircuitType, type CircuitTypeWritePayload } from "@/lib/api"
+import { type CircuitType, type CircuitTypeWritePayload } from "@/lib/api"
 import {
   FormColor,
   FormFooter,
@@ -10,6 +10,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface CircuitTypeFormProps {
   item?: CircuitType
@@ -33,6 +34,7 @@ export function CircuitTypeForm({
   const isEdit = !!item
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
   const [name, setName] = useState(item?.name ?? "")
   const [slug, setSlug] = useState(item?.slug ?? "")
   const [slugDirty, setSlugDirty] = useState(isEdit)
@@ -62,14 +64,11 @@ export function CircuitTypeForm({
         color: color || undefined,
         description: description.trim(),
       }
-      if (isEdit)
-        return api<CircuitType>(`/api/circuit-types/${item!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<CircuitType>("/api/circuit-types/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<CircuitType>({
+        objectType: "api.circuittype",
+        endpoint: "/api/circuit-types/",
+        id: isEdit ? item!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

@@ -2,17 +2,14 @@ import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type ClusterGroup,
-  type ClusterGroupWritePayload,
-} from "@/lib/api"
+import { type ClusterGroup, type ClusterGroupWritePayload } from "@/lib/api"
 import {
   FormFooter,
   FormText,
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface ClusterGroupFormProps {
   clusterGroup?: ClusterGroup
@@ -28,6 +25,7 @@ export function ClusterGroupForm({
   const isEdit = !!clusterGroup
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(clusterGroup?.name ?? "")
   const [slug, setSlug] = useState(clusterGroup?.slug ?? "")
@@ -50,14 +48,11 @@ export function ClusterGroupForm({
         slug: slug.trim(),
         description: description.trim(),
       }
-      if (isEdit)
-        return api<ClusterGroup>(`/api/cluster-groups/${clusterGroup!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<ClusterGroup>("/api/cluster-groups/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<ClusterGroup>({
+        objectType: "api.clustergroup",
+        endpoint: "/api/cluster-groups/",
+        id: isEdit ? clusterGroup!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

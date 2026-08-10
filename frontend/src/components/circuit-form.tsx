@@ -22,6 +22,7 @@ import {
 } from "@/components/forms"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface CircuitFormProps {
   circuit?: Circuit
@@ -33,6 +34,7 @@ export function CircuitForm({ circuit, onSaved, onCancel }: CircuitFormProps) {
   const isEdit = !!circuit
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [cid, setCid] = useState(circuit?.cid ?? "")
   const [providerId, setProviderId] = useState<string | null>(
@@ -114,14 +116,11 @@ export function CircuitForm({ circuit, onSaved, onCancel }: CircuitFormProps) {
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<Circuit>(`/api/circuits/${circuit!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Circuit>("/api/circuits/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Circuit>({
+        objectType: "api.circuit",
+        endpoint: "/api/circuits/",
+        id: isEdit ? circuit!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

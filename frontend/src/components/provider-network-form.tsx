@@ -20,6 +20,7 @@ import {
 } from "@/components/forms"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface ProviderNetworkFormProps {
   network?: ProviderNetwork
@@ -35,6 +36,7 @@ export function ProviderNetworkForm({
   const isEdit = !!network
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(network?.name ?? "")
   const [providerId, setProviderId] = useState<string | null>(
@@ -87,14 +89,11 @@ export function ProviderNetworkForm({
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<ProviderNetwork>(`/api/provider-networks/${network!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<ProviderNetwork>("/api/provider-networks/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<ProviderNetwork>({
+        objectType: "api.providernetwork",
+        endpoint: "/api/provider-networks/",
+        id: isEdit ? network!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

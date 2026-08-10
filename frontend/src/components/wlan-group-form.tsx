@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type WirelessLANGroup,
   type WirelessLANGroupWritePayload,
 } from "@/lib/api"
@@ -13,6 +12,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface WlanGroupFormProps {
   item?: WirelessLANGroup
@@ -32,6 +32,7 @@ export function WlanGroupForm({ item, onSaved, onCancel }: WlanGroupFormProps) {
   const isEdit = !!item
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
   const [name, setName] = useState(item?.name ?? "")
   const [slug, setSlug] = useState(item?.slug ?? "")
   const [slugDirty, setSlugDirty] = useState(isEdit)
@@ -58,14 +59,11 @@ export function WlanGroupForm({ item, onSaved, onCancel }: WlanGroupFormProps) {
         slug: slug.trim() || slugify(name),
         description: description.trim(),
       }
-      if (isEdit)
-        return api<WirelessLANGroup>(`/api/wireless-lan-groups/${item!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<WirelessLANGroup>("/api/wireless-lan-groups/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<WirelessLANGroup>({
+        objectType: "api.wirelesslangroup",
+        endpoint: "/api/wireless-lan-groups/",
+        id: isEdit ? item!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

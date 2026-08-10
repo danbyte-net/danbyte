@@ -27,6 +27,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { cn } from "@/lib/utils"
+import { useSaveObject } from "@/lib/save-object"
 
 type EndpointKind = "site" | "provider_network"
 
@@ -59,6 +60,7 @@ export function CircuitTerminationDialog({
   const sideFixed = isEdit || !!presetSide
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [side, setSide] = useState<CircuitTermSide>("A")
   const [kind, setKind] = useState<EndpointKind>("site")
@@ -125,14 +127,11 @@ export function CircuitTerminationDialog({
         pp_info: ppInfo.trim(),
         description: description.trim(),
       }
-      if (isEdit)
-        return api<CircuitTermination>(
-          `/api/circuit-terminations/${termination!.id}/`,
-          { method: "PATCH", body: JSON.stringify(payload) }
-        )
-      return api<CircuitTermination>("/api/circuit-terminations/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<CircuitTermination>({
+        objectType: "api.circuittermination",
+        endpoint: "/api/circuit-terminations/",
+        id: isEdit ? termination!.id : undefined,
+        payload,
       })
     },
     onSuccess: () => {

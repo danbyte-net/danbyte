@@ -2,13 +2,14 @@ import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type ClusterType, type ClusterTypeWritePayload } from "@/lib/api"
+import { type ClusterType, type ClusterTypeWritePayload } from "@/lib/api"
 import {
   FormFooter,
   FormText,
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface ClusterTypeFormProps {
   clusterType?: ClusterType
@@ -24,6 +25,7 @@ export function ClusterTypeForm({
   const isEdit = !!clusterType
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(clusterType?.name ?? "")
   const [slug, setSlug] = useState(clusterType?.slug ?? "")
@@ -44,14 +46,11 @@ export function ClusterTypeForm({
         slug: slug.trim(),
         description: description.trim(),
       }
-      if (isEdit)
-        return api<ClusterType>(`/api/cluster-types/${clusterType!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<ClusterType>("/api/cluster-types/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<ClusterType>({
+        objectType: "api.clustertype",
+        endpoint: "/api/cluster-types/",
+        id: isEdit ? clusterType!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

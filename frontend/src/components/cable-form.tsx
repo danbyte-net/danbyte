@@ -25,6 +25,7 @@ import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { CableTerminationSide } from "@/components/cable-termination-side"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
+import { useSaveObject } from "@/lib/save-object"
 
 const LENGTH_UNITS = [
   { value: "m", label: "m" },
@@ -58,6 +59,7 @@ export function CableForm({
   const isEdit = !!cable
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
   const choices = useDcimChoices()
 
   const [a, setA] = useState<TerminationInput[]>(
@@ -137,14 +139,11 @@ export function CableForm({
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<Cable>(`/api/cables/${cable!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Cable>("/api/cables/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Cable>({
+        objectType: "api.cable",
+        endpoint: "/api/cables/",
+        id: isEdit ? cable!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

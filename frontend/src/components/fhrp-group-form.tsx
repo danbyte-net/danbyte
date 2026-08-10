@@ -25,6 +25,7 @@ import { IpPicker } from "@/components/ip-picker"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useFieldErrors } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface FhrpGroupFormProps {
   group?: FHRPGroup
@@ -53,6 +54,7 @@ export function FhrpGroupForm({
   const isEdit = !!group
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(group?.name ?? "")
   const [protocol, setProtocol] = useState<FHRPProtocol>(
@@ -109,14 +111,11 @@ export function FhrpGroupForm({
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<FHRPGroup>(`/api/fhrp-groups/${group!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<FHRPGroup>("/api/fhrp-groups/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<FHRPGroup>({
+        objectType: "api.fhrpgroup",
+        endpoint: "/api/fhrp-groups/",
+        id: isEdit ? group!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

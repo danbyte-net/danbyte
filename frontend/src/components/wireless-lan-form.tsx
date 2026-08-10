@@ -25,6 +25,7 @@ import {
 } from "@/components/forms"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { useSaveObject } from "@/lib/save-object"
 
 const AUTH_TYPES: { value: WirelessAuthType; label: string }[] = [
   { value: "open", label: "Open" },
@@ -52,6 +53,7 @@ export function WirelessLANForm({
   const isEdit = !!wlan
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [ssid, setSsid] = useState(wlan?.ssid ?? "")
   const [groupId, setGroupId] = useState<string | null>(wlan?.group?.id ?? null)
@@ -130,14 +132,11 @@ export function WirelessLANForm({
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<WirelessLAN>(`/api/wireless-lans/${wlan!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<WirelessLAN>("/api/wireless-lans/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<WirelessLAN>({
+        objectType: "api.wirelesslan",
+        endpoint: "/api/wireless-lans/",
+        id: isEdit ? wlan!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

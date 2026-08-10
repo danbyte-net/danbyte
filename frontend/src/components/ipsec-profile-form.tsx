@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type IkeVersion,
   type IPSecAuth,
   type IPSecEncryption,
@@ -17,6 +16,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 const IKE_VERSIONS: { value: string; label: string }[] = [
   { value: "2", label: "IKEv2" },
@@ -52,6 +52,7 @@ export function IPSecProfileForm({
   const isEdit = !!item
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(item?.name ?? "")
   const [ikeVersion, setIkeVersion] = useState<IkeVersion>(
@@ -99,14 +100,11 @@ export function IPSecProfileForm({
         sa_lifetime: saLifetime ? Number(saLifetime) : null,
         description: description.trim(),
       }
-      if (isEdit)
-        return api<IPSecProfile>(`/api/ipsec-profiles/${item!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<IPSecProfile>("/api/ipsec-profiles/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<IPSecProfile>({
+        objectType: "api.ipsecprofile",
+        endpoint: "/api/ipsec-profiles/",
+        id: isEdit ? item!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

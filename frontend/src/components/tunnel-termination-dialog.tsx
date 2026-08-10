@@ -28,6 +28,7 @@ import {
 import { DevicePicker } from "@/components/device-picker"
 import { IpPicker } from "@/components/ip-picker"
 import { cn } from "@/lib/utils"
+import { useSaveObject } from "@/lib/save-object"
 
 const ROLE_OPTIONS: { value: TunnelTerminationRole; label: string }[] = [
   { value: "peer", label: "Peer" },
@@ -57,6 +58,7 @@ export function TunnelTerminationDialog({
 }) {
   const qc = useQueryClient()
   const { handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [role, setRole] = useState<TunnelTerminationRole>("peer")
   const [kind, setKind] = useState<EndpointKind>("device")
@@ -118,18 +120,12 @@ export function TunnelTerminationDialog({
         vm_interface_id: kind === "vm" ? vmInterfaceId : null,
         outside_ip_id: outsideIpId,
       }
-      return termination
-        ? api<TunnelTermination>(
-            `/api/tunnel-terminations/${termination.id}/`,
-            {
-              method: "PATCH",
-              body: JSON.stringify(payload),
-            }
-          )
-        : api<TunnelTermination>("/api/tunnel-terminations/", {
-            method: "POST",
-            body: JSON.stringify(payload),
-          })
+      return saveObject<TunnelTermination>({
+        objectType: "api.tunneltermination",
+        endpoint: "/api/tunnel-terminations/",
+        id: termination ? termination.id : undefined,
+        payload,
+      })
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tunnel", tunnelId] })

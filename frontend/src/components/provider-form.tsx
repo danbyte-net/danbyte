@@ -18,6 +18,7 @@ import {
 } from "@/components/forms"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { useSaveObject } from "@/lib/save-object"
 
 export interface ProviderFormProps {
   provider?: Provider
@@ -41,6 +42,7 @@ export function ProviderForm({
   const isEdit = !!provider
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(provider?.name ?? "")
   const [slug, setSlug] = useState(provider?.slug ?? "")
@@ -96,14 +98,11 @@ export function ProviderForm({
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<Provider>(`/api/providers/${provider!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Provider>("/api/providers/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Provider>({
+        objectType: "api.provider",
+        endpoint: "/api/providers/",
+        id: isEdit ? provider!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

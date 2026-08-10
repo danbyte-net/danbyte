@@ -20,6 +20,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { useSaveObject } from "@/lib/save-object"
 
 interface MiniNamed {
   id: string
@@ -41,6 +42,7 @@ export function ClusterForm({ cluster, onSaved, onCancel }: ClusterFormProps) {
   const isEdit = !!cluster
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(cluster?.name ?? "")
   const [typeId, setTypeId] = useState<string | null>(cluster?.type.id ?? null)
@@ -112,14 +114,11 @@ export function ClusterForm({ cluster, onSaved, onCancel }: ClusterFormProps) {
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<Cluster>(`/api/clusters/${cluster!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Cluster>("/api/clusters/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Cluster>({
+        objectType: "api.cluster",
+        endpoint: "/api/clusters/",
+        id: isEdit ? cluster!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

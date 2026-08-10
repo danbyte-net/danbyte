@@ -46,6 +46,7 @@ import { ComponentBulkBar } from "@/components/component-bulk-bar"
 import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useSaveObject } from "@/lib/save-object"
 
 export function VMInterfacesPane({ vmId }: { vmId: string }) {
   const { canDo } = useMe()
@@ -331,6 +332,7 @@ function VMInterfaceForm({
 }) {
   const isEdit = !!iface
   const { fieldErrors, handleApiError } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(iface?.name ?? "")
   const [enabled, setEnabled] = useState(iface?.enabled ?? true)
@@ -371,14 +373,11 @@ function VMInterfaceForm({
         vrf_id: vrfId,
         description: description.trim(),
       }
-      if (isEdit)
-        return api<VMInterface>(`/api/vm-interfaces/${iface!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<VMInterface>("/api/vm-interfaces/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<VMInterface>({
+        objectType: "api.vminterface",
+        endpoint: "/api/vm-interfaces/",
+        id: isEdit ? iface!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

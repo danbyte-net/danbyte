@@ -28,6 +28,7 @@ import {
 import { DevicePicker } from "@/components/device-picker"
 import { IpPicker } from "@/components/ip-picker"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { useSaveObject } from "@/lib/save-object"
 
 interface MiniNamed {
   id: string
@@ -52,6 +53,7 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
   const isEdit = !!vm
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(vm?.name ?? "")
   const [clusterId, setClusterId] = useState<string | null>(
@@ -149,14 +151,11 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<VirtualMachine>(`/api/virtual-machines/${vm!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<VirtualMachine>("/api/virtual-machines/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<VirtualMachine>({
+        objectType: "api.virtualmachine",
+        endpoint: "/api/virtual-machines/",
+        id: isEdit ? vm!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {

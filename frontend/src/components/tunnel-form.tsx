@@ -24,6 +24,7 @@ import {
 } from "@/components/forms"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { useSaveObject } from "@/lib/save-object"
 
 const ENCAPS: { value: TunnelEncapsulation; label: string }[] = [
   { value: "ipsec-tunnel", label: "IPSec — Tunnel" },
@@ -43,6 +44,7 @@ export function TunnelForm({ tunnel, onSaved, onCancel }: TunnelFormProps) {
   const isEdit = !!tunnel
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
 
   const [name, setName] = useState(tunnel?.name ?? "")
   const [statusId, setStatusId] = useState<string | null>(
@@ -125,14 +127,11 @@ export function TunnelForm({ tunnel, onSaved, onCancel }: TunnelFormProps) {
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      if (isEdit)
-        return api<Tunnel>(`/api/tunnels/${tunnel!.id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        })
-      return api<Tunnel>("/api/tunnels/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      return saveObject<Tunnel>({
+        objectType: "api.tunnel",
+        endpoint: "/api/tunnels/",
+        id: isEdit ? tunnel!.id : undefined,
+        payload,
       })
     },
     onSuccess: (saved) => {
