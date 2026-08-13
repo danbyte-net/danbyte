@@ -120,6 +120,25 @@ services:
       backend:
         condition: service_healthy
 
+  # The beat. Bare metal runs each entry in core/schedule.py as its own systemd
+  # timer; a container has no init to do that, so one process reads the same
+  # table and calls the same commands. Without it nothing is ever *triggered*:
+  # checks stay unmaterialised and never dispatch, digests never send, retention
+  # never runs — an install that looks configured but measures nothing.
+  # Keep it to one replica per deployment (it claims each occurrence in Redis,
+  # so a second replica is safe, but it buys nothing).
+  scheduler:
+    <<: *app-build
+    environment: *app-env
+    command: ["python", "manage.py", "run_scheduler"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
   # The SPA server — TanStack Start SSR build served by vite preview. nginx
   # proxies `/` here (the build has no static index.html to serve directly).
   frontend:

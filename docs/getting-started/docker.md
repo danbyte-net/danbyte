@@ -71,6 +71,7 @@ matching lines in the compose file to have `bootstrap` do it):
 | `backend`  | app (`runtime`)      | gunicorn WSGI + one-time migrate/bootstrap/static |
 | `ws`       | app (`runtime`)      | daphne ASGI — WebSockets only                    |
 | `workers`  | app (`runtime`)      | `rqworker-pool` (`RQ_WORKERS` processes; ICMP-capable) |
+| `scheduler`| app (`runtime`)      | the periodic beat — the container's systemd timers |
 | `frontend` | node (`frontend`)    | the SPA server (`vite preview`) — SSR build      |
 | `web`      | nginx (`web`)        | proxies the SPA + `/api` `/ws`, serves `/static` `/media`; HTTP :80 + HTTPS :443 |
 
@@ -78,8 +79,55 @@ WebSockets run as a **separate daphne process**, never channels-in-`runserver` �
 putting ASGI in front of all HTTP wedges plain requests. The frontend is a
 TanStack Start **SSR** build, so `web` proxies `/` to the `frontend` node server
 rather than serving files. Collected static and uploaded media live on shared
-volumes the backend writes and nginx serves. The worker container sets
-`net.ipv4.ping_group_range` so the ICMP monitor's unprivileged pings work.
+volumes the backend writes and nginx serves.
+
+### The scheduler
+
+Nothing in Danbyte polls on its own: the checks, digests, discovery and
+retention all have to be *triggered*. A bare-metal install gets that from
+systemd timers; a container has no init, so the `scheduler` service runs one
+process that reads the same table (`core/schedule.py`) and calls the same
+management commands. **Without it the stack looks configured and measures
+nothing** — assignments never expand into checks, so nothing ever dispatches and
+every check sits there having never reported.
+
+What it runs, at the same cadence as the timers:
+
+| Cadence | Work |
+| --- | --- |
+| every minute | dispatch due checks, SNMP drift, Outpost work, alert escalation |
+| every 5 min | materialise check assignments, discover subnets |
+| every 15/30 min | prefix utilisation, hardware health |
+| daily | ACME renewal, retention, stale-IP cleanup, link check, certificate expiry, digest |
+
+`manage.py run_scheduler --list` prints the table. Auto-upgrade is the one timer
+a container does **not** run: the image is the unit of upgrade, so you deploy a
+new tag instead.
+
+Occurrences are claimed in Redis, so restarting the container will not re-send
+this morning's digest and a second replica cannot double-send it. Keep it to one
+replica anyway — it buys nothing.
+
+To run one pass by hand (a cron-driven install, or when debugging):
+
+```bash
+docker compose -f docker-compose.prod.yml exec scheduler python manage.py run_scheduler --once
+```
+
+### ICMP
+
+The worker container sets `net.ipv4.ping_group_range` so the ICMP monitor's
+unprivileged pings work — `icmplib` opens datagram sockets, which is cheaper
+than running as root or granting `NET_RAW`. Podman honours the sysctl too.
+
+!!! warning "Unprivileged LXC containers cannot set this"
+    Inside an unprivileged LXC (Proxmox and friends), writing
+    `net.ipv4.ping_group_range` fails with `EIO` even in the container's own
+    network namespace, so Docker refuses to start the worker or the sysctl
+    silently does not apply. ICMP checks then report **unknown** rather than
+    up/down, because the socket cannot be opened at all. Run the Docker host in
+    a privileged LXC or on a VM/bare metal, or use a TCP/HTTP check instead of
+    ICMP for those targets.
 
 `web` listens on **:80** (`HTTP_PORT`, default 8080) and **:443**
 (`HTTPS_PORT`, default 8443) with a **self-signed** cert baked into the image —
@@ -117,6 +165,13 @@ docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 ```
 
 The backend re-runs migrations on start; the named volumes keep your data.
+`up -d` also creates services added since your last pull — check that
+`scheduler` is among them, because a stack upgraded from before it existed has
+never run any periodic work:
+
+```bash
+docker compose -f docker-compose.prod.yml ps scheduler
+```
 
 ## Podman specifics
 
