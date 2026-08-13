@@ -4,6 +4,7 @@ from __future__ import annotations
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from .calendar import calendar
 from .viewsets import (
     BoardViewSet,
     MilestoneViewSet,
@@ -27,6 +28,7 @@ router.register(
 )
 
 urlpatterns = [
+    path("calendar/", calendar, name="planning-calendar"),
     path("assignable-users/", assignable_users, name="planning-assignable-users"),
     *router.urls,
 ]
