@@ -34,7 +34,7 @@ import { PlannedChangePanel } from "./planned-change-panel"
 import { scheduleLabel } from "./task-card"
 import { TaskLinkPanel } from "./task-link-panel"
 import {
-  DateRange,
+  DateCell,
   MilestonePicker,
   PriorityPicker,
   PropertyTable,
@@ -154,74 +154,113 @@ export function TaskView({
     if (description !== task.description) set({ description })
   }
 
+  const schedule = scheduleLabel(task, today, formatDate)
+
+  const cells = {
+    status: (
+      <StatusPicker
+        statuses={statuses}
+        value={task.status}
+        onChange={(id) => set({ status: id })}
+        canEdit={canEdit}
+      />
+    ),
+    priority: (
+      <PriorityPicker
+        value={task.priority}
+        onChange={(v) => set({ priority: v })}
+        canEdit={canEdit}
+      />
+    ),
+    assignees: canEdit ? (
+      <UserPicker
+        bare
+        value={task.assignees}
+        onChange={(ids) => set({ assignees: ids })}
+      />
+    ) : task.assignee_detail.length ? (
+      <span className="text-[13px]">
+        {task.assignee_detail.map((a) => a.username).join(", ")}
+      </span>
+    ) : (
+      <span className="text-[12px] text-muted-foreground">Unassigned</span>
+    ),
+    milestone: (
+      <MilestonePicker
+        milestones={milestones}
+        value={task.milestone}
+        onChange={(id) => set({ milestone: id })}
+        canEdit={canEdit}
+        formatDate={formatDate}
+      />
+    ),
+    start: (
+      <DateCell
+        value={task.start_date}
+        placeholder="Start"
+        onChange={(v) => set({ start_date: v })}
+        canEdit={canEdit}
+      />
+    ),
+    due: (
+      <DateCell
+        value={task.due_date}
+        placeholder="Due"
+        onChange={(v) => set({ due_date: v })}
+        canEdit={canEdit}
+      />
+    ),
+  }
+
+  /* The narrow sheet stacks the properties as the labelled table every detail
+     page uses. */
   const properties = (
     <PropertyTable
       rows={[
-        {
-          label: "Status",
-          value: (
-            <StatusPicker
-              statuses={statuses}
-              value={task.status}
-              onChange={(id) => set({ status: id })}
-              canEdit={canEdit}
-            />
-          ),
-        },
-        {
-          label: "Priority",
-          value: (
-            <PriorityPicker
-              value={task.priority}
-              onChange={(v) => set({ priority: v })}
-              canEdit={canEdit}
-            />
-          ),
-        },
-        {
-          label: "Assignees",
-          value: canEdit ? (
-            <UserPicker
-              bare
-              value={task.assignees}
-              onChange={(ids) => set({ assignees: ids })}
-            />
-          ) : task.assignee_detail.length ? (
-            task.assignee_detail.map((a) => a.username).join(", ")
-          ) : (
-            <span className="text-muted-foreground">Unassigned</span>
-          ),
-        },
-        {
-          label: "Milestone",
-          value: (
-            <MilestonePicker
-              milestones={milestones}
-              value={task.milestone}
-              onChange={(id) => set({ milestone: id })}
-              canEdit={canEdit}
-              formatDate={formatDate}
-            />
-          ),
-        },
-        {
-          label: "Dates",
-          value: (
-            <DateRange
-              start={task.start_date}
-              due={task.due_date}
-              onChange={set}
-              canEdit={canEdit}
-              schedule={scheduleLabel(task, today, formatDate)}
-            />
-          ),
-        },
+        { label: "Status", value: cells.status },
+        { label: "Priority", value: cells.priority },
+        { label: "Assignees", value: cells.assignees },
+        { label: "Milestone", value: cells.milestone },
+        { label: "Start", value: cells.start },
+        { label: "Due", value: cells.due },
+        ...(schedule
+          ? [
+              {
+                label: "Schedule",
+                value: (
+                  <span className={`text-[12px] ${schedule.tone}`}>
+                    {schedule.text}
+                  </span>
+                ),
+              },
+            ]
+          : []),
       ]}
     />
   )
 
+  /* The full page lays the same cells out as a strip under the title — the
+     state of the task on one line, before the content starts. */
+  const propertyBar = (
+    <div className="flex flex-wrap items-start gap-x-8 gap-y-3 border-y border-border py-3">
+      <BarItem label="Status">{cells.status}</BarItem>
+      <BarItem label="Priority">{cells.priority}</BarItem>
+      <BarItem label="Assignees" wide>
+        {cells.assignees}
+      </BarItem>
+      <BarItem label="Milestone">{cells.milestone}</BarItem>
+      <BarItem label="Start">{cells.start}</BarItem>
+      <BarItem label="Due">{cells.due}</BarItem>
+      {schedule && (
+        <span className={`self-end pb-1 text-[12px] ${schedule.tone}`}>
+          {schedule.text}
+        </span>
+      )}
+    </div>
+  )
+
   const body = (
-    <div className="grid gap-5">
+    <div className="grid gap-6">
       {editingDesc ? (
         <Textarea
           ref={descRef}
@@ -342,21 +381,19 @@ export function TaskView({
 
   if (layout === "page") {
     return (
-      <div className="w-full px-6 py-6">
-        <div className="mb-4 flex items-start gap-3">
+      // A task page is a document: title, its state on one line, then the
+      // content in a single readable column. No rail to maroon, nothing to
+      // scroll sideways, and the width caps where prose stops being readable.
+      <div className="mx-auto w-full max-w-5xl px-6 py-6">
+        <div className="mb-3 flex items-start gap-3">
           <div className="min-w-0 flex-1">{heading}</div>
           <span className="flex shrink-0 items-center gap-2 pt-1">
             {saving}
             {menu}
           </span>
         </div>
-        {/* The rail is a fixed column and the content takes the rest: capping
-            the pair squeezed linked objects and comments into a scrollbar while
-            a wide screen sat empty either side. The rail widens with room. */}
-        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_260px] 2xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="min-w-0">{body}</div>
-          <div className="lg:pt-1">{properties}</div>
-        </div>
+        {propertyBar}
+        <div className="pt-6">{body}</div>
       </div>
     )
   }
@@ -374,6 +411,26 @@ export function TaskView({
         {properties}
         <div className="border-t border-border pt-4">{body}</div>
       </div>
+    </div>
+  )
+}
+
+/** One label-over-value cluster in the page's property strip. */
+function BarItem({
+  label,
+  wide,
+  children,
+}: {
+  label: string
+  wide?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <div className={wide ? "min-w-44" : "min-w-32"}>
+      <div className="mb-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+        {label}
+      </div>
+      {children}
     </div>
   )
 }

@@ -114,6 +114,14 @@ def build_digest(tenant, since) -> dict:
     except Exception:  # noqa: BLE001 — cert strip must never break the digest
         logger.exception("digest certificate summary failed")
 
+    tasks = None
+    try:
+        from planning.digest import task_summary
+
+        tasks = task_summary(tenant, now=timezone.now())
+    except Exception:  # noqa: BLE001 — same rule: a section never sinks the mail
+        logger.exception("digest task summary failed")
+
     return {
         "tenant": tenant,
         "since": since,
@@ -132,6 +140,7 @@ def build_digest(tenant, since) -> dict:
         "chains": chains,
         "changes": changes,
         "certs": certs,
+        "tasks": tasks,
     }
 
 
@@ -198,6 +207,19 @@ def render_text(data: dict) -> str:
     lines += ["", f"Firing alerts: {d['firing_total']}"]
     for sev, n in d["by_severity"].items():
         lines.append(f"  {sev}: {n}")
+    tasks = d.get("tasks")
+    if tasks and (tasks["overdue"] or tasks["due_today"] or tasks["due_week"]):
+        lines += [
+            "",
+            f"Planned work: {tasks['overdue']} overdue, "
+            f"{tasks['due_today']} due today, {tasks['due_week']} due this week",
+        ]
+        for r in tasks["rows"]:
+            flag = " (OVERDUE)" if r["overdue"] else ""
+            lines.append(
+                f"  {r['due']:%Y-%m-%d}{flag}  {r['title']} "
+                f"[{r['board']}] — {r['assignees']}"
+            )
     if d["top_alerts"]:
         lines.append("")
         lines.append("Top open alerts:")
@@ -403,6 +425,31 @@ def render_html(data: dict, deployment_name: str) -> str:
              ek.STATUS_BG["warning"] if certs["expiring_warning"] else ek.PALETTE["ink"]),
             (certs["changes"], "changed", ek.PALETTE["brand"]),
         ]))
+
+    tasks = d.get("tasks")
+    if tasks and (tasks["overdue"] or tasks["due_today"] or tasks["due_week"]):
+        parts.append(ek.section("Planned work"))
+        parts.append(ek.stat_grid([
+            (tasks["overdue"], "overdue",
+             ek.STATUS_BG["down"] if tasks["overdue"] else ek.PALETTE["ink"]),
+            (tasks["due_today"], "due today",
+             ek.STATUS_BG["warning"] if tasks["due_today"] else ek.PALETTE["ink"]),
+            (tasks["due_week"], "due this week", ek.PALETTE["brand"]),
+        ]))
+        if tasks["rows"]:
+            parts.append(ek.data_table(
+                ["Task", "Board", "Assigned", "Due"],
+                [
+                    [
+                        escape(r["title"]),
+                        escape(r["board"]),
+                        escape(r["assignees"]),
+                        (ek.pill(f"{r['due']:%b %-d}", "down")
+                         if r["overdue"] else f"{r['due']:%b %-d}"),
+                    ]
+                    for r in tasks["rows"]
+                ],
+            ))
 
     if d["top_alerts"]:
         parts.append(ek.section("Open alerts"))

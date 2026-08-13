@@ -248,59 +248,33 @@ export function MilestonePicker({
   )
 }
 
-/** Start → due on one line, each an inline date chip, with the "Due in 3 days"
- *  wording the card already shows so the sheet answers *when* the same way. */
-export function DateRange({
-  start,
-  due,
+/** One date cell: the chip is the value, sized to the cell like every other
+ *  picker here. Start and Due are separate rows — jamming both plus the
+ *  overdue line into one cell wrapped it onto three cramped lines. */
+export function DateCell({
+  value,
+  placeholder,
   onChange,
   canEdit,
-  schedule,
 }: {
-  start: string | null
-  due: string | null
-  onChange: (patch: {
-    start_date?: string | null
-    due_date?: string | null
-  }) => void
+  value: string | null
+  placeholder: string
+  onChange: (v: string | null) => void
   canEdit: boolean
-  schedule: { text: string; tone: string } | null
 }) {
-  const chip =
-    "-ml-1.5 h-7 w-auto justify-start border-0 bg-transparent px-1.5 font-normal shadow-none hover:bg-accent"
   if (!canEdit) {
-    return (
-      <span className="pt-1 text-[12px]">
-        {start || due ? (
-          <>
-            {start ?? "—"} → {due ?? "—"}
-          </>
-        ) : (
-          <Empty>Not scheduled</Empty>
-        )}
-      </span>
+    return value ? (
+      <span className="num text-[13px]">{value}</span>
+    ) : (
+      <Empty>—</Empty>
     )
   }
   return (
-    <div className="flex flex-wrap items-center gap-1">
-      <DatePicker
-        value={start ?? ""}
-        onChange={(v) => onChange({ start_date: v || null })}
-        placeholder="Start"
-        className={chip}
-      />
-      <span className="text-muted-foreground">→</span>
-      <DatePicker
-        value={due ?? ""}
-        onChange={(v) => onChange({ due_date: v || null })}
-        placeholder="Due"
-        className={chip}
-      />
-      {schedule && (
-        <span className={`ml-1 text-[11px] ${schedule.tone}`}>
-          {schedule.text}
-        </span>
-      )}
-    </div>
+    <DatePicker
+      value={value ?? ""}
+      onChange={(v) => onChange(v || null)}
+      placeholder={placeholder}
+      className="-mx-2 h-7 w-[calc(100%+1rem)] justify-start border-0 bg-transparent px-2 font-normal shadow-none hover:bg-accent"
+    />
   )
 }

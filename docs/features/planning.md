@@ -7,7 +7,8 @@ icon: lucide/square-kanban
 Planning gives Danbyte a lightweight ticket board wired straight into your
 inventory: kanban boards whose tasks can **link any Danbyte object** — a device,
 prefix, IP, circuit, site, certificate — so the work and the thing it's about
-live on the same page. Find it under **Governance → Planning**.
+live on the same page. Find it under **Organization → Planning**, with
+the org-wide **Calendar** beside it.
 
 ## Boards
 
@@ -95,6 +96,17 @@ description is prose until you click into it, and commits when you click away
 The sheet is for a glance; a task carrying linked devices, planned changes and a
 comment thread reads better as a page, with the properties in a rail beside the
 content. The page has its own URL, so it can be linked to and bookmarked.
+
+## On the dashboard and in the digest
+
+The **My tasks** dashboard widget lists your open tasks, most urgent first —
+overdue in red, using the same schedule wording the cards use. "Open" follows
+the status row's semantic group, so renamed columns still count correctly.
+
+The daily **email digest** gains a *Planned work* section when anything is due:
+overdue / due today / due this week counts, plus the most urgent tasks with
+their boards and assignees. It rides the existing digest schedule and settings —
+nothing new to configure.
 
 ## Planned changes
 

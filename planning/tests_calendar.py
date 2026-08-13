@@ -169,3 +169,59 @@ class CalendarScopeTests(_PlanBase):
         self._as(member)
         r = self.client.get(f"{URL}?start=2026-08-01&end=2026-08-31")
         self.assertEqual(r.status_code, 403, r.content)
+
+
+class DigestTaskSectionTests(_PlanBase):
+    """Planning's section of the daily digest: the counts an operator acts on."""
+
+    def test_task_summary_counts_and_rows(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from planning.digest import task_summary
+
+        board = self._board()
+        today = timezone.now().date()
+
+        def mk(title, due, status_name="To do"):
+            return Task.objects.create(
+                tenant=self.tenant, board=board,
+                status=board.statuses.get(name=status_name),
+                title=title, due_date=due,
+            )
+
+        mk("Late", today - timedelta(days=2))
+        mk("Today", today)
+        mk("Soon", today + timedelta(days=3))
+        mk("Far", today + timedelta(days=30))
+        # Closed work is not "planned work", whatever the column is named.
+        mk("Done already", today, status_name="Done")
+        mk("Undated", None)
+
+        s = task_summary(self.tenant, timezone.now())
+        self.assertEqual(
+            (s["overdue"], s["due_today"], s["due_week"]), (1, 1, 1)
+        )
+        self.assertEqual([r["title"] for r in s["rows"]], ["Late", "Today", "Soon"])
+        self.assertTrue(s["rows"][0]["overdue"])
+
+    def test_digest_html_carries_the_section(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from monitoring.digest import build_digest, render_html, render_text
+
+        board = self._board()
+        Task.objects.create(
+            tenant=self.tenant, board=board,
+            status=board.statuses.get(name="To do"),
+            title="Replace PSU in rack A",
+            due_date=timezone.now().date() - timedelta(days=1),
+        )
+        data = build_digest(self.tenant, timezone.now() - timedelta(days=1))
+        html = render_html(data, "Danbyte")
+        self.assertIn("Planned work", html)
+        self.assertIn("Replace PSU in rack A", html)
+        self.assertIn("Planned work", render_text(data))

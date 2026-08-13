@@ -131,7 +131,17 @@ class TaskViewSet(TenantScopedViewSet):
         if p.get("status"):
             qs = qs.filter(status_id=p["status"])
         if p.get("assignee"):
-            qs = qs.filter(assignees__id=p["assignee"])
+            # "me" so a dashboard widget needs no user id — and no user.view.
+            if p["assignee"] == "me":
+                qs = qs.filter(assignees=self.request.user)
+            else:
+                qs = qs.filter(assignees__id=p["assignee"])
+        if p.get("open") == "1":
+            # Open = the status row's semantics, not its name: "Completed" and
+            # "Cancelled" count as closed whatever a board renamed them to.
+            qs = qs.exclude(
+                status__semantic_group__in=["completed", "cancelled"]
+            )
         if p.get("label"):
             qs = qs.filter(labels__id=p["label"])
         if p.get("milestone"):
