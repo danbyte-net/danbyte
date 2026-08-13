@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { ChevronLeft, ChevronRight, Flag } from "lucide-react"
+import { CalendarDays, ChevronLeft, ChevronRight, Flag } from "lucide-react"
 
 import {
   api,
@@ -100,10 +100,16 @@ function BoardPage() {
           value={assignee}
           onChange={setAssignee}
         />
+        {/* The calendar is one view, filtered to this board — not a second
+            implementation living inside the board page. */}
+        <Button size="sm" variant="ghost" className="ml-auto" asChild>
+          <Link to="/planning/calendar" search={{ board: boardId }}>
+            <CalendarDays className="h-3.5 w-3.5" /> Calendar
+          </Link>
+        </Button>
         <Button
           size="sm"
           variant="ghost"
-          className="ml-auto"
           onClick={() => setMilestonesOpen(true)}
         >
           <Flag className="h-3.5 w-3.5" /> Milestones

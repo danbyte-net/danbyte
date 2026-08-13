@@ -50,11 +50,15 @@ const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
 function MonthGrid({
   selected,
   onPick,
+  today,
 }: {
   selected: Date | null
   onPick: (d: Date) => void
+  /** Today in the *effective display timezone*, not the browser's. Passed in
+   *  because the picker already resolves that zone for formatting, and a grid
+   *  that highlights the browser's today contradicts the value beside it. */
+  today: Date
 }) {
-  const today = new Date()
   const [view, setView] = React.useState<{ y: number; m: number }>(() => {
     const base = selected ?? today
     return { y: base.getFullYear(), m: base.getMonth() }
@@ -157,7 +161,11 @@ export function DatePicker({
   id,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false)
-  const { formatDate } = useDateFormat()
+  const { formatDate, today: todayIso } = useDateFormat()
+  // The hook resolves the user → tenant → deployment timezone; parsing its
+  // ISO day back to a Date keeps the grid and the "Today" button on the same
+  // calendar as every date Danbyte shows.
+  const today = parseIso(todayIso) ?? new Date()
   const selected = parseIso(value)
 
   return (
@@ -185,6 +193,7 @@ export function DatePicker({
       <PopoverContent className="w-auto gap-2 p-3" align="start">
         <MonthGrid
           selected={selected}
+          today={today}
           onPick={(d) => {
             onChange(toIso(d))
             setOpen(false)
@@ -197,7 +206,7 @@ export function DatePicker({
             size="sm"
             className="h-7 px-2 text-xs"
             onClick={() => {
-              onChange(toIso(new Date()))
+              onChange(todayIso)
               setOpen(false)
             }}
           >
