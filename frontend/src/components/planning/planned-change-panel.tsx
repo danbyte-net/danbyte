@@ -85,7 +85,9 @@ export function PlannedChangePanel({
   return (
     <section className="space-y-2">
       <Header count={open || changes.length} openLabel={open > 0} />
-      <div className="space-y-2">
+      {/* One frame around the list, like linked objects — a single planned
+          change used to arrive as a box inside a box. */}
+      <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
         {groups.map((rows) => {
           const first = rows[0]
           const slug = slugFromObjectType(first.object_type)
@@ -94,10 +96,7 @@ export function PlannedChangePanel({
             slug
           const Icon = objectIcon(slug)
           return (
-            <div
-              key={`${first.object_type}|${first.object_id ?? "new"}`}
-              className="overflow-hidden rounded-lg border border-border"
-            >
+            <div key={`${first.object_type}|${first.object_id ?? "new"}`}>
               {first.object_id ? (
                 <ObjectRow
                   slug={slug}
@@ -115,7 +114,7 @@ export function PlannedChangePanel({
                   </Badge>
                 </div>
               )}
-              <div className="divide-y divide-border border-t border-border">
+              <div className="divide-y divide-border/60">
                 {rows.map((c) => (
                   <ChangeSetRow
                     key={c.id}

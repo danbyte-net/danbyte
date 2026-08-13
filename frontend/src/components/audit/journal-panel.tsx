@@ -89,8 +89,9 @@ export function JournalPanel({
 
   return (
     <div className="space-y-4">
-      {/* Composer */}
-      <div className="rounded-lg border border-border bg-card p-3">
+      {/* Composer — the textarea has its own border, so a card around it was a
+          box inside a box. */}
+      <div>
         <Textarea
           value={comments}
           onChange={(e) => setComments(e.target.value)}
