@@ -5145,6 +5145,51 @@ export interface PlanningAssignee {
   email: string
 }
 
+/** `/api/planning/calendar/` — everything scheduled inside a date window. */
+export interface PlanningCalendar {
+  start: string
+  end: string
+  tasks: PlanningCalendarTask[]
+  milestones: PlanningCalendarMilestone[]
+  changes: PlanningCalendarChange[]
+}
+
+export interface PlanningCalendarTask {
+  id: string
+  board: string
+  board_name: string
+  title: string
+  status_name: string
+  status_color: string
+  semantic_group: string
+  priority: PlanningPriority
+  start_date: string | null
+  due_date: string | null
+  milestone: string | null
+  assignees: string[]
+}
+
+export interface PlanningCalendarMilestone {
+  id: string
+  board: string
+  board_name: string
+  name: string
+  color: string
+  due_date: string | null
+}
+
+export interface PlanningCalendarChange {
+  id: string
+  task: string
+  task_title: string
+  board: string
+  kind: PlanningPlannedChangeKind
+  object_type: string
+  object_id: string | null
+  fields: string[]
+  effective_date: string
+}
+
 export interface PlanningTaskLink {
   id: string
   task: string

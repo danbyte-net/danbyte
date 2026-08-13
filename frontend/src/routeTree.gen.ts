@@ -242,6 +242,7 @@ import { Route as PlatformsNewRouteImport } from './routes/platforms.new'
 import { Route as PlatformsIdRouteImport } from './routes/platforms.$id'
 import { Route as PlatformGroupsNewRouteImport } from './routes/platform-groups.new'
 import { Route as PlatformGroupsIdRouteImport } from './routes/platform-groups.$id'
+import { Route as PlanningCalendarRouteImport } from './routes/planning.calendar'
 import { Route as PlanningBoardIdRouteImport } from './routes/planning.$boardId'
 import { Route as PermissionsNewRouteImport } from './routes/permissions.new'
 import { Route as ModuleTypesNewRouteImport } from './routes/module-types.new'
@@ -1558,6 +1559,11 @@ const PlatformGroupsIdRoute = PlatformGroupsIdRouteImport.update({
   path: '/platform-groups/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlanningCalendarRoute = PlanningCalendarRouteImport.update({
+  id: '/planning/calendar',
+  path: '/planning/calendar',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PlanningBoardIdRoute = PlanningBoardIdRouteImport.update({
   id: '/planning/$boardId',
   path: '/planning/$boardId',
@@ -2451,6 +2457,7 @@ export interface FileRoutesByFullPath {
   '/module-types/new': typeof ModuleTypesNewRoute
   '/permissions/new': typeof PermissionsNewRoute
   '/planning/$boardId': typeof PlanningBoardIdRouteWithChildren
+  '/planning/calendar': typeof PlanningCalendarRoute
   '/platform-groups/$id': typeof PlatformGroupsIdRoute
   '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
@@ -2778,6 +2785,7 @@ export interface FileRoutesByTo {
   '/module-types/new': typeof ModuleTypesNewRoute
   '/permissions/new': typeof PermissionsNewRoute
   '/planning/$boardId': typeof PlanningBoardIdRouteWithChildren
+  '/planning/calendar': typeof PlanningCalendarRoute
   '/platform-groups/$id': typeof PlatformGroupsIdRoute
   '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
@@ -3162,6 +3170,7 @@ export interface FileRoutesById {
   '/module-types/new': typeof ModuleTypesNewRoute
   '/permissions/new': typeof PermissionsNewRoute
   '/planning/$boardId': typeof PlanningBoardIdRouteWithChildren
+  '/planning/calendar': typeof PlanningCalendarRoute
   '/platform-groups/$id': typeof PlatformGroupsIdRoute
   '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
@@ -3547,6 +3556,7 @@ export interface FileRouteTypes {
     | '/module-types/new'
     | '/permissions/new'
     | '/planning/$boardId'
+    | '/planning/calendar'
     | '/platform-groups/$id'
     | '/platform-groups/new'
     | '/platforms/$id'
@@ -3874,6 +3884,7 @@ export interface FileRouteTypes {
     | '/module-types/new'
     | '/permissions/new'
     | '/planning/$boardId'
+    | '/planning/calendar'
     | '/platform-groups/$id'
     | '/platform-groups/new'
     | '/platforms/$id'
@@ -4257,6 +4268,7 @@ export interface FileRouteTypes {
     | '/module-types/new'
     | '/permissions/new'
     | '/planning/$boardId'
+    | '/planning/calendar'
     | '/platform-groups/$id'
     | '/platform-groups/new'
     | '/platforms/$id'
@@ -4583,6 +4595,7 @@ export interface RootRouteChildren {
   IpsNewRoute: typeof IpsNewRoute
   JobsIdRoute: typeof JobsIdRoute
   PlanningBoardIdRoute: typeof PlanningBoardIdRouteWithChildren
+  PlanningCalendarRoute: typeof PlanningCalendarRoute
   PlatformGroupsIdRoute: typeof PlatformGroupsIdRoute
   PlatformGroupsNewRoute: typeof PlatformGroupsNewRoute
   PlatformsIdRoute: typeof PlatformsIdRoute
@@ -6267,6 +6280,13 @@ declare module '@tanstack/react-router' {
       path: '/platform-groups/$id'
       fullPath: '/platform-groups/$id'
       preLoaderRoute: typeof PlatformGroupsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/planning/calendar': {
+      id: '/planning/calendar'
+      path: '/planning/calendar'
+      fullPath: '/planning/calendar'
+      preLoaderRoute: typeof PlanningCalendarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/planning/$boardId': {
@@ -8416,6 +8436,7 @@ const rootRouteChildren: RootRouteChildren = {
   IpsNewRoute: IpsNewRoute,
   JobsIdRoute: JobsIdRoute,
   PlanningBoardIdRoute: PlanningBoardIdRouteWithChildren,
+  PlanningCalendarRoute: PlanningCalendarRoute,
   PlatformGroupsIdRoute: PlatformGroupsIdRoute,
   PlatformGroupsNewRoute: PlatformGroupsNewRoute,
   PlatformsIdRoute: PlatformsIdRoute,

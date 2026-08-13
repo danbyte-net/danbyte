@@ -2,7 +2,7 @@ import { useMemo, useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Plus } from "lucide-react"
+import { CalendarDays, Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { api, type Paginated, type PlanningBoard } from "@/lib/api"
@@ -83,11 +83,20 @@ function BoardListPage() {
       count={rows.length}
       query={q}
       actions={
-        canAdd && (
-          <Button size="sm" onClick={() => setCreating(true)}>
-            <Plus className="h-3.5 w-3.5" /> New board
+        <>
+          {/* The calendar reads across every board, so it belongs here rather
+              than inside one of them. */}
+          <Button size="sm" variant="outline" asChild>
+            <Link to="/planning/calendar">
+              <CalendarDays className="h-3.5 w-3.5" /> Calendar
+            </Link>
           </Button>
-        )
+          {canAdd && (
+            <Button size="sm" onClick={() => setCreating(true)}>
+              <Plus className="h-3.5 w-3.5" /> New board
+            </Button>
+          )}
+        </>
       }
     >
       {rows.length === 0 ? (
