@@ -1,3 +1,4 @@
+import type * as React from "react"
 import type { ReactNode } from "react"
 import { Check } from "lucide-react"
 
@@ -9,6 +10,7 @@ import type {
 import { ColorBadge } from "@/components/cells/color-badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
+import { cn } from "@/lib/utils"
 import { DatePicker } from "@/components/ui/date-picker"
 import {
   DropdownMenu,
@@ -63,24 +65,27 @@ export function PropertyTable({
 }
 
 /** The whole cell is the control, so the click target is the row you read
- *  rather than a small chip floating inside it. */
+ *  rather than a small chip floating inside it.
+ *
+ *  It **must** spread its props: `DropdownMenuTrigger asChild` clones this
+ *  element and injects the onClick, ref and aria state that make it a trigger.
+ *  Accepting only the props it names silently swallowed them, and the cell
+ *  looked clickable while doing nothing. */
 function CellTrigger({
   children,
-  title,
-  disabled,
-}: {
-  children: ReactNode
-  title: string
-  disabled?: boolean
-}) {
+  className,
+  ...props
+}: React.ComponentProps<typeof Button>) {
   return (
     <Button
       type="button"
       variant="ghost"
       size="sm"
-      disabled={disabled}
-      title={title}
-      className="-mx-2 h-7 w-[calc(100%+1rem)] justify-start gap-1 px-2 font-normal"
+      {...props}
+      className={cn(
+        "-mx-2 h-7 w-[calc(100%+1rem)] justify-start gap-1 px-2 font-normal",
+        className
+      )}
     >
       {children}
     </Button>
