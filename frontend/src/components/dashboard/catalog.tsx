@@ -351,6 +351,7 @@ export const CATALOG_BY_ID = Object.fromEntries(
 // Table-first by default; charts stay one click away in "Add".
 // Counts live in the always-on stat band, so the Inventory widget is opt-in.
 export const DEFAULT_LAYOUT: WidgetId[] = [
+  "my-tasks",
   "bookmarks",
   "recent-activity",
   "reachable-gauge",
