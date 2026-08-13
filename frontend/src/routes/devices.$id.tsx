@@ -54,12 +54,7 @@ import { DataTable, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
 import { KvCard, mono, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { Section } from "@/components/ui/section"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -328,28 +323,6 @@ function Body({ device: d }: { device: Device }) {
           }
           tags={d.tags.length > 0 && <TagList tags={d.tags} />}
           description={d.description}
-          statCols={3}
-          stats={
-            <>
-              <DetailStat label="Site" value={<SiteCell site={d.site} />} />
-              <DetailStat
-                label="Primary IP"
-                value={
-                  d.primary_ip ? (
-                    <Link
-                      to="/ips/$id"
-                      params={{ id: d.primary_ip.id }}
-                      className="font-mono text-[13px] text-primary hover:underline"
-                    >
-                      {d.primary_ip.ip_address}
-                    </Link>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )
-                }
-              />
-            </>
-          }
         />
       }
       tabs={[
@@ -783,7 +756,11 @@ function DeviceOverview({
       : []),
   ]
   const locationRows: KvRow[] = [
-    { label: "Site", value: d.site?.name ?? dash },
+    {
+      label: "Site",
+      value: <SiteCell site={d.site} />,
+      copy: d.site?.name || undefined,
+    },
     ...(visibility.location
       ? [
           {
@@ -883,6 +860,21 @@ function DeviceOverview({
       ) : (
         dash
       ),
+    },
+    {
+      label: "Primary IP",
+      value: d.primary_ip ? (
+        <Link
+          to="/ips/$id"
+          params={{ id: d.primary_ip.id }}
+          className="font-mono text-[13px] text-primary hover:underline"
+        >
+          {d.primary_ip.ip_address}
+        </Link>
+      ) : (
+        dash
+      ),
+      copy: d.primary_ip?.ip_address || undefined,
     },
     {
       label: "DNS name",
