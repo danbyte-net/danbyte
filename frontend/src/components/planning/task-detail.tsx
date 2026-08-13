@@ -37,7 +37,7 @@ import {
   DateRange,
   MilestonePicker,
   PriorityPicker,
-  PropertyRow,
+  PropertyTable,
   StatusPicker,
 } from "./task-properties"
 import { UserPicker } from "./user-picker"
@@ -155,58 +155,69 @@ export function TaskView({
   }
 
   const properties = (
-    <div className="grid gap-1">
-      <PropertyRow label="Status">
-        <StatusPicker
-          statuses={statuses}
-          value={task.status}
-          onChange={(id) => set({ status: id })}
-          canEdit={canEdit}
-        />
-      </PropertyRow>
-      <PropertyRow label="Priority">
-        <PriorityPicker
-          value={task.priority}
-          onChange={(v) => set({ priority: v })}
-          canEdit={canEdit}
-        />
-      </PropertyRow>
-      <PropertyRow label="Assignees">
-        {canEdit ? (
-          <UserPicker
-            bare
-            value={task.assignees}
-            onChange={(ids) => set({ assignees: ids })}
-          />
-        ) : (
-          <span className="pt-1 text-[12px]">
-            {task.assignee_detail.length ? (
-              task.assignee_detail.map((a) => a.username).join(", ")
-            ) : (
-              <span className="text-muted-foreground">Unassigned</span>
-            )}
-          </span>
-        )}
-      </PropertyRow>
-      <PropertyRow label="Milestone">
-        <MilestonePicker
-          milestones={milestones}
-          value={task.milestone}
-          onChange={(id) => set({ milestone: id })}
-          canEdit={canEdit}
-          formatDate={formatDate}
-        />
-      </PropertyRow>
-      <PropertyRow label="Dates">
-        <DateRange
-          start={task.start_date}
-          due={task.due_date}
-          onChange={set}
-          canEdit={canEdit}
-          schedule={scheduleLabel(task, today, formatDate)}
-        />
-      </PropertyRow>
-    </div>
+    <PropertyTable
+      rows={[
+        {
+          label: "Status",
+          value: (
+            <StatusPicker
+              statuses={statuses}
+              value={task.status}
+              onChange={(id) => set({ status: id })}
+              canEdit={canEdit}
+            />
+          ),
+        },
+        {
+          label: "Priority",
+          value: (
+            <PriorityPicker
+              value={task.priority}
+              onChange={(v) => set({ priority: v })}
+              canEdit={canEdit}
+            />
+          ),
+        },
+        {
+          label: "Assignees",
+          value: canEdit ? (
+            <UserPicker
+              bare
+              value={task.assignees}
+              onChange={(ids) => set({ assignees: ids })}
+            />
+          ) : task.assignee_detail.length ? (
+            task.assignee_detail.map((a) => a.username).join(", ")
+          ) : (
+            <span className="text-muted-foreground">Unassigned</span>
+          ),
+        },
+        {
+          label: "Milestone",
+          value: (
+            <MilestonePicker
+              milestones={milestones}
+              value={task.milestone}
+              onChange={(id) => set({ milestone: id })}
+              canEdit={canEdit}
+              formatDate={formatDate}
+            />
+          ),
+        },
+        {
+          label: "Dates",
+          value: (
+            <DateRange
+              start={task.start_date}
+              due={task.due_date}
+              onChange={set}
+              canEdit={canEdit}
+              schedule={scheduleLabel(task, today, formatDate)}
+            />
+          ),
+        },
+      ]}
+    />
   )
 
   const body = (

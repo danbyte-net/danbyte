@@ -8,6 +8,7 @@ import type {
 } from "@/lib/api"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { Button } from "@/components/ui/button"
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { DatePicker } from "@/components/ui/date-picker"
 import {
   DropdownMenu,
@@ -28,26 +29,42 @@ import { PriorityBadge } from "./task-card"
  * card between columns, which the board has always done with one small PATCH.
  */
 
-/** Label + control on one line. The label is quiet; the value carries the eye. */
-export function PropertyRow({
-  label,
-  children,
+/**
+ * The same labelled table `KvCard` gives every detail page — except the value
+ * cell is the editor. Clicking a cell opens its picker; there is no separate
+ * edit mode and no form to submit.
+ */
+export function PropertyTable({
+  rows,
 }: {
-  label: string
-  children: ReactNode
+  rows: { label: string; value: ReactNode }[]
 }) {
   return (
-    <div className="flex min-h-7 items-start gap-3">
-      <span className="w-[76px] shrink-0 pt-1 text-[11px] text-muted-foreground">
-        {label}
-      </span>
-      <div className="min-w-0 flex-1">{children}</div>
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <Table>
+        <TableBody>
+          {rows.map((row, i) => (
+            <TableRow
+              key={row.label}
+              className={i % 2 === 1 ? "bg-muted/30" : undefined}
+            >
+              <TableCell className="w-28 py-1 text-xs text-muted-foreground">
+                {row.label}
+              </TableCell>
+              <TableCell className="py-1 text-[13px] text-foreground">
+                {row.value}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   )
 }
 
-/** Shared trigger: flush, ghost, sized to its content — a value, not a field. */
-function ChipTrigger({
+/** The whole cell is the control, so the click target is the row you read
+ *  rather than a small chip floating inside it. */
+function CellTrigger({
   children,
   title,
   disabled,
@@ -63,7 +80,7 @@ function ChipTrigger({
       size="sm"
       disabled={disabled}
       title={title}
-      className="-ml-1.5 h-7 max-w-full justify-start gap-1 px-1.5 font-normal"
+      className="-mx-2 h-7 w-[calc(100%+1rem)] justify-start gap-1 px-2 font-normal"
     >
       {children}
     </Button>
@@ -95,9 +112,9 @@ export function StatusPicker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <ChipTrigger title="Move this task to another column">
+        <CellTrigger title="Move this task to another column">
           {badge}
-        </ChipTrigger>
+        </CellTrigger>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-52">
         {statuses.map((s) => (
@@ -140,7 +157,7 @@ export function PriorityPicker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <ChipTrigger title="Set priority">{badge}</ChipTrigger>
+        <CellTrigger title="Set priority">{badge}</CellTrigger>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-44">
         {PRIORITIES.map((p) => (
@@ -187,9 +204,9 @@ export function MilestonePicker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <ChipTrigger title="Roll this task up to a milestone">
+        <CellTrigger title="Roll this task up to a milestone">
           {badge}
-        </ChipTrigger>
+        </CellTrigger>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
         <DropdownMenuItem onSelect={() => onChange(null)}>

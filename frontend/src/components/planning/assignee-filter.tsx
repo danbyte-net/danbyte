@@ -3,12 +3,27 @@ import { CircleDashed } from "lucide-react"
 import { type PlanningTask } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 export type AssigneeFilter = number | "unassigned" | null
 
+/** Usernames are often email addresses. A header is no place for
+ *  "hello@minecraft-vote.com" — the local part identifies the person, and the
+ *  full value is one hover away. */
+function shortName(username: string): string {
+  const at = username.indexOf("@")
+  return at > 0 ? username.slice(0, at) : username
+}
+
 function initials(name: string): string {
-  const parts = name.trim().split(/\s+/)
+  const parts = shortName(name)
+    .trim()
+    .split(/[\s._-]+/)
   return parts.length > 1
     ? (parts[0][0] + parts[1][0]).toUpperCase()
     : name.slice(0, 2).toUpperCase()
@@ -49,51 +64,67 @@ export function AssigneeFilterStrip({
     return a[1].username.localeCompare(b[1].username)
   })
 
-  const chip = (active: boolean) =>
+  // Faces, not labelled chips. Six people used to mean six pills of differing
+  // width — one of them a full email address — fighting the board title for the
+  // header. The avatar is the control; the name and count live in the tooltip.
+  const face = (active: boolean) =>
     cn(
-      "inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-[11px] transition-colors",
+      "relative rounded-full transition-opacity focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
       active
-        ? "border-primary/40 bg-primary/10 text-foreground"
-        : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
+        ? "opacity-100 ring-2 ring-primary ring-offset-1 ring-offset-background"
+        : "opacity-60 hover:opacity-100"
     )
 
   return (
-    <div className="flex flex-wrap items-center gap-1">
+    <div className="flex items-center gap-1.5">
       {people.map(([id, p]) => {
         const active = value === id
         return (
-          <button
-            key={id}
-            type="button"
-            className={chip(active)}
-            aria-pressed={active}
-            title={`${p.username} — ${p.count} task${p.count === 1 ? "" : "s"}`}
-            onClick={() => onChange(active ? null : id)}
-          >
-            <Avatar size="sm">
-              <AvatarFallback className="text-[9px]">
-                {initials(p.username)}
-              </AvatarFallback>
-            </Avatar>
-            <span className="max-w-[8rem] truncate">
-              {isMe(p.username) ? "Me" : p.username}
-            </span>
-            <span className="num opacity-70">{p.count}</span>
-          </button>
+          <Tooltip key={id}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={face(active)}
+                aria-pressed={active}
+                aria-label={`${p.username}, ${p.count} task${p.count === 1 ? "" : "s"}`}
+                onClick={() => onChange(active ? null : id)}
+              >
+                <Avatar size="sm">
+                  <AvatarFallback className="text-[9px]">
+                    {initials(p.username)}
+                  </AvatarFallback>
+                </Avatar>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {isMe(p.username) ? "You" : shortName(p.username)} · {p.count}{" "}
+              task{p.count === 1 ? "" : "s"}
+            </TooltipContent>
+          </Tooltip>
         )
       })}
       {unassigned > 0 && (
-        <button
-          type="button"
-          className={chip(value === "unassigned")}
-          aria-pressed={value === "unassigned"}
-          title={`${unassigned} unassigned task${unassigned === 1 ? "" : "s"}`}
-          onClick={() => onChange(value === "unassigned" ? null : "unassigned")}
-        >
-          <CircleDashed className="h-3.5 w-3.5" />
-          Unassigned
-          <span className="num opacity-70">{unassigned}</span>
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className={cn(
+                face(value === "unassigned"),
+                "flex size-6 items-center justify-center text-muted-foreground"
+              )}
+              aria-pressed={value === "unassigned"}
+              aria-label={`${unassigned} unassigned task${unassigned === 1 ? "" : "s"}`}
+              onClick={() =>
+                onChange(value === "unassigned" ? null : "unassigned")
+              }
+            >
+              <CircleDashed className="h-4 w-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            Unassigned · {unassigned} task{unassigned === 1 ? "" : "s"}
+          </TooltipContent>
+        </Tooltip>
       )}
     </div>
   )

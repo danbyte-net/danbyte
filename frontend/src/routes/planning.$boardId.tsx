@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { ChevronLeft, Flag } from "lucide-react"
+import { ChevronLeft, ChevronRight, Flag } from "lucide-react"
 
 import {
   api,
@@ -11,6 +11,7 @@ import {
   type PlanningTask,
 } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
 import {
@@ -71,19 +72,29 @@ function BoardPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {/* Same shape as every other page header: back link, title, count chip —
+          then the people, separated so they read as a control rather than more
+          header text. */}
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6">
-        <Link
-          to="/planning"
-          className="flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
-        >
-          <ChevronLeft className="h-4 w-4" /> Boards
-        </Link>
-        <h1 className="text-sm font-semibold">{board?.name ?? "…"}</h1>
-        <span className="text-[12px] text-muted-foreground">
+        <nav className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Button variant="ghost" size="sm" asChild className="h-6 px-1">
+            <Link to="/planning">
+              <ChevronLeft className="h-3 w-3" /> Boards
+            </Link>
+          </Button>
+          <ChevronRight className="h-3 w-3 opacity-60" />
+          <h1 className="text-sm font-semibold text-foreground">
+            {board?.name ?? "…"}
+          </h1>
+        </nav>
+        <Badge variant="secondary">
           {assignee === null
-            ? `${tasks.length} task${tasks.length === 1 ? "" : "s"}`
+            ? tasks.length
             : `${shown.length} of ${tasks.length}`}
-        </span>
+        </Badge>
+        {tasks.length > 0 && (
+          <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+        )}
         <AssigneeFilterStrip
           tasks={tasks}
           value={assignee}
