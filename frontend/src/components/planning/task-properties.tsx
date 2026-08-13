@@ -92,6 +92,13 @@ function CellTrigger({
   )
 }
 
+/**
+ * Every menu here is `modal={false}` on purpose. These cells live inside the
+ * task sheet, which is a modal dialog: two nested modals both manage
+ * `pointer-events` on the body and the inner one loses, so the menu opens and
+ * nothing inside it can be clicked. The assignee picker never showed the bug
+ * because Popover is not modal — which is exactly why only *it* worked.
+ */
 function Empty({ children }: { children: ReactNode }) {
   return <span className="text-[12px] text-muted-foreground">{children}</span>
 }
@@ -115,7 +122,7 @@ export function StatusPicker({
   )
   if (!canEdit) return <span className="pl-0.5">{badge}</span>
   return (
-    <DropdownMenu>
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <CellTrigger title="Move this task to another column">
           {badge}
@@ -160,7 +167,7 @@ export function PriorityPicker({
     value === "none" ? <Empty>None</Empty> : <PriorityBadge priority={value} />
   if (!canEdit) return <span className="pl-0.5">{badge}</span>
   return (
-    <DropdownMenu>
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <CellTrigger title="Set priority">{badge}</CellTrigger>
       </DropdownMenuTrigger>
@@ -207,7 +214,7 @@ export function MilestonePicker({
   )
   if (!canEdit) return <span className="pl-0.5">{badge}</span>
   return (
-    <DropdownMenu>
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <CellTrigger title="Roll this task up to a milestone">
           {badge}

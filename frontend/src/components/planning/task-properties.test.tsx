@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { PlanningStatus } from "@/lib/api"
-import { PriorityPicker, StatusPicker } from "./task-properties"
+import { PriorityPicker, PropertyTable, StatusPicker } from "./task-properties"
 
 /**
  * The task's property table makes each cell its own editor, and a cell is a
@@ -78,6 +78,33 @@ describe("task property cells", () => {
     )
     fireEvent.click(await screen.findByText("Urgent"))
     expect(onChange).toHaveBeenCalledWith("urgent")
+  })
+
+  it("opens from inside the property table, which is where it actually lives", async () => {
+    const onChange = vi.fn()
+    render(
+      <PropertyTable
+        rows={[
+          {
+            label: "Status",
+            value: (
+              <StatusPicker
+                statuses={STATUSES}
+                value="s1"
+                onChange={onChange}
+                canEdit
+              />
+            ),
+          },
+        ]}
+      />
+    )
+    fireEvent.pointerDown(
+      screen.getByRole("button"),
+      new PointerEvent("pointerdown", { bubbles: true, button: 0 })
+    )
+    fireEvent.click(await screen.findByText("Done"))
+    expect(onChange).toHaveBeenCalledWith("s2")
   })
 
   it("renders a plain value, not a control, without edit rights", () => {

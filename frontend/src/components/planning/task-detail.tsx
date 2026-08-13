@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
-import { Link } from "@tanstack/react-router"
+import { Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Maximize2, MoreHorizontal, Trash2 } from "lucide-react"
+import { Maximize2, MoreHorizontal, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -312,7 +312,7 @@ export function TaskView({
   )
 
   const menu = canDelete ? (
-    <DropdownMenu>
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <Button
           size="icon-sm"
@@ -392,22 +392,38 @@ export function TaskDetailSheet({
   statuses: PlanningStatus[]
   onOpenChange: (open: boolean) => void
 }) {
+  const navigate = useNavigate()
+
+  // Leaving the sheet by navigation has to close it first. A modal dialog owns
+  // `pointer-events` on the body while it is open; unmounting it mid-navigation
+  // leaves the page it lands on inert, which reads as "the button did nothing".
+  const openFullPage = () => {
+    onOpenChange(false)
+    navigate({
+      to: "/planning/$boardId/tasks/$taskId",
+      params: { boardId: task.board, taskId: task.id },
+    })
+  }
+
   return (
     <Sheet open onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
+        // The sheet's own close button is absolutely positioned, so it never
+        // shares a baseline with anything we put in the header. Ours lives in
+        // the row instead, and everything lines up because it is one flex line.
+        showCloseButton={false}
         className="w-full gap-0 overflow-y-auto p-0 data-[side=right]:sm:max-w-xl"
       >
         <SheetHeader className="p-0">
           <SheetTitle className="sr-only">{task.title}</SheetTitle>
         </SheetHeader>
 
-        {/* Board link left, controls right — pr-14 clears the sheet's own X. */}
-        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-5 pr-14">
+        <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border pr-2 pl-5">
           <Link
             to="/planning/$boardId"
             params={{ boardId: task.board }}
-            className="text-[11px] text-muted-foreground hover:text-foreground"
+            className="truncate text-[11px] text-muted-foreground hover:text-foreground"
           >
             {task.board_name}
           </Link>
@@ -415,15 +431,20 @@ export function TaskDetailSheet({
             size="sm"
             variant="ghost"
             className="ml-auto text-muted-foreground"
-            asChild
+            onClick={openFullPage}
             title="Open this task on its own page"
           >
-            <Link
-              to="/planning/$boardId/tasks/$taskId"
-              params={{ boardId: task.board, taskId: task.id }}
-            >
-              <Maximize2 className="h-3.5 w-3.5" /> Open
-            </Link>
+            <Maximize2 className="h-3.5 w-3.5" /> Open
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="text-muted-foreground"
+            onClick={() => onOpenChange(false)}
+            title="Close"
+          >
+            <X className="h-4 w-4" />
+            <span className="sr-only">Close</span>
           </Button>
         </div>
 

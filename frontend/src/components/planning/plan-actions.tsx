@@ -59,7 +59,7 @@ export function PlanActions({
 
   // A device can also gain new children, so it gets a menu rather than a button.
   return (
-    <DropdownMenu>
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <Button
           size="sm"
