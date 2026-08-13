@@ -342,7 +342,7 @@ export function TaskView({
 
   if (layout === "page") {
     return (
-      <div className="mx-auto w-full max-w-5xl px-6 py-6">
+      <div className="w-full px-6 py-6">
         <div className="mb-4 flex items-start gap-3">
           <div className="min-w-0 flex-1">{heading}</div>
           <span className="flex shrink-0 items-center gap-2 pt-1">
@@ -350,10 +350,10 @@ export function TaskView({
             {menu}
           </span>
         </div>
-        {/* Content and properties side by side, but the pair is centred and
-            capped — a task is a document, not a thing to stretch across a
-            2000px monitor with a rail marooned at the far edge. */}
-        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_240px]">
+        {/* The rail is a fixed column and the content takes the rest: capping
+            the pair squeezed linked objects and comments into a scrollbar while
+            a wide screen sat empty either side. The rail widens with room. */}
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_260px] 2xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0">{body}</div>
           <div className="lg:pt-1">{properties}</div>
         </div>
