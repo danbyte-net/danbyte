@@ -1,7 +1,13 @@
 import { useMemo } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { CalendarClock, ChevronLeft, ChevronRight, Flag } from "lucide-react"
+import {
+  CalendarClock,
+  ChevronLeft,
+  ChevronRight,
+  Flag,
+  Wrench,
+} from "lucide-react"
 
 import {
   api,
@@ -19,6 +25,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { QueryError } from "@/components/query-error"
 import {
   CalendarMonth,
@@ -113,18 +124,57 @@ function CalendarPage() {
         <div className="ml-auto flex items-center gap-2">
           {counts && (
             <span className="hidden items-center gap-3 text-[11px] text-muted-foreground sm:flex">
-              <span>{counts.tasks.length} scheduled</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="cursor-default">
+                    {counts.tasks.length} scheduled
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" variant="panel">
+                  Tasks with dates in this month — drawn as bars across the
+                  days they cover.
+                </TooltipContent>
+              </Tooltip>
               {counts.changes.length > 0 && (
-                <span className="inline-flex items-center gap-1">
-                  <CalendarClock className="h-3 w-3 text-primary" />
-                  {counts.changes.length} planned
-                </span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex cursor-default items-center gap-1">
+                      <CalendarClock className="h-3 w-3 text-primary" />
+                      {counts.changes.length} planned
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" variant="panel">
+                    Planned changes — edits recorded on tasks, landing on the
+                    day the object is meant to change.
+                  </TooltipContent>
+                </Tooltip>
               )}
               {counts.milestones.length > 0 && (
-                <span className="inline-flex items-center gap-1">
-                  <Flag className="h-3 w-3" />
-                  {counts.milestones.length}
-                </span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex cursor-default items-center gap-1">
+                      <Flag className="h-3 w-3" />
+                      {counts.milestones.length}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" variant="panel">
+                    Milestones due this month.
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {counts.events.length > 0 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex cursor-default items-center gap-1">
+                      <Wrench className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+                      {counts.events.length}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" variant="panel">
+                    Maintenance windows and outages — managed under Monitoring
+                    → Maintenance.
+                  </TooltipContent>
+                </Tooltip>
               )}
             </span>
           )}

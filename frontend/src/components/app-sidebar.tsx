@@ -194,6 +194,12 @@ const sections: NavSection[] = [
             icon: CalendarDays,
             objectType: "task",
           },
+          {
+            title: "Maintenance",
+            url: "/maintenance",
+            icon: Wrench,
+            objectType: "maintenanceevent",
+          },
         ],
       },
       {
@@ -658,12 +664,7 @@ const sections: NavSection[] = [
             icon: BellRing,
             anyOf: ["alertrule", "notificationchannel", "silence"],
           },
-          {
-            title: "Maintenance",
-            url: "/maintenance",
-            icon: Wrench,
-            objectType: "maintenanceevent",
-          },
+
           {
             title: "Certificates",
             url: "/certificates",

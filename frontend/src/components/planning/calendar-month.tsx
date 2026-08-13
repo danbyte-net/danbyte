@@ -10,6 +10,11 @@ import type {
   PlanningCalendarTask,
 } from "@/lib/api"
 import { ColorBadge } from "@/components/cells/color-badge"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 /**
@@ -198,56 +203,81 @@ export function CalendarMonth({
                     <span aria-hidden style={{ height: lanes * 22 }} />
                     <span className="mt-0.5 w-full space-y-0.5">
                       {(byDay.events.get(key) ?? []).map((e) => (
-                        <span
-                          key={e.id}
-                          className={cn(
-                            "flex items-center gap-1 truncate text-[11px]",
-                            e.kind === "outage"
-                              ? "text-red-600 dark:text-red-400"
-                              : "text-amber-600 dark:text-amber-400",
-                            !e.is_open && "opacity-50"
-                          )}
-                          title={
-                            `${e.kind === "outage" ? "Outage" : "Maintenance"}: ${e.name}` +
-                            (e.provider_name ? ` — ${e.provider_name}` : "") +
-                            ` · ${e.status}` +
-                            (e.impact_count
-                              ? ` · ${e.impact_count} object${e.impact_count === 1 ? "" : "s"}`
-                              : "")
-                          }
-                        >
-                          {e.kind === "outage" ? (
-                            <Zap className="h-3 w-3 shrink-0" />
-                          ) : (
-                            <Wrench className="h-3 w-3 shrink-0" />
-                          )}
-                          <span className="truncate">{e.name}</span>
-                        </span>
+                        <Tooltip key={e.id}>
+                          <TooltipTrigger asChild>
+                            <span
+                              className={cn(
+                                "flex cursor-default items-center gap-1 truncate text-[11px]",
+                                e.kind === "outage"
+                                  ? "text-red-600 dark:text-red-400"
+                                  : "text-amber-600 dark:text-amber-400",
+                                !e.is_open && "opacity-50"
+                              )}
+                            >
+                              {e.kind === "outage" ? (
+                                <Zap className="h-3 w-3 shrink-0" />
+                              ) : (
+                                <Wrench className="h-3 w-3 shrink-0" />
+                              )}
+                              <span className="truncate">{e.name}</span>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="top"
+                            variant="panel"
+                            className="max-w-xs flex-col items-start gap-0.5 text-[11px]"
+                          >
+                            <EventTip event={e} />
+                          </TooltipContent>
+                        </Tooltip>
                       ))}
                       {(byDay.milestones.get(key) ?? []).map((m) => (
-                        <span
-                          key={m.id}
-                          className="flex items-center gap-1 truncate text-[11px]"
-                          title={`${m.name} — ${m.board_name}`}
-                        >
-                          <Flag className="h-3 w-3 shrink-0 text-muted-foreground" />
-                          <ColorBadge
-                            name={m.name}
-                            color={m.color || undefined}
-                          />
-                        </span>
+                        <Tooltip key={m.id}>
+                          <TooltipTrigger asChild>
+                            <span className="flex cursor-default items-center gap-1 truncate text-[11px]">
+                              <Flag className="h-3 w-3 shrink-0 text-muted-foreground" />
+                              <ColorBadge
+                                name={m.name}
+                                color={m.color || undefined}
+                              />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="top"
+                            variant="panel"
+                            className="max-w-xs flex-col items-start gap-0.5 text-[11px]"
+                          >
+                            <p className="font-medium">Milestone: {m.name}</p>
+                            <p className="text-muted-foreground">
+                              {m.board_name} — tasks roll up to this target.
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
                       ))}
                       {(byDay.changes.get(key) ?? []).map((c) => (
-                        <span
-                          key={c.id}
-                          className="flex items-center gap-1 truncate text-[11px] text-muted-foreground"
-                          title={`${c.task_title}: ${c.fields.join(", ") || "change"}`}
-                        >
-                          <CalendarClock className="h-3 w-3 shrink-0 text-primary" />
-                          <span className="truncate">
-                            {c.fields.join(", ") || "Change"}
-                          </span>
-                        </span>
+                        <Tooltip key={c.id}>
+                          <TooltipTrigger asChild>
+                            <span className="flex cursor-default items-center gap-1 truncate text-[11px] text-muted-foreground">
+                              <CalendarClock className="h-3 w-3 shrink-0 text-primary" />
+                              <span className="truncate">
+                                {c.fields.join(", ") || "Change"}
+                              </span>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="top"
+                            variant="panel"
+                            className="max-w-xs flex-col items-start gap-0.5 text-[11px]"
+                          >
+                            <p className="font-medium">
+                              Planned change — {c.fields.join(", ") || "fields"}
+                            </p>
+                            <p className="text-muted-foreground">
+                              On task “{c.task_title}”. Applied by hand when the
+                              work is done — nothing changes by itself.
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
                       ))}
                     </span>
                   </button>
@@ -259,38 +289,80 @@ export function CalendarMonth({
                 cross day boundaries, which a single cell's content cannot. */}
             <div className="pointer-events-none absolute inset-x-0 top-7 grid auto-rows-[22px] grid-cols-7">
               {bars.map((bar) => (
-                <Link
-                  key={bar.task.id}
-                  to="/planning/$boardId/tasks/$taskId"
-                  params={{ boardId: bar.task.board, taskId: bar.task.id }}
-                  style={{
-                    gridColumnStart: bar.from,
-                    gridColumnEnd: bar.to,
-                    gridRowStart: bar.lane + 1,
-                    ...(bar.task.status_color
-                      ? {
-                          backgroundColor: `${bar.task.status_color}2b`,
-                          borderColor: `${bar.task.status_color}80`,
-                        }
-                      : {}),
-                  }}
-                  className={cn(
-                    "pointer-events-auto mx-1 h-[19px] truncate rounded-[5px] border px-1.5 text-[11px] leading-[17px] hover:brightness-125",
-                    !bar.task.status_color && "border-border bg-muted",
-                    bar.continuesBefore && "ml-0 rounded-l-none border-l-0",
-                    bar.continuesAfter && "mr-0 rounded-r-none border-r-0"
-                  )}
-                  title={`${bar.task.title} — ${bar.task.board_name} · ${bar.task.status_name}`}
-                >
-                  {bar.continuesBefore && "‹ "}
-                  {bar.task.title}
-                  {bar.continuesAfter && " ›"}
-                </Link>
+                <Tooltip key={bar.task.id}>
+                  <TooltipTrigger asChild>
+                    <Link
+                      to="/planning/$boardId/tasks/$taskId"
+                      params={{ boardId: bar.task.board, taskId: bar.task.id }}
+                      style={{
+                        gridColumnStart: bar.from,
+                        gridColumnEnd: bar.to,
+                        gridRowStart: bar.lane + 1,
+                        ...(bar.task.status_color
+                          ? {
+                              backgroundColor: `${bar.task.status_color}2b`,
+                              borderColor: `${bar.task.status_color}80`,
+                            }
+                          : {}),
+                      }}
+                      className={cn(
+                        "pointer-events-auto mx-1 h-[19px] truncate rounded-[5px] border px-1.5 text-[11px] leading-[17px] hover:brightness-125",
+                        !bar.task.status_color && "border-border bg-muted",
+                        bar.continuesBefore && "ml-0 rounded-l-none border-l-0",
+                        bar.continuesAfter && "mr-0 rounded-r-none border-r-0"
+                      )}
+                    >
+                      {bar.continuesBefore && "‹ "}
+                      {bar.task.title}
+                      {bar.continuesAfter && " ›"}
+                    </Link>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="top"
+                    variant="panel"
+                    className="max-w-xs flex-col items-start gap-0.5 text-[11px]"
+                  >
+                    <p className="font-medium">{bar.task.title}</p>
+                    <p className="text-muted-foreground">
+                      {bar.task.board_name} · {bar.task.status_name}
+                      {bar.task.assignees.length
+                        ? ` · ${bar.task.assignees.join(", ")}`
+                        : ""}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {bar.task.start_date ?? "—"} → {bar.task.due_date ?? "—"}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
               ))}
             </div>
           </div>
         )
       })}
     </div>
+  )
+}
+
+function EventTip({ event }: { event: PlanningCalendarEvent }) {
+  const when =
+    event.starts_at.slice(0, 16).replace("T", " ") +
+    (event.ends_at
+      ? ` → ${event.ends_at.slice(0, 16).replace("T", " ")}`
+      : event.etr
+        ? ` · ETR ${event.etr.slice(0, 16).replace("T", " ")}`
+        : " · open-ended")
+  return (
+    <>
+      <p className="font-medium">
+        {event.kind === "outage" ? "Outage" : "Maintenance"}: {event.name}
+      </p>
+      <p className="text-muted-foreground">
+        {event.provider_name || "Internal"} · {event.status.replace("_", " ")}
+        {event.impact_count
+          ? ` · ${event.impact_count} object${event.impact_count === 1 ? "" : "s"} impacted`
+          : ""}
+      </p>
+      <p className="text-muted-foreground">{when}</p>
+    </>
   )
 }
