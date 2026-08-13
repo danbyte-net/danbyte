@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Maximize2, Minimize2, MoreHorizontal, Trash2 } from "lucide-react"
+import { Maximize2, MoreHorizontal, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -42,16 +42,6 @@ import {
 } from "./task-properties"
 import { UserPicker } from "./user-picker"
 
-const WIDE_KEY = "danbyte.planning.task-sheet-wide"
-
-const readWide = () => {
-  try {
-    return window.localStorage.getItem(WIDE_KEY) === "1"
-  } catch {
-    return false
-  }
-}
-
 /**
  * The task, not a form for the task.
  *
@@ -61,14 +51,19 @@ const readWide = () => {
  * there is no Save button and nothing to forget to press. Title and description
  * are the two free-text fields, and they commit on blur.
  */
-export function TaskDetailSheet({
+export function TaskView({
   task,
   statuses,
-  onOpenChange,
+  layout,
+  onDeleted,
 }: {
   task: PlanningTask
   statuses: PlanningStatus[]
-  onOpenChange: (open: boolean) => void
+  /** `panel` is the board's side sheet — one narrow column. `page` is the
+   *  task's own route, where the content is centred and the properties sit in
+   *  a rail beside it rather than under it. */
+  layout: "panel" | "page"
+  onDeleted?: () => void
 }) {
   const { canDo } = useMe()
   const canEdit = canDo("task", "change")
@@ -76,7 +71,6 @@ export function TaskDetailSheet({
   const qc = useQueryClient()
   const { formatDate, today } = useDateFormat()
 
-  const [wide, setWide] = useState(readWide)
   const [title, setTitle] = useState(task.title)
   const [description, setDescription] = useState(task.description)
   const [editingDesc, setEditingDesc] = useState(false)
@@ -145,7 +139,7 @@ export function TaskDetailSheet({
       toast.success("Task deleted")
       qc.invalidateQueries({ queryKey: ["planning-tasks"] })
       qc.invalidateQueries({ queryKey: ["planning-milestones"] })
-      onOpenChange(false)
+      onDeleted?.()
     },
     onError: (e) => apiErrorToast(e),
   })
@@ -159,16 +153,6 @@ export function TaskDetailSheet({
     setEditingDesc(false)
     if (description !== task.description) set({ description })
   }
-
-  const toggleWide = () =>
-    setWide((w) => {
-      try {
-        window.localStorage.setItem(WIDE_KEY, w ? "0" : "1")
-      } catch {
-        /* private mode — the toggle still works for this session */
-      }
-      return !w
-    })
 
   const properties = (
     <div className="grid gap-1">
@@ -290,15 +274,118 @@ export function TaskDetailSheet({
     </div>
   )
 
+  const heading = (
+    /* The heading *is* the input: no border, no label, sized like a title, so
+       the task opens with its own name rather than a field called Title. */
+    <textarea
+      value={title}
+      readOnly={!canEdit}
+      onChange={(e) => setTitle(e.target.value)}
+      onBlur={commitTitle}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault()
+          e.currentTarget.blur()
+        }
+        if (e.key === "Escape") {
+          setTitle(task.title)
+          e.currentTarget.blur()
+        }
+      }}
+      rows={1}
+      className={`field-sizing-content w-full resize-none bg-transparent leading-snug font-semibold tracking-tight outline-none placeholder:text-muted-foreground focus:outline-none ${
+        layout === "page" ? "text-2xl" : "text-lg"
+      }`}
+      placeholder="Untitled task"
+    />
+  )
+
+  const menu = canDelete ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          className="text-muted-foreground"
+          title="More"
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          disabled={del.isPending}
+          onSelect={() => del.mutate()}
+          className="text-destructive"
+        >
+          <Trash2 className="h-3.5 w-3.5" />{" "}
+          {del.isPending ? "Deleting..." : "Delete task"}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ) : null
+
+  const saving = patch.isPending ? (
+    <span className="text-[11px] text-muted-foreground">Saving...</span>
+  ) : null
+
+  if (layout === "page") {
+    return (
+      <div className="mx-auto w-full max-w-5xl px-6 py-6">
+        <div className="mb-4 flex items-start gap-3">
+          <div className="min-w-0 flex-1">{heading}</div>
+          <span className="flex shrink-0 items-center gap-2 pt-1">
+            {saving}
+            {menu}
+          </span>
+        </div>
+        {/* Content and properties side by side, but the pair is centred and
+            capped — a task is a document, not a thing to stretch across a
+            2000px monitor with a rail marooned at the far edge. */}
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_240px]">
+          <div className="min-w-0">{body}</div>
+          <div className="lg:pt-1">{properties}</div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="px-5 py-4">
+      <div className="mb-4 flex items-start gap-2">
+        <div className="min-w-0 flex-1">{heading}</div>
+        <span className="flex shrink-0 items-center gap-2 pt-0.5">
+          {saving}
+          {menu}
+        </span>
+      </div>
+      <div className="grid gap-5">
+        {properties}
+        <div className="border-t border-border pt-4">{body}</div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The board's side sheet: a quick look at a task without leaving the board.
+ * Anything more than a glance belongs on the task's own page — the sheet's
+ * expand button goes there rather than growing a panel to fill the screen.
+ */
+export function TaskDetailSheet({
+  task,
+  statuses,
+  onOpenChange,
+}: {
+  task: PlanningTask
+  statuses: PlanningStatus[]
+  onOpenChange: (open: boolean) => void
+}) {
   return (
     <Sheet open onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className={
-          wide
-            ? "w-full gap-0 overflow-y-auto p-0 data-[side=right]:sm:max-w-[min(1200px,95vw)]"
-            : "w-full gap-0 overflow-y-auto p-0 data-[side=right]:sm:max-w-xl"
-        }
+        className="w-full gap-0 overflow-y-auto p-0 data-[side=right]:sm:max-w-xl"
       >
         <SheetHeader className="p-0">
           <SheetTitle className="sr-only">{task.title}</SheetTitle>
@@ -313,84 +400,28 @@ export function TaskDetailSheet({
           >
             {task.board_name}
           </Link>
-          {patch.isPending && (
-            <span className="text-[11px] text-muted-foreground">Saving...</span>
-          )}
           <Button
-            size="icon-sm"
+            size="sm"
             variant="ghost"
             className="ml-auto text-muted-foreground"
-            title={wide ? "Collapse to a side panel" : "Expand to full width"}
-            onClick={toggleWide}
+            asChild
+            title="Open this task on its own page"
           >
-            {wide ? (
-              <Minimize2 className="h-3.5 w-3.5" />
-            ) : (
-              <Maximize2 className="h-3.5 w-3.5" />
-            )}
+            <Link
+              to="/planning/$boardId/tasks/$taskId"
+              params={{ boardId: task.board, taskId: task.id }}
+            >
+              <Maximize2 className="h-3.5 w-3.5" /> Open
+            </Link>
           </Button>
-          {canDelete && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  className="text-muted-foreground"
-                  title="More"
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  disabled={del.isPending}
-                  onSelect={() => del.mutate()}
-                  className="text-destructive"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />{" "}
-                  {del.isPending ? "Deleting..." : "Delete task"}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
         </div>
 
-        <div className="px-5 py-4">
-          {/* The heading *is* the input: no border, no label, sized like a
-              title, so the sheet opens with the task's name rather than a
-              field called Title. */}
-          <textarea
-            value={title}
-            readOnly={!canEdit}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={commitTitle}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault()
-                e.currentTarget.blur()
-              }
-              if (e.key === "Escape") {
-                setTitle(task.title)
-                e.currentTarget.blur()
-              }
-            }}
-            rows={1}
-            className="mb-4 field-sizing-content w-full resize-none bg-transparent text-lg leading-snug font-semibold tracking-tight outline-none placeholder:text-muted-foreground focus:outline-none"
-            placeholder="Untitled task"
-          />
-
-          {wide ? (
-            <div className="grid gap-8 lg:grid-cols-[1fr_260px]">
-              <div className="min-w-0 lg:order-1">{body}</div>
-              <div className="lg:order-2 lg:pt-1">{properties}</div>
-            </div>
-          ) : (
-            <div className="grid gap-5">
-              {properties}
-              <div className="border-t border-border pt-4">{body}</div>
-            </div>
-          )}
-        </div>
+        <TaskView
+          task={task}
+          statuses={statuses}
+          layout="panel"
+          onDeleted={() => onOpenChange(false)}
+        />
       </SheetContent>
     </Sheet>
   )

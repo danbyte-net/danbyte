@@ -41,7 +41,7 @@ export function KvCard({ title, rows }: { title: string; rows: KvRow[] }) {
                 key={r.label}
                 className={i % 2 === 1 ? "bg-muted/30" : undefined}
               >
-                <TableCell className="w-40 py-2 align-top text-xs text-muted-foreground">
+                <TableCell className="w-40 py-2 text-xs text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
                     {r.label}
                     <PendingFieldMark label={r.label} />
@@ -50,7 +50,7 @@ export function KvCard({ title, rows }: { title: string; rows: KvRow[] }) {
                 <TableCell className="py-2 text-[13px] text-foreground">
                   {r.value}
                 </TableCell>
-                <TableCell className="w-9 py-2 pr-2 text-right align-top">
+                <TableCell className="w-9 py-2 pr-2 text-right">
                   {r.copy ? <CopyButton value={r.copy} /> : null}
                 </TableCell>
               </TableRow>
@@ -79,7 +79,7 @@ export function CopyButton({ value }: { value: string }) {
         setDone(true)
         window.setTimeout(() => setDone(false), 1200)
       }}
-      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+      className="-my-1 inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
       title={done ? "Copied" : `Copy ${value}`}
       aria-label={`Copy ${value}`}
     >

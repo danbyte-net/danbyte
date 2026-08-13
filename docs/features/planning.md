@@ -91,9 +91,10 @@ small PATCH a drag between columns makes; there is no Save button. The
 description is prose until you click into it, and commits when you click away
 (`Esc` abandons an edit). Delete lives in the **⋯** menu.
 
-**Expand** widens the sheet to full width and moves the properties into a side
-rail, which is the mode to use when a task carries several planned changes;
-**Collapse** returns it to a side panel. The choice is remembered per browser.
+**Open** takes the task to its own page — a back arrow returns you to the board.
+The sheet is for a glance; a task carrying linked devices, planned changes and a
+comment thread reads better as a page, with the properties in a rail beside the
+content. The page has its own URL, so it can be linked to and bookmarked.
 
 ## Planned changes
 

@@ -122,24 +122,24 @@ export function TaskLinkPanel({
         </div>
       )}
 
-      <div className="space-y-2">
+      {/* One frame around the whole list, not a bordered card per type inside a
+          bordered section: five links used to arrive as three nested boxes. The
+          type is a quiet label between groups instead. */}
+      <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
         {groups.map((g) => {
           const Icon = objectIcon(g.slug)
           return (
-            <div
-              key={g.slug}
-              className="overflow-hidden rounded-lg border border-border"
-            >
-              <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-3 py-1.5">
-                <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-[11px] font-semibold tracking-wide uppercase">
+            <div key={g.slug}>
+              <div className="flex items-center gap-1.5 px-3 pt-2 pb-1">
+                <Icon className="h-3 w-3 text-muted-foreground" />
+                <span className="text-[11px] text-muted-foreground">
                   {g.label}
                 </span>
-                <span className="num text-[11px] text-muted-foreground">
+                <span className="num text-[11px] text-muted-foreground/70">
                   {g.items.length}
                 </span>
               </div>
-              <div className="divide-y divide-border">
+              <div className="divide-y divide-border/60">
                 {g.items.map((l) => {
                   const removeButton = canEdit && (
                     <button

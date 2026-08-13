@@ -388,6 +388,7 @@ import { Route as AutomationTargetsIdEditRouteImport } from './routes/automation
 import { Route as AsnsIdEditRouteImport } from './routes/asns.$id_.edit'
 import { Route as AlertRulesIdEditRouteImport } from './routes/alert-rules.$id_.edit'
 import { Route as AggregatesIdEditRouteImport } from './routes/aggregates.$id_.edit'
+import { Route as PlanningBoardIdTasksTaskIdRouteImport } from './routes/planning.$boardId.tasks.$taskId'
 import { Route as LTenantTypeNumidRouteImport } from './routes/l.$tenant.$type.$numid'
 
 const ZonesRoute = ZonesRouteImport.update({
@@ -2287,6 +2288,12 @@ const AggregatesIdEditRoute = AggregatesIdEditRouteImport.update({
   path: '/$id/edit',
   getParentRoute: () => AggregatesRoute,
 } as any)
+const PlanningBoardIdTasksTaskIdRoute =
+  PlanningBoardIdTasksTaskIdRouteImport.update({
+    id: '/tasks/$taskId',
+    path: '/tasks/$taskId',
+    getParentRoute: () => PlanningBoardIdRoute,
+  } as any)
 const LTenantTypeNumidRoute = LTenantTypeNumidRouteImport.update({
   id: '/l/$tenant/$type/$numid',
   path: '/l/$tenant/$type/$numid',
@@ -2443,7 +2450,7 @@ export interface FileRoutesByFullPath {
   '/module-types/$id': typeof ModuleTypesIdRoute
   '/module-types/new': typeof ModuleTypesNewRoute
   '/permissions/new': typeof PermissionsNewRoute
-  '/planning/$boardId': typeof PlanningBoardIdRoute
+  '/planning/$boardId': typeof PlanningBoardIdRouteWithChildren
   '/platform-groups/$id': typeof PlatformGroupsIdRoute
   '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
@@ -2674,6 +2681,7 @@ export interface FileRoutesByFullPath {
   '/wireless-lans/$id/edit': typeof WirelessLansIdEditRoute
   '/zones/$id/edit': typeof ZonesIdEditRoute
   '/l/$tenant/$type/$numid': typeof LTenantTypeNumidRoute
+  '/planning/$boardId/tasks/$taskId': typeof PlanningBoardIdTasksTaskIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -2769,7 +2777,7 @@ export interface FileRoutesByTo {
   '/module-types/$id': typeof ModuleTypesIdRoute
   '/module-types/new': typeof ModuleTypesNewRoute
   '/permissions/new': typeof PermissionsNewRoute
-  '/planning/$boardId': typeof PlanningBoardIdRoute
+  '/planning/$boardId': typeof PlanningBoardIdRouteWithChildren
   '/platform-groups/$id': typeof PlatformGroupsIdRoute
   '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
@@ -3000,6 +3008,7 @@ export interface FileRoutesByTo {
   '/wireless-lans/$id/edit': typeof WirelessLansIdEditRoute
   '/zones/$id/edit': typeof ZonesIdEditRoute
   '/l/$tenant/$type/$numid': typeof LTenantTypeNumidRoute
+  '/planning/$boardId/tasks/$taskId': typeof PlanningBoardIdTasksTaskIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -3152,7 +3161,7 @@ export interface FileRoutesById {
   '/module-types/$id': typeof ModuleTypesIdRoute
   '/module-types/new': typeof ModuleTypesNewRoute
   '/permissions/new': typeof PermissionsNewRoute
-  '/planning/$boardId': typeof PlanningBoardIdRoute
+  '/planning/$boardId': typeof PlanningBoardIdRouteWithChildren
   '/platform-groups/$id': typeof PlatformGroupsIdRoute
   '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
@@ -3383,6 +3392,7 @@ export interface FileRoutesById {
   '/wireless-lans/$id_/edit': typeof WirelessLansIdEditRoute
   '/zones/$id_/edit': typeof ZonesIdEditRoute
   '/l/$tenant/$type/$numid': typeof LTenantTypeNumidRoute
+  '/planning/$boardId/tasks/$taskId': typeof PlanningBoardIdTasksTaskIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -3767,6 +3777,7 @@ export interface FileRouteTypes {
     | '/wireless-lans/$id/edit'
     | '/zones/$id/edit'
     | '/l/$tenant/$type/$numid'
+    | '/planning/$boardId/tasks/$taskId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -4093,6 +4104,7 @@ export interface FileRouteTypes {
     | '/wireless-lans/$id/edit'
     | '/zones/$id/edit'
     | '/l/$tenant/$type/$numid'
+    | '/planning/$boardId/tasks/$taskId'
   id:
     | '__root__'
     | '/'
@@ -4475,6 +4487,7 @@ export interface FileRouteTypes {
     | '/wireless-lans/$id_/edit'
     | '/zones/$id_/edit'
     | '/l/$tenant/$type/$numid'
+    | '/planning/$boardId/tasks/$taskId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -4569,7 +4582,7 @@ export interface RootRouteChildren {
   IpsBulkEditRoute: typeof IpsBulkEditRoute
   IpsNewRoute: typeof IpsNewRoute
   JobsIdRoute: typeof JobsIdRoute
-  PlanningBoardIdRoute: typeof PlanningBoardIdRoute
+  PlanningBoardIdRoute: typeof PlanningBoardIdRouteWithChildren
   PlatformGroupsIdRoute: typeof PlatformGroupsIdRoute
   PlatformGroupsNewRoute: typeof PlatformGroupsNewRoute
   PlatformsIdRoute: typeof PlatformsIdRoute
@@ -7278,6 +7291,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AggregatesIdEditRouteImport
       parentRoute: typeof AggregatesRoute
     }
+    '/planning/$boardId/tasks/$taskId': {
+      id: '/planning/$boardId/tasks/$taskId'
+      path: '/tasks/$taskId'
+      fullPath: '/planning/$boardId/tasks/$taskId'
+      preLoaderRoute: typeof PlanningBoardIdTasksTaskIdRouteImport
+      parentRoute: typeof PlanningBoardIdRoute
+    }
     '/l/$tenant/$type/$numid': {
       id: '/l/$tenant/$type/$numid'
       path: '/l/$tenant/$type/$numid'
@@ -8291,6 +8311,18 @@ const ZonesRouteChildren: ZonesRouteChildren = {
 
 const ZonesRouteWithChildren = ZonesRoute._addFileChildren(ZonesRouteChildren)
 
+interface PlanningBoardIdRouteChildren {
+  PlanningBoardIdTasksTaskIdRoute: typeof PlanningBoardIdTasksTaskIdRoute
+}
+
+const PlanningBoardIdRouteChildren: PlanningBoardIdRouteChildren = {
+  PlanningBoardIdTasksTaskIdRoute: PlanningBoardIdTasksTaskIdRoute,
+}
+
+const PlanningBoardIdRouteWithChildren = PlanningBoardIdRoute._addFileChildren(
+  PlanningBoardIdRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AggregatesRoute: AggregatesRouteWithChildren,
@@ -8383,7 +8415,7 @@ const rootRouteChildren: RootRouteChildren = {
   IpsBulkEditRoute: IpsBulkEditRoute,
   IpsNewRoute: IpsNewRoute,
   JobsIdRoute: JobsIdRoute,
-  PlanningBoardIdRoute: PlanningBoardIdRoute,
+  PlanningBoardIdRoute: PlanningBoardIdRouteWithChildren,
   PlatformGroupsIdRoute: PlatformGroupsIdRoute,
   PlatformGroupsNewRoute: PlatformGroupsNewRoute,
   PlatformsIdRoute: PlatformsIdRoute,
