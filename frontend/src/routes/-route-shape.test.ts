@@ -55,6 +55,7 @@ const NON_OBJECT_PREFIXES = new Set([
 const KNOWN_MISSING = new Set([
   "alert-rules", // monitoring.AlertRule
   "channels", // monitoring.NotificationChannel
+  "maintenance", // monitoring.MaintenanceEvent — edit page carries the impacts panel
   "silences", // monitoring.Silence
   "webhooks", // integrations.Webhook
 ])

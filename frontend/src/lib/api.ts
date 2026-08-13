@@ -5145,6 +5145,39 @@ export interface PlanningAssignee {
   email: string
 }
 
+// ─── Maintenance & outage events (issue #20) ─────────────────────────────
+export type MaintenanceEventKind = "maintenance" | "outage"
+
+export interface MaintenanceEventImpact {
+  id: string
+  event: string
+  object_type: string
+  object_id: string
+  object_site_id: string | null
+  level: "no_impact" | "reduced_redundancy" | "degraded" | "outage"
+  note: string
+  created_at: string
+}
+
+export interface MaintenanceEvent {
+  id: string
+  kind: MaintenanceEventKind
+  status: string
+  name: string
+  description: string
+  provider: string | null
+  provider_name: string | null
+  external_ref: string
+  starts_at: string
+  ends_at: string | null
+  etr: string | null
+  raw_email: string
+  impacts: MaintenanceEventImpact[]
+  is_open: boolean
+  created_at: string
+  updated_at: string
+}
+
 /** `/api/planning/calendar/` — everything scheduled inside a date window. */
 export interface PlanningCalendar {
   start: string

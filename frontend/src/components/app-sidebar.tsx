@@ -66,6 +66,7 @@ import {
   Waypoints,
   Webhook,
   Workflow,
+  Wrench,
   Zap,
 } from "lucide-react"
 
@@ -656,6 +657,12 @@ const sections: NavSection[] = [
             url: "/alerts",
             icon: BellRing,
             anyOf: ["alertrule", "notificationchannel", "silence"],
+          },
+          {
+            title: "Maintenance",
+            url: "/maintenance",
+            icon: Wrench,
+            objectType: "maintenanceevent",
           },
           {
             title: "Certificates",

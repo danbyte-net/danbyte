@@ -119,6 +119,7 @@ import { Route as PlanningIndexRouteImport } from './routes/planning.index'
 import { Route as PermissionsIndexRouteImport } from './routes/permissions.index'
 import { Route as ModuleTypesIndexRouteImport } from './routes/module-types.index'
 import { Route as ManufacturersIndexRouteImport } from './routes/manufacturers.index'
+import { Route as MaintenanceIndexRouteImport } from './routes/maintenance.index'
 import { Route as MacsIndexRouteImport } from './routes/macs.index'
 import { Route as LocationsIndexRouteImport } from './routes/locations.index'
 import { Route as LabelTemplatesIndexRouteImport } from './routes/label-templates.index'
@@ -249,6 +250,7 @@ import { Route as ModuleTypesNewRouteImport } from './routes/module-types.new'
 import { Route as ModuleTypesIdRouteImport } from './routes/module-types.$id'
 import { Route as ManufacturersNewRouteImport } from './routes/manufacturers.new'
 import { Route as ManufacturersIdRouteImport } from './routes/manufacturers.$id'
+import { Route as MaintenanceNewRouteImport } from './routes/maintenance.new'
 import { Route as MacsMacRouteImport } from './routes/macs.$mac'
 import { Route as LocationsNewRouteImport } from './routes/locations.new'
 import { Route as LocationsIdRouteImport } from './routes/locations.$id'
@@ -356,6 +358,7 @@ import { Route as PermissionsIdEditRouteImport } from './routes/permissions.$id_
 import { Route as PSlugSplatRouteImport } from './routes/p.$slug.$'
 import { Route as ModuleTypesIdEditRouteImport } from './routes/module-types.$id_.edit'
 import { Route as ManufacturersIdEditRouteImport } from './routes/manufacturers.$id_.edit'
+import { Route as MaintenanceIdEditRouteImport } from './routes/maintenance.$id_.edit'
 import { Route as LocationsIdEditRouteImport } from './routes/locations.$id_.edit'
 import { Route as L2vpnsIdEditRouteImport } from './routes/l2vpns.$id_.edit'
 import { Route as IpsecProfilesIdEditRouteImport } from './routes/ipsec-profiles.$id_.edit'
@@ -941,6 +944,11 @@ const ManufacturersIndexRoute = ManufacturersIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ManufacturersRoute,
+} as any)
+const MaintenanceIndexRoute = MaintenanceIndexRouteImport.update({
+  id: '/maintenance/',
+  path: '/maintenance/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const MacsIndexRoute = MacsIndexRouteImport.update({
   id: '/',
@@ -1594,6 +1602,11 @@ const ManufacturersIdRoute = ManufacturersIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ManufacturersRoute,
 } as any)
+const MaintenanceNewRoute = MaintenanceNewRouteImport.update({
+  id: '/maintenance/new',
+  path: '/maintenance/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MacsMacRoute = MacsMacRouteImport.update({
   id: '/$mac',
   path: '/$mac',
@@ -2129,6 +2142,11 @@ const ManufacturersIdEditRoute = ManufacturersIdEditRouteImport.update({
   path: '/$id/edit',
   getParentRoute: () => ManufacturersRoute,
 } as any)
+const MaintenanceIdEditRoute = MaintenanceIdEditRouteImport.update({
+  id: '/maintenance/$id_/edit',
+  path: '/maintenance/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LocationsIdEditRoute = LocationsIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
@@ -2451,6 +2469,7 @@ export interface FileRoutesByFullPath {
   '/locations/$id': typeof LocationsIdRoute
   '/locations/new': typeof LocationsNewRoute
   '/macs/$mac': typeof MacsMacRoute
+  '/maintenance/new': typeof MaintenanceNewRoute
   '/manufacturers/$id': typeof ManufacturersIdRoute
   '/manufacturers/new': typeof ManufacturersNewRoute
   '/module-types/$id': typeof ModuleTypesIdRoute
@@ -2581,6 +2600,7 @@ export interface FileRoutesByFullPath {
   '/label-templates/': typeof LabelTemplatesIndexRoute
   '/locations/': typeof LocationsIndexRoute
   '/macs/': typeof MacsIndexRoute
+  '/maintenance/': typeof MaintenanceIndexRoute
   '/manufacturers/': typeof ManufacturersIndexRoute
   '/module-types/': typeof ModuleTypesIndexRoute
   '/permissions/': typeof PermissionsIndexRoute
@@ -2652,6 +2672,7 @@ export interface FileRoutesByFullPath {
   '/ipsec-profiles/$id/edit': typeof IpsecProfilesIdEditRoute
   '/l2vpns/$id/edit': typeof L2vpnsIdEditRoute
   '/locations/$id/edit': typeof LocationsIdEditRoute
+  '/maintenance/$id/edit': typeof MaintenanceIdEditRoute
   '/manufacturers/$id/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id/edit': typeof ModuleTypesIdEditRoute
   '/p/$slug/$': typeof PSlugSplatRoute
@@ -2779,6 +2800,7 @@ export interface FileRoutesByTo {
   '/locations/$id': typeof LocationsIdRoute
   '/locations/new': typeof LocationsNewRoute
   '/macs/$mac': typeof MacsMacRoute
+  '/maintenance/new': typeof MaintenanceNewRoute
   '/manufacturers/$id': typeof ManufacturersIdRoute
   '/manufacturers/new': typeof ManufacturersNewRoute
   '/module-types/$id': typeof ModuleTypesIdRoute
@@ -2909,6 +2931,7 @@ export interface FileRoutesByTo {
   '/label-templates': typeof LabelTemplatesIndexRoute
   '/locations': typeof LocationsIndexRoute
   '/macs': typeof MacsIndexRoute
+  '/maintenance': typeof MaintenanceIndexRoute
   '/manufacturers': typeof ManufacturersIndexRoute
   '/module-types': typeof ModuleTypesIndexRoute
   '/permissions': typeof PermissionsIndexRoute
@@ -2980,6 +3003,7 @@ export interface FileRoutesByTo {
   '/ipsec-profiles/$id/edit': typeof IpsecProfilesIdEditRoute
   '/l2vpns/$id/edit': typeof L2vpnsIdEditRoute
   '/locations/$id/edit': typeof LocationsIdEditRoute
+  '/maintenance/$id/edit': typeof MaintenanceIdEditRoute
   '/manufacturers/$id/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id/edit': typeof ModuleTypesIdEditRoute
   '/p/$slug/$': typeof PSlugSplatRoute
@@ -3164,6 +3188,7 @@ export interface FileRoutesById {
   '/locations/$id': typeof LocationsIdRoute
   '/locations/new': typeof LocationsNewRoute
   '/macs/$mac': typeof MacsMacRoute
+  '/maintenance/new': typeof MaintenanceNewRoute
   '/manufacturers/$id': typeof ManufacturersIdRoute
   '/manufacturers/new': typeof ManufacturersNewRoute
   '/module-types/$id': typeof ModuleTypesIdRoute
@@ -3294,6 +3319,7 @@ export interface FileRoutesById {
   '/label-templates/': typeof LabelTemplatesIndexRoute
   '/locations/': typeof LocationsIndexRoute
   '/macs/': typeof MacsIndexRoute
+  '/maintenance/': typeof MaintenanceIndexRoute
   '/manufacturers/': typeof ManufacturersIndexRoute
   '/module-types/': typeof ModuleTypesIndexRoute
   '/permissions/': typeof PermissionsIndexRoute
@@ -3365,6 +3391,7 @@ export interface FileRoutesById {
   '/ipsec-profiles/$id_/edit': typeof IpsecProfilesIdEditRoute
   '/l2vpns/$id_/edit': typeof L2vpnsIdEditRoute
   '/locations/$id_/edit': typeof LocationsIdEditRoute
+  '/maintenance/$id_/edit': typeof MaintenanceIdEditRoute
   '/manufacturers/$id_/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id_/edit': typeof ModuleTypesIdEditRoute
   '/p/$slug/$': typeof PSlugSplatRoute
@@ -3550,6 +3577,7 @@ export interface FileRouteTypes {
     | '/locations/$id'
     | '/locations/new'
     | '/macs/$mac'
+    | '/maintenance/new'
     | '/manufacturers/$id'
     | '/manufacturers/new'
     | '/module-types/$id'
@@ -3680,6 +3708,7 @@ export interface FileRouteTypes {
     | '/label-templates/'
     | '/locations/'
     | '/macs/'
+    | '/maintenance/'
     | '/manufacturers/'
     | '/module-types/'
     | '/permissions/'
@@ -3751,6 +3780,7 @@ export interface FileRouteTypes {
     | '/ipsec-profiles/$id/edit'
     | '/l2vpns/$id/edit'
     | '/locations/$id/edit'
+    | '/maintenance/$id/edit'
     | '/manufacturers/$id/edit'
     | '/module-types/$id/edit'
     | '/p/$slug/$'
@@ -3878,6 +3908,7 @@ export interface FileRouteTypes {
     | '/locations/$id'
     | '/locations/new'
     | '/macs/$mac'
+    | '/maintenance/new'
     | '/manufacturers/$id'
     | '/manufacturers/new'
     | '/module-types/$id'
@@ -4008,6 +4039,7 @@ export interface FileRouteTypes {
     | '/label-templates'
     | '/locations'
     | '/macs'
+    | '/maintenance'
     | '/manufacturers'
     | '/module-types'
     | '/permissions'
@@ -4079,6 +4111,7 @@ export interface FileRouteTypes {
     | '/ipsec-profiles/$id/edit'
     | '/l2vpns/$id/edit'
     | '/locations/$id/edit'
+    | '/maintenance/$id/edit'
     | '/manufacturers/$id/edit'
     | '/module-types/$id/edit'
     | '/p/$slug/$'
@@ -4262,6 +4295,7 @@ export interface FileRouteTypes {
     | '/locations/$id'
     | '/locations/new'
     | '/macs/$mac'
+    | '/maintenance/new'
     | '/manufacturers/$id'
     | '/manufacturers/new'
     | '/module-types/$id'
@@ -4392,6 +4426,7 @@ export interface FileRouteTypes {
     | '/label-templates/'
     | '/locations/'
     | '/macs/'
+    | '/maintenance/'
     | '/manufacturers/'
     | '/module-types/'
     | '/permissions/'
@@ -4463,6 +4498,7 @@ export interface FileRouteTypes {
     | '/ipsec-profiles/$id_/edit'
     | '/l2vpns/$id_/edit'
     | '/locations/$id_/edit'
+    | '/maintenance/$id_/edit'
     | '/manufacturers/$id_/edit'
     | '/module-types/$id_/edit'
     | '/p/$slug/$'
@@ -4594,6 +4630,7 @@ export interface RootRouteChildren {
   IpsBulkEditRoute: typeof IpsBulkEditRoute
   IpsNewRoute: typeof IpsNewRoute
   JobsIdRoute: typeof JobsIdRoute
+  MaintenanceNewRoute: typeof MaintenanceNewRoute
   PlanningBoardIdRoute: typeof PlanningBoardIdRoute
   PlanningCalendarRoute: typeof PlanningCalendarRoute
   PlatformGroupsIdRoute: typeof PlatformGroupsIdRoute
@@ -4621,6 +4658,7 @@ export interface RootRouteChildren {
   IpsIndexRoute: typeof IpsIndexRoute
   JobsIndexRoute: typeof JobsIndexRoute
   LabelTemplatesIndexRoute: typeof LabelTemplatesIndexRoute
+  MaintenanceIndexRoute: typeof MaintenanceIndexRoute
   PlanningIndexRoute: typeof PlanningIndexRoute
   PlatformGroupsIndexRoute: typeof PlatformGroupsIndexRoute
   PlatformsIndexRoute: typeof PlatformsIndexRoute
@@ -4638,6 +4676,7 @@ export interface RootRouteChildren {
   ComplianceRulesIdEditRoute: typeof ComplianceRulesIdEditRoute
   DeviceRolesIdEditRoute: typeof DeviceRolesIdEditRoute
   IpsIdEditRoute: typeof IpsIdEditRoute
+  MaintenanceIdEditRoute: typeof MaintenanceIdEditRoute
   PSlugSplatRoute: typeof PSlugSplatRoute
   PlatformGroupsIdEditRoute: typeof PlatformGroupsIdEditRoute
   PlatformsIdEditRoute: typeof PlatformsIdEditRoute
@@ -5421,6 +5460,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/manufacturers/'
       preLoaderRoute: typeof ManufacturersIndexRouteImport
       parentRoute: typeof ManufacturersRoute
+    }
+    '/maintenance/': {
+      id: '/maintenance/'
+      path: '/maintenance'
+      fullPath: '/maintenance/'
+      preLoaderRoute: typeof MaintenanceIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/macs/': {
       id: '/macs/'
@@ -6332,6 +6378,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManufacturersIdRouteImport
       parentRoute: typeof ManufacturersRoute
     }
+    '/maintenance/new': {
+      id: '/maintenance/new'
+      path: '/maintenance/new'
+      fullPath: '/maintenance/new'
+      preLoaderRoute: typeof MaintenanceNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/macs/$mac': {
       id: '/macs/$mac'
       path: '/$mac'
@@ -7080,6 +7133,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/manufacturers/$id/edit'
       preLoaderRoute: typeof ManufacturersIdEditRouteImport
       parentRoute: typeof ManufacturersRoute
+    }
+    '/maintenance/$id_/edit': {
+      id: '/maintenance/$id_/edit'
+      path: '/maintenance/$id/edit'
+      fullPath: '/maintenance/$id/edit'
+      preLoaderRoute: typeof MaintenanceIdEditRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/locations/$id_/edit': {
       id: '/locations/$id_/edit'
@@ -8424,6 +8484,7 @@ const rootRouteChildren: RootRouteChildren = {
   IpsBulkEditRoute: IpsBulkEditRoute,
   IpsNewRoute: IpsNewRoute,
   JobsIdRoute: JobsIdRoute,
+  MaintenanceNewRoute: MaintenanceNewRoute,
   PlanningBoardIdRoute: PlanningBoardIdRoute,
   PlanningCalendarRoute: PlanningCalendarRoute,
   PlatformGroupsIdRoute: PlatformGroupsIdRoute,
@@ -8451,6 +8512,7 @@ const rootRouteChildren: RootRouteChildren = {
   IpsIndexRoute: IpsIndexRoute,
   JobsIndexRoute: JobsIndexRoute,
   LabelTemplatesIndexRoute: LabelTemplatesIndexRoute,
+  MaintenanceIndexRoute: MaintenanceIndexRoute,
   PlanningIndexRoute: PlanningIndexRoute,
   PlatformGroupsIndexRoute: PlatformGroupsIndexRoute,
   PlatformsIndexRoute: PlatformsIndexRoute,
@@ -8468,6 +8530,7 @@ const rootRouteChildren: RootRouteChildren = {
   ComplianceRulesIdEditRoute: ComplianceRulesIdEditRoute,
   DeviceRolesIdEditRoute: DeviceRolesIdEditRoute,
   IpsIdEditRoute: IpsIdEditRoute,
+  MaintenanceIdEditRoute: MaintenanceIdEditRoute,
   PSlugSplatRoute: PSlugSplatRoute,
   PlatformGroupsIdEditRoute: PlatformGroupsIdEditRoute,
   PlatformsIdEditRoute: PlatformsIdEditRoute,
