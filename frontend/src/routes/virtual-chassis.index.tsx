@@ -168,13 +168,18 @@ function VirtualChassisPage() {
     ],
     [onDelete, canEdit, canDelete, humanIds]
   )
-  const { rail, filteredRows } = useTableFilters(columns, rows)
+  const { rail, filteredRows, snapshot, restore, activeCount } =
+    useTableFilters(columns, rows)
 
   return (
     <ListPageShell
       title="Virtual chassis"
       count={query.data ? filteredRows.length : undefined}
       rail={rail}
+      savedViews={{
+        objectType: "virtualchassis",
+        filters: { snapshot, restore, activeCount },
+      }}
       search={{ value: q, onChange: setQ, placeholder: "Filter by name…" }}
       actions={
         <>

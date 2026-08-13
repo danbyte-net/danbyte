@@ -152,13 +152,18 @@ function L2vpnsPage() {
     [onDelete, humanIds, canEdit, canDelete]
   )
 
-  const { rail, filteredRows } = useTableFilters(columns, rows)
+  const { rail, filteredRows, snapshot, restore, activeCount } =
+    useTableFilters(columns, rows)
 
   return (
     <ListPageShell
       title="L2VPNs"
       count={query.data ? filteredRows.length : undefined}
       rail={rail}
+      savedViews={{
+        objectType: "l2vpn",
+        filters: { snapshot, restore, activeCount },
+      }}
       search={{ value: q, onChange: setQ, placeholder: "Filter L2VPNs…" }}
       actions={
         <>

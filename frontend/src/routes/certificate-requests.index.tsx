@@ -123,13 +123,18 @@ function CertificateRequestsPage() {
     []
   )
 
-  const { rail, filteredRows } = useTableFilters(columns, rows)
+  const { rail, filteredRows, snapshot, restore, activeCount } =
+    useTableFilters(columns, rows)
 
   return (
     <ListPageShell
       title="Certificate requests"
       count={query.data ? filteredRows.length : undefined}
       rail={rail}
+      savedViews={{
+        objectType: "certificaterequest",
+        filters: { snapshot, restore, activeCount },
+      }}
       actions={
         canDo("certificaterequest", "add") ? (
           <Button size="sm" onClick={() => setRequestOpen(true)}>

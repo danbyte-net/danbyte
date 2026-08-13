@@ -44,13 +44,18 @@ function ManufacturersPage() {
     [handleDelete, canEdit, canDelete, humanIds]
   )
   // Columns declare their own filterability via meta.facet.
-  const { rail, filteredRows } = useTableFilters(columns, rows)
+  const { rail, filteredRows, snapshot, restore, activeCount } =
+    useTableFilters(columns, rows)
 
   return (
     <ListPageShell
       title="Manufacturers"
       count={query.data ? filteredRows.length : undefined}
       rail={rail}
+      savedViews={{
+        objectType: "manufacturer",
+        filters: { snapshot, restore, activeCount },
+      }}
       search={{
         value: q,
         onChange: setQ,

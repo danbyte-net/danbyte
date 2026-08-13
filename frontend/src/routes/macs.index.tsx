@@ -51,13 +51,18 @@ function MacsPage() {
   }, [allRows, q])
 
   const columns = useMemo<ColumnDef<MacEntry>[]>(() => buildColumns(), [])
-  const { rail, filteredRows } = useTableFilters(columns, rows)
+  const { rail, filteredRows, snapshot, restore, activeCount } =
+    useTableFilters(columns, rows)
 
   return (
     <ListPageShell
       title="MAC addresses"
       count={query.data ? filteredRows.length : undefined}
       rail={rail}
+      savedViews={{
+        objectType: "macaddress",
+        filters: { snapshot, restore, activeCount },
+      }}
       search={{
         value: q,
         onChange: setQ,
