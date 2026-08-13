@@ -115,9 +115,14 @@ export function TaskView({
               }
             : old
       )
+      // The standalone task page renders from its own single-task query.
+      qc.setQueryData<PlanningTask>(["planning-task", task.id], (old) =>
+        old ? { ...old, ...body } : old
+      )
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["planning-tasks"] })
+      qc.invalidateQueries({ queryKey: ["planning-task", task.id] })
       // Milestone task_count is a server-side roll-up: moving a task between
       // milestones changes two of them, so refresh the whole list.
       qc.invalidateQueries({ queryKey: ["planning-milestones"] })
@@ -126,6 +131,7 @@ export function TaskView({
       apiErrorToast(e)
       // The optimistic value was a guess; the server's answer wins.
       qc.invalidateQueries({ queryKey: ["planning-tasks"] })
+      qc.invalidateQueries({ queryKey: ["planning-task", task.id] })
     },
   })
   const set = (body: Partial<PlanningTask>) => {
