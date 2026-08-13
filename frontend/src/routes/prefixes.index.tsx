@@ -86,11 +86,15 @@ function PrefixesPage() {
     if (familyFilter) seed.family = [familyFilter]
     return Object.keys(seed).length ? seed : undefined
   }, [statusFilter, familyFilter])
-  const { rail, filteredRows, toggleValue, selectedValues } = useTableFilters(
-    facetColumns,
-    allRows,
-    initialEnums
-  )
+  const {
+    rail,
+    filteredRows,
+    toggleValue,
+    selectedValues,
+    snapshot,
+    restore,
+    activeCount,
+  } = useTableFilters(facetColumns, allRows, initialEnums)
   const tagSelection = selectedValues("tags")
 
   // Filter → annotate with nesting depth → keep Global VRF on top. The
@@ -174,6 +178,10 @@ function PrefixesPage() {
         count={query.data ? rows.length : undefined}
         /* Filter rail — derived from the columns' facet metadata. */
         rail={rail}
+        savedViews={{
+          objectType: "prefix",
+          filters: { snapshot, restore, activeCount },
+        }}
         search={{
           value: q,
           onChange: setQ,

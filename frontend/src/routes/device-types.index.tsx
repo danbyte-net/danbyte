@@ -51,10 +51,15 @@ function DeviceTypesPage() {
     () => buildDeviceTypeColumns<DeviceType>({ omit: ["part_number"] }),
     []
   )
-  const { rail, filteredRows, toggleValue, selectedValues } = useTableFilters(
-    facetColumns,
-    allRows
-  )
+  const {
+    rail,
+    filteredRows,
+    toggleValue,
+    selectedValues,
+    snapshot,
+    restore,
+    activeCount,
+  } = useTableFilters(facetColumns, allRows)
   const tagSelection = selectedValues("tags")
 
   const handleDelete = useCallback((d: DeviceType) => setDeleting(d), [])
@@ -84,6 +89,10 @@ function DeviceTypesPage() {
       title="Device types"
       count={query.data ? filteredRows.length : undefined}
       rail={rail}
+      savedViews={{
+        objectType: "devicetype",
+        filters: { snapshot, restore, activeCount },
+      }}
       search={{
         value: q,
         onChange: setQ,

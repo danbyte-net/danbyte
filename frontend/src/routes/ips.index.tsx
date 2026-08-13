@@ -60,13 +60,18 @@ function IpsPage() {
     if (scope) seed.scope = [scope]
     return seed
   }, [status, role, scope])
-  const { rail, filteredRows } = useTableFilters(columns, allRows, initialEnums)
+  const { rail, filteredRows, snapshot, restore, activeCount } =
+    useTableFilters(columns, allRows, initialEnums)
 
   return (
     <ListPageShell
       title="IP addresses"
       count={query.data ? filteredRows.length : undefined}
       rail={rail}
+      savedViews={{
+        objectType: "ipaddress",
+        filters: { snapshot, restore, activeCount },
+      }}
       search={{
         value: q,
         onChange: setQ,

@@ -49,13 +49,18 @@ function TunnelsPage() {
     [onDelete, humanIds]
   )
 
-  const { rail, filteredRows } = useTableFilters(columns, rows)
+  const { rail, filteredRows, snapshot, restore, activeCount } =
+    useTableFilters(columns, rows)
 
   return (
     <ListPageShell
       title="Tunnels"
       count={query.data ? filteredRows.length : undefined}
       rail={rail}
+      savedViews={{
+        objectType: "tunnel",
+        filters: { snapshot, restore, activeCount },
+      }}
       search={{ value: q, onChange: setQ, placeholder: "Filter tunnels…" }}
       actions={
         <>

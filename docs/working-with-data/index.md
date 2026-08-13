@@ -8,5 +8,6 @@ shaping the tables and exports to what you need.
 | Page | What it's for |
 |---|---|
 | [Dashboard](../features/dashboard.md) | The at-a-glance home screen of counts, charts, and status. |
+| [Saved views](../features/saved-views.md) | Name a search and its filters, and share it with your team. |
 | [Table columns](../features/table-preferences.md) | Show, hide, and reorder columns on any list — your choices stick. |
 | [Exporting tables](../features/exporting-tables.md) | Download what's on screen as a spreadsheet. |

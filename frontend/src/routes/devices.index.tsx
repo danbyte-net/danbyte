@@ -132,13 +132,18 @@ function DevicesPage() {
     if (manufacturerFilter) seed.manufacturer = [manufacturerFilter]
     return Object.keys(seed).length ? seed : undefined
   }, [typeFilter, statusFilter, siteFilter, manufacturerFilter])
-  const { rail, filteredRows } = useTableFilters(columns, allRows, initialEnums)
+  const { rail, filteredRows, snapshot, restore, activeCount } =
+    useTableFilters(columns, allRows, initialEnums)
 
   return (
     <ListPageShell
       title="Devices"
       count={query.data ? filteredRows.length : undefined}
       rail={rail}
+      savedViews={{
+        objectType: "device",
+        filters: { snapshot, restore, activeCount },
+      }}
       search={{
         value: q,
         onChange: setQ,

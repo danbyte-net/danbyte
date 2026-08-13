@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { QueryError } from "@/components/query-error"
+import { SavedViews, type SavedViewsProps } from "@/components/saved-views"
 
 // ─── The canonical list-page chrome ──────────────────────────────────────
 //
@@ -41,6 +42,7 @@ export function ListPageShell({
   rail,
   search,
   actions,
+  savedViews,
   query,
   children,
 }: {
@@ -62,6 +64,13 @@ export function ListPageShell({
   }
   /** Header action cluster (Import/Export, Add, …), right-aligned after search. */
   actions?: ReactNode
+  /** Saved views for this list. One prop, because the control needs only the
+   * list's identity and its filter handle — the search box is already here. */
+  savedViews?: {
+    /** RBAC object slug, e.g. "device". */
+    objectType: string
+    filters: SavedViewsProps["filters"]
+  }
   /** Drives the body's loading/error switch. When loading or errored, the
    * children are not rendered. Omit to always render children. */
   query?: { isLoading: boolean; isError: boolean; error: unknown }
@@ -92,6 +101,14 @@ export function ListPageShell({
             )}
             {count !== undefined && <Badge variant="secondary">{count}</Badge>}
             <div className="ml-auto flex items-center gap-2">
+              {savedViews && search && (
+                <SavedViews
+                  objectType={savedViews.objectType}
+                  q={search.value}
+                  onQ={search.onChange}
+                  filters={savedViews.filters}
+                />
+              )}
               {search && (
                 <div className="relative">
                   <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />

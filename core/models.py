@@ -607,6 +607,58 @@ class DeploymentSettings(TimestampedModel):
         return obj
 
 
+class SavedFilter(TimestampedModel):
+    """A named set of list-page filters — "my racks in Aarhus", "decommissioning
+    switches" — so a view an operator rebuilds every morning is one click.
+
+    The filters are stored as the list page's own state (``query``), not as a
+    query string or an ORM lookup: every list derives its rail from the columns
+    it renders, so the same shape works for devices, prefixes, VLANs and the
+    rest without a per-model filter grammar. A saved filter therefore describes
+    *the page*, and ``object_type`` says which one.
+
+    Scoping: tenant-scoped like everything else, and **private by default** —
+    ``shared`` publishes it to everyone in the tenant. Only the person who wrote
+    a filter (or someone with change rights on saved filters) can edit it, so a
+    shared view can't be redefined under its users.
+    """
+
+    from django.conf import settings as _settings
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="saved_filters"
+    )
+    #: RBAC object slug of the list this belongs to, e.g. "device".
+    object_type = models.SlugField(max_length=64)
+    name = models.CharField(max_length=120)
+    description = models.CharField(max_length=255, blank=True, default="")
+    #: The list page's filter state: ``{"q": "...", "facets": {...}}``.
+    query = models.JSONField(default=dict, blank=True)
+    shared = models.BooleanField(
+        default=False,
+        help_text="Visible to everyone in this tenant, not just you.",
+    )
+    created_by = models.ForeignKey(
+        _settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="saved_filters",
+    )
+
+    class Meta:
+        ordering = ["object_type", "name"]
+        indexes = [models.Index(fields=["tenant", "object_type"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "object_type", "created_by", "name"],
+                name="uniq_saved_filter_name_per_owner",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class BookmarkFolder(TimestampedModel):
     """A per-user folder for saved page links. Folders are self-nesting so the
     sidebar can present a compact favourites tree without tenant coupling."""

@@ -124,7 +124,16 @@ export interface UseTableFiltersResult<TRow> {
   /** Current selection of an enum/tags facet (empty set when untouched) —
    * lets cells highlight their active chips. */
   selectedValues: (id: string) => Set<string>
+  /** The whole selection as plain JSON, and the way back. This is what makes a
+   * *saved view* possible without a per-model filter grammar: the rail is
+   * derived from the columns a list renders, so its state describes that list
+   * completely, and any list built this way can save and restore one. */
+  snapshot: () => FilterSnapshot
+  restore: (snapshot: FilterSnapshot | null | undefined) => void
 }
+
+/** Facet selections in a form that survives JSON — sets become arrays. */
+export type FilterSnapshot = Record<string, string[] | RangeState>
 
 export function useTableFilters<TRow>(
   columns: ColumnDef<TRow, unknown>[],
@@ -316,7 +325,38 @@ export function useTableFilters<TRow>(
       </FilterRail>
     )
 
-  return { rail, filteredRows, activeCount, toggleValue, selectedValues }
+  const snapshot = useCallback((): FilterSnapshot => {
+    const out: FilterSnapshot = {}
+    for (const [id, value] of Object.entries(state)) {
+      if (value instanceof Set) {
+        if (value.size) out[id] = [...value].sort()
+      } else if (value && (value.min != null || value.max != null)) {
+        out[id] = value
+      }
+    }
+    return out
+  }, [state])
+
+  const restore = useCallback((saved: FilterSnapshot | null | undefined) => {
+    // Replaces the selection outright rather than merging: applying a saved
+    // view must show exactly what it describes, not what it describes plus
+    // whatever was already ticked.
+    const next: Record<string, EnumState | TagsState | RangeState> = {}
+    for (const [id, value] of Object.entries(saved ?? {})) {
+      next[id] = Array.isArray(value) ? new Set(value) : value
+    }
+    setState(next)
+  }, [])
+
+  return {
+    rail,
+    filteredRows,
+    activeCount,
+    toggleValue,
+    selectedValues,
+    snapshot,
+    restore,
+  }
 }
 
 // ─── Range facet ───────────────────────────────────────────────────────

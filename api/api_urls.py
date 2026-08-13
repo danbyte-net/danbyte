@@ -71,6 +71,7 @@ from integrations.netbox_api import (
     netbox_test, netbox_imports, netbox_import_detail,
 )
 from core.bookmarks import BookmarkFolderViewSet, BookmarkViewSet
+from core.saved_filters import SavedFilterViewSet
 from .search_views import search as search_view
 from .csp_views import csp_report
 from .dashboard_views import dashboard_view
@@ -317,6 +318,7 @@ router.register(r"custom-field-groups", CustomFieldGroupViewSet, basename="custo
 router.register(r"changelog",     ChangeLogViewSet,   basename="changelog")
 router.register(r"bookmarks",     BookmarkViewSet,    basename="bookmark")
 router.register(r"bookmark-folders", BookmarkFolderViewSet, basename="bookmark-folder")
+router.register(r"saved-filters", SavedFilterViewSet, basename="saved-filter")
 router.register(r"api-tokens",    ApiTokenViewSet,    basename="api-token")
 router.register(r"webhooks",      WebhookViewSet,     basename="webhook")
 router.register(r"automation-targets", AutomationTargetViewSet, basename="automation-target")

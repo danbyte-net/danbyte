@@ -75,13 +75,18 @@ function CertificatesPage() {
       seed.self_signed = [self_signed]
     return seed
   }, [expiry, self_signed])
-  const { rail, filteredRows } = useTableFilters(columns, allRows, initialEnums)
+  const { rail, filteredRows, snapshot, restore, activeCount } =
+    useTableFilters(columns, allRows, initialEnums)
 
   return (
     <ListPageShell
       title="Certificates"
       count={query.data ? filteredRows.length : undefined}
       rail={rail}
+      savedViews={{
+        objectType: "certificate",
+        filters: { snapshot, restore, activeCount },
+      }}
       search={{
         value: q,
         onChange: setQ,

@@ -48,13 +48,18 @@ function WirelessLANsPage() {
     [onDelete, humanIds]
   )
 
-  const { rail, filteredRows } = useTableFilters(columns, rows)
+  const { rail, filteredRows, snapshot, restore, activeCount } =
+    useTableFilters(columns, rows)
 
   return (
     <ListPageShell
       title="Wireless LANs"
       count={query.data ? filteredRows.length : undefined}
       rail={rail}
+      savedViews={{
+        objectType: "wirelesslan",
+        filters: { snapshot, restore, activeCount },
+      }}
       search={{ value: q, onChange: setQ, placeholder: "Filter by SSID…" }}
       actions={
         <>

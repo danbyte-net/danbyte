@@ -154,7 +154,8 @@ function LocationsPage() {
   // Rail derives from the columns' facet metadata (Status, Site) — filter
   // first, then nest, so children of a hidden parent surface at the root
   // instead of dangling indented under nothing.
-  const { rail, filteredRows } = useTableFilters(columns, allRows)
+  const { rail, filteredRows, snapshot, restore, activeCount } =
+    useTableFilters(columns, allRows)
   const rows = useMemo(() => nestLocations(filteredRows), [filteredRows])
 
   return (
@@ -162,6 +163,10 @@ function LocationsPage() {
       title="Locations"
       count={query.data ? rows.length : undefined}
       rail={rail}
+      savedViews={{
+        objectType: "location",
+        filters: { snapshot, restore, activeCount },
+      }}
       search={{ value: q, onChange: setQ, placeholder: "Filter locations…" }}
       actions={
         <>

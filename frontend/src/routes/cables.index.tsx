@@ -85,13 +85,18 @@ function CablesPage() {
     ],
     [handleDelete, handleTrace, canEdit, canDelete, humanIds]
   )
-  const { rail, filteredRows } = useTableFilters(columns, rows)
+  const { rail, filteredRows, snapshot, restore, activeCount } =
+    useTableFilters(columns, rows)
 
   return (
     <ListPageShell
       title="Cables"
       count={query.data ? filteredRows.length : undefined}
       rail={rail}
+      savedViews={{
+        objectType: "cable",
+        filters: { snapshot, restore, activeCount },
+      }}
       search={{
         value: q,
         onChange: setQ,

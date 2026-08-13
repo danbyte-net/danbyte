@@ -52,13 +52,18 @@ function RacksPage() {
   )
 
   const allRows = query.data?.results ?? []
-  const { rail, filteredRows } = useTableFilters(columns, allRows)
+  const { rail, filteredRows, snapshot, restore, activeCount } =
+    useTableFilters(columns, allRows)
 
   return (
     <ListPageShell
       title="Racks"
       count={query.data ? filteredRows.length : undefined}
       rail={rail}
+      savedViews={{
+        objectType: "rack",
+        filters: { snapshot, restore, activeCount },
+      }}
       search={{
         value: q,
         onChange: setQ,
