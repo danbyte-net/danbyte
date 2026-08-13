@@ -196,8 +196,23 @@ neither edited nor deleted.
 All endpoints are tenant-scoped and default-closed; all planning models are
 audited.
 
+## Calendar
+
+**Planning → Calendar** lays the month out with everything scheduled inside
+it: tasks (spanning start → due), milestones, planned changes on their
+implementation date, and [maintenance & outage events](maintenance.md). The
+header counts each kind for the visible month — hover a counter for what it
+means — and a board picker narrows tasks/milestones/changes to one board.
+Events ignore the board filter on purpose: provider maintenance matters to
+every board's schedule. Dates render in your profile's timezone (the badge in
+the header names it).
+
+`GET /api/planning/calendar/?start=&end=[&board=]` returns the same window as
+JSON; `GET /api/planning/calendar.ics?token=<api token>` serves it as an iCal
+feed for Outlook/Google/Apple — see [Maintenance &
+outages](maintenance.md#ical-feed) for the token rules.
+
 ## Coming next
 
-The planning calendar (global and per-board), freeze windows that can suppress
-monitoring notifications, provider maintenance/outage events, and an iCal feed
-are planned follow-ups on this foundation.
+Week/day/year calendar views and drag-to-schedule are planned follow-ups on
+this foundation.

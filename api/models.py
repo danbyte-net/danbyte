@@ -2248,6 +2248,18 @@ class Status(_LabeledChoice):
                    "in the reservation_note field — used so e.g. 'Reserved' "
                    "always carries the who/why on hover."),
     )
+    suppresses_alerts = models.BooleanField(
+        default=False,
+        help_text=("While a maintenance/outage event carries this status, "
+                   "monitoring alerts for its impacted devices are silenced "
+                   "(maintenance & outage events)."),
+    )
+    is_closed = models.BooleanField(
+        default=False,
+        help_text=("Marks the workflow as finished — a closed maintenance/"
+                   "outage event leaves the open list, the calendar's open "
+                   "count, and releases its silence."),
+    )
 
     class Meta(_LabeledChoice.Meta):
         verbose_name_plural = "statuses"

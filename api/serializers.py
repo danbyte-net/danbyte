@@ -1253,7 +1253,7 @@ class StatusSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Nu
     _USAGE_RELS = [
         "ips", "devices", "prefixes", "ip_ranges", "racks", "clusters",
         "virtual_machines", "cables", "circuits", "power_feeds",
-        "wireless_lans", "tunnels", "locations",
+        "wireless_lans", "tunnels", "locations", "maintenance_events",
     ]
 
     def get_usage_count(self, obj) -> int:
@@ -1268,6 +1268,7 @@ class StatusSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Nu
             "owning_site", "owning_site_id", "permissions", "id", "name", "slug", "color", "text_color", "description",
                   "weight", "available_to", "default_for",
                   "is_available", "requires_note",
+                  "suppresses_alerts", "is_closed",
                   "usage_count", "created_at", "updated_at"]
         read_only_fields = ["id", "text_color", "usage_count", "created_at", "updated_at"]
 
@@ -1299,7 +1300,7 @@ class StatusPickerSerializer(NumIdModelSerializer):
         model = Status
         fields = ["id", "name", "slug", "color", "text_color",
                   "available_to", "default_for", "is_available",
-                  "requires_note", "weight"]
+                  "requires_note", "suppresses_alerts", "is_closed", "weight"]
 
 
 class IPRolePickerSerializer(NumIdModelSerializer):

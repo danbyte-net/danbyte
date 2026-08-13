@@ -44,6 +44,10 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
   const [requiresNote, setRequiresNote] = useState(
     status?.requires_note ?? false
   )
+  const [suppressesAlerts, setSuppressesAlerts] = useState(
+    status?.suppresses_alerts ?? false
+  )
+  const [isClosed, setIsClosed] = useState(status?.is_closed ?? false)
 
   useEffect(() => {
     if (!status) return
@@ -55,6 +59,8 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
     setDefaultFor(status.default_for)
     setIsAvailable(status.is_available)
     setRequiresNote(status.requires_note)
+    setSuppressesAlerts(status.suppresses_alerts)
+    setIsClosed(status.is_closed)
     reset()
   }, [status, reset])
 
@@ -84,6 +90,8 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
         default_for: defaultFor,
         is_available: isAvailable,
         requires_note: requiresNote,
+        suppresses_alerts: suppressesAlerts,
+        is_closed: isClosed,
       }
       return saveObject<Status>({
         objectType: "api.status",
@@ -191,6 +199,18 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
         hint="Forces a reservation note on the IP form"
         checked={requiresNote}
         onChange={setRequiresNote}
+      />
+      <FormCheckbox
+        label="Suppresses alerts"
+        hint="A maintenance/outage event in this status silences alerts for its impacted devices"
+        checked={suppressesAlerts}
+        onChange={setSuppressesAlerts}
+      />
+      <FormCheckbox
+        label="Closes the event"
+        hint="A maintenance/outage event in this status counts as finished and releases its silence"
+        checked={isClosed}
+        onChange={setIsClosed}
       />
       <FormFooter
         onCancel={onCancel}

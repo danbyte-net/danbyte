@@ -62,6 +62,8 @@ function Body({ status: s }: { status: Status }) {
   const flags = [
     s.is_available && "Available",
     s.requires_note && "Requires note",
+    s.suppresses_alerts && "Suppresses alerts",
+    s.is_closed && "Closes the event",
   ].filter(Boolean) as string[]
 
   return (
@@ -168,6 +170,8 @@ function IpStatusOverview({ status: s }: { status: Status }) {
     { label: "Weight", value: <span className="num">{s.weight}</span> },
     { label: "Available", value: s.is_available ? "Yes" : "No" },
     { label: "Requires note", value: s.requires_note ? "Yes" : "No" },
+    { label: "Suppresses alerts", value: s.suppresses_alerts ? "Yes" : "No" },
+    { label: "Closes the event", value: s.is_closed ? "Yes" : "No" },
   ]
   const applies: KvRow[] = [
     { label: "Available to", value: chipsValue(s.available_to) },

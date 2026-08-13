@@ -702,7 +702,7 @@ def active_silence(alert, now=None):
     now = now or timezone.now()
     silences = Silence.objects.filter(
         tenant_id=alert.tenant_id, starts_at__lte=now, ends_at__gt=now
-    ).select_related("match_prefix", "match_ip")
+    ).select_related("match_prefix", "match_ip").prefetch_related("match_devices")
     ip = alert.target_ip
     for s in silences:
         if s.match_kinds and alert.kind not in s.match_kinds:
@@ -710,6 +710,11 @@ def active_silence(alert, now=None):
         if s.match_statuses and alert.check_status not in s.match_statuses:
             continue
         if s.match_ip_id and s.match_ip_id != alert.target_ip_id:
+            continue
+        device_ids = [d.id for d in s.match_devices.all()]
+        if device_ids and (
+            ip is None or getattr(ip, "assigned_device_id", None) not in device_ids
+        ):
             continue
         if not _ip_matches(s, ip):
             continue

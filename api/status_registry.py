@@ -25,6 +25,7 @@ STATUSABLE_MODELS = [
     ("tunnel", "Tunnels"),
     ("location", "Locations"),
     ("inventoryitem", "Inventory items"),
+    ("maintenanceevent", "Maintenance & outage events"),
 ]
 STATUSABLE_MODEL_VALUES = {m[0] for m in STATUSABLE_MODELS}
 
@@ -52,6 +53,18 @@ BUILTIN_STATUS_COLORS = {
     "not_connected": "#71717a",
     "decommissioned": "#71717a",
     "retired": "#71717a",
+    # Maintenance & outage workflows (issue #20).
+    "tentative": "#a1a1aa",
+    "confirmed": "#f59e0b",
+    "in_progress": "#f59e0b",
+    "rescheduled": "#a1a1aa",
+    "completed": "#10b981",
+    "cancelled": "#71717a",
+    "reported": "#ef4444",
+    "investigating": "#ef4444",
+    "identified": "#f59e0b",
+    "monitoring": "#f59e0b",
+    "resolved": "#10b981",
 }
 
 # (model slug, ModelName, default status value) — drives the data migration's
@@ -95,10 +108,37 @@ STATUS_MODEL_VALUES = {
     # Hardware parts: health/lifecycle — "failed" lights the faceplate red,
     # "empty" is a bay a chassis template stamped that holds nothing.
     "inventoryitem": ["active", "planned", "failed", "spare", "empty"],
+    # Maintenance & outage events (issue #20): the maintenance workflow
+    # (tentative → confirmed → in_progress → completed/cancelled/rescheduled)
+    # and the outage workflow (reported → investigating → identified →
+    # monitoring → resolved) share the catalog; the semantic flags below say
+    # which rows suppress alerts and which close the event.
+    "maintenanceevent": [
+        "tentative", "confirmed", "in_progress", "completed", "cancelled",
+        "rescheduled", "reported", "investigating", "identified",
+        "monitoring", "resolved",
+    ],
+}
+
+# Semantic flags stamped onto seeded rows so renaming a status never loses
+# its machine meaning (mirrors ``is_available`` for IPs). Applied on create
+# only — users own the flags afterwards.
+STATUS_SEMANTIC_FLAGS = {
+    "confirmed": {"suppresses_alerts": True},
+    "in_progress": {"suppresses_alerts": True},
+    "reported": {"suppresses_alerts": True},
+    "investigating": {"suppresses_alerts": True},
+    "identified": {"suppresses_alerts": True},
+    "monitoring": {"suppresses_alerts": True},
+    "completed": {"is_closed": True},
+    "cancelled": {"is_closed": True},
+    "rescheduled": {"is_closed": True},
+    "resolved": {"is_closed": True},
 }
 
 # model slug → default status value (None for ipaddress → fall back to "active").
 _STATUS_DEFAULTS = {slug: (default or "active") for slug, _mn, default in STATUS_MODEL_SEEDS}
+_STATUS_DEFAULTS["maintenanceevent"] = "tentative"
 
 
 def seed_builtin_statuses(tenant, *, Status=None):
@@ -120,12 +160,20 @@ def seed_builtin_statuses(tenant, *, Status=None):
         from api.models import Status  # local import: keeps this module Django-free
 
     cache = {s.slug: s for s in Status.objects.filter(tenant=tenant)}
+    # Older data migrations replay this with a historical Status that predates
+    # the semantic-flag columns — only pass the flags the model actually has.
+    model_fields = {f.name for f in Status._meta.get_fields()}
     created = 0
     for model_slug, values in STATUS_MODEL_VALUES.items():
         default_value = _STATUS_DEFAULTS.get(model_slug, "active")
         for value in values:
             s = cache.get(value)
             if s is None:
+                flags = {
+                    k: v
+                    for k, v in STATUS_SEMANTIC_FLAGS.get(value, {}).items()
+                    if k in model_fields
+                }
                 s = Status.objects.create(
                     tenant=tenant,
                     name=value.replace("_", " ").title(),
@@ -133,6 +181,7 @@ def seed_builtin_statuses(tenant, *, Status=None):
                     color=BUILTIN_STATUS_COLORS.get(value, ""),
                     available_to=[],
                     default_for=[],
+                    **flags,
                 )
                 cache[value] = s
                 created += 1

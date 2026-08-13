@@ -1413,6 +1413,13 @@ class Silence(TimestampedModel):
         related_name="silences",
     )
 
+    #: Devices whose IPs this silence covers (empty = no device restriction).
+    #: The matcher a maintenance window uses: suppress the impacted devices,
+    #: not the whole tenant.
+    match_devices = models.ManyToManyField(
+        "api.Device", blank=True, related_name="silences"
+    )
+
     starts_at = models.DateTimeField(default=timezone.now)
     ends_at = models.DateTimeField()
     created_by = models.ForeignKey(
@@ -2800,20 +2807,6 @@ class MaintenanceEventKind(models.TextChoices):
     OUTAGE = "outage", "Outage"
 
 
-#: Per-kind status workflows (issue #20). One column holds both vocabularies;
-#: the serializer refuses a status that belongs to the other kind, so the
-#: names can stay exactly what carriers and NOCs already call these states.
-MAINTENANCE_STATUSES = (
-    "tentative", "confirmed", "in_progress", "completed", "cancelled",
-    "rescheduled",
-)
-OUTAGE_STATUSES = (
-    "reported", "investigating", "identified", "monitoring", "resolved",
-)
-#: States after which an event no longer suppresses anything or counts as open.
-TERMINAL_STATUSES = {"completed", "cancelled", "resolved"}
-
-
 class MaintenanceEvent(TimestampedModel):
     """A provider maintenance window or an outage, tracked against inventory.
 
@@ -2834,7 +2827,13 @@ class MaintenanceEvent(TimestampedModel):
         choices=MaintenanceEventKind.choices,
         default=MaintenanceEventKind.MAINTENANCE,
     )
-    status = models.CharField(max_length=16, default="tentative")
+    #: A row from the tenant's editable /statuses catalog (``available_to``
+    #: contains ``maintenanceevent``). The row's ``suppresses_alerts`` and
+    #: ``is_closed`` flags carry the workflow semantics, so users can rename
+    #: the seeded rows or add their own without losing behaviour.
+    status = models.ForeignKey(
+        "api.Status", on_delete=models.PROTECT, related_name="maintenance_events"
+    )
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True, default="")
     provider = models.ForeignKey(
@@ -2895,7 +2894,59 @@ class MaintenanceEvent(TimestampedModel):
 
     @property
     def is_open(self) -> bool:
-        return self.status not in TERMINAL_STATUSES
+        return not self.status.is_closed
+
+    def sync_silence(self) -> None:
+        """Create, update or retire the Silence this event drives.
+
+        The silence mirrors the event's window and matches the devices its
+        impacts name — alerts for them are still tracked during the window,
+        just not delivered. No device impacts → no silence (a blanket mute is
+        never implied), and a terminal status retires it.
+        """
+        device_ids = list(
+            self.impacts.filter(object_type="api.device").values_list(
+                "object_id", flat=True
+            )
+        )
+        # Suppression is a property of the status row: a tentative window is
+        # a rumour, suppression starts when the row says so ("Confirmed",
+        # "Investigating", or whatever the operator renamed those to).
+        wants = (
+            self.status.suppresses_alerts
+            and bool(device_ids)
+            and self.starts_at is not None
+        )
+        if not wants:
+            if self.silence_id:
+                silence, self.silence = self.silence, None
+                type(self).objects.filter(pk=self.pk).update(silence=None)
+                silence.delete()
+            return
+
+        from datetime import timedelta
+
+        # An open-ended outage still needs a bounded silence row (ends_at is
+        # NOT NULL by design); ETR when known, else a rolling day that each
+        # resync pushes forward while the outage stays open.
+        ends = self.ends_at or self.etr or (timezone.now() + timedelta(days=1))
+        label = f"{self.get_kind_display()}: {self.name}"
+        if self.silence_id:
+            Silence.objects.filter(pk=self.silence_id).update(
+                reason=label[:255], starts_at=self.starts_at, ends_at=ends
+            )
+            silence = self.silence
+        else:
+            silence = Silence.objects.create(
+                tenant=self.tenant,
+                reason=label[:255],
+                starts_at=self.starts_at,
+                ends_at=ends,
+                created_by=self.created_by,
+            )
+            self.silence = silence
+            type(self).objects.filter(pk=self.pk).update(silence=silence)
+        silence.match_devices.set(device_ids)
 
 
 class EventImpactLevel(models.TextChoices):

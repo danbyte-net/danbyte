@@ -12,15 +12,16 @@ import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { useTableFilters } from "@/components/table-filters"
 import { actionsColumn } from "@/components/columns/actions-column"
+import { StatusBadge } from "@/components/status-badge"
 import { TimeCell } from "@/components/cells/time-ago"
 
 export const Route = createFileRoute("/maintenance/")({
   component: MaintenancePage,
 })
 
-// Provider maintenance windows and outages (issue #20). Statuses are workflow
-// words, not a colour catalog — the kind carries the colour (amber wrench /
-// red zap), matching the calendar's treatment.
+// Provider maintenance windows and outages (issue #20). Statuses are rows
+// from the tenant's /statuses catalog; the kind additionally carries its own
+// colour (amber wrench / red zap), matching the calendar's treatment.
 
 function KindCell({ event }: { event: MaintenanceEvent }) {
   return event.kind === "outage" ? (
@@ -116,14 +117,10 @@ function MaintenancePage() {
           facet: {
             kind: "enum",
             label: "Status",
-            get: (e) => e.status,
+            get: (e) => e.status.name,
           },
         },
-        cell: ({ row }) => (
-          <span className={row.original.is_open ? "" : "text-muted-foreground"}>
-            {row.original.status.replace("_", " ")}
-          </span>
-        ),
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
       },
       {
         id: "window",

@@ -357,7 +357,7 @@ function EventTip({ event }: { event: PlanningCalendarEvent }) {
         {event.kind === "outage" ? "Outage" : "Maintenance"}: {event.name}
       </p>
       <p className="text-muted-foreground">
-        {event.provider_name || "Internal"} · {event.status.replace("_", " ")}
+        {event.provider_name || "Internal"} · {event.status_name}
         {event.impact_count
           ? ` · ${event.impact_count} object${event.impact_count === 1 ? "" : "s"} impacted`
           : ""}

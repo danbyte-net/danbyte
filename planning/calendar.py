@@ -30,7 +30,7 @@ from rest_framework.response import Response
 from api.views import _get_active_tenant
 from auth_api import rbac
 
-from .models import Milestone, PlannedChange, PlannedChangeState, Task
+from .models import Milestone, PlannedChangeState, Task
 
 #: A calendar year view asks for 12 months at once; anything beyond two years is
 #: a mistake or a scrape, and the answer would be unusable either way.
@@ -75,7 +75,12 @@ def calendar(request):
 
     start, end = _window(request.query_params)
     board = request.query_params.get("board")
+    return Response(calendar_payload(request, start, end, board))
 
+
+def calendar_payload(request, start: date, end: date, board=None) -> dict:
+    """The calendar's data for one window — shared by the JSON view and the
+    iCal feed, so both see exactly the same scoped rows."""
     # Reuse the list viewsets' own querysets so row constraints, site scoping
     # and tenant filtering are applied exactly once, in one place.
     from .viewsets import MilestoneViewSet, PlannedChangeViewSet, TaskViewSet
@@ -105,16 +110,14 @@ def calendar(request):
         milestones = milestones.filter(board_id=board)
         changes = changes.filter(task__board_id=board)
 
-    return Response(
-        {
-            "start": start.isoformat(),
-            "end": end.isoformat(),
-            "tasks": [_task_entry(t) for t in tasks.distinct()],
-            "milestones": [_milestone_entry(m) for m in milestones],
-            "changes": _change_entries(changes, start, end),
-            "events": _event_entries(request, start, end),
-        }
-    )
+    return {
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "tasks": [_task_entry(t) for t in tasks.distinct()],
+        "milestones": [_milestone_entry(m) for m in milestones],
+        "changes": _change_entries(changes, start, end),
+        "events": _event_entries(request, start, end),
+    }
 
 
 def _task_entry(task: Task) -> dict:
@@ -194,7 +197,8 @@ def _event_entries(request, start: date, end: date) -> list[dict]:
             {
                 "id": str(e.id),
                 "kind": e.kind,
-                "status": e.status,
+                "status_name": e.status.name,
+                "status_color": e.status.color,
                 "name": e.name,
                 "provider_name": e.provider.name if e.provider_id else "",
                 "starts_at": e.starts_at.isoformat(),

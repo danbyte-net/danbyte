@@ -822,6 +822,7 @@ export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "tunnel", label: "Tunnels" },
   { value: "location", label: "Locations" },
   { value: "inventoryitem", label: "Inventory items" },
+  { value: "maintenanceevent", label: "Maintenance & outage events" },
 ]
 
 export interface Status {
@@ -836,6 +837,8 @@ export interface Status {
   default_for: string[]
   is_available: boolean
   requires_note: boolean
+  suppresses_alerts: boolean
+  is_closed: boolean
   usage_count: number
   owning_site?: { id: string; name: string } | null
   permissions?: ObjectPerms
@@ -852,6 +855,8 @@ export interface StatusWritePayload {
   default_for?: string[]
   is_available?: boolean
   requires_note?: boolean
+  suppresses_alerts?: boolean
+  is_closed?: boolean
 }
 
 export interface IPRole {
@@ -5162,7 +5167,8 @@ export interface MaintenanceEventImpact {
 export interface MaintenanceEvent {
   id: string
   kind: MaintenanceEventKind
-  status: string
+  /** A row from the tenant's /statuses catalog (available to this type). */
+  status: StatusMini
   name: string
   description: string
   provider: string | null
@@ -5216,7 +5222,8 @@ export interface PlanningCalendarMilestone {
 export interface PlanningCalendarEvent {
   id: string
   kind: "maintenance" | "outage"
-  status: string
+  status_name: string
+  status_color: string
   name: string
   provider_name: string
   starts_at: string

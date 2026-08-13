@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
@@ -8,6 +8,7 @@ import type {
   MaintenanceEventKind,
   Paginated,
   ProviderOption,
+  Status,
 } from "@/lib/api"
 import {
   Field,
@@ -31,27 +32,6 @@ function fromLocalInput(v: string): string | null {
   return v ? new Date(v).toISOString() : null
 }
 
-// The issue's exact per-kind workflows — the serializer enforces them, the
-// form just offers the right vocabulary for the chosen kind.
-const MAINTENANCE_STATUSES = [
-  "tentative",
-  "confirmed",
-  "in_progress",
-  "completed",
-  "cancelled",
-  "rescheduled",
-]
-const OUTAGE_STATUSES = [
-  "reported",
-  "investigating",
-  "identified",
-  "monitoring",
-  "resolved",
-]
-
-const label = (s: string) =>
-  s.replace("_", " ").replace(/^./, (c) => c.toUpperCase())
-
 export function MaintenanceEventForm({
   event,
   onSaved,
@@ -69,7 +49,9 @@ export function MaintenanceEventForm({
   const [kind, setKind] = useState<MaintenanceEventKind>(
     event?.kind ?? "maintenance"
   )
-  const [status, setStatus] = useState(event?.status ?? "tentative")
+  const [statusId, setStatusId] = useState<string | null>(
+    event?.status?.id ?? null
+  )
   const [name, setName] = useState(event?.name ?? "")
   const [description, setDescription] = useState(event?.description ?? "")
   const [provider, setProvider] = useState<string | null>(
@@ -88,14 +70,27 @@ export function MaintenanceEventForm({
       api<Paginated<ProviderOption>>("/api/providers/?page_size=200"),
   })
 
-  const statuses =
-    kind === "maintenance" ? MAINTENANCE_STATUSES : OUTAGE_STATUSES
+  // The user-editable /statuses catalog: both workflows (tentative → completed,
+  // reported → resolved) are seeded rows, and anything the tenant added shows
+  // up here too — Settings → Statuses, available to Maintenance & outage events.
+  const statuses = useQuery({
+    queryKey: ["statuses", "maintenanceevent"],
+    queryFn: () =>
+      api<Paginated<Status>>(
+        "/api/statuses/?available_to=maintenanceevent&picker=1"
+      ),
+    staleTime: 5 * 60_000,
+  })
+  const statusRows = statuses.data?.results ?? []
 
-  const changeKind = (next: MaintenanceEventKind) => {
-    setKind(next)
-    // The old status belongs to the other vocabulary; start its workflow over.
-    setStatus(next === "maintenance" ? "tentative" : "reported")
-  }
+  // Create: preselect the catalog default ("Tentative" on a stock install).
+  useEffect(() => {
+    if (isEdit || statusId || statusRows.length === 0) return
+    const fallback =
+      statusRows.find((s) => s.default_for.includes("maintenanceevent")) ??
+      statusRows[0]
+    setStatusId(fallback.id)
+  }, [isEdit, statusId, statusRows])
 
   const save = useMutation({
     mutationFn: () => {
@@ -106,7 +101,7 @@ export function MaintenanceEventForm({
         id: event?.id,
         payload: {
           kind,
-          status,
+          status_id: statusId,
           name: name.trim(),
           description,
           provider,
@@ -141,7 +136,7 @@ export function MaintenanceEventForm({
         <FormSelect
           label="Kind"
           value={kind}
-          onChange={(v) => changeKind(v as MaintenanceEventKind)}
+          onChange={(v) => setKind(v as MaintenanceEventKind)}
           options={[
             { value: "maintenance", label: "Maintenance" },
             { value: "outage", label: "Outage" },
@@ -150,10 +145,11 @@ export function MaintenanceEventForm({
         />
         <FormSelect
           label="Status"
-          value={status}
-          onChange={(v) => v && setStatus(v)}
-          options={statuses.map((s) => ({ value: s, label: label(s) }))}
-          error={fieldErrors.status}
+          value={statusId}
+          onChange={(v) => v && setStatusId(v)}
+          options={statusRows.map((s) => ({ value: s.id, label: s.name }))}
+          info="Rows from Settings → Statuses that are available to maintenance events — add your own there."
+          error={fieldErrors.status_id}
         />
       </div>
 

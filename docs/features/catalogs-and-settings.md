@@ -20,7 +20,7 @@ available to devices, prefixes, IP addresses, racks, … so it reads identically
 
 | Field | Effect |
 |---|---|
-| **Available to** | The object types this status can be used on (IP addresses, Devices, Prefixes, Racks, Clusters, VMs, Cables, Circuits, Power feeds, Wireless LANs, Tunnels, Locations, IP ranges). Only statuses available to an object show in its form. |
+| **Available to** | The object types this status can be used on (IP addresses, Devices, Prefixes, Racks, Clusters, VMs, Cables, Circuits, Power feeds, Wireless LANs, Tunnels, Locations, IP ranges, Inventory items, Maintenance & outage events). Only statuses available to an object show in its form. |
 | **Default for** | Object types for which this status is applied on create. At most one default per (tenant, object type) — a subset of *Available to*. |
 
 IP-specific flags still apply when a status is available to IP addresses:
@@ -29,6 +29,15 @@ IP-specific flags still apply when a status is available to IP addresses:
 |---|---|
 | **Available** | Marks the status as "this address is free to use" (utilisation maths). |
 | **Requires note** | Prompts for a note when an IP is set to this status. |
+
+[Maintenance & outage events](maintenance.md) carry their workflow semantics
+the same way — as flags on the row, so renaming a status never changes what it
+does:
+
+| Flag | Effect |
+|---|---|
+| **Suppresses alerts** | An event in this status silences monitoring alerts for its impacted devices. |
+| **Closes the event** | An event in this status counts as finished and releases its silence. |
 
 The built-in statuses your tenant had in use (Active, Reserved, …) are seeded
 on upgrade and merged — so the *Active* you used on IPs becomes the *Active*

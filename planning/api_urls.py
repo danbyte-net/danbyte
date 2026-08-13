@@ -5,6 +5,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .calendar import calendar
+from .ical import calendar_ics
 from .viewsets import (
     BoardViewSet,
     MilestoneViewSet,
@@ -29,6 +30,7 @@ router.register(
 
 urlpatterns = [
     path("calendar/", calendar, name="planning-calendar"),
+    path("calendar.ics", calendar_ics, name="planning-calendar-ics"),
     path("assignable-users/", assignable_users, name="planning-assignable-users"),
     *router.urls,
 ]
