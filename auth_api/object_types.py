@@ -173,6 +173,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("monitoring.NotificationSubscription", "Notification subscriptions", "Monitoring"),
     ("monitoring.AlertRule", "Alert rules", "Monitoring"),
     ("monitoring.Silence", "Silences", "Monitoring"),
+    ("monitoring.MaintenanceEvent", "Maintenance events", "Monitoring"),
+    ("monitoring.EventImpact", "Event impacts", "Monitoring"),
     ("monitoring.MonitoringPolicy", "Monitoring policies", "Monitoring"),
     ("monitoring.MonitoringProfile", "Monitoring profiles", "Monitoring"),
     ("monitoring.MonitoringDenySubnet", "Monitoring deny subnets", "Monitoring"),

@@ -7,6 +7,7 @@ from __future__ import annotations
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from .maintenance_api import EventImpactViewSet, MaintenanceEventViewSet
 from .viewsets import (
     AcmeOrderViewSet,
     AlertRuleViewSet,
@@ -89,6 +90,12 @@ router.register(
 )
 router.register(r"alert-rules", AlertRuleViewSet, basename="alert-rule")
 router.register(r"silences", SilenceViewSet, basename="silence")
+router.register(
+    r"maintenance-events", MaintenanceEventViewSet, basename="maintenance-event"
+)
+router.register(
+    r"event-impacts", EventImpactViewSet, basename="event-impact"
+)
 router.register(r"snmp-profiles", SnmpProfileViewSet, basename="snmp-profile")
 router.register(r"certificates", CertificateViewSet, basename="certificate")
 router.register(

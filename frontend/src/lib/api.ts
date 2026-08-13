@@ -5152,6 +5152,7 @@ export interface PlanningCalendar {
   tasks: PlanningCalendarTask[]
   milestones: PlanningCalendarMilestone[]
   changes: PlanningCalendarChange[]
+  events: PlanningCalendarEvent[]
 }
 
 export interface PlanningCalendarTask {
@@ -5176,6 +5177,20 @@ export interface PlanningCalendarMilestone {
   name: string
   color: string
   due_date: string | null
+}
+
+/** A maintenance window or outage on the calendar (issue #20). */
+export interface PlanningCalendarEvent {
+  id: string
+  kind: "maintenance" | "outage"
+  status: string
+  name: string
+  provider_name: string
+  starts_at: string
+  ends_at: string | null
+  etr: string | null
+  is_open: boolean
+  impact_count: number
 }
 
 export interface PlanningCalendarChange {

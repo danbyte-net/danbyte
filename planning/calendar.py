@@ -7,7 +7,11 @@ boards by default and returns the three dated things planning knows about:
 - **tasks**, which occupy a span (``start_date`` → ``due_date``) or a single day,
 - **milestones**, which are a single dated target a board rolls up to,
 - **planned changes**, whose ``effective_date`` is the day an object is meant to
-  change — the entries an operator most wants to see before agreeing to work.
+  change — the entries an operator most wants to see before agreeing to work,
+- **maintenance & outage events** (issue #20) — provider windows and live
+  outages. These are *not* board-scoped: a carrier's window matters to whoever
+  is scheduling work no matter which board they look at, so the board filter
+  deliberately leaves them in place.
 
 Everything is read through the same querysets the list endpoints use, so tenant
 scoping and RBAC row constraints apply unchanged: the calendar can only ever
@@ -108,6 +112,7 @@ def calendar(request):
             "tasks": [_task_entry(t) for t in tasks.distinct()],
             "milestones": [_milestone_entry(m) for m in milestones],
             "changes": _change_entries(changes, start, end),
+            "events": _event_entries(request, start, end),
         }
     )
 
@@ -165,6 +170,38 @@ def _change_entries(queryset, start: date, end: date) -> list[dict]:
                 "object_id": str(change.object_id) if change.object_id else None,
                 "fields": [d.get("label") or d.get("field") for d in change.display or []],
                 "effective_date": effective.isoformat(),
+            }
+        )
+    return out
+
+
+def _event_entries(request, start: date, end: date) -> list[dict]:
+    """Maintenance/outage windows overlapping the window — read through the
+    maintenance viewset's queryset so its tenant scoping applies unchanged."""
+    from monitoring.maintenance_api import MaintenanceEventViewSet
+
+    viewset = MaintenanceEventViewSet()
+    viewset.request = request
+    viewset.format_kwarg = None
+    viewset.action = "list"
+    events = viewset.get_queryset().filter(
+        Q(starts_at__date__lte=end)
+        & (Q(ends_at__date__gte=start) | Q(ends_at__isnull=True))
+    )
+    out = []
+    for e in events:
+        out.append(
+            {
+                "id": str(e.id),
+                "kind": e.kind,
+                "status": e.status,
+                "name": e.name,
+                "provider_name": e.provider.name if e.provider_id else "",
+                "starts_at": e.starts_at.isoformat(),
+                "ends_at": e.ends_at.isoformat() if e.ends_at else None,
+                "etr": e.etr.isoformat() if e.etr else None,
+                "is_open": e.is_open,
+                "impact_count": e.impacts.count(),
             }
         )
     return out

@@ -111,6 +111,8 @@ AUDITED_MODELS = [
     "monitoring.NotificationChannel",
     "monitoring.NotificationSubscription",
     "monitoring.Silence",
+    "monitoring.MaintenanceEvent",
+    "monitoring.EventImpact",
     "planning.Board",
     "planning.TaskStatus",
     "planning.TaskLabel",

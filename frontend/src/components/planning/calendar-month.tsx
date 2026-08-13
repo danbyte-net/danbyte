@@ -1,10 +1,11 @@
 import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
-import { CalendarClock, Flag } from "lucide-react"
+import { CalendarClock, Flag, Wrench, Zap } from "lucide-react"
 
 import type {
   PlanningCalendar,
   PlanningCalendarChange,
+  PlanningCalendarEvent,
   PlanningCalendarMilestone,
   PlanningCalendarTask,
 } from "@/lib/api"
@@ -33,6 +34,11 @@ export function iso(d: Date): string {
 
 /** The 6×7 grid a month is drawn on, Monday first, including the days either
  *  side that fill the first and last weeks. */
+function nextDay(dayIso: string): string {
+  const [y, m, d] = dayIso.split("-").map(Number)
+  return iso(new Date(y, m - 1, d + 1))
+}
+
 export function monthCells(year: number, month: number): Date[] {
   const first = new Date(year, month, 1)
   const lead = (first.getDay() + 6) % 7
@@ -111,6 +117,7 @@ export function CalendarMonth({
   const byDay = useMemo(() => {
     const milestones = new Map<string, PlanningCalendarMilestone[]>()
     const changes = new Map<string, PlanningCalendarChange[]>()
+    const events = new Map<string, PlanningCalendarEvent[]>()
     for (const m of data?.milestones ?? []) {
       if (!m.due_date) continue
       milestones.set(m.due_date, [...(milestones.get(m.due_date) ?? []), m])
@@ -121,7 +128,16 @@ export function CalendarMonth({
         c,
       ])
     }
-    return { milestones, changes }
+    // A window spans days; mark each day it touches. The entry carries times,
+    // so the tooltip still says exactly when inside the day.
+    for (const e of data?.events ?? []) {
+      const from = e.starts_at.slice(0, 10)
+      const to = (e.ends_at ?? e.etr ?? e.starts_at).slice(0, 10)
+      for (let d = from; d <= to; d = nextDay(d)) {
+        events.set(d, [...(events.get(d) ?? []), e])
+      }
+    }
+    return { milestones, changes, events }
   }, [data])
 
   return (
@@ -181,6 +197,33 @@ export function CalendarMonth({
                         entries start below them instead of underneath. */}
                     <span aria-hidden style={{ height: lanes * 22 }} />
                     <span className="mt-0.5 w-full space-y-0.5">
+                      {(byDay.events.get(key) ?? []).map((e) => (
+                        <span
+                          key={e.id}
+                          className={cn(
+                            "flex items-center gap-1 truncate text-[11px]",
+                            e.kind === "outage"
+                              ? "text-red-600 dark:text-red-400"
+                              : "text-amber-600 dark:text-amber-400",
+                            !e.is_open && "opacity-50"
+                          )}
+                          title={
+                            `${e.kind === "outage" ? "Outage" : "Maintenance"}: ${e.name}` +
+                            (e.provider_name ? ` — ${e.provider_name}` : "") +
+                            ` · ${e.status}` +
+                            (e.impact_count
+                              ? ` · ${e.impact_count} object${e.impact_count === 1 ? "" : "s"}`
+                              : "")
+                          }
+                        >
+                          {e.kind === "outage" ? (
+                            <Zap className="h-3 w-3 shrink-0" />
+                          ) : (
+                            <Wrench className="h-3 w-3 shrink-0" />
+                          )}
+                          <span className="truncate">{e.name}</span>
+                        </span>
+                      ))}
                       {(byDay.milestones.get(key) ?? []).map((m) => (
                         <span
                           key={m.id}

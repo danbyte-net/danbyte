@@ -2793,3 +2793,150 @@ class WatchedEndpoint(TimestampedModel):
     def __str__(self) -> str:
         sni = f" ({self.server_name})" if self.server_name else ""
         return f"{self.host}:{self.port}{sni}"
+
+
+class MaintenanceEventKind(models.TextChoices):
+    MAINTENANCE = "maintenance", "Maintenance"
+    OUTAGE = "outage", "Outage"
+
+
+#: Per-kind status workflows (issue #20). One column holds both vocabularies;
+#: the serializer refuses a status that belongs to the other kind, so the
+#: names can stay exactly what carriers and NOCs already call these states.
+MAINTENANCE_STATUSES = (
+    "tentative", "confirmed", "in_progress", "completed", "cancelled",
+    "rescheduled",
+)
+OUTAGE_STATUSES = (
+    "reported", "investigating", "identified", "monitoring", "resolved",
+)
+#: States after which an event no longer suppresses anything or counts as open.
+TERMINAL_STATUSES = {"completed", "cancelled", "resolved"}
+
+
+class MaintenanceEvent(TimestampedModel):
+    """A provider maintenance window or an outage, tracked against inventory.
+
+    The window is the heart of it: Danbyte already has the "expected downtime"
+    primitive in :class:`Silence`, so a confirmed maintenance window will *own*
+    a silence rather than growing a rival suppression mechanism (the ``silence``
+    FK is the seam; wiring lands with the Silence device/circuit matcher).
+    ``raw_email`` keeps the provider's original notification next to what was
+    parsed out of it — the audit trail issue #20 asks for.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="maintenance_events"
+    )
+    kind = models.CharField(
+        max_length=12,
+        choices=MaintenanceEventKind.choices,
+        default=MaintenanceEventKind.MAINTENANCE,
+    )
+    status = models.CharField(max_length=16, default="tentative")
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    provider = models.ForeignKey(
+        "api.Provider",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="maintenance_events",
+        help_text="The carrier this came from; empty for internal work.",
+    )
+    #: The provider's own reference ("MAINT-123456") — dedup key for ingestion.
+    external_ref = models.CharField(max_length=120, blank=True, default="")
+
+    starts_at = models.DateTimeField()
+    #: Outages start without a known end; maintenance always has one.
+    ends_at = models.DateTimeField(null=True, blank=True)
+    #: Estimated time to restore — outages only.
+    etr = models.DateTimeField(null=True, blank=True)
+
+    #: The suppression this event drives while its window is open.
+    silence = models.OneToOneField(
+        Silence,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="maintenance_event",
+    )
+    #: The notification this event was parsed from, verbatim.
+    raw_email = models.TextField(blank=True, default="")
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        ordering = ["-starts_at"]
+        constraints = [
+            # One event per provider ticket: re-ingesting a notification
+            # updates rather than duplicates. NULLs stay distinct so manual
+            # events (no ref) are unconstrained.
+            models.UniqueConstraint(
+                fields=["tenant", "provider", "external_ref"],
+                name="uniq_event_per_provider_ref",
+                condition=~models.Q(external_ref=""),
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "kind", "status"]),
+            models.Index(fields=["tenant", "starts_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_kind_display()}: {self.name}"
+
+    @property
+    def is_open(self) -> bool:
+        return self.status not in TERMINAL_STATUSES
+
+
+class EventImpactLevel(models.TextChoices):
+    NO_IMPACT = "no_impact", "No impact"
+    REDUCED_REDUNDANCY = "reduced_redundancy", "Reduced redundancy"
+    DEGRADED = "degraded", "Degraded"
+    OUTAGE = "outage", "Outage"
+
+
+class EventImpact(TimestampedModel):
+    """What an event touches — the Document/TaskLink generic-reference pattern
+    (label + id + denormalised site) plus how hard it hits."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="event_impacts"
+    )
+    event = models.ForeignKey(
+        MaintenanceEvent, on_delete=models.CASCADE, related_name="impacts"
+    )
+    object_type = models.CharField(
+        max_length=64, help_text="Model label, e.g. api.circuit."
+    )
+    object_id = models.UUIDField()
+    object_site_id = models.UUIDField(null=True, blank=True, db_index=True)
+    level = models.CharField(
+        max_length=20,
+        choices=EventImpactLevel.choices,
+        default=EventImpactLevel.OUTAGE,
+    )
+    note = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["event", "object_type", "object_id"],
+                name="uniq_impact_per_event_object",
+            ),
+        ]
+        indexes = [models.Index(fields=["object_type", "object_id"])]
+
+    def __str__(self) -> str:
+        return f"{self.event_id} → {self.object_type}:{self.object_id} ({self.level})"
