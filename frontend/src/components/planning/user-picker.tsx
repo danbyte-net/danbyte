@@ -2,7 +2,11 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronsUpDown } from "lucide-react"
 
-import { api, type PlanningAssignableUser } from "@/lib/api"
+import {
+  api,
+  type PlanningAssignableGroup,
+  type PlanningAssignableUser,
+} from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -18,11 +22,17 @@ import { Field } from "@/components/forms"
  *
  * Reads /api/planning/assignable-users/, not /api/users/ — the latter is gated
  * on `user.view`, so anyone with task rights but no user-administration grant
- * got a 403 and an empty picker, making assignment quietly admin-only. */
+ * got a 403 and an empty picker, making assignment quietly admin-only.
+ *
+ * When `onTeamChange` is given, the popover also offers the access groups as
+ * a single-select **Team** section (the ITSM assignment group): the queue the
+ * task sits in, while the ticked users are the individuals doing it. */
 export function UserPicker({
   label = "Assignees",
   value,
   onChange,
+  team = null,
+  onTeamChange,
   /** Drop the labelled `Field` wrapper and the full-width outline button — for
    *  the task sheet's property list, where the value itself is the control. */
   bare = false,
@@ -30,6 +40,8 @@ export function UserPicker({
   label?: string
   value: number[]
   onChange: (ids: number[]) => void
+  team?: number | null
+  onTeamChange?: (id: number | null) => void
   bare?: boolean
 }) {
   const [open, setOpen] = useState(false)
@@ -43,6 +55,19 @@ export function UserPicker({
       ),
     staleTime: 60_000,
   })
+  const groupsQ = useQuery({
+    queryKey: ["planning-assignable-groups"],
+    queryFn: () =>
+      api<{ results: PlanningAssignableGroup[] }>(
+        "/api/planning/assignable-groups/"
+      ),
+    staleTime: 60_000,
+    enabled: !!onTeamChange,
+  })
+  const allGroups = groupsQ.data?.results ?? []
+  const groups = allGroups.filter(
+    (g) => !q || g.name.toLowerCase().includes(q.toLowerCase())
+  )
   const all = usersQ.data?.results ?? []
   const users = all.filter(
     (u) =>
@@ -52,13 +77,17 @@ export function UserPicker({
       (u.email ?? "").toLowerCase().includes(q.toLowerCase())
   )
   const selected = new Set(value)
+  const teamName = allGroups.find((g) => g.id === team)?.name ?? null
+  const names = all
+    .filter((u) => selected.has(u.id))
+    .map((u) => u.display_name)
+    .join(", ")
   const summary =
     value.length === 0
-      ? "Unassigned"
-      : all
-          .filter((u) => selected.has(u.id))
-          .map((u) => u.display_name)
-          .join(", ") || `${value.length} selected`
+      ? (teamName ?? "Unassigned")
+      : teamName
+        ? `${teamName} · ${names || `${value.length} selected`}`
+        : names || `${value.length} selected`
 
   const toggle = (id: number) =>
     onChange(selected.has(id) ? value.filter((v) => v !== id) : [...value, id])
@@ -114,6 +143,33 @@ export function UserPicker({
             )}
           </div>
           <div className="max-h-56 space-y-0.5 overflow-y-auto">
+            {onTeamChange && groups.length > 0 && (
+              <>
+                <p className="px-2 pt-1 pb-0.5 text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+                  Team
+                </p>
+                {groups.map((g) => (
+                  <label
+                    key={`g-${g.id}`}
+                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-[13px] hover:bg-muted"
+                  >
+                    <Checkbox
+                      checked={team === g.id}
+                      onCheckedChange={() =>
+                        onTeamChange(team === g.id ? null : g.id)
+                      }
+                    />
+                    <span className="truncate">{g.name}</span>
+                    <span className="num ml-auto text-[11px] text-muted-foreground">
+                      {g.member_count}
+                    </span>
+                  </label>
+                ))}
+                <p className="px-2 pt-1 pb-0.5 text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+                  People
+                </p>
+              </>
+            )}
             {users.map((u) => (
               <label
                 key={u.id}

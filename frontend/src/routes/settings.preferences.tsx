@@ -257,6 +257,45 @@ function DisplaySection() {
           checked={confirm}
           onChange={(v) => setPref("confirm_destructive", v)}
         />
+        <div className="pt-2">
+          <p className="mb-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            Task emails
+          </p>
+          <p className="mb-2 text-[12px] text-muted-foreground">
+            Personal mails about planning tasks — each kind can be switched off
+            on its own.
+          </p>
+        </div>
+        <FormCheckbox
+          label="Assigned to me"
+          hint="Someone puts you on a task"
+          checked={values.notify_task_assigned !== false}
+          onChange={(v) => setPref("notify_task_assigned", v)}
+        />
+        <FormCheckbox
+          label="My team's queue"
+          hint="A task lands on one of your teams and nobody has claimed it"
+          checked={values.notify_task_queue !== false}
+          onChange={(v) => setPref("notify_task_queue", v)}
+        />
+        <FormCheckbox
+          label="Comments"
+          hint="A comment on a task you created, work on, or commented on"
+          checked={values.notify_task_comments !== false}
+          onChange={(v) => setPref("notify_task_comments", v)}
+        />
+        <FormCheckbox
+          label="@mentions"
+          hint="Someone @names you in a task comment"
+          checked={values.notify_task_mentions !== false}
+          onChange={(v) => setPref("notify_task_mentions", v)}
+        />
+        <FormCheckbox
+          label="Daily work reminder"
+          hint="Each morning: your overdue and upcoming tasks — only sent when you have some"
+          checked={values.notify_task_due !== false}
+          onChange={(v) => setPref("notify_task_due", v)}
+        />
       </div>
     </SettingsCard>
   )

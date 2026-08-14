@@ -186,6 +186,13 @@ class Task(TimestampedModel):
     assignees = models.ManyToManyField(
         settings.AUTH_USER_MODEL, blank=True, related_name="planning_tasks"
     )
+    #: The owning team queue (ITSM "assignment group"): the box the work sits
+    #: in, while ``assignees`` are the individuals actually doing it. Members
+    #: get a heads-up when a task lands in their queue.
+    assigned_group = models.ForeignKey(
+        "auth.Group", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="planning_tasks",
+    )
     labels = models.ManyToManyField(TaskLabel, blank=True, related_name="tasks")
     milestone = models.ForeignKey(
         Milestone, on_delete=models.SET_NULL, null=True, blank=True,

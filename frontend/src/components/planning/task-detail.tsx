@@ -183,10 +183,17 @@ export function TaskView({
         bare
         value={task.assignees}
         onChange={(ids) => set({ assignees: ids })}
+        team={task.assigned_group}
+        onTeamChange={(id) => set({ assigned_group: id })}
       />
-    ) : task.assignee_detail.length ? (
+    ) : task.assignee_detail.length || task.assigned_group_name ? (
       <span className="text-[13px]">
-        {task.assignee_detail.map((a) => a.username).join(", ")}
+        {[
+          task.assigned_group_name,
+          task.assignee_detail.map((a) => a.username).join(", "),
+        ]
+          .filter(Boolean)
+          .join(" · ")}
       </span>
     ) : (
       <span className="text-[12px] text-muted-foreground">Unassigned</span>

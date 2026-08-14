@@ -117,7 +117,7 @@ class TaskLabelViewSet(TenantScopedViewSet):
 
 class TaskViewSet(TenantScopedViewSet):
     queryset = (
-        Task.objects.select_related("board", "status", "milestone")
+        Task.objects.select_related("board", "status", "milestone", "assigned_group")
         .prefetch_related("assignees", "labels", "links", "planned_changes")
         .order_by("weight", "created_at")
     )
@@ -132,8 +132,16 @@ class TaskViewSet(TenantScopedViewSet):
             qs = qs.filter(status_id=p["status"])
         if p.get("assignee"):
             # "me" so a dashboard widget needs no user id — and no user.view.
+            # "My work" includes the team queue: tasks assigned to one of my
+            # groups that nobody has picked up yet.
             if p["assignee"] == "me":
-                qs = qs.filter(assignees=self.request.user)
+                qs = qs.filter(
+                    Q(assignees=self.request.user)
+                    | Q(
+                        assigned_group__in=self.request.user.groups.all(),
+                        assignees__isnull=True,
+                    )
+                )
             else:
                 qs = qs.filter(assignees__id=p["assignee"])
         if p.get("open") == "1":
@@ -158,6 +166,32 @@ class TaskViewSet(TenantScopedViewSet):
         if board is None or board.tenant_id != tenant.id:
             raise ValidationError({"board": "Board is not in this tenant."})
         serializer.save(tenant=tenant, created_by=self.request.user)
+        self._notify_assignment_changes(serializer.instance, set(), None)
+
+    def perform_update(self, serializer):
+        before_users = set(serializer.instance.assignees.values_list("pk", flat=True))
+        before_group = serializer.instance.assigned_group_id
+        super().perform_update(serializer)
+        self._notify_assignment_changes(
+            serializer.instance, before_users, before_group
+        )
+
+    def _notify_assignment_changes(self, task, before_users, before_group):
+        """Personal emails for what this write changed: users newly put on the
+        task, and a team the task was newly queued on."""
+        from . import notifications
+
+        actor_id = self.request.user.pk
+        added = set(task.assignees.values_list("pk", flat=True)) - before_users
+        if added:
+            notifications.enqueue(
+                notifications.send_assigned, str(task.pk), sorted(added), actor_id
+            )
+        if task.assigned_group_id and task.assigned_group_id != before_group:
+            notifications.enqueue(
+                notifications.send_queued,
+                str(task.pk), task.assigned_group_id, actor_id,
+            )
 
 
 class TaskLinkViewSet(TenantScopedViewSet):
@@ -455,4 +489,31 @@ def assignable_users(request):
             "display_name": full or u.username,
             "email": u.email if with_email else "",
         })
+    return Response({"results": rows})
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def assignable_groups(request):
+    """Teams a task can be queued on — every access group with members.
+
+    Same gate as ``assignable_users``: having task rights is what earns the
+    picker, not user administration. The payload is name + member count only.
+    """
+    from django.contrib.auth.models import Group
+    from django.db.models import Count
+
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        raise PermissionDenied("No active tenant selected.")
+    if not (
+        rbac.has_action(request.user, tenant, "task", "change")
+        or rbac.has_action(request.user, tenant, "task", "add")
+    ):
+        raise PermissionDenied("task:change required.")
+
+    rows = [
+        {"id": g.id, "name": g.name, "member_count": g.n}
+        for g in Group.objects.annotate(n=Count("user")).order_by("name")[:200]
+    ]
     return Response({"results": rows})

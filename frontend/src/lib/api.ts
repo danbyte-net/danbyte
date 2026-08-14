@@ -5305,6 +5305,13 @@ export interface PlanningAssignableUser {
   email: string
 }
 
+/** `/api/planning/assignable-groups/` — teams a task can be queued on. */
+export interface PlanningAssignableGroup {
+  id: number
+  name: string
+  member_count: number
+}
+
 export interface PlanningMilestone {
   id: string
   board: string
@@ -5326,6 +5333,9 @@ export interface PlanningTask {
   priority: PlanningPriority
   assignees: number[]
   assignee_detail: PlanningAssignee[]
+  /** ITSM "assignment group": the team queue owning this task. */
+  assigned_group: number | null
+  assigned_group_name: string | null
   labels: string[]
   label_detail: PlanningLabel[]
   milestone: string | null

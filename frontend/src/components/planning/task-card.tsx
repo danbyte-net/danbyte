@@ -131,7 +131,8 @@ export function TaskCard({
   const hasTopRow =
     task.priority !== "none" ||
     task.label_detail.length > 0 ||
-    task.assignee_detail.length > 0
+    task.assignee_detail.length > 0 ||
+    !!task.assigned_group_name
 
   return (
     <div
@@ -164,6 +165,18 @@ export function TaskCard({
               {l.name}
             </span>
           ))}
+          {/* The team queue owning the task; assignees are the doers. */}
+          {task.assigned_group_name && (
+            <span
+              className={[
+                task.assignee_detail.length ? "" : "ml-auto",
+                "max-w-[8rem] truncate rounded-[5px] bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground",
+              ].join(" ")}
+              title={`Team: ${task.assigned_group_name}`}
+            >
+              {task.assigned_group_name}
+            </span>
+          )}
           {task.assignee_detail.length > 0 && (
             <span
               className="ml-auto flex min-w-0 shrink items-center gap-1.5"

@@ -154,6 +154,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         at=("07:00",),
         label="Daily email digest",
     ),
+    ScheduledTask(
+        unit="danbyte-task-reminders",
+        commands=("send_task_reminders",),
+        at=("06:45",),
+        label="Personal task reminder emails",
+    ),
 )
 
 

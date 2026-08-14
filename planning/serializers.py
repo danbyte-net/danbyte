@@ -167,6 +167,9 @@ class TaskSerializer(serializers.ModelSerializer):
     assignee_detail = TaskAssigneeSerializer(
         source="assignees", many=True, read_only=True
     )
+    assigned_group_name = serializers.CharField(
+        source="assigned_group.name", read_only=True, default=None
+    )
     label_detail = TaskLabelSerializer(source="labels", many=True, read_only=True)
     links = TaskLinkSerializer(many=True, read_only=True)
     planned_changes = PlannedChangeSerializer(many=True, read_only=True)
@@ -176,6 +179,7 @@ class TaskSerializer(serializers.ModelSerializer):
         fields = [
             "id", "board", "board_name", "status", "status_name", "title",
             "description", "priority", "assignees", "assignee_detail",
+            "assigned_group", "assigned_group_name",
             "labels", "label_detail", "milestone", "milestone_name",
             "milestone_due", "start_date", "due_date", "weight",
             "links", "planned_changes",

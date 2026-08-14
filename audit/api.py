@@ -459,6 +459,23 @@ class JournalEntryViewSet(viewsets.ModelViewSet):
             author_name=user.get_username(),
             object_site_id=_object_site_id(otype, oid),
         )
+        # Task comments carry personal notifications (assignees, creator,
+        # earlier commenters, @mentions). Best-effort — a note always saves.
+        if otype == "planning.task":
+            from planning import notifications
+            from planning.models import Task
+
+            entry = serializer.instance
+            task = Task.objects.filter(pk=oid).first()
+            if task is not None:
+                mentioned = [
+                    u.pk
+                    for u in notifications.parse_mentions(entry.comments, task.tenant)
+                ]
+                notifications.enqueue(
+                    notifications.send_commented,
+                    str(task.pk), str(entry.pk), user.pk, mentioned,
+                )
 
     def _guard_owner(self, instance):
         user = self.request.user

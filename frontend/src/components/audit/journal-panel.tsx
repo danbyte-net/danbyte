@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
 import { toast } from "sonner"
@@ -8,6 +8,7 @@ import {
   type JournalEntry,
   type JournalKind,
   type Paginated,
+  type PlanningAssignableUser,
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -92,11 +93,15 @@ export function JournalPanel({
       {/* Composer — the textarea has its own border, so a card around it was a
           box inside a box. */}
       <div>
-        <Textarea
+        <MentionTextarea
           value={comments}
-          onChange={(e) => setComments(e.target.value)}
-          placeholder="Write a note about this object…"
-          className="min-h-20 text-[13px]"
+          onChange={setComments}
+          placeholder={
+            objectType === "planning.task"
+              ? "Write a comment… @name someone to notify them"
+              : "Write a note about this object…"
+          }
+          mentions={objectType === "planning.task"}
         />
         <div className="mt-2 flex items-center gap-2">
           <Select value={kind} onValueChange={(v) => setKind(v as JournalKind)}>
@@ -226,8 +231,139 @@ function JournalRow({
           </div>
         </div>
       ) : (
-        <p className="mt-2 text-[13px] whitespace-pre-wrap">{e.comments}</p>
+        <p className="mt-2 text-[13px] whitespace-pre-wrap">
+          {renderWithMentions(e.comments)}
+        </p>
       )}
     </li>
+  )
+}
+
+// Mirrors the server's parser (planning/notifications.py MENTION_RE) so what
+// lights up here is what actually notifies.
+const MENTION_RE = /@([A-Za-z0-9_.@+-]+)/g
+
+/** The note text with @names tinted — display only, no lookup. */
+function renderWithMentions(text: string) {
+  const parts = text.split(MENTION_RE)
+  if (parts.length === 1) return text
+  // split() with one capture group alternates [plain, name, plain, name, …].
+  return parts.map((part, i) =>
+    i % 2 === 1 ? (
+      <span key={i} className="font-medium text-primary">
+        @{part}
+      </span>
+    ) : (
+      part
+    )
+  )
+}
+
+/**
+ * A journal textarea that offers username completion while an "@word" token is
+ * being typed at the caret. Task journals only — that's where a mention sends
+ * an email; elsewhere it stays a plain textarea.
+ */
+function MentionTextarea({
+  value,
+  onChange,
+  placeholder,
+  mentions,
+}: {
+  value: string
+  onChange: (v: string) => void
+  placeholder: string
+  mentions: boolean
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null)
+  const [token, setToken] = useState<{ start: number; text: string } | null>(
+    null
+  )
+  const usersQ = useQuery({
+    queryKey: ["planning-assignable-users"],
+    queryFn: () =>
+      api<{ results: PlanningAssignableUser[] }>(
+        "/api/planning/assignable-users/"
+      ),
+    staleTime: 60_000,
+    enabled: mentions,
+  })
+  const matches = token
+    ? (usersQ.data?.results ?? [])
+        .filter((u) =>
+          u.username.toLowerCase().startsWith(token.text.toLowerCase())
+        )
+        .slice(0, 6)
+    : []
+
+  const refreshToken = (next: string, caret: number) => {
+    // The live token is the "@word" the caret is sitting in, if any.
+    const upto = next.slice(0, caret)
+    const m = /(^|\s)@([A-Za-z0-9_.+-]*)$/.exec(upto)
+    setToken(m ? { start: caret - m[2].length - 1, text: m[2] } : null)
+  }
+
+  const pick = (username: string) => {
+    if (!token) return
+    const caret = ref.current?.selectionStart ?? value.length
+    const next = `${value.slice(0, token.start)}@${username} ${value.slice(caret)}`
+    onChange(next)
+    setToken(null)
+    requestAnimationFrame(() => {
+      const pos = token.start + username.length + 2
+      ref.current?.focus()
+      ref.current?.setSelectionRange(pos, pos)
+    })
+  }
+
+  return (
+    <div className="relative">
+      <Textarea
+        ref={ref}
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value)
+          if (mentions)
+            refreshToken(e.target.value, e.target.selectionStart ?? 0)
+        }}
+        onKeyDown={(e) => {
+          if (
+            token &&
+            matches.length &&
+            (e.key === "Enter" || e.key === "Tab")
+          ) {
+            e.preventDefault()
+            pick(matches[0].username)
+          } else if (e.key === "Escape") {
+            setToken(null)
+          }
+        }}
+        onBlur={() => setTimeout(() => setToken(null), 150)}
+        placeholder={placeholder}
+        className="min-h-20 text-[13px]"
+      />
+      {token && matches.length > 0 && (
+        <div className="absolute bottom-full left-2 z-10 mb-1 w-64 rounded-md border border-border bg-popover p-1 shadow-md">
+          {matches.map((u, i) => (
+            <button
+              key={u.id}
+              type="button"
+              className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] hover:bg-muted ${
+                i === 0 ? "bg-muted/60" : ""
+              }`}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                pick(u.username)
+              }}
+            >
+              <span className="font-medium">@{u.username}</span>
+              <span className="ml-auto truncate text-[11px] text-muted-foreground">
+                {u.display_name !== u.username ? u.display_name : ""}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

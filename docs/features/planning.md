@@ -33,7 +33,7 @@ alongside every other status catalog. Each row has:
 
 A status that still has tasks can't be deleted — move them first.
 
-## Assignees
+## Assignees & teams
 
 Assign a task to one or more people from the task sheet. The picker reads
 `/api/planning/assignable-users/`, which lists active users **of the current
@@ -41,6 +41,13 @@ tenant** and is gated on *task* rights rather than user-administration rights �
 so an engineer who can edit tasks can assign them without also being able to
 administer accounts. Email addresses are included only for callers who may
 already read users.
+
+The same picker also offers a **team** — the ITSM *assignment group*. A team
+(any access group, e.g. *NOC*) is the queue the work sits in; the assignees are
+the individuals actually doing it. A task can carry both: queued on *NOC*,
+being worked by two named people. Unclaimed team work — queued on one of your
+groups with no assignee yet — counts as *your* work everywhere "my tasks" is
+asked: the dashboard widget, `?assignee=me`, and the daily reminder mail.
 
 On the board, the faces of everyone with work on that board sit in the header:
 click one to filter the board to their tasks, click **Unassigned** for the
@@ -107,6 +114,26 @@ The daily **email digest** gains a *Planned work* section when anything is due:
 overdue / due today / due this week counts, plus the most urgent tasks with
 their boards and assignees. It rides the existing digest schedule and settings —
 nothing new to configure.
+
+## Personal emails & @mentions
+
+Beyond the org-wide digest, planning sends **personal** mails — one message
+per recipient, each kind switchable off under **Settings → Preferences → Task
+emails**:
+
+| Mail | When |
+|---|---|
+| *Assigned to you* | Someone puts you on a task. |
+| *New in `<team>`* | A task is queued on one of your teams and nobody has claimed it. |
+| *New comment* | A comment lands on a task you created, work on, or commented on. |
+| *`<who>` mentioned you* | You are `@named` in a task comment — type `@` in the comment box for username completion. A mention outranks the plain comment mail, so nobody is told twice. |
+| *Your work* | A daily reminder (06:45) with your overdue / due-today / due-this-week tasks — only sent when you have some. |
+
+Recipients are always checked server-side: active users with an email address
+who are members of the task's tenant. The comment/mention hooks live on the
+task's journal, and the reminder runs as `manage.py send_task_reminders`
+(`danbyte-task-reminders.timer` on bare metal, the built-in scheduler in
+containers).
 
 ## Planned changes
 

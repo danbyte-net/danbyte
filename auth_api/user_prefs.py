@@ -21,7 +21,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 # The canonical preference registry. Keep this list short and well-named;
 # every key here is a contract with the UI. Comments describe the role.
 DEFAULTS: dict[str, Any] = {
@@ -54,6 +53,14 @@ DEFAULTS: dict[str, Any] = {
 
     # ─── Safety / confirmations ──────────────────────────────────────────
     "confirm_destructive": True,   # Two-step Confirm button on bulk delete.
+
+    # ─── Personal task emails (planning.notifications) ───────────────────
+    # Each is one mail kind a user can switch off; all default on.
+    "notify_task_assigned": True,  # You were put on a task.
+    "notify_task_queue":    True,  # A task landed in one of your teams' queues.
+    "notify_task_comments": True,  # Comment on a task you're involved in.
+    "notify_task_mentions": True,  # You were @named in a comment.
+    "notify_task_due":      True,  # The daily "your work" reminder.
 
     # ─── IPAM defaults (set by admin, used as initial values on create) ──
     "default_ip_status_id": None,   # Status.id or None — picks tenant's is_default

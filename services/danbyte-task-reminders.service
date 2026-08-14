@@ -1,0 +1,14 @@
+[Unit]
+Description=Danbyte personal task reminder emails
+After=network.target
+Wants=danbyte-infra.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/danbyte/.venv/bin/python manage.py send_task_reminders
+
+# Triggered daily by danbyte-task-reminders.timer. One mail per user with
+# overdue/upcoming tasks; silent when a user has none.
+# Logs: journalctl --user -fu danbyte-task-reminders

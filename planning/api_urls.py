@@ -14,6 +14,7 @@ from .viewsets import (
     TaskLinkViewSet,
     TaskStatusViewSet,
     TaskViewSet,
+    assignable_groups,
     assignable_users,
 )
 
@@ -32,5 +33,6 @@ urlpatterns = [
     path("calendar/", calendar, name="planning-calendar"),
     path("calendar.ics", calendar_ics, name="planning-calendar-ics"),
     path("assignable-users/", assignable_users, name="planning-assignable-users"),
+    path("assignable-groups/", assignable_groups, name="planning-assignable-groups"),
     *router.urls,
 ]

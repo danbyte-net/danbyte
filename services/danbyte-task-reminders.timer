@@ -1,0 +1,11 @@
+[Unit]
+Description=Send Danbyte personal task reminders daily
+
+[Timer]
+OnCalendar=*-*-* 06:45:00
+OnBootSec=180
+Persistent=true
+AccuracySec=5m
+
+[Install]
+WantedBy=timers.target
