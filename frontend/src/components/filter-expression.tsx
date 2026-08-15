@@ -224,12 +224,15 @@ function BuilderRows({
       {rules.map((rule, i) => {
         const samples = fields.find((f) => f.path === rule.field)?.samples ?? []
         return (
-          <div key={i} className="flex items-center gap-1.5">
+          <div
+            key={i}
+            className="grid grid-cols-[10rem_8.5rem_minmax(0,1fr)_2rem] items-center gap-1.5"
+          >
             <Select
               value={rule.field || undefined}
               onValueChange={(v) => update(i, { field: v })}
             >
-              <SelectTrigger className="h-8 w-44 shrink-0 text-[12px]">
+              <SelectTrigger className="h-8 w-full text-[12px]">
                 <SelectValue placeholder="Field" />
               </SelectTrigger>
               <SelectContent className="max-h-64">
@@ -244,7 +247,7 @@ function BuilderRows({
               value={rule.cmp}
               onValueChange={(v) => update(i, { cmp: v as BuilderRule["cmp"] })}
             >
-              <SelectTrigger className="h-8 w-36 shrink-0 text-[12px]">
+              <SelectTrigger className="h-8 w-full text-[12px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -255,11 +258,13 @@ function BuilderRows({
                 ))}
               </SelectContent>
             </Select>
+            {noValue(rule.cmp) && <div />}
             {!noValue(rule.cmp) && (
               <ValueField
                 value={rule.value}
                 onChange={(v) => update(i, { value: v })}
                 samples={samples}
+                fieldChosen={fields.some((f) => f.path === rule.field)}
               />
             )}
             <Button
@@ -311,15 +316,18 @@ function BuilderRows({
 }
 
 /** The value input as a combobox: focusing it opens the values actually
- * present in this list, typing narrows them, and free text always wins. */
+ * present in this list, typing narrows them, and free text always wins.
+ * Values are per-field, so the box directs to the field picker first. */
 function ValueField({
   value,
   onChange,
   samples,
+  fieldChosen,
 }: {
   value: string
   onChange: (v: string) => void
   samples: string[]
+  fieldChosen: boolean
 }) {
   const [open, setOpen] = useState(false)
   const anchorRef = useRef<HTMLDivElement>(null)
@@ -333,12 +341,12 @@ function ValueField({
     narrowed.length === 0 || (narrowed.length === 1 && narrowed[0] === value)
   const shown = exhausted ? samples : narrowed
 
-  if (samples.length === 0)
+  if (!fieldChosen || samples.length === 0)
     return (
       <Input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Value"
+        placeholder={fieldChosen ? "Value" : "Pick a field first"}
         className="h-8 min-w-0 flex-1 text-[12px]"
       />
     )
@@ -354,6 +362,9 @@ function ValueField({
               setOpen(true)
             }}
             onFocus={() => setOpen(true)}
+            // A second click on an already-focused input fires no focus event —
+            // pointerdown covers reopening.
+            onPointerDown={() => setOpen(true)}
             onKeyDown={(e) => {
               if (e.key === "Escape") setOpen(false)
             }}

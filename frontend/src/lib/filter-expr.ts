@@ -324,7 +324,7 @@ export function discoverFields(rows: unknown[]): FieldInfo[] {
   >()
   const note = (path: string, v: unknown) => {
     const scalar = scalarOf(v)
-    if (scalar === null || scalar === undefined) return
+    if (scalar === null || scalar === undefined || scalar === "") return
     const kind =
       typeof scalar === "number"
         ? "number"
