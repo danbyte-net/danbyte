@@ -237,6 +237,10 @@ Events ignore the board filter on purpose: provider maintenance matters to
 every board's schedule. Dates render in your profile's timezone (the badge in
 the header names it).
 
+Every week row carries its **ISO week number** in a narrow left gutter, and
+the week/day toolbars name the week (`W34 · …`) — the vocabulary change
+windows are usually booked in.
+
 The header switches between **Month**, **Week** and **Day**: week is the same
 grid at full height for one week; day is a readable agenda of everything on
 that date (click any day cell to jump there). With task-change rights you can
