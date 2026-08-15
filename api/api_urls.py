@@ -15,17 +15,16 @@ from drf_spectacular.views import (
 )
 from rest_framework.routers import DefaultRouter
 
+from audit.api import ChangeLogViewSet, JournalEntryViewSet
 from auth_api import column_prefs
 from auth_api import views as auth_views
-from auth_api.login_api import (
-    login_api,
-    logout_api,
-    mfa_resend_api,
-    mfa_verify_api,
-    set_password_api,
-    totp_confirm_api,
-    totp_disable_api,
-    totp_setup_api,
+from auth_api.api import (
+    GroupViewSet,
+    ObjectPermissionViewSet,
+    UserViewSet,
+    create_site_role,
+    rbac_object_types,
+    user_access_summary,
 )
 from auth_api.ldap_api import (
     LDAPGroupMappingViewSet,
@@ -39,7 +38,17 @@ from auth_api.ldap_api import (
     tenant_ldap_test,
     tenant_ldap_test_login,
 )
-from auth_api.token_api import ApiTokenViewSet
+from auth_api.login_api import (
+    login_api,
+    logout_api,
+    mfa_resend_api,
+    mfa_verify_api,
+    set_password_api,
+    totp_confirm_api,
+    totp_disable_api,
+    totp_setup_api,
+)
+from auth_api.sso_admin import IdentityProviderViewSet, SsoGroupMappingViewSet
 from auth_api.sso_api import (
     sso_acs,
     sso_callback,
@@ -47,158 +56,167 @@ from auth_api.sso_api import (
     sso_metadata,
     sso_providers,
 )
-from auth_api.sso_admin import IdentityProviderViewSet, SsoGroupMappingViewSet
-from auth_api.api import (
-    GroupViewSet,
-    ObjectPermissionViewSet,
-    UserViewSet,
-    rbac_object_types,
-    create_site_role,
-    user_access_summary,
-)
-from core import (
-    deployment,
-    service_api,
-    site_settings as site_settings_mod,
-    tenant_settings as tenant_settings_mod,
-    upgrade,
-)
-from integrations.api import (
-    WebhookViewSet, AutomationTargetViewSet, DeployRunViewSet,
-    DeviceConfigStateViewSet, DeviceConfigSnapshotViewSet,
-)
-from integrations.netbox_api import (
-    netbox_test, netbox_imports, netbox_import_detail,
-)
-from core.bookmarks import BookmarkFolderViewSet, BookmarkViewSet
-from core.saved_filters import SavedFilterViewSet
-from .search_views import search as search_view
-from .csp_views import csp_report
-from .dashboard_views import dashboard_view
-from .site_map_views import site_map, site_map_cables, site_map_connections
-from .presence_views import (
-    presence_heartbeat, presence_list, presence_leave,
-)
-from audit.api import ChangeLogViewSet, JournalEntryViewSet
-from customization.api_views import customization_meta, object_labels
+from auth_api.token_api import ApiTokenViewSet
 from compliance.api import (
     ComplianceRuleViewSet,
     compliance_device_status,
     compliance_evaluate,
     compliance_object_types,
 )
-from .topology_views import topology_view
-from .mac_views import mac_list_view, mac_detail_view
+from core import (
+    deployment,
+    service_api,
+    upgrade,
+)
+from core import notifications_api as core_notifications
+from core import (
+    site_settings as site_settings_mod,
+)
+from core import (
+    tenant_settings as tenant_settings_mod,
+)
+from core.bookmarks import BookmarkFolderViewSet, BookmarkViewSet
+from core.saved_filters import SavedFilterViewSet
+from customization.api_views import customization_meta, object_labels
+from integrations.api import (
+    AutomationTargetViewSet,
+    DeployRunViewSet,
+    DeviceConfigSnapshotViewSet,
+    DeviceConfigStateViewSet,
+    WebhookViewSet,
+)
+from integrations.netbox_api import (
+    netbox_import_detail,
+    netbox_imports,
+    netbox_test,
+)
+
+from .csp_views import csp_report
+from .dashboard_views import dashboard_view
 from .dcim_choices import dcim_choices_view
 from .editable_fields import editable_fields_view
-from .io_views import (
-    io_types_view, io_fields_view, io_export_view, io_import_view,
-)
 from .inventory_views import ansible_inventory
+from .io_views import (
+    io_export_view,
+    io_fields_view,
+    io_import_view,
+    io_types_view,
+)
+from .mac_views import mac_detail_view, mac_list_view
+from .presence_views import (
+    presence_heartbeat,
+    presence_leave,
+    presence_list,
+)
+from .search_views import search as search_view
+from .site_map_views import site_map, site_map_cables, site_map_connections
 from .terraform_views import vm_render_view
+from .topology_views import topology_view
 from .viewsets import (
-    resolve_shortlink,
-    ClusterTypeViewSet,
-    ClusterGroupViewSet,
-    ClusterViewSet,
-    VirtualMachineViewSet,
-    VMInterfaceViewSet,
-    MACAddressViewSet,
-    RackViewSet,
-    RackRoleViewSet,
-    RackTypeViewSet,
-    RackTypeAccessoryViewSet,
-    DeviceRoleViewSet,
-    PlatformGroupViewSet,
-    PlatformViewSet,
-    ServiceViewSet,
-    ServiceTemplateViewSet,
-    CableViewSet,
-    FiberSettingsViewSet,
-    CustomFieldViewSet,
-    CustomFieldGroupViewSet,
-    DeviceTypeViewSet,
-    DeviceViewSet,
-    FrontPortViewSet,
-    ManufacturerViewSet,
-    RearPortViewSet,
-    InterfaceViewSet,
-    IPAddressViewSet,
-    IPRangeViewSet,
     AggregateViewSet,
     ASNViewSet,
-    VLANGroupViewSet,
-    FHRPGroupViewSet,
-    FHRPGroupAssignmentViewSet,
-    ContactViewSet,
-    ContactGroupViewSet,
-    ContactRoleViewSet,
-    ContactAssignmentViewSet,
-    ProviderViewSet,
-    ProviderNetworkViewSet,
+    AuxPortTemplateViewSet,
+    AuxPortViewSet,
+    CableRouteViewSet,
+    CableViewSet,
+    CircuitTerminationViewSet,
     CircuitTypeViewSet,
     CircuitViewSet,
-    CircuitTerminationViewSet,
-    TunnelTerminationViewSet,
-    TenantGroupViewSet, L2VPNViewSet, L2VPNTerminationViewSet,
-    VirtualChassisViewSet,
-    AuxPortViewSet,
-    AuxPortTemplateViewSet,
+    ClusterGroupViewSet,
+    ClusterTypeViewSet,
+    ClusterViewSet,
+    ConfigContextViewSet,
+    ConsolePortTemplateViewSet,
+    ConsolePortViewSet,
+    ConsoleServerPortTemplateViewSet,
+    ConsoleServerPortViewSet,
+    ContactAssignmentViewSet,
+    ContactGroupViewSet,
+    ContactRoleViewSet,
+    ContactViewSet,
+    CustomFieldGroupViewSet,
+    CustomFieldViewSet,
     DeviceBayTemplateViewSet,
     DeviceBayViewSet,
+    DeviceRoleViewSet,
+    DeviceTypeServiceViewSet,
+    DeviceTypeViewSet,
+    DeviceViewSet,
+    DocumentCategoryViewSet,
+    DocumentViewSet,
+    ExportTemplateViewSet,
+    FHRPGroupAssignmentViewSet,
+    FHRPGroupViewSet,
+    FiberSettingsViewSet,
+    FloorPlanRaisedFloorAreaViewSet,
+    FloorPlanTileViewSet,
+    FloorPlanTrayViewSet,
+    FloorPlanViewSet,
+    FloorPlanWallViewSet,
+    FloorTileTypeViewSet,
+    FrontPortTemplateViewSet,
+    FrontPortViewSet,
+    InterfaceTemplateViewSet,
+    InterfaceViewSet,
     InventoryItemTemplateViewSet,
     InventoryItemViewSet,
+    IPAddressViewSet,
+    IPRangeViewSet,
+    IPRoleViewSet,
+    IPSecProfileViewSet,
+    L2VPNTerminationViewSet,
+    L2VPNViewSet,
+    LabelTemplateViewSet,
+    LocationViewSet,
+    MACAddressViewSet,
+    ManufacturerViewSet,
     ModuleBayTemplateViewSet,
     ModuleBayViewSet,
     ModuleInterfaceTemplateViewSet,
     ModuleTypeViewSet,
-    TopologyViewViewSet,
-    FloorPlanTileViewSet,
-    SiteMarkerViewSet,
-    CableRouteViewSet,
-    FloorPlanRaisedFloorAreaViewSet,
-    FloorPlanTrayViewSet,
-    FloorPlanWallViewSet,
-    FloorPlanViewSet,
-    FloorTileTypeViewSet,
     ModuleViewSet,
-    ConsolePortViewSet,
-    ConsoleServerPortViewSet,
-    PowerPortViewSet,
-    PowerOutletViewSet,
-    InterfaceTemplateViewSet,
-    DeviceTypeServiceViewSet,
-    ConsolePortTemplateViewSet,
-    ConsoleServerPortTemplateViewSet,
-    PowerPortTemplateViewSet,
-    PowerOutletTemplateViewSet,
-    RearPortTemplateViewSet,
-    FrontPortTemplateViewSet,
-    PowerPanelViewSet,
+    PlatformGroupViewSet,
+    PlatformViewSet,
     PowerFeedViewSet,
+    PowerOutletTemplateViewSet,
+    PowerOutletViewSet,
+    PowerPanelViewSet,
+    PowerPortTemplateViewSet,
+    PowerPortViewSet,
+    PrefixViewSet,
+    ProviderNetworkViewSet,
+    ProviderViewSet,
+    RackRoleViewSet,
+    RackTypeAccessoryViewSet,
+    RackTypeViewSet,
+    RackViewSet,
+    RearPortTemplateViewSet,
+    RearPortViewSet,
+    RegionViewSet,
+    RIRViewSet,
+    RouteTargetViewSet,
+    ServiceTemplateViewSet,
+    ServiceViewSet,
+    SiteMarkerViewSet,
+    SiteViewSet,
+    StatusViewSet,
+    TagViewSet,
+    TenantGroupViewSet,
+    TenantViewSet,
+    TopologyViewViewSet,
+    TunnelGroupViewSet,
+    TunnelTerminationViewSet,
+    TunnelViewSet,
+    VirtualChassisViewSet,
+    VirtualMachineViewSet,
+    VLANGroupViewSet,
+    VLANViewSet,
+    VMInterfaceViewSet,
+    VRFViewSet,
     WirelessLANGroupViewSet,
     WirelessLANViewSet,
-    TunnelGroupViewSet,
-    IPSecProfileViewSet,
-    TunnelViewSet,
-    RegionViewSet,
-    LocationViewSet,
-    ConfigContextViewSet,
-    ExportTemplateViewSet,
-    LabelTemplateViewSet,
-    DocumentViewSet,
-    DocumentCategoryViewSet,
-    RIRViewSet,
-    IPRoleViewSet,
     ZoneViewSet,
-    StatusViewSet,
-    PrefixViewSet,
-    RouteTargetViewSet,
-    SiteViewSet,
-    TagViewSet,
-    TenantViewSet,
-    VLANViewSet,
-    VRFViewSet,
+    resolve_shortlink,
 )
 
 router = DefaultRouter()
@@ -401,6 +419,9 @@ urlpatterns = [
     # surfaced here under /api/ where the SPA can reach them.
     path("me/", auth_views.me_json, name="me"),
     path("me/prefs/", auth_views.me_prefs, name="me-prefs"),
+    path("notifications/", core_notifications.notifications, name="notifications"),
+    path("notifications/read/", core_notifications.notifications_read,
+         name="notifications-read"),
     # Session login + MFA for the React SPA (two-step: password → code).
     path("auth/login/", login_api, name="auth-login"),
     path("auth/logout/", logout_api, name="auth-logout"),

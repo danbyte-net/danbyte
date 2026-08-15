@@ -8,7 +8,6 @@ from taggit.models import GenericUUIDTaggedItemBase, TagBase
 
 from monitoring.secrets import EncryptedJSONField
 
-
 HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
@@ -986,3 +985,58 @@ class SiteSettings(TimestampedModel):
     def for_site(cls, site) -> "SiteSettings":
         obj, _ = cls.objects.get_or_create(site=site)
         return obj
+
+
+class Notification(TimestampedModel):
+    """One in-app notification for one user — what the topbar bell lists.
+
+    Written by event producers (task assigned/queued/commented/@mentioned so
+    far; ``kind`` leaves room for more) alongside their emails: the bell always
+    hears, the mail respects the user's notify_* preferences. Rows are pruned
+    per user on write, so this never needs a retention job.
+    """
+
+    from django.conf import settings as _settings
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        _settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="app_notifications",
+    )
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="app_notifications",
+    )
+    kind = models.CharField(max_length=32)
+    title = models.CharField(max_length=200)
+    body = models.CharField(max_length=500, blank=True, default="")
+    #: SPA path to open ("/planning/<board>/tasks/<task>"), not a full URL.
+    url = models.CharField(max_length=300, blank=True, default="")
+    actor_name = models.CharField(max_length=150, blank=True, default="")
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    #: Newest rows a user keeps; older ones are pruned on write.
+    KEEP = 200
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["user", "read_at", "-created_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.kind} → {self.user_id}: {self.title}"
+
+    @classmethod
+    def push(cls, users, *, kind, title, body="", url="", tenant=None, actor=None):
+        """Create one row per user and prune each inbox to :attr:`KEEP`."""
+        actor_name = actor.get_username() if actor else ""
+        for user in users:
+            cls.objects.create(
+                user=user, tenant=tenant, kind=kind, title=title[:200],
+                body=body[:500], url=url[:300], actor_name=actor_name[:150],
+            )
+            stale = cls.objects.filter(user=user).values_list("pk", flat=True)[
+                cls.KEEP:
+            ]
+            if stale:
+                cls.objects.filter(pk__in=list(stale)).delete()

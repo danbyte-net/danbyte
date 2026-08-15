@@ -36,21 +36,40 @@ def parse_mentions(text: str, tenant):
     return [u for u in qs if u.username.lower() in names]
 
 
+def _eligible(user, task) -> bool:
+    """The base recipient gate: active, and able to see the task's tenant.
+    This is what the in-app bell uses — email adds its own conditions."""
+    if not user.is_active:
+        return False
+    if user.is_superuser:
+        return True
+    profile = getattr(user, "profile", None)
+    return profile is not None and profile.tenants.filter(pk=task.tenant_id).exists()
+
+
 def _wants(user, task, pref_key: str) -> bool:
-    """Fail-closed recipient gate: this mail goes to ``user`` only if they can
-    see the task's tenant at all and haven't switched the preference off."""
+    """Fail-closed email gate: eligible, has an address, preference left on."""
     from auth_api import user_prefs
 
-    if not user.is_active or not (user.email or "").strip():
+    if not (user.email or "").strip() or not _eligible(user, task):
         return False
-    if not user.is_superuser:
-        profile = getattr(user, "profile", None)
-        if profile is None or not profile.tenants.filter(pk=task.tenant_id).exists():
-            return False
     try:
         return bool(user_prefs.get(user, pref_key))
     except KeyError:
         return False
+
+
+def _push_bell(users, task, *, kind, title, body="", actor=None):
+    """In-app rows for the topbar bell — always on, unlike the mails."""
+    from core.models import Notification
+
+    eligible = [u for u in users if _eligible(u, task)]
+    if eligible:
+        Notification.push(
+            eligible, kind=kind, title=title, body=body,
+            url=f"/planning/{task.board_id}/tasks/{task.id}",
+            tenant=task.tenant, actor=actor,
+        )
 
 
 def _task_context(task):
@@ -113,13 +132,16 @@ def send_assigned(task_id, user_ids, actor_id):
         return
     User = get_user_model()
     actor = User.objects.filter(pk=actor_id).first()
-    recipients = [
-        u for u in User.objects.filter(pk__in=user_ids)
-        if u.pk != actor_id and _wants(u, task, "notify_task_assigned")
-    ]
+    who = actor.get_username() if actor else "someone"
+    added = [u for u in User.objects.filter(pk__in=user_ids) if u.pk != actor_id]
+    _push_bell(
+        added, task, kind="task_assigned",
+        title=f"Assigned to you: {task.title}",
+        body=f"{who} · {task.board.name}", actor=actor,
+    )
+    recipients = [u for u in added if _wants(u, task, "notify_task_assigned")]
     if not recipients:
         return
-    who = actor.get_username() if actor else "someone"
     _, url = _task_context(task)
     body = ek.paragraph(f"{who} assigned you: {task.title}") + _task_facts_html(task)
     _send(
@@ -146,11 +168,19 @@ def send_queued(task_id, group_id, actor_id):
     if task is None or group is None:
         return
     already = set(task.assignees.values_list("pk", flat=True))
-    recipients = [
+    members = [
         u for u in group.user_set.all()
         if u.pk != actor_id and u.pk not in already
-        and _wants(u, task, "notify_task_queue")
     ]
+    from django.contrib.auth import get_user_model
+
+    actor = get_user_model().objects.filter(pk=actor_id).first()
+    _push_bell(
+        members, task, kind="task_queued",
+        title=f"New in {group.name}: {task.title}",
+        body=task.board.name, actor=actor,
+    )
+    recipients = [u for u in members if _wants(u, task, "notify_task_queue")]
     if not recipients:
         return
     _, url = _task_context(task)
@@ -196,9 +226,17 @@ def send_commented(task_id, entry_id, actor_id, mentioned_ids):
 
     # @mentions get their own, stronger mail; they are then excluded from the
     # plain comment fan-out so nobody is told twice.
+    actor = User.objects.filter(pk=actor_id).first()
+    mention_candidates = [
+        u for u in User.objects.filter(pk__in=mentioned) if u.pk != actor_id
+    ]
+    _push_bell(
+        mention_candidates, task, kind="task_mention",
+        title=f"{who} mentioned you: {task.title}",
+        body=excerpt, actor=actor,
+    )
     mention_users = [
-        u for u in User.objects.filter(pk__in=mentioned)
-        if u.pk != actor_id and _wants(u, task, "notify_task_mentions")
+        u for u in mention_candidates if _wants(u, task, "notify_task_mentions")
     ]
     if mention_users:
         _send(task, mention_users,
@@ -214,9 +252,14 @@ def send_commented(task_id, entry_id, actor_id, mentioned_ids):
     )
     involved -= {None, actor_id}
     involved -= mentioned
+    comment_candidates = list(User.objects.filter(pk__in=involved))
+    _push_bell(
+        comment_candidates, task, kind="task_comment",
+        title=f"New comment on: {task.title}",
+        body=f"{who}: {excerpt}", actor=actor,
+    )
     comment_users = [
-        u for u in User.objects.filter(pk__in=involved)
-        if _wants(u, task, "notify_task_comments")
+        u for u in comment_candidates if _wants(u, task, "notify_task_comments")
     ]
     if comment_users:
         _send(task, comment_users,

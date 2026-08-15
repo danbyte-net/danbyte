@@ -115,11 +115,14 @@ overdue / due today / due this week counts, plus the most urgent tasks with
 their boards and assignees. It rides the existing digest schedule and settings —
 nothing new to configure.
 
-## Personal emails & @mentions
+## Personal emails, the bell & @mentions
 
-Beyond the org-wide digest, planning sends **personal** mails — one message
-per recipient, each kind switchable off under **Settings → Preferences → Task
-emails**:
+Beyond the org-wide digest, planning notifies the people involved on two
+channels. The **bell** in the top bar always hears: assignments, team-queue
+arrivals, comments and @mentions appear there the moment they happen, with an
+unread badge; clicking a row opens the task and marks it read. **Personal
+mails** carry the same events — one message per recipient, each kind
+switchable off under **Settings → Preferences → Task emails**:
 
 | Mail | When |
 |---|---|
@@ -234,12 +237,14 @@ Events ignore the board filter on purpose: provider maintenance matters to
 every board's schedule. Dates render in your profile's timezone (the badge in
 the header names it).
 
+The header switches between **Month**, **Week** and **Day**: week is the same
+grid at full height for one week; day is a readable agenda of everything on
+that date (click any day cell to jump there). With task-change rights you can
+**drag a task bar onto another day** — the whole span shifts, keeping its
+length — and drag a milestone flag to re-date it. The view, its anchor and the
+board all live in the URL, so a calendar can be linked.
+
 `GET /api/planning/calendar/?start=&end=[&board=]` returns the same window as
 JSON; `GET /api/planning/calendar.ics?token=<api token>` serves it as an iCal
 feed for Outlook/Google/Apple — see [Maintenance &
 outages](maintenance.md#ical-feed) for the token rules.
-
-## Coming next
-
-Week/day/year calendar views and drag-to-schedule are planned follow-ups on
-this foundation.

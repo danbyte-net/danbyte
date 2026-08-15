@@ -36,6 +36,12 @@ class _NotifyBase(Base):
     def _noc(self):
         return Group.objects.create(name="NOC")
 
+    def _as(self, user):
+        self.client.force_login(user)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
 
 class AssignmentGroupTests(_NotifyBase):
     def test_group_round_trips_and_feeds_my_work(self):
@@ -191,3 +197,45 @@ class DueReminderTests(_NotifyBase):
         done.assignees.add(rene)
         self.assertEqual(notifications.send_due_reminders(), 0)
         self.assertEqual(mail.outbox, [])
+
+
+class BellTests(_NotifyBase):
+    def test_bell_hears_even_when_email_is_off(self):
+        from core.models import Notification
+
+        board = self._board()
+        task = Task.objects.create(
+            tenant=self.tenant, board=board,
+            status=board.statuses.get(name="To do"),
+            title="Bell test", created_by=self.admin,
+        )
+        muted = self._user("muted", prefs={"notify_task_assigned": False})
+        task.assignees.add(muted)
+        notifications.send_assigned(str(task.pk), [muted.pk], self.admin.pk)
+        # The mail respects the opt-out; the bell always hears.
+        self.assertEqual(mail.outbox, [])
+        rows = Notification.objects.filter(user=muted)
+        self.assertEqual(rows.count(), 1)
+        self.assertIn("Bell test", rows[0].title)
+        self.assertIn(f"/tasks/{task.id}", rows[0].url)
+
+    def test_endpoint_serves_only_my_rows_and_marks_read(self):
+        from core.models import Notification
+
+        rene = self._user("rene")
+        other = self._user("other")
+        Notification.push([rene], kind="task_comment", title="For rene")
+        Notification.push([other], kind="task_comment", title="For other")
+
+        self._as(rene)
+        r = self.client.get("/api/notifications/")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["unread"], 1)
+        self.assertEqual([n["title"] for n in r.json()["results"]], ["For rene"])
+
+        r = self.client.post(
+            "/api/notifications/read/", {"all": True}, format="json"
+        )
+        self.assertEqual(r.json()["unread"], 0)
+        # The other user's row is untouched.
+        self.assertIsNone(Notification.objects.get(user=other).read_at)
