@@ -130,6 +130,17 @@ class MaintenanceEventViewSet(TenantScopedViewSet):
             qs = qs.filter(provider_id=p["provider"])
         if p.get("open") == "1":
             qs = qs.filter(status__is_closed=False)
+        # Reverse lookup — "what maintenance touches this device/circuit?"
+        # Powers the detail pages' upcoming-maintenance panel in one request.
+        if p.get("object_type") and p.get("object_id"):
+            from auth_api.object_types import label_for
+
+            label = label_for(p["object_type"])
+            if label is None:
+                return qs.none()
+            qs = qs.filter(
+                impacts__object_type=label, impacts__object_id=p["object_id"]
+            ).distinct()
         # Everything touching a window — how the calendar and an object's
         # "upcoming maintenance" panel ask.
         if p.get("active_at"):

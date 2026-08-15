@@ -1,3 +1,4 @@
+import { UpcomingMaintenancePanel } from "@/components/monitoring/upcoming-maintenance"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -287,10 +288,13 @@ function CircuitOverview({ circuit: c }: { circuit: Circuit }) {
   ]
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <KvCard title="Circuit" rows={circuitRows} />
-      <KvCard title="Service" rows={serviceRows} />
-      <KvCard title="Notes" rows={notesRows} />
+    <div className="space-y-6">
+      <UpcomingMaintenancePanel objectType="circuit" objectId={c.id} />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <KvCard title="Circuit" rows={circuitRows} />
+        <KvCard title="Service" rows={serviceRows} />
+        <KvCard title="Notes" rows={notesRows} />
+      </div>
     </div>
   )
 }

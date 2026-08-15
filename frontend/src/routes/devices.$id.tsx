@@ -1,3 +1,4 @@
+import { UpcomingMaintenancePanel } from "@/components/monitoring/upcoming-maintenance"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlSubTab, useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
@@ -369,6 +370,9 @@ function Body({ device: d }: { device: Device }) {
       onTabChange={(v) => setTab(v as DeviceTab)}
     >
       <DetailTab value="overview">
+        <div className="mb-6 empty:hidden">
+          <UpcomingMaintenancePanel objectType="device" objectId={d.id} />
+        </div>
         {/* Marks any attribute a task plans to change, so the Overview says
             "this value might change soon" where the value actually is. */}
         <PendingFieldsProvider objectType="api.device" objectId={d.id}>

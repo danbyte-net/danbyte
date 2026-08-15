@@ -1,5 +1,14 @@
 import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
+import {
+  DndContext,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core"
 import { CalendarClock, Flag, Wrench, Zap } from "lucide-react"
 
 import type {
@@ -105,6 +114,10 @@ export function CalendarMonth({
   data,
   today,
   onPickDay,
+  days,
+  tall = false,
+  onMoveTask,
+  onMoveMilestone,
 }: {
   year: number
   month: number
@@ -112,12 +125,42 @@ export function CalendarMonth({
   /** `YYYY-MM-DD` in the viewer's effective timezone. */
   today: string
   onPickDay?: (day: string) => void
+  /** Override the drawn days (a multiple of 7) — the week view passes 7. */
+  days?: Date[]
+  /** Taller cells, for the week view where one row carries a whole week. */
+  tall?: boolean
+  /** When set, a task bar can be dragged onto another day: the span shifts,
+   *  keeping its length. */
+  onMoveTask?: (task: PlanningCalendarTask, day: string) => void
+  /** Milestones are a single day — dropping one re-dates it. */
+  onMoveMilestone?: (m: PlanningCalendarMilestone, day: string) => void
 }) {
-  const cells = useMemo(() => monthCells(year, month), [year, month])
+  const cells = useMemo(
+    () => days ?? monthCells(year, month),
+    [days, year, month]
+  )
   const weeks = useMemo(
-    () => Array.from({ length: 6 }, (_, i) => cells.slice(i * 7, i * 7 + 7)),
+    () =>
+      Array.from({ length: cells.length / 7 }, (_, i) =>
+        cells.slice(i * 7, i * 7 + 7)
+      ),
     [cells]
   )
+  // An 8px activation threshold keeps plain clicks (open the task) working —
+  // the same trick the kanban board uses.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  )
+  const handleDragEnd = (ev: DragEndEvent) => {
+    const day = ev.over?.id
+    const payload = ev.active.data.current as
+      | { task?: PlanningCalendarTask; milestone?: PlanningCalendarMilestone }
+      | undefined
+    if (typeof day !== "string" || !payload) return
+    if (payload.task && onMoveTask) onMoveTask(payload.task, day)
+    if (payload.milestone && onMoveMilestone)
+      onMoveMilestone(payload.milestone, day)
+  }
 
   const byDay = useMemo(() => {
     const milestones = new Map<string, PlanningCalendarMilestone[]>()
@@ -146,200 +189,189 @@ export function CalendarMonth({
   }, [data])
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border">
-      <div className="grid grid-cols-7 border-b border-border bg-muted/30">
-        {WEEKDAYS.map((d) => (
-          <div
-            key={d}
-            className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground"
-          >
-            {d}
-          </div>
-        ))}
-      </div>
+    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+      <div className="overflow-hidden rounded-lg border border-border">
+        <div className="grid grid-cols-7 border-b border-border bg-muted/30">
+          {WEEKDAYS.map((d) => (
+            <div
+              key={d}
+              className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground"
+            >
+              {d}
+            </div>
+          ))}
+        </div>
 
-      {weeks.map((week, wi) => {
-        const bars = layOutWeek(week, data?.tasks ?? [])
-        const lanes = bars.reduce((n, b) => Math.max(n, b.lane + 1), 0)
-        return (
-          <div
-            key={wi}
-            className={cn(
-              "relative",
-              wi < weeks.length - 1 && "border-b border-border"
-            )}
-          >
-            <div className="grid grid-cols-7">
-              {week.map((day) => {
-                const key = iso(day)
-                const outside = day.getMonth() !== month
-                const isToday = key === today
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => onPickDay?.(key)}
-                    disabled={!onPickDay}
-                    className={cn(
-                      "flex min-h-28 flex-col items-start border-r border-border p-1 text-left last:border-r-0",
-                      outside && "bg-muted/20",
-                      onPickDay && "hover:bg-accent/40"
-                    )}
-                  >
-                    <span
+        {weeks.map((week, wi) => {
+          const bars = layOutWeek(week, data?.tasks ?? [])
+          const lanes = bars.reduce((n, b) => Math.max(n, b.lane + 1), 0)
+          return (
+            <div
+              key={wi}
+              className={cn(
+                "relative",
+                wi < weeks.length - 1 && "border-b border-border"
+              )}
+            >
+              <div className="grid grid-cols-7">
+                {week.map((day) => {
+                  const key = iso(day)
+                  const outside = day.getMonth() !== month
+                  const isToday = key === today
+                  return (
+                    <DroppableCell
+                      key={key}
+                      id={key}
+                      droppable={!!(onMoveTask || onMoveMilestone)}
+                      onClick={onPickDay ? () => onPickDay(key) : undefined}
                       className={cn(
-                        "num inline-flex size-5 items-center justify-center rounded-full text-[11px]",
-                        outside
-                          ? "text-muted-foreground/60"
-                          : "text-muted-foreground",
-                        isToday &&
-                          "bg-primary font-medium text-primary-foreground"
+                        "flex flex-col items-start border-r border-border p-1 text-left last:border-r-0",
+                        tall ? "min-h-96" : "min-h-28",
+                        outside && "bg-muted/20",
+                        onPickDay && "hover:bg-accent/40"
                       )}
                     >
-                      {day.getDate()}
-                    </span>
-                    {/* Reserve the rows the bars are drawn on, so a day's own
+                      <span
+                        className={cn(
+                          "num inline-flex size-5 items-center justify-center rounded-full text-[11px]",
+                          outside
+                            ? "text-muted-foreground/60"
+                            : "text-muted-foreground",
+                          isToday &&
+                            "bg-primary font-medium text-primary-foreground"
+                        )}
+                      >
+                        {day.getDate()}
+                      </span>
+                      {/* Reserve the rows the bars are drawn on, so a day's own
                         entries start below them instead of underneath. */}
-                    <span aria-hidden style={{ height: lanes * 22 }} />
-                    <span className="mt-0.5 w-full space-y-0.5">
-                      {(byDay.events.get(key) ?? []).map((e) => (
-                        <Tooltip key={e.id}>
-                          <TooltipTrigger asChild>
-                            <span
-                              className={cn(
-                                "flex cursor-default items-center gap-1 truncate text-[11px]",
-                                e.kind === "outage"
-                                  ? "text-red-600 dark:text-red-400"
-                                  : "text-amber-600 dark:text-amber-400",
-                                !e.is_open && "opacity-50"
-                              )}
-                            >
-                              {e.kind === "outage" ? (
-                                <Zap className="h-3 w-3 shrink-0" />
-                              ) : (
-                                <Wrench className="h-3 w-3 shrink-0" />
-                              )}
-                              <span className="truncate">{e.name}</span>
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent
-                            side="top"
-                            variant="panel"
-                            className="max-w-xs flex-col items-start gap-0.5 text-[11px]"
-                          >
-                            <EventTip event={e} />
-                          </TooltipContent>
-                        </Tooltip>
-                      ))}
-                      {(byDay.milestones.get(key) ?? []).map((m) => (
-                        <Tooltip key={m.id}>
-                          <TooltipTrigger asChild>
-                            <span className="flex cursor-default items-center gap-1 truncate text-[11px]">
-                              <Flag className="h-3 w-3 shrink-0 text-muted-foreground" />
-                              <ColorBadge
-                                name={m.name}
-                                color={m.color || undefined}
-                              />
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent
-                            side="top"
-                            variant="panel"
-                            className="max-w-xs flex-col items-start gap-0.5 text-[11px]"
-                          >
-                            <p className="font-medium">Milestone: {m.name}</p>
-                            <p className="text-muted-foreground">
-                              {m.board_name} — tasks roll up to this target.
-                            </p>
-                          </TooltipContent>
-                        </Tooltip>
-                      ))}
-                      {(byDay.changes.get(key) ?? []).map((c) => (
-                        <Tooltip key={c.id}>
-                          <TooltipTrigger asChild>
-                            <span className="flex cursor-default items-center gap-1 truncate text-[11px] text-muted-foreground">
-                              <CalendarClock className="h-3 w-3 shrink-0 text-primary" />
-                              <span className="truncate">
-                                {c.fields.join(", ") || "Change"}
+                      <span aria-hidden style={{ height: lanes * 22 }} />
+                      <span className="mt-0.5 w-full space-y-0.5">
+                        {(byDay.events.get(key) ?? []).map((e) => (
+                          <Tooltip key={e.id}>
+                            <TooltipTrigger asChild>
+                              <span
+                                className={cn(
+                                  "flex cursor-default items-center gap-1 truncate text-[11px]",
+                                  e.kind === "outage"
+                                    ? "text-red-600 dark:text-red-400"
+                                    : "text-amber-600 dark:text-amber-400",
+                                  !e.is_open && "opacity-50"
+                                )}
+                              >
+                                {e.kind === "outage" ? (
+                                  <Zap className="h-3 w-3 shrink-0" />
+                                ) : (
+                                  <Wrench className="h-3 w-3 shrink-0" />
+                                )}
+                                <span className="truncate">{e.name}</span>
                               </span>
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent
-                            side="top"
-                            variant="panel"
-                            className="max-w-xs flex-col items-start gap-0.5 text-[11px]"
-                          >
-                            <p className="font-medium">
-                              Planned change — {c.fields.join(", ") || "fields"}
-                            </p>
-                            <p className="text-muted-foreground">
-                              On task “{c.task_title}”. Applied by hand when the
-                              work is done — nothing changes by itself.
-                            </p>
-                          </TooltipContent>
-                        </Tooltip>
-                      ))}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              variant="panel"
+                              className="max-w-xs flex-col items-start gap-0.5 text-[11px]"
+                            >
+                              <EventTip event={e} />
+                            </TooltipContent>
+                          </Tooltip>
+                        ))}
+                        {(byDay.milestones.get(key) ?? []).map((m) => (
+                          <Tooltip key={m.id}>
+                            <TooltipTrigger asChild>
+                              <DraggableChip
+                                id={`milestone|${m.id}`}
+                                data={{ milestone: m }}
+                                enabled={!!onMoveMilestone}
+                              >
+                                <Flag className="h-3 w-3 shrink-0 text-muted-foreground" />
+                                <ColorBadge
+                                  name={m.name}
+                                  color={m.color || undefined}
+                                />
+                              </DraggableChip>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              variant="panel"
+                              className="max-w-xs flex-col items-start gap-0.5 text-[11px]"
+                            >
+                              <p className="font-medium">Milestone: {m.name}</p>
+                              <p className="text-muted-foreground">
+                                {m.board_name} — tasks roll up to this target.
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        ))}
+                        {(byDay.changes.get(key) ?? []).map((c) => (
+                          <Tooltip key={c.id}>
+                            <TooltipTrigger asChild>
+                              <span className="flex cursor-default items-center gap-1 truncate text-[11px] text-muted-foreground">
+                                <CalendarClock className="h-3 w-3 shrink-0 text-primary" />
+                                <span className="truncate">
+                                  {c.fields.join(", ") || "Change"}
+                                </span>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              variant="panel"
+                              className="max-w-xs flex-col items-start gap-0.5 text-[11px]"
+                            >
+                              <p className="font-medium">
+                                Planned change —{" "}
+                                {c.fields.join(", ") || "fields"}
+                              </p>
+                              <p className="text-muted-foreground">
+                                On task “{c.task_title}”. Applied by hand when
+                                the work is done — nothing changes by itself.
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        ))}
+                      </span>
+                    </DroppableCell>
+                  )
+                })}
+              </div>
 
-            {/* Bars live in their own grid layered over the week: a span has to
+              {/* Bars live in their own grid layered over the week: a span has to
                 cross day boundaries, which a single cell's content cannot. */}
-            <div className="pointer-events-none absolute inset-x-0 top-7 grid auto-rows-[22px] grid-cols-7">
-              {bars.map((bar) => (
-                <Tooltip key={bar.task.id}>
-                  <TooltipTrigger asChild>
-                    <Link
-                      to="/planning/$boardId/tasks/$taskId"
-                      params={{ boardId: bar.task.board, taskId: bar.task.id }}
-                      style={{
-                        gridColumnStart: bar.from,
-                        gridColumnEnd: bar.to,
-                        gridRowStart: bar.lane + 1,
-                        ...(bar.task.status_color
-                          ? {
-                              backgroundColor: `${bar.task.status_color}2b`,
-                              borderColor: `${bar.task.status_color}80`,
-                            }
-                          : {}),
-                      }}
-                      className={cn(
-                        "pointer-events-auto mx-1 h-[19px] truncate rounded-[5px] border px-1.5 text-[11px] leading-[17px] hover:brightness-125",
-                        !bar.task.status_color && "border-border bg-muted",
-                        bar.continuesBefore && "ml-0 rounded-l-none border-l-0",
-                        bar.continuesAfter && "mr-0 rounded-r-none border-r-0"
-                      )}
+              <div className="pointer-events-none absolute inset-x-0 top-7 grid auto-rows-[22px] grid-cols-7">
+                {bars.map((bar) => (
+                  <Tooltip key={`${bar.task.id}|${wi}`}>
+                    <TooltipTrigger asChild>
+                      <TaskBar
+                        bar={bar}
+                        draggable={!!onMoveTask}
+                        weekIndex={wi}
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="top"
+                      variant="panel"
+                      className="max-w-xs flex-col items-start gap-0.5 text-[11px]"
                     >
-                      {bar.continuesBefore && "‹ "}
-                      {bar.task.title}
-                      {bar.continuesAfter && " ›"}
-                    </Link>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="top"
-                    variant="panel"
-                    className="max-w-xs flex-col items-start gap-0.5 text-[11px]"
-                  >
-                    <p className="font-medium">{bar.task.title}</p>
-                    <p className="text-muted-foreground">
-                      {bar.task.board_name} · {bar.task.status_name}
-                      {bar.task.assignees.length
-                        ? ` · ${bar.task.assignees.join(", ")}`
-                        : ""}
-                    </p>
-                    <p className="text-muted-foreground">
-                      {bar.task.start_date ?? "—"} → {bar.task.due_date ?? "—"}
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              ))}
+                      <p className="font-medium">{bar.task.title}</p>
+                      <p className="text-muted-foreground">
+                        {bar.task.board_name} · {bar.task.status_name}
+                        {bar.task.assignees.length
+                          ? ` · ${bar.task.assignees.join(", ")}`
+                          : ""}
+                      </p>
+                      <p className="text-muted-foreground">
+                        {bar.task.start_date ?? "—"} →{" "}
+                        {bar.task.due_date ?? "—"}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                ))}
+              </div>
             </div>
-          </div>
-        )
-      })}
-    </div>
+          )
+        })}
+      </div>
+    </DndContext>
   )
 }
 
@@ -364,5 +396,130 @@ function EventTip({ event }: { event: PlanningCalendarEvent }) {
       </p>
       <p className="text-muted-foreground">{when}</p>
     </>
+  )
+}
+
+/** A day cell that accepts dropped bars/chips. Renders as the plain cell
+ *  button when dragging is off, so month browsing stays untouched. */
+function DroppableCell({
+  id,
+  droppable,
+  onClick,
+  className,
+  children,
+}: {
+  id: string
+  droppable: boolean
+  onClick?: () => void
+  className?: string
+  children: React.ReactNode
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id, disabled: !droppable })
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className={cn(className, droppable && isOver && "bg-accent/60")}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** A one-day chip (milestone) that can be dragged onto another day. */
+function DraggableChip({
+  id,
+  data,
+  enabled,
+  children,
+}: {
+  id: string
+  data: Record<string, unknown>
+  enabled: boolean
+  children: React.ReactNode
+}) {
+  const drag = useDraggable({ id, data, disabled: !enabled })
+  return (
+    <span
+      ref={drag.setNodeRef}
+      {...drag.attributes}
+      {...drag.listeners}
+      style={
+        drag.transform
+          ? {
+              transform: `translate(${drag.transform.x}px, ${drag.transform.y}px)`,
+              zIndex: 30,
+              position: "relative",
+            }
+          : undefined
+      }
+      className={cn(
+        "flex items-center gap-1 truncate text-[11px]",
+        enabled ? "cursor-grab touch-none" : "cursor-default",
+        drag.isDragging && "opacity-70"
+      )}
+    >
+      {children}
+    </span>
+  )
+}
+
+/** One task bar in the overlay grid — a link, and (with change rights) a
+ *  draggable: drop it on a day and the whole span shifts there. */
+function TaskBar({
+  bar,
+  draggable,
+  weekIndex,
+}: {
+  bar: Bar
+  draggable: boolean
+  weekIndex: number
+}) {
+  const drag = useDraggable({
+    // A long task renders once per week it crosses; each rendering needs its
+    // own drag identity or dnd-kit sees duplicate ids.
+    id: `task|${bar.task.id}|${weekIndex}`,
+    data: { task: bar.task },
+    disabled: !draggable,
+  })
+  return (
+    <Link
+      ref={drag.setNodeRef}
+      {...drag.attributes}
+      {...drag.listeners}
+      to="/planning/$boardId/tasks/$taskId"
+      params={{ boardId: bar.task.board, taskId: bar.task.id }}
+      style={{
+        gridColumnStart: bar.from,
+        gridColumnEnd: bar.to,
+        gridRowStart: bar.lane + 1,
+        ...(bar.task.status_color
+          ? {
+              backgroundColor: `${bar.task.status_color}2b`,
+              borderColor: `${bar.task.status_color}80`,
+            }
+          : {}),
+        ...(drag.transform
+          ? {
+              transform: `translate(${drag.transform.x}px, ${drag.transform.y}px)`,
+              zIndex: 30,
+            }
+          : {}),
+      }}
+      className={cn(
+        "pointer-events-auto mx-1 h-[19px] truncate rounded-[5px] border px-1.5 text-[11px] leading-[17px] hover:brightness-125",
+        !bar.task.status_color && "border-border bg-muted",
+        bar.continuesBefore && "ml-0 rounded-l-none border-l-0",
+        bar.continuesAfter && "mr-0 rounded-r-none border-r-0",
+        draggable && "touch-none",
+        drag.isDragging && "opacity-70"
+      )}
+    >
+      {bar.continuesBefore && "‹ "}
+      {bar.task.title}
+      {bar.continuesAfter && " ›"}
+    </Link>
   )
 }

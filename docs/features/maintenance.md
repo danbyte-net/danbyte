@@ -68,6 +68,13 @@ it **owns a silence**:
 - Closing the event (or removing all device impacts) retires the silence.
   No device impacts ever means no silence — a blanket mute is never implied.
 
+## On the objects it touches
+
+A device or circuit named in an open event shows a **Planned maintenance &
+outages** panel at the top of its Overview — the reverse of the event's impact
+list, so "is there a window on this box?" is answered where the operator
+already is. The panel disappears when nothing is planned.
+
 ## On the calendar
 
 Events overlapping the window appear on the planning calendar for **every**
@@ -121,7 +128,7 @@ Authorization: Token <api token with maintenanceevent add+change>
 
 | Endpoint | Purpose |
 |---|---|
-| `GET/POST /api/monitoring/maintenance-events/` | List and create. Filters: `kind`, `status` (id or slug), `provider`, `open=1`, `active_at=<iso>` |
+| `GET/POST /api/monitoring/maintenance-events/` | List and create. Filters: `kind`, `status` (id or slug), `provider`, `open=1`, `active_at=<iso>`, `object_type=&object_id=` (events touching that object) |
 | `PATCH/DELETE …/{id}/` | Update (resyncs the silence) / delete (retires it) |
 | `POST …/ingest/` | Upsert from an external parser (above) |
 | `GET/POST /api/monitoring/event-impacts/` | Impacts; `?event=` or `?object_type=&object_id=` for the reverse "what maintenance touches this circuit?" |
