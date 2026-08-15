@@ -12,6 +12,10 @@ the data. You define your own device types, statuses, roles, compliance rules,
 and custom fields, so the system reflects *your* network instead of someone
 else's defaults.
 
+!!! tip "Docs from inside the app"
+    The book icon in the app's top bar opens the documentation page for the
+    screen you are on; unmapped pages land here on the docs home.
+
 ## Explore
 
 <div class="grid cards" markdown>

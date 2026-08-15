@@ -4,6 +4,7 @@ import { ModeToggle } from "@/components/mode-toggle"
 import { GlobalSearch } from "@/components/global-search"
 import { BookmarkButton } from "@/components/bookmark-button"
 import { NotificationBell } from "@/components/notification-bell"
+import { DocsButton } from "@/components/docs-button"
 import { PresenceBar } from "@/components/presence-bar"
 import { usePresentUsers } from "@/lib/presence-context"
 import { useMe } from "@/lib/use-me"
@@ -68,6 +69,7 @@ export function SiteHeader({ crumbs }: { crumbs?: Crumb[] }) {
             />
           )}
           <GlobalSearch />
+          <DocsButton />
           <NotificationBell />
           <BookmarkButton />
           <ModeToggle />
