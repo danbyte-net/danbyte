@@ -17,10 +17,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
+import { Link } from "@tanstack/react-router"
+
 import { api, type PlanningStatus, type PlanningTask } from "@/lib/api"
 import { Input } from "@/components/ui/input"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useMe } from "@/lib/use-me"
 import { TaskCard } from "./task-card"
 
 // Nested droppables (cards inside column bodies) flicker with plain
@@ -124,6 +127,7 @@ export function BoardCanvas({
             canEdit={canEdit}
           />
         ))}
+        <AddColumn boardId={boardId} statuses={statuses} />
       </div>
       <DragOverlay dropAnimation={null}>
         {activeTask && (
@@ -246,6 +250,82 @@ function Column({
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+/** The rail after the last column: add a column right on the board, plus the
+ * link to the full editor (rename, color, Done tick, reorder). */
+function AddColumn({
+  boardId,
+  statuses,
+}: {
+  boardId: string
+  statuses: PlanningStatus[]
+}) {
+  const { canDo } = useMe()
+  const qc = useQueryClient()
+  const [adding, setAdding] = useState(false)
+  const [name, setName] = useState("")
+
+  const create = useMutation({
+    mutationFn: () =>
+      api("/api/planning/statuses/", {
+        method: "POST",
+        body: JSON.stringify({
+          board: boardId,
+          name: name.trim(),
+          semantic_group: "unstarted",
+          weight: statuses.length
+            ? Math.max(...statuses.map((s) => s.weight)) + 100
+            : 100,
+        }),
+      }),
+    onSuccess: () => {
+      setName("")
+      setAdding(false)
+      qc.invalidateQueries({ queryKey: ["planning-statuses", boardId] })
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  if (!canDo("taskstatus", "add")) return null
+  return (
+    <div className="w-56 shrink-0">
+      {adding ? (
+        <Input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Column name"
+          className="h-9"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && name.trim()) create.mutate()
+            if (e.key === "Escape") {
+              setName("")
+              setAdding(false)
+            }
+          }}
+          onBlur={() => {
+            if (!name.trim()) setAdding(false)
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          className="flex h-9 w-full items-center gap-1.5 rounded-lg border border-dashed border-border px-3 text-[13px] text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+          onClick={() => setAdding(true)}
+        >
+          <Plus className="h-3.5 w-3.5" /> Add column
+        </button>
+      )}
+      <Link
+        to="/statuses"
+        search={{ tab: "tasks" }}
+        className="mt-2 block px-1 text-[11px] text-muted-foreground hover:underline"
+      >
+        Manage columns (rename, color, Done)…
+      </Link>
     </div>
   )
 }
