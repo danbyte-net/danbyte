@@ -30,6 +30,10 @@ alongside every other status catalog. Each row has:
   This is what Danbyte *means* by the column: "Completed" and "Cancelled" count
   as closed no matter what you name them. Statuses stay user-editable while the
   semantics stay machine-readable.
+- **Done** — a tick box shorthand for the semantic group. Ticked, the column
+  counts as closed: its tasks stop appearing in the daily "Your work" reminder
+  email and the digest's planned-work section, even when their due date has
+  passed. A finished task never nags.
 
 A status that still has tasks can't be deleted — move them first.
 
@@ -146,6 +150,11 @@ real values. Change whatever you want — three fields, the rack, the status —
 save. Nothing is written; the fields that actually differ are recorded on the
 task as a planned change. "Plan a new interface" opens the interface create form
 the same way.
+
+The same button sits on every plan-capable object's own page and asks which
+task the work belongs to. If no existing task fits, **New task** in the picker
+creates one on the spot: give it a title, pick a board, and the object is
+linked to the new task automatically before the editor opens in plan mode.
 
 Because it is literally the same form, every field is editable, with the same
 validation and the same layout — there is no second implementation to keep in

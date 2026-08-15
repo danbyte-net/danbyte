@@ -12,6 +12,7 @@ import {
 } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { EmptyState } from "@/components/empty-state"
 import { FormSelect } from "@/components/forms"
@@ -144,8 +145,10 @@ export function TaskStatusManager() {
       </div>
       <p className="text-[11px] text-muted-foreground">
         The semantic group tells Danbyte what a column means — "Completed" and
-        "Cancelled" count as closed regardless of what you name them. Lower
-        weights sort further left on the board.
+        "Cancelled" count as closed regardless of what you name them. Tasks in a
+        closed column stop generating due-date reminder emails and drop out of
+        the digest's planned-work section, even when their due date has passed.
+        Lower weights sort further left on the board.
       </p>
     </div>
   )
@@ -198,6 +201,22 @@ function StatusRow({
           disabled={!canEdit}
         />
       </div>
+      <label
+        className="flex items-center gap-1.5 text-xs text-muted-foreground"
+        title="Tasks in this column count as done — overdue ones stop sending reminder emails"
+      >
+        <Checkbox
+          checked={
+            status.semantic_group === "completed" ||
+            status.semantic_group === "cancelled"
+          }
+          disabled={!canEdit}
+          onCheckedChange={(v) =>
+            onPatch({ semantic_group: v ? "completed" : "unstarted" })
+          }
+        />
+        Done
+      </label>
       <Input
         type="number"
         value={weight}
