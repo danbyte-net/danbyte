@@ -211,6 +211,7 @@ import { Route as SettingsFloorplanRouteImport } from './routes/settings.floorpl
 import { Route as SettingsEmailRouteImport } from './routes/settings.email'
 import { Route as SettingsDeviceFieldsRouteImport } from './routes/settings.device-fields'
 import { Route as SettingsConnectRouteImport } from './routes/settings.connect'
+import { Route as SettingsComponentsRouteImport } from './routes/settings.components'
 import { Route as SettingsAdminRouteImport } from './routes/settings.admin'
 import { Route as ServicesIdRouteImport } from './routes/services.$id'
 import { Route as ServiceTemplatesNewRouteImport } from './routes/service-templates.new'
@@ -1407,6 +1408,11 @@ const SettingsConnectRoute = SettingsConnectRouteImport.update({
   path: '/connect',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsComponentsRoute = SettingsComponentsRouteImport.update({
+  id: '/components',
+  path: '/components',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsAdminRoute = SettingsAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -2509,6 +2515,7 @@ export interface FileRoutesByFullPath {
   '/service-templates/new': typeof ServiceTemplatesNewRoute
   '/services/$id': typeof ServicesIdRoute
   '/settings/admin': typeof SettingsAdminRoute
+  '/settings/components': typeof SettingsComponentsRoute
   '/settings/connect': typeof SettingsConnectRoute
   '/settings/device-fields': typeof SettingsDeviceFieldsRoute
   '/settings/email': typeof SettingsEmailRoute
@@ -2840,6 +2847,7 @@ export interface FileRoutesByTo {
   '/service-templates/new': typeof ServiceTemplatesNewRoute
   '/services/$id': typeof ServicesIdRoute
   '/settings/admin': typeof SettingsAdminRoute
+  '/settings/components': typeof SettingsComponentsRoute
   '/settings/connect': typeof SettingsConnectRoute
   '/settings/device-fields': typeof SettingsDeviceFieldsRoute
   '/settings/email': typeof SettingsEmailRoute
@@ -3228,6 +3236,7 @@ export interface FileRoutesById {
   '/service-templates/new': typeof ServiceTemplatesNewRoute
   '/services/$id': typeof ServicesIdRoute
   '/settings/admin': typeof SettingsAdminRoute
+  '/settings/components': typeof SettingsComponentsRoute
   '/settings/connect': typeof SettingsConnectRoute
   '/settings/device-fields': typeof SettingsDeviceFieldsRoute
   '/settings/email': typeof SettingsEmailRoute
@@ -3617,6 +3626,7 @@ export interface FileRouteTypes {
     | '/service-templates/new'
     | '/services/$id'
     | '/settings/admin'
+    | '/settings/components'
     | '/settings/connect'
     | '/settings/device-fields'
     | '/settings/email'
@@ -3948,6 +3958,7 @@ export interface FileRouteTypes {
     | '/service-templates/new'
     | '/services/$id'
     | '/settings/admin'
+    | '/settings/components'
     | '/settings/connect'
     | '/settings/device-fields'
     | '/settings/email'
@@ -4335,6 +4346,7 @@ export interface FileRouteTypes {
     | '/service-templates/new'
     | '/services/$id'
     | '/settings/admin'
+    | '/settings/components'
     | '/settings/connect'
     | '/settings/device-fields'
     | '/settings/email'
@@ -6103,6 +6115,13 @@ declare module '@tanstack/react-router' {
       path: '/connect'
       fullPath: '/settings/connect'
       preLoaderRoute: typeof SettingsConnectRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/components': {
+      id: '/settings/components'
+      path: '/components'
+      fullPath: '/settings/components'
+      preLoaderRoute: typeof SettingsComponentsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/admin': {
@@ -8071,6 +8090,7 @@ const RouteTargetsRouteWithChildren = RouteTargetsRoute._addFileChildren(
 
 interface SettingsRouteChildren {
   SettingsAdminRoute: typeof SettingsAdminRoute
+  SettingsComponentsRoute: typeof SettingsComponentsRoute
   SettingsConnectRoute: typeof SettingsConnectRoute
   SettingsDeviceFieldsRoute: typeof SettingsDeviceFieldsRoute
   SettingsEmailRoute: typeof SettingsEmailRoute
@@ -8097,6 +8117,7 @@ interface SettingsRouteChildren {
 
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAdminRoute: SettingsAdminRoute,
+  SettingsComponentsRoute: SettingsComponentsRoute,
   SettingsConnectRoute: SettingsConnectRoute,
   SettingsDeviceFieldsRoute: SettingsDeviceFieldsRoute,
   SettingsEmailRoute: SettingsEmailRoute,
