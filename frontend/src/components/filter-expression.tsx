@@ -28,11 +28,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import {
   Select,
   SelectContent,
@@ -314,8 +310,8 @@ function BuilderRows({
   )
 }
 
-/** The value input plus a picker of the values actually present in this list —
- * free text still works; the picker just saves the typing (and the guessing). */
+/** The value input as a combobox: focusing it opens the values actually
+ * present in this list, typing filters them, and free text always wins. */
 function ValueField({
   value,
   onChange,
@@ -326,95 +322,119 @@ function ValueField({
   samples: string[]
 }) {
   const [open, setOpen] = useState(false)
-  return (
-    <div className="relative flex min-w-0 flex-1">
+  const matches = useMemo(() => {
+    const q = value.trim().toLowerCase()
+    const hit = q ? samples.filter((s) => s.toLowerCase().includes(q)) : samples
+    // An exact pick shouldn't collapse the list to itself.
+    return hit.length === 1 && hit[0] === value ? samples : hit
+  }, [samples, value])
+
+  if (samples.length === 0)
+    return (
       <Input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Value"
-        className={`h-8 min-w-0 flex-1 text-[12px] ${samples.length ? "pr-7" : ""}`}
+        className="h-8 min-w-0 flex-1 text-[12px]"
       />
-      {samples.length > 0 && (
-        <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              className="absolute inset-y-0 right-1.5 flex items-center text-muted-foreground hover:text-foreground"
-              title="Pick a value from this list"
-            >
-              <ChevronDown className="h-3.5 w-3.5" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent
-            align="end"
-            className="max-h-64 w-60 overflow-y-auto p-1"
+    )
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverAnchor asChild>
+        <div className="relative flex min-w-0 flex-1">
+          <Input
+            value={value}
+            onChange={(e) => {
+              onChange(e.target.value)
+              setOpen(true)
+            }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setOpen(false)
+            }}
+            placeholder="Value"
+            className="h-8 min-w-0 flex-1 pr-7 text-[12px]"
+          />
+          <button
+            type="button"
+            tabIndex={-1}
+            className="absolute inset-y-0 right-1.5 flex items-center text-muted-foreground hover:text-foreground"
+            title="Values in this list"
+            onClick={() => setOpen((o) => !o)}
           >
-            {samples.map((s) => (
-              <button
-                key={s}
-                type="button"
-                className="block w-full truncate rounded-md px-2 py-1 text-left text-[12px] hover:bg-accent"
-                onClick={() => {
-                  onChange(s)
-                  setOpen(false)
-                }}
-              >
-                {s}
-              </button>
-            ))}
-          </PopoverContent>
-        </Popover>
-      )}
-    </div>
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </PopoverAnchor>
+      <PopoverContent
+        align="start"
+        className="max-h-56 w-60 overflow-y-auto p-1"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        {matches.length === 0 ? (
+          <p className="px-2 py-1.5 text-[11px] text-muted-foreground">
+            Nothing in this list matches — free text still applies.
+          </p>
+        ) : (
+          matches.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className="block w-full truncate rounded-md px-2 py-1 text-left text-[12px] hover:bg-accent"
+              onClick={() => {
+                onChange(s)
+                setOpen(false)
+              }}
+            >
+              {s}
+            </button>
+          ))
+        )}
+      </PopoverContent>
+    </Popover>
   )
 }
 
 /** The grammar on a card, so nobody has to find the docs mid-filter. */
 function OperatorsHint() {
+  const row = (op: string, what: string) => (
+    <>
+      <code className="font-mono text-[11px] font-semibold whitespace-nowrap text-foreground">
+        {op}
+      </code>
+      <span className="text-muted-foreground">{what}</span>
+    </>
+  )
   return (
     <HoverCard openDelay={100}>
       <HoverCardTrigger asChild>
+        {/* tabIndex -1: the dialog focuses its first tabbable element on open,
+            and a focused trigger opens the card — which made the reference
+            cover the dialog before the pointer ever moved. */}
         <button
           type="button"
+          tabIndex={-1}
           className="text-muted-foreground hover:text-foreground"
           aria-label="Operator reference"
         >
           <Info className="h-3.5 w-3.5" />
         </button>
       </HoverCardTrigger>
-      <HoverCardContent className="w-80 text-xs leading-relaxed text-muted-foreground">
-        <ul className="space-y-1">
-          <li>
-            <code className="font-mono">=</code> /{" "}
-            <code className="font-mono">!=</code> — equals / not equals
-          </li>
-          <li>
-            <code className="font-mono">~</code> /{" "}
-            <code className="font-mono">!~</code> — contains / does not contain,
-            case-insensitive
-          </li>
-          <li>
-            <code className="font-mono">&lt; &gt; &lt;= &gt;=</code> — compare
-            numbers and dates
-          </li>
-          <li>
-            <code className="font-mono">is empty</code> /{" "}
-            <code className="font-mono">is not empty</code>
-          </li>
-          <li>
-            Combine with <code className="font-mono">and</code> /{" "}
-            <code className="font-mono">or</code> and parentheses;{" "}
-            <code className="font-mono">and</code> binds tighter.
-          </li>
-          <li>
-            Dotted paths reach related objects:{" "}
-            <code className="font-mono">site.name ~ cph</code>
-          </li>
-          <li>
-            On lists like tags, <code className="font-mono">~</code> matches any
-            element; the negative operators must hold for all of them.
-          </li>
-        </ul>
+      <HoverCardContent align="start" className="w-80 text-xs">
+        <div className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1.5">
+          {row("=  !=", "equals / not equals")}
+          {row("~  !~", "contains / does not contain (case-insensitive)")}
+          {row("<  >  <=  >=", "compare numbers and dates")}
+          {row("is empty", "field has no value (is not empty for the reverse)")}
+          {row("and  or", "combine conditions; and binds tighter, ( ) group")}
+          {row("site.name", "dotted paths reach related objects")}
+        </div>
+        <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+          On list fields like tags, <code className="font-mono">~</code> matches
+          any element; <code className="font-mono">!~</code> must hold for all
+          of them.
+        </p>
       </HoverCardContent>
     </HoverCard>
   )
