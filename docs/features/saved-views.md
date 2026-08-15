@@ -67,8 +67,10 @@ weight > 100 or description is empty
 the ones shared with this tenant — with the list it belongs to, its
 visibility, and its owner. Edit (rename, description, shared) or delete your
 own from there; the pencil on a view in any list's dropdown jumps straight to
-its edit dialog. The *conditions* themselves are edited on the list: apply
-the view, adjust the filters, and press **Update**.
+its edit dialog. The dialog edits the whole view: name, description,
+visibility, the search text, the ticked sidebar selections (remove values you
+no longer want), and the advanced expression with the full builder. New facet
+picks still come from the list itself — apply the view, adjust, **Update**.
 
 A line break also works as `and` — one condition per line reads naturally
 and shows up as one builder row each.

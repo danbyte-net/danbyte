@@ -122,6 +122,76 @@ function ExpressionDialog({
   onClose: () => void
   onApply: (next: string) => void
 }) {
+  const [state, setState] = useState<{ text: string; error: string | null }>({
+    text: initial,
+    error: null,
+  })
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent size="2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-1.5">
+            Advanced filter
+            <OperatorsHint />
+          </DialogTitle>
+          <DialogDescription>
+            Build conditions, or type them —{" "}
+            <code className="text-[11px]">
+              status = active and (site.name ~ cph or tags ~ core)
+            </code>
+            . Fields and values come from this list's own rows.
+          </DialogDescription>
+        </DialogHeader>
+
+        <ExpressionEditor
+          initial={initial}
+          rows={rows}
+          onChange={(text, error) => setState({ text, error })}
+        />
+
+        <DialogFooter>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={!!state.error || !state.text.trim()}
+            onClick={() => {
+              onApply(state.text.trim())
+              // Hand off to the SavedViews naming flow (same page, different
+              // subtree) — the snapshot it saves includes this expression.
+              window.dispatchEvent(new CustomEvent("danbyte:save-view"))
+            }}
+          >
+            Apply &amp; save as view
+          </Button>
+          <Button
+            size="sm"
+            disabled={!!state.error}
+            onClick={() => onApply(state.text.trim())}
+          >
+            Apply
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** The builder + text pair, reusable outside the list dialog (the saved-filter
+ * management page edits stored expressions with no rows to sample). Reports
+ * every edit with its parse error so the host can gate its save button. */
+export function ExpressionEditor({
+  initial,
+  rows,
+  onChange,
+}: {
+  initial: string
+  rows: unknown[]
+  onChange: (text: string, error: string | null) => void
+}) {
   const fields = useMemo(() => discoverFields(rows), [rows])
 
   // Groups are STATE, not a projection of the text: a freshly added blank row
@@ -148,86 +218,47 @@ function ExpressionDialog({
 
   const onTextEdit = (t: string) => {
     setText(t)
+    let err: string | null = null
     try {
       parse(t)
       setGroups(seed(t))
-    } catch {
+    } catch (e) {
       // Invalid mid-edit text: keep the rows as they were.
+      err = e instanceof Error ? e.message : String(e)
     }
+    onChange(t, err)
   }
 
   const setFromGroups = (next: BuilderRule[][]) => {
     setGroups(next)
-    setText(format(fromGroups(next)))
+    const t = format(fromGroups(next))
+    setText(t)
+    onChange(t, null)
   }
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent size="2xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-1.5">
-            Advanced filter
-            <OperatorsHint />
-          </DialogTitle>
-          <DialogDescription>
-            Build conditions, or type them —{" "}
-            <code className="text-[11px]">
-              status = active and (site.name ~ cph or tags ~ core)
-            </code>
-            . Fields and values come from this list's own rows.
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      {groups ? (
+        <GroupRows groups={groups} fields={fields} onChange={setFromGroups} />
+      ) : (
+        !error && (
+          <p className="text-[12px] text-muted-foreground">
+            This expression uses grouping the builder can't show — edit it as
+            text below.
+          </p>
+        )
+      )}
 
-        {groups ? (
-          <GroupRows groups={groups} fields={fields} onChange={setFromGroups} />
-        ) : (
-          !error && (
-            <p className="text-[12px] text-muted-foreground">
-              This expression uses grouping the builder can't show — edit it as
-              text below.
-            </p>
-          )
-        )}
-
-        <div>
-          <Textarea
-            value={text}
-            onChange={(e) => onTextEdit(e.target.value)}
-            placeholder="e.g. status = active and due_date < 2026-09-01"
-            className="min-h-16 font-mono text-[12.5px]"
-          />
-          {error && (
-            <p className="mt-1 text-[12px] text-destructive">{error}</p>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={!!error || !text.trim()}
-            onClick={() => {
-              onApply(text.trim())
-              // Hand off to the SavedViews naming flow (same page, different
-              // subtree) — the snapshot it saves includes this expression.
-              window.dispatchEvent(new CustomEvent("danbyte:save-view"))
-            }}
-          >
-            Apply & save as view
-          </Button>
-          <Button
-            size="sm"
-            disabled={!!error}
-            onClick={() => onApply(text.trim())}
-          >
-            Apply
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <div>
+        <Textarea
+          value={text}
+          onChange={(e) => onTextEdit(e.target.value)}
+          placeholder="e.g. status = active and due_date < 2026-09-01"
+          className="min-h-16 font-mono text-[12.5px]"
+        />
+        {error && <p className="mt-1 text-[12px] text-destructive">{error}</p>}
+      </div>
+    </>
   )
 }
 
@@ -285,21 +316,30 @@ function GroupRows({
                   key={ri}
                   className="grid grid-cols-[10rem_8.5rem_minmax(0,1fr)_2rem] items-center gap-1.5"
                 >
-                  <Select
-                    value={rule.field || undefined}
-                    onValueChange={(v) => update({ field: v })}
-                  >
-                    <SelectTrigger className="h-8 w-full text-[12px]">
-                      <SelectValue placeholder="Field" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-64">
-                      {fields.map((f) => (
-                        <SelectItem key={f.path} value={f.path}>
-                          {f.path}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {fields.length === 0 ? (
+                    <Input
+                      value={rule.field}
+                      onChange={(e) => update({ field: e.target.value })}
+                      placeholder="Field"
+                      className="h-8 w-full font-mono text-[12px]"
+                    />
+                  ) : (
+                    <Select
+                      value={rule.field || undefined}
+                      onValueChange={(v) => update({ field: v })}
+                    >
+                      <SelectTrigger className="h-8 w-full text-[12px]">
+                        <SelectValue placeholder="Field" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-64">
+                        {fields.map((f) => (
+                          <SelectItem key={f.path} value={f.path}>
+                            {f.path}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <Select
                     value={rule.cmp}
                     onValueChange={(v) =>
@@ -323,7 +363,10 @@ function GroupRows({
                       value={rule.value}
                       onChange={(v) => update({ value: v })}
                       samples={samples}
-                      fieldChosen={fields.some((f) => f.path === rule.field)}
+                      fieldChosen={
+                        fields.length === 0 ||
+                        fields.some((f) => f.path === rule.field)
+                      }
                     />
                   )}
                   <Button

@@ -28,6 +28,9 @@ import {
 import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { apiErrorToast } from "@/lib/api-toast"
+import { ExpressionEditor } from "@/components/filter-expression"
+import type { FilterSnapshot } from "@/components/table-filters"
+import { X } from "lucide-react"
 
 export const Route = createFileRoute("/saved-filters")({
   validateSearch: (s: Record<string, unknown>): { edit?: string } => ({
@@ -279,17 +282,53 @@ function EditDialog({
   const [name, setName] = useState(view.name)
   const [description, setDescription] = useState(view.description)
   const [shared, setShared] = useState(view.shared)
+  const [searchText, setSearchText] = useState(view.query.q ?? "")
+
+  const storedFacets: FilterSnapshot = view.query.facets ?? {}
+  const initialExpr =
+    typeof storedFacets.__expr === "string" ? storedFacets.__expr : ""
+  const [expr, setExpr] = useState<{ text: string; error: string | null }>({
+    text: initialExpr,
+    error: null,
+  })
+  // Facet selections, editable as removable values — their labels live on the
+  // source list, so this edits what was saved rather than offering new picks.
+  const [facets, setFacets] = useState<FilterSnapshot>(() => {
+    const rest: FilterSnapshot = {}
+    for (const [k, v] of Object.entries(storedFacets))
+      if (k !== "__expr") rest[k] = v
+    return rest
+  })
+
+  const dropFacetValue = (key: string, value?: string) => {
+    setFacets((cur) => {
+      const next: FilterSnapshot = { ...cur }
+      const entry = next[key]
+      if (value !== undefined && Array.isArray(entry)) {
+        const left = entry.filter((v) => v !== value)
+        if (left.length) next[key] = left
+        else delete next[key]
+      } else {
+        delete next[key]
+      }
+      return next
+    })
+  }
 
   const save = useMutation({
-    mutationFn: () =>
-      api<SavedView>(`/api/saved-filters/${view.id}/`, {
+    mutationFn: () => {
+      const outFacets: FilterSnapshot = { ...facets }
+      if (expr.text.trim()) outFacets.__expr = expr.text.trim()
+      return api<SavedView>(`/api/saved-filters/${view.id}/`, {
         method: "PATCH",
         body: JSON.stringify({
           name: name.trim(),
           description: description.trim(),
           shared,
+          query: { q: searchText, facets: outFacets },
         }),
-      }),
+      })
+    },
     onSuccess: () => {
       toast.success("Saved filter updated")
       qc.invalidateQueries({ queryKey: ["saved-views"] })
@@ -298,29 +337,112 @@ function EditDialog({
     onError: (e) => apiErrorToast(e),
   })
 
+  const facetEntries = Object.entries(facets)
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent size="md">
+      <DialogContent size="2xl">
         <DialogHeader>
           <DialogTitle>Edit saved filter</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3">
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Name</label>
+              <Input
+                autoFocus
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">
+                Description
+              </label>
+              <Input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Optional"
+              />
+            </div>
+          </div>
+
           <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">Name</label>
+            <label className="text-xs text-muted-foreground">Search text</label>
             <Input
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="What the list's search box contains"
             />
           </div>
+
+          {facetEntries.length > 0 && (
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">
+                Sidebar selections
+              </label>
+              <div className="space-y-1.5 rounded-lg border border-border p-2.5">
+                {facetEntries.map(([key, entry]) => (
+                  <div
+                    key={key}
+                    className="flex flex-wrap items-center gap-1.5 text-[12px]"
+                  >
+                    <span className="font-mono text-muted-foreground">
+                      {key}
+                    </span>
+                    {Array.isArray(entry) ? (
+                      entry.map((v) => (
+                        <span
+                          key={v}
+                          className="inline-flex items-center gap-1 rounded-md bg-accent px-1.5 py-0.5"
+                        >
+                          <span className="max-w-48 truncate">{v}</span>
+                          <button
+                            type="button"
+                            title="Remove this value"
+                            className="text-muted-foreground hover:text-foreground"
+                            onClick={() => dropFacetValue(key, v)}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-accent px-1.5 py-0.5">
+                        {typeof entry === "string"
+                          ? entry
+                          : `${entry.min || "…"} – ${entry.max || "…"}`}
+                        <button
+                          type="button"
+                          title="Remove"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => dropFacetValue(key)}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                ))}
+                <p className="text-[11px] text-muted-foreground">
+                  Ticked sidebar facets, by internal value — remove what no
+                  longer belongs; add new ones from the list itself.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">Description</label>
-            <Input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional"
+            <label className="text-xs text-muted-foreground">
+              Advanced expression
+            </label>
+            <ExpressionEditor
+              initial={initialExpr}
+              rows={[]}
+              onChange={(text, error) => setExpr({ text, error })}
             />
           </div>
+
           <label className="flex items-center gap-2 text-sm">
             <Checkbox
               checked={shared}
@@ -328,10 +450,6 @@ function EditDialog({
             />
             Share with everyone in this tenant
           </label>
-          <p className="text-[11px] text-muted-foreground">
-            The conditions themselves are edited on the list: apply this view
-            there, adjust, and use Update.
-          </p>
         </div>
         <DialogFooter>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -339,7 +457,7 @@ function EditDialog({
           </Button>
           <Button
             size="sm"
-            disabled={!name.trim() || save.isPending}
+            disabled={!name.trim() || !!expr.error || save.isPending}
             onClick={() => save.mutate()}
           >
             {save.isPending ? "Saving..." : "Save"}
