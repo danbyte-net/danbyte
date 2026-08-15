@@ -59,6 +59,9 @@ due_date < 2026-09-01 and assignees is not empty
 weight > 100 or description is empty
 ```
 
+A line break also works as `and` — one condition per line reads naturally
+and shows up as one builder row each.
+
 The grammar: `field op value`, joined with `and` / `or` (`and` binds tighter;
 parentheses override). Fields are dotted paths into the row (`status.name`,
 `site.name`, `tags`); a path landing on an object compares its name, and one

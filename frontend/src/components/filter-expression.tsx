@@ -466,6 +466,7 @@ function OperatorsHint() {
           {row("<  >  <=  >=", "compare numbers and dates")}
           {row("is empty", "field has no value (is not empty for the reverse)")}
           {row("and  or", "combine conditions; and binds tighter, ( ) group")}
+          {row("new line", "one condition per line reads as and")}
           {row("site.name", "dotted paths reach related objects")}
         </div>
         <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">

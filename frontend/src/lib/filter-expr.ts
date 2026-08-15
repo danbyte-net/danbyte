@@ -100,8 +100,37 @@ export class ParseError extends Error {
 
 // ─── Parser (recursive descent) ─────────────────────────────────────────
 
+/** Top-level lines: newlines outside parentheses and quotes separate
+ * conditions, so "one condition per line" reads as an implicit `and`. */
+function topLevelLines(src: string): string[] {
+  const lines: string[] = []
+  let depth = 0
+  let quote: string | null = null
+  let start = 0
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i]
+    if (quote) {
+      if (c === quote) quote = null
+      continue
+    }
+    if (c === '"' || c === "'") quote = c
+    else if (c === "(") depth++
+    else if (c === ")") depth--
+    else if (c === "\n" && depth === 0) {
+      lines.push(src.slice(start, i))
+      start = i + 1
+    }
+  }
+  lines.push(src.slice(start))
+  return lines.map((l) => l.trim()).filter(Boolean)
+}
+
 export function parse(src: string): Expr | null {
   if (!src.trim()) return null
+  // Multi-line input: each line is a condition, lines combine with `and`.
+  // Parenthesising each line keeps a line's own `or` binding to that line.
+  const lines = topLevelLines(src)
+  if (lines.length > 1) src = lines.map((l) => `(${l})`).join(" and ")
   const tokens = tokenize(src)
   let i = 0
 

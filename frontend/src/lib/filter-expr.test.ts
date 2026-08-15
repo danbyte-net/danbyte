@@ -66,7 +66,9 @@ describe("parse + evaluate", () => {
   })
 
   it("binds and tighter than or, with parentheses to override", () => {
-    expect(match("status = offline or status = active and weight > 50")).toEqual(
+    expect(
+      match("status = offline or status = active and weight > 50")
+    ).toEqual(
       ["core-sw1", "edge-fw2"].filter(
         (n) => n === "edge-fw2" // offline, or (active and heavy → nobody)
       )
@@ -125,5 +127,35 @@ describe("discoverFields", () => {
     expect(paths).toContain("status.color")
     expect(fields.find((f) => f.path === "weight")?.kind).toBe("number")
     expect(fields.find((f) => f.path === "enabled")?.kind).toBe("boolean")
+  })
+})
+
+describe("multi-line input", () => {
+  it("treats one condition per line as and", () => {
+    const e = parse("status = active\nname ~ sw")
+    expect(format(e)).toBe("status = active and name ~ sw")
+  })
+
+  it("keeps a line's own or binding to the line", () => {
+    const e = parse("status = active or status = planned\nsite.name ~ cph")
+    expect(
+      evaluate(e!, {
+        status: { name: "planned" },
+        site: { name: "CPH-1" },
+      })
+    ).toBe(true)
+    expect(
+      evaluate(e!, {
+        status: { name: "planned" },
+        site: { name: "AAR-1" },
+      })
+    ).toBe(false)
+  })
+
+  it("ignores blank lines and newlines inside parens", () => {
+    expect(format(parse("\nstatus = active\n\n"))).toBe("status = active")
+    expect(format(parse("(status = active or\nstatus = planned)"))).toBe(
+      "status = active or status = planned"
+    )
   })
 })
