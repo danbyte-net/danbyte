@@ -158,7 +158,13 @@ function ExpressionDialog({
         {builder ? (
           <BuilderRows
             op={builder.op}
-            rules={builder.rules}
+            // An empty expression still shows one ready-to-fill row — the
+            // dropdowns ARE the invitation; nobody guesses "+ Add condition".
+            rules={
+              builder.rules.length
+                ? builder.rules
+                : [{ field: "", cmp: "=" as const, value: "" }]
+            }
             fields={fields}
             onChange={setFromBuilder}
           />
