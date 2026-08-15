@@ -7,9 +7,9 @@ from rest_framework.test import APITestCase
 from api.models import (
     Device,
     DeviceType,
-    IPAddress,
     Interface,
     InterfaceTemplate,
+    IPAddress,
     Prefix,
     diff_device_components,
     materialize_device_components,
@@ -99,3 +99,51 @@ class DeviceSyncTests(APITestCase):
             format="json",
         )
         self.assertEqual(r.status_code, 400, r.content)
+
+
+class MarkerStampTests(DeviceSyncTests):
+    """Faceplate slots and photo markers count as expectations: syncing stamps
+    the components they reference even when no template defines them (#150)."""
+
+    def _mark(self):
+        self.dt.faceplate = {
+            "v": 1,
+            "front": [{
+                "id": "g1", "rows": 1, "bank": 0,
+                "slots": [{"t": "port", "kind": "interface", "name": "Gi0/9"}],
+            }],
+            "rear": [],
+        }
+        self.dt.image_ports = {
+            "front": [
+                {"kind": "inventory-item", "name": "Disk 1",
+                 "x": 0.1, "y": 0.5, "w": 0.05, "h": 0.4},
+                # Front ports need a rear-port mapping a marker can't express —
+                # deliberately ignored rather than half-created.
+                {"kind": "front-port", "name": "FP1",
+                 "x": 0.2, "y": 0.5, "w": 0.05, "h": 0.4},
+            ],
+            "rear": [],
+        }
+        self.dt.save(update_fields=["faceplate", "image_ports"])
+
+    def test_diff_counts_marker_names_as_expected(self):
+        self._mark()
+        diff = diff_device_components(self.dev)
+        self.assertEqual(diff["interfaces"]["add"], ["Gi0/9"])
+        self.assertEqual(diff["inventory_items"]["add"], ["Disk 1"])
+        self.assertNotIn("front_ports", diff)
+
+    def test_sync_stamps_bare_components_for_markers(self):
+        self._mark()
+        result = sync_device_components(self.dev)
+        self.assertEqual(result["added"].get("interfaces"), 1)
+        self.assertEqual(result["added"].get("inventory_items"), 1)
+        iface = self.dev.interfaces.get(name="Gi0/9")
+        self.assertEqual(iface.type, "other")
+        self.assertTrue(self.dev.inventory_items.filter(name="Disk 1").exists())
+        # Idempotent, and the marked components never read as "extra".
+        again = sync_device_components(self.dev, remove_extra=True)
+        self.assertEqual(again["added"], {})
+        self.assertEqual(again["removed"], {})
+        self.assertTrue(self.dev.interfaces.filter(name="Gi0/9").exists())

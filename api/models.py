@@ -1086,6 +1086,90 @@ def materialize_device_components(device) -> dict[str, int]:
     return created
 
 
+#: Marker/slot kind → the device relation it references, for the sync-from-type
+#: diff. Front ports are deliberately absent: a marker cannot express the
+#: rear-port mapping a FrontPort requires, so a front-port marker with no
+#: template stays a ghost on the render rather than a half-made component.
+_MARKER_KIND_RELS = {
+    "interface": "interfaces",
+    "console-port": "console_ports",
+    "console-server-port": "console_server_ports",
+    "power-port": "power_ports",
+    "power-outlet": "power_outlets",
+    "rear-port": "rear_ports",
+    "aux-port": "aux_ports",
+    "inventory-item": "inventory_items",
+    "module-bay": "module_bays",
+}
+
+
+def marker_referenced_names(device_type) -> dict[str, set[str]]:
+    """Component names the type's faceplate slots and photo markers point at,
+    keyed by device relation.
+
+    A layout is often drawn before (or instead of) filling in component
+    templates, so a marker can reference a component no template defines. Those
+    names are still part of what the type *says* a device looks like — the
+    sync-from-type diff counts them as expected, and applying the sync stamps
+    them as bare components (type/kind "other") the operator can refine."""
+    out: dict[str, set[str]] = {}
+
+    def note(kind, name):
+        rel = _MARKER_KIND_RELS.get(kind)
+        if rel and isinstance(name, str) and name:
+            out.setdefault(rel, set()).add(name)
+
+    for side in ("front", "rear"):
+        for group in (device_type.faceplate or {}).get(side, []) or []:
+            if not isinstance(group, dict):
+                continue
+            for slot in group.get("slots", []) or []:
+                if isinstance(slot, dict) and slot.get("t") == "port":
+                    note(slot.get("kind", "interface"), slot.get("name"))
+        for marker in (device_type.image_ports or {}).get(side, []) or []:
+            if isinstance(marker, dict):
+                note(marker.get("kind", "interface"), marker.get("name"))
+    return out
+
+
+def stamp_marker_components(device) -> dict[str, int]:
+    """Create bare components for marker-referenced names the device lacks
+    (see :func:`marker_referenced_names`). Idempotent; returns counts."""
+    dt = device.device_type
+    if dt is None:
+        return {}
+    wanted = marker_referenced_names(dt)
+    if not wanted:
+        return {}
+    pos = device.vc_position
+    # Relation → (model, extra field defaults). "other" is a real value in
+    # every port taxonomy, so a stamped component is valid, just unspecific.
+    factories = {
+        "interfaces": (Interface, {"type": "other"}),
+        "console_ports": (ConsolePort, {"type": "other"}),
+        "console_server_ports": (ConsoleServerPort, {"type": "other"}),
+        "power_ports": (PowerPort, {"type": "other"}),
+        "power_outlets": (PowerOutlet, {"type": "other"}),
+        "rear_ports": (RearPort, {}),
+        "aux_ports": (AuxPort, {"type": "other"}),
+        "inventory_items": (InventoryItem, {}),
+        "module_bays": (ModuleBay, {}),
+    }
+    created: dict[str, int] = {}
+    for rel, names in wanted.items():
+        model, extra = factories[rel]
+        have = set(getattr(device, rel).values_list("name", flat=True))
+        made = [
+            model(device=device, name=n, **extra)
+            for raw in sorted(names)
+            if (n := render_component_name(raw, pos)) not in have
+        ]
+        if made:
+            model.objects.bulk_create(made)
+            created[rel] = len(made)
+    return created
+
+
 # Component kinds that a device inherits from its type, for the "sync from
 # type" diff/apply. (device manager attr, device-type template relation,
 # positional?). Front/rear + outlet/inlet ordering is handled on removal.
@@ -1115,12 +1199,17 @@ def diff_device_components(device) -> dict[str, dict[str, list[str]]]:
     if dt is None:
         return {}
     pos = device.vc_position
+    markers = marker_referenced_names(dt)
     out: dict[str, dict[str, list[str]]] = {}
     for dev_rel, tmpl_rel, positional in _SYNC_KINDS:
         expected = {
             render_component_name(t.name, pos) if positional else t.name
             for t in getattr(dt, tmpl_rel).all()
         }
+        # Faceplate/photo markers are expectations too: a marked port with no
+        # template still means "this device has that port".
+        for raw in markers.get(dev_rel, ()):
+            expected.add(render_component_name(raw, pos) if positional else raw)
         actual = set(getattr(device, dev_rel).values_list("name", flat=True))
         add = sorted(expected - actual)
         extra = sorted(actual - expected)
@@ -1138,6 +1227,9 @@ def sync_device_components(device, *, remove_extra: bool = False) -> dict:
     """
     diff = diff_device_components(device)
     added = materialize_device_components(device)
+    # Then the marker-referenced names no template covers (bare components).
+    for rel, n in stamp_marker_components(device).items():
+        added[rel] = added.get(rel, 0) + n
     removed: dict[str, int] = {}
     if remove_extra:
         # Dependents before their targets: front ports FK rear ports, outlets
