@@ -34,6 +34,7 @@ export const Route = createFileRoute("/planning/$boardId")({
 function BoardPage() {
   const { boardId } = Route.useParams()
   const { task: deepLinkTask } = Route.useSearch()
+  const navigate = Route.useNavigate()
   const { canDo } = useMe()
   const canEdit = canDo("task", "change") || canDo("task", "add")
   const [openTask, setOpenTask] = useState<PlanningTask | null>(null)
@@ -140,7 +141,17 @@ function BoardPage() {
           key={openTaskLive.id}
           task={openTaskLive}
           statuses={statuses}
-          onOpenChange={(o) => !o && setOpenTask(null)}
+          onOpenChange={(o) => {
+            if (o) return
+            setOpenTask(null)
+            // A ?task= deep link holds the sheet open independently of local
+            // state — closing must clear it too, or the close button is inert.
+            if (deepLinkTask)
+              navigate({
+                search: (s) => ({ ...s, task: undefined }),
+                replace: true,
+              })
+          }}
         />
       )}
     </div>
