@@ -157,6 +157,35 @@ class SwitchLinkDriftTests(APITestCase):
         state.save(update_fields=["neighbors"])
         self.assertEqual(self._suggestions(), [])
 
+    def test_manual_uplink_flag_is_skipped(self):
+        self.port.is_uplink = True
+        self.port.save(update_fields=["is_uplink"])
+        self.assertEqual(self._suggestions(), [])
+
+    def test_arp_source_device_feeds_suggestions(self):
+        # "One ARP source" mode: the switch's own ARP is ignored; the named
+        # gateway's table supplies the IP↔MAC pairs joined with this FDB.
+        from monitoring.models import MonitoringSettings
+
+        gw = Device.objects.create(tenant=self.tenant, name="gw")
+        DeviceSnmp.objects.create(
+            tenant=self.tenant, device=gw, reachable=True,
+            polled_at=timezone.now(),
+            arp=[{"ip": "10.0.0.5", "mac": "00:11:22:33:44:55", "if_index": "1"}],
+        )
+        settings = MonitoringSettings.for_tenant(self.tenant)
+        settings.arp_source_device = gw
+        settings.save(update_fields=["arp_source_device"])
+
+        # Blank the switch's own ARP — pure-L2 reality. The suggestion must
+        # still appear, driven by the gateway's table.
+        state = DeviceSnmp.objects.get(device=self.sw)
+        state.arp = []
+        state.save(update_fields=["arp"])
+        sl = self._suggestions()
+        self.assertEqual(len(sl), 1)
+        self.assertEqual(sl[0]["ip"], "10.0.0.5")
+
     def test_lldp_to_non_bridging_neighbor_still_suggests(self):
         # A server or phone announcing LLDP must not mute the port — only a
         # neighbour we know bridges (has an FDB) marks it as an uplink.

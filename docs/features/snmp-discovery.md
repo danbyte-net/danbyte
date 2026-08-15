@@ -310,6 +310,15 @@ more than a handful of distinct MACs, is a LAG aggregate or member, or has an
 LLDP neighbour that is itself a bridging device Danbyte polls. A server or
 phone announcing LLDP does *not* mute its port — only known switches do.
 
+Two manual overrides ride on top of the automatic detection:
+
+- **Uplink** (interface form) — flag a port as facing other network gear and
+  it never gets suggestions, whatever the heuristics think.
+- **ARP source** (Settings → Monitoring → Switch-link suggestions) — on
+  L2-only networks a switch's own ARP table is nearly empty; name the device
+  that actually routes (the gateway or firewall) and its ARP table feeds
+  every switch's suggestions instead of each switch's own.
+
 ### Ghost cables on the topology map
 
 LLDP also feeds the **topology map** (`/topology`). Real cables render as solid

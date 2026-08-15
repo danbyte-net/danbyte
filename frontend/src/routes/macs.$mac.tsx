@@ -35,6 +35,52 @@ export const Route = createFileRoute("/macs/$mac")({ component: MacDetailPage })
 
 type MacInterface = MacDetail["interfaces"][number]
 type MacIp = MacDetail["ips"][number]
+type MacSighting = MacDetail["seen"][number]
+
+const seenColumns: ColumnDef<MacSighting>[] = [
+  {
+    id: "device",
+    accessorFn: (s) => s.device.name,
+    header: "Device",
+    cell: ({ row }) => (
+      <Link
+        to="/devices/$id"
+        params={{ id: row.original.device.id }}
+        className="font-medium hover:underline"
+      >
+        {row.original.device.name}
+      </Link>
+    ),
+  },
+  {
+    id: "table",
+    accessorKey: "source",
+    header: "Table",
+    cell: ({ row }) =>
+      row.original.source === "arp" ? "ARP" : "MAC (forwarding)",
+  },
+  {
+    id: "detail",
+    header: "Detail",
+    enableSorting: false,
+    cell: ({ row }) => {
+      const s = row.original
+      if (s.source === "arp")
+        return s.ip ? (
+          <span className="font-mono">{s.ip}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )
+      return s.port ? (
+        <span>
+          port <span className="font-mono">{s.port}</span>
+        </span>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      )
+    },
+  },
+]
 
 function MacDetailPage() {
   const { mac } = Route.useParams()
@@ -211,27 +257,16 @@ function Body({ data }: { data: MacDetail }) {
               Observed via SNMP
             </h2>
             <p className="text-sm text-muted-foreground">
-              Polling saw this address in the tables below — observations, not
-              records; nothing in Danbyte carries this MAC until you assign it.
+              Polling saw this address on these devices — observations, not
+              records. Every switch on the L2 path learns a host's MAC, so one
+              address on several devices is normal.
             </p>
-            <ul className="space-y-1 text-sm">
-              {data.seen.map((s, i) => (
-                <li key={i} className="flex items-center gap-1.5">
-                  <Link
-                    to="/devices/$id"
-                    params={{ id: s.device.id }}
-                    className="text-primary hover:underline"
-                  >
-                    {s.device.name}
-                  </Link>
-                  <span className="text-muted-foreground">
-                    {s.source === "arp"
-                      ? `ARP table${s.ip ? ` · ${s.ip}` : ""}`
-                      : `MAC table${s.port ? ` · port ${s.port}` : ""}`}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <DataTable
+              data={data.seen}
+              columns={seenColumns}
+              tableId="mac-sightings"
+              flexColumn="detail"
+            />
           </section>
         )}
       </div>

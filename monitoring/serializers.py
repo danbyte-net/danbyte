@@ -11,7 +11,7 @@ from django.utils.text import slugify
 from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
-from api.models import DeviceRole, DeviceType, IPAddress, Status, Prefix
+from api.models import Device, DeviceRole, DeviceType, IPAddress, Status, Prefix
 from api.serializers import TenantScopedPrimaryKeyRelatedField
 
 from .checkers import CheckConfigError, get_checker
@@ -785,6 +785,10 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
     flap_exclude_ip_status_detail = serializers.SerializerMethodField()
     outpost_repo_token = serializers.JSONField(write_only=True, required=False)
     outpost_repo_token_set = serializers.SerializerMethodField()
+    arp_source_device = TenantScopedPrimaryKeyRelatedField(
+        queryset=Device.objects.all(), required=False, allow_null=True
+    )
+    arp_source_device_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = MonitoringSettings
@@ -802,11 +806,21 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
             "flap_exclude_ip_statuses", "flap_exclude_ip_status_detail",
             "default_engine", "outpost_repo_url", "outpost_repo_token",
             "outpost_repo_token_set", "updated_at",
+            "arp_source_device", "arp_source_device_detail",
         ]
         read_only_fields = ["updated_at"]
 
     def get_outpost_repo_token_set(self, obj) -> bool:
         return bool((obj.outpost_repo_token or {}).get("token"))
+
+    def get_arp_source_device_detail(self, obj):
+        if not obj.arp_source_device_id:
+            return None
+        return {
+            "id": str(obj.arp_source_device_id),
+            "name": obj.arp_source_device.name,
+        }
+
 
     def get_skip_ip_status_detail(self, obj):
         return [

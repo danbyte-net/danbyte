@@ -17,7 +17,7 @@ from django.db import IntegrityError
 
 from api.models import Interface, IPAddress, MACAddress, Prefix, VLAN
 
-from .models import DeviceSnmp
+from .models import DeviceSnmp, MonitoringSettings
 
 
 def _real_ip(ip: str) -> bool:
@@ -384,6 +384,20 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
     #    only for IPs Danbyte already tracks (SoT: suggest, never invent).
     arp = state.arp or []
     fdb = state.fdb or []
+    # "One ARP source" mode: on pure-L2 networks a switch's own ARP table only
+    # knows its management peers; the IP↔MAC truth lives on the gateway. When
+    # the tenant names an ARP source device, its table feeds every switch's
+    # suggestions instead.
+    src_id = (
+        MonitoringSettings.objects.filter(tenant=tenant)
+        .values_list("arp_source_device_id", flat=True)
+        .first()
+    )
+    if src_id and src_id != device.id:
+        src_state = DeviceSnmp.objects.filter(
+            tenant=tenant, device_id=src_id
+        ).first()
+        arp = (src_state.arp if src_state else None) or []
     if arp and fdb:
         mac_to_ip: dict[str, str] = {}
         for a in arp:
@@ -455,6 +469,8 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
                 iface = int_by_name.get(_norm(ifindex_to_name.get(idx) or ""))
                 if iface is None:
                     continue
+                if iface.is_uplink or iface.snmp_ignore:
+                    continue  # operator said so — beats every heuristic
                 if len(macs_on_port.get(idx, ())) > UPLINK_MAC_LIMIT:
                     continue
                 if iface.id in lag_iface_ids:

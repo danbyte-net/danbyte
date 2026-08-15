@@ -2420,6 +2420,13 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "see, out-of-band jacks — which would otherwise flag as 'not seen "
         "on device' after every poll, forever.",
     )
+    is_uplink = models.BooleanField(
+        default=False,
+        help_text="This port faces other network infrastructure. It never "
+        "gets switch-link suggestions — the MACs it learns belong to hosts "
+        "behind it, not on it. The escape hatch when the automatic uplink "
+        "detection misreads a topology.",
+    )
     type = models.CharField(
         max_length=64, blank=True, default="", choices=INTERFACE_TYPE_CHOICES,
         help_text="Physical/logical media type, e.g. 10gbase-x-sfpp.",

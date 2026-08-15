@@ -779,6 +779,20 @@ class MonitoringSettings(TimestampedModel):
         help_text="Days a discovered IP must be unseen before cleanup removes it.",
     )
 
+    # ─── switch-link suggestions (issue #22) ─────────────────────────────
+    # On pure-L2 networks each switch's own ARP table only knows its
+    # management peers; the useful IP↔MAC truth lives on the gateway. When
+    # set, that one device's ARP table feeds every switch's port suggestions.
+    arp_source_device = models.ForeignKey(
+        "api.Device",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="Use this device's ARP table (e.g. the gateway firewall) "
+        "for switch-link suggestions instead of each switch's own.",
+    )
+
     # ─── flapping monitor (M22) ──────────────────────────────────────────
     # IPs with one of these statuses are excluded from the "flapping a lot"
     # surface — e.g. a DHCP-scope status where churn is expected and noisy.

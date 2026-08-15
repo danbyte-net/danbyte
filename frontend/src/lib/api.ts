@@ -1829,6 +1829,7 @@ export interface Interface {
   snmp_name: string
   /** Excluded from SNMP drift — never compared, never flagged stale. */
   snmp_ignore: boolean
+  is_uplink?: boolean
   /** Media type slug (e.g. 10gbase-x-sfpp), or "" if unset. */
   type: string
   type_display: string
@@ -1884,6 +1885,7 @@ export interface InterfaceWritePayload {
   /** Discovery link — the agent's name for this port ("" unlinks). */
   snmp_name?: string
   snmp_ignore?: boolean
+  is_uplink?: boolean
   mgmt_only?: boolean
   duplex?: string
   poe_mode?: string
@@ -3775,6 +3777,8 @@ export interface MonitoringSkipStatus {
 }
 
 export interface MonitoringSettings {
+  arp_source_device?: string | null
+  arp_source_device_detail?: { id: string; name: string } | null
   global_enabled: boolean
   default_interval_seconds: number
   stale_after_scans: number

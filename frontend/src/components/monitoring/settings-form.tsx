@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { DevicePicker } from "@/components/device-picker"
 import { INTERVALS } from "./check-fields"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -124,6 +125,7 @@ export function MonitoringSettingsForm() {
           cleanup_enabled: draft.cleanup_enabled,
           cleanup_after_days: Number(draft.cleanup_after_days),
           flap_exclude_ip_statuses: draft.flap_exclude_ip_statuses,
+          arp_source_device: draft.arp_source_device ?? null,
         })
       }}
     >
@@ -465,6 +467,25 @@ export function MonitoringSettingsForm() {
               />
             </div>
           )}
+        </Section>
+
+        <Section
+          title="Switch-link suggestions"
+          hint="SNMP drift proposes which access port each known IP hangs off, joining an ARP table with each switch's MAC table."
+        >
+          <DevicePicker
+            label="ARP source"
+            value={draft.arp_source_device ?? null}
+            onChange={(v) => set("arp_source_device", v)}
+          />
+          <p className="text-[11px] text-muted-foreground">
+            On L2-only networks a switch's own ARP table is nearly empty — pick
+            the device that actually routes (the gateway or firewall) and its
+            table feeds every switch's suggestions. Leave empty to use each
+            switch's own. Mark individual ports as{" "}
+            <span className="font-medium">Uplink</span> on the interface form to
+            exclude them.
+          </p>
         </Section>
       </div>
 

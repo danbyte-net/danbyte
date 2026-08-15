@@ -65,6 +65,7 @@ export function InterfaceForm({
   // The name SNMP reports for this port; clearing it unlinks discovery.
   const [snmpName, setSnmpName] = useState(iface?.snmp_name ?? "")
   const [snmpIgnore, setSnmpIgnore] = useState(iface?.snmp_ignore ?? false)
+  const [isUplink, setIsUplink] = useState(iface?.is_uplink ?? false)
   const [duplex, setDuplex] = useState(iface?.duplex ?? "")
   const [poeMode, setPoeMode] = useState(iface?.poe_mode ?? "")
   const [poeType, setPoeType] = useState(iface?.poe_type ?? "")
@@ -100,6 +101,7 @@ export function InterfaceForm({
     setMgmtOnly(iface.mgmt_only)
     setSnmpName(iface.snmp_name ?? "")
     setSnmpIgnore(iface.snmp_ignore ?? false)
+    setIsUplink(iface.is_uplink ?? false)
     setDuplex(iface.duplex)
     setPoeMode(iface.poe_mode)
     setPoeType(iface.poe_type)
@@ -154,6 +156,7 @@ export function InterfaceForm({
         mgmt_only: mgmtOnly,
         snmp_name: snmpName.trim(),
         snmp_ignore: snmpIgnore,
+        is_uplink: isUplink,
         duplex,
         poe_mode: poeMode,
         poe_type: poeType,
@@ -463,6 +466,12 @@ export function InterfaceForm({
             onChange={setSnmpIgnore}
           />
         )}
+        <FormCheckbox
+          label="Uplink"
+          hint="faces other network gear — never suggest hosts on this port"
+          checked={isUplink}
+          onChange={setIsUplink}
+        />
       </div>
       <FormText
         label="Description"
