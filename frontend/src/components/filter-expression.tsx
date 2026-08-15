@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { ChevronDown, Info, ListFilter, Plus, X } from "lucide-react"
 
 import {
@@ -311,7 +311,7 @@ function BuilderRows({
 }
 
 /** The value input as a combobox: focusing it opens the values actually
- * present in this list, typing filters them, and free text always wins. */
+ * present in this list, typing narrows them, and free text always wins. */
 function ValueField({
   value,
   onChange,
@@ -322,12 +322,16 @@ function ValueField({
   samples: string[]
 }) {
   const [open, setOpen] = useState(false)
-  const matches = useMemo(() => {
-    const q = value.trim().toLowerCase()
-    const hit = q ? samples.filter((s) => s.toLowerCase().includes(q)) : samples
-    // An exact pick shouldn't collapse the list to itself.
-    return hit.length === 1 && hit[0] === value ? samples : hit
-  }, [samples, value])
+  const anchorRef = useRef<HTMLDivElement>(null)
+  const q = value.trim().toLowerCase()
+  const narrowed = q
+    ? samples.filter((s) => s.toLowerCase().includes(q))
+    : samples
+  // Typed text that matches nothing (or exactly one pick) keeps the full list
+  // visible — the point of the picker is seeing what exists.
+  const exhausted =
+    narrowed.length === 0 || (narrowed.length === 1 && narrowed[0] === value)
+  const shown = exhausted ? samples : narrowed
 
   if (samples.length === 0)
     return (
@@ -342,7 +346,7 @@ function ValueField({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverAnchor asChild>
-        <div className="relative flex min-w-0 flex-1">
+        <div ref={anchorRef} className="relative flex min-w-0 flex-1">
           <Input
             value={value}
             onChange={(e) => {
@@ -371,26 +375,30 @@ function ValueField({
         align="start"
         className="max-h-56 w-60 overflow-y-auto p-1"
         onOpenAutoFocus={(e) => e.preventDefault()}
+        // The click that focuses the input is "outside" the content — without
+        // this guard the popover opens on focus and closes on the same click.
+        onInteractOutside={(e) => {
+          if (anchorRef.current?.contains(e.target as Node)) e.preventDefault()
+        }}
       >
-        {matches.length === 0 ? (
+        {q && narrowed.length === 0 && (
           <p className="px-2 py-1.5 text-[11px] text-muted-foreground">
-            Nothing in this list matches — free text still applies.
+            No value contains "{value.trim()}" — free text still applies.
           </p>
-        ) : (
-          matches.map((s) => (
-            <button
-              key={s}
-              type="button"
-              className="block w-full truncate rounded-md px-2 py-1 text-left text-[12px] hover:bg-accent"
-              onClick={() => {
-                onChange(s)
-                setOpen(false)
-              }}
-            >
-              {s}
-            </button>
-          ))
         )}
+        {shown.map((s) => (
+          <button
+            key={s}
+            type="button"
+            className="block w-full truncate rounded-md px-2 py-1 text-left text-[12px] hover:bg-accent"
+            onClick={() => {
+              onChange(s)
+              setOpen(false)
+            }}
+          >
+            {s}
+          </button>
+        ))}
       </PopoverContent>
     </Popover>
   )
