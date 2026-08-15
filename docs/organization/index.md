@@ -7,9 +7,10 @@ who's responsible for them.
 
 | Page | What it's for |
 |---|---|
-| [Contacts](../features/contacts.md) | Record people and teams, and attach them to the objects they own. |
 | [Regions & locations](../features/regions-locations.md) | Group sites into regions, and break a site into rooms, rows, or floors. |
-| [Site map](../features/site-map.md) | See every site on a real world map, and place them by clicking. |
+| [Contacts](../features/contacts.md) | Record people and teams, and attach them to the objects they own. |
+| [Planning boards & calendar](../features/planning.md) | Kanban boards wired into your inventory, and the org-wide work calendar. |
+| [Maintenance & outages](../features/maintenance.md) | Provider windows and outages — tracked, calendared, and alert-suppressing. |
 
 !!! note "Tenants & sites"
     Tenants (the hard isolation boundary) and sites are foundational objects in
