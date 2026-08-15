@@ -36,14 +36,26 @@ export interface VlanFormInitial {
 export interface VlanFormProps {
   vlan?: VLAN
   initial?: VlanFormInitial
+  /** Create-only: field values carried over from a source VLAN via
+   * GET /api/vlans/<id>/clone/. Identity (VID + name) starts blank. */
+  clone?: Partial<VLAN>
   onSaved: (saved: VLAN) => void
   onCancel: () => void
 }
 
 const NONE = "__none__"
 
-export function VlanForm({ vlan, initial, onSaved, onCancel }: VlanFormProps) {
+export function VlanForm({
+  vlan,
+  initial,
+  clone,
+  onSaved,
+  onCancel,
+}: VlanFormProps) {
   const isEdit = !!vlan
+  // Cloneable fields read from the edit object or the clone seed; the VID and
+  // name deliberately read from `vlan` only, so a clone starts blank there.
+  const src = vlan ?? clone
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const saveObject = useSaveObject()
@@ -52,15 +64,15 @@ export function VlanForm({ vlan, initial, onSaved, onCancel }: VlanFormProps) {
     vlan ? String(vlan.vlan_id) : initial?.vlanId ? String(initial.vlanId) : ""
   )
   const [name, setName] = useState(vlan?.name ?? "")
-  const [siteId, setSiteId] = useState<string | null>(vlan?.site?.id ?? null)
-  const [groupId, setGroupId] = useState<string | null>(vlan?.group?.id ?? null)
-  const [zoneId, setZoneId] = useState<string | null>(vlan?.zone?.id ?? null)
-  const [description, setDescription] = useState(vlan?.description ?? "")
+  const [siteId, setSiteId] = useState<string | null>(src?.site?.id ?? null)
+  const [groupId, setGroupId] = useState<string | null>(src?.group?.id ?? null)
+  const [zoneId, setZoneId] = useState<string | null>(src?.zone?.id ?? null)
+  const [description, setDescription] = useState(src?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
-    vlan?.tags.map((t) => t.id) ?? []
+    src?.tags?.map((t) => t.id) ?? []
   )
   const [customFields, setCustomFields] = useState<Record<string, unknown>>(
-    vlan?.custom_fields ?? {}
+    src?.custom_fields ?? {}
   )
 
   useEffect(() => {

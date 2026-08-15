@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Pencil, Trash2 } from "lucide-react"
+import { CopyPlus, Pencil, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api, type Paginated, type Prefix, type VLAN } from "@/lib/api"
@@ -79,6 +79,13 @@ function VlanDetailBody({ vlan: v }: { vlan: VLAN }) {
             <Button variant="outline" size="sm" asChild>
               <Link to="/vlans/$id/edit" params={{ id: v.id }}>
                 <Pencil className="h-3.5 w-3.5" /> Edit
+              </Link>
+            </Button>
+          )}
+          {canDo("vlan", "add") && (
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/vlans/new" search={{ clone: v.id }}>
+                <CopyPlus className="h-3.5 w-3.5" /> Clone
               </Link>
             </Button>
           )}

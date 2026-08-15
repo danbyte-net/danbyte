@@ -32,23 +32,31 @@ import { useSaveObject } from "@/lib/save-object"
 
 export interface DeviceTypeFormProps {
   deviceType?: DeviceType
+  /** Create-only: the physical spec carried over from a source type via
+   * GET /api/device-types/<id>/clone/. Name/model (the identity), faceplate
+   * and images start blank. */
+  clone?: Partial<DeviceType>
   onSaved: (d: DeviceType) => void
   onCancel: () => void
 }
 
 export function DeviceTypeForm({
   deviceType,
+  clone,
   onSaved,
   onCancel,
 }: DeviceTypeFormProps) {
   const isEdit = !!deviceType
+  // Cloneable fields read from the edit object or the clone seed; the name and
+  // model deliberately read from `deviceType` only, so a clone starts blank.
+  const src = deviceType ?? clone
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const saveObject = useSaveObject()
 
   const [name, setName] = useState(deviceType?.name ?? "")
   const [manufacturerId, setManufacturerId] = useState<string | null>(
-    deviceType?.manufacturer?.id ?? null
+    src?.manufacturer?.id ?? null
   )
   const [model, setModel] = useState(deviceType?.model ?? "")
   const [partNumber, setPartNumber] = useState(deviceType?.part_number ?? "")
@@ -56,33 +64,29 @@ export function DeviceTypeForm({
     deviceType?.platform?.id ?? null
   )
   const [uHeight, setUHeight] = useState(
-    deviceType ? String(deviceType.u_height) : "1"
+    src?.u_height != null ? String(src.u_height) : "1"
   )
   const [rackWidth, setRackWidth] = useState<"full" | "half">(
-    deviceType?.rack_width ?? "full"
+    src?.rack_width ?? "full"
   )
-  const [description, setDescription] = useState(deviceType?.description ?? "")
-  const [isFullDepth, setIsFullDepth] = useState(
-    deviceType?.is_full_depth ?? true
-  )
-  const [airflow, setAirflow] = useState<string | null>(
-    deviceType?.airflow || null
-  )
-  const [weight, setWeight] = useState(deviceType?.weight ?? "")
-  const [weightUnit, setWeightUnit] = useState(deviceType?.weight_unit || "kg")
+  const [description, setDescription] = useState(src?.description ?? "")
+  const [isFullDepth, setIsFullDepth] = useState(src?.is_full_depth ?? true)
+  const [airflow, setAirflow] = useState<string | null>(src?.airflow || null)
+  const [weight, setWeight] = useState(src?.weight ?? "")
+  const [weightUnit, setWeightUnit] = useState(src?.weight_unit || "kg")
   const [subdeviceRole, setSubdeviceRole] = useState<string | null>(
-    deviceType?.subdevice_role || null
+    src?.subdevice_role || null
   )
   const [excludeUtil, setExcludeUtil] = useState(
-    deviceType?.exclude_from_utilization ?? false
+    src?.exclude_from_utilization ?? false
   )
   const [tagIds, setTagIds] = useState<number[]>(
-    deviceType?.tags.map((t) => t.id) ?? []
+    src?.tags?.map((t) => t.id) ?? []
   )
   const [customFields, setCustomFields] = useState<Record<string, unknown>>(
-    deviceType?.custom_fields ?? {}
+    src?.custom_fields ?? {}
   )
-  const [lifecycle, setLifecycle] = useState(lifecycleFormValue(deviceType))
+  const [lifecycle, setLifecycle] = useState(lifecycleFormValue(src))
 
   useEffect(() => {
     if (!deviceType) return

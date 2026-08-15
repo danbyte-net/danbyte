@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
+import { CopyPlus, Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api, type DeviceType } from "@/lib/api"
@@ -118,6 +118,13 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
             <Button variant="outline" size="sm" asChild>
               <Link to="/device-types/$id/edit" params={{ id: d.id }}>
                 <Pencil className="h-3.5 w-3.5" /> Edit
+              </Link>
+            </Button>
+          )}
+          {canDo("devicetype", "add") && (
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/device-types/new" search={{ clone: d.id }}>
+                <CopyPlus className="h-3.5 w-3.5" /> Clone
               </Link>
             </Button>
           )}

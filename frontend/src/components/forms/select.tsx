@@ -28,11 +28,15 @@ export interface FormSelectProps extends Base {
   disabled?: boolean
 }
 
-// Internal sentinels — the Select primitive disallows the empty string
-// as a SelectItem value. We map both back to their real meanings on
-// change.
+// Internal sentinel — the Select primitive disallows the empty string as a
+// SelectItem value; it maps back to null on change.
 const NONE = "__none__"
-const KEEP = "__keep__"
+
+/** The "(keep)" row's value. With `allowKeep`, initialise your state to this
+ * and treat it as "don't change the field" when building the payload. `null`
+ * then unambiguously means "clear to none" — previously both rows collapsed
+ * to null, which made clearing a field in a bulk edit impossible (#218). */
+export const KEEP_VALUE = "__keep__"
 
 export function FormSelect({
   value,
@@ -44,21 +48,20 @@ export function FormSelect({
   disabled,
   ...field
 }: FormSelectProps) {
-  const stringValue =
-    value === null || value === undefined ? (allowKeep ? KEEP : NONE) : value
+  const stringValue = value === null || value === undefined ? NONE : value
 
   return (
     <Field {...field}>
       <Select
         value={stringValue}
-        onValueChange={(v) => onChange(v === NONE || v === KEEP ? null : v)}
+        onValueChange={(v) => onChange(v === NONE ? null : v)}
         disabled={disabled}
       >
         <SelectTrigger className="w-full">
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
-          {allowKeep && <SelectItem value={KEEP}>(keep)</SelectItem>}
+          {allowKeep && <SelectItem value={KEEP_VALUE}>(keep)</SelectItem>}
           {noneLabel && <SelectItem value={NONE}>{noneLabel}</SelectItem>}
           {options.map((o) => (
             <SelectItem key={o.value} value={o.value}>

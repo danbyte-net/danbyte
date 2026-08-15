@@ -24,34 +24,40 @@ import { useSaveObject } from "@/lib/save-object"
 
 export interface VrfFormProps {
   vrf?: VRF
+  /** Create-only: field values carried over from a source VRF via
+   * GET /api/vrfs/<id>/clone/. Name + RD (the identity) start blank. */
+  clone?: Partial<VRF>
   onSaved: (saved: VRF) => void
   onCancel: () => void
 }
 
-export function VrfForm({ vrf, onSaved, onCancel }: VrfFormProps) {
+export function VrfForm({ vrf, clone, onSaved, onCancel }: VrfFormProps) {
   const isEdit = !!vrf
+  // Cloneable fields read from the edit object or the clone seed; name and RD
+  // deliberately read from `vrf` only, so a clone starts blank there.
+  const src = vrf ?? clone
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const saveObject = useSaveObject()
 
   const [name, setName] = useState(vrf?.name ?? "")
   const [rd, setRd] = useState(vrf?.rd ?? "")
-  const [color, setColor] = useState(vrf?.color ?? "")
-  const [description, setDescription] = useState(vrf?.description ?? "")
+  const [color, setColor] = useState(src?.color ?? "")
+  const [description, setDescription] = useState(src?.description ?? "")
   const [enforceUnique, setEnforceUnique] = useState(
-    vrf?.enforce_unique ?? true
+    src?.enforce_unique ?? true
   )
   const [importIds, setImportIds] = useState<string[]>(
-    vrf?.import_targets.map((t) => t.id) ?? []
+    src?.import_targets?.map((t) => t.id) ?? []
   )
   const [exportIds, setExportIds] = useState<string[]>(
-    vrf?.export_targets.map((t) => t.id) ?? []
+    src?.export_targets?.map((t) => t.id) ?? []
   )
   const [tagIds, setTagIds] = useState<number[]>(
-    vrf?.tags.map((t) => t.id) ?? []
+    src?.tags?.map((t) => t.id) ?? []
   )
   const [customFields, setCustomFields] = useState<Record<string, unknown>>(
-    vrf?.custom_fields ?? {}
+    src?.custom_fields ?? {}
   )
 
   useEffect(() => {
