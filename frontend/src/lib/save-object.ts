@@ -211,6 +211,10 @@ export function useSaveObject() {
       }
       qc.invalidateQueries({ queryKey: ["planning-tasks"] })
       qc.invalidateQueries({ queryKey: ["planned-changes-map"] })
+      // The per-object query behind the field marks (PendingFieldsProvider) —
+      // without this, a detail page kept showing its pre-plan marks until the
+      // cache aged out.
+      qc.invalidateQueries({ queryKey: ["planned-changes-for"] })
       toast.success(
         staged.length > 1
           ? `${staged.length} changes planned`

@@ -162,6 +162,7 @@ function ChangeSetRow({
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["planning-tasks"] })
     qc.invalidateQueries({ queryKey: ["planned-changes-map"] })
+    qc.invalidateQueries({ queryKey: ["planned-changes-for"] })
     // The object itself changed — its detail page and lists must not go stale.
     qc.invalidateQueries({ queryKey: ["device"] })
     qc.invalidateQueries({ queryKey: ["device-interfaces"] })
