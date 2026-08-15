@@ -195,6 +195,19 @@ function ExpressionDialog({
           </Button>
           <Button
             size="sm"
+            variant="secondary"
+            disabled={!!error || !text.trim()}
+            onClick={() => {
+              onApply(text.trim())
+              // Hand off to the SavedViews naming flow (same page, different
+              // subtree) — the snapshot it saves includes this expression.
+              window.dispatchEvent(new CustomEvent("danbyte:save-view"))
+            }}
+          >
+            Apply & save as view
+          </Button>
+          <Button
+            size="sm"
             disabled={!!error}
             onClick={() => onApply(text.trim())}
           >

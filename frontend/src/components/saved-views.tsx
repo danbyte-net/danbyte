@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Check, ListFilter, Lock, Trash2, Users } from "lucide-react"
+import { useEffect } from "react"
 import { toast } from "sonner"
 
 import { api, type Paginated } from "@/lib/api"
@@ -71,6 +72,17 @@ export function SavedViews({ objectType, q, onQ, filters }: SavedViewsProps) {
   const [name, setName] = useState("")
   const [shared, setShared] = useState(false)
   const [applied, setApplied] = useState<SavedView | null>(null)
+
+  // The advanced-filter dialog's "Apply & save as view" lands here: same
+  // page, different subtree, so a window event is the whole bridge.
+  useEffect(() => {
+    const onSave = () => {
+      setOpen(true)
+      setNaming(true)
+    }
+    window.addEventListener("danbyte:save-view", onSave)
+    return () => window.removeEventListener("danbyte:save-view", onSave)
+  }, [])
 
   const views = useSavedViews(objectType)
   const rows = views.data?.results ?? []
