@@ -69,6 +69,12 @@ exactly like a `PLUGINS` entry. Uploaded plugins show an **uploaded** tag and an
 
 ## Anatomy of a plugin
 
+!!! tip "Start from the template"
+    Don't build this layout by hand — clone
+    [danbyte-net/danbyte-plugin-template](https://github.com/danbyte-net/danbyte-plugin-template),
+    a working starter with a model, API, monitoring check, automation hook,
+    and server-driven UI already wired. Rename the package and go.
+
 A plugin package looks like a small Django app plus one registration module:
 
 ```
