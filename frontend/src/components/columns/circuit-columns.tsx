@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router"
 import type { Circuit } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { StatusBadge } from "@/components/status-badge"
+import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
@@ -73,13 +74,19 @@ export function buildCircuitColumns<T extends Circuit = Circuit>(
       accessorKey: "cid",
       header: ({ column }) => <SortHeader column={column} label="Circuit ID" />,
       cell: ({ row }) => (
-        <Link
-          to="/circuits/$id"
-          params={{ id: row.original.id }}
-          className="font-mono text-xs font-medium hover:underline"
-        >
-          {row.original.cid}
-        </Link>
+        <span className="inline-flex items-center gap-1.5">
+          <Link
+            to="/circuits/$id"
+            params={{ id: row.original.id }}
+            className="font-mono text-xs font-medium hover:underline"
+          >
+            {row.original.cid}
+          </Link>
+          <PlannedChangeMarker
+            objectType="api.circuit"
+            objectId={row.original.id}
+          />
+        </span>
       ),
     }),
     provider: () => ({

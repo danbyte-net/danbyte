@@ -48,3 +48,17 @@ export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
 export function objectDetailRoute(objectType: string): string | undefined {
   return OBJECT_DETAIL_ROUTES[objectType]
 }
+
+/** `/devices/<uuid>` → `{ objectType: "api.device", id }`, by inverting the
+ * detail-route table. Null on anything that isn't an object detail page. */
+export function objectForPath(
+  pathname: string
+): { objectType: string; id: string } | null {
+  const m = pathname.match(/^\/([a-z-]+)\/([0-9a-fA-F-]{36})\/?$/)
+  if (!m) return null
+  const route = `/${m[1]}/$id`
+  for (const [label, to] of Object.entries(OBJECT_DETAIL_ROUTES)) {
+    if (to === route) return { objectType: label, id: m[2] }
+  }
+  return null
+}

@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router"
 import type { VirtualMachine } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { StatusBadge } from "@/components/status-badge"
+import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -91,13 +92,19 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
       accessorKey: "name",
       header: ({ column }) => <SortHeader column={column} label="Name" />,
       cell: ({ row }) => (
-        <Link
-          to="/virtual-machines/$id"
-          params={{ id: row.original.id }}
-          className="font-medium hover:underline"
-        >
-          {row.original.name}
-        </Link>
+        <span className="inline-flex items-center gap-1.5">
+          <Link
+            to="/virtual-machines/$id"
+            params={{ id: row.original.id }}
+            className="font-medium hover:underline"
+          >
+            {row.original.name}
+          </Link>
+          <PlannedChangeMarker
+            objectType="api.virtualmachine"
+            objectId={row.original.id}
+          />
+        </span>
       ),
     }),
     cluster: () => ({

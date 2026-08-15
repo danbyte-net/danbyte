@@ -2,6 +2,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 
 import type { ComplianceViolation, VRF } from "@/lib/api"
+import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import { dash } from "@/components/cells/dash"
@@ -137,6 +138,10 @@ export function buildVrfColumns<T extends VRF = VRF>(
               map={opts.violations === true ? undefined : opts.violations}
             />
           )}
+          <PlannedChangeMarker
+            objectType="api.vrf"
+            objectId={row.original.id}
+          />
         </span>
       ),
     }),

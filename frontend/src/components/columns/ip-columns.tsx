@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router"
 import { Info } from "lucide-react"
 
 import type { CustomField, IPAddress } from "@/lib/api"
+import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { StatusBadge } from "@/components/status-badge"
 import { RoleChip } from "@/components/role-chip"
@@ -117,10 +118,20 @@ export function buildIpColumns<T = IPAddress>(
             {ip.ip_address}
           </Link>
         )
-        if (!opts.copyButton) return link
+        const marker = (
+          <PlannedChangeMarker objectType="api.ipaddress" objectId={ip.id} />
+        )
+        if (!opts.copyButton)
+          return (
+            <span className="inline-flex items-center gap-1.5">
+              {link}
+              {marker}
+            </span>
+          )
         return (
           <div className="flex items-center gap-1">
             {link}
+            {marker}
             <CopyButton value={ip.ip_address} />
           </div>
         )

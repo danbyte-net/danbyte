@@ -9,6 +9,9 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import { DetailActions } from "@/components/detail-actions"
 import { useRegisterPresence } from "@/lib/presence-context"
 import { PlanFromObject } from "@/components/planning/plan-from-object"
+import { PlannedChangeBadge } from "@/components/planning/planned-change-badge"
+import { objectForPath } from "@/lib/object-routes"
+import { useRouterState } from "@tanstack/react-router"
 import { useDefaultTabPref } from "@/lib/use-url-tab"
 import {
   Tooltip,
@@ -51,6 +54,22 @@ export interface DetailTabItem {
    * name without every caller reaching into SegmentedTabs. */
   label: React.ReactNode
   count?: number
+}
+
+/** Route-derived planned-change pill: every object detail page announces open
+ * planned changes in its header, with no per-page wiring. Renders nothing when
+ * nothing is planned (or the route isn't an object page). */
+function PlannedForRoute() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const target = objectForPath(pathname)
+  if (!target) return null
+  return (
+    <PlannedChangeBadge
+      objectType={target.objectType}
+      objectId={target.id}
+      prominent
+    />
+  )
 }
 
 export function DetailShell({
@@ -111,6 +130,7 @@ export function DetailShell({
           </span>
         </nav>
         <div className="ml-auto flex items-center gap-1.5">
+          <PlannedForRoute />
           <DetailActions />
           {/* Route-derived like DetailActions: renders only on a detail page
               whose type can be planned. */}

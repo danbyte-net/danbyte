@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router"
 import type { PowerFeed } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { StatusBadge } from "@/components/status-badge"
+import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { numidColumn } from "@/components/cells/numid"
 import { rackColumn } from "@/components/cells/rack-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
@@ -81,13 +82,19 @@ export function buildPowerFeedColumns<T extends PowerFeed = PowerFeed>(
       accessorKey: "name",
       header: ({ column }) => <SortHeader column={column} label="Name" />,
       cell: ({ row }) => (
-        <Link
-          to="/power-feeds/$id"
-          params={{ id: row.original.id }}
-          className="font-medium hover:underline"
-        >
-          {row.original.name}
-        </Link>
+        <span className="inline-flex items-center gap-1.5">
+          <Link
+            to="/power-feeds/$id"
+            params={{ id: row.original.id }}
+            className="font-medium hover:underline"
+          >
+            {row.original.name}
+          </Link>
+          <PlannedChangeMarker
+            objectType="api.powerfeed"
+            objectId={row.original.id}
+          />
+        </span>
       ),
     }),
     panel: () => ({

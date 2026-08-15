@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router"
 
 import type { DeviceRole } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
+import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -69,16 +70,22 @@ export function buildDeviceRoleColumns<T extends DeviceRole = DeviceRole>(
       accessorKey: "name",
       header: ({ column }) => <SortHeader column={column} label="Name" />,
       cell: ({ row }) => (
-        <Link
-          to="/device-roles/$id"
-          params={{ id: row.original.id }}
-          className="hover:opacity-90"
-        >
-          <ColorBadge
-            name={row.original.name}
-            color={row.original.color || undefined}
+        <span className="inline-flex items-center gap-1.5">
+          <Link
+            to="/device-roles/$id"
+            params={{ id: row.original.id }}
+            className="hover:opacity-90"
+          >
+            <ColorBadge
+              name={row.original.name}
+              color={row.original.color || undefined}
+            />
+          </Link>
+          <PlannedChangeMarker
+            objectType="api.devicerole"
+            objectId={row.original.id}
           />
-        </Link>
+        </span>
       ),
     }),
     description: () => ({

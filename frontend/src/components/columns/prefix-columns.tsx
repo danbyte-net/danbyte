@@ -8,6 +8,7 @@ import type {
   CustomField,
   Prefix,
 } from "@/lib/api"
+import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { StatusBadge } from "@/components/status-badge"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
@@ -151,6 +152,10 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
                 map={opts.violations}
               />
             )}
+            <PlannedChangeMarker
+              objectType="api.prefix"
+              objectId={row.original.id}
+            />
           </div>
         )
       },

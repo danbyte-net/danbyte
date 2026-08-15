@@ -5,6 +5,7 @@ import type { DeviceType } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { LocalityBadge } from "@/components/locality-badge"
+import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
 import { lifecycleColumn } from "@/components/cells/lifecycle-cell"
@@ -124,13 +125,19 @@ export function buildDeviceTypeColumns<T extends DeviceType = DeviceType>(
       accessorKey: "name",
       header: ({ column }) => <SortHeader column={column} label="Name" />,
       cell: ({ row }) => (
-        <Link
-          to="/device-types/$id"
-          params={{ id: row.original.id }}
-          className="font-medium hover:underline"
-        >
-          {row.original.name}
-        </Link>
+        <span className="inline-flex items-center gap-1.5">
+          <Link
+            to="/device-types/$id"
+            params={{ id: row.original.id }}
+            className="font-medium hover:underline"
+          >
+            {row.original.name}
+          </Link>
+          <PlannedChangeMarker
+            objectType="api.devicetype"
+            objectId={row.original.id}
+          />
+        </span>
       ),
     }),
     manufacturer: () => manufacturerColumn<T>({ get: (r) => r.manufacturer }),

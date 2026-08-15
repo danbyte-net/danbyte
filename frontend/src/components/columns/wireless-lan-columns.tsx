@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router"
 import type { WirelessLAN } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { StatusBadge } from "@/components/status-badge"
+import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
 import { tagsColumn } from "@/components/cells/tag-list"
@@ -67,13 +68,19 @@ export function buildWirelessLANColumns<T extends WirelessLAN = WirelessLAN>(
       accessorKey: "ssid",
       header: ({ column }) => <SortHeader column={column} label="SSID" />,
       cell: ({ row }) => (
-        <Link
-          to="/wireless-lans/$id"
-          params={{ id: row.original.id }}
-          className="font-medium hover:underline"
-        >
-          {row.original.ssid}
-        </Link>
+        <span className="inline-flex items-center gap-1.5">
+          <Link
+            to="/wireless-lans/$id"
+            params={{ id: row.original.id }}
+            className="font-medium hover:underline"
+          >
+            {row.original.ssid}
+          </Link>
+          <PlannedChangeMarker
+            objectType="api.wirelesslan"
+            objectId={row.original.id}
+          />
+        </span>
       ),
     }),
     group: () => ({

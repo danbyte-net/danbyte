@@ -2,6 +2,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 
 import type { ComplianceViolation, VLAN } from "@/lib/api"
+import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import { dash } from "@/components/cells/dash"
@@ -124,6 +125,10 @@ export function buildVlanColumns<T extends VLAN = VLAN>(
               map={opts.violations === true ? undefined : opts.violations}
             />
           )}
+          <PlannedChangeMarker
+            objectType="api.vlan"
+            objectId={row.original.id}
+          />
         </span>
       ),
     }),

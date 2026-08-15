@@ -209,6 +209,14 @@ Applying leaves two trails: the normal **change-log** entry on the object, plus 
 **journal note** naming the task and listing the diff — so the object's own
 history explains why it changed.
 
+**Where the indicator shows.** A calendar-clock pill sits in the header of
+*every* object detail page with an open plan, and a quiet calendar-clock marker
+sits next to the name in every list and embedded table. Hovering either shows
+what is planned, on which task, and when; the pill links to the task. The
+indicator marks the exact target — a change planned on an interface marks the
+interface (including its row on the device's Interfaces tab), not the device
+itself.
+
 ## API
 
 Everything lives under `/api/planning/`: `boards/`, `statuses/`, `labels/`,

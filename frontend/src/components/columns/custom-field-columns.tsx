@@ -5,6 +5,7 @@ import { Check } from "lucide-react"
 import type { CustomField } from "@/lib/api"
 import { fieldTypeLabel, modelLabel } from "@/lib/custom-fields"
 import { Badge } from "@/components/ui/badge"
+import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { dash } from "@/components/cells/dash"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { SortHeader, selectionColumn } from "@/components/data-table"
@@ -65,13 +66,19 @@ export function buildCustomFieldColumns<T extends CustomField = CustomField>(
       accessorKey: "key",
       header: ({ column }) => <SortHeader column={column} label="Key" />,
       cell: ({ row }) => (
-        <Link
-          to="/custom-fields/$id"
-          params={{ id: row.original.id }}
-          className="font-mono font-medium hover:underline"
-        >
-          {row.original.key}
-        </Link>
+        <span className="inline-flex items-center gap-1.5">
+          <Link
+            to="/custom-fields/$id"
+            params={{ id: row.original.id }}
+            className="font-mono font-medium hover:underline"
+          >
+            {row.original.key}
+          </Link>
+          <PlannedChangeMarker
+            objectType="customization.customfield"
+            objectId={row.original.id}
+          />
+        </span>
       ),
     }),
     label: () => ({

@@ -2,6 +2,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 
 import type { ContactGroup } from "@/lib/api"
+import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
@@ -63,13 +64,19 @@ export function buildContactGroupColumns<T extends ContactGroup = ContactGroup>(
       accessorKey: "name",
       header: ({ column }) => <SortHeader column={column} label="Name" />,
       cell: ({ row }) => (
-        <Link
-          to="/contact-groups/$id"
-          params={{ id: row.original.id }}
-          className="font-medium hover:underline"
-        >
-          {row.original.name}
-        </Link>
+        <span className="inline-flex items-center gap-1.5">
+          <Link
+            to="/contact-groups/$id"
+            params={{ id: row.original.id }}
+            className="font-medium hover:underline"
+          >
+            {row.original.name}
+          </Link>
+          <PlannedChangeMarker
+            objectType="api.contactgroup"
+            objectId={row.original.id}
+          />
+        </span>
       ),
     }),
     parent: () => ({

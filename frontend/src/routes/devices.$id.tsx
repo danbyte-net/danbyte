@@ -60,10 +60,7 @@ import { Section } from "@/components/ui/section"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { QueryError } from "@/components/query-error"
-import {
-  PlannedChangeBadge,
-  usePlannedChangeMap,
-} from "@/components/planning/planned-change-badge"
+import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
 import { PendingFieldsProvider } from "@/lib/pending-fields"
 import { DeviceDeleteDialog } from "@/components/device-delete-dialog"
 import { DeviceSyncTypeDialog } from "@/components/device-sync-type-dialog"
@@ -295,13 +292,8 @@ function Body({ device: d }: { device: Device }) {
             <>
               <ViolationBadge objectId={d.id} objectType="device" prominent />
               <DeviceDriftBadge deviceId={d.id} prominent />
-              {/* Third indicator, deliberately not a fourth amber triangle:
-                  a planned change means nothing is wrong yet. */}
-              <PlannedChangeBadge
-                objectType="api.device"
-                objectId={d.id}
-                prominent
-              />
+              {/* The planned-change pill renders in the DetailShell header,
+                  route-derived — same as every other detail page. */}
             </>
           }
           subtitle={

@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router"
 import type { Service } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
+import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -78,18 +79,25 @@ export function buildServiceColumns<T extends Service = Service>(
       id: "name",
       accessorKey: "name",
       header: ({ column }) => <SortHeader column={column} label="Name" />,
-      cell: ({ row }) =>
-        linked ? (
-          <Link
-            to="/services/$id"
-            params={{ id: row.original.id }}
-            className="font-medium hover:underline"
-          >
-            {row.original.name}
-          </Link>
-        ) : (
-          <span className="font-medium">{row.original.name}</span>
-        ),
+      cell: ({ row }) => (
+        <span className="inline-flex items-center gap-1.5">
+          {linked ? (
+            <Link
+              to="/services/$id"
+              params={{ id: row.original.id }}
+              className="font-medium hover:underline"
+            >
+              {row.original.name}
+            </Link>
+          ) : (
+            <span className="font-medium">{row.original.name}</span>
+          )}
+          <PlannedChangeMarker
+            objectType="api.service"
+            objectId={row.original.id}
+          />
+        </span>
+      ),
     }),
     ports: () => ({
       id: "ports",

@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router"
 
 import type { RackType } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
+import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { numidColumn } from "@/components/cells/numid"
 import { manufacturerColumn } from "@/components/cells/manufacturer-cell"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -62,13 +63,19 @@ export function buildRackTypeColumns<T extends RackType = RackType>(
       accessorKey: "name",
       header: ({ column }) => <SortHeader column={column} label="Name" />,
       cell: ({ row }) => (
-        <Link
-          to="/rack-types/$id"
-          params={{ id: row.original.id }}
-          className="font-medium hover:underline"
-        >
-          {row.original.name}
-        </Link>
+        <span className="inline-flex items-center gap-1.5">
+          <Link
+            to="/rack-types/$id"
+            params={{ id: row.original.id }}
+            className="font-medium hover:underline"
+          >
+            {row.original.name}
+          </Link>
+          <PlannedChangeMarker
+            objectType="api.racktype"
+            objectId={row.original.id}
+          />
+        </span>
       ),
     }),
     manufacturer: () => manufacturerColumn<T>({ get: (r) => r.manufacturer }),

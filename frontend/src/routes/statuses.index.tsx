@@ -25,6 +25,9 @@ import { TaskStatusManager } from "@/components/planning/task-status-manager"
 import { useMe, objCan } from "@/lib/use-me"
 
 export const Route = createFileRoute("/statuses/")({
+  validateSearch: (s: Record<string, unknown>): { tab?: "tasks" } => ({
+    ...(s.tab === "tasks" ? { tab: "tasks" as const } : {}),
+  }),
   component: StatusesPage,
 })
 
@@ -32,7 +35,9 @@ export const Route = createFileRoute("/statuses/")({
  * and planning task statuses (kanban columns, per board). */
 function StatusesPage() {
   const { canDo } = useMe()
-  const [tab, setTab] = useState<"objects" | "tasks">("objects")
+  const { tab: urlTab } = Route.useSearch()
+  const navigate = Route.useNavigate()
+  const tab = urlTab ?? "objects"
   const showTasks = canDo("taskstatus", "view")
   if (!showTasks) return <IpStatusesPage />
   return (
@@ -44,7 +49,15 @@ function StatusesPage() {
             { value: "tasks", label: "Task statuses" },
           ]}
           value={tab}
-          onValueChange={(v) => setTab(v as "objects" | "tasks")}
+          onValueChange={(v) =>
+            navigate({
+              search: (s) => ({
+                ...s,
+                tab: v === "tasks" ? ("tasks" as const) : undefined,
+              }),
+              replace: true,
+            })
+          }
         />
       </div>
       {tab === "objects" ? (

@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router"
 
 import type { Aggregate } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
@@ -77,17 +78,23 @@ export function buildAggregateColumns<T extends Aggregate = Aggregate>(
       accessorKey: "prefix",
       header: ({ column }) => <SortHeader column={column} label="Prefix" />,
       cell: ({ row }) => (
-        <Link
-          to="/aggregates/$id"
-          params={{ id: row.original.id }}
-          className={cn(
-            "font-mono",
-            opts.prefixClass,
-            "font-medium hover:underline"
-          )}
-        >
-          {row.original.prefix}
-        </Link>
+        <span className="inline-flex items-center gap-1.5">
+          <Link
+            to="/aggregates/$id"
+            params={{ id: row.original.id }}
+            className={cn(
+              "font-mono",
+              opts.prefixClass,
+              "font-medium hover:underline"
+            )}
+          >
+            {row.original.prefix}
+          </Link>
+          <PlannedChangeMarker
+            objectType="api.aggregate"
+            objectId={row.original.id}
+          />
+        </span>
       ),
     }),
     rir: () => ({

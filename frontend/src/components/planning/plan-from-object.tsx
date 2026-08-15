@@ -11,7 +11,7 @@ import {
   type PlanningStatus,
   type PlanningTask,
 } from "@/lib/api"
-import { OBJECT_DETAIL_ROUTES } from "@/lib/object-routes"
+import { OBJECT_DETAIL_ROUTES, objectForPath } from "@/lib/object-routes"
 import { isPlanCapable } from "@/lib/save-object"
 import { useMe } from "@/lib/use-me"
 import { useDateFormat } from "@/lib/datetime"
@@ -38,19 +38,6 @@ import {
  * works on every detail page whose type is plan-capable, with no per-page props.
  */
 
-/** `/devices/<uuid>` → `api.device`, by inverting the detail-route table. */
-function typeForPath(
-  pathname: string
-): { objectType: string; id: string } | null {
-  const m = pathname.match(/^\/([a-z-]+)\/([0-9a-fA-F-]{36})\/?$/)
-  if (!m) return null
-  const route = `/${m[1]}/$id`
-  for (const [label, to] of Object.entries(OBJECT_DETAIL_ROUTES)) {
-    if (to === route) return { objectType: label, id: m[2] }
-  }
-  return null
-}
-
 export function PlanFromObject() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const { canDo } = useMe()
@@ -62,7 +49,7 @@ export function PlanFromObject() {
   const [title, setTitle] = useState("")
   const [boardId, setBoardId] = useState<string | null>(null)
 
-  const target = typeForPath(pathname)
+  const target = objectForPath(pathname)
   const enabled = open && !!target
 
   const tasks = useQuery({
