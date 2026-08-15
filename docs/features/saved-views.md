@@ -61,6 +61,15 @@ due_date < 2026-09-01 and assignees is not empty
 weight > 100 or description is empty
 ```
 
+### Managing saved filters
+
+**Customize → Saved filters** lists every view across every list — yours and
+the ones shared with this tenant — with the list it belongs to, its
+visibility, and its owner. Edit (rename, description, shared) or delete your
+own from there; the pencil on a view in any list's dropdown jumps straight to
+its edit dialog. The *conditions* themselves are edited on the list: apply
+the view, adjust the filters, and press **Update**.
+
 A line break also works as `and` — one condition per line reads naturally
 and shows up as one builder row each.
 

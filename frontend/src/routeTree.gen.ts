@@ -29,6 +29,7 @@ import { Route as SiteMapRouteImport } from './routes/site-map'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SetPasswordRouteImport } from './routes/set-password'
 import { Route as SearchRouteImport } from './routes/search'
+import { Route as SavedFiltersRouteImport } from './routes/saved-filters'
 import { Route as RouteTargetsRouteImport } from './routes/route-targets'
 import { Route as RirsRouteImport } from './routes/rirs'
 import { Route as RegionsRouteImport } from './routes/regions'
@@ -494,6 +495,11 @@ const SetPasswordRoute = SetPasswordRouteImport.update({
 const SearchRoute = SearchRouteImport.update({
   id: '/search',
   path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SavedFiltersRoute = SavedFiltersRouteImport.update({
+  id: '/saved-filters',
+  path: '/saved-filters',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RouteTargetsRoute = RouteTargetsRouteImport.update({
@@ -2383,6 +2389,7 @@ export interface FileRoutesByFullPath {
   '/regions': typeof RegionsRouteWithChildren
   '/rirs': typeof RirsRouteWithChildren
   '/route-targets': typeof RouteTargetsRouteWithChildren
+  '/saved-filters': typeof SavedFiltersRoute
   '/search': typeof SearchRoute
   '/set-password': typeof SetPasswordRoute
   '/settings': typeof SettingsRouteWithChildren
@@ -2732,6 +2739,7 @@ export interface FileRoutesByTo {
   '/monitoring': typeof MonitoringRoute
   '/monitoring-engines': typeof MonitoringEnginesRoute
   '/notifications': typeof NotificationsRoute
+  '/saved-filters': typeof SavedFiltersRoute
   '/search': typeof SearchRoute
   '/set-password': typeof SetPasswordRoute
   '/site-map': typeof SiteMapRoute
@@ -3104,6 +3112,7 @@ export interface FileRoutesById {
   '/regions': typeof RegionsRouteWithChildren
   '/rirs': typeof RirsRouteWithChildren
   '/route-targets': typeof RouteTargetsRouteWithChildren
+  '/saved-filters': typeof SavedFiltersRoute
   '/search': typeof SearchRoute
   '/set-password': typeof SetPasswordRoute
   '/settings': typeof SettingsRouteWithChildren
@@ -3494,6 +3503,7 @@ export interface FileRouteTypes {
     | '/regions'
     | '/rirs'
     | '/route-targets'
+    | '/saved-filters'
     | '/search'
     | '/set-password'
     | '/settings'
@@ -3843,6 +3853,7 @@ export interface FileRouteTypes {
     | '/monitoring'
     | '/monitoring-engines'
     | '/notifications'
+    | '/saved-filters'
     | '/search'
     | '/set-password'
     | '/site-map'
@@ -4214,6 +4225,7 @@ export interface FileRouteTypes {
     | '/regions'
     | '/rirs'
     | '/route-targets'
+    | '/saved-filters'
     | '/search'
     | '/set-password'
     | '/settings'
@@ -4603,6 +4615,7 @@ export interface RootRouteChildren {
   RegionsRoute: typeof RegionsRouteWithChildren
   RirsRoute: typeof RirsRouteWithChildren
   RouteTargetsRoute: typeof RouteTargetsRouteWithChildren
+  SavedFiltersRoute: typeof SavedFiltersRoute
   SearchRoute: typeof SearchRoute
   SetPasswordRoute: typeof SetPasswordRoute
   SettingsRoute: typeof SettingsRouteWithChildren
@@ -4841,6 +4854,13 @@ declare module '@tanstack/react-router' {
       path: '/search'
       fullPath: '/search'
       preLoaderRoute: typeof SearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/saved-filters': {
+      id: '/saved-filters'
+      path: '/saved-filters'
+      fullPath: '/saved-filters'
+      preLoaderRoute: typeof SavedFiltersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/route-targets': {
@@ -8466,6 +8486,7 @@ const rootRouteChildren: RootRouteChildren = {
   RegionsRoute: RegionsRouteWithChildren,
   RirsRoute: RirsRouteWithChildren,
   RouteTargetsRoute: RouteTargetsRouteWithChildren,
+  SavedFiltersRoute: SavedFiltersRoute,
   SearchRoute: SearchRoute,
   SetPasswordRoute: SetPasswordRoute,
   SettingsRoute: SettingsRouteWithChildren,

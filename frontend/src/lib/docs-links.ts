@@ -40,6 +40,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/fhrp-groups": "features/ipam-objects/",
   "/zones": "models/zone/",
   "/statuses": "features/catalogs-and-settings/",
+  "/saved-filters": "features/saved-views/",
   "/ip-statuses": "features/catalogs-and-settings/",
   "/ip-roles": "features/catalogs-and-settings/",
   "/macs": "features/search-and-macs/",

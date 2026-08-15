@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Check, ListFilter, Lock, Trash2, Users } from "lucide-react"
+import { Check, ListFilter, Lock, Pencil, Trash2, Users } from "lucide-react"
+import { Link } from "@tanstack/react-router"
 import { useEffect } from "react"
 import { toast } from "sonner"
 
@@ -39,6 +40,7 @@ export interface SavedView {
   shared: boolean
   owner: string
   mine: boolean
+  updated_at?: string
 }
 
 export interface SavedViewsProps {
@@ -365,6 +367,19 @@ function ViewGroup({
               </span>
             )}
           </button>
+          {view.mine && (
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              asChild
+              className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+              title={`Edit “${view.name}”`}
+            >
+              <Link to="/saved-filters" search={{ edit: view.id }}>
+                <Pencil className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          )}
           {onDelete && (
             <Button
               size="icon-sm"

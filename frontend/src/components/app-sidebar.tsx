@@ -68,6 +68,7 @@ import {
   Workflow,
   Wrench,
   Zap,
+  ListFilter,
 } from "lucide-react"
 
 import {
@@ -718,6 +719,7 @@ const sections: NavSection[] = [
       {
         items: [
           { title: "Tags", url: "/tags", icon: TagsIcon, objectType: "tag" },
+          { title: "Saved filters", url: "/saved-filters", icon: ListFilter },
           {
             title: "Statuses",
             url: "/statuses",
