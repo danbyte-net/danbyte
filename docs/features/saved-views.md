@@ -46,8 +46,10 @@ The **Advanced** entry at the top of every filter rail holds one expression per
 list, edited two ways over the same definition:
 
 - a **builder** — rows of *field · operator · value*, combined with
-  *match all* / *match any*, with fields and value suggestions taken from the
-  rows the list has actually loaded;
+  *match all* / *match any*. Fields come from the list's own columns, and the
+  value box carries a picker (the chevron on its right) listing the values
+  actually present in the loaded rows — pick one or type freely. The ⓘ next
+  to the dialog title is the operator reference;
 - a **typed expression** in a small grammar, for conditions the builder can't
   express (mixed and/or with parentheses):
 

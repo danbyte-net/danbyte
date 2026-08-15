@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { ListFilter, Plus, X } from "lucide-react"
+import { ChevronDown, Info, ListFilter, Plus, X } from "lucide-react"
 
 import {
   CMP_LABELS,
@@ -23,6 +23,16 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import {
   Select,
   SelectContent,
@@ -136,13 +146,16 @@ function ExpressionDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Advanced filter</DialogTitle>
+          <DialogTitle className="flex items-center gap-1.5">
+            Advanced filter
+            <OperatorsHint />
+          </DialogTitle>
           <DialogDescription>
             Build conditions, or type them —{" "}
             <code className="text-[11px]">
               status = active and (site.name ~ cph or tags ~ core)
             </code>
-            . Fields come from this list's own columns.
+            . Fields and values come from this list's own rows.
           </DialogDescription>
         </DialogHeader>
 
@@ -166,7 +179,7 @@ function ExpressionDialog({
           <Textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder='e.g. status = active and due_date < 2026-09-01'
+            placeholder="e.g. status = active and due_date < 2026-09-01"
             className="min-h-16 font-mono text-[12.5px]"
           />
           {error && (
@@ -233,9 +246,7 @@ function BuilderRows({
             </Select>
             <Select
               value={rule.cmp}
-              onValueChange={(v) =>
-                update(i, { cmp: v as BuilderRule["cmp"] })
-              }
+              onValueChange={(v) => update(i, { cmp: v as BuilderRule["cmp"] })}
             >
               <SelectTrigger className="h-8 w-36 shrink-0 text-[12px]">
                 <SelectValue />
@@ -249,22 +260,11 @@ function BuilderRows({
               </SelectContent>
             </Select>
             {!noValue(rule.cmp) && (
-              <>
-                <Input
-                  value={rule.value}
-                  onChange={(e) => update(i, { value: e.target.value })}
-                  placeholder="Value"
-                  list={samples.length ? `expr-samples-${i}` : undefined}
-                  className="h-8 min-w-0 flex-1 text-[12px]"
-                />
-                {samples.length > 0 && (
-                  <datalist id={`expr-samples-${i}`}>
-                    {samples.map((s) => (
-                      <option key={s} value={s} />
-                    ))}
-                  </datalist>
-                )}
-              </>
+              <ValueField
+                value={rule.value}
+                onChange={(v) => update(i, { value: v })}
+                samples={samples}
+              />
             )}
             <Button
               type="button"
@@ -311,5 +311,111 @@ function BuilderRows({
         )}
       </div>
     </div>
+  )
+}
+
+/** The value input plus a picker of the values actually present in this list —
+ * free text still works; the picker just saves the typing (and the guessing). */
+function ValueField({
+  value,
+  onChange,
+  samples,
+}: {
+  value: string
+  onChange: (v: string) => void
+  samples: string[]
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="relative flex min-w-0 flex-1">
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Value"
+        className={`h-8 min-w-0 flex-1 text-[12px] ${samples.length ? "pr-7" : ""}`}
+      />
+      {samples.length > 0 && (
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="absolute inset-y-0 right-1.5 flex items-center text-muted-foreground hover:text-foreground"
+              title="Pick a value from this list"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="end"
+            className="max-h-64 w-60 overflow-y-auto p-1"
+          >
+            {samples.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className="block w-full truncate rounded-md px-2 py-1 text-left text-[12px] hover:bg-accent"
+                onClick={() => {
+                  onChange(s)
+                  setOpen(false)
+                }}
+              >
+                {s}
+              </button>
+            ))}
+          </PopoverContent>
+        </Popover>
+      )}
+    </div>
+  )
+}
+
+/** The grammar on a card, so nobody has to find the docs mid-filter. */
+function OperatorsHint() {
+  return (
+    <HoverCard openDelay={100}>
+      <HoverCardTrigger asChild>
+        <button
+          type="button"
+          className="text-muted-foreground hover:text-foreground"
+          aria-label="Operator reference"
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent className="w-80 text-xs leading-relaxed text-muted-foreground">
+        <ul className="space-y-1">
+          <li>
+            <code className="font-mono">=</code> /{" "}
+            <code className="font-mono">!=</code> — equals / not equals
+          </li>
+          <li>
+            <code className="font-mono">~</code> /{" "}
+            <code className="font-mono">!~</code> — contains / does not contain,
+            case-insensitive
+          </li>
+          <li>
+            <code className="font-mono">&lt; &gt; &lt;= &gt;=</code> — compare
+            numbers and dates
+          </li>
+          <li>
+            <code className="font-mono">is empty</code> /{" "}
+            <code className="font-mono">is not empty</code>
+          </li>
+          <li>
+            Combine with <code className="font-mono">and</code> /{" "}
+            <code className="font-mono">or</code> and parentheses;{" "}
+            <code className="font-mono">and</code> binds tighter.
+          </li>
+          <li>
+            Dotted paths reach related objects:{" "}
+            <code className="font-mono">site.name ~ cph</code>
+          </li>
+          <li>
+            On lists like tags, <code className="font-mono">~</code> matches any
+            element; the negative operators must hold for all of them.
+          </li>
+        </ul>
+      </HoverCardContent>
+    </HoverCard>
   )
 }

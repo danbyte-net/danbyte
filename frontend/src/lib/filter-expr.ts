@@ -107,8 +107,7 @@ export function parse(src: string): Expr | null {
 
   const peek = () => tokens[i]
   const isWord = (v: string) =>
-    peek()?.t === "word" &&
-    (peek() as { v: string }).v.toLowerCase() === v
+    peek()?.t === "word" && (peek() as { v: string }).v.toLowerCase() === v
 
   function expr(): Expr {
     const terms = [term()]
@@ -138,8 +137,7 @@ export function parse(src: string): Expr | null {
       i++
       return inner
     }
-    if (tok.t !== "word")
-      throw new ParseError("Expected a field name", tok.pos)
+    if (tok.t !== "word") throw new ParseError("Expected a field name", tok.pos)
     const field = tok.v
     i++
     // "field is [not] empty" — the wordy form the builder writes.
@@ -158,7 +156,7 @@ export function parse(src: string): Expr | null {
       i = save // plain "is" → treat as "=" sugar below
     }
     const op = peek()
-    if (op?.t === "word" && (op.v.toLowerCase() === "is")) {
+    if (op?.t === "word" && op.v.toLowerCase() === "is") {
       i++
       if (isWord("not")) {
         i++
@@ -320,7 +318,10 @@ const SKIP_KEYS = new Set([
  * needs no per-model registry — like the facet rail, it describes exactly the
  * list it sits on. */
 export function discoverFields(rows: unknown[]): FieldInfo[] {
-  const found = new Map<string, { kind: FieldInfo["kind"]; samples: Set<string> }>()
+  const found = new Map<
+    string,
+    { kind: FieldInfo["kind"]; samples: Set<string> }
+  >()
   const note = (path: string, v: unknown) => {
     const scalar = scalarOf(v)
     if (scalar === null || scalar === undefined) return
@@ -335,7 +336,7 @@ export function discoverFields(rows: unknown[]): FieldInfo[] {
       entry = { kind, samples: new Set() }
       found.set(path, entry)
     }
-    if (entry.samples.size < 12 && typeof scalar !== "boolean")
+    if (entry.samples.size < 50 && typeof scalar !== "boolean")
       entry.samples.add(String(scalar))
   }
   for (const row of rows.slice(0, 200)) {
@@ -357,7 +358,11 @@ export function discoverFields(rows: unknown[]): FieldInfo[] {
     }
   }
   return [...found.entries()]
-    .map(([path, e]) => ({ path, kind: e.kind, samples: [...e.samples].sort() }))
+    .map(([path, e]) => ({
+      path,
+      kind: e.kind,
+      samples: [...e.samples].sort(),
+    }))
     .sort((a, b) => a.path.localeCompare(b.path))
 }
 
@@ -377,7 +382,11 @@ export function toBuilder(
   const ruleOf = (e: Expr): BuilderRule | null => {
     if (e.kind === "cmp") return { field: e.field, cmp: e.cmp, value: e.value }
     if (e.kind === "empty")
-      return { field: e.field, cmp: e.negated ? "not_empty" : "empty", value: "" }
+      return {
+        field: e.field,
+        cmp: e.negated ? "not_empty" : "empty",
+        value: "",
+      }
     return null
   }
   if (!expr) return { op: "and", rules: [] }
@@ -393,7 +402,10 @@ export function toBuilder(
   return { op: expr.op, rules }
 }
 
-export function fromBuilder(op: "and" | "or", rules: BuilderRule[]): Expr | null {
+export function fromBuilder(
+  op: "and" | "or",
+  rules: BuilderRule[]
+): Expr | null {
   const terms: Expr[] = rules
     .filter((r) => r.field)
     .map((r) =>
