@@ -40,6 +40,36 @@ A list gets saved views by handing the control its object type and its filter
 handle — the filters themselves come from the columns the list renders, so
 there's no per-model filter language to learn or maintain.
 
+## Advanced filter expressions
+
+The **Advanced** entry at the top of every filter rail holds one expression per
+list, edited two ways over the same definition:
+
+- a **builder** — rows of *field · operator · value*, combined with
+  *match all* / *match any*, with fields and value suggestions taken from the
+  rows the list has actually loaded;
+- a **typed expression** in a small grammar, for conditions the builder can't
+  express (mixed and/or with parentheses):
+
+```
+status = active and (site.name ~ cph or tags ~ core)
+due_date < 2026-09-01 and assignees is not empty
+weight > 100 or description is empty
+```
+
+The grammar: `field op value`, joined with `and` / `or` (`and` binds tighter;
+parentheses override). Fields are dotted paths into the row (`status.name`,
+`site.name`, `tags`); a path landing on an object compares its name, and one
+landing on a list matches when any element does. Operators: `=` `!=` (or
+`is` / `is not`), `~` `!~` (contains), `<` `>` `<=` `>=` (numeric when both
+sides are numbers, otherwise text — which orders ISO dates correctly), and
+`is [not] empty`. String compares are case-insensitive; quote values with
+spaces.
+
+The expression stacks with the facet rail and the search box, counts toward
+the header's filter badge, and is captured by saved views — so "core switches
+in CPH due this month" can be one shared view.
+
 !!! note "Views and column layouts are separate"
     A view remembers *which rows* you want. [Table columns](table-preferences.md)
     remember *which columns* you want, per table. The two combine.

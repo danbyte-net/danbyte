@@ -3,6 +3,8 @@ import { useCallback, useMemo, useState } from "react"
 
 import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
+import { evaluate, parse, type Expr } from "@/lib/filter-expr"
+import { ExpressionFilter } from "@/components/filter-expression"
 import {
   FacetGroup,
   FilterRail,
@@ -132,8 +134,10 @@ export interface UseTableFiltersResult<TRow> {
   restore: (snapshot: FilterSnapshot | null | undefined) => void
 }
 
-/** Facet selections in a form that survives JSON — sets become arrays. */
-export type FilterSnapshot = Record<string, string[] | RangeState>
+/** Facet selections in a form that survives JSON — sets become arrays. The
+ * reserved `__expr` key carries the advanced filter expression (a string in
+ * the lib/filter-expr grammar), so saved views capture it too. */
+export type FilterSnapshot = Record<string, string[] | RangeState | string>
 
 export function useTableFilters<TRow>(
   columns: ColumnDef<TRow, unknown>[],
@@ -177,6 +181,18 @@ export function useTableFilters<TRow>(
     setState((s) => ({ ...s, [id]: next }))
   const setRange = (id: string, next: RangeState) =>
     setState((s) => ({ ...s, [id]: next }))
+
+  // The advanced filter: one expression (lib/filter-expr grammar) applied on
+  // top of the facets. Kept as text — the single format the builder, the text
+  // editor and the saved-view snapshot all share.
+  const [exprText, setExprText] = useState("")
+  const exprAst = useMemo<Expr | null>(() => {
+    try {
+      return parse(exprText)
+    } catch {
+      return null // an invalid committed expression filters nothing
+    }
+  }, [exprText])
 
   const toggleValue = useCallback((id: string, value: string) => {
     setState((s) => {
@@ -243,6 +259,7 @@ export function useTableFilters<TRow>(
   // Apply every active filter.
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
+      if (exprAst && !evaluate(exprAst, row)) return false
       for (const { id, def } of facets) {
         const s = state[id]
         if (!s) continue
@@ -270,10 +287,10 @@ export function useTableFilters<TRow>(
       }
       return true
     })
-  }, [rows, state, facets])
+  }, [rows, state, facets, exprAst])
 
   // Count of facets with any active selection (for the page header).
-  let activeCount = 0
+  let activeCount = exprAst ? 1 : 0
   for (const { id, def } of facets) {
     const s = state[id]
     if (!s) continue
@@ -289,6 +306,7 @@ export function useTableFilters<TRow>(
   const rail =
     facets.length === 0 ? null : (
       <FilterRail>
+        <ExpressionFilter value={exprText} onChange={setExprText} rows={rows} />
         {facets.map(({ id, def }) => {
           const label = def.label ?? id
           if (def.kind === "range") {
@@ -334,18 +352,26 @@ export function useTableFilters<TRow>(
         out[id] = value
       }
     }
+    if (exprText.trim()) out.__expr = exprText
     return out
-  }, [state])
+  }, [state, exprText])
 
   const restore = useCallback((saved: FilterSnapshot | null | undefined) => {
     // Replaces the selection outright rather than merging: applying a saved
     // view must show exactly what it describes, not what it describes plus
     // whatever was already ticked.
     const next: Record<string, EnumState | TagsState | RangeState> = {}
+    let expr = ""
     for (const [id, value] of Object.entries(saved ?? {})) {
+      if (id === "__expr") {
+        if (typeof value === "string") expr = value
+        continue
+      }
+      if (typeof value === "string") continue // future reserved keys
       next[id] = Array.isArray(value) ? new Set(value) : value
     }
     setState(next)
+    setExprText(expr)
   }, [])
 
   return {

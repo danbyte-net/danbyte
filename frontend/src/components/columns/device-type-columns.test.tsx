@@ -137,6 +137,7 @@ afterEach(cleanup)
 describe("device-type filter rail", () => {
   it("offers every facet the long-catalog page needs, in column order", () => {
     expect(headings(ROWS)).toEqual([
+      "Advanced", // the expression filter leads every rail
       "Manufacturer",
       "U",
       "Images",
