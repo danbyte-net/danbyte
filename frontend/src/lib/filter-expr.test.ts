@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest"
 
 import {
   discoverFields,
+  fromGroups,
+  toGroups,
   evaluate,
   format,
   fromBuilder,
@@ -157,5 +159,25 @@ describe("multi-line input", () => {
     expect(format(parse("(status = active or\nstatus = planned)"))).toBe(
       "status = active or status = planned"
     )
+  })
+})
+
+describe("group view", () => {
+  it("shows or-of-ands", () => {
+    const g = toGroups(parse("a ~ 0 or b = 334 and c = d"))
+    expect(g).toEqual([
+      [{ field: "a", cmp: "~", value: "0" }],
+      [
+        { field: "b", cmp: "=", value: "334" },
+        { field: "c", cmp: "=", value: "d" },
+      ],
+    ])
+    expect(format(fromGroups(g!))).toBe("a ~ 0 or b = 334 and c = d")
+  })
+
+  it("rejects only genuinely deeper nesting", () => {
+    expect(toGroups(parse("a = 1 and (b = 2 or c = 3)"))).toBeNull()
+    expect(toGroups(parse("a = 1 and b = 2"))).toHaveLength(1)
+    expect(toGroups(null)).toEqual([[]])
   })
 })

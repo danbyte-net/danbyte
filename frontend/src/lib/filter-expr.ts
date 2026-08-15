@@ -449,3 +449,49 @@ export function fromBuilder(
   if (terms.length === 0) return null
   return terms.length === 1 ? terms[0] : { kind: "group", op, terms }
 }
+
+/** Group view of an expression: OR-separated groups of AND-ed rules — the
+ * shape "a or (b and c)" that the flat builder couldn't show. Null only for
+ * genuinely deeper nesting (an `or` inside an `and` inside an `or`, …). */
+export function toGroups(expr: Expr | null): BuilderRule[][] | null {
+  const ruleOf = (e: Expr): BuilderRule | null =>
+    e.kind === "cmp"
+      ? { field: e.field, cmp: e.cmp, value: e.value }
+      : e.kind === "empty"
+        ? { field: e.field, cmp: e.negated ? "not_empty" : "empty", value: "" }
+        : null
+  const groupOf = (e: Expr): BuilderRule[] | null => {
+    const single = ruleOf(e)
+    if (single) return [single]
+    if (e.kind !== "group" || e.op !== "and") return null
+    const rules: BuilderRule[] = []
+    for (const t of e.terms) {
+      const r = ruleOf(t)
+      if (!r) return null
+      rules.push(r)
+    }
+    return rules
+  }
+  if (!expr) return [[]]
+  const single = groupOf(expr)
+  if (single) return [single]
+  if (expr.kind !== "group" || expr.op !== "or") return null
+  const groups: BuilderRule[][] = []
+  for (const t of expr.terms) {
+    const g = groupOf(t)
+    if (!g) return null
+    groups.push(g)
+  }
+  return groups
+}
+
+/** The inverse of `toGroups` — incomplete rules (no field) are dropped. */
+export function fromGroups(groups: BuilderRule[][]): Expr | null {
+  const terms: Expr[] = []
+  for (const g of groups) {
+    const e = fromBuilder("and", g)
+    if (e) terms.push(e)
+  }
+  if (terms.length === 0) return null
+  return terms.length === 1 ? terms[0] : { kind: "group", op: "or", terms }
+}

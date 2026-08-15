@@ -5,12 +5,11 @@ import {
   CMP_LABELS,
   discoverFields,
   format,
-  fromBuilder,
+  fromGroups,
   parse,
-  toBuilder,
+  toGroups,
   type BuilderRule,
   type Cmp,
-  type Expr,
 } from "@/lib/filter-expr"
 import { Button } from "@/components/ui/button"
 import {
@@ -123,20 +122,44 @@ function ExpressionDialog({
   onClose: () => void
   onApply: (next: string) => void
 }) {
-  const [text, setText] = useState(initial)
   const fields = useMemo(() => discoverFields(rows), [rows])
 
-  let ast: Expr | null = null
+  // Groups are STATE, not a projection of the text: a freshly added blank row
+  // isn't part of the expression yet, so deriving rows from text on every
+  // keystroke made "+ Add condition" a no-op. Text and groups stay in sync in
+  // both directions; groups go null only for nesting deeper than or-of-ands.
+  const seed = (t: string) => {
+    try {
+      const g = toGroups(parse(t))
+      return g ? g.map((rules) => (rules.length ? rules : [BLANK()])) : null
+    } catch {
+      return null
+    }
+  }
+  const [text, setText] = useState(initial)
+  const [groups, setGroups] = useState(() => seed(initial))
+
   let error: string | null = null
   try {
-    ast = parse(text)
+    parse(text)
   } catch (e) {
     error = e instanceof Error ? e.message : String(e)
   }
-  const builder = error ? null : toBuilder(ast)
 
-  const setFromBuilder = (op: "and" | "or", rules: BuilderRule[]) =>
-    setText(format(fromBuilder(op, rules)))
+  const onTextEdit = (t: string) => {
+    setText(t)
+    try {
+      parse(t)
+      setGroups(seed(t))
+    } catch {
+      // Invalid mid-edit text: keep the rows as they were.
+    }
+  }
+
+  const setFromGroups = (next: BuilderRule[][]) => {
+    setGroups(next)
+    setText(format(fromGroups(next)))
+  }
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -155,19 +178,8 @@ function ExpressionDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {builder ? (
-          <BuilderRows
-            op={builder.op}
-            // An empty expression still shows one ready-to-fill row — the
-            // dropdowns ARE the invitation; nobody guesses "+ Add condition".
-            rules={
-              builder.rules.length
-                ? builder.rules
-                : [{ field: "", cmp: "=" as const, value: "" }]
-            }
-            fields={fields}
-            onChange={setFromBuilder}
-          />
+        {groups ? (
+          <GroupRows groups={groups} fields={fields} onChange={setFromGroups} />
         ) : (
           !error && (
             <p className="text-[12px] text-muted-foreground">
@@ -180,7 +192,7 @@ function ExpressionDialog({
         <div>
           <Textarea
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => onTextEdit(e.target.value)}
             placeholder="e.g. status = active and due_date < 2026-09-01"
             className="min-h-16 font-mono text-[12.5px]"
           />
@@ -219,117 +231,133 @@ function ExpressionDialog({
   )
 }
 
-function BuilderRows({
-  op,
-  rules,
+const BLANK = (): BuilderRule => ({ field: "", cmp: "=", value: "" })
+
+/** OR-separated groups of AND-ed rows — matching a group means matching every
+ * row in it; matching any group matches the filter. Covers everything up to
+ * "a or (b and c)" without asking anyone to think about precedence. */
+function GroupRows({
+  groups,
   fields,
   onChange,
 }: {
-  op: "and" | "or"
-  rules: BuilderRule[]
+  groups: BuilderRule[][]
   fields: ReturnType<typeof discoverFields>
-  onChange: (op: "and" | "or", rules: BuilderRule[]) => void
+  onChange: (groups: BuilderRule[][]) => void
 }) {
-  const update = (i: number, patch: Partial<BuilderRule>) =>
-    onChange(
-      op,
-      rules.map((r, j) => (j === i ? { ...r, ...patch } : r))
-    )
   const noValue = (cmp: BuilderRule["cmp"]) =>
     cmp === "empty" || cmp === "not_empty"
 
+  const setGroup = (gi: number, rules: BuilderRule[]) =>
+    onChange(groups.map((g, j) => (j === gi ? rules : g)))
+  const removeRow = (gi: number, ri: number) => {
+    const rest = groups[gi].filter((_, j) => j !== ri)
+    if (rest.length > 0) return setGroup(gi, rest)
+    // Last row of the group: drop the group, but never all of them.
+    const nextGroups = groups.filter((_, j) => j !== gi)
+    onChange(nextGroups.length ? nextGroups : [[BLANK()]])
+  }
+
   return (
     <div className="space-y-2">
-      {rules.map((rule, i) => {
-        const samples = fields.find((f) => f.path === rule.field)?.samples ?? []
-        return (
-          <div
-            key={i}
-            className="grid grid-cols-[10rem_8.5rem_minmax(0,1fr)_2rem] items-center gap-1.5"
-          >
-            <Select
-              value={rule.field || undefined}
-              onValueChange={(v) => update(i, { field: v })}
-            >
-              <SelectTrigger className="h-8 w-full text-[12px]">
-                <SelectValue placeholder="Field" />
-              </SelectTrigger>
-              <SelectContent className="max-h-64">
-                {fields.map((f) => (
-                  <SelectItem key={f.path} value={f.path}>
-                    {f.path}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={rule.cmp}
-              onValueChange={(v) => update(i, { cmp: v as BuilderRule["cmp"] })}
-            >
-              <SelectTrigger className="h-8 w-full text-[12px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {OP_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {noValue(rule.cmp) && <div />}
-            {!noValue(rule.cmp) && (
-              <ValueField
-                value={rule.value}
-                onChange={(v) => update(i, { value: v })}
-                samples={samples}
-                fieldChosen={fields.some((f) => f.path === rule.field)}
-              />
-            )}
+      {groups.map((rules, gi) => (
+        <div key={gi}>
+          {gi > 0 && (
+            <div className="mb-2 flex items-center gap-2">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+                or
+              </span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+          )}
+          <div className="space-y-2 rounded-lg border border-border p-2.5">
+            {rules.map((rule, ri) => {
+              const samples =
+                fields.find((f) => f.path === rule.field)?.samples ?? []
+              const update = (patch: Partial<BuilderRule>) =>
+                setGroup(
+                  gi,
+                  rules.map((r, j) => (j === ri ? { ...r, ...patch } : r))
+                )
+              return (
+                <div
+                  key={ri}
+                  className="grid grid-cols-[10rem_8.5rem_minmax(0,1fr)_2rem] items-center gap-1.5"
+                >
+                  <Select
+                    value={rule.field || undefined}
+                    onValueChange={(v) => update({ field: v })}
+                  >
+                    <SelectTrigger className="h-8 w-full text-[12px]">
+                      <SelectValue placeholder="Field" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64">
+                      {fields.map((f) => (
+                        <SelectItem key={f.path} value={f.path}>
+                          {f.path}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={rule.cmp}
+                    onValueChange={(v) =>
+                      update({ cmp: v as BuilderRule["cmp"] })
+                    }
+                  >
+                    <SelectTrigger className="h-8 w-full text-[12px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {OP_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {noValue(rule.cmp) && <div />}
+                  {!noValue(rule.cmp) && (
+                    <ValueField
+                      value={rule.value}
+                      onChange={(v) => update({ value: v })}
+                      samples={samples}
+                      fieldChosen={fields.some((f) => f.path === rule.field)}
+                    />
+                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                    title="Remove condition"
+                    onClick={() => removeRow(gi, ri)}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )
+            })}
             <Button
               type="button"
               variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-              title="Remove condition"
-              onClick={() =>
-                onChange(
-                  op,
-                  rules.filter((_, j) => j !== i)
-                )
-              }
+              size="sm"
+              onClick={() => setGroup(gi, [...rules, BLANK()])}
             >
-              <X className="h-3.5 w-3.5" />
+              <Plus className="h-3.5 w-3.5" /> And
             </Button>
           </div>
-        )
-      })}
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() =>
-            onChange(op, [...rules, { field: "", cmp: "=", value: "" }])
-          }
-        >
-          <Plus className="h-3.5 w-3.5" /> Add condition
-        </Button>
-        {rules.length > 1 && (
-          <Select
-            value={op}
-            onValueChange={(v) => onChange(v as "and" | "or", rules)}
-          >
-            <SelectTrigger className="h-7 w-40 text-[11px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="and">Match all (and)</SelectItem>
-              <SelectItem value="or">Match any (or)</SelectItem>
-            </SelectContent>
-          </Select>
-        )}
-      </div>
+        </div>
+      ))}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => onChange([...groups, [BLANK()]])}
+      >
+        <Plus className="h-3.5 w-3.5" /> Or — add another group
+      </Button>
     </div>
   )
 }
