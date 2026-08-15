@@ -5133,6 +5133,7 @@ export interface PlanningStatus {
   semantic_group: PlanningSemanticGroup
   color: string
   weight: number
+  updated_at?: string
 }
 
 export interface PlanningLabel {

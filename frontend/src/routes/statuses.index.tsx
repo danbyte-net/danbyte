@@ -60,13 +60,7 @@ function StatusesPage() {
           }
         />
       </div>
-      {tab === "objects" ? (
-        <IpStatusesPage />
-      ) : (
-        <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
-          <TaskStatusManager />
-        </div>
-      )}
+      {tab === "objects" ? <IpStatusesPage /> : <TaskStatusManager />}
     </div>
   )
 }
