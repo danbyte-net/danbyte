@@ -113,3 +113,56 @@ class SwitchLinkDriftTests(APITestCase):
         self.assertFalse(
             [i for i in items if i["kind"] == "switch_link_suggested"]
         )
+
+    def _suggestions(self):
+        items = compute_device_drift(self.sw, self.tenant)
+        return [i for i in items if i["kind"] == "switch_link_suggested"]
+
+    def test_trunk_port_learning_many_macs_is_skipped(self):
+        # Issue #22: an uplink learns every MAC behind it — a port over the
+        # limit must never claim hosts that hang off another switch.
+        state = DeviceSnmp.objects.get(device=self.sw)
+        state.fdb = [{"mac": "00:11:22:33:44:55", "if_index": "10"}] + [
+            {"mac": f"00:11:22:33:44:{i:02x}", "if_index": "10"}
+            for i in range(80, 85)
+        ]
+        state.save(update_fields=["fdb"])
+        self.assertEqual(self._suggestions(), [])
+
+    def test_lag_member_and_aggregate_are_skipped(self):
+        agg = Interface.objects.create(
+            device=self.sw, name="Po1", virtual=True
+        )
+        self.port.lag = agg
+        self.port.save(update_fields=["lag"])
+        self.assertEqual(self._suggestions(), [])
+        # The aggregate itself (bridge-agg ports report FDB on the LAG ifindex)
+        # is skipped too.
+        state = DeviceSnmp.objects.get(device=self.sw)
+        state.interfaces = [{"if_index": "10", "name": "Po1"}]
+        state.save(update_fields=["interfaces"])
+        self.assertEqual(self._suggestions(), [])
+
+    def test_port_facing_another_polled_switch_is_skipped(self):
+        sw2 = Device.objects.create(tenant=self.tenant, name="sw2")
+        DeviceSnmp.objects.create(
+            tenant=self.tenant, device=sw2, reachable=True,
+            polled_at=timezone.now(),
+            fdb=[{"mac": "aa:bb:cc:dd:ee:ff", "if_index": "1"}],
+        )
+        state = DeviceSnmp.objects.get(device=self.sw)
+        state.neighbors = [
+            {"local_port": "Gi0/1", "remote_device": "sw2", "remote_port": "Gi0/24"}
+        ]
+        state.save(update_fields=["neighbors"])
+        self.assertEqual(self._suggestions(), [])
+
+    def test_lldp_to_non_bridging_neighbor_still_suggests(self):
+        # A server or phone announcing LLDP must not mute the port — only a
+        # neighbour we know bridges (has an FDB) marks it as an uplink.
+        state = DeviceSnmp.objects.get(device=self.sw)
+        state.neighbors = [
+            {"local_port": "Gi0/1", "remote_device": "some-server", "remote_port": "eno1"}
+        ]
+        state.save(update_fields=["neighbors"])
+        self.assertEqual(len(self._suggestions()), 1)

@@ -62,6 +62,12 @@ def _fmt_speed(mbps) -> str:
     return f"{n} Mbps"
 
 
+#: A port learning more distinct MACs than this is treated as an uplink/trunk
+#: and never gets switch-link suggestions (issue #22). An access port with an
+#: IP phone, its PC, and a small hypervisor still fits under the limit.
+UPLINK_MAC_LIMIT = 4
+
+
 def _norm(value) -> str:
     return (value or "").strip().lower()
 
@@ -396,6 +402,46 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
             if ip and idx:
                 ip_to_ifindex.setdefault(ip, idx)
         if ip_to_ifindex:
+            # Uplink guard (issue #22): trunk/aggregate ports learn every MAC
+            # behind them, so suggesting attachment there claims hosts that
+            # really hang off another switch — and each polled switch then
+            # re-claims them, a tug of war. Skip ports that look like
+            # infrastructure rather than host access:
+            #   - the port learns more MACs than an access port plausibly
+            #     carries (phone + PC + a hypervisor still fits the limit),
+            #   - the port is a LAG aggregate or a LAG member,
+            #   - LLDP shows another bridging device (a switch whose FDB we
+            #     have) on the far end.
+            macs_on_port: dict[str, set[str]] = {}
+            for f in fdb:
+                m = _norm_mac(f.get("mac", ""))
+                fidx = str(f.get("if_index") or "")
+                if m and fidx:
+                    macs_on_port.setdefault(fidx, set()).add(m)
+            lag_iface_ids: set = set()
+            for member_id, lag_id in Interface.objects.filter(
+                device=device, lag__isnull=False
+            ).values_list("id", "lag_id"):
+                lag_iface_ids.add(member_id)
+                lag_iface_ids.add(lag_id)
+            neighbor_names = {
+                (n.get("remote_device") or "").strip()
+                for n in (state.neighbors or [])
+            }
+            neighbor_names.discard("")
+            bridging_neighbors = set(
+                DeviceSnmp.objects.filter(
+                    tenant=tenant, device__name__in=neighbor_names
+                )
+                .exclude(fdb=[])
+                .values_list("device__name", flat=True)
+            )
+            switch_facing_ports = {
+                _norm(n.get("local_port") or "")
+                for n in (state.neighbors or [])
+                if (n.get("remote_device") or "").strip() in bridging_neighbors
+            }
+
             rows = {
                 r.ip_address: r
                 for r in IPAddress.objects.filter(
@@ -408,6 +454,12 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
                     continue
                 iface = int_by_name.get(_norm(ifindex_to_name.get(idx) or ""))
                 if iface is None:
+                    continue
+                if len(macs_on_port.get(idx, ())) > UPLINK_MAC_LIMIT:
+                    continue
+                if iface.id in lag_iface_ids:
+                    continue
+                if _norm(iface.name) in switch_facing_ports:
                     continue
                 if row.switch_id == device.id and row.switch_interface_id == iface.id:
                     continue  # already linked to this exact port

@@ -297,6 +297,19 @@ page; a device that reports neither simply doesn't show them.
 The join logic (`parse_lldp` / `parse_arp`) is pure and unit-tested, so it's
 correct independent of any one device's quirks.
 
+### Switch-link suggestions & the uplink guard
+
+On a bridging device, drift joins the ARP table (IP ↔ MAC) with the
+forwarding table (MAC ↔ port) to suggest which access port each
+already-tracked IP hangs off — reviewed and accepted like any other drift.
+
+Uplinks are excluded, because a trunk learns every MAC behind it and would
+otherwise claim hosts that really sit on another switch (each poll then
+re-claiming them back and forth). A port gets no suggestions when it learns
+more than a handful of distinct MACs, is a LAG aggregate or member, or has an
+LLDP neighbour that is itself a bridging device Danbyte polls. A server or
+phone announcing LLDP does *not* mute its port — only known switches do.
+
 ### Ghost cables on the topology map
 
 LLDP also feeds the **topology map** (`/topology`). Real cables render as solid
