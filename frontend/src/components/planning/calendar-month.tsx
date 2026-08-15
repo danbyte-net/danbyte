@@ -200,8 +200,7 @@ export function CalendarMonth({
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="overflow-hidden rounded-lg border border-border">
-        <div className="grid grid-cols-[1.75rem_repeat(7,minmax(0,1fr))] border-b border-border bg-muted/30">
-          <div aria-hidden />
+        <div className="grid grid-cols-7 border-b border-border bg-muted/30">
           {WEEKDAYS.map((d) => (
             <div
               key={d}
@@ -224,7 +223,7 @@ export function CalendarMonth({
               )}
             >
               <div className="grid grid-cols-7">
-                {week.map((day) => {
+                {week.map((day, di) => {
                   const key = iso(day)
                   const outside = day.getMonth() !== month
                   const isToday = key === today
@@ -235,7 +234,7 @@ export function CalendarMonth({
                       droppable={!!(onMoveTask || onMoveMilestone)}
                       onClick={onPickDay ? () => onPickDay(key) : undefined}
                       className={cn(
-                        "flex flex-col items-start border-r border-border p-1 text-left last:border-r-0",
+                        "relative flex flex-col items-start border-r border-border p-1 text-left last:border-r-0",
                         tall ? "min-h-96" : "min-h-28",
                         outside && "bg-muted/20",
                         onPickDay && "hover:bg-accent/40"
@@ -253,6 +252,14 @@ export function CalendarMonth({
                       >
                         {day.getDate()}
                       </span>
+                      {/* The ISO week number, marked on the week's first day —
+                          keyed off the row's Thursday so year boundaries
+                          (W52/W1) resolve correctly. */}
+                      {di === 0 && (
+                        <span className="num absolute top-1.5 right-1.5 text-[9px] leading-none text-muted-foreground/60">
+                          W{isoWeek(week[3])}
+                        </span>
+                      )}
                       {/* Reserve the rows the bars are drawn on, so a day's own
                         entries start below them instead of underneath. */}
                       <span aria-hidden style={{ height: lanes * 22 }} />
@@ -347,7 +354,7 @@ export function CalendarMonth({
 
               {/* Bars live in their own grid layered over the week: a span has to
                 cross day boundaries, which a single cell's content cannot. */}
-              <div className="pointer-events-none absolute inset-x-0 top-7 grid auto-rows-[22px] grid-cols-[1.75rem_repeat(7,minmax(0,1fr))]">
+              <div className="pointer-events-none absolute inset-x-0 top-7 grid auto-rows-[22px] grid-cols-7">
                 {bars.map((bar) => (
                   <Tooltip key={`${bar.task.id}|${wi}`}>
                     <TooltipTrigger asChild>
@@ -502,9 +509,8 @@ function TaskBar({
       to="/planning/$boardId/tasks/$taskId"
       params={{ boardId: bar.task.board, taskId: bar.task.id }}
       style={{
-        // +1: the first grid column is the week-number gutter.
-        gridColumnStart: bar.from + 1,
-        gridColumnEnd: bar.to + 1,
+        gridColumnStart: bar.from,
+        gridColumnEnd: bar.to,
         gridRowStart: bar.lane + 1,
         ...(bar.task.status_color
           ? {
