@@ -446,7 +446,7 @@ export function InterfaceForm({
           error={fieldErrors.bridge_id}
         />
       </div>
-      <div className="flex gap-6">
+      <div className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
         <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
         <FormCheckbox
           label="Management only"
