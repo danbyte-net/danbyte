@@ -41,6 +41,7 @@ import { QueryError } from "@/components/query-error"
 import {
   CalendarMonth,
   iso,
+  isoWeek,
   monthCells,
 } from "@/components/planning/calendar-month"
 
@@ -216,8 +217,8 @@ function CalendarPage() {
           year: "numeric",
         }).format(new Date(anchor.year, anchor.month, 1))
       : view === "week"
-        ? `${formatDate(iso(weekDays[0]))} – ${formatDate(iso(weekDays[6]))}`
-        : formatDate(anchorDay)
+        ? `W${isoWeek(weekDays[3])} · ${formatDate(iso(weekDays[0]))} – ${formatDate(iso(weekDays[6]))}`
+        : `W${isoWeek(parseDay(anchorDay))} · ${formatDate(anchorDay)}`
 
   const counts = dataQ.data
   const boards = boardsQ.data?.results ?? []

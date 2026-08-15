@@ -53,6 +53,15 @@ function nextDay(dayIso: string): string {
   return iso(new Date(y, m - 1, d + 1))
 }
 
+/** ISO-8601 week number — the week containing that date's Thursday. */
+export function isoWeek(d: Date): number {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+  const day = date.getUTCDay() || 7
+  date.setUTCDate(date.getUTCDate() + 4 - day)
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
+  return Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
+}
+
 export function monthCells(year: number, month: number): Date[] {
   const first = new Date(year, month, 1)
   const lead = (first.getDay() + 6) % 7
@@ -191,7 +200,8 @@ export function CalendarMonth({
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="overflow-hidden rounded-lg border border-border">
-        <div className="grid grid-cols-7 border-b border-border bg-muted/30">
+        <div className="grid grid-cols-[1.75rem_repeat(7,minmax(0,1fr))] border-b border-border bg-muted/30">
+          <div aria-hidden />
           {WEEKDAYS.map((d) => (
             <div
               key={d}
@@ -337,7 +347,7 @@ export function CalendarMonth({
 
               {/* Bars live in their own grid layered over the week: a span has to
                 cross day boundaries, which a single cell's content cannot. */}
-              <div className="pointer-events-none absolute inset-x-0 top-7 grid auto-rows-[22px] grid-cols-7">
+              <div className="pointer-events-none absolute inset-x-0 top-7 grid auto-rows-[22px] grid-cols-[1.75rem_repeat(7,minmax(0,1fr))]">
                 {bars.map((bar) => (
                   <Tooltip key={`${bar.task.id}|${wi}`}>
                     <TooltipTrigger asChild>
@@ -492,8 +502,9 @@ function TaskBar({
       to="/planning/$boardId/tasks/$taskId"
       params={{ boardId: bar.task.board, taskId: bar.task.id }}
       style={{
-        gridColumnStart: bar.from,
-        gridColumnEnd: bar.to,
+        // +1: the first grid column is the week-number gutter.
+        gridColumnStart: bar.from + 1,
+        gridColumnEnd: bar.to + 1,
         gridRowStart: bar.lane + 1,
         ...(bar.task.status_color
           ? {
