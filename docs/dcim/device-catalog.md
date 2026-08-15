@@ -321,6 +321,13 @@ confirm:
   interface being removed carries IPs. The button becomes a red *Sync & remove
   extras*.
 
+Faceplate slots and photo markers count as expectations too: a port drawn on
+the layout that no template defines still shows under **Add**, and confirming
+stamps it as a bare component (type "other") for you to refine — so a marked
+port never points at nothing after a sync. Front-port markers are the one
+exception (they need a rear-port mapping a marker can't express) and are left
+as ghosts on the render.
+
 Sync is name-based (it never renames or retypes existing components) and needs
 `device.change`.
 - Per the zero-pre-filled-data rule, no templates ship — but the type/connector
@@ -374,6 +381,13 @@ precisely: drag it, grab the corner handle to resize, nudge with the **arrow
 keys** (Shift = coarser), or type exact **X / Y / W / H** percentages. A
 **fine-grid snap** keeps rows aligned. Coordinates are stored normalized
 (0–1), so they scale to any render size.
+
+What the **port hover card** shows is configurable deployment-wide under
+**Settings → Component popover**: an ordered field list (name, type, state,
+VLAN, live SNMP facts, IPs, description, MAC, MTU, LAG, tags — defaults to the
+first six). A field with no value on that port simply doesn't render, so a
+rich list costs nothing on sparse interfaces. The same list applies to the
+schematic and the photo faceplate alike.
 
 Once a type has an image **and** at least one placed marker, its devices show
 the **photo faceplate** in place of the schematic one — each marker matched to

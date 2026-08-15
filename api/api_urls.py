@@ -461,6 +461,10 @@ urlpatterns = [
     # tenant-settings/, like device fields).
     path("deployment/floorplan-popover/", deployment.floorplan_popover,
          name="deployment-floorplan-popover"),
+    path("deployment/component-popover/", deployment.component_popover,
+         name="deployment-component-popover"),
+    path("component-popover/", deployment.component_popover_effective,
+         name="component-popover"),
     # Per-tenant overrides (tenant admins; see core/tenant_settings.py).
     path("tenant-settings/", tenant_settings_mod.tenant_settings,
          name="tenant-settings"),

@@ -1,3 +1,4 @@
+import * as React from "react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useQueries, useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
@@ -300,31 +301,76 @@ function Cage({
         side="top"
         className="grid gap-0.5 font-mono text-[11px] whitespace-nowrap"
       >
-        <Link
-          to="/interfaces/$id"
-          params={{ id: i.id }}
-          className="font-semibold text-primary hover:underline"
-        >
-          {i.name}
-        </Link>
-        {i.type_display && <div>{i.type_display}</div>}
-        <div>
-          {state === "disabled"
-            ? "disabled"
-            : state === "free"
-              ? "enabled · no cable"
-              : `up${i.speed ? ` · ${i.speed}` : ""}${
-                  i.cable?.type ? ` · ${i.cable.type}` : ""
-                }`}
-        </div>
-        {hasVlan && (
-          <div>
-            <VlanRow i={i} />
-          </div>
-        )}
-        {observed && (
-          <div className="text-muted-foreground">{liveLine(observed)}</div>
-        )}
+        <PortHoverBody
+          i={i}
+          state={state}
+          hasVlan={hasVlan}
+          observed={observed}
+        />
+      </HoverCardContent>
+    </HoverCard>
+  )
+}
+
+// ─── configurable hover card ────────────────────────────────────────────────
+
+const PORT_POPOVER_DEFAULTS = ["name", "type", "state", "vlan", "live", "ips"]
+
+/** The admin-ordered field list for the port hover card — the component
+ * analogue of the floor-plan tile popover (Settings → Components). */
+function usePortPopoverFields(): string[] {
+  const q = useQuery({
+    queryKey: ["component-popover"],
+    queryFn: () => api<{ fields: string[] }>("/api/component-popover/"),
+    staleTime: 5 * 60_000,
+  })
+  return q.data?.fields ?? PORT_POPOVER_DEFAULTS
+}
+
+function PortHoverBody({
+  i,
+  state,
+  hasVlan,
+  observed,
+}: {
+  i: Interface
+  state: PortState
+  hasVlan: boolean
+  observed?: ObservedPort
+}) {
+  const fields = usePortPopoverFields()
+  const rows: Record<string, React.ReactNode> = {
+    name: (
+      <Link
+        to="/interfaces/$id"
+        params={{ id: i.id }}
+        className="font-semibold text-primary hover:underline"
+      >
+        {i.name}
+      </Link>
+    ),
+    type: i.type_display ? <div>{i.type_display}</div> : null,
+    state: (
+      <div>
+        {state === "disabled"
+          ? "disabled"
+          : state === "free"
+            ? "enabled · no cable"
+            : `up${i.speed ? ` · ${i.speed}` : ""}${
+                i.cable?.type ? ` · ${i.cable.type}` : ""
+              }`}
+      </div>
+    ),
+    vlan: hasVlan ? (
+      <div>
+        <VlanRow i={i} />
+      </div>
+    ) : null,
+    live: observed ? (
+      <div className="text-muted-foreground">{liveLine(observed)}</div>
+    ) : null,
+    ips: i.ip_addresses.length ? (
+      <>
         {i.ip_addresses.slice(0, 3).map((ip) => (
           <Link
             key={ip.id}
@@ -335,8 +381,28 @@ function Cage({
             {ip.ip_address}
           </Link>
         ))}
-      </HoverCardContent>
-    </HoverCard>
+      </>
+    ) : null,
+    description: i.description ? (
+      <div className="max-w-56 truncate text-muted-foreground">
+        {i.description}
+      </div>
+    ) : null,
+    mac: i.mac_address ? <div>{i.mac_address}</div> : null,
+    mtu: i.mtu != null ? <div>MTU {i.mtu}</div> : null,
+    lag: i.lag ? <div>LAG {i.lag.name}</div> : null,
+    tags: i.tags.length ? (
+      <div className="text-muted-foreground">
+        {i.tags.map((t) => t.name).join(", ")}
+      </div>
+    ) : null,
+  }
+  return (
+    <>
+      {fields.map((key) => (
+        <React.Fragment key={key}>{rows[key] ?? null}</React.Fragment>
+      ))}
+    </>
   )
 }
 

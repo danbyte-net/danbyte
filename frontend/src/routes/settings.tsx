@@ -63,6 +63,7 @@ const SECTIONS: NavSection[] = [
       { to: "/settings/monitoring-defaults", label: "Monitoring defaults" },
       { to: "/settings/maps", label: "Maps" },
       { to: "/settings/device-fields", label: "Device fields" },
+      { to: "/settings/components", label: "Component popover" },
       { to: "/settings/table-defaults", label: "Table defaults" },
       { to: "/settings/email", label: "Email & Delivery" },
       { to: "/settings/ldap", label: "Directory (LDAP)" },

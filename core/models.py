@@ -358,6 +358,15 @@ class DeploymentSettings(TimestampedModel):
         "Unset keys fall back to server-side defaults.",
     )
 
+    # ─── faceplate component popover ──────────────────────────────────────
+    component_popover_fields = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Ordered field keys shown when hovering a port on a device "
+        "faceplate. Empty = built-in defaults (name, type, state, VLAN, "
+        "live, IPs).",
+    )
+
     # ─── floor-plan tile popover ──────────────────────────────────────────
     floorplan_popover_fields = models.JSONField(
         default=list,

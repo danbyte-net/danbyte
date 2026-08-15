@@ -608,6 +608,78 @@ def floorplan_popover(request):
     return Response(FloorplanPopoverSerializer(obj).data)
 
 
+# The faceplate component-popover vocabulary — what a port's hover card can
+# show. Same idea as the tile popover: an ordered, curated key list; unknown
+# keys are dropped on read AND write so removed fields never linger in config.
+COMPONENT_POPOVER_FIELDS = [
+    "name",        # interface name, linked
+    "type",        # connector/interface type
+    "state",       # disabled / enabled·no cable / up · speed · cable type
+    "vlan",        # access VLAN or trunk summary
+    "live",        # observed oper status + speed (SNMP), when present
+    "ips",         # up to three assigned addresses, linked
+    "description",
+    "mac",         # the interface's MAC address
+    "mtu",
+    "lag",         # LAG membership
+    "tags",
+]
+
+COMPONENT_POPOVER_FIELD_DEFAULTS = ["name", "type", "state", "vlan", "live", "ips"]
+
+
+def clean_component_popover_fields(value) -> list:
+    if not isinstance(value, list):
+        return []
+    known = set(COMPONENT_POPOVER_FIELDS)
+    return list(dict.fromkeys(k for k in value if isinstance(k, str) and k in known))
+
+
+@extend_schema(
+    methods=["GET", "PUT"],
+    summary="Get/replace the faceplate component-popover field list",
+    tags=["deployment"],
+    request=OpenApiTypes.OBJECT,
+    responses=OpenApiTypes.OBJECT,
+)
+@api_view(["GET", "PUT"])
+@permission_classes([IsAuthenticated])
+def component_popover(request):
+    """Deployment-wide faceplate popover config (users.manage to change)."""
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    obj = DeploymentSettings.load()
+    if request.method == "PUT":
+        obj.component_popover_fields = clean_component_popover_fields(
+            request.data.get("popover_fields")
+        )
+        obj.save(update_fields=["component_popover_fields"])
+    stored = clean_component_popover_fields(obj.component_popover_fields)
+    return Response({
+        "popover_fields": stored or list(COMPONENT_POPOVER_FIELD_DEFAULTS),
+        "is_default": not stored,
+        "available": COMPONENT_POPOVER_FIELDS,
+        "defaults": COMPONENT_POPOVER_FIELD_DEFAULTS,
+    })
+
+
+@extend_schema(
+    methods=["GET"],
+    summary="The effective component-popover field list (any member)",
+    tags=["deployment"],
+    request=None,
+    responses=OpenApiTypes.OBJECT,
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def component_popover_effective(request):
+    """What the faceplate should render — readable by anyone signed in."""
+    stored = clean_component_popover_fields(
+        DeploymentSettings.load().component_popover_fields
+    )
+    return Response({"fields": stored or list(COMPONENT_POPOVER_FIELD_DEFAULTS)})
+
+
 @extend_schema(
     summary="Liveness/readiness probe with version and DB status",
     tags=["deployment"],
