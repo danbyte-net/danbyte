@@ -41,50 +41,128 @@ export const Route = createFileRoute("/saved-filters")({
 
 /** RBAC object slug → the list page it filters. Unknown slugs render as
  * plain text — the filter still edits and deletes fine. */
-const LISTS: Record<string, { label: string; to: string }> = {
-  cable: { label: "Cables", to: "/cables" },
-  certificate: { label: "Certificates", to: "/certificates" },
+const LISTS: Record<string, { label: string; to: string; api: string }> = {
+  cable: { label: "Cables", to: "/cables", api: "/api/cables/" },
+  certificate: {
+    label: "Certificates",
+    to: "/certificates",
+    api: "/api/monitoring/certificates/",
+  },
   certificaterequest: {
     label: "Certificate requests",
     to: "/certificate-requests",
+    api: "/api/monitoring/certificate-requests/",
   },
-  circuit: { label: "Circuits", to: "/circuits" },
-  circuittype: { label: "Circuit types", to: "/circuit-types" },
-  cluster: { label: "Clusters", to: "/clusters" },
-  clustergroup: { label: "Cluster groups", to: "/cluster-groups" },
-  clustertype: { label: "Cluster types", to: "/cluster-types" },
-  device: { label: "Devices", to: "/devices" },
-  devicerole: { label: "Device roles", to: "/device-roles" },
-  devicetype: { label: "Device types", to: "/device-types" },
-  ipaddress: { label: "IP addresses", to: "/ips" },
-  ipsecprofile: { label: "IPsec profiles", to: "/ipsec-profiles" },
-  location: { label: "Locations", to: "/locations" },
-  macaddress: { label: "MAC addresses", to: "/macs" },
-  maintenanceevent: { label: "Maintenance", to: "/maintenance" },
-  manufacturer: { label: "Manufacturers", to: "/manufacturers" },
-  platform: { label: "Platforms", to: "/platforms" },
-  platformgroup: { label: "Platform groups", to: "/platform-groups" },
-  powerfeed: { label: "Power feeds", to: "/power-feeds" },
-  powerpanel: { label: "Power panels", to: "/power-panels" },
-  prefix: { label: "Prefixes", to: "/prefixes" },
-  provider: { label: "Providers", to: "/providers" },
-  providernetwork: { label: "Provider networks", to: "/provider-networks" },
-  rack: { label: "Racks", to: "/racks" },
-  rackrole: { label: "Rack roles", to: "/rack-roles" },
-  service: { label: "Services", to: "/services" },
-  servicetemplate: { label: "Service templates", to: "/service-templates" },
-  site: { label: "Sites", to: "/sites" },
-  tenant: { label: "Tenants", to: "/tenants" },
-  tunnel: { label: "Tunnels", to: "/tunnels" },
-  tunnelgroup: { label: "Tunnel groups", to: "/tunnel-groups" },
-  virtualchassis: { label: "Virtual chassis", to: "/virtual-chassis" },
-  virtualmachine: { label: "Virtual machines", to: "/virtual-machines" },
-  vlan: { label: "VLANs", to: "/vlans" },
-  vlangroup: { label: "VLAN groups", to: "/vlan-groups" },
-  wirelesslan: { label: "Wireless LANs", to: "/wireless-lans" },
+  circuit: { label: "Circuits", to: "/circuits", api: "/api/circuits/" },
+  circuittype: {
+    label: "Circuit types",
+    to: "/circuit-types",
+    api: "/api/circuit-types/",
+  },
+  cluster: { label: "Clusters", to: "/clusters", api: "/api/clusters/" },
+  clustergroup: {
+    label: "Cluster groups",
+    to: "/cluster-groups",
+    api: "/api/cluster-groups/",
+  },
+  clustertype: {
+    label: "Cluster types",
+    to: "/cluster-types",
+    api: "/api/cluster-types/",
+  },
+  device: { label: "Devices", to: "/devices", api: "/api/devices/" },
+  devicerole: {
+    label: "Device roles",
+    to: "/device-roles",
+    api: "/api/device-roles/",
+  },
+  devicetype: {
+    label: "Device types",
+    to: "/device-types",
+    api: "/api/device-types/",
+  },
+  ipaddress: { label: "IP addresses", to: "/ips", api: "/api/ips/" },
+  ipsecprofile: {
+    label: "IPsec profiles",
+    to: "/ipsec-profiles",
+    api: "/api/ipsec-profiles/",
+  },
+  location: { label: "Locations", to: "/locations", api: "/api/locations/" },
+  macaddress: { label: "MAC addresses", to: "/macs", api: "/api/macs/" },
+  maintenanceevent: {
+    label: "Maintenance",
+    to: "/maintenance",
+    api: "/api/monitoring/maintenance-events/",
+  },
+  manufacturer: {
+    label: "Manufacturers",
+    to: "/manufacturers",
+    api: "/api/manufacturers/",
+  },
+  platform: { label: "Platforms", to: "/platforms", api: "/api/platforms/" },
+  platformgroup: {
+    label: "Platform groups",
+    to: "/platform-groups",
+    api: "/api/platform-groups/",
+  },
+  powerfeed: {
+    label: "Power feeds",
+    to: "/power-feeds",
+    api: "/api/power-feeds/",
+  },
+  powerpanel: {
+    label: "Power panels",
+    to: "/power-panels",
+    api: "/api/power-panels/",
+  },
+  prefix: { label: "Prefixes", to: "/prefixes", api: "/api/prefixes/" },
+  provider: { label: "Providers", to: "/providers", api: "/api/providers/" },
+  providernetwork: {
+    label: "Provider networks",
+    to: "/provider-networks",
+    api: "/api/provider-networks/",
+  },
+  rack: { label: "Racks", to: "/racks", api: "/api/racks/" },
+  rackrole: { label: "Rack roles", to: "/rack-roles", api: "/api/rack-roles/" },
+  service: { label: "Services", to: "/services", api: "/api/services/" },
+  servicetemplate: {
+    label: "Service templates",
+    to: "/service-templates",
+    api: "/api/service-templates/",
+  },
+  site: { label: "Sites", to: "/sites", api: "/api/sites/" },
+  tenant: { label: "Tenants", to: "/tenants", api: "/api/tenants/" },
+  tunnel: { label: "Tunnels", to: "/tunnels", api: "/api/tunnels/" },
+  tunnelgroup: {
+    label: "Tunnel groups",
+    to: "/tunnel-groups",
+    api: "/api/tunnel-groups/",
+  },
+  virtualchassis: {
+    label: "Virtual chassis",
+    to: "/virtual-chassis",
+    api: "/api/virtual-chassis/",
+  },
+  virtualmachine: {
+    label: "Virtual machines",
+    to: "/virtual-machines",
+    api: "/api/virtual-machines/",
+  },
+  vlan: { label: "VLANs", to: "/vlans", api: "/api/vlans/" },
+  vlangroup: {
+    label: "VLAN groups",
+    to: "/vlan-groups",
+    api: "/api/vlan-groups/",
+  },
+  wirelesslan: {
+    label: "Wireless LANs",
+    to: "/wireless-lans",
+    api: "/api/wireless-lans/",
+  },
   wirelesslangroup: {
     label: "Wireless LAN groups",
     to: "/wireless-lan-groups",
+    api: "/api/wireless-lan-groups/",
   },
 }
 
@@ -284,6 +362,16 @@ function EditDialog({
   const [shared, setShared] = useState(view.shared)
   const [searchText, setSearchText] = useState(view.query.q ?? "")
 
+  // A small sample of the target list feeds the expression editor's field
+  // dropdown and value pickers — same discovery the list dialog uses.
+  const sample = useQuery({
+    queryKey: ["saved-filter-sample", view.object_type],
+    queryFn: () =>
+      api<Paginated<unknown>>(`${LISTS[view.object_type]?.api}?page_size=25`),
+    enabled: !!LISTS[view.object_type],
+    staleTime: 5 * 60_000,
+  })
+
   const storedFacets: FilterSnapshot = view.query.facets ?? {}
   const initialExpr =
     typeof storedFacets.__expr === "string" ? storedFacets.__expr : ""
@@ -438,7 +526,7 @@ function EditDialog({
             </label>
             <ExpressionEditor
               initial={initialExpr}
-              rows={[]}
+              rows={sample.data?.results ?? []}
               onChange={(text, error) => setExpr({ text, error })}
             />
           </div>
