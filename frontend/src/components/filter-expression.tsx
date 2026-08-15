@@ -140,7 +140,7 @@ function ExpressionDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent size="2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-1.5">
             Advanced filter
