@@ -57,9 +57,28 @@ class BoardViewSet(TenantScopedViewSet):
         board = serializer.instance
         board.created_by = self.request.user
         board.save(update_fields=["created_by"])
-        # Required bootstrap: four deterministic, fully-editable statuses so a
-        # fresh board is immediately usable. Never demo data.
-        seed_default_statuses(board)
+        # Columns the user flagged "is_default" become the template for new
+        # boards (deduplicated by name, keeping the lightest). Without any,
+        # fall back to the required bootstrap four so a fresh board is
+        # immediately usable. Never demo data.
+        templates = TaskStatus.objects.filter(
+            tenant=board.tenant, is_default=True
+        ).order_by("weight", "name")
+        seen: set[str] = set()
+        copied = False
+        for t in templates:
+            key = t.name.strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            TaskStatus.objects.create(
+                tenant=board.tenant, board=board, name=t.name,
+                semantic_group=t.semantic_group, color=t.color,
+                weight=t.weight, is_default=False,
+            )
+            copied = True
+        if not copied:
+            seed_default_statuses(board)
 
 
 class TaskStatusViewSet(TenantScopedViewSet):

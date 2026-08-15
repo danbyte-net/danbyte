@@ -89,6 +89,11 @@ class TaskStatus(TimestampedModel):
     weight = models.PositiveIntegerField(
         default=100, help_text="Lower weights order columns left to right."
     )
+    is_default = models.BooleanField(
+        default=False,
+        help_text="Copy this column onto newly created boards (instead of the "
+        "built-in four). Deduplicated by name across boards.",
+    )
 
     class Meta:
         ordering = ["weight", "name"]

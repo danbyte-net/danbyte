@@ -76,6 +76,35 @@ class BoardApiTests(Base):
         seed_default_statuses(board)
         self.assertEqual(board.statuses.count(), 4)
 
+    def test_default_flagged_statuses_template_new_boards(self):
+        # Columns flagged is_default replace the builtin four on new boards,
+        # deduplicated by name (case-insensitive), lightest first.
+        src = self._board(name="Template", slug="template")
+        TaskStatus.objects.create(
+            tenant=self.tenant, board=src, name="Triage",
+            semantic_group="unstarted", color="#3b82f6", weight=50,
+            is_default=True,
+        )
+        done = src.statuses.get(name="Done")
+        done.is_default = True
+        done.save(update_fields=["is_default"])
+        # A same-named duplicate on another board must not collide.
+        other = self._board(name="Other", slug="other-src")
+        dup = other.statuses.get(name="Done")
+        dup.is_default = True
+        dup.save(update_fields=["is_default"])
+
+        r = self.client.post(
+            "/api/planning/boards/",
+            {"name": "Fresh", "slug": "fresh"}, format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        fresh = Board.objects.get(slug="fresh")
+        names = list(fresh.statuses.values_list("name", flat=True))
+        self.assertEqual(names, ["Triage", "Done"])
+        # Copies are plain columns, not templates themselves.
+        self.assertFalse(fresh.statuses.filter(is_default=True).exists())
+
     def test_tenant_isolation(self):
         self._board(tenant=self.other, name="Theirs", slug="theirs")
         r = self.client.get("/api/planning/boards/")

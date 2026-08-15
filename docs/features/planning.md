@@ -34,6 +34,17 @@ alongside every other status catalog. Each row has:
   counts as closed: its tasks stop appearing in the daily "Your work" reminder
   email and the digest's planned-work section, even when their due date has
   passed. A finished task never nags.
+- **Default** — columns flagged default become the template for **newly
+  created boards**, replacing the built-in four (deduplicated by name, lightest
+  weight first). With nothing flagged, new boards get the standard
+  Backlog / To do / In progress / Done.
+
+The page lists columns in one table, **grouped by name across boards** — four
+boards sharing "Done" read as one row, not four duplicates. Saving a row
+updates every board's copy in one go, and "Add status" can target one board or
+all of them. Filter by board, semantic group, or done/not-done in the rail.
+Columns can also be added straight from a board: the dashed **Add column**
+rail after the last column.
 
 A status that still has tasks can't be deleted — move them first.
 

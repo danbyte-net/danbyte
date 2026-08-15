@@ -32,7 +32,7 @@ class TaskStatusSerializer(serializers.ModelSerializer):
         model = TaskStatus
         fields = [
             "id", "board", "name", "semantic_group", "color", "weight",
-            "created_at", "updated_at",
+            "is_default", "created_at", "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
 
