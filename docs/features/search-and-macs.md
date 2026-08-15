@@ -44,6 +44,12 @@ that appears on both a switch port and an assigned IP shows up once, with both
 links. The row also shows the **description and tags** of any MAC object recorded
 for that address.
 
+The MAC detail page additionally lists **SNMP sightings** — the polled devices
+whose ARP or MAC tables observed the address, with the IP or port involved. A
+MAC clicked on a device's monitoring cards therefore always resolves, even
+when nothing in Danbyte carries it yet: the page says where it was seen
+instead of returning "not found".
+
 ### First-class MAC objects
 
 Beyond the derived view, a MAC can be a **real object** you manage — with its own

@@ -11,6 +11,8 @@ Full CRUD on the MAC *objects* themselves lives at ``/api/mac-addresses/``
 """
 from __future__ import annotations
 
+import re
+
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.decorators import api_view, permission_classes
@@ -19,13 +21,50 @@ from rest_framework.response import Response
 
 from auth_api import rbac
 
-from .models import IPAddress, Interface, MACAddress
+from .models import Interface, IPAddress, MACAddress
 from .serializers import TagSerializer
 from .views import _get_active_tenant
 
 
 def _norm(mac: str) -> str:
     return mac.strip().lower()
+
+
+def _hexkey(mac: str) -> str:
+    """Separator-insensitive comparison key: aa:bb == AA-BB == aabb."""
+    return re.sub(r"[^0-9a-f]", "", (mac or "").lower())
+
+
+def _snmp_sightings(tenant, mac: str) -> list[dict]:
+    """Where polling has *observed* this MAC — the ARP/FDB rows on each
+    device's SNMP state. A MAC clicked on a monitoring card often exists only
+    here (a neighbour's address learned on a port), so the detail page must
+    be able to say "seen on sw1 port eth2" instead of pretending the address
+    doesn't exist."""
+    from monitoring.models import (
+        DeviceSnmp,  # local: api must not import monitoring at module level
+    )
+
+    key = _hexkey(mac)
+    seen: list[dict] = []
+    states = DeviceSnmp.objects.filter(tenant=tenant).select_related("device")
+    for state in states:
+        dev = {"id": str(state.device_id), "name": state.device.name}
+        ifname = {
+            str(o.get("if_index")): o.get("name")
+            for o in (state.interfaces or [])
+            if o.get("if_index")
+        }
+        for a in state.arp or []:
+            if _hexkey(a.get("mac", "")) == key:
+                seen.append({"device": dev, "source": "arp", "ip": a.get("ip")})
+        for f in state.fdb or []:
+            if _hexkey(f.get("mac", "")) == key:
+                seen.append({
+                    "device": dev, "source": "fdb",
+                    "port": ifname.get(str(f.get("if_index") or "")),
+                })
+    return seen
 
 
 def _iface_ref(iface) -> dict:
@@ -162,19 +201,23 @@ def mac_detail_view(request, mac):
         .prefetch_related("tags")
         .order_by("assigned_interface__device__name", "assigned_interface__name")
     )
-    if not ifaces.exists() and not ips.exists() and not objects.exists():
+    seen = _snmp_sightings(tenant, key)
+    if not ifaces.exists() and not ips.exists() and not objects.exists() and not seen:
         return Response({"detail": "Not found."}, status=404)
 
     if ifaces.exists():
         display = ifaces.first().mac_address
     elif ips.exists():
         display = ips.first().mac_address
-    else:
+    elif objects.exists():
         display = objects.first().mac_address
+    else:
+        display = key
 
     return Response(
         {
             "mac": display,
+            "seen": seen,
             "objects": [_mac_object(m, with_custom_fields=True) for m in objects],
             "interfaces": [
                 {**_iface_ref(i), "enabled": i.enabled} for i in ifaces

@@ -85,6 +85,26 @@ class MacAggregationTests(APITestCase):
         resp = self.client.get("/api/macs/00:00:00:00:00:00/")
         self.assertEqual(resp.status_code, 404)
 
+    def test_detail_of_mac_only_observed_via_snmp(self):
+        # A MAC clicked on a device's ARP/FDB monitoring card may exist only
+        # in observed SNMP state — the page must say where it was seen, not 404.
+        from monitoring.models import DeviceSnmp
+
+        DeviceSnmp.objects.create(
+            tenant=self.tenant, device=self.device, reachable=True,
+            interfaces=[{"if_index": "10", "name": "eth2"}],
+            arp=[{"ip": "10.0.0.9", "mac": "AA:C1:AB:00:00:01", "if_index": "10"}],
+            fdb=[{"mac": "aa:c1:ab:00:00:01", "if_index": "10"}],
+        )
+        resp = self.client.get("/api/macs/aa:c1:ab:00:00:01/")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        data = resp.json()
+        self.assertEqual(data["interfaces"], [])
+        by_source = {s["source"]: s for s in data["seen"]}
+        self.assertEqual(by_source["arp"]["ip"], "10.0.0.9")
+        self.assertEqual(by_source["fdb"]["port"], "eth2")
+        self.assertEqual(by_source["arp"]["device"]["name"], "sw1")
+
     def test_other_tenant_object_not_listed(self):
         org2 = Organization.objects.create(name="O2", slug="o2")
         other = Tenant.objects.create(org=org2, name="T2", slug="t2")

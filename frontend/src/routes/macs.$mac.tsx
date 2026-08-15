@@ -121,6 +121,14 @@ function Body({ data }: { data: MacDetail }) {
             <Badge variant="secondary">
               {data.ips.length} IP{data.ips.length === 1 ? "" : "s"}
             </Badge>
+            {(data.seen ?? []).length > 0 && (
+              <Badge variant="secondary">
+                seen on {new Set(data.seen.map((s) => s.device.id)).size} device
+                {new Set(data.seen.map((s) => s.device.id)).size === 1
+                  ? ""
+                  : "s"}
+              </Badge>
+            )}
           </>
         }
       />
@@ -196,6 +204,36 @@ function Body({ data }: { data: MacDetail }) {
             />
           )}
         </section>
+
+        {(data.seen ?? []).length > 0 && (
+          <section className="space-y-3">
+            <h2 className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+              Observed via SNMP
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Polling saw this address in the tables below — observations, not
+              records; nothing in Danbyte carries this MAC until you assign it.
+            </p>
+            <ul className="space-y-1 text-sm">
+              {data.seen.map((s, i) => (
+                <li key={i} className="flex items-center gap-1.5">
+                  <Link
+                    to="/devices/$id"
+                    params={{ id: s.device.id }}
+                    className="text-primary hover:underline"
+                  >
+                    {s.device.name}
+                  </Link>
+                  <span className="text-muted-foreground">
+                    {s.source === "arp"
+                      ? `ARP table${s.ip ? ` · ${s.ip}` : ""}`
+                      : `MAC table${s.port ? ` · port ${s.port}` : ""}`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
 
       <MacObjectDialog

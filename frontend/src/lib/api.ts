@@ -2596,6 +2596,14 @@ export interface MacDetail {
     device: { id: string; name: string } | null
     interface: { id: string; name: string } | null
   }[]
+  /** SNMP sightings — the ARP/FDB rows on polled devices that carry this MAC.
+   * A MAC clicked on a monitoring card may exist only here. */
+  seen: {
+    device: { id: string; name: string }
+    source: "arp" | "fdb"
+    ip?: string | null
+    port?: string | null
+  }[]
 }
 
 /** Full first-class MAC object — the `/api/mac-addresses/` CRUD serializer.
