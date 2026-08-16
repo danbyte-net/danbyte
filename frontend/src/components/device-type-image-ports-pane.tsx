@@ -102,13 +102,18 @@ interface FillOpts {
   kind: PhotoMarkerKind
   from: string
   to: string
-  rows: 1 | 2
-  /** 2-row order: column = belly-to-belly (1 top, 2 bottom, 3 top…);
-   * row = fill the top row first, then the bottom. */
+  rows: 1 | 2 | 3 | 4
+  /** Multi-row order: column = down each column first (1 top … then next
+   * column); row = across the top row first, then the next row down. */
   order: "column" | "row"
+  /** Insert a gap every N columns (0 = evenly spaced, no banks). */
+  bank: number
+  /** Width of each bank gap, as a fraction of the run width. */
+  bankGap: number
   x1: number
   y1: number
   x2: number
+  /** Y of the bottom row; middle rows interpolate between y1 and this. */
   row2y: number
   w: number
   h: number
@@ -330,6 +335,8 @@ export function DeviceTypeImagePortsPane({
       to: names[names.length - 1]?.name ?? "",
       rows: 2,
       order: "column",
+      bank: 0,
+      bankGap: 0.02,
       x1: 0.06,
       y1: 0.4,
       x2: 0.94,
@@ -369,27 +376,43 @@ export function DeviceTypeImagePortsPane({
     if (!fill) return []
     const n = fillNames.length
     if (!n) return []
-    const cols = fill.rows === 1 ? n : Math.ceil(n / 2)
+    const R = fill.rows
+    const cols = R === 1 ? n : Math.ceil(n / R)
+
+    // Column X, with an optional gap every `bank` columns. The bank gaps eat
+    // into the x1..x2 span so the run still ends exactly at x2.
+    const banksN = fill.bank > 0 ? Math.ceil(cols / fill.bank) : 1
+    const gapTotal = (banksN - 1) * fill.bankGap
+    const step = cols > 1 ? (fill.x2 - fill.x1 - gapTotal) / (cols - 1) : 0
     const colX = (col: number) =>
-      cols > 1 ? fill.x1 + ((fill.x2 - fill.x1) * col) / (cols - 1) : fill.x1
+      cols > 1
+        ? fill.x1 +
+          col * step +
+          (fill.bank > 0 ? Math.floor(col / fill.bank) * fill.bankGap : 0)
+        : fill.x1
+
+    // Row Y: top row at y1, bottom row at row2y, middle rows evenly between.
+    const rowY = (row: number) =>
+      R === 1 ? fill.y1 : fill.y1 + ((fill.row2y - fill.y1) * row) / (R - 1)
+
     return fillNames.map((name, idx) => {
       let col: number
-      let bottom: boolean
-      if (fill.rows === 1) {
+      let row: number
+      if (R === 1) {
         col = idx
-        bottom = false
+        row = 0
       } else if (fill.order === "column") {
-        col = Math.floor(idx / 2)
-        bottom = idx % 2 === 1
+        col = Math.floor(idx / R)
+        row = idx % R
       } else {
         col = idx % cols
-        bottom = idx >= cols
+        row = Math.floor(idx / cols)
       }
       return {
         kind: fill.kind,
         name,
         x: clamp01(colX(col)),
-        y: clamp01(bottom ? fill.row2y : fill.y1),
+        y: clamp01(rowY(row)),
         w: fill.w,
         h: fill.h,
       }
@@ -715,7 +738,9 @@ function FillPanel({
   onCancel: () => void
 }) {
   const set = (patch: Partial<FillOpts>) => setFill({ ...fill, ...patch })
-  const numPct = (key: "x1" | "y1" | "x2" | "row2y" | "w" | "h") => (
+  const numPct = (
+    key: "x1" | "y1" | "x2" | "row2y" | "w" | "h" | "bankGap"
+  ) => (
     <Field label={FILL_LABEL[key]}>
       <Input
         type="number"
@@ -803,39 +828,59 @@ function FillPanel({
         </Field>
       </div>
 
-      <div className="flex flex-wrap items-center gap-4">
+      {/* Layout: rows, order, banks. */}
+      <div className="grid gap-3 sm:grid-cols-4">
         <Field label="Rows">
           <Select
             value={String(fill.rows)}
-            onValueChange={(v) => set({ rows: Number(v) as 1 | 2 })}
+            onValueChange={(v) => set({ rows: Number(v) as 1 | 2 | 3 | 4 })}
           >
-            <SelectTrigger size="sm" className="h-7 w-20 text-[12px]">
+            <SelectTrigger size="sm" className="h-7 text-[12px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="1">1 row</SelectItem>
               <SelectItem value="2">2 rows</SelectItem>
+              <SelectItem value="3">3 rows</SelectItem>
+              <SelectItem value="4">4 rows</SelectItem>
             </SelectContent>
           </Select>
         </Field>
-        {fill.rows === 2 && (
+        {fill.rows > 1 && (
           <Field label="Numbering">
             <Select
               value={fill.order}
               onValueChange={(v) => set({ order: v as "column" | "row" })}
             >
-              <SelectTrigger size="sm" className="h-7 w-52 text-[12px]">
+              <SelectTrigger size="sm" className="h-7 text-[12px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="column">
-                  Belly-to-belly (1 top, 2 bottom…)
-                </SelectItem>
-                <SelectItem value="row">Top row first, then bottom</SelectItem>
+                <SelectItem value="column">Down each column</SelectItem>
+                <SelectItem value="row">Across each row</SelectItem>
               </SelectContent>
             </Select>
           </Field>
         )}
+        <Field label="Banks">
+          <Select
+            value={String(fill.bank)}
+            onValueChange={(v) => set({ bank: Number(v) })}
+          >
+            <SelectTrigger size="sm" className="h-7 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">No banks</SelectItem>
+              {[4, 6, 8, 12].map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  Every {n} columns
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        {fill.bank > 0 && numPct("bankGap")}
       </div>
 
       {/* Anchors: type the %, or click them straight onto the photo. */}
@@ -843,7 +888,7 @@ function FillPanel({
         {numPct("x1")}
         {numPct("y1")}
         {numPct("x2")}
-        {fill.rows === 2 && numPct("row2y")}
+        {fill.rows > 1 && numPct("row2y")}
         {numPct("w")}
         {numPct("h")}
       </div>
@@ -887,6 +932,7 @@ const FILL_LABEL: Record<string, string> = {
   y1: "Top row Y %",
   x2: "Last X %",
   row2y: "Bottom row Y %",
+  bankGap: "Bank gap %",
   w: "Width %",
   h: "Height %",
 }
