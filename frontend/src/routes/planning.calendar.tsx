@@ -7,7 +7,6 @@ import {
   ChevronRight,
   Flag,
   Wrench,
-  Zap,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -44,6 +43,7 @@ import {
   isoWeek,
   monthCells,
 } from "@/components/planning/calendar-month"
+import { CalendarTimeGrid } from "@/components/planning/calendar-timegrid"
 
 const VIEWS = ["month", "week", "day"] as const
 type CalView = (typeof VIEWS)[number]
@@ -359,16 +359,28 @@ function CalendarPage() {
       <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
         {dataQ.isError ? (
           <QueryError error={dataQ.error} />
-        ) : view === "day" ? (
-          <DayView day={anchorDay} data={dataQ.data} formatDate={formatDate} />
+        ) : view !== "month" ? (
+          <CalendarTimeGrid
+            days={view === "week" ? weekDays.map(iso) : [anchorDay]}
+            data={dataQ.data}
+            today={today}
+            onPickDay={
+              view === "week"
+                ? (d) => setSearch({ view: "day", day: d })
+                : undefined
+            }
+            onMoveTask={
+              canMoveTasks
+                ? (task, day) => moveTask.mutate({ task, day })
+                : undefined
+            }
+          />
         ) : (
           <CalendarMonth
             year={anchor.year}
             month={anchor.month}
             data={dataQ.data}
             today={today}
-            days={view === "week" ? weekDays : undefined}
-            tall={view === "week"}
             onPickDay={(d) => setSearch({ view: "day", day: d })}
             onMoveTask={
               canMoveTasks
@@ -383,151 +395,6 @@ function CalendarPage() {
           />
         )}
       </div>
-    </div>
-  )
-}
-
-/** One day, as a readable agenda: everything scheduled on it, with links. */
-function DayView({
-  day,
-  data,
-  formatDate,
-}: {
-  day: string
-  data: PlanningCalendar | undefined
-  formatDate: (v: string) => string
-}) {
-  const tasks = (data?.tasks ?? []).filter((t) => {
-    const s = t.start_date ?? t.due_date
-    const e = t.due_date ?? t.start_date
-    return s !== null && e !== null && s <= day && day <= e
-  })
-  const milestones = (data?.milestones ?? []).filter((m) => m.due_date === day)
-  const changes = (data?.changes ?? []).filter((c) => c.effective_date === day)
-  const events = (data?.events ?? []).filter((e) => {
-    const from = e.starts_at.slice(0, 10)
-    const to = (e.ends_at ?? e.etr ?? e.starts_at).slice(0, 10)
-    return from <= day && day <= to
-  })
-  const empty =
-    tasks.length + milestones.length + changes.length + events.length === 0
-
-  return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      {empty && (
-        <p className="py-16 text-center text-sm text-muted-foreground">
-          Nothing scheduled on {formatDate(day)}.
-        </p>
-      )}
-      {events.length > 0 && (
-        <DaySection title="Maintenance & outages">
-          {events.map((e) => (
-            <Link
-              key={e.id}
-              to="/maintenance/$id/edit"
-              params={{ id: e.id }}
-              className="flex items-center gap-2 px-3 py-2 hover:bg-muted/60"
-            >
-              {e.kind === "outage" ? (
-                <Zap className="h-3.5 w-3.5 shrink-0 text-red-600 dark:text-red-400" />
-              ) : (
-                <Wrench className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-              )}
-              <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
-                {e.name}
-              </span>
-              <span className="text-[11px] text-muted-foreground">
-                {e.provider_name || "Internal"} · {e.status_name}
-              </span>
-              <span className="num text-[11px] whitespace-nowrap text-muted-foreground">
-                {e.starts_at.slice(11, 16)}
-                {e.ends_at ? ` → ${e.ends_at.slice(11, 16)}` : ""}
-              </span>
-            </Link>
-          ))}
-        </DaySection>
-      )}
-      {tasks.length > 0 && (
-        <DaySection title="Tasks">
-          {tasks.map((t) => (
-            <Link
-              key={t.id}
-              to="/planning/$boardId/tasks/$taskId"
-              params={{ boardId: t.board, taskId: t.id }}
-              className="flex items-center gap-2 px-3 py-2 hover:bg-muted/60"
-            >
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-[3px] border"
-                style={
-                  t.status_color
-                    ? {
-                        backgroundColor: `${t.status_color}2b`,
-                        borderColor: `${t.status_color}80`,
-                      }
-                    : undefined
-                }
-              />
-              <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
-                {t.title}
-              </span>
-              <span className="text-[11px] text-muted-foreground">
-                {t.board_name} · {t.status_name}
-                {t.assignees.length ? ` · ${t.assignees.join(", ")}` : ""}
-              </span>
-              <span className="num text-[11px] whitespace-nowrap text-muted-foreground">
-                {t.start_date ?? "—"} → {t.due_date ?? "—"}
-              </span>
-            </Link>
-          ))}
-        </DaySection>
-      )}
-      {milestones.length > 0 && (
-        <DaySection title="Milestones">
-          {milestones.map((m) => (
-            <div key={m.id} className="flex items-center gap-2 px-3 py-2">
-              <Flag className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
-                {m.name}
-              </span>
-              <span className="text-[11px] text-muted-foreground">
-                {m.board_name}
-              </span>
-            </div>
-          ))}
-        </DaySection>
-      )}
-      {changes.length > 0 && (
-        <DaySection title="Planned changes">
-          {changes.map((c) => (
-            <div key={c.id} className="flex items-center gap-2 px-3 py-2">
-              <CalendarClock className="h-3.5 w-3.5 shrink-0 text-primary" />
-              <span className="min-w-0 flex-1 truncate text-[13px]">
-                {c.fields.join(", ") || "Change"}
-              </span>
-              <span className="truncate text-[11px] text-muted-foreground">
-                Task: {c.task_title}
-              </span>
-            </div>
-          ))}
-        </DaySection>
-      )}
-    </div>
-  )
-}
-
-function DaySection({
-  title,
-  children,
-}: {
-  title: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="overflow-hidden rounded-lg border border-border">
-      <div className="border-b border-border bg-muted/40 px-3 py-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-        {title}
-      </div>
-      <div className="divide-y divide-border">{children}</div>
     </div>
   )
 }

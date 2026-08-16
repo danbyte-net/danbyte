@@ -275,12 +275,15 @@ Every week row carries its **ISO week number**, marked in the corner of the
 week's first day; the week/day toolbars name the week too (`W34 · …`) — the
 vocabulary change windows are usually booked in.
 
-The header switches between **Month**, **Week** and **Day**: week is the same
-grid at full height for one week; day is a readable agenda of everything on
-that date (click any day cell to jump there). With task-change rights you can
-**drag a task bar onto another day** — the whole span shifts, keeping its
-length — and drag a milestone flag to re-date it. The view, its anchor and the
-board all live in the URL, so a calendar can be linked.
+The header switches between **Month**, **Week** and **Day**. Week and Day are
+an hour grid: days as columns with an hour axis, **maintenance windows and
+outages drawn at their actual times** (side by side when they overlap, a red
+now-line on today), and an **all-day band** at the top carrying the date-only
+things — task spans, milestone flags, planned-change markers. Click a day
+header to zoom into it. With task-change rights you can **drag a task bar onto
+another day** — the whole span shifts, keeping its length (month view also
+re-dates milestone flags by drag). The view, its anchor and the board all live
+in the URL, so a calendar can be linked.
 
 `GET /api/planning/calendar/?start=&end=[&board=]` returns the same window as
 JSON; `GET /api/planning/calendar.ics?token=<api token>` serves it as an iCal

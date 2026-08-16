@@ -71,7 +71,7 @@ export function monthCells(year: number, month: number): Date[] {
   )
 }
 
-interface Bar {
+export interface Bar {
   task: PlanningCalendarTask
   /** 1-based grid columns, inclusive start / exclusive end. */
   from: number
@@ -82,7 +82,7 @@ interface Bar {
 }
 
 /** Pack a week's task spans into lanes so no two bars overlap on a row. */
-function layOutWeek(week: Date[], tasks: PlanningCalendarTask[]): Bar[] {
+export function layOutWeek(week: Date[], tasks: PlanningCalendarTask[]): Bar[] {
   const weekStart = iso(week[0])
   const weekEnd = iso(week[6])
   const bars: Omit<Bar, "lane">[] = []
