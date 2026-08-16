@@ -2421,7 +2421,8 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         fields = ["id", "device", "device_id", "name", "snmp_name", "snmp_ignore", "is_uplink", "type",
                   "type_display",
                   "speed", "mtu",
-                  "enabled", "mgmt_only", "duplex", "poe_mode", "poe_type",
+                  "enabled", "mgmt_only", "combo_group", "duplex", "poe_mode",
+                  "poe_type",
                   "wwn", "mac_address", "mac_addresses", "description",
                   "mode", "mode_display", "vlan", "vlan_id",
                   "tagged_vlans", "tagged_vlan_ids", "vrf", "vrf_id",
@@ -2717,7 +2718,7 @@ class _ComponentTemplateSerializer(serializers.ModelSerializer):
 class InterfaceTemplateSerializer(_ComponentTemplateSerializer):
     class Meta(_ComponentTemplateSerializer.Meta):
         model = InterfaceTemplate
-        fields = _ComponentTemplateSerializer.Meta.fields + ["enabled", "mgmt_only", "poe_mode", "poe_type",]
+        fields = _ComponentTemplateSerializer.Meta.fields + ["enabled", "mgmt_only", "combo_group", "poe_mode", "poe_type",]
 
 
 class ConsolePortTemplateSerializer(_ComponentTemplateSerializer):

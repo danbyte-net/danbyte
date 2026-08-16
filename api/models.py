@@ -528,6 +528,11 @@ class InterfaceTemplate(_ComponentTemplate):
     mgmt_only = models.BooleanField(
         default=False, help_text="A dedicated management interface."
     )
+    combo_group = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Combo/shared port group — materialised onto each device so "
+                  "its alternate connectors stay mutually exclusive.",
+    )
 
     class Meta:
         unique_together = ("device_type", "name")
@@ -925,8 +930,9 @@ def materialize_device_components(device) -> dict[str, int]:
     have = _names(device.interfaces)
     made = [
         Interface(device=device, name=n, type=t.type, enabled=t.enabled,
-                  mgmt_only=t.mgmt_only, poe_mode=t.poe_mode,
-                  poe_type=t.poe_type, description=t.description)
+                  mgmt_only=t.mgmt_only, combo_group=t.combo_group,
+                  poe_mode=t.poe_mode, poe_type=t.poe_type,
+                  description=t.description)
         for t in dt.interface_templates.all()
         if (n := render_component_name(t.name, pos)) not in have
     ]
@@ -2439,6 +2445,12 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     mgmt_only = models.BooleanField(
         default=False, help_text="Out-of-band management interface."
     )
+    combo_group = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Combo/shared port: interfaces on this device with the same "
+                  "group are alternate connectors for one logical port — "
+                  "enabling one disables the others.",
+    )
     DUPLEX_CHOICES = [("half", "Half"), ("full", "Full"), ("auto", "Auto")]
     duplex = models.CharField(
         max_length=8, choices=DUPLEX_CHOICES, blank=True, default=""
@@ -2518,6 +2530,16 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     class Meta:
         unique_together = ("device", "name")
         ordering = ["name"]
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Combo/shared port: only one connector in a group is live at a time.
+        # Enabling one disables its siblings on the same device. A queryset
+        # update (not .save()) on the siblings avoids re-entering this method.
+        if self.enabled and self.combo_group and self.device_id:
+            Interface.objects.filter(
+                device_id=self.device_id, combo_group=self.combo_group
+            ).exclude(pk=self.pk).filter(enabled=True).update(enabled=False)
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"

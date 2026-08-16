@@ -85,7 +85,6 @@ import { DeviceHardwareHealth } from "@/components/device-hardware-health"
 import {
   FaceplateLegend,
   FaceplateView,
-  type FaceplateMode,
   useHasImagePorts,
   useObservedPorts,
   useSavedFaceplate,
@@ -902,46 +901,72 @@ function DeviceOverview({
       ),
     },
   ]
+  // The Panel (photo / rendered / bare) is pinned top-right and kept in view
+  // The Panel shows when the device has ports or its type carries a rack-face
+  // photo. When it does, the overview is two explicit columns so the Panel can
+  // sit at the top of the second column (half-width — readable) rather than
+  // wherever a balanced masonry would drop it.
+  const showPanel =
+    d.interface_count > 0 ||
+    !!(d.device_type?.front_image || d.device_type?.rear_image)
+
+  const locationMap = d.latitude !== null && d.longitude !== null && (
+    <div className="rounded-lg border border-border bg-card">
+      <div className="flex items-center justify-between border-b border-border px-4 py-2">
+        <h2 className="text-sm font-semibold">Location</h2>
+        <div className="flex items-center gap-1.5">
+          <ShowOnSiteMap deviceId={d.id} hasCoords />
+          <ShowOnFloorPlan deviceId={d.id} rackId={d.rack?.id} />
+        </div>
+      </div>
+      <div className="h-64 overflow-hidden rounded-b-lg">
+        <MiniMap className="h-full w-full" focusDeviceId={d.id} />
+      </div>
+    </div>
+  )
+
+  const attributeCards = (
+    <>
+      <KvCard title="Device" rows={deviceRows} />
+      <KvCard title="Management" rows={managementRows} />
+      <KvCard title="Hardware" rows={hardwareRows} />
+      <KvCard title="Location" rows={locationRows} />
+      <CustomFieldValues
+        model="device"
+        values={d.custom_fields}
+        layout="cards"
+      />
+    </>
+  )
+
   return (
     <div className="space-y-6">
       {/* Monitoring roll-up first, mirroring the IP detail page. */}
       <DeviceMonitoring deviceId={d.id} />
 
-      {/* Masonry: every card flows into two auto-balanced columns and packs
-          tight against the card above it — no fixed grid rows, so a short card
-          (Panel) is followed immediately by the next (the rack snaps up under it
-          instead of leaving the void between them). Custom fields render as
-          cards here too, alongside the other tables. */}
-      <div className="columns-1 gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
-        <KvCard title="Device" rows={deviceRows} />
-        <KvCard title="Management" rows={managementRows} />
-        <KvCard title="Hardware" rows={hardwareRows} />
-        <KvCard title="Location" rows={locationRows} />
-        <CustomFieldValues
-          model="device"
-          values={d.custom_fields}
-          layout="cards"
-        />
-        <DeviceFrontPanel device={d} />
-        {d.latitude !== null && d.longitude !== null && (
-          <div className="rounded-lg border border-border bg-card">
-            <div className="flex items-center justify-between border-b border-border px-4 py-2">
-              <h2 className="text-sm font-semibold">Location</h2>
-              <div className="flex items-center gap-1.5">
-                <ShowOnSiteMap deviceId={d.id} hasCoords />
-                <ShowOnFloorPlan deviceId={d.id} rackId={d.rack?.id} />
-              </div>
-            </div>
-            <div className="h-64 overflow-hidden rounded-b-lg">
-              <MiniMap className="h-full w-full" focusDeviceId={d.id} />
-            </div>
+      {showPanel ? (
+        // Two columns: attributes left, the Panel at the top of the right
+        // column (then the map / topology / rack under it).
+        <div className="grid items-start gap-6 lg:grid-cols-2">
+          <div className="min-w-0 space-y-6">{attributeCards}</div>
+          <div className="min-w-0 space-y-6">
+            <DeviceFrontPanel device={d} />
+            {locationMap}
+            <DeviceMiniTopology deviceId={d.id} />
+            <DeviceTunnelsCard deviceId={d.id} />
+            <DeviceRackCard device={d} />
           </div>
-        )}
-        <DeviceMiniTopology deviceId={d.id} />
-        <DeviceTunnelsCard deviceId={d.id} />
-        <DeviceTypeFaces deviceType={d.device_type} />
-        <DeviceRackCard device={d} />
-      </div>
+        </div>
+      ) : (
+        // No panel — the original auto-balanced masonry.
+        <div className="columns-1 gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
+          {attributeCards}
+          {locationMap}
+          <DeviceMiniTopology deviceId={d.id} />
+          <DeviceTunnelsCard deviceId={d.id} />
+          <DeviceRackCard device={d} />
+        </div>
+      )}
     </div>
   )
 }
@@ -999,11 +1024,16 @@ function DeviceRackCard({ device }: { device: Device }) {
  * colored by state/speed. Uses the device type's saved faceplate layout when
  * one exists (with a Front/Rear toggle when the layout has a rear side);
  * hidden when the device has no physical interfaces. */
+type PanelView = "photo" | "rendered" | "bare"
+
 function DeviceFrontPanel({ device }: { device: Device }) {
   const deviceId = device.id
+  const dt = device.device_type
+  const frontImg = dt?.front_image ?? ""
+  const rearImg = dt?.rear_image ?? ""
+  const hasTypeImage = !!frontImg || !!rearImg
   const [side, setSide] = useState<"front" | "rear">("front")
-  // Operator override: force the schematic even when a photo exists.
-  const [renderMode, setRenderMode] = useState(false)
+  const [view, setView] = useState<PanelView>("photo")
   const q = useQuery({
     queryKey: ["device-interfaces", deviceId],
     queryFn: () =>
@@ -1011,50 +1041,60 @@ function DeviceFrontPanel({ device }: { device: Device }) {
   })
   // Live SNMP overlay — read-only observed facts on top of the intent.
   const observed = useObservedPorts(deviceId)
-  const savedDoc = useSavedFaceplate(device.device_type?.id)
-  // Photo faceplate wins when the type has an image + placed port markers;
-  // else the schematic (mm-true) faceplate.
-  const usePhoto = useHasImagePorts(device.device_type?.id)
+  const savedDoc = useSavedFaceplate(dt?.id)
+  // Photo faceplate wins when the type has an image + placed port markers.
+  const usePhoto = useHasImagePorts(dt?.id)
   // The panel tells the legend which colours it drew — a disk-bay photo panel
   // keys Active/Empty, not the whole FE→400G ramp.
   const { content: legend, report: onLegend } = useLegendCollector()
-  const hasRear = usePhoto
-    ? !!device.device_type?.rear_image
-    : (savedDoc?.rear?.length ?? 0) > 0
   // Memoized: this is the faceplate's `interfaces` prop, and a fresh array each
   // render invalidates every memo downstream of it.
   const physical = useMemo(
     () => (q.data?.results ?? []).filter((i) => !i.virtual),
     [q.data]
   )
-  if (physical.length === 0) return null
+  // Nothing to draw at all — no ports and no type photo.
+  if (physical.length === 0 && !hasTypeImage) return null
+
+  // The views this device actually offers: Photo (image + live port markers),
+  // Rendered (mm-true schematic), Bare (the plain rack-face photo). Chosen view
+  // is validated against the available set so async data can't strand it.
+  const views: { value: PanelView; label: string }[] = [
+    ...(usePhoto ? [{ value: "photo" as const, label: "Photo" }] : []),
+    ...(physical.length
+      ? [{ value: "rendered" as const, label: "Rendered" }]
+      : []),
+    ...(hasTypeImage ? [{ value: "bare" as const, label: "Bare" }] : []),
+  ]
+  const effView: PanelView =
+    views.find((v) => v.value === view)?.value ?? views[0]?.value ?? "rendered"
+  const hasRear =
+    effView === "rendered" ? (savedDoc?.rear?.length ?? 0) > 0 : !!rearImg
   const showRear = side === "rear"
-  // Photo when the type has one, unless the operator flips to the schematic.
-  const mode: FaceplateMode = usePhoto && !renderMode ? "image" : "rendered"
+  const bareSrc = showRear ? rearImg : frontImg
+
   return (
     <Section
       title="Panel"
       actions={
         <div className="flex items-center gap-2">
-          {/* Photo vs schematic — only offered when a photo exists to show. */}
-          {usePhoto && (
+          {views.length > 1 && (
             <SegmentedTabs
-              value={renderMode ? "rendered" : "image"}
-              onValueChange={(v) => setRenderMode(v === "rendered")}
+              value={effView}
+              onValueChange={(v) => setView(v as PanelView)}
+              items={views}
+            />
+          )}
+          {hasRear && (
+            <SegmentedTabs
+              value={side}
+              onValueChange={setSide}
               items={[
-                { value: "image", label: "Photo" },
-                { value: "rendered", label: "Rendered" },
+                { value: "front", label: "Front" },
+                { value: "rear", label: "Rear" },
               ]}
             />
           )}
-          <SegmentedTabs
-            value={side}
-            onValueChange={setSide}
-            items={[
-              { value: "front", label: "Front" },
-              { value: "rear", label: "Rear" },
-            ]}
-          />
         </div>
       }
     >
@@ -1063,11 +1103,25 @@ function DeviceFrontPanel({ device }: { device: Device }) {
           <p className="py-6 text-center text-sm text-muted-foreground">
             No rear panel defined for this device type.
           </p>
+        ) : effView === "bare" ? (
+          bareSrc ? (
+            <div className="flex aspect-[6/1] w-full items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
+              <img
+                src={bareSrc}
+                alt={`${side} of ${dt?.name ?? "device"}`}
+                className="h-full w-full object-contain"
+              />
+            </div>
+          ) : (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No {side} image for this device type.
+            </p>
+          )
         ) : (
           <>
             <FaceplateView
-              mode={mode}
-              deviceTypeId={device.device_type?.id}
+              mode={effView === "photo" ? "image" : "rendered"}
+              deviceTypeId={dt?.id}
               deviceId={deviceId}
               interfaces={physical}
               vcPosition={device.vc_position}
@@ -1083,51 +1137,6 @@ function DeviceFrontPanel({ device }: { device: Device }) {
             />
           </>
         )}
-      </div>
-    </Section>
-  )
-}
-
-// Read-only rack-face images inherited from the device's type. Rendered only
-// when the type carries at least one image; managing them lives on the device
-// type page.
-function DeviceTypeFaces({
-  deviceType,
-}: {
-  deviceType: Device["device_type"]
-}) {
-  const [side, setSide] = useState<"front" | "rear">("front")
-  const front = deviceType?.front_image ?? ""
-  const rear = deviceType?.rear_image ?? ""
-  if (!front && !rear) return null
-  const hasBoth = !!front && !!rear
-  // With both images, honour the toggle; with only one, always show it.
-  const shownSide: "front" | "rear" = hasBoth ? side : front ? "front" : "rear"
-  const src = shownSide === "rear" ? rear : front
-  return (
-    <Section
-      title="Rack-face image"
-      actions={
-        hasBoth ? (
-          <SegmentedTabs
-            value={side}
-            onValueChange={setSide}
-            items={[
-              { value: "front", label: "Front" },
-              { value: "rear", label: "Rear" },
-            ]}
-          />
-        ) : undefined
-      }
-    >
-      <div className="p-4 lg:p-5">
-        <div className="flex aspect-[6/1] w-full items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
-          <img
-            src={src}
-            alt={`${shownSide} of ${deviceType?.name ?? "device"}`}
-            className="h-full w-full object-contain"
-          />
-        </div>
       </div>
     </Section>
   )

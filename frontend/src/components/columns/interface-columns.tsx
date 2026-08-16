@@ -218,6 +218,15 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
                 mgmt
               </Badge>
             )}
+            {row.original.combo_group && (
+              <Badge
+                variant="outline"
+                className="h-4 px-1.5 text-[10px]"
+                title={`Combo port — shares group "${row.original.combo_group}" with its alternate connector`}
+              >
+                combo
+              </Badge>
+            )}
             {row.original.snmp_name && <SnmpLinkBadge iface={row.original} />}
             {row.original.snmp_ignore && (
               // Config that changes what drift reports must be visible where

@@ -1837,6 +1837,7 @@ export interface Interface {
   mtu: number | null
   enabled: boolean
   mgmt_only: boolean
+  combo_group: string
   duplex: string
   poe_mode: string
   poe_type: string
@@ -1887,6 +1888,7 @@ export interface InterfaceWritePayload {
   snmp_ignore?: boolean
   is_uplink?: boolean
   mgmt_only?: boolean
+  combo_group?: string
   duplex?: string
   poe_mode?: string
   poe_type?: string
@@ -2292,6 +2294,7 @@ export interface ComponentTemplateBase {
 export interface InterfaceTemplate extends ComponentTemplateBase {
   enabled: boolean
   mgmt_only: boolean
+  combo_group: string
 }
 
 export type ConsolePortTemplate = ComponentTemplateBase

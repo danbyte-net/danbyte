@@ -62,6 +62,7 @@ export function InterfaceForm({
   const [enabled, setEnabled] = useState(iface?.enabled ?? true)
   const [mac, setMac] = useState(iface?.mac_address ?? "")
   const [mgmtOnly, setMgmtOnly] = useState(iface?.mgmt_only ?? false)
+  const [comboGroup, setComboGroup] = useState(iface?.combo_group ?? "")
   // The name SNMP reports for this port; clearing it unlinks discovery.
   const [snmpName, setSnmpName] = useState(iface?.snmp_name ?? "")
   const [snmpIgnore, setSnmpIgnore] = useState(iface?.snmp_ignore ?? false)
@@ -99,6 +100,7 @@ export function InterfaceForm({
     setEnabled(iface.enabled)
     setMac(iface.mac_address)
     setMgmtOnly(iface.mgmt_only)
+    setComboGroup(iface.combo_group ?? "")
     setSnmpName(iface.snmp_name ?? "")
     setSnmpIgnore(iface.snmp_ignore ?? false)
     setIsUplink(iface.is_uplink ?? false)
@@ -154,6 +156,7 @@ export function InterfaceForm({
         enabled,
         mac_address: mac.trim(),
         mgmt_only: mgmtOnly,
+        combo_group: comboGroup.trim(),
         snmp_name: snmpName.trim(),
         snmp_ignore: snmpIgnore,
         is_uplink: isUplink,
@@ -340,6 +343,14 @@ export function InterfaceForm({
         hint="Fibre Channel World Wide Name (optional)"
         placeholder="10:00:00:90:fa:12:34:56"
         error={fieldErrors.wwn}
+      />
+      <FormText
+        label="Combo group"
+        value={comboGroup}
+        onChange={setComboGroup}
+        placeholder="e.g. mgmt"
+        info="Combo / shared port: give the alternate connectors of one logical port the same group (an RJ45 and its SFP twin). Enabling one automatically disables the others on this device, so only the live connector shows as up."
+        error={fieldErrors.combo_group}
       />
 
       {/* ── L2 switching ── */}

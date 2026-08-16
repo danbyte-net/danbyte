@@ -101,7 +101,7 @@ export const TEMPLATE_NOUN: Record<TemplateKind, string> = {
 /** Union-ish row shape so one dialog/table can hold any of the 7 kinds —
  * the per-kind extras are simply absent on the kinds that lack them. */
 export type AnyTemplate = ComponentTemplateBase &
-  Partial<Pick<InterfaceTemplate, "enabled" | "mgmt_only">> &
+  Partial<Pick<InterfaceTemplate, "enabled" | "mgmt_only" | "combo_group">> &
   Partial<{ poe_mode: string; poe_type: string }> &
   Partial<Pick<PowerPortTemplate, "maximum_draw" | "allocated_draw">> &
   Partial<Pick<PowerOutletTemplate, "power_port_template" | "feed_leg">> &
@@ -159,6 +159,7 @@ export function ComponentTemplateDialog({
   // Interface extras
   const [enabled, setEnabled] = useState(true)
   const [mgmtOnly, setMgmtOnly] = useState(false)
+  const [comboGroup, setComboGroup] = useState("")
   const [poeMode, setPoeMode] = useState("")
   const [poeType, setPoeType] = useState("")
   // Power-port extras
@@ -200,6 +201,7 @@ export function ComponentTemplateDialog({
     setDescription(template?.description ?? "")
     setEnabled(template?.enabled ?? true)
     setMgmtOnly(template?.mgmt_only ?? false)
+    setComboGroup(template?.combo_group ?? "")
     setPoeMode(template?.poe_mode ?? "")
     setPoeType(template?.poe_type ?? "")
     setMaximumDraw(
@@ -290,6 +292,7 @@ export function ComponentTemplateDialog({
         payload.type = type
         payload.enabled = enabled
         payload.mgmt_only = mgmtOnly
+        payload.combo_group = comboGroup.trim()
         payload.poe_mode = poeMode
         payload.poe_type = poeType
       } else if (
@@ -556,20 +559,29 @@ export function ComponentTemplateDialog({
             </div>
           )}
           {kind === "interface" && (
-            <div className="flex flex-wrap gap-x-6 gap-y-2">
-              <FormCheckbox
-                label="Enabled"
-                checked={enabled}
-                onChange={setEnabled}
-                hint="New interfaces start enabled"
+            <>
+              <div className="flex flex-wrap gap-x-6 gap-y-2">
+                <FormCheckbox
+                  label="Enabled"
+                  checked={enabled}
+                  onChange={setEnabled}
+                  hint="New interfaces start enabled"
+                />
+                <FormCheckbox
+                  label="Management only"
+                  checked={mgmtOnly}
+                  onChange={setMgmtOnly}
+                  hint="Out-of-band interface"
+                />
+              </div>
+              <FormText
+                label="Combo group"
+                value={comboGroup}
+                onChange={setComboGroup}
+                placeholder="e.g. mgmt"
+                info="Combo / shared port: give the alternate connectors of one logical port the same group (an RJ45 and its SFP twin). On each device, enabling one automatically disables the others."
               />
-              <FormCheckbox
-                label="Management only"
-                checked={mgmtOnly}
-                onChange={setMgmtOnly}
-                hint="Out-of-band interface"
-              />
-            </div>
+            </>
           )}
 
           {kind === "power-port" && (

@@ -75,6 +75,10 @@ const defaultSize = (kind: string) =>
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
 const markerKey = (m: { kind: string; name: string }) => `${m.kind}:${m.name}`
 
+// Common ports-per-bank sizes for the auto-fill "Banks" select; anything else
+// goes through the Custom… size input.
+const BANK_PRESETS = [0, 6, 8, 12, 24]
+
 /** Natural (human) compare so "Ethernet1/0/2" sorts before ".../11". Splits
  * each name into digit / non-digit runs and compares run-by-run. */
 const naturalCompare = (a: string, b: string): number => {
@@ -102,16 +106,34 @@ interface FillOpts {
   kind: PhotoMarkerKind
   from: string
   to: string
-  rows: 1 | 2
-  /** 2-row order: column = belly-to-belly (1 top, 2 bottom, 3 top…);
-   * row = fill the top row first, then the bottom. */
+  rows: 1 | 2 | 3 | 4
+  /** Multi-row order: column = down each column first (1 top … then next
+   * column); row = across the top row first, then the next row down. */
   order: "column" | "row"
+  /** Insert a gap every N ports (0 = evenly spaced, no banks). */
+  bank: number
+  /** Width of each bank gap, as a fraction of the run width. */
+  bankGap: number
   x1: number
   y1: number
   x2: number
+  /** Y of the bottom row; middle rows interpolate between y1 and this. */
   row2y: number
+  /** Optional per-row Y overrides (length = rows). When set, each row sits at
+   * its own Y instead of interpolating — for devices whose rows aren't evenly
+   * spaced. Undefined = even top-to-bottom spacing. */
+  rowYs?: number[]
   w: number
   h: number
+}
+
+/** Even top-to-bottom Y positions for `rows` rows between `top` and `bottom`. */
+function interpRowYs(top: number, bottom: number, rows: number): number[] {
+  if (rows <= 1) return [top]
+  return Array.from(
+    { length: rows },
+    (_, r) => top + ((bottom - top) * r) / (rows - 1)
+  )
 }
 
 /**
@@ -330,6 +352,8 @@ export function DeviceTypeImagePortsPane({
       to: names[names.length - 1]?.name ?? "",
       rows: 2,
       order: "column",
+      bank: 0,
+      bankGap: 0.03,
       x1: 0.06,
       y1: 0.4,
       x2: 0.94,
@@ -369,27 +393,46 @@ export function DeviceTypeImagePortsPane({
     if (!fill) return []
     const n = fillNames.length
     if (!n) return []
-    const cols = fill.rows === 1 ? n : Math.ceil(n / 2)
+    const R = fill.rows
+    const cols = R === 1 ? n : Math.ceil(n / R)
+
+    // Column pitch comes from the first..last anchors (as if evenly spaced);
+    // a bank gap then *pushes* each subsequent bank further right, so the run
+    // visibly spreads (the last ports extend past the Last-X anchor by the
+    // accumulated gaps). Bank size is in PORTS — convert to columns for the
+    // current row count so "every 24 ports" means what it says.
+    const pitch = cols > 1 ? (fill.x2 - fill.x1) / (cols - 1) : 0
+    const colsPerBank =
+      fill.bank > 0 ? Math.max(1, Math.ceil(fill.bank / R)) : 0
     const colX = (col: number) =>
-      cols > 1 ? fill.x1 + ((fill.x2 - fill.x1) * col) / (cols - 1) : fill.x1
+      fill.x1 +
+      col * pitch +
+      (colsPerBank ? Math.floor(col / colsPerBank) * fill.bankGap : 0)
+
+    // Row Y: per-row overrides when set, else top at y1 / bottom at row2y with
+    // middle rows evenly between.
+    const even = interpRowYs(fill.y1, fill.row2y, R)
+    const rowY = (row: number) =>
+      fill.rowYs?.[row] != null ? fill.rowYs[row] : even[row]
+
     return fillNames.map((name, idx) => {
       let col: number
-      let bottom: boolean
-      if (fill.rows === 1) {
+      let row: number
+      if (R === 1) {
         col = idx
-        bottom = false
+        row = 0
       } else if (fill.order === "column") {
-        col = Math.floor(idx / 2)
-        bottom = idx % 2 === 1
+        col = Math.floor(idx / R)
+        row = idx % R
       } else {
         col = idx % cols
-        bottom = idx >= cols
+        row = Math.floor(idx / cols)
       }
       return {
         kind: fill.kind,
         name,
         x: clamp01(colX(col)),
-        y: clamp01(bottom ? fill.row2y : fill.y1),
+        y: clamp01(rowY(row)),
         w: fill.w,
         h: fill.h,
       }
@@ -715,7 +758,9 @@ function FillPanel({
   onCancel: () => void
 }) {
   const set = (patch: Partial<FillOpts>) => setFill({ ...fill, ...patch })
-  const numPct = (key: "x1" | "y1" | "x2" | "row2y" | "w" | "h") => (
+  const numPct = (
+    key: "x1" | "y1" | "x2" | "row2y" | "w" | "h" | "bankGap"
+  ) => (
     <Field label={FILL_LABEL[key]}>
       <Input
         type="number"
@@ -803,47 +848,139 @@ function FillPanel({
         </Field>
       </div>
 
-      <div className="flex flex-wrap items-center gap-4">
+      {/* Layout: rows, order, banks. */}
+      <div className="grid gap-3 sm:grid-cols-4">
         <Field label="Rows">
           <Select
             value={String(fill.rows)}
-            onValueChange={(v) => set({ rows: Number(v) as 1 | 2 })}
+            onValueChange={(v) => {
+              const R = Number(v) as 1 | 2 | 3 | 4
+              // Resize custom row heights to the new count (re-interpolated).
+              set({
+                rows: R,
+                ...(fill.rowYs
+                  ? { rowYs: interpRowYs(fill.y1, fill.row2y, R) }
+                  : {}),
+              })
+            }}
           >
-            <SelectTrigger size="sm" className="h-7 w-20 text-[12px]">
+            <SelectTrigger size="sm" className="h-7 text-[12px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="1">1 row</SelectItem>
               <SelectItem value="2">2 rows</SelectItem>
+              <SelectItem value="3">3 rows</SelectItem>
+              <SelectItem value="4">4 rows</SelectItem>
             </SelectContent>
           </Select>
         </Field>
-        {fill.rows === 2 && (
+        {fill.rows > 1 && (
           <Field label="Numbering">
             <Select
               value={fill.order}
               onValueChange={(v) => set({ order: v as "column" | "row" })}
             >
-              <SelectTrigger size="sm" className="h-7 w-52 text-[12px]">
+              <SelectTrigger size="sm" className="h-7 text-[12px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="column">
-                  Belly-to-belly (1 top, 2 bottom…)
-                </SelectItem>
-                <SelectItem value="row">Top row first, then bottom</SelectItem>
+                <SelectItem value="column">Down each column</SelectItem>
+                <SelectItem value="row">Across each row</SelectItem>
               </SelectContent>
             </Select>
           </Field>
         )}
+        <Field label="Banks">
+          <Select
+            value={
+              BANK_PRESETS.includes(fill.bank) ? String(fill.bank) : "custom"
+            }
+            onValueChange={(v) => {
+              if (v === "custom") {
+                // Nudge to a non-preset so the size input appears; the user
+                // types the real ports-per-bank next door.
+                if (BANK_PRESETS.includes(fill.bank)) set({ bank: 16 })
+                return
+              }
+              set({ bank: Number(v) })
+            }}
+          >
+            <SelectTrigger size="sm" className="h-7 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">No banks</SelectItem>
+              {[6, 8, 12, 24].map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  Every {n} ports
+                </SelectItem>
+              ))}
+              <SelectItem value="custom">Custom…</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        {!BANK_PRESETS.includes(fill.bank) && (
+          <Field label="Ports per bank">
+            <Input
+              type="number"
+              min={1}
+              max={96}
+              value={fill.bank}
+              onChange={(e) =>
+                set({
+                  bank: Math.max(1, Math.min(96, Number(e.target.value) || 1)),
+                })
+              }
+              className="num h-7 text-[12px]"
+              aria-label="Ports per bank"
+            />
+          </Field>
+        )}
+        {fill.bank > 0 && numPct("bankGap")}
       </div>
+
+      {fill.rows > 1 && (
+        <FormCheckbox
+          label="Custom row spacing (set each row's Y)"
+          checked={!!fill.rowYs}
+          onChange={(on) =>
+            set({
+              rowYs: on
+                ? interpRowYs(fill.y1, fill.row2y, fill.rows)
+                : undefined,
+            })
+          }
+          className="items-center gap-1.5 text-[12px] text-muted-foreground"
+        />
+      )}
 
       {/* Anchors: type the %, or click them straight onto the photo. */}
       <div className="grid gap-3 sm:grid-cols-6">
         {numPct("x1")}
-        {numPct("y1")}
         {numPct("x2")}
-        {fill.rows === 2 && numPct("row2y")}
+        {fill.rowYs ? (
+          fill.rowYs.map((v, r) => (
+            <Field key={`rowY${r}`} label={`Row ${r + 1} Y %`}>
+              <Input
+                type="number"
+                step={0.5}
+                value={Math.round(v * 1000) / 10}
+                onChange={(e) => {
+                  const next = [...fill.rowYs!]
+                  next[r] = clamp01((Number(e.target.value) || 0) / 100)
+                  set({ rowYs: next })
+                }}
+                className="h-7 text-[12px]"
+              />
+            </Field>
+          ))
+        ) : (
+          <>
+            {numPct("y1")}
+            {fill.rows > 1 && numPct("row2y")}
+          </>
+        )}
         {numPct("w")}
         {numPct("h")}
       </div>
@@ -866,7 +1003,8 @@ function FillPanel({
         </Button>
         <span className="text-muted-foreground">
           First = top-left port center; Last = the last top-row port. Columns
-          space evenly between them.
+          space evenly between them; a bank gap pushes each later bank further
+          right.
         </span>
       </div>
 
@@ -887,6 +1025,7 @@ const FILL_LABEL: Record<string, string> = {
   y1: "Top row Y %",
   x2: "Last X %",
   row2y: "Bottom row Y %",
+  bankGap: "Bank gap %",
   w: "Width %",
   h: "Height %",
 }
