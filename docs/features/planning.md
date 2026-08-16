@@ -48,7 +48,9 @@ boards sharing "Done" read as one row, not four duplicates. Saving a row
 updates every board's copy in one go, and "Add status" can target one board or
 all of them. Filter by board, semantic group, or done/not-done in the rail.
 Columns can also be added straight from a board: the dashed **Add column**
-rail after the last column.
+rail after the last column, and removed there too — the
+trash icon in a column header (an occupied column refuses; move its tasks
+first).
 
 A status that still has tasks can't be deleted — move them first.
 

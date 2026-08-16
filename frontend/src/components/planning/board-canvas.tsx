@@ -14,7 +14,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { Plus } from "lucide-react"
+import { Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Link } from "@tanstack/react-router"
@@ -155,8 +155,21 @@ function Column({
 }) {
   const drop = useDroppable({ id: `column|${status.id}` })
   const qc = useQueryClient()
+  const { canDo } = useMe()
+  const canDeleteColumn = canDo("taskstatus", "delete")
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState("")
+
+  const removeColumn = useMutation({
+    mutationFn: () =>
+      api(`/api/planning/statuses/${status.id}/`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast.success(`Column “${status.name}” deleted`)
+      qc.invalidateQueries({ queryKey: ["planning-statuses", boardId] })
+    },
+    // The server refuses while tasks remain — the toast explains it.
+    onError: (e) => apiErrorToast(e),
+  })
 
   const create = useMutation({
     mutationFn: () =>
@@ -183,7 +196,7 @@ function Column({
   })
 
   return (
-    <div className="flex w-80 shrink-0 flex-col rounded-lg border border-border bg-muted/20">
+    <div className="group/column flex w-80 shrink-0 flex-col rounded-lg border border-border bg-muted/20">
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <ColorBadge name={status.name} color={status.color || undefined} />
         <span className="num text-[11px] text-muted-foreground">
@@ -197,6 +210,16 @@ function Column({
             onClick={() => setAdding(true)}
           >
             <Plus className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {canDeleteColumn && (
+          <button
+            type="button"
+            className="rounded p-1 text-muted-foreground opacity-0 group-hover/column:opacity-100 hover:text-foreground focus-visible:opacity-100"
+            title="Delete column (must be empty)"
+            onClick={() => removeColumn.mutate()}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
           </button>
         )}
       </div>
