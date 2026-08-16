@@ -110,7 +110,7 @@ interface FillOpts {
   /** Multi-row order: column = down each column first (1 top … then next
    * column); row = across the top row first, then the next row down. */
   order: "column" | "row"
-  /** Insert a gap every N columns (0 = evenly spaced, no banks). */
+  /** Insert a gap every N ports (0 = evenly spaced, no banks). */
   bank: number
   /** Width of each bank gap, as a fraction of the run width. */
   bankGap: number
