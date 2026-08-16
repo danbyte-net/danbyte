@@ -75,9 +75,9 @@ const defaultSize = (kind: string) =>
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
 const markerKey = (m: { kind: string; name: string }) => `${m.kind}:${m.name}`
 
-// Common bank sizes for the auto-fill "Banks" select; anything else (a 24-FX
-// switch, say) goes through the Custom… size input.
-const BANK_PRESETS = [0, 4, 6, 8, 12]
+// Common ports-per-bank sizes for the auto-fill "Banks" select; anything else
+// goes through the Custom… size input.
+const BANK_PRESETS = [0, 6, 8, 12, 24]
 
 /** Natural (human) compare so "Ethernet1/0/2" sorts before ".../11". Splits
  * each name into digit / non-digit runs and compares run-by-run. */
@@ -399,12 +399,15 @@ export function DeviceTypeImagePortsPane({
     // Column pitch comes from the first..last anchors (as if evenly spaced);
     // a bank gap then *pushes* each subsequent bank further right, so the run
     // visibly spreads (the last ports extend past the Last-X anchor by the
-    // accumulated gaps).
+    // accumulated gaps). Bank size is in PORTS — convert to columns for the
+    // current row count so "every 24 ports" means what it says.
     const pitch = cols > 1 ? (fill.x2 - fill.x1) / (cols - 1) : 0
+    const colsPerBank =
+      fill.bank > 0 ? Math.max(1, Math.ceil(fill.bank / R)) : 0
     const colX = (col: number) =>
       fill.x1 +
       col * pitch +
-      (fill.bank > 0 ? Math.floor(col / fill.bank) * fill.bankGap : 0)
+      (colsPerBank ? Math.floor(col / colsPerBank) * fill.bankGap : 0)
 
     // Row Y: per-row overrides when set, else top at y1 / bottom at row2y with
     // middle rows evenly between.
@@ -895,9 +898,9 @@ function FillPanel({
             }
             onValueChange={(v) => {
               if (v === "custom") {
-                // Nudge to a non-preset so the size input appears (24 suits a
-                // common 24-port bank); the user types the real size next door.
-                if (BANK_PRESETS.includes(fill.bank)) set({ bank: 24 })
+                // Nudge to a non-preset so the size input appears; the user
+                // types the real ports-per-bank next door.
+                if (BANK_PRESETS.includes(fill.bank)) set({ bank: 16 })
                 return
               }
               set({ bank: Number(v) })
@@ -908,9 +911,9 @@ function FillPanel({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="0">No banks</SelectItem>
-              {[4, 6, 8, 12].map((n) => (
+              {[6, 8, 12, 24].map((n) => (
                 <SelectItem key={n} value={String(n)}>
-                  Every {n} columns
+                  Every {n} ports
                 </SelectItem>
               ))}
               <SelectItem value="custom">Custom…</SelectItem>
@@ -918,7 +921,7 @@ function FillPanel({
           </Select>
         </Field>
         {!BANK_PRESETS.includes(fill.bank) && (
-          <Field label="Bank size">
+          <Field label="Ports per bank">
             <Input
               type="number"
               min={1}
@@ -930,7 +933,7 @@ function FillPanel({
                 })
               }
               className="num h-7 text-[12px]"
-              aria-label="Custom bank size"
+              aria-label="Ports per bank"
             />
           </Field>
         )}
