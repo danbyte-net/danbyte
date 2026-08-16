@@ -824,6 +824,59 @@ const sections: NavSection[] = [
       },
     ],
   },
+  {
+    // Data synced from the Windows integration. Connection config lives under
+    // Integrations; this is where operators read and act on what came in.
+    label: "DNS & DHCP",
+    icon: Globe,
+    clusters: [
+      {
+        label: "DHCP",
+        items: [
+          {
+            title: "Scopes",
+            url: "/dhcp-scopes",
+            icon: Network,
+            objectType: "dhcpscope",
+            integration: ["dhcp"],
+          },
+          {
+            title: "Reservations",
+            url: "/dhcp-reservations",
+            icon: Locate,
+            objectType: "dhcpreservation",
+            integration: ["dhcp"],
+          },
+          {
+            title: "Leases",
+            url: "/dhcp-leases",
+            icon: Clock,
+            objectType: "dhcplease",
+            integration: ["dhcp"],
+          },
+        ],
+      },
+      {
+        label: "DNS",
+        items: [
+          {
+            title: "Zones",
+            url: "/dns-zones",
+            icon: Layers,
+            objectType: "dnszone",
+            integration: ["dns"],
+          },
+          {
+            title: "Records",
+            url: "/dns-records",
+            icon: FileSignature,
+            objectType: "dnsrecord",
+            integration: ["dns"],
+          },
+        ],
+      },
+    ],
+  },
 ]
 
 // A sidebar category group whose label toggles its items open/closed. Collapse

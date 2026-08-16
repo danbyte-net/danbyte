@@ -139,6 +139,11 @@ import { Route as FloorplansIndexRouteImport } from './routes/floorplans.index'
 import { Route as FloorTileTypesIndexRouteImport } from './routes/floor-tile-types.index'
 import { Route as FhrpGroupsIndexRouteImport } from './routes/fhrp-groups.index'
 import { Route as ExportTemplatesIndexRouteImport } from './routes/export-templates.index'
+import { Route as DnsZonesIndexRouteImport } from './routes/dns-zones.index'
+import { Route as DnsRecordsIndexRouteImport } from './routes/dns-records.index'
+import { Route as DhcpScopesIndexRouteImport } from './routes/dhcp-scopes.index'
+import { Route as DhcpReservationsIndexRouteImport } from './routes/dhcp-reservations.index'
+import { Route as DhcpLeasesIndexRouteImport } from './routes/dhcp-leases.index'
 import { Route as DevicesIndexRouteImport } from './routes/devices.index'
 import { Route as DeviceTypesIndexRouteImport } from './routes/device-types.index'
 import { Route as DeviceRolesIndexRouteImport } from './routes/device-roles.index'
@@ -1052,6 +1057,31 @@ const ExportTemplatesIndexRoute = ExportTemplatesIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ExportTemplatesRoute,
+} as any)
+const DnsZonesIndexRoute = DnsZonesIndexRouteImport.update({
+  id: '/dns-zones/',
+  path: '/dns-zones/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DnsRecordsIndexRoute = DnsRecordsIndexRouteImport.update({
+  id: '/dns-records/',
+  path: '/dns-records/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DhcpScopesIndexRoute = DhcpScopesIndexRouteImport.update({
+  id: '/dhcp-scopes/',
+  path: '/dhcp-scopes/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DhcpReservationsIndexRoute = DhcpReservationsIndexRouteImport.update({
+  id: '/dhcp-reservations/',
+  path: '/dhcp-reservations/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DhcpLeasesIndexRoute = DhcpLeasesIndexRouteImport.update({
+  id: '/dhcp-leases/',
+  path: '/dhcp-leases/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const DevicesIndexRoute = DevicesIndexRouteImport.update({
   id: '/',
@@ -2632,6 +2662,11 @@ export interface FileRoutesByFullPath {
   '/device-roles/': typeof DeviceRolesIndexRoute
   '/device-types/': typeof DeviceTypesIndexRoute
   '/devices/': typeof DevicesIndexRoute
+  '/dhcp-leases/': typeof DhcpLeasesIndexRoute
+  '/dhcp-reservations/': typeof DhcpReservationsIndexRoute
+  '/dhcp-scopes/': typeof DhcpScopesIndexRoute
+  '/dns-records/': typeof DnsRecordsIndexRoute
+  '/dns-zones/': typeof DnsZonesIndexRoute
   '/export-templates/': typeof ExportTemplatesIndexRoute
   '/fhrp-groups/': typeof FhrpGroupsIndexRoute
   '/floor-tile-types/': typeof FloorTileTypesIndexRoute
@@ -2970,6 +3005,11 @@ export interface FileRoutesByTo {
   '/device-roles': typeof DeviceRolesIndexRoute
   '/device-types': typeof DeviceTypesIndexRoute
   '/devices': typeof DevicesIndexRoute
+  '/dhcp-leases': typeof DhcpLeasesIndexRoute
+  '/dhcp-reservations': typeof DhcpReservationsIndexRoute
+  '/dhcp-scopes': typeof DhcpScopesIndexRoute
+  '/dns-records': typeof DnsRecordsIndexRoute
+  '/dns-zones': typeof DnsZonesIndexRoute
   '/export-templates': typeof ExportTemplatesIndexRoute
   '/fhrp-groups': typeof FhrpGroupsIndexRoute
   '/floor-tile-types': typeof FloorTileTypesIndexRoute
@@ -3365,6 +3405,11 @@ export interface FileRoutesById {
   '/device-roles/': typeof DeviceRolesIndexRoute
   '/device-types/': typeof DeviceTypesIndexRoute
   '/devices/': typeof DevicesIndexRoute
+  '/dhcp-leases/': typeof DhcpLeasesIndexRoute
+  '/dhcp-reservations/': typeof DhcpReservationsIndexRoute
+  '/dhcp-scopes/': typeof DhcpScopesIndexRoute
+  '/dns-records/': typeof DnsRecordsIndexRoute
+  '/dns-zones/': typeof DnsZonesIndexRoute
   '/export-templates/': typeof ExportTemplatesIndexRoute
   '/fhrp-groups/': typeof FhrpGroupsIndexRoute
   '/floor-tile-types/': typeof FloorTileTypesIndexRoute
@@ -3761,6 +3806,11 @@ export interface FileRouteTypes {
     | '/device-roles/'
     | '/device-types/'
     | '/devices/'
+    | '/dhcp-leases/'
+    | '/dhcp-reservations/'
+    | '/dhcp-scopes/'
+    | '/dns-records/'
+    | '/dns-zones/'
     | '/export-templates/'
     | '/fhrp-groups/'
     | '/floor-tile-types/'
@@ -4099,6 +4149,11 @@ export interface FileRouteTypes {
     | '/device-roles'
     | '/device-types'
     | '/devices'
+    | '/dhcp-leases'
+    | '/dhcp-reservations'
+    | '/dhcp-scopes'
+    | '/dns-records'
+    | '/dns-zones'
     | '/export-templates'
     | '/fhrp-groups'
     | '/floor-tile-types'
@@ -4493,6 +4548,11 @@ export interface FileRouteTypes {
     | '/device-roles/'
     | '/device-types/'
     | '/devices/'
+    | '/dhcp-leases/'
+    | '/dhcp-reservations/'
+    | '/dhcp-scopes/'
+    | '/dns-records/'
+    | '/dns-zones/'
     | '/export-templates/'
     | '/fhrp-groups/'
     | '/floor-tile-types/'
@@ -4743,6 +4803,11 @@ export interface RootRouteChildren {
   ClusterTypesIndexRoute: typeof ClusterTypesIndexRoute
   ClustersIndexRoute: typeof ClustersIndexRoute
   DeviceRolesIndexRoute: typeof DeviceRolesIndexRoute
+  DhcpLeasesIndexRoute: typeof DhcpLeasesIndexRoute
+  DhcpReservationsIndexRoute: typeof DhcpReservationsIndexRoute
+  DhcpScopesIndexRoute: typeof DhcpScopesIndexRoute
+  DnsRecordsIndexRoute: typeof DnsRecordsIndexRoute
+  DnsZonesIndexRoute: typeof DnsZonesIndexRoute
   IpsIndexRoute: typeof IpsIndexRoute
   JobsIndexRoute: typeof JobsIndexRoute
   LabelTemplatesIndexRoute: typeof LabelTemplatesIndexRoute
@@ -5690,6 +5755,41 @@ declare module '@tanstack/react-router' {
       fullPath: '/export-templates/'
       preLoaderRoute: typeof ExportTemplatesIndexRouteImport
       parentRoute: typeof ExportTemplatesRoute
+    }
+    '/dns-zones/': {
+      id: '/dns-zones/'
+      path: '/dns-zones'
+      fullPath: '/dns-zones/'
+      preLoaderRoute: typeof DnsZonesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dns-records/': {
+      id: '/dns-records/'
+      path: '/dns-records'
+      fullPath: '/dns-records/'
+      preLoaderRoute: typeof DnsRecordsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dhcp-scopes/': {
+      id: '/dhcp-scopes/'
+      path: '/dhcp-scopes'
+      fullPath: '/dhcp-scopes/'
+      preLoaderRoute: typeof DhcpScopesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dhcp-reservations/': {
+      id: '/dhcp-reservations/'
+      path: '/dhcp-reservations'
+      fullPath: '/dhcp-reservations/'
+      preLoaderRoute: typeof DhcpReservationsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dhcp-leases/': {
+      id: '/dhcp-leases/'
+      path: '/dhcp-leases'
+      fullPath: '/dhcp-leases/'
+      preLoaderRoute: typeof DhcpLeasesIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/devices/': {
       id: '/devices/'
@@ -8655,6 +8755,11 @@ const rootRouteChildren: RootRouteChildren = {
   ClusterTypesIndexRoute: ClusterTypesIndexRoute,
   ClustersIndexRoute: ClustersIndexRoute,
   DeviceRolesIndexRoute: DeviceRolesIndexRoute,
+  DhcpLeasesIndexRoute: DhcpLeasesIndexRoute,
+  DhcpReservationsIndexRoute: DhcpReservationsIndexRoute,
+  DhcpScopesIndexRoute: DhcpScopesIndexRoute,
+  DnsRecordsIndexRoute: DnsRecordsIndexRoute,
+  DnsZonesIndexRoute: DnsZonesIndexRoute,
   IpsIndexRoute: IpsIndexRoute,
   JobsIndexRoute: JobsIndexRoute,
   LabelTemplatesIndexRoute: LabelTemplatesIndexRoute,

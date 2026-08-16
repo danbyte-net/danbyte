@@ -42,6 +42,9 @@ class DnsZoneViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         conn = self.request.query_params.get("connection")
         if conn:
             qs = qs.filter(connection_id=conn)
+        s = (self.request.query_params.get("search") or "").strip()
+        if s:
+            qs = qs.filter(name__icontains=s)
         return qs
 
     @action(detail=True, methods=["get"])

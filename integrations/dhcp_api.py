@@ -67,6 +67,9 @@ class DhcpScopeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         conn = self.request.query_params.get("connection")
         if conn:
             qs = qs.filter(connection_id=conn)
+        s = (self.request.query_params.get("search") or "").strip()
+        if s:
+            qs = qs.filter(scope_id__icontains=s) | qs.filter(name__icontains=s)
         return qs
 
 
@@ -130,6 +133,10 @@ class DhcpReservationViewSet(IntegrationToggleMixin, TenantScopedViewSet):
             qs = qs.filter(scope__connection_id=conn)
         if self.request.query_params.get("drift") == "1":
             qs = qs.exclude(drift="")
+        s = (self.request.query_params.get("search") or "").strip()
+        if s:
+            qs = (qs.filter(ip__icontains=s) | qs.filter(mac__icontains=s)
+                  | qs.filter(name__icontains=s))
         return qs
 
     def _scope_in_tenant(self, scope) -> DhcpScope:
@@ -245,4 +252,8 @@ class DhcpLeaseViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         conn = self.request.query_params.get("connection")
         if conn:
             qs = qs.filter(scope__connection_id=conn)
+        s = (self.request.query_params.get("search") or "").strip()
+        if s:
+            qs = (qs.filter(ip__icontains=s) | qs.filter(mac__icontains=s)
+                  | qs.filter(hostname__icontains=s))
         return qs

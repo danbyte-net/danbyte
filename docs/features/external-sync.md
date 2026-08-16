@@ -16,6 +16,19 @@ All three integrations ship **off**. A tenant admin enables them under
 virtualization sync. While a toggle is off, that integration's pages and API
 endpoints are hidden for the tenant and its scheduled syncs don't run.
 
+## Where things live
+
+Two places, on purpose:
+
+- **Integrations → Windows servers / Virtualization sources** — where you
+  *configure connections*: host, credentials, roles, sync mode, and the
+  per-server drift/review views.
+- **DNS & DHCP** (sidebar section) — where you *read and act on the synced
+  data*, aggregated across every server: **DHCP** → Scopes, Reservations,
+  Leases; **DNS** → Zones, Records. Each list filters by server and links back
+  to the prefixes and IP addresses the data maps to. These pages appear once
+  the matching toggle is on.
+
 ## Connections
 
 ### Windows servers (DHCP / DNS)
