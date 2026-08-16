@@ -24,7 +24,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { Boxes, Plus, Trash2 } from "lucide-react"
+import { Boxes, Plus, Trash2, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -40,8 +40,9 @@ import {
   renderTemplateName,
 } from "@/lib/faceplate-geometry"
 import {
-  autoLayout,
+  autoArrange,
   portNumber,
+  type AutoArrangeOpts,
   type FaceplateDoc,
   type FaceplateGroup,
   type FaceplateSide,
@@ -75,6 +76,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { FormCheckbox, FormFooter, FormText } from "@/components/forms"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
@@ -118,6 +124,14 @@ const BUILDER_SCALE = 2.2
 
 // Common bank sizes; anything else goes through the Custom… input.
 const BANK_PRESETS = [0, 4, 6, 8, 12]
+
+// Extra spacing before a group, in mm (the "distance from each" control).
+const GAP_PRESETS: { value: number; label: string }[] = [
+  { value: 0, label: "No gap" },
+  { value: 4, label: "Small gap" },
+  { value: 10, label: "Medium gap" },
+  { value: 20, label: "Large gap" },
+]
 
 // Drag-id separator — a control char that can never appear in a template name.
 const SEP = "\u001f"
@@ -184,8 +198,8 @@ export function DeviceTypeFaceplatePane({
   const templatesLoaded = templateQueries.every((q) => !q.isLoading)
 
   const seed = useMemo<FaceplateDoc>(
-    () => deviceType.faceplate ?? autoLayout(templatesByKind.interface ?? []),
-    [deviceType.faceplate, templatesByKind.interface]
+    () => deviceType.faceplate ?? autoArrange(templatesByKind),
+    [deviceType.faceplate, templatesByKind]
   )
   const [draft, setDraft] = useState<FaceplateDoc>(seed)
   const [dirty, setDirty] = useState(false)
@@ -311,7 +325,7 @@ export function DeviceTypeFaceplatePane({
         qc.invalidateQueries({ queryKey: ["device-modules-faceplate"] })
       setDirty(false)
       if (doc === null) {
-        setDraft(autoLayout(templatesByKind.interface ?? []))
+        setDraft(autoArrange(templatesByKind))
         toast.success("Faceplate reset to automatic layout")
       } else {
         toast.success("Faceplate saved")
@@ -680,6 +694,26 @@ export function DeviceTypeFaceplatePane({
                       aria-label="Custom bank size"
                     />
                   )}
+                  <Select
+                    value={String(selected.gapMm ?? 0)}
+                    onValueChange={(v) =>
+                      patchGroup(selected.id, {
+                        gapMm: Number(v) || undefined,
+                      })
+                    }
+                    disabled={!canWrite}
+                  >
+                    <SelectTrigger size="sm" className="h-7 w-28 text-[12px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {GAP_PRESETS.map((g) => (
+                        <SelectItem key={g.value} value={String(g.value)}>
+                          {g.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   {deviceType.u_height > 1 && (
                     <Select
                       value={String(selected.u ?? 1)}
@@ -870,6 +904,12 @@ export function DeviceTypeFaceplatePane({
             >
               Discard changes
             </Button>
+            <AutoArrangePopover
+              present={KINDS.filter(
+                (k) => (templatesByKind[k]?.length ?? 0) > 0
+              )}
+              onApply={(opts) => update(autoArrange(templatesByKind, opts))}
+            />
             <Button variant="outline" onClick={() => setConfirmReset(true)}>
               Reset to auto
             </Button>
@@ -1180,6 +1220,11 @@ function BuilderGroup({
         selected && "ring-1 ring-primary/60",
         isOver && "bg-primary/5 ring-1 ring-primary/60"
       )}
+      style={
+        g.gapMm
+          ? { marginLeft: Math.round(g.gapMm * BUILDER_SCALE) }
+          : undefined
+      }
     >
       <SortableContext items={ids} strategy={rectSortingStrategy}>
         <div
@@ -1247,5 +1292,118 @@ function NewGroupZone({
     >
       <Plus className="h-4 w-4" />
     </button>
+  )
+}
+
+/** The "auto-fill" popover: pick which component kinds to include, an optional
+ * forced row count and bank size, then regenerate the whole panel from the
+ * device type's templates. Fills the draft (non-destructive) — the operator
+ * still saves. */
+function AutoArrangePopover({
+  present,
+  onApply,
+  disabled,
+}: {
+  present: SlotKind[]
+  onApply: (opts: AutoArrangeOpts) => void
+  disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [rows, setRows] = useState<0 | 1 | 2 | 3 | 4>(0)
+  const [bank, setBank] = useState(-1)
+  const [kinds, setKinds] = useState<Set<SlotKind>>(() => new Set(present))
+
+  // Re-seed the kind checkboxes whenever the popover opens, so newly-added
+  // component kinds show up ticked.
+  const onOpenChange = (o: boolean) => {
+    if (o) setKinds(new Set(present))
+    setOpen(o)
+  }
+
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" disabled={disabled}>
+          <Wand2 className="h-3.5 w-3.5" /> Auto-arrange…
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 space-y-3">
+        <div>
+          <p className="mb-1.5 text-xs font-medium">Include</p>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+            {present.map((k) => (
+              <FormCheckbox
+                key={k}
+                label={KIND_TITLE[k]}
+                checked={kinds.has(k)}
+                onChange={(on) =>
+                  setKinds((s) => {
+                    const next = new Set(s)
+                    if (on) next.add(k)
+                    else next.delete(k)
+                    return next
+                  })
+                }
+                className="items-center gap-1.5 text-[12px]"
+              />
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="space-y-1 text-[11px] text-muted-foreground">
+            Rows
+            <Select
+              value={String(rows)}
+              onValueChange={(v) => setRows(Number(v) as 0 | 1 | 2 | 3 | 4)}
+            >
+              <SelectTrigger size="sm" className="h-7 text-[12px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="0">Auto</SelectItem>
+                <SelectItem value="1">1 row</SelectItem>
+                <SelectItem value="2">2 rows</SelectItem>
+                <SelectItem value="3">3 rows</SelectItem>
+                <SelectItem value="4">4 rows</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="space-y-1 text-[11px] text-muted-foreground">
+            Banks
+            <Select
+              value={String(bank)}
+              onValueChange={(v) => setBank(Number(v))}
+            >
+              <SelectTrigger size="sm" className="h-7 text-[12px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="-1">Auto</SelectItem>
+                {BANK_PRESETS.map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    {n === 0 ? "No banks" : `Banks of ${n}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+        </div>
+        <Button
+          className="w-full"
+          size="sm"
+          disabled={kinds.size === 0}
+          onClick={() => {
+            onApply({
+              rows: rows || undefined,
+              bank: bank < 0 ? undefined : bank,
+              kinds: [...kinds],
+            })
+            setOpen(false)
+          }}
+        >
+          Arrange {kinds.size} kind{kinds.size === 1 ? "" : "s"}
+        </Button>
+      </PopoverContent>
+    </Popover>
   )
 }

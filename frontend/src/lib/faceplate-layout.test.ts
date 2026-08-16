@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   MARKER_TERMINATION_KIND,
+  autoArrange,
   composeModuleFaceplates,
   markerTerminationKind,
   type FaceplateDoc,
@@ -199,5 +200,60 @@ describe("markerTerminationKind", () => {
       "power-port",
       "rear-port",
     ])
+  })
+})
+
+describe("autoArrange", () => {
+  const ports = (prefix: string, n: number, type = "1000base-t") =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `${prefix}${i + 1}`,
+      name: `${prefix}${i + 1}`,
+      type,
+    }))
+
+  it("splits front ports to front and rear ports to rear, tagging kind", () => {
+    const doc = autoArrange({
+      interface: ports("Gi", 4),
+      "front-port": ports("Front", 24, "8p8c"),
+      "rear-port": ports("Rear", 24, "8p8c"),
+    })
+    // interfaces + front ports on the front, rear ports on the rear.
+    const frontKinds = new Set(
+      doc.front.flatMap((g) =>
+        g.slots.map((s) => (s.t === "port" ? s.kind : null))
+      )
+    )
+    expect(doc.rear.length).toBeGreaterThan(0)
+    // front-port slots carry their kind; interface slots leave it undefined.
+    expect(frontKinds.has("front-port")).toBe(true)
+    expect(frontKinds.has(undefined)).toBe(true)
+    const rearKinds = new Set(
+      doc.rear.flatMap((g) =>
+        g.slots.map((s) => (s.t === "port" ? s.kind : null))
+      )
+    )
+    expect([...rearKinds]).toEqual(["rear-port"])
+  })
+
+  it("honors a forced row count and bank size", () => {
+    const doc = autoArrange(
+      { "rear-port": ports("Rear", 48, "8p8c") },
+      { rows: 4, bank: 6 }
+    )
+    expect(doc.rear[0].rows).toBe(4)
+    expect(doc.rear[0].bank).toBe(6)
+  })
+
+  it("restricts to the requested kinds", () => {
+    const doc = autoArrange(
+      {
+        interface: ports("Gi", 4),
+        "front-port": ports("Front", 4, "8p8c"),
+        "rear-port": ports("Rear", 4, "8p8c"),
+      },
+      { kinds: ["rear-port"] }
+    )
+    expect(doc.front).toHaveLength(0)
+    expect(doc.rear).toHaveLength(1)
   })
 })

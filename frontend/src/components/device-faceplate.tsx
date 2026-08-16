@@ -433,7 +433,10 @@ function GroupBlock({
   const banks = chunk(cells, g.bank > 0 ? g.bank : cells.length)
 
   return (
-    <div className="flex items-center gap-2">
+    <div
+      className="flex items-center gap-2"
+      style={g.gapMm ? { marginLeft: Math.round(g.gapMm * scale) } : undefined}
+    >
       {g.label && (
         <span className="num w-fit shrink-0 font-mono text-[9px] text-muted-foreground">
           {g.label}

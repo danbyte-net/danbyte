@@ -70,6 +70,9 @@ export interface FaceplateGroup {
   rows: 1 | 2 | 3 | 4
   /** Visual gap every N ports (0 = none). */
   bank: number
+  /** Extra spacing (mm) before this group on the panel — lets the builder push
+   * groups apart. 0/undefined = the default inter-group gap. */
+  gapMm?: number
   /** Which rack unit of the panel this group sits in (1-based lane, top
    * lane = 1). Multi-U devices place groups per U; default 1. */
   u?: number
@@ -229,15 +232,109 @@ function makeAutoGroup(
   prefix: string,
   run: PortComponent[],
   family: ConnectorFamily,
-  index: number
+  index: number,
+  opts: { kind?: SlotKind; rows?: 0 | 1 | 2 | 3 | 4; bank?: number } = {}
 ): FaceplateGroup {
   const twoRow = run.length > 12 && !SINGLE_ROW_FAMILIES.has(family)
+  const rows = opts.rows ? opts.rows : twoRow ? 2 : 1
+  const bank =
+    opts.bank !== undefined && opts.bank >= 0
+      ? opts.bank
+      : rows >= 2 && run.length >= 24
+        ? 12
+        : 0
+  const kind = opts.kind && opts.kind !== "interface" ? opts.kind : undefined
   return {
     id: `auto-${index}-${prefix || "ports"}`,
     label: prefix || undefined,
-    rows: twoRow ? 2 : 1,
-    bank: twoRow && run.length >= 24 ? 12 : 0,
-    slots: run.map((p) => ({ t: "port", name: p.name })),
+    rows: rows as 1 | 2 | 3 | 4,
+    bank,
+    slots: run.map((p) => ({
+      t: "port",
+      name: p.name,
+      ...(kind ? { kind } : {}),
+    })),
+  }
+}
+
+// Port kinds that belong on the front vs rear panel when auto-arranging.
+const FRONT_AUTO_KINDS: SlotKind[] = [
+  "interface",
+  "front-port",
+  "console-port",
+  "console-server-port",
+  "power-port",
+  "power-outlet",
+  "aux-port",
+]
+const REAR_AUTO_KINDS: SlotKind[] = ["rear-port"]
+
+export interface AutoArrangeOpts {
+  /** Force a row count on every generated group; 0 = size automatically. */
+  rows?: 0 | 1 | 2 | 3 | 4
+  /** Force a bank size; -1 = choose automatically. */
+  bank?: number
+  /** Restrict to these kinds; omit to include every kind present. */
+  kinds?: SlotKind[]
+}
+
+/** Auto-arrange a full faceplate from every component kind — the builder's
+ * "auto-fill". Interfaces, front ports, console/power/aux land on the front;
+ * rear ports on the rear. Each kind is grouped by slot prefix and split where
+ * the connector family changes, exactly like {@link autoLayout}. */
+export function autoArrange(
+  byKind: Partial<Record<SlotKind, PortComponent[]>>,
+  opts: AutoArrangeOpts = {}
+): FaceplateDoc {
+  const include = opts.kinds ? new Set(opts.kinds) : null
+  let seq = 0
+
+  const buildSide = (kinds: SlotKind[]): FaceplateGroup[] => {
+    const out: { g: FaceplateGroup; fam: ConnectorFamily }[] = []
+    for (const kind of kinds) {
+      if (include && !include.has(kind)) continue
+      const comps = byKind[kind] ?? []
+      if (!comps.length) continue
+      const byPrefix = new Map<string, PortComponent[]>()
+      for (const p of comps) {
+        const key = slotPrefix(p.name)
+        const list = byPrefix.get(key)
+        if (list) list.push(p)
+        else byPrefix.set(key, [p])
+      }
+      for (const [prefix, list] of byPrefix) {
+        list.sort(byPortOrder)
+        let run: PortComponent[] = []
+        let runFamily: ConnectorFamily | null = null
+        const flush = () => {
+          if (!run.length || runFamily == null) return
+          out.push({
+            g: makeAutoGroup(prefix, run, runFamily, seq++, {
+              kind,
+              rows: opts.rows,
+              bank: opts.bank,
+            }),
+            fam: runFamily,
+          })
+          run = []
+        }
+        for (const p of list) {
+          const fam = familyForType(p.type ?? "")
+          if (runFamily !== null && fam !== runFamily) flush()
+          runFamily = fam
+          run.push(p)
+        }
+        flush()
+      }
+    }
+    out.sort((a, b) => familyRank(a.fam) - familyRank(b.fam))
+    return out.map((x) => x.g)
+  }
+
+  return {
+    v: 1,
+    front: buildSide(FRONT_AUTO_KINDS),
+    rear: buildSide(REAR_AUTO_KINDS),
   }
 }
 
