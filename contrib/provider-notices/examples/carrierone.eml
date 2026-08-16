@@ -1,0 +1,21 @@
+From: noc@carrierone.example
+To: notices@acme.example
+Subject: Planned Work Notification [CARR1-2026-09115]
+Date: Sun, 16 Aug 2026 09:00:00 +0000
+Content-Type: text/plain; charset=utf-8
+
+Reference:   CARR1-2026-09115
+Type:        maintenance
+Status:      tentative
+Start:       2026-08-25 23:00 UTC
+End:         2026-08-26 03:00 UTC
+Circuit ID:  DK-31-0042
+Summary:     Line card replacement, PoP CPH-2
+
+Dear customer,
+
+we will perform a line card replacement in PoP CPH-2. Traffic on the listed
+circuit will be rerouted; expect up to 30 minutes of downtime inside the
+window.
+
+CarrierOne NOC

@@ -124,6 +124,17 @@ Authorization: Token <api token with maintenanceevent add+change>
 - Impact rows pass the token's own view RBAC per object, and the silence is
   resynced after every ingest.
 
+### The reference parser
+
+`contrib/provider-notices/ingest_mail.py` in the repository is a working,
+stdlib-only starting point: it polls an IMAP mailbox (or takes one `.eml` via
+`--file`, the development loop), runs each mail through per-provider parser
+functions, and POSTs the result here — original mail preserved in
+`raw_email`, carrier circuit ids mapped to Danbyte circuits. Adding a
+provider is one function returning the payload above; everything else —
+dedup, statuses, silences, RBAC — is the endpoint's job. Run it from cron or
+a systemd timer; unparsed mail is left unread for the next pass.
+
 ## API
 
 | Endpoint | Purpose |
