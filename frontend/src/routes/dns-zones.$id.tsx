@@ -43,15 +43,32 @@ function Body({ zone }: { zone: DnsZone }) {
   const { canDo } = useMe()
   const [showLive, setShowLive] = useState(false)
 
-  const setSync = useMutation({
-    mutationFn: (on: boolean) =>
+  const canImport = canDo("ipaddress", "add")
+
+  const patchZone = useMutation({
+    mutationFn: (body: Partial<Pick<DnsZone, "sync" | "auto_create">>) =>
       api<DnsZone>(`/api/dns-zones/${zone.id}/`, {
         method: "PATCH",
-        body: JSON.stringify({ sync: on }),
+        body: JSON.stringify(body),
       }),
-    onSuccess: (_, on) => {
-      toast.success(on ? "Reconciliation on" : "Reconciliation off")
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["dns-zone"] })
+      qc.invalidateQueries({ queryKey: ["dns-records"] })
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  const importAll = useMutation({
+    mutationFn: () =>
+      api<{ created: number; skipped: number }>(
+        "/api/dns-records/import_unmatched/",
+        { method: "POST", body: JSON.stringify({ zone: zone.id }) }
+      ),
+    onSuccess: (r) => {
+      toast.success(
+        `Imported ${r.created} record${r.created === 1 ? "" : "s"}` +
+          (r.skipped ? ` — ${r.skipped} skipped (no prefix)` : "")
+      )
       qc.invalidateQueries({ queryKey: ["dns-records"] })
     },
     onError: (e) => apiErrorToast(e),
@@ -91,15 +108,30 @@ function Body({ zone }: { zone: DnsZone }) {
       }
       actions={
         canDo("dnszone", "change") && (
-          <span className="flex items-center gap-2 text-xs text-muted-foreground">
-            Reconcile
-            <Switch
-              checked={zone.sync}
-              disabled={setSync.isPending}
-              onCheckedChange={(on) => setSync.mutate(on)}
-              aria-label="Reconcile zone"
-            />
-          </span>
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+              Reconcile
+              <Switch
+                checked={zone.sync}
+                disabled={patchZone.isPending}
+                onCheckedChange={(on) => patchZone.mutate({ sync: on })}
+                aria-label="Reconcile zone"
+              />
+            </span>
+            {zone.sync && (
+              <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                Auto-add to IPAM
+                <Switch
+                  checked={zone.auto_create}
+                  disabled={patchZone.isPending}
+                  onCheckedChange={(on) =>
+                    patchZone.mutate({ auto_create: on })
+                  }
+                  aria-label="Auto-create IPs from records"
+                />
+              </span>
+            )}
+          </div>
         )
       }
       tabs={[{ value: "records", label: "Records" }]}
@@ -114,11 +146,25 @@ function Body({ zone }: { zone: DnsZone }) {
           </EmptyState>
         ) : (
           <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              Address records synced from this zone, linked to their IP
-              addresses. Other record types (CNAME, MX, TXT…) aren't stored —
-              use the live view for the full dump.
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <p className="max-w-prose text-xs text-muted-foreground">
+                Address records synced from this zone, linked to their IP
+                addresses. Other record types (CNAME, MX, TXT…) aren't stored —
+                use the live view for the full dump.
+              </p>
+              {canImport && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={importAll.isPending}
+                  onClick={() => importAll.mutate()}
+                >
+                  {importAll.isPending
+                    ? "Importing…"
+                    : "Add all unmatched to IPAM"}
+                </Button>
+              )}
+            </div>
             <DnsRecordsTable
               params={`zone=${zone.id}`}
               queryKey={["dns-records", "zone", zone.id]}

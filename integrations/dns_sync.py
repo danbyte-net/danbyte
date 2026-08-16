@@ -38,6 +38,66 @@ SKIP_ZONES = {"trustanchors"}
 _AD_HELPER_HOSTS = {"forestdnszones", "domaindnszones", "gc"}
 
 
+class DnsImportError(RuntimeError):
+    """Raised when a record can't be imported into IPAM (no containing prefix)."""
+
+
+def containing_prefix(tenant, ip: str):
+    """The smallest global-VRF prefix that contains ``ip``, or None."""
+    import ipaddress as _ip
+
+    from api.models import Prefix
+
+    try:
+        addr = _ip.ip_address(ip)
+    except ValueError:
+        return None
+    best = None
+    for p in Prefix.objects.filter(tenant=tenant, vrf__isnull=True):
+        try:
+            net = _ip.ip_network(p.cidr, strict=False)
+        except ValueError:
+            continue
+        if addr in net and (best is None or net.prefixlen > best[0].prefixlen):
+            best = (net, p)
+    return best[1] if best else None
+
+
+def import_record(record):
+    """Create an IPAddress for a DNS record's address and link it back.
+
+    Fills the IP's ``dns_name`` from the record. Raises :class:`DnsImportError`
+    when no prefix contains the address (an IP needs a prefix). Idempotent: if
+    the address already exists it's adopted and linked, not duplicated.
+    """
+    from api.models import IPAddress
+
+    tenant = record.zone.connection.tenant
+    row = IPAddress.objects.filter(
+        tenant=tenant, vrf__isnull=True, ip_address=record.ip
+    ).first()
+    if row is None:
+        prefix = containing_prefix(tenant, record.ip)
+        if prefix is None:
+            raise DnsImportError(
+                f"No prefix contains {record.ip} — create the prefix first, "
+                "then import."
+            )
+        dns_name = record.name if record.record_type in ("A", "AAAA") else ""
+        row = IPAddress.objects.create(
+            tenant=tenant, ip_address=record.ip, prefix=prefix,
+            dns_name=dns_name,
+            description=f"Imported from Windows DNS «{record.zone.connection.name}»",
+        )
+    else:
+        if record.record_type in ("A", "AAAA") and not row.dns_name:
+            row.dns_name = record.name
+            row.save(update_fields=["dns_name"])
+    record.ip_address = row
+    record.save(update_fields=["ip_address"])
+    return row
+
+
 def _preferred_name(server_names: set, zone_name: str) -> str:
     """Pick the name to fill a blank ``dns_name`` from an IP's server records.
 
@@ -221,9 +281,23 @@ def _reconcile(conn, synced_zones, data, now, counts) -> None:
         # real table — name/data are direction-specific.
         rec_name = server_name if rtype in ("A", "AAAA") else _fqdn(host, zone.name)
         rec_data = raw
+        linked = ip_row(ip)
+        # Opt-in auto-create: mint the IP for an untracked address when the zone
+        # asks for it and a prefix contains it (else leave it unlinked).
+        if linked is None and zone.auto_create:
+            prefix = containing_prefix(conn.tenant, ip)
+            if prefix is not None:
+                from api.models import IPAddress
+
+                linked = IPAddress.objects.create(
+                    tenant=conn.tenant, ip_address=ip, prefix=prefix,
+                    dns_name=rec_name if rtype in ("A", "AAAA") else "",
+                    description=f"Imported from Windows DNS «{conn.name}»",
+                )
+                counts["filled"] += 1
         DnsRecord.objects.update_or_create(
             zone=zone, name=rec_name, record_type=rtype, data=rec_data,
-            defaults={"ip": ip, "ip_address": ip_row(ip), "last_seen_at": now},
+            defaults={"ip": ip, "ip_address": linked, "last_seen_at": now},
         )
         fresh_records.add((zone.id, rec_name, rtype, rec_data))
 

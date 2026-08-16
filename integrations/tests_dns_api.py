@@ -39,7 +39,8 @@ class DnsApiTests(APITestCase):
         self.user = User.objects.create_user("op", password="x")
         UserProfile.objects.create(user=self.user).tenants.add(self.tenant)
         p = ObjectPermission.objects.create(
-            name="dns-op", object_types=["dnszone", "dnsdrift", "dnsrecord"],
+            name="dns-op",
+            object_types=["dnszone", "dnsdrift", "dnsrecord", "ipaddress"],
             actions=["view", "add", "change", "delete"],
         )
         p.users.add(self.user)
@@ -140,3 +141,77 @@ class DnsApiTests(APITestCase):
             dns_sync_enabled=False
         )
         self.assertEqual(self.client.get("/api/dns-records/").status_code, 404)
+
+    def test_import_record_creates_ip(self):
+        self.zone.sync = True
+        self.zone.save(update_fields=["sync"])
+        rec = DnsRecord.objects.create(
+            zone=self.zone, name="new.danbyte.lan", record_type="A",
+            data="10.77.0.88", ip="10.77.0.88",
+        )
+        res = self.client.post(f"/api/dns-records/{rec.id}/import/")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.json()["ok"])
+        rec.refresh_from_db()
+        self.assertIsNotNone(rec.ip_address)
+        self.assertEqual(rec.ip_address.dns_name, "new.danbyte.lan")
+
+    def test_import_no_prefix_reports_error(self):
+        self.zone.sync = True
+        self.zone.save(update_fields=["sync"])
+        rec = DnsRecord.objects.create(
+            zone=self.zone, name="off.danbyte.lan", record_type="A",
+            data="203.0.113.5", ip="203.0.113.5",
+        )
+        res = self.client.post(f"/api/dns-records/{rec.id}/import/")
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(res.json()["ok"])
+
+    def test_import_requires_ipaddress_add(self):
+        from django.contrib.auth.models import User
+
+        from auth_api.models import ObjectPermission, UserProfile
+
+        viewer = User.objects.create_user("viewer", password="x")
+        UserProfile.objects.create(user=viewer).tenants.add(self.tenant)
+        p = ObjectPermission.objects.create(
+            name="dns-view", object_types=["dnszone", "dnsrecord"],
+            actions=["view"],
+        )
+        p.users.add(viewer)
+        p.tenants.set([self.tenant])
+        self.zone.sync = True
+        self.zone.save(update_fields=["sync"])
+        rec = DnsRecord.objects.create(
+            zone=self.zone, name="x.danbyte.lan", record_type="A",
+            data="10.77.0.88", ip="10.77.0.88",
+        )
+        self.client.force_login(viewer)
+        self.client.post(f"/api/tenants/{self.tenant.id}/switch/")
+        res = self.client.post(f"/api/dns-records/{rec.id}/import/")
+        self.assertEqual(res.status_code, 403)
+
+    def test_import_unmatched_bulk(self):
+        self.zone.sync = True
+        self.zone.save(update_fields=["sync"])
+        for i, ip in enumerate(["10.77.0.91", "10.77.0.92", "203.0.113.9"]):
+            DnsRecord.objects.create(
+                zone=self.zone, name=f"h{i}.danbyte.lan", record_type="A",
+                data=ip, ip=ip,
+            )
+        res = self.client.post(
+            "/api/dns-records/import_unmatched/", {"zone": str(self.zone.id)},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json()["created"], 2)
+        self.assertEqual(res.json()["skipped"], 1)  # 203.0.113.9 has no prefix
+
+    def test_zone_auto_create_is_writable(self):
+        res = self.client.patch(
+            f"/api/dns-zones/{self.zone.id}/", {"auto_create": True},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.zone.refresh_from_db()
+        self.assertTrue(self.zone.auto_create)

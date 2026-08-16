@@ -625,6 +625,10 @@ class DnsZone(TimestampedModel):
     zone_type = models.CharField(max_length=32, blank=True, default="")
     is_reverse = models.BooleanField(default=False)
     sync = models.BooleanField(default=False)
+    # Opt-in: when reconciling, create an IPAddress for any record whose
+    # address isn't in IPAM yet (only where a containing prefix exists). Off by
+    # default — zero-prefilled-data means importing is a deliberate choice.
+    auto_create = models.BooleanField(default=False)
     record_count = models.PositiveIntegerField(default=0)
     last_seen_at = models.DateTimeField(null=True, blank=True)
 

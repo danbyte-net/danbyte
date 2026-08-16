@@ -327,3 +327,77 @@ class DnsRecordStoreTests(TestCase):
         ):
             dns_sync.sync_dns(self.conn)
         self.assertEqual(DnsRecord.objects.count(), 0)
+
+
+class DnsImportTests(TestCase):
+    """Manual import + opt-in auto-create of untracked DNS addresses."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.conn = WindowsServerConnection.objects.create(
+            tenant=self.tenant, name="dc1", host="192.0.2.10", username="svc",
+            credentials={"password": "pw"}, dns_enabled=True,
+        )
+        self.prefix = Prefix.objects.create(tenant=self.tenant, cidr="10.77.0.0/24")
+        self.zone = DnsZone.objects.create(
+            connection=self.conn, name="danbyte.lan", sync=True
+        )
+
+    def _record(self, ip, name="host.danbyte.lan", rtype="A"):
+        return DnsRecord.objects.create(
+            zone=self.zone, name=name, record_type=rtype, data=ip, ip=ip,
+        )
+
+    def test_import_creates_and_links_ip(self):
+        rec = self._record("10.77.0.80")
+        row = dns_sync.import_record(rec)
+        self.assertEqual(row.ip_address, "10.77.0.80")
+        self.assertEqual(row.dns_name, "host.danbyte.lan")
+        self.assertEqual(row.prefix, self.prefix)
+        rec.refresh_from_db()
+        self.assertEqual(rec.ip_address, row)
+
+    def test_import_without_prefix_raises(self):
+        rec = self._record("192.0.99.5")  # no containing prefix
+        with self.assertRaises(dns_sync.DnsImportError):
+            dns_sync.import_record(rec)
+
+    def test_import_adopts_existing_ip(self):
+        existing = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.77.0.80", prefix=self.prefix
+        )
+        rec = self._record("10.77.0.80")
+        row = dns_sync.import_record(rec)
+        self.assertEqual(row, existing)
+        self.assertEqual(IPAddress.objects.filter(ip_address="10.77.0.80").count(), 1)
+        row.refresh_from_db()
+        self.assertEqual(row.dns_name, "host.danbyte.lan")  # blank-filled
+
+    def test_auto_create_on_reconcile(self):
+        self.zone.auto_create = True
+        self.zone.save(update_fields=["auto_create"])
+        with mock.patch.object(
+            dns_sync, "run_json",
+            side_effect=[
+                [{"ZoneName": "danbyte.lan", "zone_type": "Primary",
+                  "IsReverseLookupZone": False}],
+                {"records": [
+                    {"zone": "danbyte.lan", "HostName": "new-host", "rtype": "A",
+                     "data": "10.77.0.90"},
+                    {"zone": "danbyte.lan", "HostName": "off-net", "rtype": "A",
+                     "data": "192.0.99.9"},  # no prefix → stays unlinked
+                ], "counts": [{"zone": "danbyte.lan", "n": 2}]},
+            ],
+        ):
+            dns_sync.sync_dns(self.conn)
+        self.assertTrue(
+            IPAddress.objects.filter(ip_address="10.77.0.90").exists()
+        )
+        self.assertFalse(
+            IPAddress.objects.filter(ip_address="192.0.99.9").exists()
+        )
+        linked = DnsRecord.objects.get(data="10.77.0.90")
+        self.assertIsNotNone(linked.ip_address)
+        unlinked = DnsRecord.objects.get(data="192.0.99.9")
+        self.assertIsNone(unlinked.ip_address)

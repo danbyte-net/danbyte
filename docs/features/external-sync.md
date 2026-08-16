@@ -168,6 +168,22 @@ Only reconciled zones store records (matching the per-zone opt-in); records
 are pruned as they leave the server, and cleared entirely if you switch a
 zone's reconcile off.
 
+### Bringing records into IPAM
+
+A record for an address Danbyte doesn't track yet shows **· not in IPAM**.
+To pull it in:
+
+- **Add to IPAM** on the record creates the IP address, links the record, and
+  sets the IP's DNS name from it. On a zone page, **Add all unmatched to IPAM**
+  does the whole zone at once.
+- Import needs a **containing prefix** — an IP must belong to one. If no prefix
+  covers the address (common for a public IPv6 record), the import is refused
+  with a message; create the prefix first, then import. Bulk import reports how
+  many were skipped for this reason.
+- **Auto-add to IPAM** (per-zone switch) does it automatically on every sync —
+  off by default, since importing is a deliberate choice. It still only creates
+  IPs where a prefix exists.
+
 ## Virtualization (Proxmox VE)
 
 Enable the **Virtualization sync** toggle and add the cluster under

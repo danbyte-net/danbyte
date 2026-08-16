@@ -108,12 +108,7 @@ function DhcpLeasesPage() {
           server's page, and its active leases appear here.
         </EmptyState>
       ) : (
-        <DataTable
-          data={rows}
-          columns={columns}
-          tableId="dhcp-leases-all"
-          flexColumn="hostname"
-        />
+        <DataTable data={rows} columns={columns} tableId="dhcp-leases-all" />
       )}
     </ListPageShell>
   )

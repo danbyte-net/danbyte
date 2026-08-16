@@ -127,12 +127,7 @@ function DhcpScopesPage() {
           its scopes appear here.
         </EmptyState>
       ) : (
-        <DataTable
-          data={rows}
-          columns={columns}
-          tableId="dhcp-scopes-all"
-          flexColumn="name"
-        />
+        <DataTable data={rows} columns={columns} tableId="dhcp-scopes-all" />
       )}
     </ListPageShell>
   )

@@ -6917,6 +6917,7 @@ export interface DnsZone {
   zone_type: string
   is_reverse: boolean
   sync: boolean
+  auto_create: boolean
   record_count: number
   drift_count: number
   last_seen_at: string | null

@@ -127,7 +127,6 @@ function DhcpReservationsPage() {
           data={rows}
           columns={columns}
           tableId="dhcp-reservations-all"
-          flexColumn="name"
         />
       )}
     </ListPageShell>

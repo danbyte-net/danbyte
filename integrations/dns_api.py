@@ -20,9 +20,10 @@ class DnsZoneSerializer(serializers.ModelSerializer):
     class Meta:
         model = DnsZone
         fields = ["id", "connection", "connection_name", "name", "zone_type",
-                  "is_reverse", "sync", "record_count", "drift_count",
-                  "last_seen_at", "updated_at"]
-        read_only_fields = [f for f in fields if f != "sync"]
+                  "is_reverse", "sync", "auto_create", "record_count",
+                  "drift_count", "last_seen_at", "updated_at"]
+        read_only_fields = [f for f in fields
+                            if f not in ("sync", "auto_create")]
 
 
 class DnsZoneViewSet(IntegrationToggleMixin, TenantScopedViewSet):
@@ -91,17 +92,71 @@ class DnsRecordSerializer(serializers.ModelSerializer):
 
 
 class DnsRecordViewSet(IntegrationToggleMixin, TenantScopedViewSet):
-    """Read-only stored A/AAAA/PTR records from reconciled zones. Filter by
+    """Read stored A/AAAA/PTR records from reconciled zones. Filter by
     ``?zone=``, ``?connection=``, ``?ip=``, ``?prefix=<id>``, ``?type=``,
-    ``?search=`` — the backbone of the zone table and the IPAM cross-links."""
+    ``?search=``. ``import`` / ``import_unmatched`` pull untracked records into
+    IPAM (needs ``ipaddress.add``)."""
 
     integration_keys = ("dns",)
     tenant_field = "zone__connection__tenant"
-    http_method_names = ["get"]
+    http_method_names = ["get", "post"]
     queryset = DnsRecord.objects.select_related(
         "zone", "zone__connection", "ip_address"
     ).order_by("name")
     serializer_class = DnsRecordSerializer
+    # These POST actions gate on ipaddress.add (checked in the handler), not on
+    # a dnsrecord write — so map them to the read action for the type-level gate.
+    rbac_action_map = {"import_": "view", "import_unmatched": "view"}
+
+    def create(self, request, *args, **kwargs):
+        from rest_framework.exceptions import MethodNotAllowed
+
+        raise MethodNotAllowed("POST")
+
+    def _require_ip_add(self, request):
+        from auth_api import rbac
+
+        tenant = self._tenant_or_403()
+        if not (
+            request.user.is_superuser
+            or rbac.has_action(request.user, tenant, "ipaddress", "add")
+        ):
+            from rest_framework.exceptions import PermissionDenied
+
+            raise PermissionDenied("You can't create IP addresses.")
+
+    @action(detail=True, methods=["post"], url_path="import")
+    def import_(self, request, pk=None):
+        """Create the IPAddress for this record and link it."""
+        from .dns_sync import DnsImportError, import_record
+
+        self._require_ip_add(request)
+        record = self.get_object()
+        try:
+            ip = import_record(record)
+        except DnsImportError as exc:
+            return Response({"ok": False, "error": str(exc)}, status=400)
+        return Response({"ok": True, "ip_address": str(ip.id)})
+
+    @action(detail=False, methods=["post"])
+    def import_unmatched(self, request, pk=None):
+        """Import every unlinked record in a zone (``{"zone": "<id>"}``).
+        Returns how many were created and how many were skipped (no prefix)."""
+        from .dns_sync import DnsImportError, import_record
+
+        self._require_ip_add(request)
+        zone_id = (request.data or {}).get("zone")
+        if not zone_id:
+            return Response({"detail": "zone is required."}, status=400)
+        qs = self.get_queryset().filter(zone_id=zone_id, ip_address__isnull=True)
+        created, skipped = 0, 0
+        for record in qs:
+            try:
+                import_record(record)
+                created += 1
+            except DnsImportError:
+                skipped += 1
+        return Response({"ok": True, "created": created, "skipped": skipped})
 
     def get_queryset(self):
         qs = super().get_queryset()

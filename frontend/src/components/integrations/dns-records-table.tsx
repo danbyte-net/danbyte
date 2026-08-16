@@ -1,10 +1,14 @@
 import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
+import { toast } from "sonner"
 
 import { api, type DnsRecord, type Paginated } from "@/lib/api"
+import { apiErrorToast } from "@/lib/api-toast"
+import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
@@ -108,13 +112,52 @@ export function DnsRecordsTable({
   empty?: string
   tableId?: string
 }) {
+  const qc = useQueryClient()
+  const { canDo } = useMe()
+  const canImport = canDo("ipaddress", "add")
   const query = useQuery({
     queryKey,
     queryFn: () =>
       api<Paginated<DnsRecord>>(`/api/dns-records/?${params}&page_size=500`),
   })
   const rows = query.data?.results ?? []
-  const columns = useMemo(() => dnsRecordColumns(showZone), [showZone])
+
+  const importOne = useMutation({
+    mutationFn: (rec: DnsRecord) =>
+      api<{ ok: boolean; error?: string }>(
+        `/api/dns-records/${rec.id}/import/`,
+        { method: "POST", body: "{}" }
+      ),
+    onSuccess: (r) => {
+      if (r.ok) toast.success("Added to IPAM")
+      else toast.error(r.error || "Could not import")
+      qc.invalidateQueries({ queryKey: ["dns-records"] })
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  const columns = useMemo(() => {
+    const cols = dnsRecordColumns(showZone)
+    if (canImport)
+      cols.push({
+        id: "import",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.ip_address ? null : (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-xs"
+              disabled={importOne.isPending}
+              onClick={() => importOne.mutate(row.original)}
+            >
+              Add to IPAM
+            </Button>
+          ),
+      })
+    return cols
+  }, [showZone, canImport, importOne])
 
   if (query.isError) return <QueryError error={query.error} />
   if (query.data && rows.length === 0) return <EmptyState title={empty} />
