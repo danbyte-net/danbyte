@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
 import { DatePicker } from "@/components/ui/date-picker"
+import { TimePicker } from "@/components/ui/time-picker"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -287,12 +288,11 @@ export function DateCell({
         className="h-7 min-w-0 flex-1 justify-start border-0 bg-transparent px-2 font-normal shadow-none hover:bg-accent"
       />
       {onTime && value && (
-        <input
-          type="time"
-          value={hhmm}
-          onChange={(e) => onTime(e.target.value || null)}
-          className="num h-7 shrink-0 rounded-md bg-transparent px-1 text-[12px] text-muted-foreground hover:bg-accent focus:text-foreground"
-          title="Optional time"
+        <TimePicker
+          value={time ?? null}
+          onChange={onTime}
+          placeholder="+ time"
+          className="h-7 shrink-0 border-0 bg-transparent px-1.5 text-[12px] shadow-none hover:bg-accent"
         />
       )}
     </span>
