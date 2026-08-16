@@ -56,12 +56,19 @@ def _parse_net(value: str) -> dict:
 def sync_proxmox(source) -> dict:
     from .models import VirtGuest
 
-    status = proxmox_get(source, "cluster/status") or []
+    # cluster/status needs Sys.Audit on / — a narrowly-scoped token may be
+    # denied it while still seeing VMs. Fall back to /nodes + the source name.
+    try:
+        status = proxmox_get(source, "cluster/status") or []
+    except VirtAPIError:
+        status = []
     cluster_name = next(
         (s.get("name") for s in status if s.get("type") == "cluster"),
         source.name,
     )
     nodes = [s.get("name") for s in status if s.get("type") == "node"]
+    if not nodes:
+        nodes = [n.get("node") for n in (proxmox_get(source, "nodes") or [])]
     resources = [
         r for r in (proxmox_get(source, "cluster/resources?type=vm") or [])
         if r.get("template") not in (1, True)  # VM templates aren't inventory

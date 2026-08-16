@@ -172,6 +172,22 @@ class ProxmoxSyncTests(TestCase):
             VirtualMachine.objects.filter(name="router-vm").exists()
         )
 
+    def test_cluster_status_403_falls_back_to_nodes(self):
+        """A token denied cluster/status still syncs VMs via /nodes."""
+        def denied(source, path):
+            if path == "cluster/status":
+                raise virt_sync.VirtAPIError("403")
+            if path == "nodes":
+                return [{"node": "pve1"}, {"node": "pve2"}]
+            return fake_get(source, path)
+
+        with mock.patch.object(virt_sync, "proxmox_get", side_effect=denied):
+            counts = virt_sync.sync_proxmox(self.source)
+        self.assertEqual(counts["nodes"], 2)
+        self.assertEqual(counts["vms"], 2)
+        # Cluster name falls back to the source name.
+        self.assertTrue(Cluster.objects.filter(name="pve").exists())
+
     def test_ip_without_containing_prefix_skipped(self):
         Prefix.objects.all().delete()
         counts = self.sync()
