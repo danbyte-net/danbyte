@@ -84,7 +84,7 @@ export interface Bar {
 /** Pack a week's task spans into lanes so no two bars overlap on a row. */
 export function layOutWeek(week: Date[], tasks: PlanningCalendarTask[]): Bar[] {
   const weekStart = iso(week[0])
-  const weekEnd = iso(week[6])
+  const weekEnd = iso(week[week.length - 1])
   const bars: Omit<Bar, "lane">[] = []
 
   for (const task of tasks) {
