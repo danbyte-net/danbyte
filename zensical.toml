@@ -108,6 +108,7 @@ nav = [
     { "Advanced: custom-field-driven playbook" = "features/cf-driven-playbook.md" },
     { "Webhooks"          = "features/webhooks.md" },
     { "Import from NetBox" = "features/netbox-import.md" },
+    { "External sync (DHCP/DNS/virtualization)" = "features/external-sync.md" },
   ] },
   { "Administration" = [
     "access/index.md",
