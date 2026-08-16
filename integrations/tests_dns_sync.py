@@ -123,6 +123,55 @@ class DnsSyncTests(TestCase):
         self.assertEqual(d.ip, "10.77.0.60")
         self.assertEqual(d.server_name, "theirs.danbyte.lan")
 
+    def test_ip_with_multiple_names_matches_any(self):
+        """AD apex + ForestDnsZones both point at the DC — matching the apex
+        is in sync, not drift."""
+        row = self.ip("10.0.0.45", dns_name="danbyte.lan")
+        self.sync()
+        DnsZone.objects.filter(name="danbyte.lan").update(sync=True)
+        counts = self.sync(record_payload=records([
+            {"zone": "danbyte.lan", "HostName": "@", "rtype": "A",
+             "data": "10.0.0.45"},
+            {"zone": "danbyte.lan", "HostName": "ForestDnsZones", "rtype": "A",
+             "data": "10.0.0.45"},
+            {"zone": "danbyte.lan", "HostName": "DomainDnsZones", "rtype": "A",
+             "data": "10.0.0.45"},
+        ]))
+        row.refresh_from_db()
+        self.assertEqual(row.dns_name, "danbyte.lan")
+        self.assertEqual(counts["drift"], 0)
+        self.assertEqual(DnsDrift.objects.count(), 0)
+
+    def test_blank_fill_prefers_real_host_over_ad_helpers(self):
+        row = self.ip("10.0.0.45")
+        self.sync()
+        DnsZone.objects.filter(name="danbyte.lan").update(sync=True)
+        self.sync(record_payload=records([
+            {"zone": "danbyte.lan", "HostName": "ForestDnsZones", "rtype": "A",
+             "data": "10.0.0.45"},
+            {"zone": "danbyte.lan", "HostName": "db-dc", "rtype": "A",
+             "data": "10.0.0.45"},
+            {"zone": "danbyte.lan", "HostName": "@", "rtype": "A",
+             "data": "10.0.0.45"},
+        ]))
+        row.refresh_from_db()
+        self.assertEqual(row.dns_name, "db-dc.danbyte.lan")
+
+    def test_mismatch_only_when_no_server_name_matches(self):
+        row = self.ip("10.0.0.45", dns_name="wrong.danbyte.lan")
+        self.sync()
+        DnsZone.objects.filter(name="danbyte.lan").update(sync=True)
+        counts = self.sync(record_payload=records([
+            {"zone": "danbyte.lan", "HostName": "db-dc", "rtype": "A",
+             "data": "10.0.0.45"},
+            {"zone": "danbyte.lan", "HostName": "@", "rtype": "A",
+             "data": "10.0.0.45"},
+        ]))
+        self.assertEqual(counts["drift"], 1)
+        d = DnsDrift.objects.get()
+        self.assertIn("db-dc.danbyte.lan", d.server_name)
+        self.assertIn("danbyte.lan", d.server_name)
+
     def test_push_script_for_mismatch_rewrites_record(self):
         zone = DnsZone.objects.create(
             connection=self.conn, name="danbyte.lan", sync=True

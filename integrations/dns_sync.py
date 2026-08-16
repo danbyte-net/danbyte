@@ -33,6 +33,33 @@ logger = logging.getLogger("danbyte.dns_sync")
 #: AD/system zones nobody wants reconciled or even listed.
 SKIP_ZONES = {"trustanchors"}
 
+#: AD helper host labels that alias a DC's IP — real records, but never the
+#: name a human means by that address, so they're chosen last when filling.
+_AD_HELPER_HOSTS = {"forestdnszones", "domaindnszones", "gc"}
+
+
+def _preferred_name(server_names: set, zone_name: str) -> str:
+    """Pick the name to fill a blank ``dns_name`` from an IP's server records.
+
+    Prefer an ordinary host name over the zone apex, AD helper records
+    (ForestDnsZones/DomainDnsZones), and underscore service labels — those
+    alias the address but aren't what an operator means by it.
+    """
+    zn = zone_name.lower()
+
+    def rank(name: str) -> tuple:
+        low = name.lower()
+        label = low[: -(len(zn) + 1)] if low.endswith("." + zn) else ""
+        system = (
+            low == zn  # apex
+            or label in _AD_HELPER_HOSTS
+            or label.startswith("_")
+            or "._" in low
+        )
+        return (system, name)  # non-system first, then stable by name
+
+    return sorted(server_names, key=rank)[0]
+
 
 def _fetch_zones_script() -> str:
     return """
@@ -158,12 +185,18 @@ def _reconcile(conn, synced_zones, data, now, counts) -> None:
     # (zone, ip) pairs that have a record — for missing_record detection.
     recorded: dict[str, set] = {z: set() for z in zones}
 
+    # One IP legitimately carries many names (an AD zone's apex + ForestDnsZones
+    # / DomainDnsZones helper records all point at the DC; round-robin, aliases).
+    # So gather every server name per (zone, ip, rtype) first, then compare the
+    # IP's dns_name against the whole set — a match to ANY of them is in sync.
+    # names_by[(zone_name, ip, rtype)] = {server_name, …}
+    names_by: dict[tuple, set] = {}
     for r in _as_list(data.get("records")):
         zone = zones.get((r.get("zone") or "").rstrip("."))
         rtype = r.get("rtype") or ""
         host = (r.get("HostName") or "").strip()
         raw = (r.get("data") or "").strip()
-        if zone is None or not raw or host == "@" and rtype == "PTR":
+        if zone is None or not raw or (host == "@" and rtype == "PTR"):
             continue
         counts["records"] += 1
         if rtype in ("A", "AAAA"):
@@ -174,20 +207,26 @@ def _reconcile(conn, synced_zones, data, now, counts) -> None:
         if not ip:
             continue
         recorded[zone.name].add(ip)
+        names_by.setdefault((zone.name, ip, rtype), set()).add(server_name)
+
+    for (zone_name, ip, rtype), server_names in names_by.items():
+        zone = zones[zone_name]
         row = ip_row(ip)
         if row is None:
             continue  # record with no IPAM presence — live view only
         ours = (row.dns_name or "").rstrip(".")
+        lowered = {n.lower() for n in server_names}
         if not ours:
-            row.dns_name = server_name
+            row.dns_name = _preferred_name(server_names, zone.name)
             row.save(update_fields=["dns_name"])
             counts["filled"] += 1
-        elif ours.lower() != server_name.lower():
+        elif ours.lower() not in lowered:
             DnsDrift.objects.update_or_create(
                 zone=zone, ip=ip, record_type=rtype,
                 defaults={
                     "kind": "mismatch", "ip_address": row,
-                    "danbyte_name": ours, "server_name": server_name,
+                    "danbyte_name": ours,
+                    "server_name": ", ".join(sorted(server_names))[:255],
                     "last_seen_at": now,
                 },
             )
