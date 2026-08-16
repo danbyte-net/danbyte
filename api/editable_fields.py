@@ -81,6 +81,7 @@ LABEL_OVERRIDES: dict[tuple[str, str], str] = {
     ("api.interface", "mtu"): "MTU",
     ("api.vminterface", "mtu"): "MTU",
     ("api.interface", "mgmt_only"): "Management only",
+    ("api.interface", "combo_group"): "Combo group",
     ("api.interface", "poe_mode"): "PoE mode",
     ("api.interface", "poe_type"): "PoE type",
     ("api.interface", "vlan"): "Untagged VLAN",

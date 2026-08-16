@@ -21,6 +21,21 @@ variants), and **WWN** for Fibre Channel. Interface *templates* carry
 mgmt-only and PoE too, so they stamp onto new devices — and the
 devicetype-library importer maps `poe_mode`/`poe_type` from library files.
 
+### Combo / shared ports
+
+A **combo group** models a shared port with more than one physical
+connector — the classic RJ45 + SFP twin, or two management jacks where only
+one is ever live. Give each connector its own interface with the **same combo
+group** name (e.g. `mgmt` on `mgmt0` and `mgmt0-sfp`). They're badged `combo`
+in the interface table, and Danbyte keeps them **mutually exclusive**:
+enabling one automatically disables the others in the group on that device, so
+only the active connector reads as up.
+
+Set the combo group on interface *templates* too and it materialises onto
+every device of that type. It also plays with SNMP: when a drift sync adopts
+the observed admin state (the connector that's actually up), the group flips
+the twin off to match — no manual bookkeeping.
+
 ## Add an interface
 
 From a device's **Interfaces** tab, click **Add interface**, then fill in:
