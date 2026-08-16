@@ -90,24 +90,32 @@ export function dnsRecordColumns(showZone: boolean): ColumnDef<DnsRecord>[] {
       accessorKey: "zone_name",
       header: "Zone",
       cell: ({ row }) => (
-        <span className="font-mono text-[11px] text-muted-foreground">
+        <Link
+          to="/dns-zones/$id"
+          params={{ id: row.original.zone }}
+          className="font-mono text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+        >
           {row.original.zone_name}
-        </span>
+        </Link>
       ),
     })
   return cols
 }
 
-/** A stored-DNS-records table driven by a query string (zone/prefix/ip/…). */
+/** A stored-DNS-records table. Either fetches from a query string
+ * (zone/prefix/ip/…) or renders `rows` supplied by a faceted parent. */
 export function DnsRecordsTable({
   params,
   queryKey,
+  rows: providedRows,
   showZone = true,
   empty = "No DNS records.",
   tableId = "dns-records",
 }: {
-  params: string
-  queryKey: unknown[]
+  params?: string
+  queryKey?: unknown[]
+  /** When set, these rows are rendered instead of fetching (parent facets). */
+  rows?: DnsRecord[]
   showZone?: boolean
   empty?: string
   tableId?: string
@@ -116,11 +124,12 @@ export function DnsRecordsTable({
   const { canDo } = useMe()
   const canImport = canDo("ipaddress", "add")
   const query = useQuery({
-    queryKey,
+    queryKey: queryKey ?? ["dns-records", "unused"],
     queryFn: () =>
       api<Paginated<DnsRecord>>(`/api/dns-records/?${params}&page_size=500`),
+    enabled: providedRows === undefined,
   })
-  const rows = query.data?.results ?? []
+  const rows = providedRows ?? query.data?.results ?? []
 
   const importOne = useMutation({
     mutationFn: (rec: DnsRecord) =>
@@ -160,7 +169,8 @@ export function DnsRecordsTable({
   }, [showZone, canImport, importOne])
 
   if (query.isError) return <QueryError error={query.error} />
-  if (query.data && rows.length === 0) return <EmptyState title={empty} />
+  if (rows.length === 0 && (providedRows !== undefined || query.data))
+    return <EmptyState title={empty} />
   return (
     <DataTable
       data={rows}

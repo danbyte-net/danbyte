@@ -9,6 +9,7 @@ import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
 import { dash } from "@/components/kv-card"
+import { useFacetRail } from "@/lib/use-facet-rail"
 
 export const Route = createFileRoute("/dhcp-scopes/")({
   component: DhcpScopesPage,
@@ -99,26 +100,47 @@ function DhcpScopesPage() {
         header: ({ column }) => (
           <SortHeader column={column} label="Reservations" />
         ),
-        cell: ({ row }) => (
-          <span className="num">
-            {row.original.reservation_count}
-            {row.original.drift_count > 0 && (
-              <Badge variant="destructive" className="ml-2 text-[10px]">
-                {row.original.drift_count} drift
-              </Badge>
-            )}
-          </span>
-        ),
+        cell: ({ row }) =>
+          row.original.reservation_count > 0 ? (
+            <Link
+              to="/dhcp-reservations"
+              search={{ scope: row.original.id }}
+              className="hover:underline"
+            >
+              <span className="num">{row.original.reservation_count}</span>
+              {row.original.drift_count > 0 && (
+                <Badge variant="destructive" className="ml-2 text-[10px]">
+                  {row.original.drift_count} drift
+                </Badge>
+              )}
+            </Link>
+          ) : (
+            <span className="num text-muted-foreground">0</span>
+          ),
       },
     ],
     []
   )
 
+  const { rail, filtered } = useFacetRail(rows, [
+    {
+      key: "server",
+      label: "Server",
+      get: (r) => ({ value: r.connection_name, label: r.connection_name }),
+    },
+    {
+      key: "state",
+      label: "State",
+      get: (r) => (r.state ? { value: r.state, label: r.state } : null),
+    },
+  ])
+
   return (
     <ListPageShell
       title="DHCP scopes"
-      count={query.data ? rows.length : undefined}
+      count={query.data ? filtered.length : undefined}
       query={query}
+      rail={rail}
       search={{ value: q, onChange: setQ, placeholder: "Filter scopes…" }}
     >
       {rows.length === 0 && query.data && !q ? (
@@ -127,7 +149,11 @@ function DhcpScopesPage() {
           its scopes appear here.
         </EmptyState>
       ) : (
-        <DataTable data={rows} columns={columns} tableId="dhcp-scopes-all" />
+        <DataTable
+          data={filtered}
+          columns={columns}
+          tableId="dhcp-scopes-all"
+        />
       )}
     </ListPageShell>
   )

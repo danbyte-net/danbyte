@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TimeCell } from "@/components/cells/time-ago"
 import { dash } from "@/components/kv-card"
+import { useFacetRail } from "@/lib/use-facet-rail"
 
 export const Route = createFileRoute("/dhcp-leases/")({
   component: DhcpLeasesPage,
@@ -95,11 +96,28 @@ function DhcpLeasesPage() {
     []
   )
 
+  const { rail, filtered } = useFacetRail(rows, [
+    {
+      key: "scope",
+      label: "Scope",
+      get: (r) => ({ value: r.scope_display, label: r.scope_display }),
+    },
+    {
+      key: "state",
+      label: "State",
+      get: (r) =>
+        r.address_state
+          ? { value: r.address_state, label: r.address_state }
+          : null,
+    },
+  ])
+
   return (
     <ListPageShell
       title="DHCP leases"
-      count={query.data ? rows.length : undefined}
+      count={query.data ? filtered.length : undefined}
       query={query}
+      rail={rail}
       search={{ value: q, onChange: setQ, placeholder: "IP, MAC or hostname…" }}
     >
       {rows.length === 0 && query.data && !q ? (
@@ -108,7 +126,11 @@ function DhcpLeasesPage() {
           server's page, and its active leases appear here.
         </EmptyState>
       ) : (
-        <DataTable data={rows} columns={columns} tableId="dhcp-leases-all" />
+        <DataTable
+          data={filtered}
+          columns={columns}
+          tableId="dhcp-leases-all"
+        />
       )}
     </ListPageShell>
   )

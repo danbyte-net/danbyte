@@ -19,6 +19,7 @@ import { useUrlTab } from "@/lib/use-url-tab"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
+import { InfoTip } from "@/components/ui/info-tip"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
@@ -590,11 +591,14 @@ function Reservations({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
-          Reservations created or edited here are pushed straight to the DHCP
-          server. Rows marked <span className="font-medium">Danbyte</span> are
-          watched for outside changes.
-        </p>
+        <h3 className="flex items-center gap-1.5 text-sm font-medium">
+          Reservations
+          <InfoTip>
+            Reservations created or edited here are pushed straight to the DHCP
+            server. Rows marked <span className="font-medium">Danbyte</span> are
+            watched for outside changes.
+          </InfoTip>
+        </h3>
         {canAdd && scopes.length > 0 && (
           <Button size="sm" onClick={() => setCreating(true)}>
             <Plus className="h-3.5 w-3.5" /> New reservation

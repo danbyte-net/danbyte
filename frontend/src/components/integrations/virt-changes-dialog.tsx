@@ -18,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { InfoTip } from "@/components/ui/info-tip"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 
@@ -166,13 +167,15 @@ export function VirtChangesDialog({
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent size="2xl">
         <DialogHeader>
-          <DialogTitle>Pending changes — {source.name}</DialogTitle>
+          <DialogTitle className="flex items-center gap-1.5">
+            Pending changes — {source.name}
+            <InfoTip>
+              This source is in {source.sync_mode} mode, so nothing is applied
+              until you accept it. Accept writes the change to the inventory;
+              ignore hides it until it changes again.
+            </InfoTip>
+          </DialogTitle>
         </DialogHeader>
-        <p className="text-xs text-muted-foreground">
-          This source is in {source.sync_mode} mode, so nothing is applied until
-          you accept it. Accept writes the change to the inventory; ignore hides
-          it until it changes again.
-        </p>
         {query.data && rows.length === 0 ? (
           <EmptyState title="Nothing to review.">
             The inventory matches the hypervisor. New VMs, spec changes and

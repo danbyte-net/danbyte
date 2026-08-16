@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
+import { useFacetRail } from "@/lib/use-facet-rail"
 
 export const Route = createFileRoute("/dns-zones/")({
   component: DnsZonesPage,
@@ -101,11 +102,36 @@ function DnsZonesPage() {
     []
   )
 
+  const { rail, filtered } = useFacetRail(rows, [
+    {
+      key: "server",
+      label: "Server",
+      get: (r) => ({ value: r.connection_name, label: r.connection_name }),
+    },
+    {
+      key: "direction",
+      label: "Direction",
+      get: (r) => ({
+        value: r.is_reverse ? "reverse" : "forward",
+        label: r.is_reverse ? "Reverse" : "Forward",
+      }),
+    },
+    {
+      key: "reconcile",
+      label: "Reconcile",
+      get: (r) => ({
+        value: r.sync ? "on" : "off",
+        label: r.sync ? "On" : "Off",
+      }),
+    },
+  ])
+
   return (
     <ListPageShell
       title="DNS zones"
-      count={query.data ? rows.length : undefined}
+      count={query.data ? filtered.length : undefined}
       query={query}
+      rail={rail}
       search={{ value: q, onChange: setQ, placeholder: "Filter zones…" }}
     >
       {rows.length === 0 && query.data && !q ? (
@@ -116,7 +142,7 @@ function DnsZonesPage() {
         </EmptyState>
       ) : (
         <DataTable
-          data={rows}
+          data={filtered}
           columns={columns}
           tableId="dns-zones-all"
           flexColumn="name"

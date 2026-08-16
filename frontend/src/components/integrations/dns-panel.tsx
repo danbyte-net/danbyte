@@ -16,6 +16,7 @@ import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
+import { InfoTip } from "@/components/ui/info-tip"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 
@@ -246,13 +247,13 @@ export function DnsPanel({ conn }: { conn: WindowsConnection }) {
   return (
     <div className="space-y-5">
       <div>
-        <div className="mb-2 flex items-baseline justify-between">
-          <h3 className="text-sm font-medium">Zones</h3>
-          <p className="text-xs text-muted-foreground">
+        <h3 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
+          Zones
+          <InfoTip>
             Reconciliation compares A/AAAA/PTR records against IP DNS names —
             opt in per zone. Open a zone for its records and IP links.
-          </p>
-        </div>
+          </InfoTip>
+        </h3>
         {zonesQ.data && zones.length === 0 ? (
           <EmptyState title="No zones synced yet.">
             Run a sync to list this server's DNS zones.

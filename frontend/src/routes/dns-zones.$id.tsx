@@ -9,6 +9,7 @@ import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
+import { InfoTip } from "@/components/ui/info-tip"
 import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
 import { DetailShell, DetailHero, DetailTab } from "@/components/detail-shell"
@@ -146,12 +147,15 @@ function Body({ zone }: { zone: DnsZone }) {
           </EmptyState>
         ) : (
           <div className="space-y-2">
-            <div className="flex items-start justify-between gap-3">
-              <p className="max-w-prose text-xs text-muted-foreground">
-                Address records synced from this zone, linked to their IP
-                addresses. Other record types (CNAME, MX, TXT…) aren't stored —
-                use the live view for the full dump.
-              </p>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="flex items-center gap-1.5 text-sm font-medium">
+                Records
+                <InfoTip>
+                  Address records (A/AAAA/PTR) synced from this zone, linked to
+                  their IP addresses. Other types (CNAME, MX, TXT…) aren't
+                  stored — use the live view below for the full dump.
+                </InfoTip>
+              </h3>
               {canImport && (
                 <Button
                   size="sm"
