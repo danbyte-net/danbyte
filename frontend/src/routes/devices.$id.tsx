@@ -902,13 +902,30 @@ function DeviceOverview({
     },
   ]
   // The Panel (photo / rendered / bare) is pinned top-right and kept in view
-  // while the attribute cards scroll, so it's the first thing an operator sees.
-  // It shows when the device has ports or its type carries a rack-face photo.
+  // The Panel shows when the device has ports or its type carries a rack-face
+  // photo. When it does, the overview is two explicit columns so the Panel can
+  // sit at the top of the second column (half-width — readable) rather than
+  // wherever a balanced masonry would drop it.
   const showPanel =
     d.interface_count > 0 ||
     !!(d.device_type?.front_image || d.device_type?.rear_image)
 
-  const cards = (
+  const locationMap = d.latitude !== null && d.longitude !== null && (
+    <div className="rounded-lg border border-border bg-card">
+      <div className="flex items-center justify-between border-b border-border px-4 py-2">
+        <h2 className="text-sm font-semibold">Location</h2>
+        <div className="flex items-center gap-1.5">
+          <ShowOnSiteMap deviceId={d.id} hasCoords />
+          <ShowOnFloorPlan deviceId={d.id} rackId={d.rack?.id} />
+        </div>
+      </div>
+      <div className="h-64 overflow-hidden rounded-b-lg">
+        <MiniMap className="h-full w-full" focusDeviceId={d.id} />
+      </div>
+    </div>
+  )
+
+  const attributeCards = (
     <>
       <KvCard title="Device" rows={deviceRows} />
       <KvCard title="Management" rows={managementRows} />
@@ -919,23 +936,6 @@ function DeviceOverview({
         values={d.custom_fields}
         layout="cards"
       />
-      {d.latitude !== null && d.longitude !== null && (
-        <div className="rounded-lg border border-border bg-card">
-          <div className="flex items-center justify-between border-b border-border px-4 py-2">
-            <h2 className="text-sm font-semibold">Location</h2>
-            <div className="flex items-center gap-1.5">
-              <ShowOnSiteMap deviceId={d.id} hasCoords />
-              <ShowOnFloorPlan deviceId={d.id} rackId={d.rack?.id} />
-            </div>
-          </div>
-          <div className="h-64 overflow-hidden rounded-b-lg">
-            <MiniMap className="h-full w-full" focusDeviceId={d.id} />
-          </div>
-        </div>
-      )}
-      <DeviceMiniTopology deviceId={d.id} />
-      <DeviceTunnelsCard deviceId={d.id} />
-      <DeviceRackCard device={d} />
     </>
   )
 
@@ -945,19 +945,26 @@ function DeviceOverview({
       <DeviceMonitoring deviceId={d.id} />
 
       {showPanel ? (
-        // Attribute cards on the left (auto-balanced masonry), the Panel pinned
-        // top-right and sticky so it stays visible as the left column scrolls.
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_26rem]">
-          <div className="min-w-0 columns-1 gap-6 xl:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
-            {cards}
-          </div>
-          <div className="min-w-0 self-start lg:sticky lg:top-4">
+        // Two columns: attributes left, the Panel at the top of the right
+        // column (then the map / topology / rack under it).
+        <div className="grid items-start gap-6 lg:grid-cols-2">
+          <div className="min-w-0 space-y-6">{attributeCards}</div>
+          <div className="min-w-0 space-y-6">
             <DeviceFrontPanel device={d} />
+            {locationMap}
+            <DeviceMiniTopology deviceId={d.id} />
+            <DeviceTunnelsCard deviceId={d.id} />
+            <DeviceRackCard device={d} />
           </div>
         </div>
       ) : (
+        // No panel — the original auto-balanced masonry.
         <div className="columns-1 gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
-          {cards}
+          {attributeCards}
+          {locationMap}
+          <DeviceMiniTopology deviceId={d.id} />
+          <DeviceTunnelsCard deviceId={d.id} />
+          <DeviceRackCard device={d} />
         </div>
       )}
     </div>
