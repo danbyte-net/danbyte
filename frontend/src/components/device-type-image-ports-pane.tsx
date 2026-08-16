@@ -75,6 +75,10 @@ const defaultSize = (kind: string) =>
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
 const markerKey = (m: { kind: string; name: string }) => `${m.kind}:${m.name}`
 
+// Common bank sizes for the auto-fill "Banks" select; anything else (a 24-FX
+// switch, say) goes through the Custom… size input.
+const BANK_PRESETS = [0, 4, 6, 8, 12]
+
 /** Natural (human) compare so "Ethernet1/0/2" sorts before ".../11". Splits
  * each name into digit / non-digit runs and compares run-by-run. */
 const naturalCompare = (a: string, b: string): number => {
@@ -115,8 +119,21 @@ interface FillOpts {
   x2: number
   /** Y of the bottom row; middle rows interpolate between y1 and this. */
   row2y: number
+  /** Optional per-row Y overrides (length = rows). When set, each row sits at
+   * its own Y instead of interpolating — for devices whose rows aren't evenly
+   * spaced. Undefined = even top-to-bottom spacing. */
+  rowYs?: number[]
   w: number
   h: number
+}
+
+/** Even top-to-bottom Y positions for `rows` rows between `top` and `bottom`. */
+function interpRowYs(top: number, bottom: number, rows: number): number[] {
+  if (rows <= 1) return [top]
+  return Array.from(
+    { length: rows },
+    (_, r) => top + ((bottom - top) * r) / (rows - 1)
+  )
 }
 
 /**
@@ -391,9 +408,11 @@ export function DeviceTypeImagePortsPane({
           (fill.bank > 0 ? Math.floor(col / fill.bank) * fill.bankGap : 0)
         : fill.x1
 
-    // Row Y: top row at y1, bottom row at row2y, middle rows evenly between.
+    // Row Y: per-row overrides when set, else top at y1 / bottom at row2y with
+    // middle rows evenly between.
+    const even = interpRowYs(fill.y1, fill.row2y, R)
     const rowY = (row: number) =>
-      R === 1 ? fill.y1 : fill.y1 + ((fill.row2y - fill.y1) * row) / (R - 1)
+      fill.rowYs?.[row] != null ? fill.rowYs[row] : even[row]
 
     return fillNames.map((name, idx) => {
       let col: number
@@ -833,7 +852,16 @@ function FillPanel({
         <Field label="Rows">
           <Select
             value={String(fill.rows)}
-            onValueChange={(v) => set({ rows: Number(v) as 1 | 2 | 3 | 4 })}
+            onValueChange={(v) => {
+              const R = Number(v) as 1 | 2 | 3 | 4
+              // Resize custom row heights to the new count (re-interpolated).
+              set({
+                rows: R,
+                ...(fill.rowYs
+                  ? { rowYs: interpRowYs(fill.y1, fill.row2y, R) }
+                  : {}),
+              })
+            }}
           >
             <SelectTrigger size="sm" className="h-7 text-[12px]">
               <SelectValue />
@@ -864,8 +892,18 @@ function FillPanel({
         )}
         <Field label="Banks">
           <Select
-            value={String(fill.bank)}
-            onValueChange={(v) => set({ bank: Number(v) })}
+            value={
+              BANK_PRESETS.includes(fill.bank) ? String(fill.bank) : "custom"
+            }
+            onValueChange={(v) => {
+              if (v === "custom") {
+                // Nudge to a non-preset so the size input appears (24 suits a
+                // common 24-port bank); the user types the real size next door.
+                if (BANK_PRESETS.includes(fill.bank)) set({ bank: 24 })
+                return
+              }
+              set({ bank: Number(v) })
+            }}
           >
             <SelectTrigger size="sm" className="h-7 text-[12px]">
               <SelectValue />
@@ -877,18 +915,71 @@ function FillPanel({
                   Every {n} columns
                 </SelectItem>
               ))}
+              <SelectItem value="custom">Custom…</SelectItem>
             </SelectContent>
           </Select>
         </Field>
+        {!BANK_PRESETS.includes(fill.bank) && (
+          <Field label="Bank size">
+            <Input
+              type="number"
+              min={1}
+              max={96}
+              value={fill.bank}
+              onChange={(e) =>
+                set({
+                  bank: Math.max(1, Math.min(96, Number(e.target.value) || 1)),
+                })
+              }
+              className="num h-7 text-[12px]"
+              aria-label="Custom bank size"
+            />
+          </Field>
+        )}
         {fill.bank > 0 && numPct("bankGap")}
       </div>
+
+      {fill.rows > 1 && (
+        <FormCheckbox
+          label="Custom row spacing (set each row's Y)"
+          checked={!!fill.rowYs}
+          onChange={(on) =>
+            set({
+              rowYs: on
+                ? interpRowYs(fill.y1, fill.row2y, fill.rows)
+                : undefined,
+            })
+          }
+          className="items-center gap-1.5 text-[12px] text-muted-foreground"
+        />
+      )}
 
       {/* Anchors: type the %, or click them straight onto the photo. */}
       <div className="grid gap-3 sm:grid-cols-6">
         {numPct("x1")}
-        {numPct("y1")}
         {numPct("x2")}
-        {fill.rows > 1 && numPct("row2y")}
+        {fill.rowYs ? (
+          fill.rowYs.map((v, r) => (
+            <Field key={`rowY${r}`} label={`Row ${r + 1} Y %`}>
+              <Input
+                type="number"
+                step={0.5}
+                value={Math.round(v * 1000) / 10}
+                onChange={(e) => {
+                  const next = [...fill.rowYs!]
+                  next[r] = clamp01((Number(e.target.value) || 0) / 100)
+                  set({ rowYs: next })
+                }}
+                className="h-7 text-[12px]"
+              />
+            </Field>
+          ))
+        ) : (
+          <>
+            {numPct("y1")}
+            {fill.rows > 1 && numPct("row2y")}
+          </>
+        )}
         {numPct("w")}
         {numPct("h")}
       </div>
