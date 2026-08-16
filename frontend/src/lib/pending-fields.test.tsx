@@ -34,6 +34,7 @@ vi.mock("@/lib/api", async (orig) => {
           effective_date: null,
           display: [
             { field: "status_id", label: "Status", from: "Active", to: "Off" },
+            { field: "position", label: "Position", from: "27", to: "40" },
           ],
         },
       ],
@@ -57,6 +58,9 @@ describe("pending-field marks on a KvCard", () => {
               { label: "Name", value: "sw1" },
               { label: "Status", value: "Active" },
               { label: "Description", value: "x" },
+              // The form's unit-suffixed label must match the registry's
+              // bare "Position" — the rack-elevation mark regression.
+              { label: "Position (U)", value: "U27" },
             ]}
           />
         </PendingFieldsProvider>
@@ -65,7 +69,7 @@ describe("pending-field marks on a KvCard", () => {
     await waitFor(() => {
       expect(
         screen.getAllByLabelText("A change to this field is planned")
-      ).toHaveLength(2)
+      ).toHaveLength(3)
     })
   })
 })

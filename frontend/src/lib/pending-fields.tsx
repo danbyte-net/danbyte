@@ -37,7 +37,13 @@ export interface PendingMark {
 
 const PendingFieldsContext = createContext<Map<string, PendingMark>>(new Map())
 
-const norm = (label: string) => label.trim().toLowerCase()
+// "Position (U)" and "Position" are the same field: the registry label is the
+// bare noun, form labels may carry a parenthetical unit — strip it to match.
+const norm = (label: string) =>
+  label
+    .replace(/\s*\([^)]*\)\s*$/, "")
+    .trim()
+    .toLowerCase()
 
 /** Mount on any page that renders an object's fields — an edit form, a detail
  *  Overview. Renders nothing itself. */
