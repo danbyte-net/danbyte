@@ -323,3 +323,119 @@ class NetBoxImportRun(TimestampedModel):
 
     def __str__(self) -> str:
         return f"NetBox import {self.url} → {self.tenant_id} ({self.status})"
+
+
+# ─── External system connections (Windows DHCP/DNS + virtualization) ─────────
+
+
+class IntegrationSettings(TimestampedModel):
+    """Per-tenant master toggles for the external-sync integrations.
+
+    Everything ships OFF: no nav, no endpoints, no scheduled jobs until the
+    operator opts in on Settings → Integrations. Enforcement lives in
+    ``integrations.toggles`` (viewset mixin + job-time re-check), not the UI.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.OneToOneField(
+        "core.Tenant", on_delete=models.CASCADE, related_name="integration_settings"
+    )
+    dhcp_sync_enabled = models.BooleanField(default=False)
+    dns_sync_enabled = models.BooleanField(default=False)
+    virtualization_enabled = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name_plural = "integration settings"
+
+    def __str__(self) -> str:
+        return f"Integration settings · {self.tenant_id}"
+
+
+class WindowsServerConnection(TimestampedModel):
+    """One Windows server reached agentlessly over WinRM.
+
+    A single connection can serve both the DHCP and DNS roles (they usually
+    live on the same box). The password is Fernet-encrypted at rest and
+    write-only through the API. Outbound connects go through the same
+    deployment SSRF allowlist as the NetBox importer — an internal host must
+    be allow-listed under Settings → Deployment before Danbyte will talk to it.
+    """
+
+    AUTH_CHOICES = [("ntlm", "NTLM"), ("kerberos", "Kerberos")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="windows_connections"
+    )
+    name = models.CharField(max_length=200)
+    host = models.CharField(max_length=255)
+    port = models.PositiveIntegerField(default=5985)
+    use_tls = models.BooleanField(default=False)
+    # Most WinRM-over-HTTPS deployments run self-signed certs; strict
+    # verification is the opt-in, mirroring the issue's recommendation.
+    verify_ssl = models.BooleanField(default=False)
+    auth_mode = models.CharField(max_length=16, choices=AUTH_CHOICES, default="ntlm")
+    username = models.CharField(max_length=255)
+    # Fernet-encrypted {"password": "..."} — write-only in serializers.
+    credentials = EncryptedJSONField(default=dict, blank=True)
+
+    dhcp_enabled = models.BooleanField(default=False)
+    dns_enabled = models.BooleanField(default=False)
+    poll_interval_minutes = models.PositiveIntegerField(default=5)
+    enabled = models.BooleanField(default=True)
+
+    last_sync_at = models.DateTimeField(null=True, blank=True)
+    last_sync_status = models.CharField(max_length=16, blank=True, default="")
+    last_sync_error = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_winconn_tenant_name"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.host})"
+
+
+class VirtualizationSource(TimestampedModel):
+    """A hypervisor/cluster API Danbyte syncs virtual machines from.
+
+    ``kind`` picks the client; Proxmox is the first implementation and vCenter
+    slots in behind the same model later. Credentials are kind-shaped —
+    Proxmox: ``{"token_id": "user@realm!name", "secret": "..."}`` — and
+    write-only through the API.
+    """
+
+    KIND_CHOICES = [("proxmox", "Proxmox VE"), ("vcenter", "VMware vCenter")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="virtualization_sources"
+    )
+    name = models.CharField(max_length=200)
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, default="proxmox")
+    host = models.CharField(max_length=255)
+    port = models.PositiveIntegerField(default=8006)
+    verify_ssl = models.BooleanField(default=False)
+    credentials = EncryptedJSONField(default=dict, blank=True)
+
+    poll_interval_minutes = models.PositiveIntegerField(default=10)
+    enabled = models.BooleanField(default=True)
+
+    last_sync_at = models.DateTimeField(null=True, blank=True)
+    last_sync_status = models.CharField(max_length=16, blank=True, default="")
+    last_sync_error = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_virtsource_tenant_name"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.get_kind_display()})"

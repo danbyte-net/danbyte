@@ -51,6 +51,7 @@ const SECTIONS: NavSection[] = [
       { to: "/settings/snmp", label: "SNMP profiles" },
       { to: "/settings/snmp-sensors", label: "SNMP sensors" },
       { to: "/settings/connect", label: "Connect protocols" },
+      { to: "/settings/integrations", label: "Integrations" },
     ],
   },
   {

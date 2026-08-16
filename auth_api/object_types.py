@@ -201,6 +201,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("integrations.DeployRun", "Config deploy runs", "Integrations"),
     ("integrations.DeviceConfigSnapshot", "Device config snapshots", "Integrations"),
     ("integrations.DeviceConfigState", "Device config state", "Integrations"),
+    ("integrations.WindowsServerConnection", "Windows server connections", "Integrations"),
+    ("integrations.VirtualizationSource", "Virtualization sources", "Integrations"),
     # ─── Planning ───────────────────────────────────────────────────
     ("planning.Board", "Boards", "Planning"),
     ("planning.TaskStatus", "Task statuses", "Planning"),

@@ -85,6 +85,11 @@ from integrations.api import (
     DeviceConfigStateViewSet,
     WebhookViewSet,
 )
+from integrations.connections_api import (
+    VirtualizationSourceViewSet,
+    WindowsServerConnectionViewSet,
+    integration_settings,
+)
 from integrations.netbox_api import (
     netbox_import_detail,
     netbox_imports,
@@ -340,6 +345,10 @@ router.register(r"saved-filters", SavedFilterViewSet, basename="saved-filter")
 router.register(r"api-tokens",    ApiTokenViewSet,    basename="api-token")
 router.register(r"webhooks",      WebhookViewSet,     basename="webhook")
 router.register(r"automation-targets", AutomationTargetViewSet, basename="automation-target")
+router.register(r"windows-connections", WindowsServerConnectionViewSet,
+                basename="windows-connection")
+router.register(r"virtualization-sources", VirtualizationSourceViewSet,
+                basename="virtualization-source")
 router.register(r"deploy-runs",   DeployRunViewSet,   basename="deploy-run")
 router.register(r"config-states", DeviceConfigStateViewSet, basename="config-state")
 router.register(r"config-snapshots", DeviceConfigSnapshotViewSet, basename="config-snapshot")
@@ -385,6 +394,8 @@ urlpatterns = [
     path("io/<slug:slug>/export/", io_export_view, name="io-export"),
     path("io/<slug:slug>/import/", io_import_view, name="io-import"),
     # NetBox instance migration (tenant-admin; runs on the RQ low queue).
+    path("integrations/settings/", integration_settings,
+         name="integration-settings"),
     path("netbox-import/test/", netbox_test, name="netbox-import-test"),
     path("netbox-import/", netbox_imports, name="netbox-imports"),
     path("netbox-import/<uuid:run_id>/", netbox_import_detail,

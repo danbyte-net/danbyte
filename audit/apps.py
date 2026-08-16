@@ -140,6 +140,9 @@ AUDITED_MODELS = [
     "core.TenantSettings",
     "core.SiteSettings",
     "integrations.NetBoxImportRun",
+    "integrations.WindowsServerConnection",
+    "integrations.VirtualizationSource",
+    "integrations.IntegrationSettings",
     # Governance config.
     "compliance.ComplianceRule",
     # Access: object permissions + public share links.

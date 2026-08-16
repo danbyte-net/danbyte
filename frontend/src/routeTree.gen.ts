@@ -208,6 +208,7 @@ import { Route as SettingsMonitoringDefaultsRouteImport } from './routes/setting
 import { Route as SettingsMonitoringRouteImport } from './routes/settings.monitoring'
 import { Route as SettingsMapsRouteImport } from './routes/settings.maps'
 import { Route as SettingsLdapRouteImport } from './routes/settings.ldap'
+import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsFloorplanRouteImport } from './routes/settings.floorplan'
 import { Route as SettingsEmailRouteImport } from './routes/settings.email'
 import { Route as SettingsDeviceFieldsRouteImport } from './routes/settings.device-fields'
@@ -1394,6 +1395,11 @@ const SettingsLdapRoute = SettingsLdapRouteImport.update({
   path: '/ldap',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsFloorplanRoute = SettingsFloorplanRouteImport.update({
   id: '/floorplan',
   path: '/floorplan',
@@ -2527,6 +2533,7 @@ export interface FileRoutesByFullPath {
   '/settings/device-fields': typeof SettingsDeviceFieldsRoute
   '/settings/email': typeof SettingsEmailRoute
   '/settings/floorplan': typeof SettingsFloorplanRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/ldap': typeof SettingsLdapRoute
   '/settings/maps': typeof SettingsMapsRoute
   '/settings/monitoring': typeof SettingsMonitoringRoute
@@ -2860,6 +2867,7 @@ export interface FileRoutesByTo {
   '/settings/device-fields': typeof SettingsDeviceFieldsRoute
   '/settings/email': typeof SettingsEmailRoute
   '/settings/floorplan': typeof SettingsFloorplanRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/ldap': typeof SettingsLdapRoute
   '/settings/maps': typeof SettingsMapsRoute
   '/settings/monitoring': typeof SettingsMonitoringRoute
@@ -3250,6 +3258,7 @@ export interface FileRoutesById {
   '/settings/device-fields': typeof SettingsDeviceFieldsRoute
   '/settings/email': typeof SettingsEmailRoute
   '/settings/floorplan': typeof SettingsFloorplanRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/ldap': typeof SettingsLdapRoute
   '/settings/maps': typeof SettingsMapsRoute
   '/settings/monitoring': typeof SettingsMonitoringRoute
@@ -3641,6 +3650,7 @@ export interface FileRouteTypes {
     | '/settings/device-fields'
     | '/settings/email'
     | '/settings/floorplan'
+    | '/settings/integrations'
     | '/settings/ldap'
     | '/settings/maps'
     | '/settings/monitoring'
@@ -3974,6 +3984,7 @@ export interface FileRouteTypes {
     | '/settings/device-fields'
     | '/settings/email'
     | '/settings/floorplan'
+    | '/settings/integrations'
     | '/settings/ldap'
     | '/settings/maps'
     | '/settings/monitoring'
@@ -4363,6 +4374,7 @@ export interface FileRouteTypes {
     | '/settings/device-fields'
     | '/settings/email'
     | '/settings/floorplan'
+    | '/settings/integrations'
     | '/settings/ldap'
     | '/settings/maps'
     | '/settings/monitoring'
@@ -6107,6 +6119,13 @@ declare module '@tanstack/react-router' {
       path: '/ldap'
       fullPath: '/settings/ldap'
       preLoaderRoute: typeof SettingsLdapRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/integrations': {
+      id: '/settings/integrations'
+      path: '/integrations'
+      fullPath: '/settings/integrations'
+      preLoaderRoute: typeof SettingsIntegrationsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/floorplan': {
@@ -8115,6 +8134,7 @@ interface SettingsRouteChildren {
   SettingsDeviceFieldsRoute: typeof SettingsDeviceFieldsRoute
   SettingsEmailRoute: typeof SettingsEmailRoute
   SettingsFloorplanRoute: typeof SettingsFloorplanRoute
+  SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   SettingsLdapRoute: typeof SettingsLdapRoute
   SettingsMapsRoute: typeof SettingsMapsRoute
   SettingsMonitoringRoute: typeof SettingsMonitoringRoute
@@ -8142,6 +8162,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsDeviceFieldsRoute: SettingsDeviceFieldsRoute,
   SettingsEmailRoute: SettingsEmailRoute,
   SettingsFloorplanRoute: SettingsFloorplanRoute,
+  SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   SettingsLdapRoute: SettingsLdapRoute,
   SettingsMapsRoute: SettingsMapsRoute,
   SettingsMonitoringRoute: SettingsMonitoringRoute,
