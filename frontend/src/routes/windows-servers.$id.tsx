@@ -29,16 +29,24 @@ import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { DhcpReservationDialog } from "@/components/integrations/dhcp-reservation-dialog"
+import { DnsPanel } from "@/components/integrations/dns-panel"
 import { WindowsConnectionDialog } from "@/components/integrations/windows-connection-dialog"
 import { SyncStatusBadge, roleBadges } from "./windows-servers.index"
 
 const OBJECT_TYPE = "integrations.windowsserverconnection"
 
-type Tab = "overview" | "reservations" | "leases" | "journal" | "history"
+type Tab =
+  | "overview"
+  | "reservations"
+  | "leases"
+  | "dns"
+  | "journal"
+  | "history"
 const TABS: readonly Tab[] = [
   "overview",
   "reservations",
   "leases",
+  "dns",
   "journal",
   "history",
 ]
@@ -226,6 +234,7 @@ function Body({ conn }: { conn: WindowsConnection }) {
           count: driftCount || undefined,
         },
         { value: "leases", label: "Leases" },
+        { value: "dns", label: "DNS" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
       ]}
@@ -240,6 +249,9 @@ function Body({ conn }: { conn: WindowsConnection }) {
       </DetailTab>
       <DetailTab value="leases">
         <Leases conn={conn} scopes={scopeRows} />
+      </DetailTab>
+      <DetailTab value="dns">
+        <DnsPanel conn={conn} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType={OBJECT_TYPE} objectId={conn.id} />

@@ -105,8 +105,35 @@ the server simply mirror it and are never flagged.
 
 ## Windows DNS
 
-Lands with the DNS sync toggle — zone enumeration (opt-in per zone),
-A/AAAA/PTR reconciliation against IP DNS names, and record push.
+Enable the **Windows DNS sync** toggle and tick the DNS role on the
+connection. The server's **DNS** tab then lists every zone (auto-created and
+system zones like TrustAnchors are skipped); click a zone to view its records
+**live** off the server.
+
+### Reconciliation (opt-in per zone)
+
+Flip a zone's **Reconcile** switch and the sync compares its A/AAAA (and PTR,
+for reverse zones) records against your IP addresses' **DNS names**:
+
+- IP found, DNS name blank → the name is **filled in** (blank-fill only —
+  the one automatic write).
+- Names agree → in sync; nothing happens.
+- Names differ → a **drift** entry: *Name differs*, showing both sides.
+- An IP carries a name inside a reconciled forward zone, but the zone has no
+  record for it → *No record on server*.
+- A record whose address isn't in Danbyte at all is left alone — see it in
+  the live zone viewer.
+
+Nothing beyond blank-fill is ever applied automatically. Each drift entry is
+settled by hand: **Accept** (the server wins — the IP takes the server's
+name, or loses its name when no record exists) or **Push ours** (Danbyte
+wins — the record is rewritten on the server via
+`Remove-/Add-DnsServerResourceRecord`). Drift that stops reproducing — because
+someone fixed it on either side — clears itself on the next sync.
+
+Out of scope for now: CNAME/MX/SRV/TXT management, creating zones, and
+DNSSEC. Point the connection at one server of an AD-replicated set; AD
+replication carries pushed records to the rest.
 
 ## Virtualization (Proxmox)
 

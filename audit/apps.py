@@ -145,6 +145,7 @@ AUDITED_MODELS = [
     "integrations.IntegrationSettings",
     "integrations.DhcpScope",
     "integrations.DhcpReservation",
+    "integrations.DnsZone",
     # Governance config.
     "compliance.ComplianceRule",
     # Access: object permissions + public share links.

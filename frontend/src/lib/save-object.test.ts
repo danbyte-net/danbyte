@@ -52,6 +52,11 @@ const UNMIGRATED_FORMS = new Set<string>([
   "routes/services.$id.tsx",
   // Deployment settings, not a domain object.
   "routes/settings.sso.tsx",
+  // External-sync writes: saving pushes to a live Windows server over WinRM
+  // (Add/Set-DhcpServerv4Reservation) — replaying one later as a planned
+  // change can't honour that contract, so these stay direct on purpose.
+  "components/integrations/dhcp-reservation-dialog.tsx",
+  "components/integrations/windows-connection-dialog.tsx",
 ])
 
 function walk(dir: string): string[] {

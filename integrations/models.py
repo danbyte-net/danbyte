@@ -593,3 +593,73 @@ class DhcpLease(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.ip} lease → {self.mac}"
+
+
+# ─── Windows DNS sync state ───────────────────────────────────────────────────
+
+
+class DnsZone(TimestampedModel):
+    """One zone on a Windows DNS server. Zones are always *listed*; record
+    reconciliation is opt-in per zone via ``sync`` (AD deployments carry
+    system zones nobody wants reconciled)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    connection = models.ForeignKey(
+        WindowsServerConnection, on_delete=models.CASCADE, related_name="dns_zones"
+    )
+    name = models.CharField(max_length=255)
+    zone_type = models.CharField(max_length=32, blank=True, default="")
+    is_reverse = models.BooleanField(default=False)
+    sync = models.BooleanField(default=False)
+    record_count = models.PositiveIntegerField(default=0)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["connection", "name"], name="uniq_dnszone_conn_name"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class DnsDrift(TimestampedModel):
+    """A disagreement between a zone's records and an IP's DNS name.
+
+    ``mismatch``: the record for this IP names something else than the IP's
+    ``dns_name``. ``missing_record``: the IP carries a name inside this zone
+    but the zone has no record for it. Rows are recomputed on every sync and
+    resolved by the operator (accept the server / push Danbyte's version) —
+    never auto-applied.
+    """
+
+    KIND_CHOICES = [
+        ("mismatch", "Name differs"),
+        ("missing_record", "No record on server"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    zone = models.ForeignKey(DnsZone, on_delete=models.CASCADE, related_name="drifts")
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    record_type = models.CharField(max_length=8, blank=True, default="")  # A/AAAA/PTR
+    ip = models.GenericIPAddressField()
+    ip_address = models.ForeignKey(
+        "api.IPAddress", on_delete=models.CASCADE, related_name="dns_drifts"
+    )
+    danbyte_name = models.CharField(max_length=255, blank=True, default="")
+    server_name = models.CharField(max_length=255, blank=True, default="")
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["ip"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["zone", "ip", "record_type"], name="uniq_dnsdrift_zone_ip_type"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.ip}: {self.danbyte_name!r} vs {self.server_name!r}"

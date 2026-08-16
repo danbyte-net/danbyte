@@ -6908,3 +6908,38 @@ export interface DhcpLease {
   ip_address: string | null
   last_seen_at: string | null
 }
+
+export interface DnsZone {
+  id: string
+  connection: string
+  connection_name: string
+  name: string
+  zone_type: string
+  is_reverse: boolean
+  sync: boolean
+  record_count: number
+  drift_count: number
+  last_seen_at: string | null
+  updated_at: string
+}
+
+export interface DnsDrift {
+  id: string
+  zone: string
+  zone_name: string
+  kind: "mismatch" | "missing_record"
+  kind_display: string
+  record_type: string
+  ip: string
+  ip_address: string | null
+  danbyte_name: string
+  server_name: string
+  last_seen_at: string | null
+}
+
+export interface DnsLiveRecord {
+  HostName: string
+  rtype: string
+  ttl: string
+  data: string
+}

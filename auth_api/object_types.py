@@ -206,6 +206,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("integrations.DhcpScope", "DHCP scopes", "Integrations"),
     ("integrations.DhcpReservation", "DHCP reservations", "Integrations"),
     ("integrations.DhcpLease", "DHCP leases", "Integrations"),
+    ("integrations.DnsZone", "DNS zones", "Integrations"),
+    ("integrations.DnsDrift", "DNS drift", "Integrations"),
     # ─── Planning ───────────────────────────────────────────────────
     ("planning.Board", "Boards", "Planning"),
     ("planning.TaskStatus", "Task statuses", "Planning"),

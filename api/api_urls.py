@@ -85,6 +85,10 @@ from integrations.api import (
     DeviceConfigStateViewSet,
     WebhookViewSet,
 )
+from integrations.dns_api import (
+    DnsDriftViewSet,
+    DnsZoneViewSet,
+)
 from integrations.dhcp_api import (
     DhcpLeaseViewSet,
     DhcpReservationViewSet,
@@ -359,6 +363,8 @@ router.register(r"dhcp-scopes", DhcpScopeViewSet, basename="dhcp-scope")
 router.register(r"dhcp-reservations", DhcpReservationViewSet,
                 basename="dhcp-reservation")
 router.register(r"dhcp-leases", DhcpLeaseViewSet, basename="dhcp-lease")
+router.register(r"dns-zones", DnsZoneViewSet, basename="dns-zone")
+router.register(r"dns-drifts", DnsDriftViewSet, basename="dns-drift")
 router.register(r"deploy-runs",   DeployRunViewSet,   basename="deploy-run")
 router.register(r"config-states", DeviceConfigStateViewSet, basename="config-state")
 router.register(r"config-snapshots", DeviceConfigSnapshotViewSet, basename="config-snapshot")
