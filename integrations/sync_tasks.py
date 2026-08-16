@@ -94,6 +94,9 @@ def enqueue_due_virt_syncs() -> int:
     for source in VirtualizationSource.objects.filter(enabled=True).select_related(
         "tenant"
     ):
+        # manual sources only sync on demand — the beat leaves them alone.
+        if source.sync_mode == "manual":
+            continue
         if integration_enabled(source.tenant, "virtualization") and _due(source, now):
             q.enqueue(run_virt_sync, str(source.id), job_timeout=600)
             queued += 1

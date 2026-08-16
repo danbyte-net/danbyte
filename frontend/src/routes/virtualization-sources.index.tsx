@@ -2,7 +2,7 @@ import { useMemo, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Plug, Plus, RefreshCw } from "lucide-react"
+import { Inbox, Plug, Plus, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
 import { api, type Paginated, type VirtualizationSource } from "@/lib/api"
@@ -17,12 +17,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { FormCheckbox, FormText } from "@/components/forms"
+import { FormCheckbox, FormSelect, FormText } from "@/components/forms"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { TimeCell } from "@/components/cells/time-ago"
+import { VirtChangesDialog } from "@/components/integrations/virt-changes-dialog"
 
 export const Route = createFileRoute("/virtualization-sources/")({
   component: VirtualizationSourcesPage,
@@ -37,6 +38,7 @@ function VirtualizationSourcesPage() {
   const [q, setQ] = useState("")
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<VirtualizationSource | null>(null)
+  const [reviewing, setReviewing] = useState<VirtualizationSource | null>(null)
 
   const query = useQuery({
     queryKey: ["virtualization-sources", q],
@@ -130,6 +132,34 @@ function VirtualizationSourcesPage() {
             {row.original.kind_display}
           </Badge>
         ),
+      },
+      {
+        id: "mode",
+        accessorKey: "sync_mode",
+        header: "Mode",
+        cell: ({ row }) => {
+          const m = row.original.sync_mode
+          const label =
+            m === "auto" ? "automatic" : m === "manual" ? "manual" : "review"
+          return (
+            <span className="flex items-center gap-2">
+              <Badge variant="secondary" className="text-[10px]">
+                {label}
+              </Badge>
+              {row.original.pending_count > 0 && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-1.5 text-[11px]"
+                  onClick={() => setReviewing(row.original)}
+                >
+                  <Inbox className="h-3.5 w-3.5" />
+                  {row.original.pending_count} to review
+                </Button>
+              )}
+            </span>
+          )
+        },
       },
       {
         id: "host",
@@ -245,6 +275,12 @@ function VirtualizationSourcesPage() {
           onOpenChange={(o) => !o && setEditing(null)}
         />
       )}
+      {reviewing && (
+        <VirtChangesDialog
+          source={reviewing}
+          onOpenChange={(o) => !o && setReviewing(null)}
+        />
+      )}
     </ListPageShell>
   )
 }
@@ -265,6 +301,9 @@ function SourceDialog({
   const [verifySsl, setVerifySsl] = useState(source?.verify_ssl ?? false)
   const [tokenId, setTokenId] = useState("")
   const [secret, setSecret] = useState("")
+  const [syncMode, setSyncMode] = useState<string>(
+    source?.sync_mode ?? "review"
+  )
   const [interval, setInterval] = useState(
     String(source?.poll_interval_minutes ?? 10)
   )
@@ -278,6 +317,7 @@ function SourceDialog({
         host: host.trim(),
         port: Number(port) || 8006,
         verify_ssl: verifySsl,
+        sync_mode: syncMode,
         poll_interval_minutes: Number(interval) || 10,
         enabled,
       }
@@ -329,6 +369,17 @@ function SourceDialog({
             info="Any cluster node works — the API answers cluster-wide."
           />
           <FormText label="API port" value={port} onChange={setPort} />
+          <FormSelect
+            label="Sync mode"
+            value={syncMode}
+            onChange={(v) => setSyncMode(v ?? "review")}
+            info="Automatic mirrors the hypervisor (it becomes the source of truth). Review polls on a schedule but only applies changes you accept. Manual detects only when you sync by hand — both keep Danbyte the source of truth."
+            options={[
+              { value: "review", label: "Review — apply on accept" },
+              { value: "auto", label: "Automatic — mirror" },
+              { value: "manual", label: "Manual — detect on demand" },
+            ]}
+          />
           <FormText
             label="Poll interval (minutes)"
             value={interval}

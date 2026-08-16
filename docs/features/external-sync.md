@@ -149,12 +149,44 @@ cluster/VM inventory**:
 | Guest NIC (`netX`) | **VM interface** with its MAC |
 | Guest-agent IP | **IP address** assigned to the interface |
 
+### Sync mode — who is the source of truth
+
+Each source has a **sync mode** that decides how discovered differences reach
+the inventory:
+
+- **Automatic (mirror)** — the sync applies everything on a schedule: new VMs
+  are created, specs updated, and VMs whose guests disappear are removed. The
+  **hypervisor is the source of truth**. Hands-off, but Danbyte follows
+  Proxmox.
+- **Review** (default) — the sync still polls on a schedule, but only to
+  **detect**. New VMs, changed specs and removals land in a **review inbox**
+  ("N to review" on the sources list); nothing changes until you **Accept**
+  each one (or **Ignore** it until it changes again). **Danbyte stays the
+  source of truth.**
+- **Manual** — like Review, but nothing is scheduled: differences are detected
+  only when you press **Sync**, and applied only on accept.
+
+A new source defaults to **Review** so a fresh connection never reshapes your
+inventory before you've seen what it would do.
+
+### What each side owns
+
+- The **hypervisor owns** a VM's existence, its node, power state, and — in
+  Automatic mode — its specs (vCPU/RAM/disk).
+- **You own** everything else: role, platform, tags, custom fields,
+  description, site, and the primary-IP choice. The sync **never** overwrites
+  those in any mode.
+
 Rules:
 
 - Same adoption policy as the Windows syncs: VMs, interfaces and IPs you
   already have are linked and blank-filled, never overwritten — and never
   deleted by sync. Only objects the sync created itself are removed again
-  when their guest disappears from the hypervisor.
+  when their guest disappears from the hypervisor (Automatic), or offered as a
+  removal to accept (Review/Manual).
+- Interface and guest-IP discovery is additive (blank-fill) and runs for any
+  already-linked VM in every mode — the review inbox is only for the decisions
+  that reshape inventory: new VMs, spec changes, and removals.
 - Guest IPs come from the **QEMU guest agent**, so they only appear for
   running QEMU VMs with the agent installed. An IP is only created when a
   **containing prefix** already exists — sync never invents address space.

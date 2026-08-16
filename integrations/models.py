@@ -411,6 +411,17 @@ class VirtualizationSource(TimestampedModel):
 
     KIND_CHOICES = [("proxmox", "Proxmox VE"), ("vcenter", "VMware vCenter")]
 
+    #: How discovered changes reach the inventory. ``auto`` mirrors the
+    #: hypervisor (it becomes the source of truth); ``review`` and ``manual``
+    #: keep Danbyte the source of truth — nothing changes without a human
+    #: accepting it. ``review`` still polls on a schedule to *detect*; ``manual``
+    #: only detects when you run a sync by hand.
+    MODE_CHOICES = [
+        ("auto", "Automatic (mirror)"),
+        ("review", "Review (scheduled detect, apply on accept)"),
+        ("manual", "Manual (detect on demand, apply on accept)"),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
         "core.Tenant", on_delete=models.CASCADE, related_name="virtualization_sources"
@@ -422,6 +433,9 @@ class VirtualizationSource(TimestampedModel):
     verify_ssl = models.BooleanField(default=False)
     credentials = EncryptedJSONField(default=dict, blank=True)
 
+    # Default to review: a fresh connection shouldn't silently reshape the
+    # inventory before an operator has seen what it would do.
+    sync_mode = models.CharField(max_length=8, choices=MODE_CHOICES, default="review")
     poll_interval_minutes = models.PositiveIntegerField(default=10)
     enabled = models.BooleanField(default=True)
 
@@ -703,3 +717,51 @@ class VirtGuest(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.kind}/{self.vmid} on {self.node}"
+
+
+class VirtChange(TimestampedModel):
+    """A discovered difference between the hypervisor and Danbyte's inventory,
+    awaiting a human decision (review/manual modes) — the review inbox.
+
+    In ``auto`` mode changes are applied straight away and no rows land here.
+    In ``review``/``manual`` mode each detected difference is recorded once and
+    resolved by **accept** (apply it) or **ignore** (dismiss until it changes
+    again), so Danbyte stays the source of truth.
+    """
+
+    KIND_CHOICES = [
+        ("new_guest", "New VM on hypervisor"),
+        ("spec_change", "Specs changed"),
+        ("removed_guest", "VM removed from hypervisor"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    source = models.ForeignKey(
+        VirtualizationSource, on_delete=models.CASCADE, related_name="changes"
+    )
+    guest = models.ForeignKey(
+        VirtGuest, on_delete=models.CASCADE, related_name="changes"
+    )
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    vm = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="virt_changes",
+    )
+    # For new_guest: the proposed VM attributes. For spec_change:
+    # {field: {"danbyte": …, "hypervisor": …}}. For removed_guest: {}.
+    detail = models.JSONField(default=dict, blank=True)
+    # Dismissed by the operator: kept (so detection doesn't re-raise it) but
+    # hidden from the default inbox until it's accepted or the guest goes away.
+    ignored = models.BooleanField(default=False)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["kind", "guest__vmid"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["guest", "kind"], name="uniq_virtchange_guest_kind"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.kind} · {self.guest_id}"

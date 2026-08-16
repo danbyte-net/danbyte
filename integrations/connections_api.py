@@ -153,9 +153,13 @@ class VirtualizationSourceSerializer(serializers.ModelSerializer):
     )
     credentials_set = serializers.SerializerMethodField()
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+    pending_count = serializers.SerializerMethodField()
 
     def get_credentials_set(self, obj) -> bool:
         return bool((obj.credentials or {}).get("secret"))
+
+    def get_pending_count(self, obj) -> int:
+        return obj.changes.filter(ignored=False).count()
 
     def validate_kind(self, value):
         if value == "vcenter":
@@ -187,11 +191,11 @@ class VirtualizationSourceSerializer(serializers.ModelSerializer):
         model = VirtualizationSource
         fields = ["id", "name", "kind", "kind_display", "host", "port",
                   "verify_ssl", "token_id", "secret", "credentials_set",
-                  "poll_interval_minutes", "enabled", "last_sync_at",
-                  "last_sync_status", "last_sync_error",
-                  "created_at", "updated_at"]
+                  "sync_mode", "poll_interval_minutes", "enabled",
+                  "pending_count", "last_sync_at", "last_sync_status",
+                  "last_sync_error", "created_at", "updated_at"]
         read_only_fields = ["id", "kind_display", "credentials_set",
-                            "last_sync_at", "last_sync_status",
+                            "pending_count", "last_sync_at", "last_sync_status",
                             "last_sync_error", "created_at", "updated_at"]
 
 

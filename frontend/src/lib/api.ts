@@ -6953,11 +6953,28 @@ export interface VirtualizationSource {
   port: number
   verify_ssl: boolean
   credentials_set: boolean
+  sync_mode: "auto" | "review" | "manual"
   poll_interval_minutes: number
   enabled: boolean
+  pending_count: number
   last_sync_at: string | null
   last_sync_status: string
   last_sync_error: string
   created_at: string
   updated_at: string
+}
+
+export interface VirtChange {
+  id: string
+  source: string
+  source_name: string
+  kind: "new_guest" | "spec_change" | "removed_guest"
+  kind_display: string
+  vmid: number
+  node: string
+  vm: string | null
+  vm_name: string
+  detail: Record<string, unknown>
+  ignored: boolean
+  last_seen_at: string | null
 }

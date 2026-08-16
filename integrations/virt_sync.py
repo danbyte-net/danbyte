@@ -54,7 +54,7 @@ def _parse_net(value: str) -> dict:
 
 
 def sync_proxmox(source) -> dict:
-    from .models import VirtGuest
+    from .models import VirtChange, VirtGuest
 
     # cluster/status needs Sys.Audit on / — a narrowly-scoped token may be
     # denied it while still seeing VMs. Fall back to /nodes + the source name.
@@ -75,8 +75,9 @@ def sync_proxmox(source) -> dict:
     ]
 
     now = timezone.now()
+    apply = source.sync_mode == "auto"
     counts = {"nodes": len(nodes), "vms": 0, "vms_created": 0,
-              "interfaces": 0, "ips": 0}
+              "interfaces": 0, "ips": 0, "pending": 0}
 
     # Guest details come over the network — fetch before the DB transaction.
     details = {}
@@ -100,8 +101,17 @@ def sync_proxmox(source) -> dict:
         details[vmid] = (cfg, agent_ifaces)
 
     with transaction.atomic():
-        cluster = _cluster_for(source, cluster_name)
+        # The cluster is a container — only materialise it when a VM actually
+        # lands (so a review-mode source with nothing accepted stays inert).
+        cluster_box: list = []
+
+        def cluster():
+            if not cluster_box:
+                cluster_box.append(_cluster_for(source, cluster_name))
+            return cluster_box[0]
+
         seen = set()
+        fresh_changes: set = set()  # (guest_id, kind) queued this pass
         for r in resources:
             vmid = r.get("vmid")
             if vmid is None:
@@ -116,28 +126,165 @@ def sync_proxmox(source) -> dict:
             guest.node = r.get("node") or ""
             guest.power_state = r.get("status") or ""
             guest.last_seen_at = now
-            created = _attach_vm(source, cluster, guest, r)
-            if created:
-                counts["vms_created"] += 1
-            cfg, agent_ifaces = details.get(vmid, ({}, []))
-            counts["interfaces"] += _sync_interfaces(guest, cfg)
-            counts["ips"] += _sync_ips(source, guest, agent_ifaces)
             guest.save()
+            _reconcile_guest(source, cluster, cluster_name, guest, r, apply,
+                             now, counts, fresh_changes)
+            if guest.vm_id:
+                cfg, agent_ifaces = details.get(vmid, ({}, []))
+                counts["interfaces"] += _sync_interfaces(guest, cfg)
+                counts["ips"] += _sync_ips(source, guest, agent_ifaces)
 
-        # Guests gone from the hypervisor: drop the link; delete the VM only
-        # if this sync created it (operator inventory is never sync-deleted).
+        # Guests gone from the hypervisor.
         for gone in VirtGuest.objects.filter(source=source).exclude(vmid__in=seen):
-            if gone.created_vm and gone.vm_id:
-                gone.vm.delete()
-            gone.delete()
+            if gone.vm_id and gone.created_vm:
+                if apply:
+                    gone.vm.delete()
+                    gone.delete()
+                else:
+                    _queue_change(gone, "removed_guest", {}, now, fresh_changes)
+            else:
+                # An adopted (operator-owned) VM or one never accepted: drop the
+                # tracking row, never the VM.
+                gone.delete()
+
+        _prune_changes(source, fresh_changes)
+        counts["pending"] = VirtChange.objects.filter(
+            source=source, ignored=False
+        ).count()
 
     source.last_sync_at = now
     source.last_sync_status = "ok"
     source.last_sync_error = ""
     source.save(update_fields=["last_sync_at", "last_sync_status",
                                "last_sync_error"])
-    logger.info("proxmox sync %s: %s", source.name, counts)
+    logger.info("proxmox sync %s (%s): %s", source.name, source.sync_mode, counts)
     return counts
+
+
+def _desired_specs(resource: dict) -> dict:
+    maxmem = resource.get("maxmem") or 0
+    maxdisk = resource.get("maxdisk") or 0
+    return {
+        "vcpus": int(resource.get("maxcpu") or 0) or None,
+        "memory_mb": int(maxmem / 1024 / 1024) or None,
+        "disk_gb": int(maxdisk / 1024 / 1024 / 1024) or None,
+    }
+
+
+def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
+                     counts, fresh_changes) -> None:
+    """Bring one guest into line with the inventory — applying (auto) or
+    queuing a change (review/manual)."""
+    from api.models import VirtualMachine
+
+    name = resource.get("name") or f"vm-{guest.vmid}"
+    specs = _desired_specs(resource)
+
+    if guest.vm_id is None:
+        # Adopt an operator's existing VM of the same name — a non-destructive
+        # link, so it happens in every mode.
+        adopted = VirtualMachine.objects.filter(
+            tenant=source.tenant, name=name
+        ).first()
+        if adopted is not None:
+            guest.vm = adopted
+            guest.created_vm = False
+            guest.save(update_fields=["vm", "created_vm"])
+            _blank_fill(adopted, specs, source, guest)
+            _clear_change(guest, "new_guest")
+            return
+        if apply:
+            vm = VirtualMachine.objects.create(
+                tenant=source.tenant, name=name, cluster=cluster(),
+                description=f"Synced from «{source.name}»", **_nonnull(specs),
+            )
+            guest.vm = vm
+            guest.created_vm = True
+            guest.save(update_fields=["vm", "created_vm"])
+            _blank_fill(vm, {}, source, guest)  # node → device
+            counts["vms_created"] += 1
+        else:
+            detail = {"name": name, "node": guest.node, "kind": guest.kind,
+                      "cluster": cluster_name, **_nonnull(specs)}
+            _queue_change(guest, "new_guest", detail, now, fresh_changes)
+        return
+
+    # Already linked. Sync-created rows track the hypervisor's specs; adopted
+    # rows are operator-owned and only ever blank-filled.
+    vm = guest.vm
+    if guest.created_vm:
+        diffs = {}
+        for field, value in specs.items():
+            if value is not None and getattr(vm, field) != value:
+                diffs[field] = {"danbyte": getattr(vm, field), "hypervisor": value}
+        if diffs:
+            if apply:
+                for field, pair in diffs.items():
+                    setattr(vm, field, pair["hypervisor"])
+                vm.save(update_fields=list(diffs))
+                _clear_change(guest, "spec_change")
+            else:
+                _queue_change(guest, "spec_change", diffs, now, fresh_changes)
+        else:
+            _clear_change(guest, "spec_change")
+    _blank_fill(vm, {} if guest.created_vm else specs, source, guest)
+
+
+def _nonnull(specs: dict) -> dict:
+    return {k: v for k, v in specs.items() if v is not None}
+
+
+def _blank_fill(vm, specs, source, guest) -> None:
+    """Fill only empty spec fields (adopted rows) and the host device link.
+    Never overwrites operator data."""
+    from api.models import Device
+
+    changed = []
+    for field, value in (specs or {}).items():
+        if value is not None and getattr(vm, field) in (None, 0):
+            setattr(vm, field, value)
+            changed.append(field)
+    if guest.node and vm.device_id is None:
+        host = Device.objects.filter(
+            tenant=source.tenant, name__iexact=guest.node
+        ).first()
+        if host is not None:
+            vm.device = host
+            changed.append("device")
+    if changed:
+        vm.save(update_fields=changed)
+
+
+def _queue_change(guest, kind, detail, now, fresh_changes) -> None:
+    """Record (or refresh) a pending change without disturbing an ignore."""
+    from .models import VirtChange
+
+    row, created = VirtChange.objects.get_or_create(
+        guest=guest, kind=kind,
+        defaults={"source": guest.source, "vm": guest.vm, "detail": detail,
+                  "last_seen_at": now},
+    )
+    if not created:
+        row.detail = detail
+        row.vm = guest.vm
+        row.last_seen_at = now
+        row.save(update_fields=["detail", "vm", "last_seen_at"])
+    fresh_changes.add((guest.id, kind))
+
+
+def _clear_change(guest, kind) -> None:
+    from .models import VirtChange
+
+    VirtChange.objects.filter(guest=guest, kind=kind).delete()
+
+
+def _prune_changes(source, fresh_changes) -> None:
+    """Drop change rows that no longer reproduce (resolved on the hypervisor)."""
+    from .models import VirtChange
+
+    for row in VirtChange.objects.filter(source=source).select_related("guest"):
+        if (row.guest_id, row.kind) not in fresh_changes:
+            row.delete()
 
 
 def _cluster_for(source, name: str):
@@ -157,59 +304,6 @@ def _cluster_for(source, name: str):
         tenant=source.tenant, name=name, type=ctype,
         description=f"Synced from «{source.name}»",
     )
-
-
-def _attach_vm(source, cluster, guest, resource) -> bool:
-    """Link (or create) the VirtualMachine for a guest. Returns created."""
-    from api.models import Device, VirtualMachine
-
-    name = resource.get("name") or f"vm-{guest.vmid}"
-    vm = guest.vm
-    created = False
-    if vm is None:
-        vm = VirtualMachine.objects.filter(
-            tenant=source.tenant, name=name
-        ).first()
-        if vm is None:
-            vm = VirtualMachine.objects.create(
-                tenant=source.tenant, name=name, cluster=cluster,
-                description=f"Synced from «{source.name}»",
-            )
-            created = True
-            guest.created_vm = True
-        guest.vm = vm
-
-    # Specs: sync-created rows track the hypervisor; adopted rows blank-fill.
-    own = guest.created_vm
-    maxmem = resource.get("maxmem") or 0
-    maxdisk = resource.get("maxdisk") or 0
-    updates = {
-        "vcpus": int(resource.get("maxcpu") or 0) or None,
-        "memory_mb": int(maxmem / 1024 / 1024) or None,
-        "disk_gb": int(maxdisk / 1024 / 1024 / 1024) or None,
-    }
-    changed = []
-    for field, value in updates.items():
-        if value is None:
-            continue
-        if own or getattr(vm, field) in (None, 0):
-            if getattr(vm, field) != value:
-                setattr(vm, field, value)
-                changed.append(field)
-    if vm.cluster_id != cluster.id and own:
-        vm.cluster = cluster
-        changed.append("cluster")
-    # The node it runs on, when a Device of that name exists (blank-fill).
-    if guest.node and vm.device_id is None:
-        host = Device.objects.filter(
-            tenant=source.tenant, name__iexact=guest.node
-        ).first()
-        if host is not None:
-            vm.device = host
-            changed.append("device")
-    if changed:
-        vm.save(update_fields=changed)
-    return created
 
 
 def _sync_interfaces(guest, cfg: dict) -> int:
@@ -311,3 +405,56 @@ def record_virt_failure(source, exc: Exception) -> None:
     source.last_sync_error = str(exc)[:2000]
     source.save(update_fields=["last_sync_at", "last_sync_status",
                                "last_sync_error"])
+
+
+# ─── Review inbox: accept / ignore a pending change ───────────────────────────
+
+
+def apply_change(change) -> None:
+    """Apply one pending :class:`VirtChange` to the inventory, then clear it.
+
+    Interface/IP enrichment for a newly-created VM lands on the next sync pass
+    (it needs the guest's live config), so accepting a ``new_guest`` creates
+    the VM shell and links it — the specs and NICs fill in on the next detect.
+    """
+    from api.models import VirtualMachine
+
+    guest = change.guest
+    if change.kind == "removed_guest":
+        if guest.vm_id and guest.created_vm:
+            guest.vm.delete()
+        guest.delete()  # cascades the change row
+        return
+
+    if change.kind == "new_guest":
+        detail = change.detail or {}
+        cluster = _cluster_for(guest.source, detail.get("cluster") or guest.source.name)
+        specs = {k: detail.get(k) for k in ("vcpus", "memory_mb", "disk_gb")}
+        vm = VirtualMachine.objects.create(
+            tenant=guest.source.tenant,
+            name=detail.get("name") or f"vm-{guest.vmid}",
+            cluster=cluster,
+            description=f"Synced from «{guest.source.name}»",
+            **{k: v for k, v in specs.items() if v is not None},
+        )
+        guest.vm = vm
+        guest.created_vm = True
+        guest.save(update_fields=["vm", "created_vm"])
+        _blank_fill(vm, {}, guest.source, guest)  # node → device
+    elif change.kind == "spec_change":
+        vm = guest.vm
+        if vm is not None:
+            fields = []
+            for field, pair in (change.detail or {}).items():
+                setattr(vm, field, pair.get("hypervisor"))
+                fields.append(field)
+            if fields:
+                vm.save(update_fields=fields)
+    change.delete()
+
+
+def ignore_change(change) -> None:
+    """Dismiss a change: kept so detection won't re-raise it, hidden from the
+    default inbox until it's accepted or the guest disappears."""
+    change.ignored = True
+    change.save(update_fields=["ignored"])
