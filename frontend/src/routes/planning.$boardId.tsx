@@ -1,7 +1,13 @@
 import { useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { CalendarDays, ChevronLeft, ChevronRight, Flag } from "lucide-react"
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Flag,
+  Pencil,
+} from "lucide-react"
 
 import {
   api,
@@ -20,6 +26,7 @@ import {
   type AssigneeFilter,
 } from "@/components/planning/assignee-filter"
 import { BoardCanvas } from "@/components/planning/board-canvas"
+import { BoardDialog } from "@/components/planning/board-dialog"
 import { MilestoneManagerDialog } from "@/components/planning/milestone-manager"
 import { TaskDetailSheet } from "@/components/planning/task-detail"
 
@@ -39,6 +46,7 @@ function BoardPage() {
   const canEdit = canDo("task", "change") || canDo("task", "add")
   const [openTask, setOpenTask] = useState<PlanningTask | null>(null)
   const [milestonesOpen, setMilestonesOpen] = useState(false)
+  const [editingBoard, setEditingBoard] = useState(false)
   const [assignee, setAssignee] = useState<AssigneeFilter>(null)
 
   const boardQ = useQuery({
@@ -88,6 +96,17 @@ function BoardPage() {
             {board?.name ?? "…"}
           </h1>
         </nav>
+        {board && canDo("board", "change") && (
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="text-muted-foreground"
+            title="Edit board name, description, tags"
+            onClick={() => setEditingBoard(true)}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+        )}
         <Badge variant="secondary">
           {assignee === null
             ? tasks.length
@@ -134,6 +153,12 @@ function BoardPage() {
           boardId={boardId}
           open={milestonesOpen}
           onOpenChange={setMilestonesOpen}
+        />
+      )}
+      {editingBoard && board && (
+        <BoardDialog
+          board={board}
+          onOpenChange={(o) => !o && setEditingBoard(false)}
         />
       )}
       {openTaskLive && (

@@ -20,6 +20,10 @@ A new board starts with four columns — **Backlog, To do, In progress, Done** �
 as a working starting point. They're ordinary editable status rows, not fixed
 workflow: rename, recolor, reorder or replace them.
 
+Boards themselves are editable too: the pencil next to the board name (or the
+row actions on the Planning list) edits name, description, and **tags** — the
+list gets a tag facet rail, search, and bulk delete.
+
 ## Task statuses (columns)
 
 Columns are **status rows**, managed under **Statuses → Task statuses**

@@ -50,7 +50,12 @@ class BoardViewSet(TenantScopedViewSet):
     serializer_class = BoardSerializer
 
     def get_queryset(self):
-        return super().get_queryset().annotate(task_count=Count("tasks"))
+        return (
+            super()
+            .get_queryset()
+            .prefetch_related("tags")
+            .annotate(task_count=Count("tasks"))
+        )
 
     def perform_create(self, serializer):
         super().perform_create(serializer)

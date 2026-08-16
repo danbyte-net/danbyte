@@ -20,10 +20,10 @@ import uuid
 from django.conf import settings
 from django.db import models
 
-from core.models import Tenant, TimestampedModel
+from core.models import Tenant, TimestampedModel, TaggableMixin
 
 
-class Board(TimestampedModel):
+class Board(TaggableMixin, TimestampedModel):
     """A named kanban surface — e.g. "DC migration" or "Daily ops"."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

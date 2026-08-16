@@ -105,6 +105,21 @@ class BoardApiTests(Base):
         # Copies are plain columns, not templates themselves.
         self.assertFalse(fresh.statuses.filter(is_default=True).exists())
 
+    def test_board_edit_and_tags(self):
+        from core.models import Tag
+
+        board = self._board()
+        tag = Tag.objects.create(tenant=self.tenant, name="noc", slug="noc")
+        r = self.client.patch(
+            f"/api/planning/boards/{board.id}/",
+            {"name": "Renamed", "description": "d", "tag_ids": [tag.id]},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        data = self.client.get("/api/planning/boards/").json()["results"][0]
+        self.assertEqual(data["name"], "Renamed")
+        self.assertEqual([t["name"] for t in data["tags"]], ["noc"])
+
     def test_tenant_isolation(self):
         self._board(tenant=self.other, name="Theirs", slug="theirs")
         r = self.client.get("/api/planning/boards/")

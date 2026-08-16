@@ -3,6 +3,12 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+from api.serializers import (
+    TagSerializer,
+    TaggableSerializerMixin,
+    TenantScopedPrimaryKeyRelatedField,
+)
+from core.models import Tag
 from .models import (
     Board,
     Milestone,
@@ -15,13 +21,19 @@ from .models import (
 )
 
 
-class BoardSerializer(serializers.ModelSerializer):
+class BoardSerializer(TaggableSerializerMixin, serializers.ModelSerializer):
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
     task_count = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
         model = Board
         fields = [
             "id", "name", "slug", "description", "task_count",
+            "tags", "tag_ids",
             "created_at", "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]

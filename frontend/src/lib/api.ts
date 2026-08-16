@@ -5127,6 +5127,7 @@ export interface PlanningBoard {
   slug: string
   description: string
   task_count: number
+  tags: TagOption[]
   created_at: string
   updated_at: string
 }
