@@ -439,3 +439,157 @@ class VirtualizationSource(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.get_kind_display()})"
+
+
+# ─── Windows DHCP sync state ──────────────────────────────────────────────────
+
+
+class DhcpScope(TimestampedModel):
+    """Mirror of one Windows DHCP scope, linked to the Prefix it syncs into.
+
+    The IPAM objects (Prefix / IPRange / IPAddress) stay clean: everything
+    DHCP-specific — scope identity, options, lease-sync opt-in — lives here,
+    so a synced prefix is an ordinary prefix that happens to have a scope row
+    pointing at it.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    connection = models.ForeignKey(
+        WindowsServerConnection, on_delete=models.CASCADE, related_name="dhcp_scopes"
+    )
+    scope_id = models.CharField(max_length=64)  # Windows scope id, e.g. "10.77.0.0"
+    name = models.CharField(max_length=255, blank=True, default="")
+    description = models.TextField(blank=True, default="")
+    state = models.CharField(max_length=32, blank=True, default="")
+    start_range = models.GenericIPAddressField(null=True, blank=True)
+    end_range = models.GenericIPAddressField(null=True, blank=True)
+    subnet_mask = models.GenericIPAddressField(null=True, blank=True)
+    lease_duration = models.CharField(max_length=64, blank=True, default="")
+    # [{"option_id": 3, "name": "Router", "value": ["10.77.0.1"]}, …] — kept
+    # structured (not flattened) so scope options stay inspectable.
+    options = models.JSONField(default=list, blank=True)
+    prefix = models.ForeignKey(
+        "api.Prefix", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="dhcp_scopes",
+    )
+    # Lease sync is opt-in per scope: leases churn, and syncing them all by
+    # default would flood the DB for large scopes.
+    lease_sync = models.BooleanField(default=False)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["scope_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["connection", "scope_id"], name="uniq_dhcpscope_conn_scope"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.scope_id} ({self.name})"
+
+
+class DhcpExclusion(TimestampedModel):
+    """One exclusion range of a scope, linked to the IPRange it created."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    scope = models.ForeignKey(
+        DhcpScope, on_delete=models.CASCADE, related_name="exclusions"
+    )
+    start_address = models.GenericIPAddressField()
+    end_address = models.GenericIPAddressField()
+    ip_range = models.ForeignKey(
+        "api.IPRange", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="dhcp_exclusions",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["scope", "start_address", "end_address"],
+                name="uniq_dhcpexcl_scope_range",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.start_address}–{self.end_address}"
+
+
+class DhcpReservation(TimestampedModel):
+    """One DHCP reservation, mirrored from — or pushed to — the server.
+
+    ``managed`` marks rows Danbyte owns (created/edited here and pushed out);
+    on those, a change made directly in the Windows console is recorded as
+    ``drift`` for review instead of being silently adopted or overwritten.
+    """
+
+    DRIFT_CHOICES = [
+        ("", "In sync"),
+        ("modified", "Modified on server"),
+        ("missing", "Missing on server"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    scope = models.ForeignKey(
+        DhcpScope, on_delete=models.CASCADE, related_name="reservations"
+    )
+    ip = models.GenericIPAddressField()
+    mac = models.CharField(max_length=64, blank=True, default="")
+    name = models.CharField(max_length=255, blank=True, default="")
+    description = models.TextField(blank=True, default="")
+    ip_address = models.ForeignKey(
+        "api.IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="dhcp_reservations",
+    )
+    managed = models.BooleanField(default=False)
+    drift = models.CharField(
+        max_length=16, choices=DRIFT_CHOICES, blank=True, default=""
+    )
+    # {"field": {"danbyte": …, "server": …}} for the drift-review UI.
+    drift_detail = models.JSONField(default=dict, blank=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["ip"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["scope", "ip"], name="uniq_dhcpres_scope_ip"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.ip} → {self.mac}"
+
+
+class DhcpLease(TimestampedModel):
+    """A synced lease (only for scopes with lease sync switched on)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    scope = models.ForeignKey(
+        DhcpScope, on_delete=models.CASCADE, related_name="leases"
+    )
+    ip = models.GenericIPAddressField()
+    mac = models.CharField(max_length=64, blank=True, default="")
+    hostname = models.CharField(max_length=255, blank=True, default="")
+    address_state = models.CharField(max_length=32, blank=True, default="")
+    expires_at = models.DateTimeField(null=True, blank=True)
+    ip_address = models.ForeignKey(
+        "api.IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="dhcp_leases",
+    )
+    # True when the sync created the IPAddress row itself — only those are
+    # cleaned up again when the lease disappears; rows an operator already had
+    # (or has since edited) are never deleted by lease churn.
+    created_ip = models.BooleanField(default=False)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["ip"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["scope", "ip"], name="uniq_dhcplease_scope_ip"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.ip} lease → {self.mac}"

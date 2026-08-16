@@ -106,6 +106,7 @@ SCHEDULED_TASKS = [
     {"name": "drift", "label": "Config-drift dispatch", "cadence": "every minute"},
     {"name": "outposts", "label": "Drive Outposts", "cadence": "every minute"},
     {"name": "alert-maintenance", "label": "Alert maintenance", "cadence": "every minute"},
+    {"name": "external-sync", "label": "External sync (DHCP/DNS)", "cadence": "every minute"},
     {"name": "materialise", "label": "Materialise checks", "cadence": "every 5 min"},
     {"name": "discover", "label": "Subnet discovery", "cadence": "every 5 min"},
     {"name": "utilization", "label": "Interface utilization", "cadence": "every 15 min"},

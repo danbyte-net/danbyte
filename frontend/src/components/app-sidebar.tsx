@@ -45,6 +45,7 @@ import {
   Printer,
   Puzzle,
   Radio,
+  RefreshCw,
   Rocket,
   Rows3,
   Server,
@@ -150,6 +151,8 @@ type NavItem = {
   objectType?: string
   anyOf?: string[]
   perm?: string
+  /** Also require one of these Settings → Integrations toggles to be on. */
+  integration?: Array<"dhcp" | "dns" | "virtualization">
 }
 // A cluster is a labelled run of items inside a section (rendered as a small
 // sub-heading). `label` is optional — a single unlabelled cluster renders as a
@@ -803,6 +806,13 @@ const sections: NavSection[] = [
             icon: Upload,
             perm: "import.run",
           },
+          {
+            title: "Windows servers",
+            url: "/windows-servers",
+            icon: RefreshCw,
+            objectType: "windowsserverconnection",
+            integration: ["dhcp", "dns"],
+          },
         ],
       },
     ],
@@ -868,7 +878,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   // Hide any link the user can't reach — mirrors the API so the nav never
   // advertises a page that would only 403 (see NavItem for the gate kinds).
   // An item with no gate is universal and always shows.
+  // Integration-gated items also need their tenant toggle on (Settings →
+  // Integrations). Cached: this changes rarely and the page 404s anyway.
+  const integrations = useQuery({
+    queryKey: ["integrations-enabled"],
+    queryFn: () => api<Record<string, boolean>>("/api/integrations/enabled/"),
+    staleTime: 5 * 60_000,
+  })
   const itemVisible = (item: NavItem): boolean => {
+    if (
+      item.integration &&
+      !item.integration.some((k) => integrations.data?.[k])
+    )
+      return false
     if (item.objectType) return canDo(item.objectType, "view")
     if (item.anyOf) return item.anyOf.some((t) => canDo(t, "view"))
     if (item.perm) return can(item.perm)

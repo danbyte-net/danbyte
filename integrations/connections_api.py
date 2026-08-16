@@ -28,6 +28,19 @@ class IntegrationSettingsSerializer(serializers.ModelSerializer):
         fields = ["dhcp_sync_enabled", "dns_sync_enabled", "virtualization_enabled"]
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def integrations_enabled(request):
+    """Which integrations are on for the active tenant — read-only, any
+    member. The sidebar uses this to hide integration nav while it's off."""
+    from api.views import _get_active_tenant
+
+    from .toggles import KEYS, integration_enabled
+
+    tenant = _get_active_tenant(request)
+    return Response({k: integration_enabled(tenant, k) for k in KEYS})
+
+
 @api_view(["GET", "PUT"])
 @permission_classes([IsAuthenticated])
 def integration_settings(request):
@@ -117,6 +130,17 @@ class WindowsServerConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet
             return Response({"ok": False, "error": str(exc)}, status=502)
         data["ok"] = "dhcp_error" not in data and "dns_error" not in data
         return Response(data)
+
+    @action(detail=True, methods=["post"])
+    def sync(self, request, pk=None):
+        """Sync now, synchronously — the button behind the sync log."""
+        from .sync_tasks import run_windows_sync
+
+        conn = self.get_object()
+        result = run_windows_sync(str(conn.id))
+        if "error" in result:
+            return Response({"ok": False, **result}, status=502)
+        return Response({"ok": True, **result})
 
 
 # ─── Virtualization sources ──────────────────────────────────────────────────

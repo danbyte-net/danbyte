@@ -143,6 +143,8 @@ AUDITED_MODELS = [
     "integrations.WindowsServerConnection",
     "integrations.VirtualizationSource",
     "integrations.IntegrationSettings",
+    "integrations.DhcpScope",
+    "integrations.DhcpReservation",
     # Governance config.
     "compliance.ComplianceRule",
     # Access: object permissions + public share links.

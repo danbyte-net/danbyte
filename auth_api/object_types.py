@@ -203,6 +203,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("integrations.DeviceConfigState", "Device config state", "Integrations"),
     ("integrations.WindowsServerConnection", "Windows server connections", "Integrations"),
     ("integrations.VirtualizationSource", "Virtualization sources", "Integrations"),
+    ("integrations.DhcpScope", "DHCP scopes", "Integrations"),
+    ("integrations.DhcpReservation", "DHCP reservations", "Integrations"),
+    ("integrations.DhcpLease", "DHCP leases", "Integrations"),
     # ─── Planning ───────────────────────────────────────────────────
     ("planning.Board", "Boards", "Planning"),
     ("planning.TaskStatus", "Task statuses", "Planning"),

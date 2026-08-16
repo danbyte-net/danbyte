@@ -85,10 +85,16 @@ from integrations.api import (
     DeviceConfigStateViewSet,
     WebhookViewSet,
 )
+from integrations.dhcp_api import (
+    DhcpLeaseViewSet,
+    DhcpReservationViewSet,
+    DhcpScopeViewSet,
+)
 from integrations.connections_api import (
     VirtualizationSourceViewSet,
     WindowsServerConnectionViewSet,
     integration_settings,
+    integrations_enabled,
 )
 from integrations.netbox_api import (
     netbox_import_detail,
@@ -349,6 +355,10 @@ router.register(r"windows-connections", WindowsServerConnectionViewSet,
                 basename="windows-connection")
 router.register(r"virtualization-sources", VirtualizationSourceViewSet,
                 basename="virtualization-source")
+router.register(r"dhcp-scopes", DhcpScopeViewSet, basename="dhcp-scope")
+router.register(r"dhcp-reservations", DhcpReservationViewSet,
+                basename="dhcp-reservation")
+router.register(r"dhcp-leases", DhcpLeaseViewSet, basename="dhcp-lease")
 router.register(r"deploy-runs",   DeployRunViewSet,   basename="deploy-run")
 router.register(r"config-states", DeviceConfigStateViewSet, basename="config-state")
 router.register(r"config-snapshots", DeviceConfigSnapshotViewSet, basename="config-snapshot")
@@ -396,6 +406,8 @@ urlpatterns = [
     # NetBox instance migration (tenant-admin; runs on the RQ low queue).
     path("integrations/settings/", integration_settings,
          name="integration-settings"),
+    path("integrations/enabled/", integrations_enabled,
+         name="integrations-enabled"),
     path("netbox-import/test/", netbox_test, name="netbox-import-test"),
     path("netbox-import/", netbox_imports, name="netbox-imports"),
     path("netbox-import/<uuid:run_id>/", netbox_import_detail,

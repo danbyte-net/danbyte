@@ -85,6 +85,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ZonesIndexRouteImport } from './routes/zones.index'
 import { Route as WirelessLansIndexRouteImport } from './routes/wireless-lans.index'
 import { Route as WirelessLanGroupsIndexRouteImport } from './routes/wireless-lan-groups.index'
+import { Route as WindowsServersIndexRouteImport } from './routes/windows-servers.index'
 import { Route as WebhooksIndexRouteImport } from './routes/webhooks.index'
 import { Route as WatchedEndpointsIndexRouteImport } from './routes/watched-endpoints.index'
 import { Route as VrfsIndexRouteImport } from './routes/vrfs.index'
@@ -164,6 +165,7 @@ import { Route as WirelessLansNewRouteImport } from './routes/wireless-lans.new'
 import { Route as WirelessLansIdRouteImport } from './routes/wireless-lans.$id'
 import { Route as WirelessLanGroupsNewRouteImport } from './routes/wireless-lan-groups.new'
 import { Route as WirelessLanGroupsIdRouteImport } from './routes/wireless-lan-groups.$id'
+import { Route as WindowsServersIdRouteImport } from './routes/windows-servers.$id'
 import { Route as WebhooksNewRouteImport } from './routes/webhooks.new'
 import { Route as VrfsNewRouteImport } from './routes/vrfs.new'
 import { Route as VrfsIdRouteImport } from './routes/vrfs.$id'
@@ -778,6 +780,11 @@ const WirelessLanGroupsIndexRoute = WirelessLanGroupsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => WirelessLanGroupsRoute,
 } as any)
+const WindowsServersIndexRoute = WindowsServersIndexRouteImport.update({
+  id: '/windows-servers/',
+  path: '/windows-servers/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WebhooksIndexRoute = WebhooksIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -1173,6 +1180,11 @@ const WirelessLanGroupsIdRoute = WirelessLanGroupsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => WirelessLanGroupsRoute,
+} as any)
+const WindowsServersIdRoute = WindowsServersIdRouteImport.update({
+  id: '/windows-servers/$id',
+  path: '/windows-servers/$id',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const WebhooksNewRoute = WebhooksNewRouteImport.update({
   id: '/new',
@@ -2578,6 +2590,7 @@ export interface FileRoutesByFullPath {
   '/vrfs/$id': typeof VrfsIdRoute
   '/vrfs/new': typeof VrfsNewRoute
   '/webhooks/new': typeof WebhooksNewRoute
+  '/windows-servers/$id': typeof WindowsServersIdRoute
   '/wireless-lan-groups/$id': typeof WirelessLanGroupsIdRoute
   '/wireless-lan-groups/new': typeof WirelessLanGroupsNewRoute
   '/wireless-lans/$id': typeof WirelessLansIdRoute
@@ -2657,6 +2670,7 @@ export interface FileRoutesByFullPath {
   '/vrfs/': typeof VrfsIndexRoute
   '/watched-endpoints/': typeof WatchedEndpointsIndexRoute
   '/webhooks/': typeof WebhooksIndexRoute
+  '/windows-servers/': typeof WindowsServersIndexRoute
   '/wireless-lan-groups/': typeof WirelessLanGroupsIndexRoute
   '/wireless-lans/': typeof WirelessLansIndexRoute
   '/zones/': typeof ZonesIndexRoute
@@ -2912,6 +2926,7 @@ export interface FileRoutesByTo {
   '/vrfs/$id': typeof VrfsIdRoute
   '/vrfs/new': typeof VrfsNewRoute
   '/webhooks/new': typeof WebhooksNewRoute
+  '/windows-servers/$id': typeof WindowsServersIdRoute
   '/wireless-lan-groups/$id': typeof WirelessLanGroupsIdRoute
   '/wireless-lan-groups/new': typeof WirelessLanGroupsNewRoute
   '/wireless-lans/$id': typeof WirelessLansIdRoute
@@ -2991,6 +3006,7 @@ export interface FileRoutesByTo {
   '/vrfs': typeof VrfsIndexRoute
   '/watched-endpoints': typeof WatchedEndpointsIndexRoute
   '/webhooks': typeof WebhooksIndexRoute
+  '/windows-servers': typeof WindowsServersIndexRoute
   '/wireless-lan-groups': typeof WirelessLanGroupsIndexRoute
   '/wireless-lans': typeof WirelessLansIndexRoute
   '/zones': typeof ZonesIndexRoute
@@ -3303,6 +3319,7 @@ export interface FileRoutesById {
   '/vrfs/$id': typeof VrfsIdRoute
   '/vrfs/new': typeof VrfsNewRoute
   '/webhooks/new': typeof WebhooksNewRoute
+  '/windows-servers/$id': typeof WindowsServersIdRoute
   '/wireless-lan-groups/$id': typeof WirelessLanGroupsIdRoute
   '/wireless-lan-groups/new': typeof WirelessLanGroupsNewRoute
   '/wireless-lans/$id': typeof WirelessLansIdRoute
@@ -3382,6 +3399,7 @@ export interface FileRoutesById {
   '/vrfs/': typeof VrfsIndexRoute
   '/watched-endpoints/': typeof WatchedEndpointsIndexRoute
   '/webhooks/': typeof WebhooksIndexRoute
+  '/windows-servers/': typeof WindowsServersIndexRoute
   '/wireless-lan-groups/': typeof WirelessLanGroupsIndexRoute
   '/wireless-lans/': typeof WirelessLansIndexRoute
   '/zones/': typeof ZonesIndexRoute
@@ -3695,6 +3713,7 @@ export interface FileRouteTypes {
     | '/vrfs/$id'
     | '/vrfs/new'
     | '/webhooks/new'
+    | '/windows-servers/$id'
     | '/wireless-lan-groups/$id'
     | '/wireless-lan-groups/new'
     | '/wireless-lans/$id'
@@ -3774,6 +3793,7 @@ export interface FileRouteTypes {
     | '/vrfs/'
     | '/watched-endpoints/'
     | '/webhooks/'
+    | '/windows-servers/'
     | '/wireless-lan-groups/'
     | '/wireless-lans/'
     | '/zones/'
@@ -4029,6 +4049,7 @@ export interface FileRouteTypes {
     | '/vrfs/$id'
     | '/vrfs/new'
     | '/webhooks/new'
+    | '/windows-servers/$id'
     | '/wireless-lan-groups/$id'
     | '/wireless-lan-groups/new'
     | '/wireless-lans/$id'
@@ -4108,6 +4129,7 @@ export interface FileRouteTypes {
     | '/vrfs'
     | '/watched-endpoints'
     | '/webhooks'
+    | '/windows-servers'
     | '/wireless-lan-groups'
     | '/wireless-lans'
     | '/zones'
@@ -4419,6 +4441,7 @@ export interface FileRouteTypes {
     | '/vrfs/$id'
     | '/vrfs/new'
     | '/webhooks/new'
+    | '/windows-servers/$id'
     | '/wireless-lan-groups/$id'
     | '/wireless-lan-groups/new'
     | '/wireless-lans/$id'
@@ -4498,6 +4521,7 @@ export interface FileRouteTypes {
     | '/vrfs/'
     | '/watched-endpoints/'
     | '/webhooks/'
+    | '/windows-servers/'
     | '/wireless-lan-groups/'
     | '/wireless-lans/'
     | '/zones/'
@@ -4685,6 +4709,7 @@ export interface RootRouteChildren {
   SilencesNewRoute: typeof SilencesNewRoute
   VirtualMachinesIdRoute: typeof VirtualMachinesIdRoute
   VirtualMachinesNewRoute: typeof VirtualMachinesNewRoute
+  WindowsServersIdRoute: typeof WindowsServersIdRoute
   CertificateIssuersIndexRoute: typeof CertificateIssuersIndexRoute
   CertificateRequestsIndexRoute: typeof CertificateRequestsIndexRoute
   CertificatesIndexRoute: typeof CertificatesIndexRoute
@@ -4705,6 +4730,7 @@ export interface RootRouteChildren {
   ServicesIndexRoute: typeof ServicesIndexRoute
   VirtualMachinesIndexRoute: typeof VirtualMachinesIndexRoute
   WatchedEndpointsIndexRoute: typeof WatchedEndpointsIndexRoute
+  WindowsServersIndexRoute: typeof WindowsServersIndexRoute
   AlertRulesIdEditRoute: typeof AlertRulesIdEditRoute
   ChannelsIdEditRoute: typeof ChannelsIdEditRoute
   ClusterGroupsIdEditRoute: typeof ClusterGroupsIdEditRoute
@@ -5260,6 +5286,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WirelessLanGroupsIndexRouteImport
       parentRoute: typeof WirelessLanGroupsRoute
     }
+    '/windows-servers/': {
+      id: '/windows-servers/'
+      path: '/windows-servers'
+      fullPath: '/windows-servers/'
+      preLoaderRoute: typeof WindowsServersIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/webhooks/': {
       id: '/webhooks/'
       path: '/'
@@ -5812,6 +5845,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/wireless-lan-groups/$id'
       preLoaderRoute: typeof WirelessLanGroupsIdRouteImport
       parentRoute: typeof WirelessLanGroupsRoute
+    }
+    '/windows-servers/$id': {
+      id: '/windows-servers/$id'
+      path: '/windows-servers/$id'
+      fullPath: '/windows-servers/$id'
+      preLoaderRoute: typeof WindowsServersIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/webhooks/new': {
       id: '/webhooks/new'
@@ -8565,6 +8605,7 @@ const rootRouteChildren: RootRouteChildren = {
   SilencesNewRoute: SilencesNewRoute,
   VirtualMachinesIdRoute: VirtualMachinesIdRoute,
   VirtualMachinesNewRoute: VirtualMachinesNewRoute,
+  WindowsServersIdRoute: WindowsServersIdRoute,
   CertificateIssuersIndexRoute: CertificateIssuersIndexRoute,
   CertificateRequestsIndexRoute: CertificateRequestsIndexRoute,
   CertificatesIndexRoute: CertificatesIndexRoute,
@@ -8585,6 +8626,7 @@ const rootRouteChildren: RootRouteChildren = {
   ServicesIndexRoute: ServicesIndexRoute,
   VirtualMachinesIndexRoute: VirtualMachinesIndexRoute,
   WatchedEndpointsIndexRoute: WatchedEndpointsIndexRoute,
+  WindowsServersIndexRoute: WindowsServersIndexRoute,
   AlertRulesIdEditRoute: AlertRulesIdEditRoute,
   ChannelsIdEditRoute: ChannelsIdEditRoute,
   ClusterGroupsIdEditRoute: ClusterGroupsIdEditRoute,

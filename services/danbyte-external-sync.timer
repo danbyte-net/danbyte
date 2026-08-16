@@ -1,0 +1,11 @@
+[Unit]
+Description=Enqueue due Danbyte external syncs every minute
+
+[Timer]
+OnCalendar=*:0/1
+OnBootSec=90
+Persistent=true
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target

@@ -6821,3 +6821,90 @@ export interface FloorPlanLiveState {
   as_of: string
   tiles: Record<string, FloorTileRackState | FloorTileDeviceState>
 }
+
+/* ── External sync: Windows DHCP/DNS + virtualization ───────────────────── */
+
+export interface IntegrationsEnabled {
+  dhcp: boolean
+  dns: boolean
+  virtualization: boolean
+}
+
+export interface WindowsConnection {
+  id: string
+  name: string
+  host: string
+  port: number
+  use_tls: boolean
+  verify_ssl: boolean
+  auth_mode: "ntlm" | "kerberos"
+  username: string
+  password_set: boolean
+  dhcp_enabled: boolean
+  dns_enabled: boolean
+  poll_interval_minutes: number
+  enabled: boolean
+  last_sync_at: string | null
+  last_sync_status: string
+  last_sync_error: string
+  created_at: string
+  updated_at: string
+}
+
+export interface DhcpScopeOption {
+  option_id: number | null
+  name: string
+  value: string[]
+}
+
+export interface DhcpScope {
+  id: string
+  connection: string
+  connection_name: string
+  scope_id: string
+  name: string
+  description: string
+  state: string
+  start_range: string | null
+  end_range: string | null
+  subnet_mask: string | null
+  lease_duration: string
+  options: DhcpScopeOption[]
+  prefix: string | null
+  prefix_cidr: string | null
+  lease_sync: boolean
+  reservation_count: number
+  drift_count: number
+  last_seen_at: string | null
+  updated_at: string
+}
+
+export interface DhcpReservation {
+  id: string
+  scope: string
+  scope_display: string
+  connection_name: string
+  ip: string
+  mac: string
+  name: string
+  description: string
+  ip_address: string | null
+  managed: boolean
+  drift: "" | "modified" | "missing"
+  drift_detail: Record<string, { danbyte: unknown; server: unknown }>
+  last_seen_at: string | null
+  updated_at: string
+}
+
+export interface DhcpLease {
+  id: string
+  scope: string
+  scope_display: string
+  ip: string
+  mac: string
+  hostname: string
+  address_state: string
+  expires_at: string | null
+  ip_address: string | null
+  last_seen_at: string | null
+}
