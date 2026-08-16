@@ -135,7 +135,36 @@ Out of scope for now: CNAME/MX/SRV/TXT management, creating zones, and
 DNSSEC. Point the connection at one server of an AD-replicated set; AD
 replication carries pushed records to the rest.
 
-## Virtualization (Proxmox)
+## Virtualization (Proxmox VE)
 
-Lands with the virtualization toggle — clusters, virtual machines, their
-interfaces and guest-agent IPs synced into the existing cluster/VM inventory.
+Enable the **Virtualization sync** toggle and add the cluster under
+**Integrations → Virtualization sources** (any node's address works — the
+API answers cluster-wide). Each sync imports into the **existing
+cluster/VM inventory**:
+
+| Proxmox object | Danbyte object |
+| --- | --- |
+| Cluster | **Cluster** (a *Proxmox VE* cluster type is created on demand) |
+| QEMU / LXC guest | **Virtual machine** (vCPUs, memory, disk, description) |
+| Guest NIC (`netX`) | **VM interface** with its MAC |
+| Guest-agent IP | **IP address** assigned to the interface |
+
+Rules:
+
+- Same adoption policy as the Windows syncs: VMs, interfaces and IPs you
+  already have are linked and blank-filled, never overwritten — and never
+  deleted by sync. Only objects the sync created itself are removed again
+  when their guest disappears from the hypervisor.
+- Guest IPs come from the **QEMU guest agent**, so they only appear for
+  running QEMU VMs with the agent installed. An IP is only created when a
+  **containing prefix** already exists — sync never invents address space.
+  The first private IPv4 becomes the VM's primary IP (if it had none).
+- A guest's node maps to the **Device** of the same name when one exists,
+  linking VMs to their physical hosts.
+- VM templates are skipped; read-only — Danbyte never changes the hypervisor.
+
+!!! tip "Virtual routers become monitorable"
+    Once a virtual router's IP is synced, the monitoring engine can check and
+    SNMP-poll it like any other address — no special handling needed.
+
+vCenter is planned behind the same source model (`kind: vcenter`).

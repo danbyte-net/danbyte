@@ -91,6 +91,7 @@ import { Route as WatchedEndpointsIndexRouteImport } from './routes/watched-endp
 import { Route as VrfsIndexRouteImport } from './routes/vrfs.index'
 import { Route as VlansIndexRouteImport } from './routes/vlans.index'
 import { Route as VlanGroupsIndexRouteImport } from './routes/vlan-groups.index'
+import { Route as VirtualizationSourcesIndexRouteImport } from './routes/virtualization-sources.index'
 import { Route as VirtualMachinesIndexRouteImport } from './routes/virtual-machines.index'
 import { Route as VirtualChassisIndexRouteImport } from './routes/virtual-chassis.index'
 import { Route as UsersIndexRouteImport } from './routes/users.index'
@@ -810,6 +811,12 @@ const VlanGroupsIndexRoute = VlanGroupsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => VlanGroupsRoute,
 } as any)
+const VirtualizationSourcesIndexRoute =
+  VirtualizationSourcesIndexRouteImport.update({
+    id: '/virtualization-sources/',
+    path: '/virtualization-sources/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const VirtualMachinesIndexRoute = VirtualMachinesIndexRouteImport.update({
   id: '/virtual-machines/',
   path: '/virtual-machines/',
@@ -2665,6 +2672,7 @@ export interface FileRoutesByFullPath {
   '/users/': typeof UsersIndexRoute
   '/virtual-chassis/': typeof VirtualChassisIndexRoute
   '/virtual-machines/': typeof VirtualMachinesIndexRoute
+  '/virtualization-sources/': typeof VirtualizationSourcesIndexRoute
   '/vlan-groups/': typeof VlanGroupsIndexRoute
   '/vlans/': typeof VlansIndexRoute
   '/vrfs/': typeof VrfsIndexRoute
@@ -3001,6 +3009,7 @@ export interface FileRoutesByTo {
   '/users': typeof UsersIndexRoute
   '/virtual-chassis': typeof VirtualChassisIndexRoute
   '/virtual-machines': typeof VirtualMachinesIndexRoute
+  '/virtualization-sources': typeof VirtualizationSourcesIndexRoute
   '/vlan-groups': typeof VlanGroupsIndexRoute
   '/vlans': typeof VlansIndexRoute
   '/vrfs': typeof VrfsIndexRoute
@@ -3394,6 +3403,7 @@ export interface FileRoutesById {
   '/users/': typeof UsersIndexRoute
   '/virtual-chassis/': typeof VirtualChassisIndexRoute
   '/virtual-machines/': typeof VirtualMachinesIndexRoute
+  '/virtualization-sources/': typeof VirtualizationSourcesIndexRoute
   '/vlan-groups/': typeof VlanGroupsIndexRoute
   '/vlans/': typeof VlansIndexRoute
   '/vrfs/': typeof VrfsIndexRoute
@@ -3788,6 +3798,7 @@ export interface FileRouteTypes {
     | '/users/'
     | '/virtual-chassis/'
     | '/virtual-machines/'
+    | '/virtualization-sources/'
     | '/vlan-groups/'
     | '/vlans/'
     | '/vrfs/'
@@ -4124,6 +4135,7 @@ export interface FileRouteTypes {
     | '/users'
     | '/virtual-chassis'
     | '/virtual-machines'
+    | '/virtualization-sources'
     | '/vlan-groups'
     | '/vlans'
     | '/vrfs'
@@ -4516,6 +4528,7 @@ export interface FileRouteTypes {
     | '/users/'
     | '/virtual-chassis/'
     | '/virtual-machines/'
+    | '/virtualization-sources/'
     | '/vlan-groups/'
     | '/vlans/'
     | '/vrfs/'
@@ -4729,6 +4742,7 @@ export interface RootRouteChildren {
   ServiceTemplatesIndexRoute: typeof ServiceTemplatesIndexRoute
   ServicesIndexRoute: typeof ServicesIndexRoute
   VirtualMachinesIndexRoute: typeof VirtualMachinesIndexRoute
+  VirtualizationSourcesIndexRoute: typeof VirtualizationSourcesIndexRoute
   WatchedEndpointsIndexRoute: typeof WatchedEndpointsIndexRoute
   WindowsServersIndexRoute: typeof WindowsServersIndexRoute
   AlertRulesIdEditRoute: typeof AlertRulesIdEditRoute
@@ -5327,6 +5341,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/vlan-groups/'
       preLoaderRoute: typeof VlanGroupsIndexRouteImport
       parentRoute: typeof VlanGroupsRoute
+    }
+    '/virtualization-sources/': {
+      id: '/virtualization-sources/'
+      path: '/virtualization-sources'
+      fullPath: '/virtualization-sources/'
+      preLoaderRoute: typeof VirtualizationSourcesIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/virtual-machines/': {
       id: '/virtual-machines/'
@@ -8625,6 +8646,7 @@ const rootRouteChildren: RootRouteChildren = {
   ServiceTemplatesIndexRoute: ServiceTemplatesIndexRoute,
   ServicesIndexRoute: ServicesIndexRoute,
   VirtualMachinesIndexRoute: VirtualMachinesIndexRoute,
+  VirtualizationSourcesIndexRoute: VirtualizationSourcesIndexRoute,
   WatchedEndpointsIndexRoute: WatchedEndpointsIndexRoute,
   WindowsServersIndexRoute: WindowsServersIndexRoute,
   AlertRulesIdEditRoute: AlertRulesIdEditRoute,

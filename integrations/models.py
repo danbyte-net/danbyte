@@ -663,3 +663,43 @@ class DnsDrift(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.ip}: {self.danbyte_name!r} vs {self.server_name!r}"
+
+
+# ─── Virtualization sync state ────────────────────────────────────────────────
+
+
+class VirtGuest(TimestampedModel):
+    """One hypervisor guest, linked to the VirtualMachine it syncs into.
+
+    ``created_vm`` marks VMs the sync minted itself — only those are removed
+    again when the guest disappears from the hypervisor; VMs an operator
+    already had are adopted and never deleted by sync.
+    """
+
+    KIND_CHOICES = [("qemu", "QEMU"), ("lxc", "LXC")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    source = models.ForeignKey(
+        VirtualizationSource, on_delete=models.CASCADE, related_name="guests"
+    )
+    vmid = models.PositiveIntegerField()
+    node = models.CharField(max_length=128, blank=True, default="")
+    kind = models.CharField(max_length=8, choices=KIND_CHOICES, default="qemu")
+    vm = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="virt_guests",
+    )
+    created_vm = models.BooleanField(default=False)
+    power_state = models.CharField(max_length=16, blank=True, default="")
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["vmid"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source", "vmid"], name="uniq_virtguest_source_vmid"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.kind}/{self.vmid} on {self.node}"

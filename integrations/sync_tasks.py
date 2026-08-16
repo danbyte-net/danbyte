@@ -40,11 +40,11 @@ def run_windows_sync(conn_id: str) -> dict:
     return result
 
 
-def _due(conn, now) -> bool:
-    if conn.last_sync_at is None:
+def _due(row, now) -> bool:
+    if row.last_sync_at is None:
         return True
-    interval = max(int(conn.poll_interval_minutes or 5), 1)
-    return (now - conn.last_sync_at).total_seconds() >= interval * 60
+    interval = max(int(row.poll_interval_minutes or 5), 1)
+    return (now - row.last_sync_at).total_seconds() >= interval * 60
 
 
 def enqueue_due_syncs() -> dict:
@@ -64,4 +64,37 @@ def enqueue_due_syncs() -> dict:
         if wants and _due(conn, now):
             q.enqueue(run_windows_sync, str(conn.id), job_timeout=600)
             queued += 1
-    return {"windows_queued": queued}
+    return {"windows_queued": queued, "virt_queued": enqueue_due_virt_syncs()}
+
+
+def run_virt_sync(source_id: str) -> dict:
+    """RQ job: sync one virtualization source (Proxmox for now)."""
+    from .models import VirtualizationSource
+    from .virt_sync import record_virt_failure, sync_proxmox
+
+    source = VirtualizationSource.objects.filter(id=source_id).first()
+    if source is None or not source.enabled:
+        return {"skipped": "gone-or-disabled"}
+    if not integration_enabled(source.tenant, "virtualization"):
+        return {"skipped": "toggle-off"}
+    try:
+        return sync_proxmox(source)
+    except Exception as exc:  # noqa: BLE001 — the row carries the error
+        record_virt_failure(source, exc)
+        logger.warning("virt sync %s failed: %s", source.name, exc)
+        return {"error": str(exc)}
+
+
+def enqueue_due_virt_syncs() -> int:
+    from .models import VirtualizationSource
+
+    now = timezone.now()
+    queued = 0
+    q = django_rq.get_queue("low")
+    for source in VirtualizationSource.objects.filter(enabled=True).select_related(
+        "tenant"
+    ):
+        if integration_enabled(source.tenant, "virtualization") and _due(source, now):
+            q.enqueue(run_virt_sync, str(source.id), job_timeout=600)
+            queued += 1
+    return queued

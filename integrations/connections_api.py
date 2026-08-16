@@ -225,3 +225,14 @@ class VirtualizationSourceViewSet(IntegrationToggleMixin, TenantScopedViewSet):
             "nodes": len(nodes),
             "online_nodes": sum(1 for n in nodes if n.get("status") == "online"),
         })
+
+    @action(detail=True, methods=["post"])
+    def sync(self, request, pk=None):
+        """Sync now, synchronously."""
+        from .sync_tasks import run_virt_sync
+
+        source = self.get_object()
+        result = run_virt_sync(str(source.id))
+        if "error" in result:
+            return Response({"ok": False, **result}, status=502)
+        return Response({"ok": True, **result})

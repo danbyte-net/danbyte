@@ -813,6 +813,13 @@ const sections: NavSection[] = [
             objectType: "windowsserverconnection",
             integration: ["dhcp", "dns"],
           },
+          {
+            title: "Virtualization sources",
+            url: "/virtualization-sources",
+            icon: Cloud,
+            objectType: "virtualizationsource",
+            integration: ["virtualization"],
+          },
         ],
       },
     ],

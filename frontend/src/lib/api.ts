@@ -6943,3 +6943,21 @@ export interface DnsLiveRecord {
   ttl: string
   data: string
 }
+
+export interface VirtualizationSource {
+  id: string
+  name: string
+  kind: "proxmox" | "vcenter"
+  kind_display: string
+  host: string
+  port: number
+  verify_ssl: boolean
+  credentials_set: boolean
+  poll_interval_minutes: number
+  enabled: boolean
+  last_sync_at: string | null
+  last_sync_status: string
+  last_sync_error: string
+  created_at: string
+  updated_at: string
+}
