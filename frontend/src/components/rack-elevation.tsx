@@ -15,8 +15,15 @@ import { useQuery } from "@tanstack/react-query"
 
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
+import { CalendarClock } from "lucide-react"
 
-import { api, type Device, type Paginated, type Rack } from "@/lib/api"
+import {
+  api,
+  type Device,
+  type Paginated,
+  type PlanningPlannedChange,
+  type Rack,
+} from "@/lib/api"
 import { readableText } from "@/components/cells/color-badge"
 import { OPENING_MM, PANEL_MM } from "@/lib/faceplate-geometry"
 import { Button } from "@/components/ui/button"
@@ -161,6 +168,54 @@ export function RackElevation({
         .filter((x): x is { d: Device; hatched: boolean } => x !== null),
     [devices, face]
   )
+
+  // Planned rack-elevation moves, drawn as ghosts: a device in THIS rack
+  // whose open planned change touches position/face (and stays in this rack)
+  // shows a dashed outline at the planned spot — the graphic's version of the
+  // calendar-clock field mark.
+  const plansQ = useQuery({
+    queryKey: ["planned-changes-open"],
+    queryFn: () =>
+      api<Paginated<PlanningPlannedChange>>(
+        "/api/planning/planned-changes/?state=planned&page_size=300"
+      ),
+    staleTime: 60_000,
+  })
+  const ghosts = useMemo(() => {
+    const out: {
+      dev: Device
+      position: number
+      ghostFace: RackFace
+      fromLabel: string
+    }[] = []
+    for (const c of plansQ.data?.results ?? []) {
+      if (c.object_type !== "api.device" || c.kind !== "update") continue
+      const dev = devices.find((d) => d.id === c.object_id)
+      if (!dev || dev.position == null) continue
+      const p = c.payload
+      if (!("position" in p) && !("face" in p) && !("rack_id" in p)) continue
+      // Leaving this rack: no spot here to ghost. (The field marks on the
+      // device page carry that story.)
+      if ("rack_id" in p && String(p.rack_id) !== rack.id) continue
+      const position =
+        "position" in p && p.position != null
+          ? Number(p.position)
+          : dev.position
+      const ghostFace: RackFace =
+        ("face" in p ? p.face : dev.face) === "rear" ? "rear" : "front"
+      const sameSpot =
+        position === dev.position &&
+        ghostFace === (dev.face === "rear" ? "rear" : "front")
+      if (sameSpot || !Number.isFinite(position)) continue
+      out.push({
+        dev,
+        position,
+        ghostFace,
+        fromLabel: `U${dev.position} → U${position}`,
+      })
+    }
+    return out
+  }, [plansQ.data, devices, rack.id])
 
   // Proportions: mm-true rows at widths that follow the rack's physical
   // opening (a real 1U blade is ~10:1 — squeezing it into short rows is what
@@ -369,6 +424,36 @@ export function RackElevation({
                     />
                   )
                 })}
+                {ghosts
+                  .filter((g) => g.ghostFace === face)
+                  .map((g) => {
+                    const h = Math.max(1, g.dev.u_height)
+                    const topUnit = rack.desc_units
+                      ? g.position
+                      : g.position + h - 1
+                    const column =
+                      g.dev.rack_width === "half"
+                        ? g.dev.rack_side === "right"
+                          ? "2"
+                          : "1"
+                        : "1 / -1"
+                    return (
+                      <div
+                        key={`ghost-${g.dev.id}`}
+                        className="z-10 m-px flex items-center justify-center gap-1 truncate rounded-md border border-dashed border-primary/70 bg-primary/10 px-2 text-[11px] text-primary"
+                        style={{
+                          gridRow: `${rowOf(topUnit)} / span ${h}`,
+                          gridColumn: column,
+                        }}
+                        title={`Planned move: ${g.dev.name} ${g.fromLabel}`}
+                      >
+                        <CalendarClock className="h-3 w-3 shrink-0" />
+                        <span className="truncate">
+                          {g.dev.name} {g.fromLabel}
+                        </span>
+                      </div>
+                    )
+                  })}
               </div>
               {(mountedRight.length > 0 || canAddDevice) && (
                 <SideLane

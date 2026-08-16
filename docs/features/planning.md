@@ -234,7 +234,8 @@ sits next to the name in every list and embedded table. Hovering either shows
 what is planned, on which task, and when; the pill links to the task. The
 indicator marks the exact target — a change planned on an interface marks the
 interface (including its row on the device's Interfaces tab), not the device
-itself.
+itself. A planned **rack move** goes one further: the rack elevation draws a
+dashed ghost of the device at its planned position and face.
 
 ## API
 
