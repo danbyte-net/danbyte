@@ -180,120 +180,118 @@ export function CalendarTimeGrid({
         ref={scrollRef}
         className="flex h-full min-h-0 flex-col overflow-y-auto rounded-lg border border-border"
       >
-        {/* ── Day headers ── */}
-        <div
-          className="sticky top-0 z-20 grid border-b border-border bg-background"
-          style={gridCols}
-        >
-          <div />
-          {days.map((d, i) => {
-            const date = dates[i]
-            const isToday = d === today
-            return (
-              <button
-                key={d}
-                type="button"
-                onClick={() => onPickDay?.(d)}
-                className={cn(
-                  "border-l border-border px-2 py-1.5 text-left",
-                  onPickDay && "hover:bg-muted/50"
-                )}
-              >
-                <span className="text-[10px] tracking-wide text-muted-foreground uppercase">
-                  {date.toLocaleDateString(undefined, {
-                    weekday: "short",
-                    timeZone: "UTC",
-                  })}
-                </span>{" "}
-                <span
+        {/* ── Sticky chrome: day headers + the all-day band pin together,
+            so there is no second offset to fall out of sync on scroll. ── */}
+        <div className="sticky top-0 z-20 border-b border-border bg-background">
+          {/* ── Day headers ── */}
+          <div className="grid border-b border-border" style={gridCols}>
+            <div />
+            {days.map((d, i) => {
+              const date = dates[i]
+              const isToday = d === today
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => onPickDay?.(d)}
                   className={cn(
-                    "num text-[13px] font-semibold",
-                    isToday &&
-                      "rounded-full bg-primary px-1.5 py-0.5 text-primary-foreground"
+                    "border-l border-border px-2 py-1.5 text-left",
+                    onPickDay && "hover:bg-muted/50"
                   )}
                 >
-                  {date.getUTCDate()}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* ── All-day band: tasks as lane-packed bars, chips for the rest ── */}
-        <div
-          className="sticky top-[33px] z-10 grid border-b border-border bg-background"
-          style={gridCols}
-        >
-          <div className="flex items-start justify-end px-1.5 pt-1 text-[9px] tracking-wide text-muted-foreground uppercase">
-            all-day
+                  <span className="text-[10px] tracking-wide text-muted-foreground uppercase">
+                    {date.toLocaleDateString(undefined, {
+                      weekday: "short",
+                      timeZone: "UTC",
+                    })}
+                  </span>{" "}
+                  <span
+                    className={cn(
+                      "num text-[13px] font-semibold",
+                      isToday &&
+                        "rounded-full bg-primary px-1.5 py-0.5 text-primary-foreground"
+                    )}
+                  >
+                    {date.getUTCDate()}
+                  </span>
+                </button>
+              )
+            })}
           </div>
-          <div
-            className="relative col-span-full col-start-2 grid"
-            style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
-          >
-            {days.map((d) => (
-              <AllDayCell
-                key={d}
-                day={d}
-                droppable={!!onMoveTask}
-                laneOffset={lanes}
-              >
-                {milestones
-                  .filter((m) => m.due_date === d)
-                  .map((m) => (
-                    <Link
-                      key={m.id}
-                      to="/planning/$boardId"
-                      params={{ boardId: m.board }}
-                      className="flex min-w-0 items-center gap-1 truncate rounded-[4px] px-1 py-0.5 text-[10px] hover:bg-muted/60"
-                      style={m.color ? { color: m.color } : undefined}
-                    >
-                      <Flag className="h-2.5 w-2.5 shrink-0" />
-                      <span className="truncate">{m.name}</span>
-                    </Link>
+
+          {/* ── All-day band: tasks as lane-packed bars, chips for the rest ── */}
+          <div className="grid" style={gridCols}>
+            <div className="flex items-start justify-end px-1.5 pt-1 text-[9px] tracking-wide text-muted-foreground uppercase">
+              all-day
+            </div>
+            <div
+              className="relative col-span-full col-start-2 grid"
+              style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
+            >
+              {days.map((d) => (
+                <AllDayCell
+                  key={d}
+                  day={d}
+                  droppable={!!onMoveTask}
+                  laneOffset={lanes}
+                >
+                  {milestones
+                    .filter((m) => m.due_date === d)
+                    .map((m) => (
+                      <Link
+                        key={m.id}
+                        to="/planning/$boardId"
+                        params={{ boardId: m.board }}
+                        className="flex min-w-0 items-center gap-1 truncate rounded-[4px] px-1 py-0.5 text-[10px] hover:bg-muted/60"
+                        style={m.color ? { color: m.color } : undefined}
+                      >
+                        <Flag className="h-2.5 w-2.5 shrink-0" />
+                        <span className="truncate">{m.name}</span>
+                      </Link>
+                    ))}
+                  {changes
+                    .filter((c) => c.effective_date === d)
+                    .map((c) => (
+                      <Link
+                        key={c.id}
+                        to="/planning/$boardId"
+                        params={{ boardId: c.board }}
+                        search={{ task: c.task }}
+                        className="flex min-w-0 items-center gap-1 truncate rounded-[4px] px-1 py-0.5 text-[10px] text-primary hover:bg-muted/60"
+                      >
+                        <CalendarClock className="h-2.5 w-2.5 shrink-0" />
+                        <span className="truncate">{c.task_title}</span>
+                      </Link>
+                    ))}
+                </AllDayCell>
+              ))}
+              {lanes > 0 && (
+                <div
+                  className="pointer-events-none absolute inset-x-0 top-0 grid gap-y-0.5 py-0.5"
+                  style={{
+                    ...{ gridTemplateColumns: `repeat(${cols}, 1fr)` },
+                    gridTemplateRows: `repeat(${lanes}, 1.25rem)`,
+                  }}
+                >
+                  {bars.map((bar) => (
+                    <TaskBar
+                      key={bar.task.id}
+                      bar={bar}
+                      draggable={!!onMoveTask}
+                      onOpen={() =>
+                        navigate({
+                          to: "/planning/$boardId/tasks/$taskId",
+                          params: {
+                            boardId: bar.task.board,
+                            taskId: bar.task.id,
+                          },
+                        })
+                      }
+                    />
                   ))}
-                {changes
-                  .filter((c) => c.effective_date === d)
-                  .map((c) => (
-                    <Link
-                      key={c.id}
-                      to="/planning/$boardId"
-                      params={{ boardId: c.board }}
-                      search={{ task: c.task }}
-                      className="flex min-w-0 items-center gap-1 truncate rounded-[4px] px-1 py-0.5 text-[10px] text-primary hover:bg-muted/60"
-                    >
-                      <CalendarClock className="h-2.5 w-2.5 shrink-0" />
-                      <span className="truncate">{c.task_title}</span>
-                    </Link>
-                  ))}
-              </AllDayCell>
-            ))}
-            {lanes > 0 && (
-              <div
-                className="pointer-events-none absolute inset-x-0 top-0 grid gap-y-0.5 py-0.5"
-                style={{
-                  ...{ gridTemplateColumns: `repeat(${cols}, 1fr)` },
-                  gridTemplateRows: `repeat(${lanes}, 1.25rem)`,
-                }}
-              >
-                {bars.map((bar) => (
-                  <TaskBar
-                    key={bar.task.id}
-                    bar={bar}
-                    draggable={!!onMoveTask}
-                    onOpen={() =>
-                      navigate({
-                        to: "/planning/$boardId/tasks/$taskId",
-                        params: {
-                          boardId: bar.task.board,
-                          taskId: bar.task.id,
-                        },
-                      })
-                    }
-                  />
-                ))}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -410,7 +408,7 @@ function TaskBar({
       type="button"
       onClick={onOpen}
       className={cn(
-        "pointer-events-auto mx-0.5 flex min-w-0 items-center gap-1 truncate rounded-[4px] border px-1.5 text-left text-[11px]",
+        "pointer-events-auto mx-0.5 flex min-w-0 items-center gap-1 truncate rounded-[4px] border px-1.5 text-left text-[11px] transition-[filter] hover:brightness-125 dark:hover:brightness-150",
         bar.continuesBefore && "rounded-l-none",
         bar.continuesAfter && "rounded-r-none",
         drag.isDragging && "opacity-40"
