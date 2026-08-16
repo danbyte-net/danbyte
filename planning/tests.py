@@ -154,6 +154,26 @@ class TaskApiTests(Base):
         )
         self.assertEqual(r.status_code, 400)
 
+    def test_task_times_ride_on_dates(self):
+        board = self._board()
+        todo = board.statuses.get(name="To do")
+        r = self.client.post(
+            "/api/planning/tasks/",
+            {"board": str(board.id), "status": str(todo.id), "title": "t",
+             "due_date": "2026-08-20", "due_time": "14:30"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["due_time"], "14:30:00")
+        # A time without its date is rejected.
+        r = self.client.post(
+            "/api/planning/tasks/",
+            {"board": str(board.id), "status": str(todo.id), "title": "t2",
+             "start_time": "09:00"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400)
+
     def test_status_with_tasks_is_protected(self):
         board = self._board()
         st = board.statuses.get(name="To do")

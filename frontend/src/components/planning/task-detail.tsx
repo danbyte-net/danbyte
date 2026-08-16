@@ -210,16 +210,24 @@ export function TaskView({
     start: (
       <DateCell
         value={task.start_date}
+        time={task.start_time}
         placeholder="Start"
-        onChange={(v) => set({ start_date: v })}
+        onChange={(v) =>
+          set(v ? { start_date: v } : { start_date: null, start_time: null })
+        }
+        onTime={(v) => set({ start_time: v })}
         canEdit={canEdit}
       />
     ),
     due: (
       <DateCell
         value={task.due_date}
+        time={task.due_time}
         placeholder="Due"
-        onChange={(v) => set({ due_date: v })}
+        onChange={(v) =>
+          set(v ? { due_date: v } : { due_date: null, due_time: null })
+        }
+        onTime={(v) => set({ due_time: v })}
         canEdit={canEdit}
       />
     ),

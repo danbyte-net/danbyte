@@ -123,9 +123,24 @@ export function CalendarTimeGrid({
   }, [])
 
   const dates = useMemo(() => days.map(parseISODay), [days])
+  // A single-day task carrying a time is a scheduled block, not an all-day
+  // bar; multi-day spans stay in the band whatever times they carry.
+  const isTimed = (t: PlanningCalendarTask) => {
+    const s = t.start_date ?? t.due_date
+    const e = t.due_date ?? t.start_date
+    return s !== null && s === e && !!(t.due_time || t.start_time)
+  }
+  const allDayTasks = useMemo(
+    () => (data?.tasks ?? []).filter((t) => !isTimed(t)),
+    [data?.tasks]
+  )
+  const timedTasks = useMemo(
+    () => (data?.tasks ?? []).filter(isTimed),
+    [data?.tasks]
+  )
   const bars = useMemo(
-    () => layOutWeek(dates, data?.tasks ?? []),
-    [dates, data?.tasks]
+    () => layOutWeek(dates, allDayTasks),
+    [dates, allDayTasks]
   )
   const lanes = bars.reduce((n, b) => Math.max(n, b.lane + 1), 0)
   const events = data?.events ?? []
@@ -217,7 +232,12 @@ export function CalendarTimeGrid({
             style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
           >
             {days.map((d) => (
-              <AllDayCell key={d} day={d} droppable={!!onMoveTask}>
+              <AllDayCell
+                key={d}
+                day={d}
+                droppable={!!onMoveTask}
+                laneOffset={lanes}
+              >
                 {milestones
                   .filter((m) => m.due_date === d)
                   .map((m) => (
@@ -274,11 +294,6 @@ export function CalendarTimeGrid({
                 ))}
               </div>
             )}
-            {/* Spacer so chips start under the task lanes. */}
-            <div
-              className="col-span-full"
-              style={{ height: lanes ? `${lanes * 1.375}rem` : 0 }}
-            />
           </div>
         </div>
 
@@ -315,6 +330,11 @@ export function CalendarTimeGrid({
                 {segs.map((s) => (
                   <EventBlock key={`${s.event.id}-${d}`} seg={s} />
                 ))}
+                {timedTasks
+                  .filter((t) => (t.due_date ?? t.start_date) === d)
+                  .map((t) => (
+                    <TaskBlock key={t.id} task={t} />
+                  ))}
                 {isToday && (
                   <div
                     className="pointer-events-none absolute inset-x-0 z-10 border-t-2 border-red-500"
@@ -342,10 +362,13 @@ export function CalendarTimeGrid({
 function AllDayCell({
   day,
   droppable,
+  laneOffset,
   children,
 }: {
   day: string
   droppable: boolean
+  /** Task-bar lanes overlaying the band — chips start below them. */
+  laneOffset: number
   children: React.ReactNode
 }) {
   const drop = useDroppable({ id: `day|${day}`, disabled: !droppable })
@@ -356,6 +379,9 @@ function AllDayCell({
         "min-h-7 space-y-0.5 border-l border-border px-0.5 pb-0.5",
         drop.isOver && "bg-primary/10"
       )}
+      style={{
+        paddingTop: laneOffset ? `${laneOffset * 1.375}rem` : undefined,
+      }}
     >
       {children}
     </div>
@@ -437,6 +463,46 @@ function EventBlock({ seg }: { seg: Segment }) {
         <span className="num block text-muted-foreground">
           {e.starts_at.slice(11, 16)}
           {e.ends_at ? `–${e.ends_at.slice(11, 16)}` : ""}
+        </span>
+      )}
+    </Link>
+  )
+}
+
+/** A single-day task with a time, on the hour grid: start_time → due_time,
+ * or a one-hour block ending at the one time it has. */
+function TaskBlock({ task }: { task: PlanningCalendarTask }) {
+  const end = task.due_time ?? task.start_time
+  const endMin = end
+    ? Number(end.slice(0, 2)) * 60 + Number(end.slice(3, 5))
+    : 0
+  const startMin = task.start_time
+    ? Number(task.start_time.slice(0, 2)) * 60 +
+      Number(task.start_time.slice(3, 5))
+    : Math.max(endMin - 60, 0)
+  const top = (Math.min(startMin, endMin) / 60) * HOUR_H
+  const height = Math.max((Math.abs(endMin - startMin) / 60) * HOUR_H, 18)
+  return (
+    <Link
+      to="/planning/$boardId/tasks/$taskId"
+      params={{ boardId: task.board, taskId: task.id }}
+      className="absolute inset-x-0.5 z-[4] overflow-hidden rounded-[4px] border px-1.5 py-0.5 text-[10.5px] leading-tight hover:brightness-110"
+      style={{
+        top,
+        height,
+        backgroundColor: task.status_color
+          ? `${task.status_color}22`
+          : "var(--muted)",
+        borderColor: task.status_color ? `${task.status_color}66` : undefined,
+      }}
+      title={`${task.title} · ${task.board_name}`}
+    >
+      <span className="block truncate font-medium">{task.title}</span>
+      {height > 30 && (
+        <span className="num block text-muted-foreground">
+          {task.start_time ? task.start_time.slice(0, 5) : ""}
+          {task.start_time && end ? "–" : ""}
+          {end ? end.slice(0, 5) : ""}
         </span>
       )}
     </Link>

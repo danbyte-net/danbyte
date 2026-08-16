@@ -90,7 +90,9 @@ behaves differently: it can't be deleted while tasks still use it.)
 
 A card carries a title, a markdown description (same subset as compliance
 guides), a priority, **assignees**, tenant-wide colored **labels**, an optional
-milestone, optional start/due dates, and:
+milestone, optional start/due dates — each refinable with an **optional
+time** (set it next to the date; a timed single-day task draws as a block on
+the calendar's hour grid instead of the all-day band) — and:
 
 - **Linked objects** — attach anything Danbyte knows about via the same object
   picker custom fields use, including interfaces. In the task sheet links are

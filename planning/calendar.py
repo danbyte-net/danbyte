@@ -131,7 +131,9 @@ def _task_entry(task: Task) -> dict:
         "semantic_group": task.status.semantic_group if task.status_id else "",
         "priority": task.priority,
         "start_date": task.start_date.isoformat() if task.start_date else None,
+        "start_time": task.start_time.isoformat("minutes") if task.start_time else None,
         "due_date": task.due_date.isoformat() if task.due_date else None,
+        "due_time": task.due_time.isoformat("minutes") if task.due_time else None,
         "milestone": str(task.milestone_id) if task.milestone_id else None,
         "assignees": [u.username for u in task.assignees.all()],
     }

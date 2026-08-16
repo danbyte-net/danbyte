@@ -193,7 +193,8 @@ class TaskSerializer(serializers.ModelSerializer):
             "description", "priority", "assignees", "assignee_detail",
             "assigned_group", "assigned_group_name",
             "labels", "label_detail", "milestone", "milestone_name",
-            "milestone_due", "start_date", "due_date", "weight",
+            "milestone_due", "start_date", "start_time",
+            "due_date", "due_time", "weight",
             "links", "planned_changes",
             "created_by", "created_at", "updated_at",
         ]
@@ -223,4 +224,10 @@ class TaskSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"due_date": "Due date is before the start date."}
             )
+        for tfield, dval in (("start_time", start), ("due_time", due)):
+            tval = attrs.get(tfield, getattr(self.instance, tfield, None))
+            if tval and not dval:
+                raise serializers.ValidationError(
+                    {tfield: "A time needs its date."}
+                )
         return attrs

@@ -204,7 +204,12 @@ class Task(TimestampedModel):
         related_name="tasks",
     )
     start_date = models.DateField(null=True, blank=True)
+    #: Optional refinements: a task stays date-scheduled (reminders, digest,
+    #: month view all reason in days); a time only sharpens where the hour
+    #: grid draws it. Meaningless without the matching date.
+    start_time = models.TimeField(null=True, blank=True)
     due_date = models.DateField(null=True, blank=True)
+    due_time = models.TimeField(null=True, blank=True)
     weight = models.PositiveIntegerField(
         default=100, help_text="Ordering within the status column."
     )

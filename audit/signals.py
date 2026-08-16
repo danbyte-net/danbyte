@@ -37,7 +37,7 @@ from core.secret_fields import is_secret_field as _is_secret  # noqa: E402
 def _ser(v):
     if isinstance(v, (uuid.UUID, decimal.Decimal)):
         return str(v)
-    if isinstance(v, (datetime.datetime, datetime.date)):
+    if isinstance(v, (datetime.datetime, datetime.date, datetime.time)):
         return v.isoformat()
     # FileField / ImageField → store the file name, not the FieldFile object
     # (which isn't JSON serializable).

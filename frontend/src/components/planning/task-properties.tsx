@@ -253,28 +253,48 @@ export function MilestonePicker({
  *  overdue line into one cell wrapped it onto three cramped lines. */
 export function DateCell({
   value,
+  time,
   placeholder,
   onChange,
+  onTime,
   canEdit,
 }: {
   value: string | null
+  /** Optional "HH:MM[:SS]" refinement — rendered once a date is set. */
+  time?: string | null
   placeholder: string
   onChange: (v: string | null) => void
+  onTime?: (v: string | null) => void
   canEdit: boolean
 }) {
+  const hhmm = time ? time.slice(0, 5) : ""
   if (!canEdit) {
     return value ? (
-      <span className="num text-[13px]">{value}</span>
+      <span className="num text-[13px]">
+        {value}
+        {hhmm && ` · ${hhmm}`}
+      </span>
     ) : (
       <Empty>—</Empty>
     )
   }
   return (
-    <DatePicker
-      value={value ?? ""}
-      onChange={(v) => onChange(v || null)}
-      placeholder={placeholder}
-      className="-mx-2 h-7 w-[calc(100%+1rem)] justify-start border-0 bg-transparent px-2 font-normal shadow-none hover:bg-accent"
-    />
+    <span className="-mx-2 flex w-[calc(100%+1rem)] items-center">
+      <DatePicker
+        value={value ?? ""}
+        onChange={(v) => onChange(v || null)}
+        placeholder={placeholder}
+        className="h-7 min-w-0 flex-1 justify-start border-0 bg-transparent px-2 font-normal shadow-none hover:bg-accent"
+      />
+      {onTime && value && (
+        <input
+          type="time"
+          value={hhmm}
+          onChange={(e) => onTime(e.target.value || null)}
+          className="num h-7 shrink-0 rounded-md bg-transparent px-1 text-[12px] text-muted-foreground hover:bg-accent focus:text-foreground"
+          title="Optional time"
+        />
+      )}
+    </span>
   )
 }

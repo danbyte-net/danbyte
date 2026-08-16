@@ -5219,7 +5219,9 @@ export interface PlanningCalendarTask {
   semantic_group: string
   priority: PlanningPriority
   start_date: string | null
+  start_time: string | null
   due_date: string | null
+  due_time: string | null
   milestone: string | null
   assignees: string[]
 }
@@ -5357,7 +5359,9 @@ export interface PlanningTask {
   milestone_name: string | null
   milestone_due: string | null
   start_date: string | null
+  start_time: string | null
   due_date: string | null
+  due_time: string | null
   weight: number
   links: PlanningTaskLink[]
   planned_changes: PlanningPlannedChange[]
