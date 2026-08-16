@@ -247,7 +247,7 @@ export function DetailHero({
   children?: ReactNode
 }) {
   return (
-    <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-4 border-b border-border px-6 py-5">
+    <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-3 border-b border-border px-6 py-4">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-3">
           <h1
@@ -260,22 +260,26 @@ export function DetailHero({
           </h1>
           {badges}
         </div>
-        {/* `empty:hidden` on every optional row: a slot often holds a
-            component that decides for itself whether it has anything to draw
-            (a prefix's masters chain, a flags array), and without it a
-            null-rendering slot still spent its margin. */}
-        {subtitle && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground empty:hidden">
+        {/* Subtitle chips and tags share one row (a hairline between them
+            when both are present) — stacking them one per line made a device
+            hero four rows tall before any content. `empty:hidden` because a
+            slot often holds a component that decides for itself whether it
+            has anything to draw. */}
+        {(subtitle || tags) && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground empty:hidden">
             {subtitle}
+            {subtitle && tags && (
+              <span className="h-4 w-px bg-border" aria-hidden />
+            )}
+            {tags}
           </div>
         )}
-        {tags && <div className="mt-2 empty:hidden">{tags}</div>}
         {description && (
-          <p className="mt-3 max-w-2xl text-[13px] text-muted-foreground empty:hidden">
+          <p className="mt-1.5 max-w-2xl text-[13px] text-muted-foreground empty:hidden">
             {description}
           </p>
         )}
-        {children && <div className="mt-3 empty:hidden">{children}</div>}
+        {children && <div className="mt-2 empty:hidden">{children}</div>}
       </div>
       {stats && (
         <dl
