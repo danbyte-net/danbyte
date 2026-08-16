@@ -10,6 +10,7 @@ from api.models import IPAddress, Prefix
 from core.models import Organization, Tenant
 from integrations.models import (
     DnsDrift,
+    DnsRecord,
     DnsZone,
     IntegrationSettings,
     WindowsServerConnection,
@@ -38,7 +39,7 @@ class DnsApiTests(APITestCase):
         self.user = User.objects.create_user("op", password="x")
         UserProfile.objects.create(user=self.user).tenants.add(self.tenant)
         p = ObjectPermission.objects.create(
-            name="dns-op", object_types=["dnszone", "dnsdrift"],
+            name="dns-op", object_types=["dnszone", "dnsdrift", "dnsrecord"],
             actions=["view", "add", "change", "delete"],
         )
         p.users.add(self.user)
@@ -104,3 +105,38 @@ class DnsApiTests(APITestCase):
         )
         self.assertEqual(self.client.get("/api/dns-zones/").status_code, 404)
         self.assertEqual(self.client.get("/api/dns-drifts/").status_code, 404)
+
+    def test_records_endpoint_filters(self):
+        self.zone.sync = True
+        self.zone.save(update_fields=["sync"])
+        other_prefix = Prefix.objects.create(tenant=self.tenant, cidr="10.9.0.0/24")
+        other_ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.9.0.5", prefix=other_prefix
+        )
+        DnsRecord.objects.create(
+            zone=self.zone, name="a.danbyte.lan", record_type="A",
+            data="10.77.0.60", ip="10.77.0.60", ip_address=self.ip,
+        )
+        DnsRecord.objects.create(
+            zone=self.zone, name="b.danbyte.lan", record_type="A",
+            data="10.9.0.5", ip="10.9.0.5", ip_address=other_ip,
+        )
+        # All records
+        res = self.client.get("/api/dns-records/")
+        self.assertEqual(res.json()["count"], 2)
+        # By prefix — only the record whose IP is in that prefix
+        res = self.client.get(f"/api/dns-records/?prefix={self.ip.prefix_id}")
+        self.assertEqual(res.json()["count"], 1)
+        self.assertEqual(res.json()["results"][0]["name"], "a.danbyte.lan")
+        # By ip
+        res = self.client.get("/api/dns-records/?ip=10.9.0.5")
+        self.assertEqual(res.json()["count"], 1)
+        # Search
+        res = self.client.get("/api/dns-records/?search=b.danbyte")
+        self.assertEqual(res.json()["count"], 1)
+
+    def test_records_404_without_toggle(self):
+        IntegrationSettings.objects.filter(tenant=self.tenant).update(
+            dns_sync_enabled=False
+        )
+        self.assertEqual(self.client.get("/api/dns-records/").status_code, 404)

@@ -150,6 +150,13 @@ def sync_dns(conn) -> dict:
             )
         DnsZone.objects.filter(connection=conn).exclude(name__in=seen).delete()
 
+    # Records/drift only make sense for reconciled zones — drop any left behind
+    # by a zone whose reconcile was switched off (or that vanished).
+    from .models import DnsDrift, DnsRecord
+
+    DnsRecord.objects.filter(zone__connection=conn, zone__sync=False).delete()
+    DnsDrift.objects.filter(zone__connection=conn, zone__sync=False).delete()
+
     synced = list(DnsZone.objects.filter(connection=conn, sync=True))
     if synced:
         data = run_json(conn, _fetch_records_script([z.name for z in synced])) or {}
@@ -167,7 +174,7 @@ def sync_dns(conn) -> dict:
 def _reconcile(conn, synced_zones, data, now, counts) -> None:
     from api.models import IPAddress
 
-    from .models import DnsDrift
+    from .models import DnsDrift, DnsRecord
 
     zones = {z.name: z for z in synced_zones}
     for c in _as_list(data.get("counts")):
@@ -182,6 +189,7 @@ def _reconcile(conn, synced_zones, data, now, counts) -> None:
         ).first()
 
     fresh: set = set()  # (zone_id, ip, rtype) drift keys seen this pass
+    fresh_records: set = set()  # (zone_id, name, rtype, data) stored this pass
     # (zone, ip) pairs that have a record — for missing_record detection.
     recorded: dict[str, set] = {z: set() for z in zones}
 
@@ -208,6 +216,16 @@ def _reconcile(conn, synced_zones, data, now, counts) -> None:
             continue
         recorded[zone.name].add(ip)
         names_by.setdefault((zone.name, ip, rtype), set()).add(server_name)
+
+        # Persist the address record itself so it's queryable from IPAM and a
+        # real table — name/data are direction-specific.
+        rec_name = server_name if rtype in ("A", "AAAA") else _fqdn(host, zone.name)
+        rec_data = raw
+        DnsRecord.objects.update_or_create(
+            zone=zone, name=rec_name, record_type=rtype, data=rec_data,
+            defaults={"ip": ip, "ip_address": ip_row(ip), "last_seen_at": now},
+        )
+        fresh_records.add((zone.id, rec_name, rtype, rec_data))
 
     for (zone_name, ip, rtype), server_names in names_by.items():
         zone = zones[zone_name]
@@ -261,10 +279,14 @@ def _reconcile(conn, synced_zones, data, now, counts) -> None:
             counts["drift"] += 1
 
     # Drift that no longer reproduces is settled — drop stale rows.
-    from .models import DnsDrift as _D
-
-    for stale in _D.objects.filter(zone__in=synced_zones):
+    for stale in DnsDrift.objects.filter(zone__in=synced_zones):
         if (stale.zone_id, stale.ip, stale.record_type) not in fresh:
+            stale.delete()
+
+    # Records removed from the zone since last sync go too.
+    for stale in DnsRecord.objects.filter(zone__in=synced_zones):
+        key = (stale.zone_id, stale.name, stale.record_type, stale.data)
+        if key not in fresh_records:
             stale.delete()
 
 

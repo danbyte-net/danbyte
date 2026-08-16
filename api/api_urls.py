@@ -87,6 +87,7 @@ from integrations.api import (
 )
 from integrations.dns_api import (
     DnsDriftViewSet,
+    DnsRecordViewSet,
     DnsZoneViewSet,
 )
 from integrations.virt_api import VirtChangeViewSet
@@ -366,6 +367,7 @@ router.register(r"dhcp-reservations", DhcpReservationViewSet,
 router.register(r"dhcp-leases", DhcpLeaseViewSet, basename="dhcp-lease")
 router.register(r"dns-zones", DnsZoneViewSet, basename="dns-zone")
 router.register(r"dns-drifts", DnsDriftViewSet, basename="dns-drift")
+router.register(r"dns-records", DnsRecordViewSet, basename="dns-record")
 router.register(r"virt-changes", VirtChangeViewSet, basename="virt-change")
 router.register(r"deploy-runs",   DeployRunViewSet,   basename="deploy-run")
 router.register(r"config-states", DeviceConfigStateViewSet, basename="config-state")

@@ -6978,3 +6978,18 @@ export interface VirtChange {
   ignored: boolean
   last_seen_at: string | null
 }
+
+export interface DnsRecord {
+  id: string
+  zone: string
+  zone_name: string
+  connection: string
+  connection_name: string
+  name: string
+  record_type: "A" | "AAAA" | "PTR"
+  data: string
+  ip: string
+  ip_address: string | null
+  ttl: string
+  last_seen_at: string | null
+}

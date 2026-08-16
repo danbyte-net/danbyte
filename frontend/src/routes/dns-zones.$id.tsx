@@ -1,0 +1,199 @@
+import { useState } from "react"
+import { createFileRoute } from "@tanstack/react-router"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
+
+import { api, type DnsLiveRecord, type DnsZone } from "@/lib/api"
+import { apiErrorToast } from "@/lib/api-toast"
+import { useMe } from "@/lib/use-me"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
+import { EmptyState } from "@/components/empty-state"
+import { QueryError } from "@/components/query-error"
+import { DetailShell, DetailHero, DetailTab } from "@/components/detail-shell"
+import { SimpleTable, type SimpleColumn } from "@/components/ui/simple-table"
+import { dash } from "@/components/kv-card"
+import { DnsRecordsTable } from "@/components/integrations/dns-records-table"
+
+export const Route = createFileRoute("/dns-zones/$id")({
+  component: ZoneDetail,
+})
+
+function ZoneDetail() {
+  const { id } = Route.useParams()
+  const q = useQuery({
+    queryKey: ["dns-zone", id],
+    queryFn: () => api<DnsZone>(`/api/dns-zones/${id}/`),
+  })
+  if (q.isLoading)
+    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isError)
+    return (
+      <div className="p-6">
+        <QueryError error={q.error} />
+      </div>
+    )
+  if (!q.data) return null
+  return <Body zone={q.data} />
+}
+
+function Body({ zone }: { zone: DnsZone }) {
+  const qc = useQueryClient()
+  const { canDo } = useMe()
+  const [showLive, setShowLive] = useState(false)
+
+  const setSync = useMutation({
+    mutationFn: (on: boolean) =>
+      api<DnsZone>(`/api/dns-zones/${zone.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ sync: on }),
+      }),
+    onSuccess: (_, on) => {
+      toast.success(on ? "Reconciliation on" : "Reconciliation off")
+      qc.invalidateQueries({ queryKey: ["dns-zone"] })
+      qc.invalidateQueries({ queryKey: ["dns-records"] })
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  return (
+    <DetailShell
+      backTo="/windows-servers"
+      backLabel={zone.connection_name || "Windows servers"}
+      title={zone.name}
+      hero={
+        <DetailHero
+          title={zone.name}
+          badges={
+            <>
+              <Badge variant="outline" className="text-[10px]">
+                {zone.zone_type}
+                {zone.is_reverse ? " · reverse" : ""}
+              </Badge>
+              {zone.sync ? (
+                <Badge variant="success" className="text-[10px]">
+                  reconciled
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="text-[10px]">
+                  not reconciled
+                </Badge>
+              )}
+            </>
+          }
+          subtitle={
+            <span className="text-[12px] text-muted-foreground">
+              {zone.record_count} records on the server
+            </span>
+          }
+        />
+      }
+      actions={
+        canDo("dnszone", "change") && (
+          <span className="flex items-center gap-2 text-xs text-muted-foreground">
+            Reconcile
+            <Switch
+              checked={zone.sync}
+              disabled={setSync.isPending}
+              onCheckedChange={(on) => setSync.mutate(on)}
+              aria-label="Reconcile zone"
+            />
+          </span>
+        )
+      }
+      tabs={[{ value: "records", label: "Records" }]}
+      tab="records"
+      onTabChange={() => {}}
+    >
+      <DetailTab value="records">
+        {!zone.sync ? (
+          <EmptyState title="This zone isn't reconciled.">
+            Turn on Reconcile to store its A/AAAA/PTR records here and link them
+            to your IP addresses. You can still view the live records below.
+          </EmptyState>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Address records synced from this zone, linked to their IP
+              addresses. Other record types (CNAME, MX, TXT…) aren't stored —
+              use the live view for the full dump.
+            </p>
+            <DnsRecordsTable
+              params={`zone=${zone.id}`}
+              queryKey={["dns-records", "zone", zone.id]}
+              showZone={false}
+              empty="No address records synced yet."
+            />
+          </div>
+        )}
+        <div className="mt-6">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowLive((v) => !v)}
+          >
+            {showLive ? "Hide live records" : "Show all record types (live)"}
+          </Button>
+          {showLive && <LiveRecords zone={zone} />}
+        </div>
+      </DetailTab>
+    </DetailShell>
+  )
+}
+
+const liveColumns: SimpleColumn<DnsLiveRecord>[] = [
+  {
+    id: "name",
+    header: "Name",
+    cell: (r) => <span className="font-mono text-xs">{r.HostName}</span>,
+  },
+  { id: "type", header: "Type", cell: (r) => r.rtype },
+  {
+    id: "ttl",
+    header: "TTL",
+    cell: (r) => <span className="text-muted-foreground">{r.ttl}</span>,
+  },
+  {
+    id: "data",
+    header: "Data",
+    flex: true,
+    cell: (r) => <span className="font-mono text-xs">{r.data || dash}</span>,
+  },
+]
+
+function LiveRecords({ zone }: { zone: DnsZone }) {
+  const q = useQuery({
+    queryKey: ["dns-zone-records", zone.id],
+    queryFn: () =>
+      api<{ ok: boolean; records: DnsLiveRecord[]; error?: string }>(
+        `/api/dns-zones/${zone.id}/records/`
+      ),
+    staleTime: 30_000,
+  })
+  const rows = q.data?.records ?? []
+  return (
+    <div className="mt-3">
+      {q.isLoading && (
+        <p className="text-sm text-muted-foreground">
+          Asking the server directly…
+        </p>
+      )}
+      {q.data && !q.data.ok && (
+        <p className="text-sm text-destructive">{q.data.error}</p>
+      )}
+      {rows.length > 0 && (
+        <div className="max-h-[60vh] overflow-auto">
+          <SimpleTable
+            columns={liveColumns}
+            data={rows}
+            getRowKey={(_, i) => i}
+          />
+        </div>
+      )}
+      {q.data?.ok && rows.length === 0 && (
+        <p className="text-sm text-muted-foreground">The zone is empty.</p>
+      )}
+    </div>
+  )
+}

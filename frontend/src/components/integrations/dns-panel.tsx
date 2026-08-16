@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
+import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
@@ -6,7 +7,6 @@ import { toast } from "sonner"
 import {
   api,
   type DnsDrift,
-  type DnsLiveRecord,
   type DnsZone,
   type Paginated,
   type WindowsConnection,
@@ -15,37 +15,9 @@ import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
-import { dash } from "@/components/kv-card"
-import { SimpleTable, type SimpleColumn } from "@/components/ui/simple-table"
-
-const recordColumns: SimpleColumn<DnsLiveRecord>[] = [
-  {
-    id: "name",
-    header: "Name",
-    cell: (r) => <span className="font-mono text-xs">{r.HostName}</span>,
-  },
-  { id: "type", header: "Type", cell: (r) => r.rtype },
-  {
-    id: "ttl",
-    header: "TTL",
-    cell: (r) => <span className="text-muted-foreground">{r.ttl}</span>,
-  },
-  {
-    id: "data",
-    header: "Data",
-    flex: true,
-    cell: (r) => <span className="font-mono text-xs">{r.data || dash}</span>,
-  },
-]
 
 /** The DNS side of a Windows server: zones (with per-zone reconcile opt-in),
  * drift review, and a live record viewer. */
@@ -54,7 +26,6 @@ export function DnsPanel({ conn }: { conn: WindowsConnection }) {
   const { canDo } = useMe()
   const canZone = canDo("dnszone", "change")
   const canResolve = canDo("dnsdrift", "change")
-  const [viewing, setViewing] = useState<DnsZone | null>(null)
 
   const zonesQ = useQuery({
     queryKey: ["dns-zones", conn.id],
@@ -126,14 +97,13 @@ export function DnsPanel({ conn }: { conn: WindowsConnection }) {
         accessorKey: "name",
         header: "Zone",
         cell: ({ row }) => (
-          <button
-            type="button"
-            className="font-mono text-xs hover:underline"
-            onClick={() => setViewing(row.original)}
-            title="View records (live)"
+          <Link
+            to="/dns-zones/$id"
+            params={{ id: row.original.id }}
+            className="font-mono text-xs font-medium hover:underline"
           >
             {row.original.name}
-          </button>
+          </Link>
         ),
       },
       {
@@ -280,7 +250,7 @@ export function DnsPanel({ conn }: { conn: WindowsConnection }) {
           <h3 className="text-sm font-medium">Zones</h3>
           <p className="text-xs text-muted-foreground">
             Reconciliation compares A/AAAA/PTR records against IP DNS names —
-            opt in per zone. Click a zone to view its records live.
+            opt in per zone. Open a zone for its records and IP links.
           </p>
         </div>
         {zonesQ.data && zones.length === 0 ? (
@@ -307,61 +277,6 @@ export function DnsPanel({ conn }: { conn: WindowsConnection }) {
           />
         </div>
       )}
-      {viewing && (
-        <ZoneRecordsDialog
-          zone={viewing}
-          onOpenChange={(o) => !o && setViewing(null)}
-        />
-      )}
     </div>
-  )
-}
-
-function ZoneRecordsDialog({
-  zone,
-  onOpenChange,
-}: {
-  zone: DnsZone
-  onOpenChange: (open: boolean) => void
-}) {
-  const q = useQuery({
-    queryKey: ["dns-zone-records", zone.id],
-    queryFn: () =>
-      api<{ ok: boolean; records: DnsLiveRecord[]; error?: string }>(
-        `/api/dns-zones/${zone.id}/records/`
-      ),
-    staleTime: 30_000,
-  })
-  const rows = q.data?.records ?? []
-  return (
-    <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent size="2xl">
-        <DialogHeader>
-          <DialogTitle>
-            <span className="font-mono">{zone.name}</span> — live records
-          </DialogTitle>
-        </DialogHeader>
-        {q.isLoading && (
-          <p className="text-sm text-muted-foreground">
-            Asking the server directly…
-          </p>
-        )}
-        {q.data && !q.data.ok && (
-          <p className="text-sm text-destructive">{q.data.error}</p>
-        )}
-        {rows.length > 0 && (
-          <div className="max-h-[60vh] overflow-auto">
-            <SimpleTable
-              columns={recordColumns}
-              data={rows}
-              getRowKey={(_, i) => i}
-            />
-          </div>
-        )}
-        {q.data?.ok && rows.length === 0 && (
-          <p className="text-sm text-muted-foreground">The zone is empty.</p>
-        )}
-      </DialogContent>
-    </Dialog>
   )
 }

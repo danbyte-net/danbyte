@@ -135,6 +135,26 @@ Out of scope for now: CNAME/MX/SRV/TXT management, creating zones, and
 DNSSEC. Point the connection at one server of an AD-replicated set; AD
 replication carries pushed records to the rest.
 
+### The zone page and record cross-links
+
+Opening a zone (its name on the DNS tab) shows a **records page**: the
+zone's A/AAAA/PTR records as a proper table, each linked to its IP address —
+records for space Danbyte doesn't track are shown too, marked *not in IPAM*.
+A **"Show all record types (live)"** button fetches the full zone dump
+(CNAME/MX/TXT…) straight from the server when you need it.
+
+Because reconciled records are stored, they also surface **inside IPAM**:
+
+- A prefix's **DNS** tab lists every record whose address falls in that
+  prefix.
+- An IP address's overview shows a **DNS records** section — its A/AAAA and
+  PTR records together, so you can see the forward/reverse round-trip at a
+  glance.
+
+Only reconciled zones store records (matching the per-zone opt-in); records
+are pruned as they leave the server, and cleared entirely if you switch a
+zone's reconcile off.
+
 ## Virtualization (Proxmox VE)
 
 Enable the **Virtualization sync** toggle and add the cluster under

@@ -8,7 +8,12 @@ from django.test import TestCase
 from api.models import IPAddress, Prefix
 from core.models import Organization, Tenant
 from integrations import dns_sync
-from integrations.models import DnsDrift, DnsZone, WindowsServerConnection
+from integrations.models import (
+    DnsDrift,
+    DnsRecord,
+    DnsZone,
+    WindowsServerConnection,
+)
 
 ZONES = [
     {"ZoneName": "danbyte.lan", "zone_type": "Primary",
@@ -227,3 +232,98 @@ class DnsSyncTests(TestCase):
         self.sync(zone_payload=[ZONES[0]])
         names = set(DnsZone.objects.values_list("name", flat=True))
         self.assertEqual(names, {"danbyte.lan"})
+
+
+class DnsRecordStoreTests(TestCase):
+    """A/AAAA/PTR records are persisted for reconciled zones and linked to IPs."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.conn = WindowsServerConnection.objects.create(
+            tenant=self.tenant, name="dc1", host="192.0.2.10", username="svc",
+            credentials={"password": "pw"}, dns_enabled=True,
+        )
+        self.prefix = Prefix.objects.create(tenant=self.tenant, cidr="10.77.0.0/24")
+
+    def ip(self, addr, dns_name=""):
+        return IPAddress.objects.create(
+            tenant=self.tenant, ip_address=addr, prefix=self.prefix,
+            dns_name=dns_name,
+        )
+
+    def sync(self, record_payload):
+        zones = [{"ZoneName": "danbyte.lan", "zone_type": "Primary",
+                  "IsReverseLookupZone": False}]
+        with mock.patch.object(dns_sync, "run_json", side_effect=[zones, record_payload]):
+            return dns_sync.sync_dns(self.conn)
+
+    def _enable(self):
+        # First pass lists the zone; enable reconcile, then records land.
+        with mock.patch.object(
+            dns_sync, "run_json",
+            return_value=[{"ZoneName": "danbyte.lan", "zone_type": "Primary",
+                           "IsReverseLookupZone": False}],
+        ):
+            dns_sync.sync_dns(self.conn)
+        DnsZone.objects.filter(name="danbyte.lan").update(sync=True)
+
+    def test_records_persisted_and_linked(self):
+        row = self.ip("10.77.0.60")
+        self._enable()
+        self.sync({
+            "records": [
+                {"zone": "danbyte.lan", "HostName": "printer-1", "rtype": "A",
+                 "data": "10.77.0.60"},
+                {"zone": "danbyte.lan", "HostName": "unknown", "rtype": "A",
+                 "data": "10.77.0.250"},
+            ],
+            "counts": [{"zone": "danbyte.lan", "n": 2}],
+        })
+        recs = DnsRecord.objects.order_by("name")
+        self.assertEqual(recs.count(), 2)
+        linked = DnsRecord.objects.get(name="printer-1.danbyte.lan")
+        self.assertEqual(linked.ip, "10.77.0.60")
+        self.assertEqual(linked.ip_address, row)
+        # A record for an address not in IPAM is stored but unlinked.
+        unlinked = DnsRecord.objects.get(name="unknown.danbyte.lan")
+        self.assertIsNone(unlinked.ip_address)
+
+    def test_records_pruned_when_gone(self):
+        self._enable()
+        payload_two = {
+            "records": [
+                {"zone": "danbyte.lan", "HostName": "a", "rtype": "A",
+                 "data": "10.77.0.1"},
+                {"zone": "danbyte.lan", "HostName": "b", "rtype": "A",
+                 "data": "10.77.0.2"},
+            ],
+            "counts": [{"zone": "danbyte.lan", "n": 2}],
+        }
+        self.sync(payload_two)
+        self.assertEqual(DnsRecord.objects.count(), 2)
+        # b removed on the server → pruned locally.
+        self.sync({
+            "records": [{"zone": "danbyte.lan", "HostName": "a", "rtype": "A",
+                         "data": "10.77.0.1"}],
+            "counts": [{"zone": "danbyte.lan", "n": 1}],
+        })
+        self.assertEqual(DnsRecord.objects.count(), 1)
+        self.assertEqual(DnsRecord.objects.get().name, "a.danbyte.lan")
+
+    def test_records_cleared_when_reconcile_disabled(self):
+        self._enable()
+        self.sync({
+            "records": [{"zone": "danbyte.lan", "HostName": "a", "rtype": "A",
+                         "data": "10.77.0.1"}],
+            "counts": [{"zone": "danbyte.lan", "n": 1}],
+        })
+        self.assertEqual(DnsRecord.objects.count(), 1)
+        DnsZone.objects.filter(name="danbyte.lan").update(sync=False)
+        with mock.patch.object(
+            dns_sync, "run_json",
+            return_value=[{"ZoneName": "danbyte.lan", "zone_type": "Primary",
+                           "IsReverseLookupZone": False}],
+        ):
+            dns_sync.sync_dns(self.conn)
+        self.assertEqual(DnsRecord.objects.count(), 0)

@@ -285,6 +285,7 @@ import { Route as FhrpGroupsNewRouteImport } from './routes/fhrp-groups.new'
 import { Route as FhrpGroupsIdRouteImport } from './routes/fhrp-groups.$id'
 import { Route as ExportTemplatesNewRouteImport } from './routes/export-templates.new'
 import { Route as ExportTemplatesIdRouteImport } from './routes/export-templates.$id'
+import { Route as DnsZonesIdRouteImport } from './routes/dns-zones.$id'
 import { Route as DevicesNewRouteImport } from './routes/devices.new'
 import { Route as DevicesIdRouteImport } from './routes/devices.$id'
 import { Route as DeviceTypesNewRouteImport } from './routes/device-types.new'
@@ -1784,6 +1785,11 @@ const ExportTemplatesIdRoute = ExportTemplatesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ExportTemplatesRoute,
 } as any)
+const DnsZonesIdRoute = DnsZonesIdRouteImport.update({
+  id: '/dns-zones/$id',
+  path: '/dns-zones/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DevicesNewRoute = DevicesNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -2479,6 +2485,7 @@ export interface FileRoutesByFullPath {
   '/device-types/new': typeof DeviceTypesNewRoute
   '/devices/$id': typeof DevicesIdRoute
   '/devices/new': typeof DevicesNewRoute
+  '/dns-zones/$id': typeof DnsZonesIdRoute
   '/export-templates/$id': typeof ExportTemplatesIdRoute
   '/export-templates/new': typeof ExportTemplatesNewRoute
   '/fhrp-groups/$id': typeof FhrpGroupsIdRoute
@@ -2816,6 +2823,7 @@ export interface FileRoutesByTo {
   '/device-types/new': typeof DeviceTypesNewRoute
   '/devices/$id': typeof DevicesIdRoute
   '/devices/new': typeof DevicesNewRoute
+  '/dns-zones/$id': typeof DnsZonesIdRoute
   '/export-templates/$id': typeof ExportTemplatesIdRoute
   '/export-templates/new': typeof ExportTemplatesNewRoute
   '/fhrp-groups/$id': typeof FhrpGroupsIdRoute
@@ -3210,6 +3218,7 @@ export interface FileRoutesById {
   '/device-types/new': typeof DeviceTypesNewRoute
   '/devices/$id': typeof DevicesIdRoute
   '/devices/new': typeof DevicesNewRoute
+  '/dns-zones/$id': typeof DnsZonesIdRoute
   '/export-templates/$id': typeof ExportTemplatesIdRoute
   '/export-templates/new': typeof ExportTemplatesNewRoute
   '/fhrp-groups/$id': typeof FhrpGroupsIdRoute
@@ -3605,6 +3614,7 @@ export interface FileRouteTypes {
     | '/device-types/new'
     | '/devices/$id'
     | '/devices/new'
+    | '/dns-zones/$id'
     | '/export-templates/$id'
     | '/export-templates/new'
     | '/fhrp-groups/$id'
@@ -3942,6 +3952,7 @@ export interface FileRouteTypes {
     | '/device-types/new'
     | '/devices/$id'
     | '/devices/new'
+    | '/dns-zones/$id'
     | '/export-templates/$id'
     | '/export-templates/new'
     | '/fhrp-groups/$id'
@@ -4335,6 +4346,7 @@ export interface FileRouteTypes {
     | '/device-types/new'
     | '/devices/$id'
     | '/devices/new'
+    | '/dns-zones/$id'
     | '/export-templates/$id'
     | '/export-templates/new'
     | '/fhrp-groups/$id'
@@ -4700,6 +4712,7 @@ export interface RootRouteChildren {
   ComplianceRulesNewRoute: typeof ComplianceRulesNewRoute
   DeviceRolesIdRoute: typeof DeviceRolesIdRoute
   DeviceRolesNewRoute: typeof DeviceRolesNewRoute
+  DnsZonesIdRoute: typeof DnsZonesIdRoute
   IpsIdRoute: typeof IpsIdRoute
   IpsBulkEditRoute: typeof IpsBulkEditRoute
   IpsNewRoute: typeof IpsNewRoute
@@ -6700,6 +6713,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ExportTemplatesIdRouteImport
       parentRoute: typeof ExportTemplatesRoute
     }
+    '/dns-zones/$id': {
+      id: '/dns-zones/$id'
+      path: '/dns-zones/$id'
+      fullPath: '/dns-zones/$id'
+      preLoaderRoute: typeof DnsZonesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/devices/new': {
       id: '/devices/new'
       path: '/new'
@@ -8604,6 +8624,7 @@ const rootRouteChildren: RootRouteChildren = {
   ComplianceRulesNewRoute: ComplianceRulesNewRoute,
   DeviceRolesIdRoute: DeviceRolesIdRoute,
   DeviceRolesNewRoute: DeviceRolesNewRoute,
+  DnsZonesIdRoute: DnsZonesIdRoute,
   IpsIdRoute: IpsIdRoute,
   IpsBulkEditRoute: IpsBulkEditRoute,
   IpsNewRoute: IpsNewRoute,

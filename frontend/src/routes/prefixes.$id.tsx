@@ -32,6 +32,10 @@ import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { SpaceMap } from "@/components/space-map"
 import { PrefixIpsTable } from "@/components/prefix-ips-table"
 import { PrefixMonitoring } from "@/components/monitoring/prefix-monitoring"
+import {
+  DnsRecordsTable,
+  useDnsEnabled,
+} from "@/components/integrations/dns-records-table"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import {
@@ -109,9 +113,12 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
     | "children"
     | "map"
     | "monitoring"
+    | "dns"
     | "journal"
     | "history"
   >("overview")
+  // The DNS tab only makes sense when Windows DNS sync is on for the tenant.
+  const dnsEnabled = useDnsEnabled()
 
   // Prefix-level delete confirm.
   const [deletePrefix, setDeletePrefix] = useState<Prefix | null>(null)
@@ -326,6 +333,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
         },
         { value: "map", label: "Map" },
         { value: "monitoring", label: "Monitoring" },
+        ...(dnsEnabled ? [{ value: "dns", label: "DNS" }] : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
       ]}
@@ -414,6 +422,14 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
             cidr: p.cidr,
             auto_discover: p.auto_discover,
           }}
+        />
+      </DetailTab>
+
+      <DetailTab value="dns">
+        <DnsRecordsTable
+          params={`prefix=${p.id}`}
+          queryKey={["dns-records", "prefix", p.id]}
+          empty="No DNS records point into this prefix."
         />
       </DetailTab>
 

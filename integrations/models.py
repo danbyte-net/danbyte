@@ -765,3 +765,48 @@ class VirtChange(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.kind} · {self.guest_id}"
+
+
+class DnsRecord(TimestampedModel):
+    """An address record (A/AAAA/PTR) mirrored from a reconciled DNS zone,
+    linked to the IPAddress it concerns.
+
+    Persisted so DNS data is queryable from IPAM (the prefix and IP pages) and
+    presentable as a real table — without a live WinRM call per view. Only
+    reconciled (``sync=True``) zones populate records; the set is bounded and
+    stable, and rows are pruned each sync like drift. High-churn, so it is
+    RBAC-registered but deliberately **not** audited.
+    """
+
+    RTYPE_CHOICES = [("A", "A"), ("AAAA", "AAAA"), ("PTR", "PTR")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    zone = models.ForeignKey(
+        DnsZone, on_delete=models.CASCADE, related_name="records"
+    )
+    name = models.CharField(max_length=255)  # FQDN
+    record_type = models.CharField(max_length=8, choices=RTYPE_CHOICES)
+    data = models.CharField(max_length=255)  # A/AAAA: the IP; PTR: the target
+    ip = models.GenericIPAddressField()  # the address this record concerns
+    ip_address = models.ForeignKey(
+        "api.IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="dns_records",
+    )
+    ttl = models.CharField(max_length=32, blank=True, default="")
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        indexes = [
+            models.Index(fields=["zone", "ip"]),
+            models.Index(fields=["ip_address"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["zone", "name", "record_type", "data"],
+                name="uniq_dnsrecord_zone_name_type_data",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} {self.record_type} {self.data}"

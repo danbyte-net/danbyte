@@ -34,6 +34,10 @@ import { IpMonitoring } from "@/components/monitoring/ip-monitoring"
 import { CertificatesPanel } from "@/components/monitoring/certificates-panel"
 import { IpMonitoringSummary } from "@/components/monitoring/ip-monitoring-summary"
 import { QueryError } from "@/components/query-error"
+import {
+  DnsRecordsTable,
+  useDnsEnabled,
+} from "@/components/integrations/dns-records-table"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { useMe, objCan } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -88,6 +92,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
   })
 
   const family: 4 | 6 = ip.ip_address.includes(":") ? 6 : 4
+  const dnsEnabled = useDnsEnabled()
 
   // ─── Row collections — single source of truth for table render + copy ─
 
@@ -493,6 +498,18 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
         {subnetRows.length > 0 && (
           <div className="mt-6">
             <KvCard title="Subnet" rows={subnetRows} />
+          </div>
+        )}
+
+        {dnsEnabled && (
+          <div className="mt-6">
+            <h3 className="mb-2 text-sm font-medium">DNS records</h3>
+            <DnsRecordsTable
+              params={`ip=${ip.ip_address}`}
+              queryKey={["dns-records", "ip", ip.ip_address]}
+              empty="No DNS records for this address."
+              tableId="ip-dns-records"
+            />
           </div>
         )}
 

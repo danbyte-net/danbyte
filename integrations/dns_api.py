@@ -8,7 +8,7 @@ from rest_framework.response import Response
 
 from api.viewsets import TenantScopedViewSet
 
-from .models import DnsDrift, DnsZone
+from .models import DnsDrift, DnsRecord, DnsZone
 from .toggles import IntegrationToggleMixin
 from .winrm_client import WinRMError, ps_str, run_json
 
@@ -70,6 +70,53 @@ class DnsZoneViewSet(IntegrationToggleMixin, TenantScopedViewSet):
             return Response({"ok": False, "error": str(exc)}, status=502)
         rows = data if isinstance(data, list) else ([data] if data else [])
         return Response({"ok": True, "records": rows})
+
+
+class DnsRecordSerializer(serializers.ModelSerializer):
+    zone_name = serializers.CharField(source="zone.name", read_only=True)
+    connection = serializers.CharField(source="zone.connection_id", read_only=True)
+    connection_name = serializers.CharField(
+        source="zone.connection.name", read_only=True
+    )
+
+    class Meta:
+        model = DnsRecord
+        fields = ["id", "zone", "zone_name", "connection", "connection_name",
+                  "name", "record_type", "data", "ip", "ip_address", "ttl",
+                  "last_seen_at"]
+        read_only_fields = fields
+
+
+class DnsRecordViewSet(IntegrationToggleMixin, TenantScopedViewSet):
+    """Read-only stored A/AAAA/PTR records from reconciled zones. Filter by
+    ``?zone=``, ``?connection=``, ``?ip=``, ``?prefix=<id>``, ``?type=``,
+    ``?search=`` — the backbone of the zone table and the IPAM cross-links."""
+
+    integration_keys = ("dns",)
+    tenant_field = "zone__connection__tenant"
+    http_method_names = ["get"]
+    queryset = DnsRecord.objects.select_related(
+        "zone", "zone__connection", "ip_address"
+    ).order_by("name")
+    serializer_class = DnsRecordSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        p = self.request.query_params
+        if p.get("zone"):
+            qs = qs.filter(zone_id=p["zone"])
+        if p.get("connection"):
+            qs = qs.filter(zone__connection_id=p["connection"])
+        if p.get("ip"):
+            qs = qs.filter(ip=p["ip"])
+        if p.get("prefix"):
+            qs = qs.filter(ip_address__prefix_id=p["prefix"])
+        if p.get("type"):
+            qs = qs.filter(record_type=p["type"])
+        s = (p.get("search") or "").strip()
+        if s:
+            qs = qs.filter(name__icontains=s) | qs.filter(data__icontains=s)
+        return qs
 
 
 class DnsDriftSerializer(serializers.ModelSerializer):

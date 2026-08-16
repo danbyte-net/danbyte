@@ -98,6 +98,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/deploy-runs": "features/iac-runner/",
   "/webhooks": "features/webhooks/",
   "/windows-servers": "features/external-sync/",
+  "/dns-zones": "features/external-sync/",
   "/virtualization-sources": "features/external-sync/",
   "/settings/integrations": "features/external-sync/",
   "/tags": "features/tags-and-custom-fields/",
