@@ -353,7 +353,7 @@ export function DeviceTypeImagePortsPane({
       rows: 2,
       order: "column",
       bank: 0,
-      bankGap: 0.02,
+      bankGap: 0.03,
       x1: 0.06,
       y1: 0.4,
       x2: 0.94,
@@ -396,17 +396,15 @@ export function DeviceTypeImagePortsPane({
     const R = fill.rows
     const cols = R === 1 ? n : Math.ceil(n / R)
 
-    // Column X, with an optional gap every `bank` columns. The bank gaps eat
-    // into the x1..x2 span so the run still ends exactly at x2.
-    const banksN = fill.bank > 0 ? Math.ceil(cols / fill.bank) : 1
-    const gapTotal = (banksN - 1) * fill.bankGap
-    const step = cols > 1 ? (fill.x2 - fill.x1 - gapTotal) / (cols - 1) : 0
+    // Column pitch comes from the first..last anchors (as if evenly spaced);
+    // a bank gap then *pushes* each subsequent bank further right, so the run
+    // visibly spreads (the last ports extend past the Last-X anchor by the
+    // accumulated gaps).
+    const pitch = cols > 1 ? (fill.x2 - fill.x1) / (cols - 1) : 0
     const colX = (col: number) =>
-      cols > 1
-        ? fill.x1 +
-          col * step +
-          (fill.bank > 0 ? Math.floor(col / fill.bank) * fill.bankGap : 0)
-        : fill.x1
+      fill.x1 +
+      col * pitch +
+      (fill.bank > 0 ? Math.floor(col / fill.bank) * fill.bankGap : 0)
 
     // Row Y: per-row overrides when set, else top at y1 / bottom at row2y with
     // middle rows evenly between.
@@ -1002,7 +1000,8 @@ function FillPanel({
         </Button>
         <span className="text-muted-foreground">
           First = top-left port center; Last = the last top-row port. Columns
-          space evenly between them.
+          space evenly between them; a bank gap pushes each later bank further
+          right.
         </span>
       </div>
 
