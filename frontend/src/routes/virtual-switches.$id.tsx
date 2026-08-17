@@ -1,5 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
+import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { type ColumnDef } from "@tanstack/react-table"
 
 import {
   api,
@@ -8,6 +10,7 @@ import {
   type VirtualSwitch,
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
+import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
@@ -142,8 +145,8 @@ function Body({ sw }: { sw: VirtualSwitch }) {
   )
 }
 
-/** The networks (port-groups / bridges) on this switch, each with its VLAN and
- * the VMs attached — the switch→network→VM chain. */
+/** The networks (port-groups / bridges) on this switch as a table — each with
+ * its VLAN and the VMs attached (the switch→network→VM chain). */
 function SwitchNetworks({
   nets,
   loading,
@@ -151,6 +154,61 @@ function SwitchNetworks({
   nets: VirtNetwork[]
   loading: boolean
 }) {
+  const columns = useMemo<ColumnDef<VirtNetwork>[]>(
+    () => [
+      {
+        id: "network",
+        accessorFn: (r) => r.name || r.ext_key,
+        header: "Network",
+        cell: ({ row }) => (
+          <span className="font-medium">
+            {row.original.name || row.original.ext_key}
+          </span>
+        ),
+      },
+      {
+        id: "vlan",
+        accessorFn: (r) => r.vlan?.vlan_id ?? "",
+        header: "VLAN",
+        cell: ({ row }) =>
+          row.original.vlan ? (
+            <Link
+              to="/vlans/$id"
+              params={{ id: row.original.vlan.id }}
+              className="link font-mono text-xs"
+            >
+              {row.original.vlan.vlan_id} · {row.original.vlan.name}
+            </Link>
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          ),
+      },
+      {
+        id: "vms",
+        header: "Virtual machines",
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.vms.length === 0 ? (
+            <span className="text-xs text-muted-foreground">—</span>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {row.original.vms.map((vm) => (
+                <Link
+                  key={vm.id}
+                  to="/virtual-machines/$id"
+                  params={{ id: vm.id }}
+                  className="link rounded-md border border-border px-2 py-0.5 text-xs"
+                >
+                  {vm.name}
+                </Link>
+              ))}
+            </div>
+          ),
+      },
+    ],
+    []
+  )
+
   if (loading) return <p className="text-sm text-muted-foreground">Loading…</p>
   if (nets.length === 0)
     return (
@@ -162,42 +220,12 @@ function SwitchNetworks({
       </EmptyState>
     )
   return (
-    <div className="space-y-4">
-      {nets.map((n) => (
-        <div key={n.id} className="rounded-lg border border-border">
-          <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
-            <span className="font-medium">{n.name || n.ext_key}</span>
-            {n.vlan ? (
-              <Link
-                to="/vlans/$id"
-                params={{ id: n.vlan.id }}
-                className="link font-mono text-xs text-muted-foreground"
-              >
-                VLAN {n.vlan.vlan_id} · {n.vlan.name}
-              </Link>
-            ) : (
-              <span className="text-xs text-muted-foreground">no VLAN</span>
-            )}
-            <Badge variant="secondary" className="ml-auto text-[10px]">
-              {n.vms.length} VM{n.vms.length === 1 ? "" : "s"}
-            </Badge>
-          </div>
-          {n.vms.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 px-4 py-3">
-              {n.vms.map((vm) => (
-                <Link
-                  key={vm.id}
-                  to="/virtual-machines/$id"
-                  params={{ id: vm.id }}
-                  className="link rounded-md border border-border px-2 py-0.5 text-xs"
-                >
-                  {vm.name}
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
+    <DataTable
+      data={nets}
+      columns={columns}
+      tableId="switch-networks"
+      flexColumn="vms"
+      embedded
+    />
   )
 }
