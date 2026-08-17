@@ -48,7 +48,7 @@ function DhcpLeasesPage() {
       {
         id: "mac",
         accessorKey: "mac",
-        header: "MAC",
+        header: ({ column }) => <SortHeader column={column} label="MAC" />,
         cell: ({ row }) => (
           <span className="font-mono text-[11px] text-muted-foreground">
             {row.original.mac || "—"}
@@ -58,13 +58,13 @@ function DhcpLeasesPage() {
       {
         id: "hostname",
         accessorKey: "hostname",
-        header: "Hostname",
+        header: ({ column }) => <SortHeader column={column} label="Hostname" />,
         cell: ({ row }) => row.original.hostname || dash,
       },
       {
         id: "scope",
         accessorKey: "scope_display",
-        header: "Scope",
+        header: ({ column }) => <SortHeader column={column} label="Scope" />,
         cell: ({ row }) => (
           <span className="font-mono text-[11px] text-muted-foreground">
             {row.original.scope_display}
@@ -74,7 +74,7 @@ function DhcpLeasesPage() {
       {
         id: "state",
         accessorKey: "address_state",
-        header: "State",
+        header: ({ column }) => <SortHeader column={column} label="State" />,
         cell: ({ row }) => (
           <span className="text-xs text-muted-foreground">
             {row.original.address_state || "—"}

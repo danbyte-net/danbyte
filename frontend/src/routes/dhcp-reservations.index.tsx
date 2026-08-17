@@ -62,7 +62,7 @@ function DhcpReservationsPage() {
       {
         id: "mac",
         accessorKey: "mac",
-        header: "MAC",
+        header: ({ column }) => <SortHeader column={column} label="MAC" />,
         cell: ({ row }) => (
           <span className="font-mono text-[11px] text-muted-foreground">
             {row.original.mac}
@@ -72,13 +72,13 @@ function DhcpReservationsPage() {
       {
         id: "name",
         accessorKey: "name",
-        header: "Name",
+        header: ({ column }) => <SortHeader column={column} label="Name" />,
         cell: ({ row }) => row.original.name || dash,
       },
       {
         id: "scope",
         accessorKey: "scope_display",
-        header: "Scope",
+        header: ({ column }) => <SortHeader column={column} label="Scope" />,
         cell: ({ row }) => (
           <span className="font-mono text-[11px] text-muted-foreground">
             {row.original.scope_display}
@@ -88,7 +88,7 @@ function DhcpReservationsPage() {
       {
         id: "server",
         accessorKey: "connection_name",
-        header: "Server",
+        header: ({ column }) => <SortHeader column={column} label="Server" />,
         cell: ({ row }) => (
           <span className="text-xs text-muted-foreground">
             {row.original.connection_name}

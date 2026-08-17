@@ -41,7 +41,7 @@ function DhcpScopesPage() {
       {
         id: "name",
         accessorKey: "name",
-        header: "Name",
+        header: ({ column }) => <SortHeader column={column} label="Name" />,
         cell: ({ row }) => row.original.name || dash,
       },
       {
@@ -74,7 +74,7 @@ function DhcpScopesPage() {
       {
         id: "server",
         accessorKey: "connection_name",
-        header: "Server",
+        header: ({ column }) => <SortHeader column={column} label="Server" />,
         cell: ({ row }) => (
           <span className="text-xs text-muted-foreground">
             {row.original.connection_name}
@@ -84,7 +84,7 @@ function DhcpScopesPage() {
       {
         id: "state",
         accessorKey: "state",
-        header: "State",
+        header: ({ column }) => <SortHeader column={column} label="State" />,
         cell: ({ row }) => (
           <Badge
             variant={row.original.state === "Active" ? "success" : "secondary"}
