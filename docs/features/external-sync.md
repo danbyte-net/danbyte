@@ -148,6 +148,10 @@ intensities so the states read as the same family:
     - **solid** — *leased*: held right now by a reservation or an active lease.
     - **faint outline** — *scope*: inside a scope's pool range but not currently
       handed out (DHCP-managed space, not necessarily in use).
+- **Exclusion ranges carve holes in the pool.** Addresses inside an exclusion
+  get *no* pool badge — they're static space the server never hands out. The
+  IPRange the exclusion created carries a dashed **DHCP EXCL** badge (on the
+  ranges list and its detail page) so it can't be mistaken for the pool itself.
 - On a prefix's IPs tab, the **Show DHCP pool** toggle (next to *Show
   available*) lays out the scope pool's addresses as ghost rows even before any
   of them exist in IPAM — the pool is visible without creating anything.

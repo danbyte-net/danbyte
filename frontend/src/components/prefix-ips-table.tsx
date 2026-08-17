@@ -87,18 +87,37 @@ function PrefixIpsTableImpl({
   })
 
   // DHCP scope pool ranges (from the ips endpoint) → shade free addresses that
-  // fall inside a pool, and back the "Show DHCP pool" ghost rows. Registered
-  // rows carry their own `dhcp` state already.
+  // fall inside a pool, and back the "Show DHCP pool" ghost rows. Exclusion
+  // ranges carve holes in the pool — those addresses are static space, not
+  // pool space. Registered rows carry their own `dhcp` state already.
   const dhcpSpans = useMemo(
     () =>
       (query.data?.dhcp_ranges ?? [])
         .map((r: DhcpScopeRange) => {
           const start = ipToBigInt(r.start)
           const end = ipToBigInt(r.end)
-          return start != null && end != null ? { start, end } : null
+          if (start == null || end == null) return null
+          const exclusions = (r.exclusions ?? [])
+            .map((e) => {
+              const s = ipToBigInt(e.start)
+              const x = ipToBigInt(e.end)
+              return s != null && x != null ? { start: s, end: x } : null
+            })
+            .filter((x): x is { start: bigint; end: bigint } => !!x)
+          return { start, end, exclusions }
         })
-        .filter((x): x is { start: bigint; end: bigint } => !!x),
+        .filter((x): x is NonNullable<typeof x> => !!x),
     [query.data]
+  )
+  const inPool = useCallback(
+    (n: bigint) =>
+      dhcpSpans.some(
+        (s) =>
+          n >= s.start &&
+          n <= s.end &&
+          !s.exclusions.some((e) => n >= e.start && n <= e.end)
+      ),
+    [dhcpSpans]
   )
 
   const rows = useMemo<IpRow[]>(() => {
@@ -160,11 +179,13 @@ function PrefixIpsTableImpl({
         const hosts = enumerableHostInts(cidr)
         if (hosts) for (const n of hosts.ints) pushFree(n)
       } else {
-        // Pool-only view: enumerate each scope span directly, capped so a
-        // misconfigured giant range can't flood the table.
+        // Pool-only view: enumerate each scope span directly (skipping the
+        // exclusion holes), capped so a misconfigured giant range can't flood
+        // the table.
         let budget = 4096
         for (const s of dhcpSpans) {
           for (let n = s.start; n <= s.end && budget > 0; n++) {
+            if (s.exclusions.some((e) => n >= e.start && n <= e.end)) continue
             pushFree(n)
             budget--
           }
@@ -261,10 +282,9 @@ function PrefixIpsTableImpl({
       if (r.kind === "registered") return r.ip.dhcp ?? null
       const n = ipToBigInt(r.address)
       if (n == null) return null
-      for (const s of dhcpSpans) if (n >= s.start && n <= s.end) return "scope"
-      return null
+      return inPool(n) ? "scope" : null
     },
-    [dhcpSpans]
+    [inPool]
   )
 
   const columns = useMemo<ColumnDef<IpRow>[]>(

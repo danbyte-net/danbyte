@@ -203,8 +203,10 @@ from .serializers import (
 def annotate_dhcp(qs):
     """Add the counts the IPAddress serializer's ``dhcp`` field reads, so every
     surface that lists IPs marks DHCP state consistently: a reservation, a lease,
-    or membership in a scope's pool range (address between start/end). The
-    reverse path ``prefix__dhcp_scopes`` keeps ``api`` free of an ``integrations``
+    or membership in a scope's pool range (address between start/end). An
+    exclusion range carves a hole in the pool — DHCP never hands those out — so
+    the serializer subtracts ``dhcp_excl_n`` from pool membership. The reverse
+    path ``prefix__dhcp_scopes`` keeps ``api`` free of an ``integrations``
     import; the ``inet`` columns compare directly."""
     return qs.annotate(
         dhcp_resv_n=Count("dhcp_reservations", distinct=True),
@@ -215,6 +217,14 @@ def annotate_dhcp(qs):
             filter=Q(
                 prefix__dhcp_scopes__start_range__lte=F("ip_address"),
                 prefix__dhcp_scopes__end_range__gte=F("ip_address"),
+            ),
+        ),
+        dhcp_excl_n=Count(
+            "prefix__dhcp_scopes__exclusions",
+            distinct=True,
+            filter=Q(
+                prefix__dhcp_scopes__exclusions__start_address__lte=F("ip_address"),
+                prefix__dhcp_scopes__exclusions__end_address__gte=F("ip_address"),
             ),
         ),
     )
@@ -1173,11 +1183,18 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         ser = IPAddressSerializer(rows, many=True, context=self.get_serializer_context())
         # The scope pool ranges on this prefix, so the pane can shade *free*
         # addresses (which have no IPAddress row) as DHCP-scope space too.
-        # Reverse accessor — no integrations import.
+        # Exclusions ride along — they carve holes in the pool that must not be
+        # shaded. Reverse accessor — no integrations import.
         dhcp_ranges = [
-            {"scope_id": s.scope_id, "name": s.name,
-             "start": s.start_range, "end": s.end_range}
-            for s in prefix.dhcp_scopes.all()
+            {
+                "scope_id": s.scope_id, "name": s.name,
+                "start": s.start_range, "end": s.end_range,
+                "exclusions": [
+                    {"start": e.start_address, "end": e.end_address}
+                    for e in s.exclusions.all()
+                ],
+            }
+            for s in prefix.dhcp_scopes.prefetch_related("exclusions")
             if s.start_range and s.end_range
         ]
         return Response(
@@ -5036,6 +5053,9 @@ class IPRangeViewSet(TenantScopedViewSet):
             .get_queryset()
             .select_related("vrf", "role", "prefix")
             .prefetch_related("tags")
+            # Backs a DHCP exclusion? → serializer `dhcp` flag ("exclusion").
+            # Reverse accessor — no integrations import.
+            .annotate(dhcp_excl_n=Count("dhcp_exclusions", distinct=True))
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()

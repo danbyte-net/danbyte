@@ -7,6 +7,7 @@ import { useCallback, useState } from "react"
 import { api, type IPRange, type IPRangeAvailable } from "@/lib/api"
 import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { DhcpBadge } from "@/components/dhcp-badge"
 import { Button } from "@/components/ui/button"
 import { KvCard, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
@@ -97,6 +98,7 @@ function Body({ range: r }: { range: IPRange }) {
                   color={r.role.color || undefined}
                 />
               )}
+              {r.dhcp === "exclusion" && <DhcpBadge state="exclusion" />}
             </>
           }
           tags={r.tags.length > 0 && <TagList tags={r.tags} />}

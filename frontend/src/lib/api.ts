@@ -594,6 +594,8 @@ export interface IPRange {
   status: StatusMini | null
   family: number | null
   size: number | null
+  /** `"exclusion"` when this range backs a DHCP scope exclusion. */
+  dhcp?: "exclusion" | null
   vrf: { id: string; name: string; rd: string; color: string } | null
   prefix: PrefixMini | null
   role: IPRoleMini | null
@@ -2651,6 +2653,8 @@ export interface DhcpScopeRange {
   name: string
   start: string
   end: string
+  /** Exclusion ranges carved out of the pool — never shaded as pool space. */
+  exclusions: { start: string; end: string }[]
 }
 
 export interface IPListResponse {

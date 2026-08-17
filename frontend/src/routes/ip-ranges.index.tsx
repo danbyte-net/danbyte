@@ -8,6 +8,7 @@ import { api, type IPRange, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { DhcpBadge } from "@/components/dhcp-badge"
 import { VrfCell } from "@/components/cells/vrf-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -209,13 +210,18 @@ function buildColumns({
       accessorKey: "start_address",
       header: ({ column }) => <SortHeader column={column} label="Range" />,
       cell: ({ row }) => (
-        <Link
-          to="/ip-ranges/$id"
-          params={{ id: row.original.id }}
-          className="link font-mono text-[13px] font-medium"
-        >
-          {row.original.start_address} – {row.original.end_address}
-        </Link>
+        <span className="inline-flex items-center gap-1.5">
+          <Link
+            to="/ip-ranges/$id"
+            params={{ id: row.original.id }}
+            className="link font-mono text-[13px] font-medium"
+          >
+            {row.original.start_address} – {row.original.end_address}
+          </Link>
+          {row.original.dhcp === "exclusion" && (
+            <DhcpBadge state="exclusion" />
+          )}
+        </span>
       ),
     },
     {

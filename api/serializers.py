@@ -1082,14 +1082,17 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
         * ``"leased"`` — held right now, by a reservation or an active lease.
         * ``"scope"`` — inside a DHCP scope's pool range but not currently
           leased (DHCP-managed space, not necessarily handed out).
-        * ``None`` — nothing to do with DHCP.
+        * ``None`` — nothing to do with DHCP. An address inside an **exclusion
+          range** is also None: the exclusion carves it out of the pool, so it
+          is static space DHCP never hands out (the IPRange the exclusion
+          created carries that story).
 
         The two states are drawn in different shades so the operator can tell
         "the pool lives here" apart from "this address is actually in use".
         """
         if getattr(obj, "dhcp_resv_n", 0) > 0 or getattr(obj, "dhcp_lease_n", 0) > 0:
             return "leased"
-        if getattr(obj, "dhcp_pool_n", 0) > 0:
+        if getattr(obj, "dhcp_pool_n", 0) > 0 and getattr(obj, "dhcp_excl_n", 0) == 0:
             return "scope"
         return None
     prefix = PrefixMiniSerializer(read_only=True)
@@ -4417,10 +4420,18 @@ class IPRangeSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Tagg
             attrs["vrf"] = prefix.vrf
         return attrs
 
+    dhcp = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_dhcp(self, obj) -> str | None:
+        """``"exclusion"`` when this range backs a DHCP scope exclusion —
+        space carved *out* of the pool for static use (viewset-annotated)."""
+        return "exclusion" if getattr(obj, "dhcp_excl_n", 0) > 0 else None
+
     class Meta:
         model = IPRange
         fields = ["id", "start_address", "end_address", "status", "status_id",
-                   "family", "size",
+                   "family", "size", "dhcp",
                   "vrf", "vrf_id", "prefix", "prefix_id", "role", "role_id",
                   "description", "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
