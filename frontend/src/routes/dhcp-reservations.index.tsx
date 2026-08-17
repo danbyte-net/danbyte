@@ -1,14 +1,24 @@
 import { useMemo, useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
+import { Pencil, Plus, Trash2 } from "lucide-react"
+import { toast } from "sonner"
 
-import { api, type DhcpReservation, type Paginated } from "@/lib/api"
+import {
+  api,
+  type DhcpReservation,
+  type DhcpScope,
+  type Paginated,
+} from "@/lib/api"
+import { apiErrorToast } from "@/lib/api-toast"
+import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
+import { DhcpReservationDialog } from "@/components/integrations/dhcp-reservation-dialog"
 import { dash } from "@/components/kv-card"
 import { useFacetRail } from "@/lib/use-facet-rail"
 
@@ -26,7 +36,30 @@ const DRIFT_LABEL: Record<string, string> = {
 
 function DhcpReservationsPage() {
   const { scope } = Route.useSearch()
+  const { canDo } = useMe()
+  const canAdd = canDo("dhcpreservation", "add")
+  const canChange = canDo("dhcpreservation", "change")
+  const canDelete = canDo("dhcpreservation", "delete")
+  const qc = useQueryClient()
   const [q, setQ] = useState("")
+  const [creating, setCreating] = useState(false)
+  const [editing, setEditing] = useState<DhcpReservation | null>(null)
+
+  const scopesQ = useQuery({
+    queryKey: ["dhcp-scopes", "picker"],
+    queryFn: () => api<Paginated<DhcpScope>>("/api/dhcp-scopes/?page_size=500"),
+    enabled: canAdd || canChange,
+  })
+  const del = useMutation({
+    mutationFn: (r: DhcpReservation) =>
+      api(`/api/dhcp-reservations/${r.id}/`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast.success("Reservation removed")
+      qc.invalidateQueries({ queryKey: ["dhcp-reservations"] })
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
   const query = useQuery({
     queryKey: ["dhcp-reservations", "all", q, scope ?? ""],
     queryFn: () => {
@@ -121,8 +154,43 @@ function DhcpReservationsPage() {
             <span className="text-xs text-muted-foreground">—</span>
           ),
       },
+      ...(canChange || canDelete
+        ? [
+            {
+              id: "actions",
+              header: "",
+              enableSorting: false,
+              cell: ({ row }) => (
+                <div className="flex justify-end gap-1">
+                  {canChange && (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      title="Edit reservation"
+                      onClick={() => setEditing(row.original)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  {canDelete && (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      title="Delete reservation"
+                      disabled={del.isPending}
+                      onClick={() => del.mutate(row.original)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              ),
+            } satisfies ColumnDef<DhcpReservation>,
+          ]
+        : []),
     ],
-    []
+    [canChange, canDelete, del]
   )
 
   const { rail, filtered } = useFacetRail(rows, [
@@ -156,6 +224,13 @@ function DhcpReservationsPage() {
       query={query}
       rail={rail}
       search={{ value: q, onChange: setQ, placeholder: "IP, MAC or name…" }}
+      actions={
+        canAdd && (
+          <Button size="sm" onClick={() => setCreating(true)}>
+            <Plus className="h-3.5 w-3.5" /> Add reservation
+          </Button>
+        )
+      }
     >
       {scope && (
         <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
@@ -177,6 +252,19 @@ function DhcpReservationsPage() {
           data={filtered}
           columns={columns}
           tableId="dhcp-reservations-all"
+        />
+      )}
+      {creating && (
+        <DhcpReservationDialog
+          scopes={scopesQ.data?.results ?? []}
+          onOpenChange={(o) => !o && setCreating(false)}
+        />
+      )}
+      {editing && (
+        <DhcpReservationDialog
+          scopes={scopesQ.data?.results ?? []}
+          reservation={editing}
+          onOpenChange={(o) => !o && setEditing(null)}
         />
       )}
     </ListPageShell>
