@@ -125,6 +125,7 @@ nav = [
     { "Tenant settings & overrides" = "architecture/tenant-settings.md" },
     { "Fibre-strand internals" = "architecture/fiber-strands.md" },
     { "Service monitoring internals" = "architecture/service-monitoring.md" },
+    { "Source-of-truth authoring audit" = "architecture/sot-authoring-gaps.md" },
     { "Design tokens"     = "architecture/shadcn-tokens.md" },
     { "Visual language"   = "design/visual-language.md" },
     { "Data models" = [
