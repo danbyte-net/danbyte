@@ -53,9 +53,13 @@ const UNMIGRATED_FORMS = new Set<string>([
   // Deployment settings, not a domain object.
   "routes/settings.sso.tsx",
   // External-sync writes: saving pushes to a live Windows server over WinRM
-  // (Add/Set-DhcpServerv4Reservation) — replaying one later as a planned
-  // change can't honour that contract, so these stay direct on purpose.
+  // (Add/Set/Remove-DhcpServerv4Reservation, Add-DhcpServerv4Scope) — replaying
+  // one later as a planned change can't honour that contract, so these stay
+  // direct on purpose. The DNS zone dialog is the sibling authoring flow and
+  // stays with them.
   "components/integrations/dhcp-reservation-dialog.tsx",
+  "components/integrations/dhcp-scope-dialog.tsx",
+  "components/integrations/dns-zone-dialog.tsx",
   "components/integrations/windows-connection-dialog.tsx",
 ])
 

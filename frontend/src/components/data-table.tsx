@@ -731,14 +731,37 @@ function resolveColumnLabel(
 // TanStack columnOrder from a desired manageable sequence; `manageableSeq`
 // extracts the current manageable sequence back out for the menu.
 
-function applyManageableOrder(
+/** Slot ids the sequence has never seen (new feature columns) at their
+ * *designed* position — right after the nearest preceding column the sequence
+ * knows — instead of appending them at the far end, where a saved layout from
+ * before the column existed would banish it off-screen. */
+function insertUnknownAtDesignedPosition(
+  norm: string[],
+  manageableIds: string[]
+): void {
+  for (const id of manageableIds) {
+    if (norm.includes(id)) continue
+    const defIdx = manageableIds.indexOf(id)
+    let insertAt = 0
+    for (let j = defIdx - 1; j >= 0; j--) {
+      const at = norm.indexOf(manageableIds[j])
+      if (at !== -1) {
+        insertAt = at + 1
+        break
+      }
+    }
+    norm.splice(insertAt, 0, id)
+  }
+}
+
+export function applyManageableOrder(
   allIds: string[],
   manageableIds: string[],
   seq: string[]
 ): string[] {
   const mset = new Set(manageableIds)
   const norm = seq.filter((id) => mset.has(id))
-  for (const id of manageableIds) if (!norm.includes(id)) norm.push(id)
+  insertUnknownAtDesignedPosition(norm, manageableIds)
   let i = 0
   return allIds.map((id) => (mset.has(id) ? norm[i++] : id))
 }
@@ -751,7 +774,7 @@ function manageableSeq(
   const mset = new Set(manageableIds)
   const base = columnOrder.length ? columnOrder : allIds
   const seq = base.filter((id) => mset.has(id))
-  for (const id of manageableIds) if (!seq.includes(id)) seq.push(id)
+  insertUnknownAtDesignedPosition(seq, manageableIds)
   return seq
 }
 
