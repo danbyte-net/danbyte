@@ -3228,6 +3228,8 @@ export interface VirtualSwitch {
   mtu: number | null
   created_switch: boolean
   description: string
+  created_at: string
+  updated_at: string
 }
 
 export interface VirtualMachineWritePayload {

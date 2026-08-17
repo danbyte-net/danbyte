@@ -31,7 +31,13 @@ function VirtualSwitchesPage() {
         accessorKey: "name",
         header: ({ column }) => <SortHeader column={column} label="Name" />,
         cell: ({ row }) => (
-          <span className="font-medium">{row.original.name}</span>
+          <Link
+            to="/virtual-switches/$id"
+            params={{ id: row.original.id }}
+            className="link font-medium"
+          >
+            {row.original.name}
+          </Link>
         ),
       },
       {
