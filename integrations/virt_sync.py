@@ -207,6 +207,55 @@ def _sync_networks_proxmox(source, cluster, guest, cfg, now) -> int:
     return n
 
 
+def _sync_proxmox_uplinks(source, cluster_name, nodes) -> int:
+    """Link each bridge's physical ports to the node Device's interfaces — the
+    switch's uplinks (physical adapters). A bridge (vmbrN) exists on every node,
+    so a cluster switch gets the union of all hosts' ports (multi-hypervisor).
+
+    Additive only: never removes uplinks an operator set. Matches when the node
+    is modelled as a Device and the port name is one of its Interfaces."""
+    from api.models import Cluster, Device, Interface, VirtualSwitch
+
+    cluster = Cluster.objects.filter(
+        tenant=source.tenant, name=cluster_name
+    ).first()
+    if cluster is None:
+        return 0
+    added = 0
+    for node in nodes:
+        if not node:
+            continue
+        try:
+            netcfg = proxmox_get(source, f"nodes/{node}/network") or []
+        except VirtAPIError:
+            continue
+        dev = Device.objects.filter(tenant=source.tenant, name=node).first()
+        if dev is None:
+            continue
+        for entry in netcfg:
+            if entry.get("type") not in ("bridge", "OVSBridge"):
+                continue
+            bridge = entry.get("iface")
+            ports = (
+                entry.get("bridge_ports") or entry.get("ovs_ports") or ""
+            ).split()
+            if not bridge or not ports:
+                continue
+            sw = VirtualSwitch.objects.filter(
+                tenant=source.tenant, cluster=cluster, name=bridge
+            ).first()
+            if sw is None:
+                continue  # only link switches the VM-NIC pass created
+            existing = set(sw.uplink_interfaces.values_list("id", flat=True))
+            for port in ports:
+                iface = Interface.objects.filter(device=dev, name=port).first()
+                if iface and iface.id not in existing:
+                    sw.uplink_interfaces.add(iface)
+                    existing.add(iface.id)
+                    added += 1
+    return added
+
+
 def sync_proxmox(source) -> dict:
     # cluster/status needs Sys.Audit on / — a narrowly-scoped token may be
     # denied it while still seeing VMs. Fall back to /nodes + the source name.
@@ -229,7 +278,7 @@ def sync_proxmox(source) -> dict:
     now = timezone.now()
     counts = {"nodes": len(nodes), "vms": 0, "vms_created": 0,
               "interfaces": 0, "ips": 0, "disks": 0, "networks": 0,
-              "pending": 0}
+              "uplinks": 0, "pending": 0}
 
     # Guest details come over the network — fetch before the DB transaction.
     # The Proxmox config blob carries both NICs (netN) and disks (scsiN/…), so
@@ -255,10 +304,14 @@ def sync_proxmox(source) -> dict:
         details[vmid] = {"ifaces": cfg, "ips": agent_ifaces,
                          "disks": cfg, "nets": cfg}
 
-    return _run_pass(source, cluster_name, resources, details, now, counts,
-                     _sync_interfaces, _sync_ips,
-                     sync_disks_fn=_sync_disks,
-                     sync_nets_fn=_sync_networks_proxmox, label="proxmox")
+    result = _run_pass(source, cluster_name, resources, details, now, counts,
+                       _sync_interfaces, _sync_ips,
+                       sync_disks_fn=_sync_disks,
+                       sync_nets_fn=_sync_networks_proxmox, label="proxmox")
+    # Switches exist now — link their bridge uplinks to the node's real NICs.
+    if source.sync_networks:
+        result["uplinks"] = _sync_proxmox_uplinks(source, cluster_name, nodes)
+    return result
 
 
 def _run_pass(source, cluster_name, resources, details, now, counts,

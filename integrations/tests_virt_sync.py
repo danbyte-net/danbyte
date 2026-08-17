@@ -60,6 +60,13 @@ AGENT = {
 }
 
 
+NODE_NET_PVE1 = [
+    {"iface": "vmbr0", "type": "bridge", "bridge_ports": "eno1 eno2"},
+    {"iface": "eno1", "type": "eth"},
+    {"iface": "eno2", "type": "eth"},
+]
+
+
 def fake_get(source, path):
     if path == "cluster/status":
         return CLUSTER_STATUS
@@ -71,6 +78,10 @@ def fake_get(source, path):
         return LXC_CONFIG
     if path == "nodes/pve1/qemu/100/agent/network-get-interfaces":
         return AGENT
+    if path == "nodes/pve1/network":
+        return NODE_NET_PVE1
+    if path == "nodes/pve2/network":
+        return []
     raise AssertionError(f"unexpected path {path}")
 
 
@@ -255,6 +266,25 @@ class ProxmoxSyncTests(TestCase):
         self.sync()  # source.sync_networks defaults False
         self.assertEqual(VirtualSwitch.objects.count(), 0)
         self.assertFalse(VMInterface.objects.exclude(vlan__isnull=True).exists())
+
+    def test_uplinks_linked_from_bridge_ports(self):
+        from api.models import Device, Interface
+
+        self.source.sync_networks = True
+        self.source.save(update_fields=["sync_networks"])
+        dev = Device.objects.create(tenant=self.tenant, name="pve1")
+        Interface.objects.create(device=dev, name="eno1")
+        Interface.objects.create(device=dev, name="eno2")
+        counts = self.sync()
+        self.assertEqual(counts["uplinks"], 2)  # vmbr0 ports eno1 + eno2
+        sw = VirtualSwitch.objects.get(name="vmbr0")
+        self.assertEqual(
+            set(sw.uplink_interfaces.values_list("name", flat=True)),
+            {"eno1", "eno2"},
+        )
+        # Additive + idempotent — a second sync doesn't duplicate.
+        self.sync()
+        self.assertEqual(sw.uplink_interfaces.count(), 2)
 
 
 class ProxmoxModeTests(TestCase):

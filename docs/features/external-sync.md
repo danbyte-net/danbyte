@@ -241,8 +241,15 @@ the **real host NICs** — the hypervisor host is a Device, and you assign its
 physical interfaces as the switch's uplinks (host device → interface). This is
 the vCenter "Physical Adapters" layer: the uplink traces straight through to its
 cabled port (cable-trace), and the topology shows the adapters feeding each
-switch. Assign them inline on the switch page (they can also be filled by sync
-when the host and its interfaces are modelled).
+switch.
+
+For **Proxmox** these are filled **automatically**: each bridge's `bridge_ports`
+are matched to the node Device's interfaces (so a cluster-wide bridge collects
+the ports from every host — the multi-hypervisor case). The node must be
+modelled as a Device with those interfaces; matching is additive and never
+removes an uplink you set. For **vCenter** the vSphere REST API doesn't expose
+standard-switch pNICs cleanly, so assign uplinks **inline on the switch page**
+for now.
 
 Both hypervisors run through the same reconcile engine, so sync modes,
 adoption, blank-fill and the review inbox behave identically — only the fetch
