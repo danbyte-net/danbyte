@@ -1001,7 +1001,9 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         # it was stamped to the user's own site on create.
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        qs = super().get_queryset().annotate(
+            dhcp_scope_n=Count("dhcp_scopes", distinct=True)
+        )
         if not self.request:
             return qs
         search = self.request.query_params.get("search", "").strip()
@@ -1247,7 +1249,10 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         IP-assign picker scales to very large address spaces (filter, don't
         ship millions of rows): ``?search=`` (address or DNS), ``?prefix=``,
         ``?vrf=``, ``?site=``, ``?assigned_interface=``."""
-        qs = super().get_queryset()
+        qs = super().get_queryset().annotate(
+            dhcp_resv_n=Count("dhcp_reservations", distinct=True),
+            dhcp_lease_n=Count("dhcp_leases", distinct=True),
+        )
         if not self.request:
             return qs
         p = self.request.query_params

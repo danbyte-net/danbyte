@@ -851,6 +851,12 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     child_count = serializers.SerializerMethodField()
     has_descendants = serializers.SerializerMethodField()
     monitoring_engine = serializers.SerializerMethodField()
+    dhcp = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_dhcp(self, obj) -> bool:
+        """This prefix backs a DHCP scope (annotated by the viewset)."""
+        return getattr(obj, "dhcp_scope_n", 0) > 0
 
     def get_ip_count(self, obj) -> int:
         return obj.ip_addresses.count()
@@ -989,7 +995,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         fields = [
             "id", "numid", "cidr", "status", "status_id",
             "family", "utilisation_pct", "is_enumerable",
-            "ip_count", "child_count", "has_descendants",
+            "ip_count", "child_count", "has_descendants", "dhcp",
             "site", "vlan", "vrf", "location",
             "vrf_id", "site_id", "vlan_id", "location_id", "tag_ids",
             "gateway", "description", "auto_discover", "auto_assign_site",
@@ -1067,6 +1073,15 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
     assigned_interface = serializers.SerializerMethodField()
     switch = DeviceMiniSerializer(read_only=True)
     switch_interface = serializers.SerializerMethodField()
+    dhcp = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_dhcp(self, obj) -> bool:
+        """This address has a DHCP reservation or lease (viewset-annotated)."""
+        return (
+            getattr(obj, "dhcp_resv_n", 0) > 0
+            or getattr(obj, "dhcp_lease_n", 0) > 0
+        )
     prefix = PrefixMiniSerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)
     is_primary_for_device = serializers.SerializerMethodField()
@@ -1220,7 +1235,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
     class Meta:
         model = IPAddress
         fields = [
-            "id", "numid", "ip_address",
+            "id", "numid", "ip_address", "dhcp",
             "prefix", "prefix_id",
             "site",
             "status", "status_id",

@@ -178,6 +178,8 @@ export interface Prefix {
   id: string
   numid: number | null
   cidr: string
+  /** Backs a DHCP scope. */
+  dhcp?: boolean
   status: StatusMini | null
   family: 4 | 6 | null
   utilisation_pct: number | null
@@ -735,6 +737,8 @@ export interface IPAddress {
   id: string
   numid: number | null
   ip_address: string
+  /** Has a DHCP reservation or lease. */
+  dhcp?: boolean
   prefix: PrefixMini | null
   site: { id: string; name: string } | null
   status: StatusMini | null

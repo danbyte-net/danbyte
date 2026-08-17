@@ -10,6 +10,7 @@ import type {
 } from "@/lib/api"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
+import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
@@ -146,6 +147,15 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
             >
               {row.original.cidr}
             </Link>
+            {row.original.dhcp && (
+              <Badge
+                variant="outline"
+                className="border-sky-500/50 text-[9px] text-sky-600 dark:text-sky-400"
+                title="This range backs a DHCP scope"
+              >
+                DHCP
+              </Badge>
+            )}
             {opts.violations && (
               <ViolationBadge
                 objectId={row.original.id}

@@ -107,13 +107,21 @@ Rules:
   lease on the same address.
 - Deleting a scope on the server removes the scope link, **not** the prefix.
 
-### Pushing reservations out
+### Adding reservations
 
-The **Reservations** tab is bidirectional: creating, editing, or deleting a
-reservation there calls `Add/Set/Remove-DhcpServerv4Reservation` on the
-owning server immediately — the row only saves once the server accepted it.
-Pushed reservations carry a `[danbyte]` marker in their description so their
-origin is visible in the Windows DHCP console too.
+Static reservations (a **MAC → IP** binding) are bidirectional: create, edit or
+delete one from the **DHCP reservations** page (Add button + per-row edit/
+delete) or a server's page, and Danbyte calls
+`Add/Set/Remove-DhcpServerv4Reservation` on the owning server immediately — the
+row only saves once the server accepted it. Pushed reservations carry a
+`[danbyte]` marker in their description so their origin is visible in the
+Windows DHCP console too.
+
+### Spotting DHCP in IPAM
+
+Ranges and addresses managed by DHCP are flagged so they're obvious in IPAM: a
+prefix that **backs a DHCP scope** shows a **DHCP** badge in the prefix list,
+and an address with a **reservation or lease** shows one in the IP lists.
 
 ### Drift
 

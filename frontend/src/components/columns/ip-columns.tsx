@@ -5,6 +5,7 @@ import { Info } from "lucide-react"
 import type { CustomField, IPAddress } from "@/lib/api"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
+import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
 import { RoleChip } from "@/components/role-chip"
 import { CopyButton } from "@/components/kv-card"
@@ -121,16 +122,27 @@ export function buildIpColumns<T = IPAddress>(
         const marker = (
           <PlannedChangeMarker objectType="api.ipaddress" objectId={ip.id} />
         )
+        const dhcpBadge = (ip as { dhcp?: boolean }).dhcp ? (
+          <Badge
+            variant="outline"
+            className="border-sky-500/50 text-[9px] text-sky-600 dark:text-sky-400"
+            title="This address has a DHCP reservation or lease"
+          >
+            DHCP
+          </Badge>
+        ) : null
         if (!opts.copyButton)
           return (
             <span className="inline-flex items-center gap-1.5">
               {link}
+              {dhcpBadge}
               {marker}
             </span>
           )
         return (
           <div className="flex items-center gap-1">
             {link}
+            {dhcpBadge}
             {marker}
             <CopyButton value={ip.ip_address} />
           </div>
