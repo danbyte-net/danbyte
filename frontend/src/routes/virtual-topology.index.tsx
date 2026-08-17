@@ -140,6 +140,25 @@ function VirtualTopologyPage() {
                   )}
                 </div>
 
+                {/* Physical adapters — the real host NICs feeding the switch. */}
+                {sw && sw.uplink_interfaces.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 pl-6 text-xs text-muted-foreground">
+                    <span className="text-[10px] tracking-wide uppercase">
+                      uplinks
+                    </span>
+                    {sw.uplink_interfaces.map((u) => (
+                      <Link
+                        key={u.id}
+                        to="/interfaces/$id"
+                        params={{ id: u.id }}
+                        className="link rounded-md border border-border bg-muted/30 px-2 py-0.5 font-mono"
+                      >
+                        {u.device.name}/{u.name}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+
                 {/* Each network is a full-width "subnet bar"; its VMs hang
                     beneath it, connected by a short tick. */}
                 {nets.map((n) => (

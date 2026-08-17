@@ -3599,11 +3599,25 @@ class VirtualSwitchSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_null=True,
     )
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+    uplink_interfaces = serializers.SerializerMethodField()
+    uplink_interface_ids = TenantScopedPrimaryKeyRelatedField(
+        source="uplink_interfaces", queryset=Interface.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_uplink_interfaces(self, obj):
+        return [
+            {"id": str(i.id), "name": i.name,
+             "device": {"id": str(i.device_id), "name": i.device.name}}
+            for i in obj.uplink_interfaces.select_related("device").all()
+        ]
 
     class Meta:
         model = VirtualSwitch
         fields = ["id", "name", "kind", "kind_display", "cluster", "cluster_id",
-                  "uplinks", "mtu", "created_switch", "description",
+                  "uplinks", "uplink_interfaces", "uplink_interface_ids",
+                  "mtu", "created_switch", "description",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "kind_display", "created_switch",
                             "created_at", "updated_at"]

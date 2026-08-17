@@ -3499,8 +3499,16 @@ class VirtualSwitch(TimestampedModel):
     )
     name = models.CharField(max_length=128)
     kind = models.CharField(max_length=16, blank=True, default="", choices=KIND_CHOICES)
-    # Comma-separated physical uplinks (vmnicN / bridge_ports).
+    # Comma-separated physical uplink NAMES as the hypervisor reports them
+    # (vmnicN / bridge_ports) — the raw list, even when a name doesn't resolve
+    # to a modelled interface.
     uplinks = models.CharField(max_length=255, blank=True, default="")
+    # The real physical NICs (on the hypervisor host Device) that carry this
+    # switch — the "Physical Adapters" of the vCenter picture. Links the switch
+    # to actual device I/O, so an uplink traces through to its cabled port.
+    uplink_interfaces = models.ManyToManyField(
+        "Interface", blank=True, related_name="uplink_switches",
+    )
     mtu = models.IntegerField(null=True, blank=True)
     created_switch = models.BooleanField(default=False)
     description = models.TextField(blank=True)

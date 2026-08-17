@@ -3239,6 +3239,11 @@ export interface VirtualSwitch {
   kind_display: string
   cluster: { id: string; name: string } | null
   uplinks: string
+  uplink_interfaces: {
+    id: string
+    name: string
+    device: { id: string; name: string }
+  }[]
   mtu: number | null
   created_switch: boolean
   description: string

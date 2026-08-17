@@ -236,6 +236,14 @@ Once networks are synced, each **virtual switch** page has a **Networks** tab
 networks (VLANs) as bars, and the VMs on each — an OpenStack-style map, with VM
 boxes tinted by status.
 
+A switch's **Uplinks · physical adapters** (on its Overview) link the switch to
+the **real host NICs** — the hypervisor host is a Device, and you assign its
+physical interfaces as the switch's uplinks (host device → interface). This is
+the vCenter "Physical Adapters" layer: the uplink traces straight through to its
+cabled port (cable-trace), and the topology shows the adapters feeding each
+switch. Assign them inline on the switch page (they can also be filled by sync
+when the host and its interfaces are modelled).
+
 Both hypervisors run through the same reconcile engine, so sync modes,
 adoption, blank-fill and the review inbox behave identically — only the fetch
 and the identifiers differ (Proxmox integer VMIDs; vCenter VM MoRefs, whose

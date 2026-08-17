@@ -1,20 +1,34 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { useMemo } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useMemo, useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
+import { Plus, X } from "lucide-react"
+import { toast } from "sonner"
 
 import {
   api,
+  type Interface,
   type Paginated,
   type VirtNetwork,
   type VirtualSwitch,
 } from "@/lib/api"
+import { apiErrorToast } from "@/lib/api-toast"
+import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
+import { DevicePicker } from "@/components/device-picker"
 import { EmptyState } from "@/components/empty-state"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { TimeCell } from "@/components/cells/time-ago"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   DetailHero,
   DetailShell,
@@ -128,8 +142,11 @@ function Body({ sw }: { sw: VirtualSwitch }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
-        <div className="grid gap-6 lg:grid-cols-2">
-          <KvCard title="Virtual switch" rows={rows} />
+        <div className="space-y-6">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <KvCard title="Virtual switch" rows={rows} />
+          </div>
+          <SwitchUplinks sw={sw} />
         </div>
       </DetailTab>
       <DetailTab value="networks">
@@ -142,6 +159,131 @@ function Body({ sw }: { sw: VirtualSwitch }) {
         <ChangeLogPanel objectType="api.virtualswitch" objectId={sw.id} />
       </DetailTab>
     </DetailShell>
+  )
+}
+
+/** Physical uplinks — the real host NICs (device interfaces) that carry this
+ * switch, the "Physical Adapters" of the vCenter picture. Links switch → real
+ * device I/O; each uplink traces on to its cabled port. Editable inline. */
+function SwitchUplinks({ sw }: { sw: VirtualSwitch }) {
+  const qc = useQueryClient()
+  const { canDo } = useMe()
+  const canEdit = canDo("virtualswitch", "change")
+  const [device, setDevice] = useState<string | null>(null)
+  const [iface, setIface] = useState("")
+
+  const ifaces = useQuery({
+    queryKey: ["device-interfaces", device],
+    queryFn: () =>
+      api<Paginated<Interface>>(`/api/interfaces/?device=${device}`),
+    enabled: !!device,
+  })
+  const save = useMutation({
+    mutationFn: (ids: string[]) =>
+      api(`/api/virtual-switches/${sw.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ uplink_interface_ids: ids }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["virtual-switch", sw.id] })
+      toast.success("Uplinks updated")
+      setDevice(null)
+      setIface("")
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  const current = sw.uplink_interfaces
+  const currentIds = current.map((u) => u.id)
+
+  return (
+    <section>
+      <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
+        Uplinks · physical adapters
+      </h2>
+      {current.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No physical NICs linked. Assign the hypervisor host's real interfaces
+          below so this switch traces through to actual device I/O.
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {current.map((u) => (
+            <span
+              key={u.id}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/30 px-2 py-1 text-xs"
+            >
+              <Link
+                to="/devices/$id"
+                params={{ id: u.device.id }}
+                className="link text-muted-foreground"
+              >
+                {u.device.name}
+              </Link>
+              <span className="text-muted-foreground">/</span>
+              <Link
+                to="/interfaces/$id"
+                params={{ id: u.id }}
+                className="link font-mono"
+              >
+                {u.name}
+              </Link>
+              {canEdit && (
+                <button
+                  type="button"
+                  aria-label="Remove uplink"
+                  className="ml-0.5 text-muted-foreground hover:text-destructive"
+                  disabled={save.isPending}
+                  onClick={() =>
+                    save.mutate(currentIds.filter((id) => id !== u.id))
+                  }
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+      {canEdit && (
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <div className="w-56">
+            <DevicePicker
+              label="Host device"
+              value={device}
+              onChange={(v) => {
+                setDevice(v)
+                setIface("")
+              }}
+            />
+          </div>
+          {device && (
+            <Select value={iface} onValueChange={setIface}>
+              <SelectTrigger size="sm" className="h-9 w-52 text-xs">
+                <SelectValue placeholder="Interface…" />
+              </SelectTrigger>
+              <SelectContent>
+                {(ifaces.data?.results ?? [])
+                  .filter((i) => !currentIds.includes(i.id))
+                  .map((i) => (
+                    <SelectItem key={i.id} value={i.id}>
+                      {i.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!iface || save.isPending}
+            onClick={() => iface && save.mutate([...currentIds, iface])}
+          >
+            <Plus className="h-3.5 w-3.5" /> Add uplink
+          </Button>
+        </div>
+      )}
+    </section>
   )
 }
 
