@@ -212,25 +212,41 @@ export function DataTable<T>({
     return { allIds: all, manageableIds: manageable }
   }, [columns])
 
-  // Apply the saved layout exactly once, after the fetch resolves. We don't
-  // keep re-applying so the user's in-session toggles aren't clobbered.
-  const appliedRef = useRef(false)
+  // Apply the saved layout. The ORDER is re-derived whenever the column set
+  // changes — data-gated columns (monitoring, range) mount only after their
+  // fetch resolves, and an order computed without them would exile them past
+  // the pinned actions column at the far right. Re-deriving is safe: pref.order
+  // tracks in-session reorders optimistically, so this is idempotent for them.
+  // HIDDEN is applied once per id (late-mounting ids included) so a user's
+  // in-session show/hide toggles are never clobbered.
+  const appliedHiddenIds = useRef<Set<string>>(new Set())
   useEffect(() => {
-    if (!tableId || !pref.loaded || appliedRef.current) return
-    appliedRef.current = true
-    if (pref.hidden.length) {
-      setColumnVisibility((v) => {
-        const next = { ...v }
-        for (const id of pref.hidden)
-          if (manageableIds.includes(id)) next[id] = false
-        return next
-      })
-    }
+    if (!tableId || !pref.loaded) return
     if (pref.order.length) {
       setColumnOrder(applyManageableOrder(allIds, manageableIds, pref.order))
     }
+    const fresh = pref.hidden.filter(
+      (id) => manageableIds.includes(id) && !appliedHiddenIds.current.has(id)
+    )
+    if (fresh.length) {
+      for (const id of fresh) appliedHiddenIds.current.add(id)
+      setColumnVisibility((v) => {
+        const next = { ...v }
+        for (const id of fresh) next[id] = false
+        return next
+      })
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableId, pref.loaded])
+  }, [
+    tableId,
+    pref.loaded,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    allIds.join(" "),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    pref.order.join(" "),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    pref.hidden.join(" "),
+  ])
 
   // Persisted change handlers — write through to the pref hook (no-op when
   // there's no tableId or the layout is forced).
@@ -264,7 +280,7 @@ export function DataTable<T>({
   const resetLayout = () => {
     setColumnOrder([])
     setColumnVisibility(initialColumnVisibility ?? {})
-    appliedRef.current = false
+    appliedHiddenIds.current.clear()
     pref.reset()
   }
   // Default to every group expanded so the child rows show on first
