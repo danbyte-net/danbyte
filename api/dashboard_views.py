@@ -280,9 +280,18 @@ def dashboard_view(request):
             "device_by_type": device_by_type,
             "device_by_site": device_by_site,
             "device_by_manufacturer": device_by_manufacturer,
+            # Admin-set default widget layout for new users (empty = built-in).
+            "default_widgets": _default_widgets(tenant),
             **monitoring,
         }
     )
+
+
+def _default_widgets(tenant) -> list:
+    from core.models import TenantSettings
+
+    row = TenantSettings.objects.filter(tenant=tenant).first()
+    return list(row.default_dashboard_widgets or []) if row else []
 
 
 def _recent_prefixes(prefixes, limit: int = 8) -> list:

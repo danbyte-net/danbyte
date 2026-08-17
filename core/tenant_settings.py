@@ -79,6 +79,8 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
             "cert_digest_enabled",
             "cert_digest_recipients",
             "cert_digest_last_run",
+            # default dashboard preset for new users
+            "default_dashboard_widgets",
             "updated_at",
         ]
         read_only_fields = ["updated_at", "digest_last_run", "cert_digest_last_run"]

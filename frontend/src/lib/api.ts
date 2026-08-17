@@ -4518,6 +4518,8 @@ export interface DashRecentIp {
 }
 export interface DashboardData {
   counts: Record<string, number>
+  /** Admin-set default widget layout for new users (empty = built-in). */
+  default_widgets?: string[]
   recent_activity: DashActivity[]
   recent_prefixes: DashRecentPrefix[]
   recent_devices: DashRecentDevice[]

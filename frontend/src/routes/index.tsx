@@ -1,7 +1,16 @@
-import { Suspense, useEffect, useState, type ReactNode } from "react"
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { GripVertical, LayoutGrid, Plus, RotateCcw, X } from "lucide-react"
+import { toast } from "sonner"
+import {
+  Check,
+  GripVertical,
+  LayoutGrid,
+  Pencil,
+  Plus,
+  RotateCcw,
+  X,
+} from "lucide-react"
 import {
   DndContext,
   DragOverlay,
@@ -20,6 +29,8 @@ import {
 } from "@dnd-kit/sortable"
 
 import { api, type DashboardData } from "@/lib/api"
+import { apiErrorToast } from "@/lib/api-toast"
+import { useMe } from "@/lib/use-me"
 import { useUserPrefs } from "@/lib/use-user-prefs"
 import { Button } from "@/components/ui/button"
 import {
@@ -75,12 +86,29 @@ function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefs.landing_page])
 
+  const { canManage } = useMe()
   const [layout, setLayout] = useState<WidgetId[]>(DEFAULT_LAYOUT)
   const [hydrated, setHydrated] = useState(false)
+  const [hasLocal, setHasLocal] = useState(false)
   useEffect(() => {
+    const raw =
+      typeof window !== "undefined" ? window.localStorage.getItem(LS_KEY) : null
     setLayout(loadLayout())
+    setHasLocal(!!raw)
     setHydrated(true)
   }, [])
+
+  // New users (no saved layout) start from the admin-set tenant default when
+  // one exists — applied once, when the dashboard payload arrives.
+  const appliedDefault = useRef(false)
+  useEffect(() => {
+    if (appliedDefault.current || !hydrated || hasLocal || !q.data) return
+    appliedDefault.current = true
+    const dw = (q.data.default_widgets ?? []).filter(
+      (id) => id in CATALOG_BY_ID
+    )
+    if (dw.length) setLayout(dw as WidgetId[])
+  }, [hydrated, hasLocal, q.data])
   const persist = (next: WidgetId[]) => {
     setLayout(next)
     window.localStorage.setItem(LS_KEY, JSON.stringify(next))
@@ -89,20 +117,48 @@ function Dashboard() {
   const remove = (id: WidgetId) => persist(layout.filter((x) => x !== id))
   const reset = () => persist(DEFAULT_LAYOUT)
 
-  // Drag-to-reorder. A handle (not the whole tile) starts the drag, so links
-  // and buttons inside widgets stay clickable; a small distance threshold keeps
-  // plain clicks from registering as drags.
+  // Edit mode gates the drag handles / remove buttons, so the normal dashboard
+  // stays clean and read-only until you choose to rearrange it.
+  const [editing, setEditing] = useState(false)
+
+  // Drag-to-reorder with LIVE feedback: onDragOver reorders the array as you
+  // move over a target (the masonry re-packs live — the dimmed source is the
+  // "ghost"), and we persist on drop. A snapshot restores order on cancel.
   const [dragId, setDragId] = useState<WidgetId | null>(null)
+  const [preDrag, setPreDrag] = useState<WidgetId[] | null>(null)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
-  const onDragEnd = (e: DragEndEvent) => {
-    setDragId(null)
+  const onDragOver = (e: DragEndEvent) => {
     const { active, over } = e
     if (!over || active.id === over.id) return
-    const from = layout.indexOf(active.id as WidgetId)
-    const to = layout.indexOf(over.id as WidgetId)
-    if (from >= 0 && to >= 0) persist(arrayMove(layout, from, to))
+    setLayout((l) => {
+      const from = l.indexOf(active.id as WidgetId)
+      const to = l.indexOf(over.id as WidgetId)
+      return from >= 0 && to >= 0 ? arrayMove(l, from, to) : l
+    })
+  }
+  const onDragEnd = () => {
+    setDragId(null)
+    setPreDrag(null)
+    window.localStorage.setItem(LS_KEY, JSON.stringify(layout))
+  }
+  const onDragCancel = () => {
+    setDragId(null)
+    if (preDrag) setLayout(preDrag)
+    setPreDrag(null)
+  }
+
+  const saveAsDefault = async () => {
+    try {
+      await api("/api/tenant-settings/", {
+        method: "PUT",
+        body: JSON.stringify({ default_dashboard_widgets: layout }),
+      })
+      toast.success("Saved as the starting layout for new users")
+    } catch (e) {
+      apiErrorToast(e)
+    }
   }
 
   const d = q.data
@@ -119,12 +175,38 @@ function Dashboard() {
             </p>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={reset}>
-              <RotateCcw className="h-3.5 w-3.5" /> Reset
+            {editing && canManage && (
+              <Button variant="ghost" size="sm" onClick={saveAsDefault}>
+                <LayoutGrid className="h-3.5 w-3.5" /> Set as new-user default
+              </Button>
+            )}
+            {editing && (
+              <Button variant="ghost" size="sm" onClick={reset}>
+                <RotateCcw className="h-3.5 w-3.5" /> Reset
+              </Button>
+            )}
+            <Button
+              variant={editing ? "default" : "outline"}
+              size="sm"
+              onClick={() => setEditing((v) => !v)}
+            >
+              {editing ? (
+                <>
+                  <Check className="h-3.5 w-3.5" /> Done
+                </>
+              ) : (
+                <>
+                  <Pencil className="h-3.5 w-3.5" /> Edit layout
+                </>
+              )}
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={editing ? "" : "hidden"}
+                >
                   <Plus className="h-3.5 w-3.5" /> Add widget
                 </Button>
               </DropdownMenuTrigger>
@@ -166,11 +248,13 @@ function Dashboard() {
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
-            onDragStart={(e: DragStartEvent) =>
+            onDragStart={(e: DragStartEvent) => {
               setDragId(e.active.id as WidgetId)
-            }
+              setPreDrag(layout)
+            }}
+            onDragOver={onDragOver}
             onDragEnd={onDragEnd}
-            onDragCancel={() => setDragId(null)}
+            onDragCancel={onDragCancel}
           >
             <SortableContext items={layout} strategy={rectSortingStrategy}>
               <div className="gap-4 [column-fill:_balance] sm:columns-2 xl:columns-3 [&>*]:mb-4">
@@ -183,6 +267,7 @@ function Dashboard() {
                       id={id}
                       title={w.title}
                       description={w.description}
+                      editing={editing}
                       onRemove={() => remove(id)}
                     >
                       {w.render(d)}
@@ -223,22 +308,27 @@ function SortableTile({
   id,
   title,
   description,
+  editing,
   onRemove,
   children,
 }: {
   id: WidgetId
   title: string
   description: string
+  editing: boolean
   onRemove: () => void
   children: ReactNode
 }) {
-  const { setNodeRef, listeners, attributes, isDragging } = useSortable({ id })
+  const { setNodeRef, listeners, attributes, isDragging } = useSortable({
+    id,
+    disabled: !editing,
+  })
   return (
     <div
       ref={setNodeRef}
-      className={`group/tile relative break-inside-avoid overflow-hidden rounded-lg border border-border bg-card p-3.5 ${
+      className={`group/tile relative break-inside-avoid overflow-hidden rounded-lg border bg-card p-3.5 transition-shadow ${
         isDragging ? "opacity-40" : ""
-      }`}
+      } ${editing ? "border-dashed border-primary/40" : "border-border"}`}
     >
       <div className="mb-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -247,26 +337,28 @@ function SortableTile({
             {description}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            {...listeners}
-            {...attributes}
-            className="cursor-grab touch-none rounded-md p-1 text-muted-foreground opacity-0 transition-opacity group-hover/tile:opacity-100 hover:bg-muted hover:text-foreground active:cursor-grabbing"
-            title="Drag to reorder"
-            aria-label="Drag to reorder"
-          >
-            <GripVertical className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={onRemove}
-            className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity group-hover/tile:opacity-100 hover:bg-muted hover:text-foreground"
-            title="Remove widget"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
+        {editing && (
+          <div className="flex shrink-0 items-center gap-0.5">
+            <button
+              type="button"
+              {...listeners}
+              {...attributes}
+              className="cursor-grab touch-none rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing"
+              title="Drag to reorder"
+              aria-label="Drag to reorder"
+            >
+              <GripVertical className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={onRemove}
+              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              title="Remove widget"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
       </div>
       <Suspense
         fallback={<div className="h-32 animate-pulse rounded-md bg-muted/40" />}

@@ -842,6 +842,11 @@ class TenantSettings(TimestampedModel):
     override_ui = models.BooleanField(default=False)
     override_sharing = models.BooleanField(default=False)
 
+    # Default dashboard widget layout for NEW users of this tenant (a list of
+    # widget ids). Empty = fall back to the built-in default. Admins set it;
+    # every user reads it via the dashboard payload as their starting layout.
+    default_dashboard_widgets = models.JSONField(default=list, blank=True)
+
     # ─── email / SMTP (mirrors DeploymentSettings) ─────────────────────────
     email_enabled = models.BooleanField(default=False)
     smtp_host = models.CharField(max_length=255, blank=True, default="")

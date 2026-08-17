@@ -40,18 +40,22 @@ work the same way.
 
 ## Customizing it
 
-You decide which widgets to show and in what order.
+Click **Edit layout** to rearrange; the dashboard stays clean and read-only
+otherwise. In edit mode each tile gets a drag grip and a remove button.
 
 | Action | Effect |
 |---|---|
+| **Edit layout / Done** | Toggle edit mode on/off. |
 | **Add widget** | Opens a list of widgets you haven't added yet. |
-| **Drag the ⠿ handle** | Reorder — grab a widget's grip (top-right, on hover) and drop it where you want. |
+| **Drag the ⠿ handle** | Reorder — the other tiles re-flow live as you drag, and the order saves on drop. |
 | **× on a widget** | Removes that widget. |
-| **Reset** | Restores the default layout. |
+| **Reset** | Restores the built-in default layout. |
+| **Set as new-user default** *(admins)* | Saves your current layout as the starting dashboard for new users of the tenant. |
 
 !!! note
-    Your dashboard layout is saved in your browser, so it's per-device. Setting
-    it up again on another computer takes a moment.
+    Your own dashboard layout is saved in your browser, so it's per-device. New
+    users start from the tenant's admin-set default (if one is set), otherwise
+    the built-in layout.
 
 ## Related
 
