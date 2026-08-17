@@ -137,12 +137,22 @@ class ConnectionApiTests(APITestCase):
         }, format="json")
         self.assertEqual(res.status_code, 400)
 
-    def test_vcenter_kind_rejected_for_now(self):
+    def test_vcenter_kind_accepted_with_credentials(self):
+        self._login(self.admin)
+        self._enable(virtualization_enabled=True)
+        res = self.client.post("/api/virtualization-sources/", {
+            "name": "vc", "kind": "vcenter", "host": "192.0.2.20", "port": 443,
+            "username": "administrator@vsphere.local", "password": "s",
+        }, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertTrue(res.json()["credentials_set"])
+
+    def test_vcenter_kind_requires_password(self):
         self._login(self.admin)
         self._enable(virtualization_enabled=True)
         res = self.client.post("/api/virtualization-sources/", {
             "name": "vc", "kind": "vcenter", "host": "192.0.2.20",
-            "token_id": "a@b!c", "secret": "s",
+            "username": "administrator@vsphere.local",
         }, format="json")
         self.assertEqual(res.status_code, 400)
 

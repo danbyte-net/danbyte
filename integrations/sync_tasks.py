@@ -68,17 +68,18 @@ def enqueue_due_syncs() -> dict:
 
 
 def run_virt_sync(source_id: str) -> dict:
-    """RQ job: sync one virtualization source (Proxmox for now)."""
+    """RQ job: sync one virtualization source (Proxmox or vCenter)."""
     from .models import VirtualizationSource
-    from .virt_sync import record_virt_failure, sync_proxmox
+    from .virt_sync import record_virt_failure, sync_proxmox, sync_vcenter
 
     source = VirtualizationSource.objects.filter(id=source_id).first()
     if source is None or not source.enabled:
         return {"skipped": "gone-or-disabled"}
     if not integration_enabled(source.tenant, "virtualization"):
         return {"skipped": "toggle-off"}
+    engine = sync_vcenter if source.kind == "vcenter" else sync_proxmox
     try:
-        return sync_proxmox(source)
+        return engine(source)
     except Exception as exc:  # noqa: BLE001 — the row carries the error
         record_virt_failure(source, exc)
         logger.warning("virt sync %s failed: %s", source.name, exc)
