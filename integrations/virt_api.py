@@ -8,8 +8,68 @@ from rest_framework.response import Response
 
 from api.viewsets import TenantScopedViewSet
 
-from .models import VirtChange
+from .models import VirtChange, VirtNetwork
 from .toggles import IntegrationToggleMixin
+
+
+class VirtNetworkSerializer(serializers.ModelSerializer):
+    """A synced hypervisor network (port-group / bridge) with the VLAN it maps
+    to and the VMs currently attached — the switch→network→VM linkage that
+    feeds the switch page and the virtual topology view."""
+
+    vlan = serializers.SerializerMethodField()
+    vms = serializers.SerializerMethodField()
+
+    class Meta:
+        model = VirtNetwork
+        fields = ["id", "name", "ext_key", "vlan", "vswitch", "vms",
+                  "last_seen_at"]
+
+    def get_vlan(self, obj):
+        if not obj.vlan_id:
+            return None
+        return {"id": str(obj.vlan_id), "vlan_id": obj.vlan.vlan_id,
+                "name": obj.vlan.name}
+
+    def get_vms(self, obj):
+        if not obj.vlan_id:
+            return []
+        from api.models import VMInterface
+
+        seen: dict = {}
+        for i in (
+            VMInterface.objects.filter(vlan_id=obj.vlan_id)
+            .select_related("vm", "vm__status")
+        ):
+            vm = i.vm
+            if vm.id not in seen:
+                seen[vm.id] = {
+                    "id": str(vm.id), "name": vm.name,
+                    "status": vm.status.name if vm.status_id else None,
+                }
+        return list(seen.values())
+
+
+class VirtNetworkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
+    """Read-only synced networks; filter by ``?vswitch=`` or ``?source=``."""
+
+    integration_keys = ("virtualization",)
+    tenant_field = "source__tenant"
+    http_method_names = ["get"]
+    queryset = VirtNetwork.objects.select_related(
+        "source", "vlan", "vswitch"
+    ).order_by("name", "ext_key")
+    serializer_class = VirtNetworkSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        vs = self.request.query_params.get("vswitch")
+        if vs:
+            qs = qs.filter(vswitch_id=vs)
+        src = self.request.query_params.get("source")
+        if src:
+            qs = qs.filter(source_id=src)
+        return qs
 
 
 class VirtChangeSerializer(serializers.ModelSerializer):

@@ -3218,6 +3218,16 @@ export interface VirtualDisk {
   description: string
 }
 
+export interface VirtNetwork {
+  id: string
+  name: string
+  ext_key: string
+  vlan: { id: string; vlan_id: number; name: string } | null
+  vswitch: string | null
+  vms: { id: string; name: string; status: string | null }[]
+  last_seen_at: string | null
+}
+
 export interface VirtualSwitch {
   id: string
   name: string

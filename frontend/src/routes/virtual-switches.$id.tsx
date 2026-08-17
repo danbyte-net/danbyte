@@ -1,8 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 
-import { api, type VirtualSwitch } from "@/lib/api"
+import {
+  api,
+  type Paginated,
+  type VirtNetwork,
+  type VirtualSwitch,
+} from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
+import { EmptyState } from "@/components/empty-state"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -39,9 +45,15 @@ function VirtualSwitchDetail() {
 }
 
 function Body({ sw }: { sw: VirtualSwitch }) {
-  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">(
-    "overview"
-  )
+  const [tab, setTab] = useUrlTab<
+    "overview" | "networks" | "journal" | "history"
+  >("overview")
+  const networks = useQuery({
+    queryKey: ["virt-networks", { vswitch: sw.id }],
+    queryFn: () =>
+      api<Paginated<VirtNetwork>>(`/api/virt-networks/?vswitch=${sw.id}`),
+  })
+  const nets = networks.data?.results ?? []
   const rows: KvRow[] = [
     {
       label: "Kind",
@@ -105,6 +117,7 @@ function Body({ sw }: { sw: VirtualSwitch }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
+        { value: "networks", label: "Networks", count: nets.length },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
       ]}
@@ -116,6 +129,9 @@ function Body({ sw }: { sw: VirtualSwitch }) {
           <KvCard title="Virtual switch" rows={rows} />
         </div>
       </DetailTab>
+      <DetailTab value="networks">
+        <SwitchNetworks nets={nets} loading={networks.isLoading} />
+      </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.virtualswitch" objectId={sw.id} />
       </DetailTab>
@@ -123,5 +139,65 @@ function Body({ sw }: { sw: VirtualSwitch }) {
         <ChangeLogPanel objectType="api.virtualswitch" objectId={sw.id} />
       </DetailTab>
     </DetailShell>
+  )
+}
+
+/** The networks (port-groups / bridges) on this switch, each with its VLAN and
+ * the VMs attached — the switch→network→VM chain. */
+function SwitchNetworks({
+  nets,
+  loading,
+}: {
+  nets: VirtNetwork[]
+  loading: boolean
+}) {
+  if (loading) return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (nets.length === 0)
+    return (
+      <EmptyState title="No networks on this switch yet.">
+        Networks appear once a sync with{" "}
+        <span className="font-medium">virtual switches &amp; networks</span>{" "}
+        enabled has run — each port-group/bridge is mapped to a VLAN and the VMs
+        on it are linked here.
+      </EmptyState>
+    )
+  return (
+    <div className="space-y-4">
+      {nets.map((n) => (
+        <div key={n.id} className="rounded-lg border border-border">
+          <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
+            <span className="font-medium">{n.name || n.ext_key}</span>
+            {n.vlan ? (
+              <Link
+                to="/vlans/$id"
+                params={{ id: n.vlan.id }}
+                className="link font-mono text-xs text-muted-foreground"
+              >
+                VLAN {n.vlan.vlan_id} · {n.vlan.name}
+              </Link>
+            ) : (
+              <span className="text-xs text-muted-foreground">no VLAN</span>
+            )}
+            <Badge variant="secondary" className="ml-auto text-[10px]">
+              {n.vms.length} VM{n.vms.length === 1 ? "" : "s"}
+            </Badge>
+          </div>
+          {n.vms.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-4 py-3">
+              {n.vms.map((vm) => (
+                <Link
+                  key={vm.id}
+                  to="/virtual-machines/$id"
+                  params={{ id: vm.id }}
+                  className="link rounded-md border border-border px-2 py-0.5 text-xs"
+                >
+                  {vm.name}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
   )
 }
