@@ -222,9 +222,13 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
         const v = row.original.vlan
         return v ? (
           <span className="inline-flex items-center gap-1.5">
-            <span className="font-mono text-xs text-muted-foreground">
+            <Link
+              to="/vlans/$id"
+              params={{ id: v.id }}
+              className="link font-mono text-xs text-muted-foreground"
+            >
               {v.vlan_id} · {v.name}
-            </span>
+            </Link>
             {v.zone && (
               <ColorBadge
                 name={v.zone.name}
