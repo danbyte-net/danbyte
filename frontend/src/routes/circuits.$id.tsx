@@ -141,7 +141,7 @@ function Body({ circuit: c }: { circuit: Circuit }) {
                       <Link
                         to="/providers/$id"
                         params={{ id: c.provider.id }}
-                        className="text-primary hover:underline"
+                        className="link"
                       >
                         {c.provider.name}
                       </Link>
@@ -236,7 +236,7 @@ function CircuitOverview({ circuit: c }: { circuit: Circuit }) {
         <Link
           to="/providers/$id"
           params={{ id: c.provider.id }}
-          className="text-primary hover:underline"
+          className="link"
         >
           {c.provider.name}
         </Link>
@@ -342,11 +342,7 @@ function TerminationCard({
     {
       label: "Endpoint",
       value: t.site ? (
-        <Link
-          to="/sites/$id"
-          params={{ id: t.site.id }}
-          className="text-primary hover:underline"
-        >
+        <Link to="/sites/$id" params={{ id: t.site.id }} className="link">
           {t.site.name}
         </Link>
       ) : t.provider_network ? (

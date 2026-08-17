@@ -168,7 +168,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
                       <Link
                         to="/manufacturers/$id"
                         params={{ id: d.manufacturer.id }}
-                        className="text-primary hover:underline"
+                        className="link"
                       >
                         {d.manufacturer.name}
                       </Link>
@@ -316,11 +316,7 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
       label: "Devices",
       value:
         d.device_count > 0 ? (
-          <Link
-            to="/devices"
-            search={{ type: d.id }}
-            className="num text-primary hover:underline"
-          >
+          <Link to="/devices" search={{ type: d.id }} className="num link">
             {d.device_count}
           </Link>
         ) : (

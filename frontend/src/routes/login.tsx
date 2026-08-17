@@ -315,11 +315,7 @@ function LoginPage() {
                   ← Back
                 </button>
                 {method === "email" && (
-                  <button
-                    type="button"
-                    className="text-primary hover:underline"
-                    onClick={resend}
-                  >
+                  <button type="button" className="link" onClick={resend}>
                     Resend code
                   </button>
                 )}

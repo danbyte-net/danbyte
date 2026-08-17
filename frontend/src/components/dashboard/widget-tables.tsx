@@ -62,7 +62,7 @@ const DEVICE_COLUMNS: SimpleColumn<DashRecentDevice>[] = [
       <Link
         to="/devices/$id"
         params={{ id: x.id }}
-        className="font-medium text-primary hover:underline"
+        className="link font-medium"
       >
         {x.name}
       </Link>

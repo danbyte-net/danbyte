@@ -112,7 +112,13 @@ export function buildClusterColumns<T extends Cluster = Cluster>(
             accessorFn: (r) => r.type.name,
             header: "Type",
             cell: ({ row }) => (
-              <ColorBadge name={row.original.type.name} color={undefined} />
+              <Link
+                to="/cluster-types/$id"
+                params={{ id: row.original.type.id }}
+                className="hover:underline"
+              >
+                <ColorBadge name={row.original.type.name} color={undefined} />
+              </Link>
             ),
           }
         : {
@@ -120,7 +126,13 @@ export function buildClusterColumns<T extends Cluster = Cluster>(
             header: ({ column }) => <SortHeader column={column} label="Type" />,
             accessorFn: (r) => r.type.name,
             cell: ({ row }) => (
-              <span className="text-xs">{row.original.type.name}</span>
+              <Link
+                to="/cluster-types/$id"
+                params={{ id: row.original.type.id }}
+                className="link text-xs"
+              >
+                {row.original.type.name}
+              </Link>
             ),
             meta: {
               facet: {

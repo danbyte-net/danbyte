@@ -203,7 +203,7 @@ export function CertificatesPanel({
         <Link
           to="/certificates/$id"
           params={{ id: a.certificate }}
-          className="font-medium text-primary hover:underline"
+          className="link font-medium"
         >
           {a.certificate_subject_cn ||
             `${(a.certificate_fingerprint ?? "").slice(0, 16)}…`}

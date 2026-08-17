@@ -132,7 +132,7 @@ export function VMInterfacesPane({ vmId }: { vmId: string }) {
             <Link
               to="/vlans/$id"
               params={{ id: row.original.vlan.id }}
-              className="font-mono text-xs text-primary hover:underline"
+              className="link font-mono text-xs"
             >
               {row.original.vlan.vlan_id} · {row.original.vlan.name}
             </Link>
@@ -148,7 +148,7 @@ export function VMInterfacesPane({ vmId }: { vmId: string }) {
             <Link
               to="/vrfs/$id"
               params={{ id: row.original.vrf.id }}
-              className="text-xs text-primary hover:underline"
+              className="link text-xs"
             >
               {row.original.vrf.name}
             </Link>
@@ -167,7 +167,7 @@ export function VMInterfacesPane({ vmId }: { vmId: string }) {
                   key={ip.id}
                   to="/ips/$id"
                   params={{ id: ip.id }}
-                  className="font-mono text-xs text-primary hover:underline"
+                  className="link font-mono text-xs"
                 >
                   {ip.ip_address}
                 </Link>

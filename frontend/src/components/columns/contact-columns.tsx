@@ -102,7 +102,7 @@ export function buildContactColumns<T extends Contact = Contact>(
         row.original.email ? (
           <a
             href={`mailto:${row.original.email}`}
-            className="font-mono text-xs text-primary hover:underline"
+            className="link font-mono text-xs"
           >
             {row.original.email}
           </a>

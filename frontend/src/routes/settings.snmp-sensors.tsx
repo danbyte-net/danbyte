@@ -219,7 +219,7 @@ function SnmpSensorCatalogPage() {
                     to="/device-types/$id"
                     params={{ id: s.device_type }}
                     search={{ tab: "sensors" }}
-                    className="text-[11px] text-primary hover:underline"
+                    className="link text-[11px]"
                   >
                     {s.device_type_name}
                   </Link>

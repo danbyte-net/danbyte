@@ -58,12 +58,7 @@ export function formatCustomValue(
   }
   if (type === "url") {
     return (
-      <a
-        href={String(v)}
-        target="_blank"
-        rel="noreferrer"
-        className="text-primary hover:underline"
-      >
+      <a href={String(v)} target="_blank" rel="noreferrer" className="link">
         {String(v)}
       </a>
     )
@@ -111,7 +106,7 @@ function ObjectValue({ slug, id }: { slug: string; id: string }) {
     )
   if (hit.route)
     return (
-      <Link to={hit.route as "/"} className="text-primary hover:underline">
+      <Link to={hit.route as "/"} className="link">
         {hit.label}
       </Link>
     )

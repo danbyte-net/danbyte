@@ -37,7 +37,7 @@ export function ManufacturerCell({
     <Link
       to="/manufacturers/$id"
       params={{ id: manufacturer.id }}
-      className={className ? `${className} hover:underline` : "hover:underline"}
+      className={className ? `${className} link` : "link"}
     >
       {manufacturer.name}
     </Link>

@@ -239,7 +239,7 @@ function IpRangeOverview({ range: r }: { range: IPRange }) {
         <Link
           to="/prefixes/$id"
           params={{ id: r.prefix.id }}
-          className="font-mono text-[13px] text-primary hover:underline"
+          className="link font-mono text-[13px]"
         >
           {r.prefix.cidr}
         </Link>

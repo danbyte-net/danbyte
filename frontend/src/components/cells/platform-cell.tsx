@@ -37,7 +37,7 @@ export function PlatformCell({
     <Link
       to="/platforms/$id"
       params={{ id: platform.id }}
-      className={className ? `${className} hover:underline` : "hover:underline"}
+      className={className ? `${className} link` : "link"}
     >
       {platform.name}
     </Link>

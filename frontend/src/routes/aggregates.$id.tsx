@@ -88,7 +88,7 @@ function Body({ aggregate: a }: { aggregate: Aggregate }) {
               <Link
                 to="/rirs/$id"
                 params={{ id: a.rir.id }}
-                className="text-sm text-primary hover:underline"
+                className="link text-sm"
               >
                 {a.rir.name}
               </Link>

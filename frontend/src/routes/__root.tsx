@@ -16,6 +16,7 @@ import {
   QueryClientProvider,
 } from "@tanstack/react-query"
 import { ThemeProvider } from "@/components/theme-provider"
+import { LinkIconsProvider } from "@/components/link-icons-provider"
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { OnboardingWizard } from "@/components/onboarding-wizard"
@@ -72,6 +73,8 @@ const THEME_BOOT_SCRIPT = `(function(){try{
     t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
   if (t === "dark") document.documentElement.classList.add("dark");
+  if (localStorage.getItem("danbyte-link-icons") === "on")
+    document.documentElement.classList.add("link-icons");
 }catch(e){}})();`
 
 export const Route = createRootRoute({
@@ -241,12 +244,14 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <ThemeProvider>
-          <QueryClientProvider client={queryClient}>
-            <TooltipProvider delayDuration={200}>
-              {children}
-              <Toaster richColors closeButton />
-            </TooltipProvider>
-          </QueryClientProvider>
+          <LinkIconsProvider>
+            <QueryClientProvider client={queryClient}>
+              <TooltipProvider delayDuration={200}>
+                {children}
+                <Toaster richColors closeButton />
+              </TooltipProvider>
+            </QueryClientProvider>
+          </LinkIconsProvider>
         </ThemeProvider>
         <TanStackDevtools
           config={{ position: "bottom-right" }}

@@ -33,7 +33,7 @@ export function RackCell({ rack, linked = true, className }: RackCellProps) {
     <Link
       to="/racks/$id"
       params={{ id: rack.id }}
-      className={className ? `${className} hover:underline` : "hover:underline"}
+      className={className ? `${className} link` : "link"}
     >
       {rack.name}
     </Link>

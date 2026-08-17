@@ -53,11 +53,7 @@ function PowerFeedDetail() {
 /** The panel this feed draws from — its own page, one hop up the power path. */
 function PanelLink({ panel }: { panel: { id: string; name: string } }) {
   return (
-    <Link
-      to="/power-panels/$id"
-      params={{ id: panel.id }}
-      className="text-primary hover:underline"
-    >
+    <Link to="/power-panels/$id" params={{ id: panel.id }} className="link">
       {panel.name}
     </Link>
   )

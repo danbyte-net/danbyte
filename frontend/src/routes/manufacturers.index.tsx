@@ -145,7 +145,7 @@ function buildColumns({
             href={row.original.url}
             target="_blank"
             rel="noreferrer"
-            className="text-xs text-primary hover:underline"
+            className="link text-xs"
           >
             {row.original.url.replace(/^https?:\/\//, "")}
           </a>

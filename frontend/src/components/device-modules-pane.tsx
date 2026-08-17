@@ -121,7 +121,7 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
                       <Link
                         to="/module-types/$id"
                         params={{ id: b.module.module_type.id }}
-                        className="text-primary hover:underline"
+                        className="link"
                       >
                         {b.module.module_type.name}
                       </Link>

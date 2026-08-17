@@ -74,7 +74,7 @@ export function LifecycleCard({
                 href={item.lifecycle_url}
                 target="_blank"
                 rel="noreferrer"
-                className="text-primary hover:underline"
+                className="link"
               >
                 {item.lifecycle_url}
               </a>

@@ -308,7 +308,7 @@ function ChangeSetRow({
               "$id",
               c.created_object_id
             )}
-            className="text-[11px] text-primary hover:underline"
+            className="link text-[11px]"
           >
             View created object
           </Link>

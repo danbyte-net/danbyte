@@ -67,10 +67,7 @@ function Body({ contact: c }: { contact: Contact }) {
     {
       label: "Email",
       value: c.email ? (
-        <a
-          href={`mailto:${c.email}`}
-          className="font-mono text-primary hover:underline"
-        >
+        <a href={`mailto:${c.email}`} className="link font-mono">
           {c.email}
         </a>
       ) : (
@@ -81,12 +78,7 @@ function Body({ contact: c }: { contact: Contact }) {
     {
       label: "Link",
       value: c.link ? (
-        <a
-          href={c.link}
-          target="_blank"
-          rel="noreferrer"
-          className="text-primary hover:underline"
-        >
+        <a href={c.link} target="_blank" rel="noreferrer" className="link">
           {c.link}
         </a>
       ) : (

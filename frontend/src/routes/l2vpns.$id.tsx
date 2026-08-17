@@ -250,7 +250,7 @@ function EndpointCell({ termination: t }: { termination: L2VPNTermination }) {
       <Link
         to="/interfaces/$id"
         params={{ id: t.interface.id }}
-        className="font-mono text-[13px] text-primary hover:underline"
+        className="link font-mono text-[13px]"
       >
         {t.interface.device.name}:{t.interface.name}
       </Link>
@@ -261,7 +261,7 @@ function EndpointCell({ termination: t }: { termination: L2VPNTermination }) {
       <Link
         to="/virtual-machines/$id"
         params={{ id: t.vm_interface.vm.id }}
-        className="font-mono text-[13px] text-primary hover:underline"
+        className="link font-mono text-[13px]"
       >
         {t.vm_interface.vm.name}:{t.vm_interface.name}
       </Link>

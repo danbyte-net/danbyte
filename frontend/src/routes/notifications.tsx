@@ -70,7 +70,7 @@ function ScopeLink({
       <Link
         to="/prefixes/$id"
         params={{ id: ch.scope_id }}
-        className={className ?? "text-primary hover:underline"}
+        className={className ?? "link"}
       >
         {children}
       </Link>
@@ -80,7 +80,7 @@ function ScopeLink({
       <Link
         to="/ips/$id"
         params={{ id: ch.scope_id }}
-        className={className ?? "text-primary hover:underline"}
+        className={className ?? "link"}
       >
         {children}
       </Link>
@@ -90,7 +90,7 @@ function ScopeLink({
       <Link
         to="/devices/$id"
         params={{ id: ch.scope_id }}
-        className={className ?? "text-primary hover:underline"}
+        className={className ?? "link"}
       >
         {children}
       </Link>
@@ -202,7 +202,7 @@ function ForYouTab() {
         cell: ({ row }) => (
           <ScopeLink
             ch={row.original.channel}
-            className="font-mono text-[12px] text-primary hover:underline"
+            className="link font-mono text-[12px]"
           >
             {scopeLabel(row.original.channel)}
           </ScopeLink>

@@ -89,7 +89,7 @@ export function DeviceBaysPane({ deviceId }: { deviceId: string }) {
                       <Link
                         to="/devices/$id"
                         params={{ id: b.installed_device.id }}
-                        className="text-primary hover:underline"
+                        className="link"
                       >
                         {b.installed_device.name}
                       </Link>

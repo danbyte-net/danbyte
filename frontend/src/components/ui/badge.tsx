@@ -18,7 +18,7 @@ const badgeVariants = cva(
           "border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground",
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
-        link: "text-primary underline-offset-4 hover:underline",
+        link: "underline-offset-4 hover:underline",
         // Danbyte status families — same shape as default but tinted.
         // Use these for any semantic "this thing is healthy/warning/dead"
         // signal. Kept separate from `default`/`destructive` so brand

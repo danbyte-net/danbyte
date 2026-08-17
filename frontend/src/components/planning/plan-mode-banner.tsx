@@ -30,7 +30,7 @@ export function PlanModeBanner() {
             to="/planning/$boardId"
             params={{ boardId: plan.boardId }}
             search={{ task: plan.taskId }}
-            className="text-primary hover:underline"
+            className="link"
           >
             «{q.data?.title ?? "this task"}»
           </Link>

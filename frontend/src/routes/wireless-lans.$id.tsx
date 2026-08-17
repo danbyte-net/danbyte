@@ -96,7 +96,7 @@ function Body({ wlan: w }: { wlan: WirelessLAN }) {
                 <Link
                   to="/wireless-lan-groups/$id"
                   params={{ id: w.group.id }}
-                  className="text-primary hover:underline"
+                  className="link"
                 >
                   {w.group.name}
                 </Link>
@@ -159,7 +159,7 @@ function WlanOverview({ wlan: w }: { wlan: WirelessLAN }) {
         <Link
           to="/wireless-lan-groups/$id"
           params={{ id: w.group.id }}
-          className="text-primary hover:underline"
+          className="link"
         >
           {w.group.name}
         </Link>
@@ -186,7 +186,7 @@ function WlanOverview({ wlan: w }: { wlan: WirelessLAN }) {
         <Link
           to="/vlans/$id"
           params={{ id: w.vlan.id }}
-          className="text-primary hover:underline"
+          className="link"
         >
           <span className="num font-mono">{w.vlan.vlan_id}</span> {w.vlan.name}
         </Link>

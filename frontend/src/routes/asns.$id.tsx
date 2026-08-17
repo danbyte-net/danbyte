@@ -129,11 +129,7 @@ function AsnOverview({ asn: a }: { asn: ASN }) {
     {
       label: "RIR",
       value: a.rir ? (
-        <Link
-          to="/rirs/$id"
-          params={{ id: a.rir.id }}
-          className="text-primary hover:underline"
-        >
+        <Link to="/rirs/$id" params={{ id: a.rir.id }} className="link">
           {a.rir.name}
         </Link>
       ) : (

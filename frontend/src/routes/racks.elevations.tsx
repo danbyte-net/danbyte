@@ -99,7 +99,7 @@ function RackElevationsPage() {
                 <Link
                   to="/racks/$id"
                   params={{ id: r.id }}
-                  className="text-[13px] font-medium text-primary hover:underline"
+                  className="link text-[13px] font-medium"
                 >
                   {r.name}
                 </Link>

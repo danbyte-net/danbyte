@@ -102,7 +102,15 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
               <>
                 <DetailStat
                   label="Type"
-                  value={<span className="text-xs">{c.type.name}</span>}
+                  value={
+                    <Link
+                      to="/cluster-types/$id"
+                      params={{ id: c.type.id }}
+                      className="link text-xs"
+                    >
+                      {c.type.name}
+                    </Link>
+                  }
                 />
                 <DetailStat
                   label="Site"
@@ -111,7 +119,7 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
                       <Link
                         to="/sites/$id"
                         params={{ id: c.site.id }}
-                        className="text-xs text-primary hover:underline"
+                        className="link text-xs"
                       >
                         {c.site.name}
                       </Link>
@@ -199,16 +207,23 @@ function ClusterOverview({ cluster: c }: { cluster: Cluster }) {
           } satisfies KvRow,
         ]
       : []),
-    { label: "Type", value: c.type.name },
+    {
+      label: "Type",
+      value: (
+        <Link
+          to="/cluster-types/$id"
+          params={{ id: c.type.id }}
+          className="link"
+        >
+          {c.type.name}
+        </Link>
+      ),
+    },
     { label: "Group", value: c.group ? c.group.name : dash },
     {
       label: "Site",
       value: c.site ? (
-        <Link
-          to="/sites/$id"
-          params={{ id: c.site.id }}
-          className="text-primary hover:underline"
-        >
+        <Link to="/sites/$id" params={{ id: c.site.id }} className="link">
           {c.site.name}
         </Link>
       ) : (

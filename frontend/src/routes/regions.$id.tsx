@@ -88,7 +88,7 @@ function Body({ region: r }: { region: Region }) {
               <Link
                 to="/regions/$id"
                 params={{ id: r.parent.id }}
-                className="text-primary hover:underline"
+                className="link"
               >
                 {r.parent.name}
               </Link>
@@ -164,11 +164,7 @@ function RegionOverview({ region: r }: { region: Region }) {
     {
       label: "Parent region",
       value: r.parent ? (
-        <Link
-          to="/regions/$id"
-          params={{ id: r.parent.id }}
-          className="text-primary hover:underline"
-        >
+        <Link to="/regions/$id" params={{ id: r.parent.id }} className="link">
           {r.parent.name}
         </Link>
       ) : (

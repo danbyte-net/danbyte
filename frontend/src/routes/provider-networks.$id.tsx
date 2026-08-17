@@ -90,7 +90,7 @@ function Body({ network: n }: { network: ProviderNetwork }) {
               <Link
                 to="/providers/$id"
                 params={{ id: n.provider.id }}
-                className="text-primary hover:underline"
+                className="link"
               >
                 {n.provider.name}
               </Link>
@@ -159,7 +159,7 @@ function NetworkOverview({ network: n }: { network: ProviderNetwork }) {
         <Link
           to="/providers/$id"
           params={{ id: n.provider.id }}
-          className="text-primary hover:underline"
+          className="link"
         >
           {n.provider.name}
         </Link>

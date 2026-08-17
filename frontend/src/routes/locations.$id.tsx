@@ -281,8 +281,26 @@ function LocationOverview({
           } satisfies KvRow,
         ]
       : []),
-    { label: "Site", value: l.site ? l.site.name : dash },
-    { label: "Parent", value: l.parent ? l.parent.name : dash },
+    {
+      label: "Site",
+      value: l.site ? (
+        <Link to="/sites/$id" params={{ id: l.site.id }} className="link">
+          {l.site.name}
+        </Link>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "Parent",
+      value: l.parent ? (
+        <Link to="/locations/$id" params={{ id: l.parent.id }} className="link">
+          {l.parent.name}
+        </Link>
+      ) : (
+        dash
+      ),
+    },
     { label: "Status", value: <StatusBadge status={l.status} /> },
   ]
 

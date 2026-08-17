@@ -119,7 +119,7 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
                     <Link
                       to="/sites/$id"
                       params={{ id: r.site.id }}
-                      className="text-xs text-primary hover:underline"
+                      className="link text-xs"
                     >
                       {r.site.name}
                     </Link>
@@ -278,11 +278,7 @@ function RackOverview({ rack: r }: { rack: Rack }) {
     {
       label: "Site",
       value: (
-        <Link
-          to="/sites/$id"
-          params={{ id: r.site.id }}
-          className="text-primary hover:underline"
-        >
+        <Link to="/sites/$id" params={{ id: r.site.id }} className="link">
           {r.site.name}
         </Link>
       ),
@@ -301,7 +297,7 @@ function RackOverview({ rack: r }: { rack: Rack }) {
         <Link
           to="/rack-types/$id"
           params={{ id: r.rack_type.id }}
-          className="text-primary hover:underline"
+          className="link"
         >
           {r.rack_type.manufacturer
             ? `${r.rack_type.manufacturer.name} ${r.rack_type.name}`
@@ -318,7 +314,7 @@ function RackOverview({ rack: r }: { rack: Rack }) {
         <Link
           to="/locations/$id"
           params={{ id: r.location.id }}
-          className="text-primary hover:underline"
+          className="link"
         >
           {r.location.name}
         </Link>

@@ -74,7 +74,7 @@ function ProvidersPage() {
           row.original.noc_email ? (
             <a
               href={`mailto:${row.original.noc_email}`}
-              className="font-mono text-xs text-primary hover:underline"
+              className="link font-mono text-xs"
             >
               {row.original.noc_email}
             </a>

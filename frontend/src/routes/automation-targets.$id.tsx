@@ -191,7 +191,7 @@ function TargetOverview({ target: t }: { target: AutomationTarget }) {
           href={t.base_url}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1 font-mono text-[12px] text-primary hover:underline"
+          className="link inline-flex items-center gap-1 font-mono text-[12px]"
         >
           <ExternalLink className="h-3.5 w-3.5 shrink-0" />
           <span className="break-all">{t.base_url}</span>

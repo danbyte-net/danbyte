@@ -144,11 +144,7 @@ function VlanLink({
   vlan: { id: string; vlan_id: number; name: string }
 }) {
   return (
-    <Link
-      to="/vlans/$id"
-      params={{ id: vlan.id }}
-      className="text-primary hover:underline"
-    >
+    <Link to="/vlans/$id" params={{ id: vlan.id }} className="link">
       {vlan.vlan_id} · {vlan.name}
     </Link>
   )
@@ -344,7 +340,7 @@ function PortHoverBody({
       <Link
         to="/interfaces/$id"
         params={{ id: i.id }}
-        className="font-semibold text-primary hover:underline"
+        className="link font-semibold"
       >
         {i.name}
       </Link>
@@ -376,7 +372,7 @@ function PortHoverBody({
             key={ip.id}
             to="/ips/$id"
             params={{ id: ip.id }}
-            className="text-primary hover:underline"
+            className="link"
           >
             {ip.ip_address}
           </Link>
@@ -508,33 +504,37 @@ function FaceplateLanes({
       className="flex flex-col justify-center"
       style={{ rowGap: Math.round(PANEL_MM.rowGap * 2 * scale) }}
     >
-      {laneNos.map((no) => (
-        <div
-          key={no}
-          className="flex items-center"
-          style={{
-            columnGap: Math.round(PANEL_MM.groupGap * scale),
-            minHeight: multi
-              ? Math.round(PANEL_MM.face * scale * 0.85)
-              : undefined,
-          }}
-        >
-          {byLane.get(no)!.map((g, i) => {
-            const prev = byLane.get(no)![i - 1]
-            const divider = prev && prev.family !== g.family
-            return (
-              <div
-                key={g.id}
-                className="flex items-center"
-                style={{ columnGap: Math.round(PANEL_MM.groupGap * scale) }}
-              >
-                {divider && <div className="h-8 w-px shrink-0 bg-border" />}
-                <GroupBlock group={g} scale={scale} observed={observed} />
-              </div>
-            )
-          })}
-        </div>
-      ))}
+      {laneNos.map((no) => {
+        const laneGroups = byLane.get(no)!
+        // A group spanning >1 U makes its lane that many units tall.
+        const spanU = laneGroups.reduce((m, g) => Math.max(m, g.uSpan ?? 1), 1)
+        const perU = Math.round(PANEL_MM.face * scale * 0.85)
+        return (
+          <div
+            key={no}
+            className="flex items-center"
+            style={{
+              columnGap: Math.round(PANEL_MM.groupGap * scale),
+              minHeight: multi || spanU > 1 ? perU * spanU : undefined,
+            }}
+          >
+            {laneGroups.map((g, i) => {
+              const prev = laneGroups[i - 1]
+              const divider = prev && prev.family !== g.family
+              return (
+                <div
+                  key={g.id}
+                  className="flex items-center"
+                  style={{ columnGap: Math.round(PANEL_MM.groupGap * scale) }}
+                >
+                  {divider && <div className="h-8 w-px shrink-0 bg-border" />}
+                  <GroupBlock group={g} scale={scale} observed={observed} />
+                </div>
+              )
+            })}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -1547,7 +1547,7 @@ export function ImagePortsFaceplate({
               <Link
                 to="/interfaces/$id"
                 params={{ id: iface.id }}
-                className="font-semibold text-primary hover:underline"
+                className="link font-semibold"
               >
                 {iface.name}
               </Link>
@@ -1567,7 +1567,7 @@ export function ImagePortsFaceplate({
                   key={ip.id}
                   to="/ips/$id"
                   params={{ id: ip.id }}
-                  className="text-primary hover:underline"
+                  className="link"
                 >
                   {ip.ip_address}
                 </Link>

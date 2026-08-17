@@ -125,7 +125,7 @@ export function ContactsPanel({
         <Link
           to="/contacts/$id"
           params={{ id: a.contact.id }}
-          className="font-medium text-primary hover:underline"
+          className="link font-medium"
         >
           {a.contact.name}
         </Link>

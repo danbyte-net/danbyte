@@ -88,7 +88,7 @@ function ChangeLogDetail() {
         <Link
           to={route}
           params={{ id: e.object_id }}
-          className="font-medium text-primary hover:underline"
+          className="link font-medium"
         >
           {e.object_repr}
         </Link>

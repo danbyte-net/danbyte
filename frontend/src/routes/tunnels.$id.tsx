@@ -126,10 +126,7 @@ function Body({ tunnel: t }: { tunnel: Tunnel }) {
                   label="Group"
                   value={
                     t.group ? (
-                      <Link
-                        to="/tunnel-groups"
-                        className="text-primary hover:underline"
-                      >
+                      <Link to="/tunnel-groups" className="link">
                         {t.group.name}
                       </Link>
                     ) : (
@@ -218,7 +215,7 @@ function TunnelOverview({ tunnel: t }: { tunnel: Tunnel }) {
     {
       label: "Group",
       value: t.group ? (
-        <Link to="/tunnel-groups" className="text-primary hover:underline">
+        <Link to="/tunnel-groups" className="link">
           {t.group.name}
         </Link>
       ) : (
@@ -256,7 +253,7 @@ function EndpointCell({ termination: t }: { termination: TunnelTermination }) {
       <Link
         to="/interfaces/$id"
         params={{ id: t.interface.id }}
-        className="font-mono text-[13px] text-primary hover:underline"
+        className="link font-mono text-[13px]"
       >
         {t.interface.device.name}:{t.interface.name}
       </Link>
@@ -267,7 +264,7 @@ function EndpointCell({ termination: t }: { termination: TunnelTermination }) {
       <Link
         to="/virtual-machines/$id"
         params={{ id: t.vm_interface.vm.id }}
-        className="font-mono text-[13px] text-primary hover:underline"
+        className="link font-mono text-[13px]"
       >
         {t.vm_interface.vm.name}:{t.vm_interface.name}
       </Link>
@@ -348,7 +345,7 @@ function TerminationsTab({
                       <Link
                         to="/ips/$id"
                         params={{ id: term.outside_ip.id }}
-                        className="font-mono text-[13px] text-primary hover:underline"
+                        className="link font-mono text-[13px]"
                       >
                         {term.outside_ip.ip_address}
                       </Link>

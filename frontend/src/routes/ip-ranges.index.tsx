@@ -252,7 +252,7 @@ function buildColumns({
           <Link
             to="/prefixes/$id"
             params={{ id: row.original.prefix.id }}
-            className="font-mono text-xs text-primary hover:underline"
+            className="link font-mono text-xs"
           >
             {row.original.prefix.cidr}
           </Link>

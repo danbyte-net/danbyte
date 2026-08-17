@@ -176,7 +176,7 @@ function ManufacturerOverview({
           href={m.url}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1 text-primary hover:underline"
+          className="link inline-flex items-center gap-1"
         >
           <ExternalLink className="h-3.5 w-3.5" />
           {m.url.replace(/^https?:\/\//, "")}

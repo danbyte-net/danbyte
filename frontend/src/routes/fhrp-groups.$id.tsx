@@ -174,7 +174,7 @@ function FhrpGroupOverview({
         <Link
           to="/ips/$id"
           params={{ id: g.virtual_ip.id }}
-          className="font-mono text-[13px] text-primary hover:underline"
+          className="link font-mono text-[13px]"
         >
           {g.virtual_ip.ip_address}
         </Link>

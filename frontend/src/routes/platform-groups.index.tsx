@@ -122,7 +122,7 @@ function buildColumns({
           <Link
             to="/platform-groups/$id"
             params={{ id: row.original.parent.id }}
-            className="text-xs text-primary hover:underline"
+            className="link text-xs"
           >
             {row.original.parent.name}
           </Link>

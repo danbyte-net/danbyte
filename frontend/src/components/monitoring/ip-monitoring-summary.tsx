@@ -63,7 +63,7 @@ export function IpMonitoringSummary({
       <button
         type="button"
         onClick={onOpenMonitoring}
-        className="ml-auto inline-flex items-center gap-0.5 text-primary hover:underline"
+        className="link ml-auto inline-flex items-center gap-0.5"
       >
         {checks.length > 0 ? "Open" : "Set up"}
         <ArrowRight className="h-3 w-3" />

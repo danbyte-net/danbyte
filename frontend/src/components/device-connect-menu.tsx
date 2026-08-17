@@ -64,7 +64,12 @@ function replaceAll(s: string, from: string, to: string): string {
  */
 function buildUrl(
   template: string,
-  { host, name, port, username }: {
+  {
+    host,
+    name,
+    port,
+    username,
+  }: {
     host: string
     name: string
     port: number | null
@@ -95,7 +100,11 @@ function isSshTemplate(template: string): boolean {
 }
 
 /** `ssh user@host` (or `ssh -p <port> user@host`), for pasting into a terminal. */
-function sshCommand(host: string, port: number | null, username: string): string {
+function sshCommand(
+  host: string,
+  port: number | null,
+  username: string
+): string {
   const target = username ? `${username}@${host}` : host
   return port != null ? `ssh -p ${port} ${target}` : `ssh ${target}`
 }
@@ -200,125 +209,119 @@ export function DeviceConnectMenu({ device }: { device: Device }) {
 
   return (
     <>
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Plug className="h-3.5 w-3.5" /> Connect
-          <ChevronDown className="h-3.5 w-3.5" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-72">
-        <DropdownMenuLabel>Username</DropdownMenuLabel>
-        {usernames.length > 0 ? (
-          <DropdownMenuRadioGroup
-            value={username}
-            onValueChange={chooseUsername}
-          >
-            {usernames.map((u) => (
-              <DropdownMenuRadioItem
-                key={u}
-                value={u}
-                // Keep the menu open so a protocol can be picked next.
-                onSelect={(e) => e.preventDefault()}
-              >
-                <span className="font-mono text-xs">{u}</span>
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-        ) : (
-          // Radix menus hijack keystrokes for typeahead; stop propagation so
-          // the field types normally.
-          <div
-            className="px-2 py-1.5"
-            onKeyDown={(e) => e.stopPropagation()}
-          >
-            <Input
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm">
+            <Plug className="h-3.5 w-3.5" /> Connect
+            <ChevronDown className="h-3.5 w-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-72">
+          <DropdownMenuLabel>Username</DropdownMenuLabel>
+          {usernames.length > 0 ? (
+            <DropdownMenuRadioGroup
               value={username}
-              onChange={(e) => chooseUsername(e.target.value)}
-              placeholder="username (optional)"
-              className="h-8 font-mono text-xs"
-            />
-          </div>
-        )}
-        <DropdownMenuSeparator />
-        {terminalEnabled && (
-          <>
-            <DropdownMenuItem onSelect={() => setTermOpen(true)}>
-              <TerminalSquare className="h-3.5 w-3.5" /> Open web terminal
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-          </>
-        )}
-        {protocolsQ.isLoading ? (
-          <div className="px-2 py-1.5 text-xs text-muted-foreground">
-            Loading…
-          </div>
-        ) : protocols.length === 0 ? (
-          <div className="px-2 py-1.5 text-xs text-muted-foreground">
-            No connect protocols —{" "}
-            <Link
-              to="/settings/connect"
-              className="text-primary hover:underline"
+              onValueChange={chooseUsername}
             >
-              configure them in Settings
-            </Link>
-          </div>
-        ) : (
-          protocols.map((proto) => {
-            const Icon = getLucideIcon(proto.icon) ?? Plug
-            const url = buildUrl(proto.url_template, {
-              host,
-              name: device.name,
-              port: proto.default_port,
-              username,
-            })
-            return (
-              <DropdownMenuSub key={proto.id}>
-                <DropdownMenuSubTrigger>
-                  <Icon className="h-3.5 w-3.5" />
-                  <span className="ml-2">{proto.name}</span>
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="w-56">
-                  <div className="px-2 py-1 font-mono text-[11px] break-all text-muted-foreground">
-                    {url}
-                  </div>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={() => launch(proto)}>
-                    <ExternalLink className="h-3.5 w-3.5" /> Launch
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() =>
-                      copy(url, `Copied ${proto.name} URL to the clipboard`)
-                    }
-                  >
-                    <Copy className="h-3.5 w-3.5" /> Copy URL
-                  </DropdownMenuItem>
-                  {isSshTemplate(proto.url_template) && (
+              {usernames.map((u) => (
+                <DropdownMenuRadioItem
+                  key={u}
+                  value={u}
+                  // Keep the menu open so a protocol can be picked next.
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  <span className="font-mono text-xs">{u}</span>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          ) : (
+            // Radix menus hijack keystrokes for typeahead; stop propagation so
+            // the field types normally.
+            <div className="px-2 py-1.5" onKeyDown={(e) => e.stopPropagation()}>
+              <Input
+                value={username}
+                onChange={(e) => chooseUsername(e.target.value)}
+                placeholder="username (optional)"
+                className="h-8 font-mono text-xs"
+              />
+            </div>
+          )}
+          <DropdownMenuSeparator />
+          {terminalEnabled && (
+            <>
+              <DropdownMenuItem onSelect={() => setTermOpen(true)}>
+                <TerminalSquare className="h-3.5 w-3.5" /> Open web terminal
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
+          {protocolsQ.isLoading ? (
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+              Loading…
+            </div>
+          ) : protocols.length === 0 ? (
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+              No connect protocols —{" "}
+              <Link to="/settings/connect" className="link">
+                configure them in Settings
+              </Link>
+            </div>
+          ) : (
+            protocols.map((proto) => {
+              const Icon = getLucideIcon(proto.icon) ?? Plug
+              const url = buildUrl(proto.url_template, {
+                host,
+                name: device.name,
+                port: proto.default_port,
+                username,
+              })
+              return (
+                <DropdownMenuSub key={proto.id}>
+                  <DropdownMenuSubTrigger>
+                    <Icon className="h-3.5 w-3.5" />
+                    <span className="ml-2">{proto.name}</span>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-56">
+                    <div className="px-2 py-1 font-mono text-[11px] break-all text-muted-foreground">
+                      {url}
+                    </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={() => launch(proto)}>
+                      <ExternalLink className="h-3.5 w-3.5" /> Launch
+                    </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={() =>
-                        copy(
-                          sshCommand(host, proto.default_port, username),
-                          "Copied SSH command to the clipboard"
-                        )
+                        copy(url, `Copied ${proto.name} URL to the clipboard`)
                       }
                     >
-                      <Terminal className="h-3.5 w-3.5" /> Copy SSH command
+                      <Copy className="h-3.5 w-3.5" /> Copy URL
                     </DropdownMenuItem>
-                  )}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-            )
-          })
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-    {terminalEnabled && (
-      <DeviceTerminalDialog
-        device={device}
-        open={termOpen}
-        onOpenChange={setTermOpen}
-      />
-    )}
+                    {isSshTemplate(proto.url_template) && (
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          copy(
+                            sshCommand(host, proto.default_port, username),
+                            "Copied SSH command to the clipboard"
+                          )
+                        }
+                      >
+                        <Terminal className="h-3.5 w-3.5" /> Copy SSH command
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              )
+            })
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {terminalEnabled && (
+        <DeviceTerminalDialog
+          device={device}
+          open={termOpen}
+          onOpenChange={setTermOpen}
+        />
+      )}
     </>
   )
 }

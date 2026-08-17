@@ -145,7 +145,7 @@ function MarkBody({
             to="/planning/$boardId"
             params={{ boardId: mark.boardId }}
             search={{ task: mark.taskId }}
-            className="text-primary hover:underline"
+            className="link"
           >
             Open the task
           </Link>

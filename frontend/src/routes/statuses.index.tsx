@@ -200,7 +200,7 @@ function IpStatusesPage() {
                 </span>
                 {weightRange && (
                   <button
-                    className="text-[11px] text-primary hover:underline"
+                    className="link text-[11px]"
                     onClick={() => setWeightRange(null)}
                   >
                     Reset

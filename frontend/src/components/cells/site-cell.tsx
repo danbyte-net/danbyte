@@ -39,7 +39,7 @@ export function SiteCell({ site, linked = true, className }: SiteCellProps) {
     <Link
       to="/sites/$id"
       params={{ id: site.id }}
-      className={className ? `${className} hover:underline` : "hover:underline"}
+      className={className ? `${className} link` : "link"}
     >
       {site.name}
     </Link>

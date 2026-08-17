@@ -737,6 +737,34 @@ export function DeviceTypeFaceplatePane({
                       </SelectContent>
                     </Select>
                   )}
+                  {deviceType.u_height > 1 && (
+                    <Select
+                      value={String(selected.uSpan ?? 1)}
+                      onValueChange={(v) =>
+                        patchGroup(selected.id, {
+                          uSpan: Number(v) > 1 ? Number(v) : undefined,
+                        })
+                      }
+                      disabled={!canWrite}
+                    >
+                      <SelectTrigger size="sm" className="h-7 w-24 text-[12px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from(
+                          {
+                            length:
+                              deviceType.u_height - ((selected.u ?? 1) - 1),
+                          },
+                          (_, i) => i + 1
+                        ).map((s) => (
+                          <SelectItem key={s} value={String(s)}>
+                            {s === 1 ? "1 U tall" : `${s} U tall`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   {canWrite && (
                     <>
                       {!selected.bay && (
@@ -810,58 +838,83 @@ export function DeviceTypeFaceplatePane({
                 paddingBottom: 6,
               }}
             >
-              {Array.from(
-                { length: Math.max(1, deviceType.u_height) },
-                (_, i) => i + 1
-              ).map((lane) => {
-                const laneGroups = sideGroups.filter((g) => (g.u ?? 1) === lane)
-                return (
-                  <div
-                    key={lane}
-                    className="flex items-center border-b border-border/40 last:border-b-0"
-                    style={{
-                      columnGap: Math.round(PANEL_MM.groupGap * BUILDER_SCALE),
-                      minHeight: Math.round(PANEL_MM.face * BUILDER_SCALE),
-                    }}
-                  >
-                    {deviceType.u_height > 1 && (
-                      <span className="num w-5 shrink-0 text-right font-mono text-[9px] text-muted-foreground/60">
-                        U{lane}
-                      </span>
-                    )}
-                    {laneGroups.map((g) => {
-                      const gi = sideGroups.indexOf(g)
-                      return (
-                        <BuilderGroup
-                          key={g.id}
-                          group={g}
-                          gi={gi}
-                          selected={g.id === selectedGroup}
-                          onSelect={() => setSelectedGroup(g.id)}
-                          canWrite={canWrite}
-                          templateIndex={templateIndex}
-                          onRemoveSlot={(i) => removeSlot(g.id, i)}
-                        />
-                      )
-                    })}
-                    <NewGroupZone
-                      lane={lane}
-                      onClick={() => {
-                        if (!canWrite) return
-                        const id = newGroupId()
-                        update({
-                          ...draft,
-                          [side]: [
-                            ...sideGroups,
-                            { id, rows: 1, bank: 0, u: lane, slots: [] },
-                          ],
-                        })
-                        setSelectedGroup(id)
+              {(() => {
+                // Lanes swallowed by a group above them that spans >1 U —
+                // they become part of that group's taller canvas, so they get
+                // no separate row/"+" zone (unless they hold their own group).
+                const covered = new Set<number>()
+                for (const g of sideGroups) {
+                  const span = g.uSpan ?? 1
+                  if (span > 1) {
+                    const start = g.u ?? 1
+                    for (let k = 1; k < span; k++) covered.add(start + k)
+                  }
+                }
+                return Array.from(
+                  { length: Math.max(1, deviceType.u_height) },
+                  (_, i) => i + 1
+                ).map((lane) => {
+                  const laneGroups = sideGroups.filter(
+                    (g) => (g.u ?? 1) === lane
+                  )
+                  if (covered.has(lane) && laneGroups.length === 0) return null
+                  const spanU = laneGroups.reduce(
+                    (m, g) => Math.max(m, g.uSpan ?? 1),
+                    1
+                  )
+                  const laneH =
+                    Math.round(PANEL_MM.face * BUILDER_SCALE) * spanU +
+                    (spanU - 1) * 4
+                  return (
+                    <div
+                      key={lane}
+                      className="flex items-center border-b border-border/40 last:border-b-0"
+                      style={{
+                        columnGap: Math.round(
+                          PANEL_MM.groupGap * BUILDER_SCALE
+                        ),
+                        minHeight: laneH,
                       }}
-                    />
-                  </div>
-                )
-              })}
+                    >
+                      {deviceType.u_height > 1 && (
+                        <span className="num w-5 shrink-0 text-right font-mono text-[9px] text-muted-foreground/60">
+                          U{lane}
+                        </span>
+                      )}
+                      {laneGroups.map((g) => {
+                        const gi = sideGroups.indexOf(g)
+                        return (
+                          <BuilderGroup
+                            key={g.id}
+                            group={g}
+                            gi={gi}
+                            selected={g.id === selectedGroup}
+                            onSelect={() => setSelectedGroup(g.id)}
+                            canWrite={canWrite}
+                            templateIndex={templateIndex}
+                            onRemoveSlot={(i) => removeSlot(g.id, i)}
+                          />
+                        )
+                      })}
+                      <NewGroupZone
+                        lane={lane}
+                        onClick={() => {
+                          if (!canWrite) return
+                          const id = newGroupId()
+                          update({
+                            ...draft,
+                            [side]: [
+                              ...sideGroups,
+                              { id, rows: 1, bank: 0, u: lane, slots: [] },
+                            ],
+                          })
+                          setSelectedGroup(id)
+                        }}
+                      />
+                    </div>
+                  )
+                })
+              })()}
             </div>
 
             <p className="text-[11px] text-muted-foreground">

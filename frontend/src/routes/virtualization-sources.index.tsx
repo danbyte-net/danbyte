@@ -256,9 +256,9 @@ function VirtualizationSourcesPage() {
     >
       {rows.length === 0 && query.data && !q ? (
         <EmptyState title="No virtualization sources.">
-          Connect a Proxmox VE cluster with an API token and Danbyte imports its
-          virtual machines, their interfaces and guest IPs into the cluster/VM
-          inventory — and keeps them fresh.
+          Connect a Proxmox VE cluster or a VMware vCenter and Danbyte imports
+          its virtual machines, their interfaces and guest IPs into the
+          cluster/VM inventory — and keeps them fresh.
         </EmptyState>
       ) : (
         <DataTable
@@ -295,12 +295,27 @@ function SourceDialog({
 }) {
   const qc = useQueryClient()
   const isEdit = !!source
+  const [kind, setKind] = useState<string>(source?.kind ?? "proxmox")
+  const isVcenter = kind === "vcenter"
+  const defaultPort = isVcenter ? 443 : 8006
   const [name, setName] = useState(source?.name ?? "")
   const [host, setHost] = useState(source?.host ?? "")
-  const [port, setPort] = useState(String(source?.port ?? 8006))
+  const [port, setPort] = useState(String(source?.port ?? defaultPort))
   const [verifySsl, setVerifySsl] = useState(source?.verify_ssl ?? false)
   const [tokenId, setTokenId] = useState("")
   const [secret, setSecret] = useState("")
+  const [username, setUsername] = useState("")
+  const [password, setPassword] = useState("")
+
+  // On create, switching kind swaps the conventional default API port unless the
+  // operator has typed a non-default one.
+  function changeKind(next: string | null) {
+    const k = next ?? "proxmox"
+    if (!isEdit && (port === "" || port === "8006" || port === "443")) {
+      setPort(String(k === "vcenter" ? 443 : 8006))
+    }
+    setKind(k)
+  }
   const [syncMode, setSyncMode] = useState<string>(
     source?.sync_mode ?? "review"
   )
@@ -313,16 +328,21 @@ function SourceDialog({
     mutationFn: () => {
       const body: Record<string, unknown> = {
         name: name.trim(),
-        kind: "proxmox",
+        kind,
         host: host.trim(),
-        port: Number(port) || 8006,
+        port: Number(port) || defaultPort,
         verify_ssl: verifySsl,
         sync_mode: syncMode,
         poll_interval_minutes: Number(interval) || 10,
         enabled,
       }
-      if (tokenId.trim()) body.token_id = tokenId.trim()
-      if (secret) body.secret = secret
+      if (isVcenter) {
+        if (username.trim()) body.username = username.trim()
+        if (password) body.password = password
+      } else {
+        if (tokenId.trim()) body.token_id = tokenId.trim()
+        if (secret) body.secret = secret
+      }
       if (isEdit)
         return api<VirtualizationSource>(
           `/api/virtualization-sources/${source.id}/`,
@@ -341,15 +361,19 @@ function SourceDialog({
     onError: (e) => apiErrorToast(e),
   })
 
-  const valid =
-    name.trim() && host.trim() && (isEdit || (tokenId.trim() && secret))
+  const credsValid = isVcenter
+    ? username.trim() && password
+    : tokenId.trim() && secret
+  const valid = name.trim() && host.trim() && (isEdit || credsValid)
+
+  const kindLabel = isVcenter ? "vCenter" : "Proxmox"
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>
-            {isEdit ? "Edit Proxmox source" : "Add Proxmox source"}
+            {isEdit ? `Edit ${kindLabel} source` : `Add ${kindLabel} source`}
           </DialogTitle>
         </DialogHeader>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -358,15 +382,30 @@ function SourceDialog({
             value={name}
             onChange={setName}
             required
-            placeholder="DB-CLUSTER01"
+            placeholder={isVcenter ? "vcenter.example.com" : "DB-CLUSTER01"}
           />
+          {!isEdit && (
+            <FormSelect
+              label="Type"
+              value={kind}
+              onChange={changeKind}
+              options={[
+                { value: "proxmox", label: "Proxmox VE" },
+                { value: "vcenter", label: "VMware vCenter" },
+              ]}
+            />
+          )}
           <FormText
             label="Host"
             value={host}
             onChange={setHost}
             required
-            placeholder="10.0.0.11"
-            info="Any cluster node works — the API answers cluster-wide."
+            placeholder={isVcenter ? "vcenter.danbyte.lan" : "10.0.0.11"}
+            info={
+              isVcenter
+                ? "The vCenter Server FQDN or IP."
+                : "Any cluster node works — the API answers cluster-wide."
+            }
           />
           <FormText label="API port" value={port} onChange={setPort} />
           <FormSelect
@@ -385,23 +424,49 @@ function SourceDialog({
             value={interval}
             onChange={setInterval}
           />
-          <FormText
-            label="API token id"
-            value={tokenId}
-            onChange={setTokenId}
-            mono
-            placeholder={isEdit ? "(unchanged)" : "danbyte@pam!sync"}
-            info="Datacenter → Permissions → API Tokens. The PVEAuditor role is enough for read sync."
-            required={!isEdit}
-          />
-          <FormText
-            label="Token secret"
-            value={secret}
-            onChange={setSecret}
-            type="password"
-            placeholder={isEdit ? "(unchanged)" : ""}
-            required={!isEdit}
-          />
+          {isVcenter ? (
+            <>
+              <FormText
+                label="Username"
+                value={username}
+                onChange={setUsername}
+                mono
+                placeholder={
+                  isEdit ? "(unchanged)" : "administrator@vsphere.local"
+                }
+                info="A read-only vCenter SSO user is enough for inventory sync."
+                required={!isEdit}
+              />
+              <FormText
+                label="Password"
+                value={password}
+                onChange={setPassword}
+                type="password"
+                placeholder={isEdit ? "(unchanged)" : ""}
+                required={!isEdit}
+              />
+            </>
+          ) : (
+            <>
+              <FormText
+                label="API token id"
+                value={tokenId}
+                onChange={setTokenId}
+                mono
+                placeholder={isEdit ? "(unchanged)" : "danbyte@pam!sync"}
+                info="Datacenter → Permissions → API Tokens. The PVEAuditor role is enough for read sync."
+                required={!isEdit}
+              />
+              <FormText
+                label="Token secret"
+                value={secret}
+                onChange={setSecret}
+                type="password"
+                placeholder={isEdit ? "(unchanged)" : ""}
+                required={!isEdit}
+              />
+            </>
+          )}
           <div className="flex flex-col justify-end gap-2 pb-1">
             <FormCheckbox
               label="Verify TLS certificate"

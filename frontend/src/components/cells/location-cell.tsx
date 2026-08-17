@@ -37,7 +37,7 @@ export function LocationCell({
     <Link
       to="/locations/$id"
       params={{ id: location.id }}
-      className={className ? `${className} hover:underline` : "hover:underline"}
+      className={className ? `${className} link` : "link"}
     >
       {location.name}
     </Link>

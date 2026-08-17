@@ -66,11 +66,20 @@ function DnsZonesPage() {
         id: "records",
         accessorKey: "record_count",
         header: ({ column }) => <SortHeader column={column} label="Records" />,
-        cell: ({ row }) => (
-          <span className="num">
-            {row.original.sync ? row.original.record_count : "—"}
-          </span>
-        ),
+        cell: ({ row }) =>
+          row.original.sync && row.original.record_count > 0 ? (
+            <Link
+              to="/dns-records"
+              search={{ zone: row.original.id }}
+              className="num hover:underline"
+            >
+              {row.original.record_count}
+            </Link>
+          ) : (
+            <span className="num">
+              {row.original.sync ? row.original.record_count : "—"}
+            </span>
+          ),
       },
       {
         id: "reconcile",

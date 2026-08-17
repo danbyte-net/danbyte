@@ -142,7 +142,7 @@ function WatchedEndpointsPage() {
             <Link
               to="/certificates/$id"
               params={{ id: r.last_certificate }}
-              className="text-primary hover:underline"
+              className="link"
               title={r.last_certificate_fingerprint ?? undefined}
             >
               {label}

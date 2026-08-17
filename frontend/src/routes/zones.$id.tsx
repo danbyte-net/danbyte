@@ -191,7 +191,7 @@ function ZoneOverview({ zone: z }: { zone: Zone }) {
         <Link
           to="/sites/$id"
           params={{ id: z.owning_site.id }}
-          className="text-primary hover:underline"
+          className="link"
         >
           {z.owning_site.name}
         </Link>

@@ -125,7 +125,7 @@ function buildColumns({
           <Link
             to="/manufacturers/$id"
             params={{ id: row.original.manufacturer.id }}
-            className="text-xs text-primary hover:underline"
+            className="link text-xs"
           >
             {row.original.manufacturer.name}
           </Link>

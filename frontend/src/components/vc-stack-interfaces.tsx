@@ -148,7 +148,7 @@ export function StackInterfacesTable({
               <Link
                 to="/devices/$id"
                 params={{ id: m.id }}
-                className="font-mono text-[13px] text-primary hover:underline"
+                className="link font-mono text-[13px]"
               >
                 {m.name}
               </Link>

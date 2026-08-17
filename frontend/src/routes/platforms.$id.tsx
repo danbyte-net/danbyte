@@ -88,7 +88,7 @@ function Body({ platform: p }: { platform: Platform }) {
               <Link
                 to="/manufacturers/$id"
                 params={{ id: p.manufacturer.id }}
-                className="text-primary hover:underline"
+                className="link"
               >
                 {p.manufacturer.name}
               </Link>

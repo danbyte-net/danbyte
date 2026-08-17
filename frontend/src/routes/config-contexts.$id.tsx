@@ -217,22 +217,12 @@ function ContextOverview({ context: c }: { context: ConfigContext }) {
 
   const scope: KvRow[] = [
     scopeRow("Regions", c.regions, (r) => (
-      <Link
-        key={r.id}
-        to="/regions/$id"
-        params={{ id: r.id }}
-        className="text-primary hover:underline"
-      >
+      <Link key={r.id} to="/regions/$id" params={{ id: r.id }} className="link">
         {r.name}
       </Link>
     )),
     scopeRow("Sites", c.sites, (s) => (
-      <Link
-        key={s.id}
-        to="/sites/$id"
-        params={{ id: s.id }}
-        className="text-primary hover:underline"
-      >
+      <Link key={s.id} to="/sites/$id" params={{ id: s.id }} className="link">
         {s.name}
       </Link>
     )),
@@ -241,7 +231,7 @@ function ContextOverview({ context: c }: { context: ConfigContext }) {
         key={r.id}
         to="/device-roles/$id"
         params={{ id: r.id }}
-        className="text-primary hover:underline"
+        className="link"
       >
         {r.name}
       </Link>
@@ -251,7 +241,7 @@ function ContextOverview({ context: c }: { context: ConfigContext }) {
         key={p.id}
         to="/platforms/$id"
         params={{ id: p.id }}
-        className="text-primary hover:underline"
+        className="link"
       >
         {p.name}
       </Link>

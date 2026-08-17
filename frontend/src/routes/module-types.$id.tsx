@@ -83,7 +83,7 @@ function Body({ moduleType: m }: { moduleType: ModuleType }) {
         <Link
           to="/manufacturers/$id"
           params={{ id: m.manufacturer.id }}
-          className="text-primary hover:underline"
+          className="link"
         >
           {m.manufacturer.name}
         </Link>

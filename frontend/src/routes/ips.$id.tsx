@@ -160,7 +160,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
         <Link
           to="/interfaces/$id"
           params={{ id: ip.assigned_interface.id }}
-          className="font-mono text-primary hover:underline"
+          className="link font-mono"
         >
           {ip.assigned_interface.name}
         </Link>
@@ -175,7 +175,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
         <Link
           to="/virtual-machines/$id"
           params={{ id: ip.assigned_vm.id }}
-          className="text-primary hover:underline"
+          className="link"
         >
           {ip.assigned_vm.name}
         </Link>
@@ -209,7 +209,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
           <Link
             to="/interfaces/$id"
             params={{ id: ip.switch_interface.id }}
-            className="font-mono text-primary hover:underline"
+            className="link font-mono"
           >
             {ip.switch_interface.name}
           </Link>
@@ -230,7 +230,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
         <Link
           to="/macs/$mac"
           params={{ mac: ip.mac_address }}
-          className="font-mono text-primary hover:underline"
+          className="link font-mono"
         >
           {ip.mac_address}
         </Link>

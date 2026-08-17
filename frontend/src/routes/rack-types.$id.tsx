@@ -95,7 +95,7 @@ function Body({ rackType: rt }: { rackType: RackType }) {
         <Link
           to="/manufacturers/$id"
           params={{ id: rt.manufacturer.id }}
-          className="text-primary hover:underline"
+          className="link"
         >
           {rt.manufacturer.name}
         </Link>

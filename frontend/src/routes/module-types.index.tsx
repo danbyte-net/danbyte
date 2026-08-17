@@ -77,7 +77,7 @@ function ModuleTypesPage() {
         <p className="max-w-xl text-sm text-muted-foreground">
           No module types yet. Add one, or import them from the NetBox
           devicetype-library on the{" "}
-          <Link to="/device-types" className="text-primary hover:underline">
+          <Link to="/device-types" className="link">
             Device types
           </Link>{" "}
           page — module-type files are auto-detected.

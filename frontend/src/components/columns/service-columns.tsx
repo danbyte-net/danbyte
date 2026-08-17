@@ -126,7 +126,7 @@ export function buildServiceColumns<T extends Service = Service>(
             <Link
               to="/devices/$id"
               params={{ id: s.device.id }}
-              className="text-xs text-primary hover:underline"
+              className="link text-xs"
             >
               {s.device.name}
             </Link>
@@ -136,7 +136,7 @@ export function buildServiceColumns<T extends Service = Service>(
             <Link
               to="/virtual-machines/$id"
               params={{ id: s.virtual_machine.id }}
-              className="text-xs text-primary hover:underline"
+              className="link text-xs"
             >
               {s.virtual_machine.name}
             </Link>
@@ -154,7 +154,7 @@ export function buildServiceColumns<T extends Service = Service>(
           <Link
             to="/ips/$id"
             params={{ id: ip.id }}
-            className="font-mono text-xs text-primary hover:underline"
+            className="link font-mono text-xs"
           >
             {ip.ip_address}
           </Link>

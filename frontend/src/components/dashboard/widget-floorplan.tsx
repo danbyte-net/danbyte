@@ -30,7 +30,8 @@ export function FloorplanWidget() {
   })
   const state = useQuery({
     queryKey: ["floor-plan-state", plan?.id],
-    queryFn: () => api<FloorPlanLiveState>(`/api/floor-plans/${plan!.id}/state/`),
+    queryFn: () =>
+      api<FloorPlanLiveState>(`/api/floor-plans/${plan!.id}/state/`),
     enabled: !!plan,
     refetchInterval: 30_000,
   })
@@ -43,7 +44,7 @@ export function FloorplanWidget() {
       <div className="flex h-56 items-center justify-center rounded-md border border-dashed border-border p-4 text-center text-[13px] text-muted-foreground">
         <span>
           No floor plans yet —{" "}
-          <Link to="/floorplans" className="text-primary hover:underline">
+          <Link to="/floorplans" className="link">
             create one
           </Link>
           .

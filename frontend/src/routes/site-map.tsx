@@ -1263,7 +1263,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
                   href="/docs/features/site-map/"
                   target="_blank"
                   rel="noreferrer"
-                  className="text-primary hover:underline"
+                  className="link"
                 >
                   the Site map docs
                 </a>{" "}
@@ -1299,7 +1299,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           {/* rich popover, anchored to the selected object */}
           {popPos && (selSite || selDevice || selMarker || selConn) && (
             <div
-              className="absolute z-[900] w-max min-w-[15rem] max-w-[22rem] -translate-x-1/2 rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+              className="absolute z-[900] w-max max-w-[22rem] min-w-[15rem] -translate-x-1/2 rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg"
               style={{ left: popPos.x, top: popPos.y + 14 }}
             >
               {selSite && (
@@ -1763,11 +1763,7 @@ function deviceFieldRow(
         ? {
             label: "Site",
             node: (
-              <Link
-                to="/sites/$id"
-                params={{ id: d.site.id }}
-                className="text-primary hover:underline"
-              >
+              <Link to="/sites/$id" params={{ id: d.site.id }} className="link">
                 {d.site.name}
               </Link>
             ),
@@ -1785,7 +1781,7 @@ function deviceFieldRow(
               <Link
                 to="/ips/$id"
                 params={{ id: d.primary_ip.id }}
-                className="font-mono text-primary hover:underline"
+                className="link font-mono"
               >
                 {d.primary_ip.ip_address}
               </Link>
@@ -1905,7 +1901,7 @@ function DevicePopover({
         </span>
         {cableIds.length > 0 && (
           <button
-            className="inline-flex items-center gap-1 text-primary hover:underline"
+            className="link inline-flex items-center gap-1"
             onClick={() => onTrace(cableIds)}
           >
             <Waypoints className="size-3.5" /> Trace
@@ -2056,7 +2052,7 @@ function MarkerDeviceLink({
           <Link
             to="/devices/$id"
             params={{ id: m.device.id }}
-            className="flex-1 truncate font-mono text-[12px] text-primary hover:underline"
+            className="link flex-1 truncate font-mono text-[12px]"
           >
             {m.device.name}
           </Link>

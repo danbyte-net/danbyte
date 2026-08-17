@@ -370,7 +370,7 @@ export function RackElevation({
                           <Link
                             to="/devices/new"
                             search={{ rack: rack.id, position: unit, face }}
-                            className="rounded px-1 text-[10px] font-medium text-primary hover:underline"
+                            className="link rounded px-1 text-[10px] font-medium"
                           >
                             + Add
                           </Link>
@@ -379,7 +379,7 @@ export function RackElevation({
                           <button
                             type="button"
                             onClick={() => setAssignUnit(unit)}
-                            className="rounded px-1 text-[10px] font-medium text-primary hover:underline"
+                            className="link rounded px-1 text-[10px] font-medium"
                           >
                             Assign
                           </button>

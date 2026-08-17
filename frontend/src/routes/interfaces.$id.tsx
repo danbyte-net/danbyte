@@ -150,7 +150,7 @@ function Body({ iface: i }: { iface: Interface }) {
                   <Link
                     to="/devices/$id"
                     params={{ id: i.device.id }}
-                    className="font-mono text-primary hover:underline"
+                    className="link font-mono"
                   >
                     {i.device.name}
                   </Link>
@@ -230,7 +230,7 @@ function Body({ iface: i }: { iface: Interface }) {
                   <Link
                     to="/ips/$id"
                     params={{ id: ip.id }}
-                    className="block px-3 py-2 font-mono text-[13px] text-primary hover:bg-muted/60 hover:underline"
+                    className="link block px-3 py-2 font-mono text-[13px] hover:bg-muted/60"
                   >
                     {ip.ip_address}
                   </Link>
@@ -332,7 +332,7 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
                 <Link
                   to="/macs/$mac"
                   params={{ mac: m.mac_address }}
-                  className="font-mono text-[13px] text-primary hover:underline"
+                  className="link font-mono text-[13px]"
                 >
                   {m.mac_address}
                 </Link>
@@ -360,7 +360,7 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
         <Link
           to="/vlans/$id"
           params={{ id: i.vlan.id }}
-          className="font-mono text-[13px] text-primary hover:underline"
+          className="link font-mono text-[13px]"
         >
           {i.vlan.vlan_id} · {i.vlan.name}
         </Link>
@@ -378,7 +378,7 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
                 key={v.id}
                 to="/vlans/$id"
                 params={{ id: v.id }}
-                className="font-mono text-[12px] text-primary hover:underline"
+                className="link font-mono text-[12px]"
               >
                 {v.vlan_id}
               </Link>
@@ -394,7 +394,7 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
         <Link
           to="/vrfs/$id"
           params={{ id: i.vrf.id }}
-          className="text-[13px] text-primary hover:underline"
+          className="link text-[13px]"
         >
           {i.vrf.name}
         </Link>
@@ -411,7 +411,7 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
         <Link
           to="/interfaces/$id"
           params={{ id: i.parent.id }}
-          className="font-mono text-primary hover:underline"
+          className="link font-mono"
         >
           {i.parent.name}
         </Link>
@@ -425,7 +425,7 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
         <Link
           to="/interfaces/$id"
           params={{ id: i.lag.id }}
-          className="font-mono text-primary hover:underline"
+          className="link font-mono"
         >
           {i.lag.name}
         </Link>
@@ -439,7 +439,7 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
         <Link
           to="/interfaces/$id"
           params={{ id: i.bridge.id }}
-          className="font-mono text-primary hover:underline"
+          className="link font-mono"
         >
           {i.bridge.name}
         </Link>
@@ -457,7 +457,7 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
                 <Link
                   to="/tunnels/$id"
                   params={{ id: tt.tunnel.id }}
-                  className="text-[13px] text-primary hover:underline"
+                  className="link text-[13px]"
                 >
                   {tt.tunnel.name}
                 </Link>
@@ -540,11 +540,7 @@ function InterfaceDriftAlert({
       <p className="mb-2 text-[12px] text-muted-foreground">
         SNMP observed values that differ from the source of truth. Review and
         accept them in the device's{" "}
-        <Link
-          to="/devices/$id"
-          params={{ id: deviceId }}
-          className="text-primary hover:underline"
-        >
+        <Link to="/devices/$id" params={{ id: deviceId }} className="link">
           Drift panel
         </Link>{" "}
         — nothing changes here until you do.

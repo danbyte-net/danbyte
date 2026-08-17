@@ -76,6 +76,10 @@ export interface FaceplateGroup {
   /** Which rack unit of the panel this group sits in (1-based lane, top
    * lane = 1). Multi-U devices place groups per U; default 1. */
   u?: number
+  /** How many rack units this group spans, starting at `u`. >1 turns the
+   * group's lane into a single taller canvas covering that many U (the covered
+   * lanes below get no separate "+" zone). Default/undefined = 1. */
+  uSpan?: number
   /** Module-bay placeholder: the name of the module bay this group stands in
    * for. On a device render, an installed module's faceplate is composed *in
    * place of* this group; an empty bay draws its blank cage(s). Set on the
@@ -408,6 +412,7 @@ export function composeModuleFaceplates(
           rows: placeholder.rows,
           bank: placeholder.bank,
           u: placeholder.u,
+          uSpan: placeholder.uSpan,
           slots: ifaces.map((p) => ({ t: "port", name: p.name })),
         },
       ]

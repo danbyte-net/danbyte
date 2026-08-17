@@ -359,9 +359,14 @@ the same true-scale drawing devices render, with every cage draggable:
   **into that spot** (`{module}` resolves to the bay position); an empty bay
   shows a labelled placeholder cage. A bay you don't place still appends its
   module at the end, as before — so old layouts keep working.
-- **Click a group** to edit its **label**, **1 or 2 rows**, and **banking**
+- **Click a group** to edit its **label**, **rows** (1–4), and **banking**
   (visual gaps every N ports) in the toolbar, or add **blank** cages and
   silk-screen **label** text.
+- On a **multi-U** device the panel splits into one lane per rack unit; the
+  toolbar's **U** control picks a group's unit. Set **U tall** to have a group
+  span several units — the lanes it covers merge into one taller canvas (no
+  separate **+** zone), handy for devices whose ports don't line up on U
+  boundaries.
 - **Save** stores the layout on the device type — every device of the type
   (including each member of a [virtual chassis](virtual-chassis.md); `{position}`
   names resolve per member) renders it, and devices with a rear side get a

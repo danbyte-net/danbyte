@@ -139,7 +139,7 @@ function MemberBar({
           <Link
             to="/devices/$id"
             params={{ id: m.id }}
-            className="truncate font-mono text-[13px] font-medium text-primary hover:underline"
+            className="link truncate font-mono text-[13px] font-medium"
           >
             {m.name}
           </Link>

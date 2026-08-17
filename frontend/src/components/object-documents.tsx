@@ -309,7 +309,7 @@ function DocumentRow({
                 href={doc.url ?? undefined}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex max-w-full items-center gap-1 truncate text-primary hover:underline"
+                className="link inline-flex max-w-full items-center gap-1 truncate"
               >
                 <ExternalLink className="h-3 w-3 shrink-0" />
                 <span className="truncate">{doc.url}</span>

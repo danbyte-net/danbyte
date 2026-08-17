@@ -409,11 +409,7 @@ function IfaceLink({ name, id }: { name: string; id?: string }) {
   if (!name) return <Muted />
   if (!id) return <span className="font-mono">{name}</span>
   return (
-    <Link
-      to="/interfaces/$id"
-      params={{ id }}
-      className="font-mono text-primary hover:underline"
-    >
+    <Link to="/interfaces/$id" params={{ id }} className="link font-mono">
       {name}
     </Link>
   )
@@ -433,11 +429,7 @@ function VlanLink({
   const label = name ? `${vid} · ${name}` : vid
   if (!id) return <span className="font-mono">{label}</span>
   return (
-    <Link
-      to="/vlans/$id"
-      params={{ id }}
-      className="font-mono text-primary hover:underline"
-    >
+    <Link to="/vlans/$id" params={{ id }} className="link font-mono">
       {label}
     </Link>
   )
@@ -461,7 +453,7 @@ function IpLinks({
             key={ip}
             to="/ips/$id"
             params={{ id }}
-            className="font-mono text-primary hover:underline"
+            className="link font-mono"
           >
             {ip}
           </Link>
@@ -479,11 +471,7 @@ function IpLinks({
 function MacLink({ mac }: { mac: string }) {
   if (!mac) return <Muted />
   return (
-    <Link
-      to="/macs/$mac"
-      params={{ mac }}
-      className="font-mono text-primary hover:underline"
-    >
+    <Link to="/macs/$mac" params={{ mac }} className="link font-mono">
       {mac}
     </Link>
   )

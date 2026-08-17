@@ -73,7 +73,7 @@ function Body({ group: g }: { group: PlatformGroup }) {
         <Link
           to="/platform-groups/$id"
           params={{ id: g.parent.id }}
-          className="text-primary hover:underline"
+          className="link"
         >
           {g.parent.name}
         </Link>
@@ -90,7 +90,7 @@ function Body({ group: g }: { group: PlatformGroup }) {
               key={c.id}
               to="/platform-groups/$id"
               params={{ id: c.id }}
-              className="text-primary hover:underline"
+              className="link"
             >
               {c.name}
             </Link>
@@ -138,7 +138,7 @@ function Body({ group: g }: { group: PlatformGroup }) {
               <Link
                 to="/platform-groups/$id"
                 params={{ id: g.parent.id }}
-                className="text-primary hover:underline"
+                className="link"
               >
                 {g.parent.name}
               </Link>
@@ -228,7 +228,7 @@ function GroupPlatforms({ groupId }: { groupId: string }) {
             <Link
               to="/platforms/$id"
               params={{ id: p.id }}
-              className="text-[13px] font-medium text-primary hover:underline"
+              className="link text-[13px] font-medium"
             >
               {p.name}
             </Link>

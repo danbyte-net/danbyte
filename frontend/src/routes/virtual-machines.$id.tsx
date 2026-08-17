@@ -116,7 +116,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
                   <Link
                     to="/clusters/$id"
                     params={{ id: vm.cluster.id }}
-                    className="text-xs text-primary hover:underline"
+                    className="text-xs link"
                   >
                     {vm.cluster.name}
                   </Link>
@@ -129,7 +129,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
                     <Link
                       to="/ips/$id"
                       params={{ id: vm.primary_ip.id }}
-                      className="font-mono text-[13px] text-primary hover:underline"
+                      className="font-mono text-[13px] link"
                     >
                       {vm.primary_ip.ip_address}
                     </Link>
@@ -181,7 +181,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
             <Link
               to="/virtual-machines/$id/edit"
               params={{ id: vm.id }}
-              className="text-primary hover:underline"
+              className="link"
             >
               Edit VM
             </Link>
@@ -260,7 +260,7 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
         <Link
           to="/clusters/$id"
           params={{ id: vm.cluster.id }}
-          className="text-primary hover:underline"
+          className="link"
         >
           {vm.cluster.name}
         </Link>
@@ -272,7 +272,7 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
         <Link
           to="/devices/$id"
           params={{ id: vm.device.id }}
-          className="text-primary hover:underline"
+          className="link"
         >
           {vm.device.name}
         </Link>
@@ -286,7 +286,7 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
         <Link
           to="/sites/$id"
           params={{ id: vm.site.id }}
-          className="text-primary hover:underline"
+          className="link"
         >
           {vm.site.name}
         </Link>
@@ -302,7 +302,7 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
         <Link
           to="/ips/$id"
           params={{ id: vm.primary_ip.id }}
-          className="font-mono text-[13px] text-primary hover:underline"
+          className="font-mono text-[13px] link"
         >
           {vm.primary_ip.ip_address}
         </Link>

@@ -192,7 +192,7 @@ function Body({ data }: { data: MacDetail }) {
                 <button
                   type="button"
                   onClick={() => setCreating(true)}
-                  className="text-primary hover:underline"
+                  className="link"
                 >
                   Create one
                 </button>
@@ -317,7 +317,7 @@ function MacObjectCard({
                 <Link
                   to="/devices/$id"
                   params={{ id: obj.assigned_interface.device.id }}
-                  className="font-mono text-xs text-primary hover:underline"
+                  className="link font-mono text-xs"
                 >
                   {obj.assigned_interface.device.name}
                 </Link>
@@ -325,7 +325,7 @@ function MacObjectCard({
                 <Link
                   to="/interfaces/$id"
                   params={{ id: obj.assigned_interface.id }}
-                  className="font-mono text-xs font-medium text-primary hover:underline"
+                  className="link font-mono text-xs font-medium"
                 >
                   {obj.assigned_interface.name}
                 </Link>

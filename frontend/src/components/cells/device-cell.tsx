@@ -36,11 +36,7 @@ export function DeviceCell({
     return <span className="text-muted-foreground">—</span>
   }
   const name = linked ? (
-    <Link
-      to="/devices/$id"
-      params={{ id: device.id }}
-      className="hover:underline"
-    >
+    <Link to="/devices/$id" params={{ id: device.id }} className="link">
       {device.name}
     </Link>
   ) : (

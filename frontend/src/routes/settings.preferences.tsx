@@ -7,6 +7,7 @@ import { TABLES, type TableMeta } from "@/lib/tables"
 import { api, type ColumnPrefSummary } from "@/lib/api"
 import { useUserPrefs } from "@/lib/use-user-prefs"
 import { useTheme } from "@/components/theme-provider"
+import { useLinkIcons } from "@/components/link-icons-provider"
 import { FormCheckbox, FormCombobox, FormSelect } from "@/components/forms"
 import { Button } from "@/components/ui/button"
 import { TwoFactorSection } from "@/components/two-factor-section"
@@ -111,6 +112,7 @@ function timezoneOptions(): { value: string; label: string }[] {
 
 function DisplaySection() {
   const { theme, toggleTheme } = useTheme()
+  const { linkIcons, setLinkIcons } = useLinkIcons()
   const { values, setPref } = useUserPrefs()
   const density = String(values.table_density ?? "comfortable")
   const stripes = values.table_stripes === true
@@ -140,6 +142,12 @@ function DisplaySection() {
             { value: "light", label: "Light" },
             { value: "dark", label: "Dark" },
           ]}
+        />
+        <FormCheckbox
+          label="Show link icon on linked objects"
+          hint="Adds a small chain glyph after links so clickable references stand out. Off keeps links as plain text that only underline on hover."
+          checked={linkIcons}
+          onChange={setLinkIcons}
         />
         <FormSelect
           label="Table density"

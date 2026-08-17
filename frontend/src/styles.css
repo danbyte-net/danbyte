@@ -67,6 +67,9 @@
   --border: oklch(0.92 0.004 286.32);
   --input: oklch(0.92 0.004 286.32);
   --ring: oklch(0.705 0.015 286.067);
+  /* Lucide `link-2` for the opt-in `.link-icon` variant; drawn as a
+     currentColor mask, so it's theme-independent (defined once here). */
+  --link-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 17H7A5 5 0 0 1 7 7h2'/%3E%3Cpath d='M15 7h2a5 5 0 1 1 0 10h-2'/%3E%3Cline x1='8' x2='16' y1='12' y2='12'/%3E%3C/svg%3E");
   --chart-1: oklch(0.828 0.111 230.318);
   --chart-2: oklch(0.685 0.169 237.323);
   --chart-3: oklch(0.588 0.158 241.966);
@@ -251,7 +254,7 @@
 .sm-pop-link {
   margin-top: 6px;
   font-size: 12px;
-  color: var(--primary);
+  color: inherit;
   cursor: pointer;
 }
 .sm-pop-link:hover {
@@ -405,6 +408,47 @@
    dedicated formatting commit if variants (`sm:num`) are ever wanted. */
 .num {
   font-variant-numeric: tabular-nums;
+}
+
+/* Canonical link. Neutral by design: inherits the surrounding text colour (no
+   blue) and only reveals an underline on hover / keyboard focus, so a page
+   dense with object references doesn't turn into a wall of blue. `--primary`
+   stays reserved for buttons, active tabs and focus rings — never links.
+   Plain rule, not `@utility`, to keep prettier from re-sorting `link` across
+   its ~150 call sites (same reasoning as `.num` above).
+   Opt-in `.link-icon` adds a trailing chain glyph (Lucide `link-2`) for the
+   few prominent standalone links where an explicit affordance earns its keep;
+   it is deliberately off by default to avoid per-row clutter and hover reflow
+   in tables. */
+.link {
+  color: inherit;
+  text-decoration: none;
+  text-underline-offset: 2px;
+  border-radius: 2px;
+}
+.link:hover,
+.link:focus-visible {
+  text-decoration: underline;
+}
+.link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+/* `.link-icon` forces the glyph on a single prominent link; the `.link-icons`
+   root class (the "show link icon on linked objects" preference) turns it on for
+   every `.link` at once. Same drawing either way. */
+.link-icon::after,
+.link-icons .link::after {
+  content: "";
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin-left: 0.25em;
+  vertical-align: -0.08em;
+  background-color: currentColor;
+  opacity: 0.55;
+  -webkit-mask: var(--link-icon) no-repeat center / contain;
+  mask: var(--link-icon) no-repeat center / contain;
 }
 
 /* Sticky form action bar. On full-page create/edit forms (EditPageShell adds

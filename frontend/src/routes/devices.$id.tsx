@@ -708,7 +708,7 @@ function DeviceOverview({
           <Link
             to="/device-types/$id"
             params={{ id: d.device_type.id }}
-            className="text-primary hover:underline"
+            className="link"
           >
             {d.device_type.name}
           </Link>
@@ -764,7 +764,7 @@ function DeviceOverview({
               <Link
                 to="/locations/$id"
                 params={{ id: d.location.id }}
-                className="text-primary hover:underline"
+                className="link"
               >
                 {d.location.name}
               </Link>
@@ -777,11 +777,7 @@ function DeviceOverview({
     {
       label: "Rack",
       value: d.rack ? (
-        <Link
-          to="/racks/$id"
-          params={{ id: d.rack.id }}
-          className="text-primary hover:underline"
-        >
+        <Link to="/racks/$id" params={{ id: d.rack.id }} className="link">
           {d.rack.name}
         </Link>
       ) : (
@@ -833,7 +829,7 @@ function DeviceOverview({
               <Link
                 to="/clusters/$id"
                 params={{ id: d.cluster.id }}
-                className="text-primary hover:underline"
+                className="link"
               >
                 {d.cluster.name}
               </Link>
@@ -862,7 +858,7 @@ function DeviceOverview({
         <Link
           to="/ips/$id"
           params={{ id: d.primary_ip.id }}
-          className="font-mono text-[13px] text-primary hover:underline"
+          className="link font-mono text-[13px]"
         >
           {d.primary_ip.ip_address}
         </Link>
@@ -879,11 +875,7 @@ function DeviceOverview({
     {
       label: "IP addresses",
       value: (
-        <button
-          type="button"
-          onClick={() => onTab("ips")}
-          className="num text-primary hover:underline"
-        >
+        <button type="button" onClick={() => onTab("ips")} className="num link">
           {d.ip_count}
         </button>
       ),
@@ -894,7 +886,7 @@ function DeviceOverview({
         <button
           type="button"
           onClick={() => onTab("components")}
-          className="num text-primary hover:underline"
+          className="num link"
         >
           {d.interface_count}
         </button>
@@ -989,11 +981,7 @@ function DeviceRackCard({ device }: { device: Device }) {
       title={
         <span>
           Rack ·{" "}
-          <Link
-            to="/racks/$id"
-            params={{ id: rackId }}
-            className="text-primary hover:underline"
-          >
+          <Link to="/racks/$id" params={{ id: rackId }} className="link">
             {device.rack!.name}
           </Link>
         </span>

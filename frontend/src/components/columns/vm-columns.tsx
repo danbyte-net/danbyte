@@ -115,7 +115,7 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
         <Link
           to="/clusters/$id"
           params={{ id: row.original.cluster.id }}
-          className="text-xs text-primary hover:underline"
+          className="link text-xs"
         >
           {row.original.cluster.name}
         </Link>

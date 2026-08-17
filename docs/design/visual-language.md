@@ -35,7 +35,15 @@ a lot of data fast — typography and spacing serve that, not decoration.
   *different* blue — so selection currently reads as two colours depending on
   which surface you're on. Until a `readCssVar()` bridge exists, keep new canvas
   code on the shared constant rather than adding another literal.
-- **Links**: dotted underline, not blue.
+- **Links**: never blue. Use the `.link` class (`styles.css`) — it inherits the
+  surrounding text colour and reveals an underline only on **hover** and
+  keyboard **focus** (with a focus ring). This keeps link-dense pages from
+  turning into a wall of blue while still marking clickability. `--primary` is
+  reserved for primary action / selection, never for a link. A trailing
+  chain-glyph affordance is available as the opt-in `.link-icon` variant for the
+  rare prominent standalone link; it is off by default to avoid per-row clutter
+  and hover reflow in tables. The shared cell factories (`components/cells/*`)
+  and TanStack `Link`s alike all use `.link`.
 - **Mono font**: for every IP, CIDR, MAC, serial, ID, UUID, custom-field key.
 - **Tabular nums**: on every counter, percentage, timestamp.
 - **Radii**: `rounded-md` and `rounded-lg` only. `rounded-full` for status dots and avatars.

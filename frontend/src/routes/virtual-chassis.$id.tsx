@@ -172,7 +172,7 @@ function Body({ vc }: { vc: VirtualChassis }) {
                     <Link
                       to="/devices/$id"
                       params={{ id: vc.master.id }}
-                      className="font-mono text-[13px] text-primary hover:underline"
+                      className="link font-mono text-[13px]"
                     >
                       {vc.master.name}
                     </Link>
@@ -270,7 +270,7 @@ function Overview({
         <Link
           to="/devices/$id"
           params={{ id: vc.master.id }}
-          className="font-mono text-[13px] text-primary hover:underline"
+          className="link font-mono text-[13px]"
         >
           {vc.master.name}
         </Link>
@@ -454,7 +454,7 @@ function MembersTable({
                     <Link
                       to="/devices/$id"
                       params={{ id: m.id }}
-                      className="font-mono text-[13px] text-primary hover:underline"
+                      className="link font-mono text-[13px]"
                     >
                       {m.name}
                     </Link>

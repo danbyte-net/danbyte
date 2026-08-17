@@ -103,7 +103,7 @@ function Body({ group: g }: { group: ContactGroup }) {
               <Link
                 to="/contact-groups/$id"
                 params={{ id: g.parent.id }}
-                className="text-primary hover:underline"
+                className="link"
               >
                 {g.parent.name}
               </Link>
@@ -192,7 +192,7 @@ function GroupOverview({ group: g }: { group: ContactGroup }) {
         <Link
           to="/contact-groups/$id"
           params={{ id: g.parent.id }}
-          className="text-primary hover:underline"
+          className="link"
         >
           {g.parent.name}
         </Link>

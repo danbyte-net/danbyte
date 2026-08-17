@@ -175,7 +175,7 @@ function TagOverview({ tag: t }: { tag: Tag }) {
         <Link
           to="/sites/$id"
           params={{ id: t.owning_site.id }}
-          className="text-primary hover:underline"
+          className="link"
         >
           {t.owning_site.name}
         </Link>

@@ -176,7 +176,7 @@ function ProviderOverview({ provider: p }: { provider: Provider }) {
           href={p.portal_url}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1 text-primary hover:underline"
+          className="link inline-flex items-center gap-1"
         >
           <ExternalLink className="h-3.5 w-3.5" />
           {p.portal_url.replace(/^https?:\/\//, "")}
@@ -189,10 +189,7 @@ function ProviderOverview({ provider: p }: { provider: Provider }) {
     {
       label: "NOC email",
       value: p.noc_email ? (
-        <a
-          href={`mailto:${p.noc_email}`}
-          className="text-primary hover:underline"
-        >
+        <a href={`mailto:${p.noc_email}`} className="link">
           {p.noc_email}
         </a>
       ) : (

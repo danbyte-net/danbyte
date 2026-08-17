@@ -201,7 +201,7 @@ export function DeviceTypeImportDialog({
               href="https://github.com/netbox-community/devicetype-library"
               target="_blank"
               rel="noreferrer"
-              className="text-primary hover:underline"
+              className="link"
             >
               NetBox devicetype-library
             </a>{" "}
