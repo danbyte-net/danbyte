@@ -373,6 +373,60 @@ const sections: NavSection[] = [
     ],
   },
   {
+    // Lives next to IPAM — scopes/reservations/zones are address-space state.
+    // Connection config stays under Integrations; this is where operators read
+    // and act on what came in.
+    label: "DNS & DHCP",
+    icon: Globe,
+    clusters: [
+      {
+        label: "DHCP",
+        items: [
+          {
+            title: "Scopes",
+            url: "/dhcp-scopes",
+            icon: Network,
+            objectType: "dhcpscope",
+            integration: ["dhcp"],
+          },
+          {
+            title: "Reservations",
+            url: "/dhcp-reservations",
+            icon: Locate,
+            objectType: "dhcpreservation",
+            integration: ["dhcp"],
+          },
+          {
+            title: "Leases",
+            url: "/dhcp-leases",
+            icon: Clock,
+            objectType: "dhcplease",
+            integration: ["dhcp"],
+          },
+        ],
+      },
+      {
+        label: "DNS",
+        items: [
+          {
+            title: "Zones",
+            url: "/dns-zones",
+            icon: Layers,
+            objectType: "dnszone",
+            integration: ["dns"],
+          },
+          {
+            title: "Records",
+            url: "/dns-records",
+            icon: FileSignature,
+            objectType: "dnsrecord",
+            integration: ["dns"],
+          },
+        ],
+      },
+    ],
+  },
+  {
     label: "DCIM",
     icon: Server,
     clusters: [
@@ -832,59 +886,6 @@ const sections: NavSection[] = [
             icon: Cloud,
             objectType: "virtualizationsource",
             integration: ["virtualization"],
-          },
-        ],
-      },
-    ],
-  },
-  {
-    // Data synced from the Windows integration. Connection config lives under
-    // Integrations; this is where operators read and act on what came in.
-    label: "DNS & DHCP",
-    icon: Globe,
-    clusters: [
-      {
-        label: "DHCP",
-        items: [
-          {
-            title: "Scopes",
-            url: "/dhcp-scopes",
-            icon: Network,
-            objectType: "dhcpscope",
-            integration: ["dhcp"],
-          },
-          {
-            title: "Reservations",
-            url: "/dhcp-reservations",
-            icon: Locate,
-            objectType: "dhcpreservation",
-            integration: ["dhcp"],
-          },
-          {
-            title: "Leases",
-            url: "/dhcp-leases",
-            icon: Clock,
-            objectType: "dhcplease",
-            integration: ["dhcp"],
-          },
-        ],
-      },
-      {
-        label: "DNS",
-        items: [
-          {
-            title: "Zones",
-            url: "/dns-zones",
-            icon: Layers,
-            objectType: "dnszone",
-            integration: ["dns"],
-          },
-          {
-            title: "Records",
-            url: "/dns-records",
-            icon: FileSignature,
-            objectType: "dnsrecord",
-            integration: ["dns"],
           },
         ],
       },

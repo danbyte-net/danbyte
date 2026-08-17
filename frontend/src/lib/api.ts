@@ -6962,6 +6962,8 @@ export interface DhcpReservation {
   id: string
   scope: string
   scope_display: string
+  /** Windows server connection id — links the Server cell to its page. */
+  connection: string
   connection_name: string
   ip: string
   mac: string

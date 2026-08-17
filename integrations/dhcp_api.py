@@ -176,18 +176,22 @@ class DhcpScopeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 
 class DhcpReservationSerializer(serializers.ModelSerializer):
     scope_display = serializers.CharField(source="scope.scope_id", read_only=True)
+    # Server id + name so tables can link the Server cell to its detail page.
+    connection = serializers.CharField(source="scope.connection_id", read_only=True)
     connection_name = serializers.CharField(
         source="scope.connection.name", read_only=True
     )
 
     class Meta:
         model = DhcpReservation
-        fields = ["id", "scope", "scope_display", "connection_name", "ip",
-                  "mac", "name", "description", "ip_address", "managed",
-                  "drift", "drift_detail", "last_seen_at", "updated_at"]
-        read_only_fields = ["id", "scope_display", "connection_name",
-                            "ip_address", "managed", "drift", "drift_detail",
-                            "last_seen_at", "updated_at"]
+        fields = ["id", "scope", "scope_display", "connection",
+                  "connection_name", "ip", "mac", "name", "description",
+                  "ip_address", "managed", "drift", "drift_detail",
+                  "last_seen_at", "updated_at"]
+        read_only_fields = ["id", "scope_display", "connection",
+                            "connection_name", "ip_address", "managed",
+                            "drift", "drift_detail", "last_seen_at",
+                            "updated_at"]
 
     def validate_mac(self, value):
         from .dhcp_sync import _norm_mac

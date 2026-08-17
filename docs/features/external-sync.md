@@ -23,11 +23,12 @@ Two places, on purpose:
 - **Integrations → Windows servers / Virtualization sources** — where you
   *configure connections*: host, credentials, roles, sync mode, and the
   per-server drift/review views.
-- **DNS & DHCP** (sidebar section) — where you *read and act on the synced
-  data*, aggregated across every server: **DHCP** → Scopes, Reservations,
-  Leases; **DNS** → Zones, Records. Each list filters by server and links back
-  to the prefixes and IP addresses the data maps to. These pages appear once
-  the matching toggle is on.
+- **DNS & DHCP** (sidebar section, right below IPAM — scopes, reservations and
+  zones are address-space state) — where you *read and act on the synced data*,
+  aggregated across every server: **DHCP** → Scopes, Reservations, Leases;
+  **DNS** → Zones, Records. Each list filters by server and links back to the
+  prefixes and IP addresses the data maps to. These pages appear once the
+  matching toggle is on.
 
 ## Connections
 

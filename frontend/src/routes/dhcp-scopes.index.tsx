@@ -98,9 +98,13 @@ function DhcpScopesPage() {
         accessorKey: "connection_name",
         header: ({ column }) => <SortHeader column={column} label="Server" />,
         cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground">
+          <Link
+            to="/windows-servers/$id"
+            params={{ id: row.original.connection }}
+            className="link text-xs"
+          >
             {row.original.connection_name}
-          </span>
+          </Link>
         ),
       },
       {
