@@ -70,7 +70,9 @@ class DhcpSyncTests(TestCase):
 
         ip = IPAddress.objects.get(tenant=self.tenant, ip_address="10.77.0.60")
         self.assertEqual(ip.mac_address, "aa:bb:cc:00:11:22")
-        self.assertTrue(ip.reservation_note)
+        # DHCP reservations surface via the DHCP badge, not the operator's own
+        # `reservation_note` marker — sync must leave that field alone.
+        self.assertFalse(ip.reservation_note)
         res = DhcpReservation.objects.get(scope=scope, ip="10.77.0.60")
         self.assertFalse(res.managed)
         self.assertEqual(res.ip_address, ip)

@@ -365,8 +365,12 @@ def _ip_for_reservation(conn, scope, res):
         conn, scope, res.ip, res.mac, "",
         note=f"DHCP reservation «{res.name}» — {_source_note(conn)}",
     )
-    if row is not None and not row.reservation_note:
-        row.reservation_note = f"DHCP reservation ({conn.name})"
+    # `reservation_note` is the operator's own "I want to hold this address"
+    # affordance (it raises the amber marker on the IP). A DHCP reservation is
+    # not that — it's surfaced by the DHCP badge instead — so we never set it,
+    # and we retire the marker earlier syncs wrote here.
+    if row is not None and row.reservation_note == f"DHCP reservation ({conn.name})":
+        row.reservation_note = ""
         row.save(update_fields=["reservation_note"])
     return row
 

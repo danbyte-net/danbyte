@@ -1137,7 +1137,13 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             IPAddress.objects
             .filter(prefix=prefix)
             .select_related("status", "role", "assigned_device")
-            .prefetch_related("tags"),
+            .prefetch_related("tags")
+            # Feed the serializer's `dhcp` flag — the prefix IPs pane builds its
+            # own queryset, so it needs the same DHCP counts IPAddressViewSet adds.
+            .annotate(
+                dhcp_resv_n=Count("dhcp_reservations", distinct=True),
+                dhcp_lease_n=Count("dhcp_leases", distinct=True),
+            ),
             request.user, prefix.tenant, "ipaddress", "view",
         )
         # IPAddressField is a string; sort numerically so 10.0.0.2 lands

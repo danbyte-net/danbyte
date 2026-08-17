@@ -91,7 +91,7 @@ does it immediately).
 | --- | --- |
 | Scope | **Prefix** (found by CIDR, or created) |
 | Exclusion range | **IP range** |
-| Reservation | **IP address** (with MAC + reservation note) |
+| Reservation | **IP address** (with MAC; flagged by the DHCP badge) |
 | Lease *(opt-in per scope)* | **IP address** |
 | Scope options (router, DNS, lease time…) | kept structured on the scope |
 
@@ -121,7 +121,10 @@ Windows DHCP console too.
 
 Ranges and addresses managed by DHCP are flagged so they're obvious in IPAM: a
 prefix that **backs a DHCP scope** shows a **DHCP** badge in the prefix list,
-and an address with a **reservation or lease** shows one in the IP lists.
+and an address with a **reservation or lease** shows one in the IP lists — on
+the prefix's own IPs tab too. DHCP reservations are marked *only* by this badge;
+they never raise the operator's manual **reservation note** marker, which stays
+reserved for addresses a person deliberately holds.
 
 ### Drift
 
