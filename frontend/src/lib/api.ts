@@ -3197,12 +3197,37 @@ export interface VirtualMachine {
   vcpus: number | null
   memory_mb: number | null
   disk_gb: number | null
+  disks: VirtualDisk[]
   primary_ip: { id: string; ip_address: string; dns_name: string } | null
   description: string
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+export interface VirtualDisk {
+  id: string
+  key: string
+  name: string
+  size_gb: number | null
+  storage: string
+  controller: string
+  disk_format: string
+  created_disk: boolean
+  description: string
+}
+
+export interface VirtualSwitch {
+  id: string
+  name: string
+  kind: string
+  kind_display: string
+  cluster: { id: string; name: string } | null
+  uplinks: string
+  mtu: number | null
+  created_switch: boolean
+  description: string
 }
 
 export interface VirtualMachineWritePayload {
@@ -4798,7 +4823,9 @@ export interface SnmpArpEntry {
 }
 
 export interface DeviceSnmp {
-  device: string
+  device: string | null
+  /** Set instead of `device` when the SNMP target is a VM (virtual router). */
+  vm?: string | null
   profile: string | null
   profile_name: string | null
   data: Record<string, string>
@@ -6965,6 +6992,8 @@ export interface VirtualizationSource {
   credentials_set: boolean
   sync_mode: "auto" | "review" | "manual"
   poll_interval_minutes: number
+  sync_disks: boolean
+  sync_networks: boolean
   enabled: boolean
   pending_count: number
   last_sync_at: string | null

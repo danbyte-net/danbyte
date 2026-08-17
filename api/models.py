@@ -3432,6 +3432,92 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         return f"{self.vm.name}/{self.name}"
 
 
+class VirtualDisk(TimestampedModel):
+    """One virtual disk attached to a VM. Sync-filled from the hypervisor
+    (Proxmox ``scsi0``/``virtio0``…, vCenter disk devices); ``created_disk``
+    marks rows the sync minted, so only those are pruned when the disk
+    disappears — operator-added rows are never deleted by sync. The VM's
+    aggregate ``disk_gb`` stays the sum of these. Scopes through ``vm`` (no
+    own tenant FK), exactly like :class:`VMInterface`."""
+
+    CONTROLLER_CHOICES = [
+        ("scsi", "SCSI"), ("virtio", "VirtIO"), ("ide", "IDE"),
+        ("sata", "SATA"), ("nvme", "NVMe"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    vm = models.ForeignKey(
+        VirtualMachine, on_delete=models.CASCADE, related_name="disks"
+    )
+    # Stable per-VM key: Proxmox bus+index ("scsi0"), vCenter disk key/label.
+    key = models.CharField(max_length=64)
+    name = models.CharField(max_length=128, blank=True, default="")
+    size_gb = models.PositiveIntegerField(null=True, blank=True)
+    # Datastore / storage pool the disk lives on.
+    storage = models.CharField(max_length=128, blank=True, default="")
+    controller = models.CharField(
+        max_length=16, blank=True, default="", choices=CONTROLLER_CHOICES
+    )
+    # raw / qcow2 / vmdk … — free-form, hypervisor-reported.
+    disk_format = models.CharField(max_length=16, blank=True, default="")
+    created_disk = models.BooleanField(default=False)
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["key"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["vm", "key"], name="uniq_virtualdisk_vm_key"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.vm.name}/{self.name or self.key}"
+
+
+class VirtualSwitch(TimestampedModel):
+    """A hypervisor virtual switch (vCenter standard/distributed switch,
+    Proxmox Linux bridge / OVS / bond). Sync-filled infrastructure that VM
+    networks (port-groups / bridges → VLANs) attach to; drawn as a layer in the
+    virtual network topology. Tenant-scoped; optionally pinned to a cluster."""
+
+    KIND_CHOICES = [
+        ("standard", "Standard switch"),
+        ("distributed", "Distributed switch"),
+        ("linux-bridge", "Linux bridge"),
+        ("ovs", "Open vSwitch"),
+        ("bond", "Bond"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="virtual_switches"
+    )
+    cluster = models.ForeignKey(
+        Cluster, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="virtual_switches",
+    )
+    name = models.CharField(max_length=128)
+    kind = models.CharField(max_length=16, blank=True, default="", choices=KIND_CHOICES)
+    # Comma-separated physical uplinks (vmnicN / bridge_ports).
+    uplinks = models.CharField(max_length=255, blank=True, default="")
+    mtu = models.IntegerField(null=True, blank=True)
+    created_switch = models.BooleanField(default=False)
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "cluster", "name"],
+                name="uniq_virtualswitch_tenant_cluster_name",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 # ─── Racks ───────────────────────────────────────────────────────────────────
 class RackRole(NumIdMixin, TimestampedModel):
     """Functional role of a rack (compute, network, storage, …). Coloured."""

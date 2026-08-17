@@ -147,8 +147,14 @@ class WindowsServerConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet
 
 
 class VirtualizationSourceSerializer(serializers.ModelSerializer):
+    # Proxmox credentials: API token id + secret.
     token_id = serializers.CharField(write_only=True, required=False, allow_blank=True)
     secret = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False
+    )
+    # vCenter credentials: SSO username + password.
+    username = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    password = serializers.CharField(
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
     credentials_set = serializers.SerializerMethodField()
@@ -156,43 +162,58 @@ class VirtualizationSourceSerializer(serializers.ModelSerializer):
     pending_count = serializers.SerializerMethodField()
 
     def get_credentials_set(self, obj) -> bool:
-        return bool((obj.credentials or {}).get("secret"))
+        creds = obj.credentials or {}
+        return bool(creds.get("secret") or creds.get("password"))
 
     def get_pending_count(self, obj) -> int:
         return obj.changes.filter(ignored=False).count()
 
-    def validate_kind(self, value):
-        if value == "vcenter":
-            raise serializers.ValidationError(
-                "vCenter support is not implemented yet — Proxmox only for now."
-            )
-        return value
-
     def validate(self, attrs):
         token_id = attrs.pop("token_id", None)
         secret = attrs.pop("secret", None)
-        if secret:
-            existing = (self.instance.credentials or {}) if self.instance else {}
-            attrs["credentials"] = {
-                "token_id": token_id or existing.get("token_id", ""),
-                "secret": secret,
-            }
-        elif token_id and self.instance is not None:
-            creds = dict(self.instance.credentials or {})
-            creds["token_id"] = token_id
-            attrs["credentials"] = creds
-        elif self.instance is None:
-            raise serializers.ValidationError(
-                {"secret": "An API token (id + secret) is required."}
-            )
+        username = attrs.pop("username", None)
+        password = attrs.pop("password", None)
+        # Kind may be omitted on update — fall back to the stored one.
+        kind = attrs.get("kind") or (self.instance.kind if self.instance else "proxmox")
+        existing = (self.instance.credentials or {}) if self.instance else {}
+
+        if kind == "vcenter":
+            if password:
+                attrs["credentials"] = {
+                    "username": username or existing.get("username", ""),
+                    "password": password,
+                }
+            elif username and self.instance is not None:
+                creds = dict(existing)
+                creds["username"] = username
+                attrs["credentials"] = creds
+            elif self.instance is None:
+                raise serializers.ValidationError(
+                    {"password": "A vCenter username and password are required."}
+                )
+        else:  # proxmox
+            if secret:
+                attrs["credentials"] = {
+                    "token_id": token_id or existing.get("token_id", ""),
+                    "secret": secret,
+                }
+            elif token_id and self.instance is not None:
+                creds = dict(existing)
+                creds["token_id"] = token_id
+                attrs["credentials"] = creds
+            elif self.instance is None:
+                raise serializers.ValidationError(
+                    {"secret": "An API token (id + secret) is required."}
+                )
         return attrs
 
     class Meta:
         model = VirtualizationSource
         fields = ["id", "name", "kind", "kind_display", "host", "port",
-                  "verify_ssl", "token_id", "secret", "credentials_set",
-                  "sync_mode", "poll_interval_minutes", "enabled",
-                  "pending_count", "last_sync_at", "last_sync_status",
+                  "verify_ssl", "token_id", "secret", "username", "password",
+                  "credentials_set", "sync_mode", "poll_interval_minutes",
+                  "sync_disks", "sync_networks",
+                  "enabled", "pending_count", "last_sync_at", "last_sync_status",
                   "last_sync_error", "created_at", "updated_at"]
         read_only_fields = ["id", "kind_display", "credentials_set",
                             "pending_count", "last_sync_at", "last_sync_status",
@@ -214,10 +235,29 @@ class VirtualizationSourceViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 
     @action(detail=True, methods=["post"])
     def test(self, request, pk=None):
-        """API reachability: version + node count."""
-        from .virt_client import VirtAPIError, proxmox_get
+        """API reachability: version + node/host count."""
+        from .virt_client import VCenterClient, VirtAPIError, proxmox_get
 
         source = self.get_object()
+        if source.kind == "vcenter":
+            client = VCenterClient(source)
+            try:
+                client.login()
+                hosts = client.get("vcenter/host") or []
+                vms = client.get("vcenter/vm") or []
+            except VirtAPIError as exc:
+                return Response({"ok": False, "error": str(exc)}, status=502)
+            finally:
+                client.close()
+            return Response({
+                "ok": True,
+                "version": "",
+                "nodes": len(hosts),
+                "online_nodes": sum(
+                    1 for h in hosts if h.get("connection_state") == "CONNECTED"
+                ),
+                "vms": len(vms),
+            })
         try:
             version = proxmox_get(source, "version") or {}
             nodes = proxmox_get(source, "nodes") or []

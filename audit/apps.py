@@ -83,6 +83,8 @@ AUDITED_MODELS = [
     "api.Cluster",
     "api.VirtualMachine",
     "api.VMInterface",
+    "api.VirtualDisk",
+    "api.VirtualSwitch",
     "api.RackRole",
     "api.RackType",
     "api.RackTypeAccessory",

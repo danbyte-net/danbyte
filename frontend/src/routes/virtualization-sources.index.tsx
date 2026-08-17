@@ -322,6 +322,10 @@ function SourceDialog({
   const [interval, setInterval] = useState(
     String(source?.poll_interval_minutes ?? 10)
   )
+  const [syncDisks, setSyncDisks] = useState(source?.sync_disks ?? true)
+  const [syncNetworks, setSyncNetworks] = useState(
+    source?.sync_networks ?? false
+  )
   const [enabled, setEnabled] = useState(source?.enabled ?? true)
 
   const save = useMutation({
@@ -334,6 +338,8 @@ function SourceDialog({
         verify_ssl: verifySsl,
         sync_mode: syncMode,
         poll_interval_minutes: Number(interval) || 10,
+        sync_disks: syncDisks,
+        sync_networks: syncNetworks,
         enabled,
       }
       if (isVcenter) {
@@ -472,6 +478,18 @@ function SourceDialog({
               label="Verify TLS certificate"
               checked={verifySsl}
               onChange={setVerifySsl}
+            />
+            <FormCheckbox
+              label="Sync disks"
+              hint="Import each VM's virtual disks (name, size, storage)."
+              checked={syncDisks}
+              onChange={setSyncDisks}
+            />
+            <FormCheckbox
+              label="Sync virtual switches & networks"
+              hint="Import virtual switches and port-groups/bridges, mapping them to VLANs."
+              checked={syncNetworks}
+              onChange={setSyncNetworks}
             />
             {isEdit && (
               <FormCheckbox

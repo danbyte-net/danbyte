@@ -2,9 +2,11 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
-import { useCallback, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
+import { type ColumnDef } from "@tanstack/react-table"
 
-import { api, type VirtualMachine } from "@/lib/api"
+import { api, type VirtualDisk, type VirtualMachine } from "@/lib/api"
+import { DataTable } from "@/components/data-table"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -21,6 +23,7 @@ import { useMe } from "@/lib/use-me"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { VMInterfacesPane } from "@/components/vm-interfaces-pane"
+import { VmSnmpCard } from "@/components/vm-snmp-card"
 import { CertificatesPanel } from "@/components/monitoring/certificates-panel"
 import { ConfigContextPanel } from "@/components/config-context-panel"
 import { ServicesPane } from "@/components/services-pane"
@@ -64,6 +67,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
     | "components"
     | "services"
     | "monitoring"
+    | "snmp"
     | "certificates"
     | "config"
     | "journal"
@@ -116,7 +120,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
                   <Link
                     to="/clusters/$id"
                     params={{ id: vm.cluster.id }}
-                    className="text-xs link"
+                    className="link text-xs"
                   >
                     {vm.cluster.name}
                   </Link>
@@ -129,7 +133,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
                     <Link
                       to="/ips/$id"
                       params={{ id: vm.primary_ip.id }}
-                      className="font-mono text-[13px] link"
+                      className="link font-mono text-[13px]"
                     >
                       {vm.primary_ip.ip_address}
                     </Link>
@@ -147,6 +151,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         { value: "components", label: "Components" },
         { value: "services", label: "Services" },
         { value: "monitoring", label: "Monitoring" },
+        { value: "snmp", label: "SNMP" },
         { value: "certificates", label: "Certificates" },
         { value: "config", label: "Config" },
         { value: "journal", label: "Journal" },
@@ -187,6 +192,9 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
             </Link>
           </p>
         )}
+      </DetailTab>
+      <DetailTab value="snmp">
+        <VmSnmpCard vmId={vm.id} />
       </DetailTab>
       <DetailTab value="certificates">
         <CertificatesPanel objectType="api.virtualmachine" objectId={vm.id} />
@@ -269,11 +277,7 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
     {
       label: "Host device",
       value: vm.device ? (
-        <Link
-          to="/devices/$id"
-          params={{ id: vm.device.id }}
-          className="link"
-        >
+        <Link to="/devices/$id" params={{ id: vm.device.id }} className="link">
           {vm.device.name}
         </Link>
       ) : (
@@ -283,11 +287,7 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
     {
       label: "Site",
       value: vm.site ? (
-        <Link
-          to="/sites/$id"
-          params={{ id: vm.site.id }}
-          className="link"
-        >
+        <Link to="/sites/$id" params={{ id: vm.site.id }} className="link">
           {vm.site.name}
         </Link>
       ) : (
@@ -302,7 +302,7 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
         <Link
           to="/ips/$id"
           params={{ id: vm.primary_ip.id }}
-          className="font-mono text-[13px] link"
+          className="link font-mono text-[13px]"
         >
           {vm.primary_ip.ip_address}
         </Link>
@@ -325,7 +325,70 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
         <KvCard title="Placement" rows={placementRows} />
         <KvCard title="Management" rows={managementRows} />
       </div>
+      {vm.disks.length > 0 && <VmDisks disks={vm.disks} />}
       <CustomFieldValues model="virtualmachine" values={vm.custom_fields} />
     </div>
+  )
+}
+
+/** The VM's virtual disks (synced or operator-added). */
+function VmDisks({ disks }: { disks: VirtualDisk[] }) {
+  const columns = useMemo<ColumnDef<VirtualDisk>[]>(
+    () => [
+      {
+        id: "name",
+        accessorKey: "name",
+        header: "Disk",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs">
+            {row.original.name || row.original.key}
+          </span>
+        ),
+      },
+      {
+        id: "size",
+        accessorKey: "size_gb",
+        header: "Size",
+        cell: ({ row }) =>
+          row.original.size_gb != null ? (
+            <span className="num text-xs">{row.original.size_gb} GB</span>
+          ) : (
+            dash
+          ),
+      },
+      {
+        id: "storage",
+        accessorKey: "storage",
+        header: "Storage",
+        cell: ({ row }) => (
+          <span className="text-xs">{row.original.storage || "—"}</span>
+        ),
+      },
+      {
+        id: "controller",
+        accessorKey: "controller",
+        header: "Controller",
+        cell: ({ row }) => (
+          <span className="text-xs uppercase">
+            {row.original.controller || "—"}
+          </span>
+        ),
+      },
+    ],
+    []
+  )
+  return (
+    <section>
+      <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
+        Disks
+      </h2>
+      <DataTable
+        data={disks}
+        columns={columns}
+        tableId="vm-disks-embedded"
+        flexColumn="storage"
+        embedded
+      />
+    </section>
   )
 }

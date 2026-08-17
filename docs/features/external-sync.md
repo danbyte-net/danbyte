@@ -5,8 +5,8 @@ icon: lucide/refresh-cw
 # External sync: Windows DHCP/DNS & virtualization
 
 Danbyte can keep itself in sync with systems that own live network state —
-**Windows DHCP**, **Windows DNS**, and your **hypervisors** (Proxmox VE first,
-vCenter planned). Everything is agentless: DHCP/DNS talk WinRM to the Windows
+**Windows DHCP**, **Windows DNS**, and your **hypervisors** (Proxmox VE and
+VMware vCenter). Everything is agentless: DHCP/DNS talk WinRM to the Windows
 server's own PowerShell modules; hypervisors are reached over their REST API.
 
 ## Turning it on
@@ -57,10 +57,18 @@ the first sync.
 
 ### Virtualization sources
 
-A source names one hypervisor API. For **Proxmox VE**, authenticate with an
-**API token** (Datacenter → Permissions → API Tokens; `PVEAuditor` is enough
-for read sync) — the token secret is encrypted at rest and write-only, and
-**Test connection** reports the API version and node count.
+A source names one hypervisor API. Pick the **type** when you add it:
+
+- **Proxmox VE** — authenticate with an **API token** (Datacenter →
+  Permissions → API Tokens; `PVEAuditor` is enough for read sync). Default API
+  port `8006`.
+- **VMware vCenter** — authenticate with an **SSO username and password** (a
+  read-only role is enough for inventory sync). Default API port `443`; the
+  connector uses the vSphere Automation REST API (`/api/`), creating one login
+  session per sync pass and tearing it down afterwards.
+
+Credentials are encrypted at rest and write-only, and **Test connection**
+reports the reachable host/node count (plus API version for Proxmox).
 
 ## Internal hosts and the outbound allowlist
 
@@ -184,19 +192,48 @@ To pull it in:
   off by default, since importing is a deliberate choice. It still only creates
   IPs where a prefix exists.
 
-## Virtualization (Proxmox VE)
+## Virtualization (Proxmox VE & VMware vCenter)
 
-Enable the **Virtualization sync** toggle and add the cluster under
-**Integrations → Virtualization sources** (any node's address works — the
-API answers cluster-wide). Each sync imports into the **existing
-cluster/VM inventory**:
+Enable the **Virtualization sync** toggle and add a source under
+**Integrations → Virtualization sources**. For Proxmox any node's address works
+(the API answers cluster-wide); for vCenter, point at the vCenter Server. Each
+sync imports into the **existing cluster/VM inventory**:
 
-| Proxmox object | Danbyte object |
-| --- | --- |
-| Cluster | **Cluster** (a *Proxmox VE* cluster type is created on demand) |
-| QEMU / LXC guest | **Virtual machine** (vCPUs, memory, disk, description) |
-| Guest NIC (`netX`) | **VM interface** with its MAC |
-| Guest-agent IP | **IP address** assigned to the interface |
+| Proxmox object | vCenter object | Danbyte object |
+| --- | --- | --- |
+| Cluster | Cluster (single-cluster vCenters; else the source name) | **Cluster** (a *Proxmox VE* / *VMware vCenter* cluster type is created on demand) |
+| QEMU / LXC guest | Virtual machine | **Virtual machine** (vCPUs, memory, disk, description) |
+| Guest NIC (`netX`) | Ethernet adapter | **VM interface** with its MAC |
+| Disk (`scsiN`/`virtioN`/…) | Virtual disk device | **Virtual disk** (name, size, storage/datastore, controller) — *opt-in* |
+| Bridge + VLAN tag (`vmbr0,tag=42`) | Port-group VLAN | **VLAN** (in the source's VLAN group) + the interface's access VLAN — *opt-in* |
+| Bridge | vSwitch | **Virtual switch** — *opt-in* |
+| Guest-agent IP | VMware Tools reported IP | **IP address** assigned to the interface |
+| Node | ESXi host | linked to the **Device** of the same name |
+
+### Disks, virtual switches and networks (opt-in)
+
+Two per-source switches (under the tenant's virtualization master toggle)
+widen what a source imports:
+
+- **Sync disks** (on by default) — each VM's virtual disks become **Virtual
+  disk** rows (shown on the VM's Overview): name, size, storage pool /
+  datastore, and controller. Optical drives are skipped. The VM's aggregate
+  *Disk* figure is unchanged.
+- **Sync virtual switches & networks** (off by default) — virtual switches
+  (Proxmox bridges / OVS, vCenter standard & distributed switches) become
+  **Virtual switch** rows, and each VLAN-tagged network becomes a **VLAN** in a
+  VLAN group named after the source. A VM interface's access VLAN is then
+  **blank-filled** from the port-group/bridge tag (never overwriting a VLAN you
+  set).
+
+Both follow the same adoption rules as the rest of the sync: sync-created rows
+are refreshed and pruned when they vanish; operator-created rows are only
+blank-filled and never deleted.
+
+Both hypervisors run through the same reconcile engine, so sync modes,
+adoption, blank-fill and the review inbox behave identically — only the fetch
+and the identifiers differ (Proxmox integer VMIDs; vCenter VM MoRefs, whose
+numeric part is used as the stable id).
 
 ### Sync mode — who is the source of truth
 
@@ -236,16 +273,15 @@ Rules:
 - Interface and guest-IP discovery is additive (blank-fill) and runs for any
   already-linked VM in every mode — the review inbox is only for the decisions
   that reshape inventory: new VMs, spec changes, and removals.
-- Guest IPs come from the **QEMU guest agent**, so they only appear for
-  running QEMU VMs with the agent installed. An IP is only created when a
-  **containing prefix** already exists — sync never invents address space.
-  The first private IPv4 becomes the VM's primary IP (if it had none).
-- A guest's node maps to the **Device** of the same name when one exists,
-  linking VMs to their physical hosts.
+- Guest IPs come from the in-guest agent — the **QEMU guest agent** on Proxmox,
+  **VMware Tools** on vCenter — so they only appear for running VMs with the
+  agent present. An IP is only created when a **containing prefix** already
+  exists — sync never invents address space. The first private IPv4 becomes the
+  VM's primary IP (if it had none).
+- A guest's node (Proxmox node / ESXi host) maps to the **Device** of the same
+  name when one exists, linking VMs to their physical hosts.
 - VM templates are skipped; read-only — Danbyte never changes the hypervisor.
 
 !!! tip "Virtual routers become monitorable"
     Once a virtual router's IP is synced, the monitoring engine can check and
     SNMP-poll it like any other address — no special handling needed.
-
-vCenter is planned behind the same source model (`kind: vcenter`).

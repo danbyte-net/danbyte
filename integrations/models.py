@@ -439,6 +439,12 @@ class VirtualizationSource(TimestampedModel):
     poll_interval_minutes = models.PositiveIntegerField(default=10)
     enabled = models.BooleanField(default=True)
 
+    # Granular sync scope (under the tenant's virtualization master toggle).
+    #: Per-disk inventory (VirtualDisk rows) in addition to aggregate disk_gb.
+    sync_disks = models.BooleanField(default=True)
+    #: Virtual switches + networks (port-groups/bridges → VLANs).
+    sync_networks = models.BooleanField(default=False)
+
     last_sync_at = models.DateTimeField(null=True, blank=True)
     last_sync_status = models.CharField(max_length=16, blank=True, default="")
     last_sync_error = models.TextField(blank=True, default="")
@@ -694,12 +700,14 @@ class VirtGuest(TimestampedModel):
     already had are adopted and never deleted by sync.
     """
 
-    KIND_CHOICES = [("qemu", "QEMU"), ("lxc", "LXC")]
+    KIND_CHOICES = [("qemu", "QEMU"), ("lxc", "LXC"), ("vmware", "VMware VM")]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     source = models.ForeignKey(
         VirtualizationSource, on_delete=models.CASCADE, related_name="guests"
     )
+    # Proxmox: the integer VMID. vCenter: the numeric part of the VM MoRef
+    # (``vm-1023`` → ``1023``), which is stable for the VM's lifetime.
     vmid = models.PositiveIntegerField()
     node = models.CharField(max_length=128, blank=True, default="")
     kind = models.CharField(max_length=8, choices=KIND_CHOICES, default="qemu")
@@ -769,6 +777,43 @@ class VirtChange(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.kind} · {self.guest_id}"
+
+
+class VirtNetwork(TimestampedModel):
+    """Maps one hypervisor network — a vCenter port-group or a Proxmox bridge
+    (optionally with a VLAN tag) — to the :class:`api.VLAN` it reconciles into,
+    mirroring how :class:`DhcpScope` links to a Prefix. Danbyte's VLAN stays the
+    source of truth; ``created_vlan`` marks VLANs the sync minted so only those
+    are pruned. Optionally records the owning virtual switch."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    source = models.ForeignKey(
+        VirtualizationSource, on_delete=models.CASCADE, related_name="networks"
+    )
+    # Stable key: port-group MoRef (vCenter) or "bridge[:tag]" (Proxmox).
+    ext_key = models.CharField(max_length=255)
+    name = models.CharField(max_length=255, blank=True, default="")
+    vlan = models.ForeignKey(
+        "api.VLAN", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="virt_networks",
+    )
+    vswitch = models.ForeignKey(
+        "api.VirtualSwitch", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="virt_networks",
+    )
+    created_vlan = models.BooleanField(default=False)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["name", "ext_key"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source", "ext_key"], name="uniq_virtnetwork_source_key"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name or self.ext_key
 
 
 class DnsRecord(TimestampedModel):

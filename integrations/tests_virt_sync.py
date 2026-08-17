@@ -6,13 +6,16 @@ from unittest import mock
 from django.test import TestCase
 
 from api.models import (
+    VLAN,
     Cluster,
     ClusterType,
     Device,
     DeviceRole,
     IPAddress,
     Prefix,
+    VirtualDisk,
     VirtualMachine,
+    VirtualSwitch,
     VMInterface,
 )
 from core.models import Organization, Tenant
@@ -36,7 +39,13 @@ RESOURCES = [
      "status": "stopped", "template": 1},
 ]
 
-QEMU_CONFIG = {"net0": "virtio=AA:BB:CC:00:11:22,bridge=vmbr0", "cores": 4}
+QEMU_CONFIG = {
+    "net0": "virtio=AA:BB:CC:00:11:22,bridge=vmbr0,tag=10",
+    "scsi0": "local-lvm:vm-100-disk-0,size=32G,ssd=1",
+    "scsi1": "ceph-vm:vm-100-disk-1,size=100G",
+    "ide2": "local:iso/debian.iso,media=cdrom",  # optical — must be ignored
+    "cores": 4,
+}
 LXC_CONFIG = {"net0": "name=eth0,bridge=vmbr0,hwaddr=AA:BB:CC:00:11:33,ip=dhcp"}
 AGENT = {
     "result": [
@@ -195,6 +204,58 @@ class ProxmoxSyncTests(TestCase):
         self.assertEqual(counts["ips"], 0)
         self.assertEqual(IPAddress.objects.count(), 0)
 
+    def test_disks_synced_cdrom_ignored(self):
+        counts = self.sync()
+        self.assertEqual(counts["disks"], 2)  # scsi0 + scsi1, ide2 cdrom skipped
+        vm = VirtualMachine.objects.get(name="router-vm")
+        disks = {d.key: d for d in vm.disks.all()}
+        self.assertEqual(set(disks), {"scsi0", "scsi1"})
+        self.assertEqual(disks["scsi0"].size_gb, 32)
+        self.assertEqual(disks["scsi0"].storage, "local-lvm")
+        self.assertEqual(disks["scsi0"].controller, "scsi")
+        self.assertEqual(disks["scsi1"].size_gb, 100)
+
+    def test_disks_off_when_toggle_disabled(self):
+        self.source.sync_disks = False
+        self.source.save(update_fields=["sync_disks"])
+        counts = self.sync()
+        self.assertEqual(counts["disks"], 0)
+        self.assertEqual(VirtualDisk.objects.count(), 0)
+
+    def test_disk_pruned_when_removed(self):
+        self.sync()
+        self.assertEqual(VirtualDisk.objects.filter(key="scsi1").count(), 1)
+        shrunk = dict(QEMU_CONFIG)
+        shrunk.pop("scsi1")
+
+        def fewer(s, p):
+            return shrunk if p == "nodes/pve1/qemu/100/config" else fake_get(s, p)
+
+        with mock.patch.object(virt_sync, "proxmox_get", side_effect=fewer):
+            virt_sync.sync_proxmox(self.source)
+        self.assertEqual(VirtualDisk.objects.filter(key="scsi1").count(), 0)
+        self.assertEqual(VirtualDisk.objects.filter(key="scsi0").count(), 1)
+
+    def test_networks_synced_switch_vlan_and_iface_link(self):
+        self.source.sync_networks = True
+        self.source.save(update_fields=["sync_networks"])
+        counts = self.sync()
+        # router-vm net0 (tag=10) + lxc-dns eth0 (untagged) both on vmbr0.
+        self.assertEqual(counts["networks"], 2)
+        cluster = Cluster.objects.get(name="DB-CLUSTER01")
+        sw = VirtualSwitch.objects.get(name="vmbr0", cluster=cluster)
+        self.assertEqual(sw.kind, "linux-bridge")
+        self.assertEqual(VirtualSwitch.objects.count(), 1)  # one shared bridge
+        vlan = VLAN.objects.get(vlan_id=10)
+        iface = VMInterface.objects.get(vm__name="router-vm", name="net0")
+        self.assertEqual(iface.vlan, vlan)
+        self.assertEqual(iface.mode, "access")
+
+    def test_networks_off_by_default(self):
+        self.sync()  # source.sync_networks defaults False
+        self.assertEqual(VirtualSwitch.objects.count(), 0)
+        self.assertFalse(VMInterface.objects.exclude(vlan__isnull=True).exists())
+
 
 class ProxmoxModeTests(TestCase):
     """Review/manual modes queue changes; accept applies, ignore dismisses."""
@@ -329,6 +390,159 @@ class ProxmoxModeTests(TestCase):
             queued = enqueue_due_virt_syncs()
         self.assertEqual(queued, 0)
         rq.get_queue.return_value.enqueue.assert_not_called()
+
+
+VC_VMS = [
+    {"vm": "vm-100", "name": "web01", "power_state": "POWERED_ON",
+     "cpu_count": 4, "memory_size_MiB": 8192},
+    {"vm": "vm-101", "name": "db01", "power_state": "POWERED_OFF",
+     "cpu_count": 2, "memory_size_MiB": 4096},
+]
+VC_HOSTS = [{"host": "host-1", "name": "esxi-lab-01",
+             "connection_state": "CONNECTED"}]
+VC_CLUSTERS = [{"cluster": "domain-c1", "name": "Lab-Cluster"}]
+VC_DETAIL = {
+    "vm-100": {
+        "name": "web01", "power_state": "POWERED_ON",
+        "cpu": {"count": 4}, "memory": {"size_MiB": 8192},
+        "disks": {"2000": {"capacity": 40 * 1024**3}},
+        "nics": {"4000": {"label": "Network adapter 1",
+                          "mac_address": "00:50:56:AA:BB:CC"}},
+    },
+    "vm-101": {
+        "name": "db01", "power_state": "POWERED_OFF",
+        "cpu": {"count": 2}, "memory": {"size_MiB": 4096},
+        "disks": {"2000": {"capacity": 20 * 1024**3}},
+        "nics": {"4000": {"label": "Network adapter 1",
+                          "mac_address": "00:50:56:DD:EE:FF"}},
+    },
+}
+VC_GUEST_NET = {
+    "vm-100": [{
+        "mac_address": "00:50:56:AA:BB:CC", "nic": "4000",
+        "ip": {"ip_addresses": [
+            {"ip_address": "10.77.0.40", "prefix_length": 24,
+             "state": "PREFERRED"},
+            {"ip_address": "fe80::5", "prefix_length": 64},
+        ]},
+    }],
+}
+
+
+class FakeVCenter:
+    """Stand-in for VCenterClient — routes REST paths to the fixtures above."""
+
+    def __init__(self, source):
+        self.source = source
+
+    def login(self):
+        return self
+
+    def get(self, path):
+        if path == "vcenter/vm":
+            return VC_VMS
+        if path == "vcenter/host":
+            return VC_HOSTS
+        if path == "vcenter/cluster":
+            return VC_CLUSTERS
+        if path == "vcenter/vm?hosts=host-1":
+            return [{"vm": "vm-100"}, {"vm": "vm-101"}]
+        if path.endswith("/guest/networking/interfaces"):
+            moref = path.split("/")[2]  # vcenter/vm/<moref>/guest/...
+            return VC_GUEST_NET.get(moref, [])
+        if path.startswith("vcenter/vm/"):
+            return VC_DETAIL.get(path.split("/")[-1], {})
+        raise AssertionError(f"unexpected path {path}")
+
+    def close(self):
+        pass
+
+
+class VCenterSyncTests(TestCase):
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="vc", kind="vcenter", host="192.0.2.40",
+            port=443, credentials={"username": "administrator@vsphere.local",
+                                   "password": "s"},
+            sync_mode="auto",
+        )
+        self.prefix = Prefix.objects.create(tenant=self.tenant, cidr="10.77.0.0/24")
+
+    def sync(self):
+        with mock.patch("integrations.virt_client.VCenterClient", FakeVCenter):
+            return virt_sync.sync_vcenter(self.source)
+
+    def test_full_sync_maps_cluster_vms_interfaces_ips(self):
+        counts = self.sync()
+        self.assertEqual(counts["vms"], 2)
+        self.assertEqual(counts["vms_created"], 2)
+
+        cluster = Cluster.objects.get(tenant=self.tenant, name="Lab-Cluster")
+        self.assertEqual(cluster.type.name, "VMware vCenter")
+
+        vm = VirtualMachine.objects.get(name="web01")
+        self.assertEqual(vm.cluster, cluster)
+        self.assertEqual(vm.vcpus, 4)
+        self.assertEqual(vm.memory_mb, 8192)
+        self.assertEqual(vm.disk_gb, 40)
+
+        iface = VMInterface.objects.get(vm=vm)
+        self.assertEqual(iface.name, "Network adapter 1")
+        self.assertEqual(iface.mac_address, "00:50:56:aa:bb:cc")
+
+        ip = IPAddress.objects.get(ip_address="10.77.0.40")
+        self.assertEqual(ip.assigned_vm, vm)
+        self.assertEqual(ip.assigned_vm_interface, iface)
+        vm.refresh_from_db()
+        self.assertEqual(vm.primary_ip, ip)
+
+    def test_moref_becomes_integer_vmid(self):
+        self.sync()
+        self.assertTrue(VirtGuest.objects.filter(vmid=100, kind="vmware").exists())
+        self.assertTrue(VirtGuest.objects.filter(vmid=101).exists())
+
+    def test_powered_off_vm_gets_no_guest_ip(self):
+        self.sync()
+        db = VirtualMachine.objects.get(name="db01")
+        # NIC still comes from hardware; no guest-tools IP for a powered-off VM.
+        self.assertTrue(VMInterface.objects.filter(vm=db).exists())
+        self.assertFalse(IPAddress.objects.filter(assigned_vm=db).exists())
+
+    def test_node_maps_to_esxi_host_device(self):
+        host = Device.objects.create(tenant=self.tenant, name="esxi-lab-01")
+        self.sync()
+        vm = VirtualMachine.objects.get(name="web01")
+        self.assertEqual(vm.device, host)
+
+    def test_sync_is_idempotent(self):
+        self.sync()
+        self.sync()
+        self.assertEqual(VirtualMachine.objects.count(), 2)
+        self.assertEqual(VMInterface.objects.count(), 2)
+        self.assertEqual(IPAddress.objects.count(), 1)
+
+    def test_review_mode_queues_changes(self):
+        from integrations.models import VirtChange
+
+        self.source.sync_mode = "review"
+        self.source.save(update_fields=["sync_mode"])
+        counts = self.sync()
+        self.assertEqual(counts["vms_created"], 0)
+        self.assertEqual(VirtualMachine.objects.count(), 0)
+        self.assertEqual(VirtChange.objects.filter(kind="new_guest").count(), 2)
+
+    def test_dispatch_routes_vcenter_engine(self):
+        from integrations.models import IntegrationSettings
+        from integrations.sync_tasks import run_virt_sync
+
+        IntegrationSettings.objects.create(
+            tenant=self.tenant, virtualization_enabled=True
+        )
+        with mock.patch("integrations.virt_client.VCenterClient", FakeVCenter):
+            counts = run_virt_sync(str(self.source.id))
+        self.assertEqual(counts["vms"], 2)
 
 
 class VirtChangeApiTests(TestCase):

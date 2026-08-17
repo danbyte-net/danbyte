@@ -226,6 +226,7 @@ from .viewsets import (
     TunnelViewSet,
     VirtualChassisViewSet,
     VirtualMachineViewSet,
+    VirtualSwitchViewSet,
     VLANGroupViewSet,
     VLANViewSet,
     VMInterfaceViewSet,
@@ -293,6 +294,7 @@ router.register(r"cluster-types", ClusterTypeViewSet, basename="cluster-type")
 router.register(r"cluster-groups", ClusterGroupViewSet, basename="cluster-group")
 router.register(r"clusters",      ClusterViewSet,     basename="cluster")
 router.register(r"virtual-machines", VirtualMachineViewSet, basename="virtual-machine")
+router.register(r"virtual-switches", VirtualSwitchViewSet, basename="virtual-switch")
 router.register(r"vm-interfaces",  VMInterfaceViewSet, basename="vm-interface")
 router.register(r"racks",         RackViewSet,        basename="rack")
 router.register(r"rack-roles",    RackRoleViewSet,    basename="rack-role")

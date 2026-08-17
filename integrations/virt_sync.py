@@ -37,25 +37,177 @@ _NET_KEY = re.compile(r"^net(\d+)$")
 
 
 def _parse_net(value: str) -> dict:
-    """Parse a Proxmox netX config value into {mac, name}.
+    """Parse a Proxmox netX config value into {mac, name, bridge, tag}.
 
     QEMU: ``virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0,tag=10``
     LXC:  ``name=eth0,bridge=vmbr0,hwaddr=AA:…,ip=dhcp``
     """
-    out = {"mac": "", "name": ""}
+    out = {"mac": "", "name": "", "bridge": "", "tag": None}
     m = _MAC_RE.search(value or "")
     if m:
         out["mac"] = m.group(1).lower()
     for part in (value or "").split(","):
         k, _, v = part.partition("=")
-        if k.strip() == "name":
-            out["name"] = v.strip()
+        k, v = k.strip(), v.strip()
+        if k == "name":
+            out["name"] = v
+        elif k == "bridge":
+            out["bridge"] = v
+        elif k == "tag" and v.isdigit():
+            out["tag"] = int(v)
     return out
 
 
-def sync_proxmox(source) -> dict:
-    from .models import VirtChange, VirtGuest
+# Proxmox disk buses (skip cdrom/efidisk/tpmstate/cloudinit — not data disks).
+_DISK_KEY = re.compile(r"^(scsi|virtio|sata|ide|nvme)(\d+)$")
 
+
+def _disk_size_gb(value: str):
+    """``…,size=32G`` / ``size=1024M`` / ``size=1T`` → whole GB (min 1)."""
+    m = re.search(r"size=(\d+(?:\.\d+)?)([KMGT])", value or "")
+    if not m:
+        return None
+    num = float(m.group(1))
+    gb = num * {"K": 1 / 1024 / 1024, "M": 1 / 1024, "G": 1, "T": 1024}[m.group(2)]
+    return int(gb) or (1 if gb > 0 else None)
+
+
+def _sync_disks(guest, cfg: dict) -> int:
+    """Proxmox VM config disks (scsiN/virtioN/…) → VirtualDisk rows.
+
+    Sync-created rows track the hypervisor; adopted (operator) rows are only
+    blank-filled. Only sync-created disks that vanish are pruned."""
+    from api.models import VirtualDisk
+
+    if guest.vm is None or not cfg:
+        return 0
+    seen, n = set(), 0
+    for key, value in cfg.items():
+        key = str(key)
+        km = _DISK_KEY.match(key)
+        if not km:
+            continue
+        val = str(value)
+        head = val.split(",")[0]
+        if "media=cdrom" in val or head in ("none", "") or head.endswith(".iso"):
+            continue  # optical / empty bus, not a data disk
+        storage = head.split(":")[0] if ":" in head else ""
+        seen.add(key)
+        n += 1
+        _upsert_disk(guest.vm, key, name=key, size_gb=_disk_size_gb(val),
+                     storage=storage, controller=km.group(1))
+    VirtualDisk.objects.filter(
+        vm=guest.vm, created_disk=True
+    ).exclude(key__in=seen).delete()
+    return n
+
+
+def _upsert_disk(vm, key, *, name="", size_gb=None, storage="",
+                 controller="", disk_format="") -> None:
+    """Create or refresh one VirtualDisk. Sync-created rows track the
+    hypervisor; adopted (operator) rows are only blank-filled."""
+    from api.models import VirtualDisk
+
+    controller = controller if controller in {
+        "scsi", "virtio", "ide", "sata", "nvme"
+    } else ""
+    disk = VirtualDisk.objects.filter(vm=vm, key=key).first()
+    if disk is None:
+        VirtualDisk.objects.create(
+            vm=vm, key=key, name=name or key, size_gb=size_gb, storage=storage,
+            controller=controller, disk_format=disk_format, created_disk=True,
+        )
+        return
+    changed = []
+    for f, v in (("name", name), ("size_gb", size_gb), ("storage", storage),
+                 ("controller", controller), ("disk_format", disk_format)):
+        if v in (None, ""):
+            continue
+        if disk.created_disk or getattr(disk, f) in (None, ""):
+            if getattr(disk, f) != v:
+                setattr(disk, f, v)
+                changed.append(f)
+    if changed:
+        disk.save(update_fields=changed)
+
+
+def _network_group(source, cluster):
+    """A dedicated VLANGroup for one source's synced VLANs — keeps their VIDs
+    scoped so they never collide with operator-defined VLANs."""
+    from api.models import VLANGroup
+
+    grp, _ = VLANGroup.objects.get_or_create(
+        tenant=source.tenant, slug=f"virt-{source.id.hex[:12]}",
+        defaults={"name": f"{source.name} networks", "cluster": cluster},
+    )
+    return grp
+
+
+def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now):
+    """Shared: upsert VirtualSwitch(bridge) + VirtNetwork(→VLAN) and blank-fill
+    the VM interface's VLAN. Returns 1 if a network row was touched."""
+    from api.models import VLAN, VMInterface, VirtualSwitch
+    from .models import VirtNetwork
+
+    if not bridge:
+        return 0
+    c = cluster()
+    vswitch, _ = VirtualSwitch.objects.get_or_create(
+        tenant=source.tenant, cluster=c, name=bridge,
+        defaults={"kind": "linux-bridge" if source.kind == "proxmox"
+                  else "standard", "created_switch": True},
+    )
+    vlan = None
+    if tag is not None:
+        grp = _network_group(source, c)
+        vlan, _ = VLAN.objects.get_or_create(
+            tenant=source.tenant, group=grp, vlan_id=tag,
+            defaults={"name": name or f"{bridge} VLAN {tag}"},
+        )
+    ext_key = f"{bridge}:{tag}" if tag is not None else bridge
+    vn, _ = VirtNetwork.objects.get_or_create(
+        source=source, ext_key=ext_key,
+        defaults={"name": name or ext_key},
+    )
+    changed = ["last_seen_at"]
+    vn.last_seen_at = now
+    if vn.vswitch_id is None:
+        vn.vswitch = vswitch
+        changed.append("vswitch")
+    if vn.vlan_id is None and vlan is not None:
+        vn.vlan = vlan
+        vn.created_vlan = True
+        changed += ["vlan", "created_vlan"]
+    vn.save(update_fields=changed)
+    # Blank-fill the interface's access VLAN (never overwrite operator intent).
+    if vlan is not None and iface_name:
+        iface = VMInterface.objects.filter(vm=guest.vm, name=iface_name).first()
+        if iface is not None and iface.vlan_id is None:
+            iface.vlan = vlan
+            if not iface.mode:
+                iface.mode = "access"
+            iface.save(update_fields=["vlan", "mode"])
+    return 1
+
+
+def _sync_networks_proxmox(source, cluster, guest, cfg, now) -> int:
+    """Proxmox NIC bridges/tags → VirtualSwitch + VirtNetwork(→VLAN)."""
+    if guest.vm is None or not cfg:
+        return 0
+    n = 0
+    for key, value in cfg.items():
+        if not _NET_KEY.match(str(key)):
+            continue
+        parsed = _parse_net(str(value))
+        iface_name = parsed["name"] or str(key)
+        n += _link_network(
+            source, cluster, guest, iface_name,
+            parsed["bridge"], parsed["tag"], "", now,
+        )
+    return n
+
+
+def sync_proxmox(source) -> dict:
     # cluster/status needs Sys.Audit on / — a narrowly-scoped token may be
     # denied it while still seeing VMs. Fall back to /nodes + the source name.
     try:
@@ -75,11 +227,13 @@ def sync_proxmox(source) -> dict:
     ]
 
     now = timezone.now()
-    apply = source.sync_mode == "auto"
     counts = {"nodes": len(nodes), "vms": 0, "vms_created": 0,
-              "interfaces": 0, "ips": 0, "pending": 0}
+              "interfaces": 0, "ips": 0, "disks": 0, "networks": 0,
+              "pending": 0}
 
     # Guest details come over the network — fetch before the DB transaction.
+    # The Proxmox config blob carries both NICs (netN) and disks (scsiN/…), so
+    # one fetch feeds interfaces, disks and networks.
     details = {}
     for r in resources:
         vmid, node = r.get("vmid"), r.get("node")
@@ -98,8 +252,30 @@ def sync_proxmox(source) -> dict:
                 agent_ifaces = (agent or {}).get("result", [])
             except VirtAPIError:
                 pass  # agent not installed/running — IPs just stay unknown
-        details[vmid] = (cfg, agent_ifaces)
+        details[vmid] = {"ifaces": cfg, "ips": agent_ifaces,
+                         "disks": cfg, "nets": cfg}
 
+    return _run_pass(source, cluster_name, resources, details, now, counts,
+                     _sync_interfaces, _sync_ips,
+                     sync_disks_fn=_sync_disks,
+                     sync_nets_fn=_sync_networks_proxmox, label="proxmox")
+
+
+def _run_pass(source, cluster_name, resources, details, now, counts,
+              sync_ifaces, sync_ips, *, sync_disks_fn=None,
+              sync_nets_fn=None, label) -> dict:
+    """Reconcile one fetched inventory against Danbyte — hypervisor-agnostic.
+
+    ``resources`` is a list of normalised guest dicts (``vmid``, ``name``,
+    ``type``, ``node``, ``status`` + ``maxcpu``/``maxmem``/``maxdisk`` specs);
+    ``details`` maps ``vmid → (iface_data, ip_data)`` fetched before the
+    transaction. ``sync_ifaces``/``sync_ips`` are the hypervisor-specific
+    callables that turn that detail into VMInterface/IPAddress rows. Everything
+    else — adoption, spec diffing, the review queue, orphan pruning — is shared.
+    """
+    from .models import VirtChange, VirtGuest
+
+    apply = source.sync_mode == "auto"
     with transaction.atomic():
         # The cluster is a container — only materialise it when a VM actually
         # lands (so a review-mode source with nothing accepted stays inert).
@@ -118,7 +294,7 @@ def sync_proxmox(source) -> dict:
                 continue
             seen.add(vmid)
             counts["vms"] += 1
-            kind = "lxc" if r.get("type") == "lxc" else "qemu"
+            kind = r.get("kind") or ("lxc" if r.get("type") == "lxc" else "qemu")
             guest, _ = VirtGuest.objects.get_or_create(
                 source=source, vmid=vmid, defaults={"kind": kind}
             )
@@ -130,9 +306,15 @@ def sync_proxmox(source) -> dict:
             _reconcile_guest(source, cluster, cluster_name, guest, r, apply,
                              now, counts, fresh_changes)
             if guest.vm_id:
-                cfg, agent_ifaces = details.get(vmid, ({}, []))
-                counts["interfaces"] += _sync_interfaces(guest, cfg)
-                counts["ips"] += _sync_ips(source, guest, agent_ifaces)
+                d = details.get(vmid) or {}
+                counts["interfaces"] += sync_ifaces(guest, d.get("ifaces"))
+                counts["ips"] += sync_ips(source, guest, d.get("ips"))
+                if source.sync_disks and sync_disks_fn:
+                    counts["disks"] += sync_disks_fn(guest, d.get("disks"))
+                if source.sync_networks and sync_nets_fn:
+                    counts["networks"] += sync_nets_fn(
+                        source, cluster, guest, d.get("nets"), now
+                    )
 
         # Guests gone from the hypervisor.
         for gone in VirtGuest.objects.filter(source=source).exclude(vmid__in=seen):
@@ -157,7 +339,7 @@ def sync_proxmox(source) -> dict:
     source.last_sync_error = ""
     source.save(update_fields=["last_sync_at", "last_sync_status",
                                "last_sync_error"])
-    logger.info("proxmox sync %s (%s): %s", source.name, source.sync_mode, counts)
+    logger.info("%s sync %s (%s): %s", label, source.name, source.sync_mode, counts)
     return counts
 
 
@@ -287,18 +469,25 @@ def _prune_changes(source, fresh_changes) -> None:
             row.delete()
 
 
+_CLUSTER_TYPE = {
+    "proxmox": ("Proxmox VE", "proxmox-ve"),
+    "vcenter": ("VMware vCenter", "vmware-vcenter"),
+}
+
+
 def _cluster_for(source, name: str):
     from api.models import Cluster, ClusterType
 
     existing = Cluster.objects.filter(tenant=source.tenant, name=name).first()
     if existing:
         return existing
+    type_name, type_slug = _CLUSTER_TYPE.get(source.kind, _CLUSTER_TYPE["proxmox"])
     ctype = ClusterType.objects.filter(
-        tenant=source.tenant, name__iexact="Proxmox VE"
+        tenant=source.tenant, name__iexact=type_name
     ).first()
     if ctype is None:
         ctype = ClusterType.objects.create(
-            tenant=source.tenant, name="Proxmox VE", slug="proxmox-ve"
+            tenant=source.tenant, name=type_name, slug=type_slug
         )
     return Cluster.objects.create(
         tenant=source.tenant, name=name, type=ctype,
@@ -329,11 +518,29 @@ def _sync_interfaces(guest, cfg: dict) -> int:
     return n
 
 
-def _sync_ips(source, guest, agent_ifaces: list) -> int:
-    """Attach guest-agent IPs to the VM's interfaces (matched by MAC)."""
+def _sync_ips(source, guest, agent_ifaces) -> int:
+    """Proxmox guest-agent IPs → the shared attach path (matched by MAC)."""
+    entries = [
+        {
+            "mac": entry.get("hardware-address") or "",
+            "ips": [i.get("ip-address") or ""
+                    for i in (entry.get("ip-addresses") or [])],
+        }
+        for entry in (agent_ifaces or [])
+    ]
+    return _attach_ips(source, guest, entries)
+
+
+def _attach_ips(source, guest, entries) -> int:
+    """Attach discovered IPs to a VM's interfaces (matched by MAC).
+
+    ``entries`` is a hypervisor-agnostic ``[{"mac": .., "ips": [str, ..]}]``.
+    An IP is only recorded when a containing Prefix already exists — sync never
+    invents address space — and only ever adopts an unassigned IPAM row.
+    """
     from api.models import IPAddress, Prefix, VMInterface
 
-    if guest.vm is None or not agent_ifaces:
+    if guest.vm is None or not entries:
         return 0
     prefixes = []
     for p in Prefix.objects.filter(tenant=source.tenant, vrf__isnull=True):
@@ -356,11 +563,10 @@ def _sync_ips(source, guest, agent_ifaces: list) -> int:
     }
     n = 0
     first_v4 = None
-    for entry in agent_ifaces:
-        mac = (entry.get("hardware-address") or "").lower()
+    for entry in entries:
+        mac = (entry.get("mac") or "").lower()
         iface = by_mac.get(mac)
-        for ipinfo in entry.get("ip-addresses") or []:
-            raw = ipinfo.get("ip-address") or ""
+        for raw in entry.get("ips") or []:
             try:
                 addr = ipaddress.ip_address(raw)
             except ValueError:
@@ -397,6 +603,192 @@ def _sync_ips(source, guest, agent_ifaces: list) -> int:
         guest.vm.primary_ip = first_v4
         guest.vm.save(update_fields=["primary_ip"])
     return n
+
+
+# ─── VMware vCenter (vSphere Automation REST) ────────────────────────────────
+
+_MOREF_RE = re.compile(r"(\d+)")
+
+_VC_POWER = {"POWERED_ON": "running", "POWERED_OFF": "stopped",
+             "SUSPENDED": "suspended"}
+
+
+def _moref_id(moref: str):
+    """``vm-1023`` → ``1023``. vCenter MoRefs are stable per VM lifetime, so the
+    integer is a safe key for VirtGuest.vmid (a PositiveIntegerField)."""
+    m = _MOREF_RE.search(moref or "")
+    return int(m.group(1)) if m else None
+
+
+def _vcenter_resource(summary: dict, info: dict, vmid: int, node: str) -> dict:
+    """Normalise a vCenter VM into the shared resource shape ``_run_pass`` wants."""
+    mem_mib = (info.get("memory") or {}).get("size_MiB") \
+        or summary.get("memory_size_MiB") or 0
+    cpu = (info.get("cpu") or {}).get("count") or summary.get("cpu_count") or 0
+    disk_bytes = sum(
+        int((d or {}).get("capacity") or 0)
+        for d in (info.get("disks") or {}).values()
+    )
+    power = summary.get("power_state") or info.get("power_state") or ""
+    return {
+        "vmid": vmid,
+        "kind": "vmware",
+        "type": "vmware",
+        "name": summary.get("name") or info.get("name") or f"vm-{vmid}",
+        "node": node,
+        "status": _VC_POWER.get(power, power.lower()),
+        "maxcpu": cpu,
+        "maxmem": int(mem_mib) * 1024 * 1024,
+        "maxdisk": disk_bytes,
+    }
+
+
+def sync_vcenter(source) -> dict:
+    from .virt_client import VCenterClient
+
+    client = VCenterClient(source).login()
+    try:
+        vms = client.get("vcenter/vm") or []
+        clusters = client.get("vcenter/cluster") or []
+        hosts = client.get("vcenter/host") or []
+
+        # A single cluster names the api.Cluster; a multi-cluster vCenter falls
+        # back to the source name (VM→cluster placement isn't in the VM summary).
+        cluster_name = clusters[0]["name"] if len(clusters) == 1 else source.name
+
+        # Map each VM to its ESXi host so blank-fill can link the host Device.
+        host_of: dict = {}
+        for h in hosts:
+            hm, hn = h.get("host"), h.get("name") or ""
+            if not hm:
+                continue
+            try:
+                on_host = client.get(f"vcenter/vm?hosts={hm}") or []
+            except VirtAPIError:
+                on_host = []
+            for v in on_host:
+                host_of[v.get("vm")] = hn
+
+        now = timezone.now()
+        counts = {"nodes": len(hosts), "vms": 0, "vms_created": 0,
+                  "interfaces": 0, "ips": 0, "disks": 0, "networks": 0,
+                  "pending": 0}
+
+        resources: list = []
+        details: dict = {}
+        for v in vms:
+            moref = v.get("vm")
+            vmid = _moref_id(moref)
+            if vmid is None:
+                continue
+            try:
+                info = client.get(f"vcenter/vm/{moref}") or {}
+            except VirtAPIError as exc:
+                logger.warning("vcenter vm %s fetch failed: %s", moref, exc)
+                info = {}
+            resources.append(
+                _vcenter_resource(v, info, vmid, host_of.get(moref, ""))
+            )
+            nics = info.get("nics") or {}
+            guest_nets = []
+            if v.get("power_state") == "POWERED_ON":
+                try:
+                    guest_nets = client.get(
+                        f"vcenter/vm/{moref}/guest/networking/interfaces"
+                    ) or []
+                except VirtAPIError:
+                    pass  # VMware Tools absent/starting — IPs stay unknown
+            details[vmid] = {"ifaces": nics, "ips": guest_nets,
+                             "disks": info.get("disks"), "nets": nics}
+
+        return _run_pass(source, cluster_name, resources, details, now, counts,
+                         _sync_vcenter_interfaces, _sync_vcenter_ips,
+                         sync_disks_fn=_sync_vcenter_disks,
+                         sync_nets_fn=_sync_networks_vcenter, label="vcenter")
+    finally:
+        client.close()
+
+
+def _sync_vcenter_disks(guest, disks) -> int:
+    """vCenter VM disk devices → VirtualDisk rows."""
+    from api.models import VirtualDisk
+
+    if guest.vm is None or not disks:
+        return 0
+    seen, n = set(), 0
+    for key, d in disks.items():
+        d = d or {}
+        key = str(key)
+        cap = int(d.get("capacity") or 0)
+        size_gb = int(cap / 1024**3) or (1 if cap > 0 else None)
+        backing = d.get("backing") or {}
+        storage = ""
+        m = re.match(r"\[([^\]]+)\]", backing.get("vmdk_file") or "")
+        if m:
+            storage = m.group(1)
+        seen.add(key)
+        n += 1
+        _upsert_disk(guest.vm, key, name=d.get("label") or key, size_gb=size_gb,
+                     storage=storage, controller=(d.get("type") or "").lower())
+    VirtualDisk.objects.filter(
+        vm=guest.vm, created_disk=True
+    ).exclude(key__in=seen).delete()
+    return n
+
+
+def _sync_networks_vcenter(source, cluster, guest, nics, now) -> int:
+    """vCenter NIC backings → VirtualSwitch + VirtNetwork. VLAN tags live on the
+    port-group (not the VM NIC), so a VLAN is only linked when the backing
+    exposes one; otherwise the network is recorded without a VLAN."""
+    if guest.vm is None or not nics:
+        return 0
+    n = 0
+    for key, nic in nics.items():
+        nic = nic or {}
+        backing = nic.get("backing") or {}
+        network = backing.get("network_name") or backing.get("network") or ""
+        if not network:
+            continue
+        tag = backing.get("vlan_id")
+        iface_name = nic.get("label") or f"nic-{key}"
+        n += _link_network(
+            source, cluster, guest, iface_name, network,
+            int(tag) if isinstance(tag, int) else None, network, now,
+        )
+    return n
+
+
+def _sync_vcenter_interfaces(guest, nics) -> int:
+    from api.models import VMInterface
+
+    if guest.vm is None or not nics:
+        return 0
+    n = 0
+    for key, nic in (nics or {}).items():
+        nic = nic or {}
+        name = nic.get("label") or f"nic-{key}"
+        mac = (nic.get("mac_address") or "").lower()
+        iface = VMInterface.objects.filter(vm=guest.vm, name=name).first()
+        if iface is None:
+            VMInterface.objects.create(vm=guest.vm, name=name, mac_address=mac)
+        elif mac and not iface.mac_address:
+            iface.mac_address = mac
+            iface.save(update_fields=["mac_address"])
+        n += 1
+    return n
+
+
+def _sync_vcenter_ips(source, guest, guest_nets) -> int:
+    """vCenter guest-tools IPs → the shared attach path (matched by MAC)."""
+    entries = [
+        {
+            "mac": gn.get("mac_address") or "",
+            "ips": [a.get("ip_address") or ""
+                    for a in ((gn.get("ip") or {}).get("ip_addresses") or [])],
+        }
+        for gn in (guest_nets or [])
+    ]
+    return _attach_ips(source, guest, entries)
 
 
 def record_virt_failure(source, exc: Exception) -> None:

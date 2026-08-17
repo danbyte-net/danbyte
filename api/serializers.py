@@ -39,7 +39,8 @@ from .models import (
     RearPortTemplate, Region, RIR, RouteTarget, Service, ServiceTemplate,
     SiteMarker,
     DeviceTypeService, Site,
-    VirtualMachine, VMInterface, VLAN, VLANGroup, VRF, Zone,
+    VirtualMachine, VirtualDisk, VirtualSwitch, VMInterface, VLAN, VLANGroup,
+    VRF, Zone,
     WirelessLAN, WirelessLANGroup,
     Tunnel, TunnelGroup, TunnelTermination, IPSecProfile,
     L2VPN, L2VPNTermination, VirtualChassis,
@@ -3572,8 +3573,45 @@ class VirtualMachineMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name", "status"]
 
 
+class VirtualDiskSerializer(serializers.ModelSerializer):
+    """A VM's virtual disk. Read+write so operators can edit an adopted VM's
+    disks; sync fills sync-created rows."""
+
+    vm_id = TenantScopedPrimaryKeyRelatedField(
+        source="vm", queryset=VirtualMachine.objects.all(), write_only=True
+    )
+
+    class Meta:
+        model = VirtualDisk
+        fields = ["id", "vm_id", "key", "name", "size_gb", "storage",
+                  "controller", "disk_format", "created_disk", "description",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "created_disk", "created_at", "updated_at"]
+
+
+class VirtualSwitchSerializer(serializers.ModelSerializer):
+    """A hypervisor virtual switch. Sync-created rows are read-mostly, but an
+    operator may edit/remove them."""
+
+    cluster = ClusterMiniSerializer(read_only=True)
+    cluster_id = TenantScopedPrimaryKeyRelatedField(
+        source="cluster", queryset=Cluster.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+
+    class Meta:
+        model = VirtualSwitch
+        fields = ["id", "name", "kind", "kind_display", "cluster", "cluster_id",
+                  "uplinks", "mtu", "created_switch", "description",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "kind_display", "created_switch",
+                            "created_at", "updated_at"]
+
+
 class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cluster = ClusterMiniSerializer(read_only=True)
+    disks = VirtualDiskSerializer(many=True, read_only=True)
     cluster_id = TenantScopedPrimaryKeyRelatedField(
         source="cluster", queryset=Cluster.objects.all(), write_only=True
     )
@@ -3624,8 +3662,8 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
         fields = ["id", "name", "cluster", "cluster_id",
                   "role", "role_id", "platform", "platform_id",
                   "device", "device_id",
-                  "site", "site_id", "status", "status_id", 
-                  "vcpus", "memory_mb", "disk_gb",
+                  "site", "site_id", "status", "status_id",
+                  "vcpus", "memory_mb", "disk_gb", "disks",
                   "primary_ip", "primary_ip_id", "description",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]

@@ -46,7 +46,7 @@ from .models import (
     PowerFeed, PowerOutlet, PowerOutletTemplate, PowerPanel, PowerPort,
     PowerPortTemplate, Prefix, Provider, ProviderNetwork, RearPort,
     RearPortTemplate,
-    DeviceRole, Platform, PlatformGroup, Rack, RackRole, RackType, RackTypeAccessory, RIR, RouteTarget, Service, ServiceTemplate, Site, VirtualMachine, VMInterface, VLAN, VLANGroup, VRF, Zone,
+    DeviceRole, Platform, PlatformGroup, Rack, RackRole, RackType, RackTypeAccessory, RIR, RouteTarget, Service, ServiceTemplate, Site, VirtualMachine, VirtualSwitch, VMInterface, VLAN, VLANGroup, VRF, Zone,
     WirelessLAN, WirelessLANGroup,
     Tunnel, TunnelGroup, TunnelTermination, IPSecProfile,
     L2VPN, L2VPNTermination, VirtualChassis,
@@ -130,6 +130,7 @@ from .serializers import (
     ClusterGroupMiniSerializer,
     ClusterSerializer,
     ClusterTypeSerializer,
+    VirtualSwitchSerializer,
     ClusterTypeMiniSerializer,
     VirtualMachineSerializer,
     VirtualMachineMiniSerializer,
@@ -4330,6 +4331,23 @@ class ClusterViewSet(TenantScopedViewSet):
                 status=drf_status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
+
+
+class VirtualSwitchViewSet(TenantScopedViewSet):
+    queryset = VirtualSwitch.objects.all().order_by(NATURAL_NAME)
+    serializer_class = VirtualSwitchSerializer
+    pagination_class = StandardPagination
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related("cluster")
+        if self.request:
+            s = self.request.query_params.get("search", "").strip()
+            if s:
+                qs = qs.filter(name__icontains=s)
+            cluster = self.request.query_params.get("cluster")
+            if cluster:
+                qs = qs.filter(cluster_id=cluster)
+        return qs
 
 
 class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
