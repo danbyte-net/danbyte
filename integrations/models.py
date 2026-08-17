@@ -827,7 +827,11 @@ class DnsRecord(TimestampedModel):
     RBAC-registered but deliberately **not** audited.
     """
 
-    RTYPE_CHOICES = [("A", "A"), ("AAAA", "AAAA"), ("PTR", "PTR")]
+    RTYPE_CHOICES = [
+        ("A", "A"), ("AAAA", "AAAA"), ("CNAME", "CNAME"), ("MX", "MX"),
+        ("TXT", "TXT"), ("NS", "NS"), ("SRV", "SRV"), ("PTR", "PTR"),
+        ("CAA", "CAA"),
+    ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     zone = models.ForeignKey(
@@ -835,13 +839,18 @@ class DnsRecord(TimestampedModel):
     )
     name = models.CharField(max_length=255)  # FQDN
     record_type = models.CharField(max_length=8, choices=RTYPE_CHOICES)
-    data = models.CharField(max_length=255)  # A/AAAA: the IP; PTR: the target
-    ip = models.GenericIPAddressField()  # the address this record concerns
+    data = models.CharField(max_length=255)  # value: IP, target, "10 mail…", text
+    # Only address records (A/AAAA/PTR) carry an IP; nullable for other types.
+    ip = models.GenericIPAddressField(null=True, blank=True)
     ip_address = models.ForeignKey(
         "api.IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="dns_records",
     )
     ttl = models.CharField(max_length=32, blank=True, default="")
+    # Authored in Danbyte (the source of truth) rather than mirrored from a
+    # Windows server. Managed records are user-editable and are NEVER pruned by
+    # the sync (which only owns the records it observed).
+    managed = models.BooleanField(default=False)
     last_seen_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:

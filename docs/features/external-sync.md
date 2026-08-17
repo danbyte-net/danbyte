@@ -192,6 +192,19 @@ To pull it in:
   off by default, since importing is a deliberate choice. It still only creates
   IPs where a prefix exists.
 
+### Authoring records
+
+Records synced from a Windows server are read-only (the server owns them). You
+can also **author your own** records in Danbyte: **DNS records → Add record**
+(or the same button on a zone page) opens a form — pick the zone, name, **type**
+(A, AAAA, CNAME, MX, TXT, NS, SRV, PTR, CAA), value, and an optional TTL, with
+per-type validation (an A must be an IPv4, an MX is `"10 mail…"`, and so on).
+Authored records are marked **managed**: they're **editable and deletable** (a
+pencil/trash on the row), and the sync **never** touches or prunes them — so
+Danbyte can be the source of truth even in a zone it also observes. (Pushing
+authored records out to a DNS backend is a planned follow-up; today they live
+in Danbyte.)
+
 ## Virtualization (Proxmox VE & VMware vCenter)
 
 Enable the **Virtualization sync** toggle and add a source under

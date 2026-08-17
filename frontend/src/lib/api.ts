@@ -7051,10 +7051,31 @@ export interface DnsRecord {
   connection: string
   connection_name: string
   name: string
-  record_type: "A" | "AAAA" | "PTR"
+  record_type: DnsRecordType
   data: string
-  ip: string
+  ip: string | null
   ip_address: string | null
   ttl: string
+  /** Authored in Danbyte (editable) vs mirrored from a DNS server (read-only). */
+  managed: boolean
   last_seen_at: string | null
+}
+
+export type DnsRecordType =
+  | "A"
+  | "AAAA"
+  | "CNAME"
+  | "MX"
+  | "TXT"
+  | "NS"
+  | "SRV"
+  | "PTR"
+  | "CAA"
+
+export interface DnsRecordWritePayload {
+  zone: string
+  name: string
+  record_type: DnsRecordType
+  data: string
+  ttl?: string
 }

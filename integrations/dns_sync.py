@@ -222,7 +222,9 @@ def sync_dns(conn) -> dict:
     # by a zone whose reconcile was switched off (or that vanished).
     from .models import DnsDrift, DnsRecord
 
-    DnsRecord.objects.filter(zone__connection=conn, zone__sync=False).delete()
+    DnsRecord.objects.filter(
+        zone__connection=conn, zone__sync=False, managed=False
+    ).delete()
     DnsDrift.objects.filter(zone__connection=conn, zone__sync=False).delete()
 
     synced = list(DnsZone.objects.filter(connection=conn, sync=True))
@@ -365,8 +367,9 @@ def _reconcile(conn, synced_zones, data, now, counts) -> None:
         if (stale.zone_id, stale.ip, stale.record_type) not in fresh:
             stale.delete()
 
-    # Records removed from the zone since last sync go too.
-    for stale in DnsRecord.objects.filter(zone__in=synced_zones):
+    # Records removed from the zone since last sync go too — but never the
+    # ones authored in Danbyte (managed).
+    for stale in DnsRecord.objects.filter(zone__in=synced_zones, managed=False):
         key = (stale.zone_id, stale.name, stale.record_type, stale.data)
         if key not in fresh_records:
             stale.delete()

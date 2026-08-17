@@ -87,8 +87,75 @@ class DnsRecordSerializer(serializers.ModelSerializer):
         model = DnsRecord
         fields = ["id", "zone", "zone_name", "connection", "connection_name",
                   "name", "record_type", "data", "ip", "ip_address", "ttl",
-                  "last_seen_at"]
+                  "managed", "last_seen_at"]
         read_only_fields = fields
+
+
+class DnsRecordWriteSerializer(serializers.ModelSerializer):
+    """Create/edit an **authored** (managed) record. Per-type validation mirrors
+    what netbox-dns enforces; the record lives in Danbyte as the source of truth
+    (pushing to a DNS backend is a later phase)."""
+
+    class Meta:
+        model = DnsRecord
+        fields = ["id", "zone", "name", "record_type", "data", "ttl"]
+
+    def validate_zone(self, zone):
+        tenant = self.context.get("tenant")
+        if tenant is not None and zone.connection_id and \
+                zone.connection.tenant_id != tenant.id:
+            raise serializers.ValidationError("Zone is not in your tenant.")
+        return zone
+
+    def validate(self, attrs):
+        import ipaddress as _ip
+
+        rtype = attrs.get("record_type") or getattr(
+            self.instance, "record_type", ""
+        )
+        data = (attrs.get("data") or getattr(self.instance, "data", "")).strip()
+        if not data:
+            raise serializers.ValidationError({"data": "Value is required."})
+
+        def bad(msg):
+            raise serializers.ValidationError({"data": msg})
+
+        if rtype == "A":
+            try:
+                if _ip.ip_address(data).version != 4:
+                    bad("An A record's value must be an IPv4 address.")
+            except ValueError:
+                bad("An A record's value must be an IPv4 address.")
+        elif rtype == "AAAA":
+            try:
+                if _ip.ip_address(data).version != 6:
+                    bad("An AAAA record's value must be an IPv6 address.")
+            except ValueError:
+                bad("An AAAA record's value must be an IPv6 address.")
+        elif rtype in ("CNAME", "NS", "PTR"):
+            if " " in data:
+                bad(f"A {rtype} value must be a single hostname.")
+        elif rtype == "MX":
+            parts = data.split()
+            if len(parts) != 2 or not parts[0].isdigit():
+                bad('MX must be "<priority> <mail-host>", e.g. "10 mail.x.com".')
+        elif rtype == "SRV":
+            parts = data.split()
+            if len(parts) != 4 or not all(p.isdigit() for p in parts[:3]):
+                bad('SRV must be "<pri> <weight> <port> <target>".')
+        elif rtype == "CAA":
+            parts = data.split(maxsplit=2)
+            if len(parts) != 3 or not parts[0].isdigit():
+                bad('CAA must be "<flags> <tag> <value>", e.g. "0 issue ca.x".')
+        # TXT: any non-empty value is fine.
+        return attrs
+
+    def create(self, validated_data):
+        validated_data["managed"] = True
+        rtype, data = validated_data["record_type"], validated_data["data"]
+        if rtype in ("A", "AAAA"):
+            validated_data["ip"] = data
+        return super().create(validated_data)
 
 
 class DnsRecordViewSet(IntegrationToggleMixin, TenantScopedViewSet):
@@ -99,7 +166,7 @@ class DnsRecordViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 
     integration_keys = ("dns",)
     tenant_field = "zone__connection__tenant"
-    http_method_names = ["get", "post"]
+    http_method_names = ["get", "post", "patch", "delete"]
     queryset = DnsRecord.objects.select_related(
         "zone", "zone__connection", "ip_address"
     ).order_by("name")
@@ -108,10 +175,39 @@ class DnsRecordViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     # a dnsrecord write — so map them to the read action for the type-level gate.
     rbac_action_map = {"import_": "view", "import_unmatched": "view"}
 
-    def create(self, request, *args, **kwargs):
-        from rest_framework.exceptions import MethodNotAllowed
+    def get_serializer_class(self):
+        if self.action in ("create", "update", "partial_update"):
+            return DnsRecordWriteSerializer
+        return DnsRecordSerializer
 
-        raise MethodNotAllowed("POST")
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx["tenant"] = self._tenant_or_403()
+        return ctx
+
+    def perform_create(self, serializer):
+        # DnsRecord scopes through zone→connection→tenant (a traversal, not an
+        # own tenant field), so the base tenant-injection can't apply here — the
+        # zone (validated to the tenant) carries it.
+        serializer.save()
+
+    def _guard_managed(self):
+        """Only authored records are editable; the synced mirror is read-only."""
+        from rest_framework.exceptions import PermissionDenied
+
+        if not self.get_object().managed:
+            raise PermissionDenied(
+                "This record is synced from a DNS server and is read-only. "
+                "Only records created in Danbyte can be edited."
+            )
+
+    def update(self, request, *args, **kwargs):
+        self._guard_managed()
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        self._guard_managed()
+        return super().destroy(request, *args, **kwargs)
 
     def _require_ip_add(self, request):
         from auth_api import rbac

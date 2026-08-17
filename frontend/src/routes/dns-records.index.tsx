@@ -1,12 +1,15 @@
 import { useMemo, useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
+import { Plus } from "lucide-react"
 
 import { api, type DnsRecord, type Paginated } from "@/lib/api"
+import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ListPageShell } from "@/components/list-page-shell"
 import { DnsRecordsTable } from "@/components/integrations/dns-records-table"
+import { DnsRecordDialog } from "@/components/integrations/dns-record-dialog"
 import { useFacetRail } from "@/lib/use-facet-rail"
 
 export const Route = createFileRoute("/dns-records/")({
@@ -18,6 +21,9 @@ export const Route = createFileRoute("/dns-records/")({
 
 function DnsRecordsPage() {
   const { zone } = Route.useSearch()
+  const { canDo } = useMe()
+  const canAdd = canDo("dnsrecord", "add")
+  const [adding, setAdding] = useState(false)
   const [q, setQ] = useState("")
   const query = useQuery({
     queryKey: ["dns-records", "all", q, zone ?? ""],
@@ -58,6 +64,13 @@ function DnsRecordsPage() {
       query={query}
       rail={rail}
       search={{ value: q, onChange: setQ, placeholder: "Name or address…" }}
+      actions={
+        canAdd && (
+          <Button size="sm" onClick={() => setAdding(true)}>
+            <Plus className="h-3.5 w-3.5" /> Add record
+          </Button>
+        )
+      }
     >
       {zone && (
         <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
@@ -74,7 +87,9 @@ function DnsRecordsPage() {
         showZone={!zone}
         empty={q ? "No records match." : "No DNS records stored."}
         tableId="dns-records-all"
+        editable
       />
+      <DnsRecordDialog open={adding} onOpenChange={setAdding} zoneId={zone} />
     </ListPageShell>
   )
 }

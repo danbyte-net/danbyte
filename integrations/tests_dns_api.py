@@ -121,6 +121,66 @@ class DnsApiTests(APITestCase):
         rec.refresh_from_db()
         self.assertIsNotNone(rec.ip_address_id)
 
+    def test_create_managed_record(self):
+        res = self.client.post(
+            "/api/dns-records/",
+            {"zone": str(self.zone.id), "name": "www.danbyte.lan",
+             "record_type": "A", "data": "10.77.0.20", "ttl": "3600"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201, res.content)
+        rec = DnsRecord.objects.get(name="www.danbyte.lan")
+        self.assertTrue(rec.managed)
+        self.assertEqual(rec.ip, "10.77.0.20")
+
+    def test_create_cname_and_txt(self):
+        for name, rtype, data in [
+            ("alias.danbyte.lan", "CNAME", "www.danbyte.lan"),
+            ("danbyte.lan", "TXT", "v=spf1 -all"),
+            ("danbyte.lan", "MX", "10 mail.danbyte.lan"),
+        ]:
+            res = self.client.post(
+                "/api/dns-records/",
+                {"zone": str(self.zone.id), "name": name,
+                 "record_type": rtype, "data": data},
+                format="json",
+            )
+            self.assertEqual(res.status_code, 201, res.content)
+
+    def test_invalid_values_rejected(self):
+        for rtype, data in [("A", "not-an-ip"), ("AAAA", "10.0.0.1"),
+                            ("MX", "mail-without-priority")]:
+            res = self.client.post(
+                "/api/dns-records/",
+                {"zone": str(self.zone.id), "name": "x.danbyte.lan",
+                 "record_type": rtype, "data": data},
+                format="json",
+            )
+            self.assertEqual(res.status_code, 400, (rtype, res.content))
+
+    def test_managed_editable_synced_readonly(self):
+        mine = DnsRecord.objects.create(
+            zone=self.zone, name="edit.danbyte.lan", record_type="A",
+            data="10.77.0.21", ip="10.77.0.21", managed=True,
+        )
+        synced = DnsRecord.objects.create(
+            zone=self.zone, name="synced.danbyte.lan", record_type="A",
+            data="10.77.0.22", ip="10.77.0.22", managed=False,
+        )
+        r1 = self.client.patch(
+            f"/api/dns-records/{mine.id}/", {"data": "10.77.0.99"},
+            format="json",
+        )
+        self.assertEqual(r1.status_code, 200, r1.content)
+        r2 = self.client.patch(
+            f"/api/dns-records/{synced.id}/", {"data": "10.77.0.99"},
+            format="json",
+        )
+        self.assertEqual(r2.status_code, 403)
+        self.assertEqual(
+            self.client.delete(f"/api/dns-records/{mine.id}/").status_code, 204
+        )
+
     def test_endpoints_404_without_toggle(self):
         IntegrationSettings.objects.filter(tenant=self.tenant).update(
             dns_sync_enabled=False

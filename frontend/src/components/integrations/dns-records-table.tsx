@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
+import { Pencil, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { ApiError, api, type DnsRecord, type Paginated } from "@/lib/api"
@@ -13,6 +14,7 @@ import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
 import { FormText } from "@/components/forms"
+import { DnsRecordDialog } from "@/components/integrations/dns-record-dialog"
 import {
   Dialog,
   DialogContent,
@@ -119,6 +121,7 @@ export function DnsRecordsTable({
   showZone = true,
   empty = "No DNS records.",
   tableId = "dns-records",
+  editable = false,
 }: {
   params?: string
   queryKey?: unknown[]
@@ -127,10 +130,25 @@ export function DnsRecordsTable({
   showZone?: boolean
   empty?: string
   tableId?: string
+  /** Show edit/delete actions on authored (managed) records. */
+  editable?: boolean
 }) {
   const qc = useQueryClient()
   const { canDo } = useMe()
   const canImport = canDo("ipaddress", "add")
+  const canChange = canDo("dnsrecord", "change")
+  const canDelete = canDo("dnsrecord", "delete")
+  const [editRec, setEditRec] = useState<DnsRecord | null>(null)
+
+  const del = useMutation({
+    mutationFn: (rec: DnsRecord) =>
+      api(`/api/dns-records/${rec.id}/`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast.success("Record deleted")
+      qc.invalidateQueries({ queryKey: ["dns-records"] })
+    },
+    onError: (e) => apiErrorToast(e),
+  })
   const query = useQuery({
     queryKey: queryKey ?? ["dns-records", "unused"],
     queryFn: () =>
@@ -203,8 +221,41 @@ export function DnsRecordsTable({
             </Button>
           ),
       })
+    if (editable && (canChange || canDelete))
+      cols.push({
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.managed ? (
+            <div className="flex justify-end gap-1">
+              {canChange && (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  title="Edit record"
+                  onClick={() => setEditRec(row.original)}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              {canDelete && (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  title="Delete record"
+                  disabled={del.isPending}
+                  onClick={() => del.mutate(row.original)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+          ) : null,
+      })
     return cols
-  }, [showZone, canImport, importOne])
+  }, [showZone, canImport, importOne, editable, canChange, canDelete, del])
 
   if (query.isError) return <QueryError error={query.error} />
   const table =
@@ -255,6 +306,11 @@ export function DnsRecordsTable({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <DnsRecordDialog
+        open={editRec !== null}
+        onOpenChange={(o) => !o && setEditRec(null)}
+        record={editRec}
+      />
     </>
   )
 }
