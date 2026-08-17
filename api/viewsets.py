@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from django.db import transaction
 from django.db.models.functions import Collate
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 from django.utils.text import slugify
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import permissions, status as drf_status, viewsets
@@ -1143,6 +1143,14 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             .annotate(
                 dhcp_resv_n=Count("dhcp_reservations", distinct=True),
                 dhcp_lease_n=Count("dhcp_leases", distinct=True),
+                dhcp_pool_n=Count(
+                    "prefix__dhcp_scopes",
+                    distinct=True,
+                    filter=Q(
+                        prefix__dhcp_scopes__start_range__lte=F("ip_address"),
+                        prefix__dhcp_scopes__end_range__gte=F("ip_address"),
+                    ),
+                ),
             ),
             request.user, prefix.tenant, "ipaddress", "view",
         )
@@ -1153,7 +1161,18 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         # (change/delete) resolves for the current user — without it every row
         # reports change:false and the table's Edit/Delete row actions vanish.
         ser = IPAddressSerializer(rows, many=True, context=self.get_serializer_context())
-        return Response({"count": len(rows), "results": ser.data})
+        # The scope pool ranges on this prefix, so the pane can shade *free*
+        # addresses (which have no IPAddress row) as DHCP-scope space too.
+        # Reverse accessor — no integrations import.
+        dhcp_ranges = [
+            {"scope_id": s.scope_id, "name": s.name,
+             "start": s.start_range, "end": s.end_range}
+            for s in prefix.dhcp_scopes.all()
+            if s.start_range and s.end_range
+        ]
+        return Response(
+            {"count": len(rows), "results": ser.data, "dhcp_ranges": dhcp_ranges}
+        )
 
     # ── Bulk delete ─────────────────────────────────────────────────────
     @action(detail=False, methods=["post"], url_path="bulk-delete")
@@ -1258,6 +1277,17 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         qs = super().get_queryset().annotate(
             dhcp_resv_n=Count("dhcp_reservations", distinct=True),
             dhcp_lease_n=Count("dhcp_leases", distinct=True),
+            # In a DHCP scope's pool range (start–end) on this address's prefix.
+            # Reverse path `prefix__dhcp_scopes` keeps api free of an integrations
+            # import; the inet columns compare directly.
+            dhcp_pool_n=Count(
+                "prefix__dhcp_scopes",
+                distinct=True,
+                filter=Q(
+                    prefix__dhcp_scopes__start_range__lte=F("ip_address"),
+                    prefix__dhcp_scopes__end_range__gte=F("ip_address"),
+                ),
+            ),
         )
         if not self.request:
             return qs

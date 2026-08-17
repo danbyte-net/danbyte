@@ -8,11 +8,13 @@ import {
   type BulkStatusEntry,
   type BulkStatusResponse,
   type CustomField,
+  type DhcpScopeRange,
   type IPAddress,
   type IPListResponse,
   type IPRange,
   type Paginated,
 } from "@/lib/api"
+import type { DhcpState } from "@/components/dhcp-badge"
 import { objCan } from "@/lib/use-me"
 import { ipToBigInt, bigIntToIp, enumerableHostInts } from "@/lib/prefix-tree"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
@@ -219,6 +221,30 @@ function PrefixIpsTableImpl({
     [rangeSpans]
   )
 
+  // DHCP scope pool ranges (from the ips endpoint) → shade free addresses that
+  // fall inside a pool. Registered rows carry their own `dhcp` state already.
+  const dhcpSpans = useMemo(
+    () =>
+      (query.data?.dhcp_ranges ?? [])
+        .map((r: DhcpScopeRange) => {
+          const start = ipToBigInt(r.start)
+          const end = ipToBigInt(r.end)
+          return start != null && end != null ? { start, end } : null
+        })
+        .filter((x): x is { start: bigint; end: bigint } => !!x),
+    [query.data]
+  )
+  const dhcpStateForRow = useCallback(
+    (r: IpRow): DhcpState | null => {
+      if (r.kind === "registered") return r.ip.dhcp ?? null
+      const n = ipToBigInt(r.address)
+      if (n == null) return null
+      for (const s of dhcpSpans) if (n >= s.start && n <= s.end) return "scope"
+      return null
+    },
+    [dhcpSpans]
+  )
+
   const columns = useMemo<ColumnDef<IpRow>[]>(
     () =>
       buildColumns({
@@ -232,6 +258,7 @@ function PrefixIpsTableImpl({
         cfDefs,
         findRange,
         hasRanges: rangeSpans.length > 0,
+        dhcpStateForRow,
         canEdit,
         canDelete,
         canAdd,
@@ -247,6 +274,7 @@ function PrefixIpsTableImpl({
       cfDefs,
       findRange,
       rangeSpans.length,
+      dhcpStateForRow,
       canEdit,
       canDelete,
       canAdd,
@@ -319,6 +347,7 @@ interface BuildOpts {
   cfDefs: CustomField[]
   findRange: (address: string) => IPRange | null
   hasRanges: boolean
+  dhcpStateForRow: (row: IpRow) => DhcpState | null
   canEdit: boolean
   canDelete: boolean
   canAdd: boolean
@@ -335,6 +364,7 @@ function buildColumns({
   cfDefs,
   findRange,
   hasRanges,
+  dhcpStateForRow,
   canEdit,
   canDelete,
   canAdd,
@@ -350,6 +380,7 @@ function buildColumns({
       address: (r) => (r.kind === "free" ? r.address : ""),
       statusLabel: "Available",
     },
+    dhcpState: dhcpStateForRow,
     cfDefs,
     tagFilter: { activeSlugs: activeTagSlugs, onToggle: onToggleTag },
   })

@@ -119,12 +119,20 @@ Windows DHCP console too.
 
 ### Spotting DHCP in IPAM
 
-Ranges and addresses managed by DHCP are flagged so they're obvious in IPAM: a
-prefix that **backs a DHCP scope** shows a **DHCP** badge in the prefix list,
-and an address with a **reservation or lease** shows one in the IP lists — on
-the prefix's own IPs tab too. DHCP reservations are marked *only* by this badge;
-they never raise the operator's manual **reservation note** marker, which stays
-reserved for addresses a person deliberately holds.
+DHCP-managed space is flagged so it's obvious in IPAM, in one blue hue at two
+intensities so the states read as the same family:
+
+- A prefix that **backs a DHCP scope** shows a **DHCP** badge in the prefix
+  list.
+- On the IP lists — and the prefix's own IPs tab, free addresses included —
+  each address carries the badge in one of two states:
+    - **solid** — *leased*: held right now by a reservation or an active lease.
+    - **faint outline** — *scope*: inside a scope's pool range but not currently
+      handed out (DHCP-managed space, not necessarily in use).
+
+DHCP addresses are marked *only* by this badge; they never raise the operator's
+manual **reservation note** marker, which stays reserved for addresses a person
+deliberately holds.
 
 ### Drift
 

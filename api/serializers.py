@@ -1075,13 +1075,23 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
     switch_interface = serializers.SerializerMethodField()
     dhcp = serializers.SerializerMethodField()
 
-    @extend_schema_field(OpenApiTypes.BOOL)
-    def get_dhcp(self, obj) -> bool:
-        """This address has a DHCP reservation or lease (viewset-annotated)."""
-        return (
-            getattr(obj, "dhcp_resv_n", 0) > 0
-            or getattr(obj, "dhcp_lease_n", 0) > 0
-        )
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_dhcp(self, obj) -> str | None:
+        """DHCP state of the address (all counts are viewset-annotated):
+
+        * ``"leased"`` — held right now, by a reservation or an active lease.
+        * ``"scope"`` — inside a DHCP scope's pool range but not currently
+          leased (DHCP-managed space, not necessarily handed out).
+        * ``None`` — nothing to do with DHCP.
+
+        The two states are drawn in different shades so the operator can tell
+        "the pool lives here" apart from "this address is actually in use".
+        """
+        if getattr(obj, "dhcp_resv_n", 0) > 0 or getattr(obj, "dhcp_lease_n", 0) > 0:
+            return "leased"
+        if getattr(obj, "dhcp_pool_n", 0) > 0:
+            return "scope"
+        return None
     prefix = PrefixMiniSerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)
     is_primary_for_device = serializers.SerializerMethodField()

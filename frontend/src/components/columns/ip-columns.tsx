@@ -5,7 +5,7 @@ import { Info } from "lucide-react"
 import type { CustomField, IPAddress } from "@/lib/api"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
-import { Badge } from "@/components/ui/badge"
+import { DhcpBadge, type DhcpState } from "@/components/dhcp-badge"
 import { StatusBadge } from "@/components/status-badge"
 import { RoleChip } from "@/components/role-chip"
 import { CopyButton } from "@/components/kv-card"
@@ -69,6 +69,11 @@ export interface IpColumnOpts<T> {
   copyButton?: boolean
   /** Rendering for rows where getIp() returns null (free addresses). */
   freeRow?: { address: (row: T) => string; statusLabel?: string }
+  /**
+   * DHCP badge state per row. Defaults to the registered IP's own `dhcp` field;
+   * pass this to also shade *free* rows (which have no IPAddress) as pool space.
+   */
+  dhcpState?: (row: T) => DhcpState | null
   /** One column per tenant custom field. */
   cfDefs?: CustomField[]
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
@@ -101,13 +106,19 @@ export function buildIpColumns<T = IPAddress>(
       header: ({ column }) => <SortHeader column={column} label="Address" />,
       cell: ({ row }) => {
         const ip = getIp(row.original)
+        const dhcpState = opts.dhcpState
+          ? opts.dhcpState(row.original)
+          : (ip?.dhcp ?? null)
+        const dhcpBadge = dhcpState ? <DhcpBadge state={dhcpState} /> : null
         if (!ip) {
-          return opts.freeRow ? (
-            <span className="font-mono text-xs text-muted-foreground italic">
-              {opts.freeRow.address(row.original)}
+          if (!opts.freeRow) return dash
+          return (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="font-mono text-xs text-muted-foreground italic">
+                {opts.freeRow.address(row.original)}
+              </span>
+              {dhcpBadge}
             </span>
-          ) : (
-            dash
           )
         }
         const link = (
@@ -122,15 +133,6 @@ export function buildIpColumns<T = IPAddress>(
         const marker = (
           <PlannedChangeMarker objectType="api.ipaddress" objectId={ip.id} />
         )
-        const dhcpBadge = (ip as { dhcp?: boolean }).dhcp ? (
-          <Badge
-            variant="outline"
-            className="border-sky-500/50 text-[9px] text-sky-600 dark:text-sky-400"
-            title="This address has a DHCP reservation or lease"
-          >
-            DHCP
-          </Badge>
-        ) : null
         if (!opts.copyButton)
           return (
             <span className="inline-flex items-center gap-1.5">

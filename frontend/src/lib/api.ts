@@ -737,8 +737,11 @@ export interface IPAddress {
   id: string
   numid: number | null
   ip_address: string
-  /** Has a DHCP reservation or lease. */
-  dhcp?: boolean
+  /**
+   * DHCP state: `"leased"` = held now (reservation or active lease),
+   * `"scope"` = inside a DHCP scope pool but not leased, `null` = not DHCP.
+   */
+  dhcp?: "leased" | "scope" | null
   prefix: PrefixMini | null
   site: { id: string; name: string } | null
   status: StatusMini | null
@@ -2642,9 +2645,19 @@ export interface IPBulkUpdateFields {
 // Nested IPs endpoint returns a flat list (no DRF pagination on this
 // action). Carries the same Paginated-ish shape so the React side can
 // reuse list helpers.
+/** A DHCP scope's pool range on a prefix — shades free addresses in the pane. */
+export interface DhcpScopeRange {
+  scope_id: string
+  name: string
+  start: string
+  end: string
+}
+
 export interface IPListResponse {
   count: number
   results: IPAddress[]
+  /** Present on the prefix IPs endpoint: the scope pool ranges on this prefix. */
+  dhcp_ranges?: DhcpScopeRange[]
 }
 
 export interface BulkUpdateFields {
