@@ -9,13 +9,15 @@ import {
   type DnsZone,
   type Paginated,
 } from "@/lib/api"
-import { apiErrorToast } from "@/lib/api-toast"
-import { Button } from "@/components/ui/button"
-import { FormSelect, FormText } from "@/components/forms"
+import {
+  FormFooter,
+  FormSelect,
+  FormText,
+  useFieldErrors,
+} from "@/components/forms"
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -59,6 +61,7 @@ export function DnsRecordDialog({
   zoneId?: string
 }) {
   const qc = useQueryClient()
+  const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const isEdit = !!record
 
   const zones = useQuery({
@@ -102,11 +105,15 @@ export function DnsRecordDialog({
           })
     },
     onSuccess: () => {
+      reset()
       qc.invalidateQueries({ queryKey: ["dns-records"] })
       toast.success(isEdit ? "Record saved" : "Record created")
       onOpenChange(false)
     },
-    onError: (e) => apiErrorToast(e),
+    onError: (err) => {
+      const msg = handleApiError(err)
+      if (msg) toast.error(msg)
+    },
   })
 
   const valid = zone && name.trim() && data.trim()
@@ -119,7 +126,13 @@ export function DnsRecordDialog({
             {isEdit ? "Edit DNS record" : "Add DNS record"}
           </DialogTitle>
         </DialogHeader>
-        <div className="grid gap-3">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (valid) save.mutate()
+          }}
+          className="grid gap-3"
+        >
           {!zoneId && !isEdit && (
             <FormSelect
               label="Zone"
@@ -129,46 +142,47 @@ export function DnsRecordDialog({
                 value: z.id,
                 label: z.name,
               }))}
+              error={fieldErrors.zone}
             />
           )}
           <FormText
             label="Name"
             value={name}
             onChange={setName}
+            required
             mono
             placeholder="www.example.com  ·  @ for the apex"
+            error={fieldErrors.name}
           />
           <FormSelect
             label="Type"
             value={type}
             onChange={(v) => setType((v as DnsRecordType) ?? "A")}
             options={TYPES.map((t) => ({ value: t, label: t }))}
+            error={fieldErrors.record_type}
           />
           <FormText
             label="Value"
             value={data}
             onChange={setData}
+            required
             mono
             hint={VALUE_HINT[type]}
+            error={fieldErrors.data}
           />
           <FormText
             label="TTL"
             value={ttl}
             onChange={setTtl}
             placeholder="optional (zone default)"
+            error={fieldErrors.ttl}
           />
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            disabled={!valid || save.isPending}
-            onClick={() => save.mutate()}
-          >
-            {save.isPending ? "Saving…" : isEdit ? "Save" : "Add record"}
-          </Button>
-        </DialogFooter>
+          <FormFooter
+            onCancel={() => onOpenChange(false)}
+            submitting={save.isPending}
+            submitLabel={isEdit ? "Save changes" : "Add record"}
+          />
+        </form>
       </DialogContent>
     </Dialog>
   )

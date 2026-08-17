@@ -4,17 +4,20 @@ import { toast } from "sonner"
 import { Plus } from "lucide-react"
 
 import { api, type DhcpReservation, type DhcpScope } from "@/lib/api"
-import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { FormSelect, FormText } from "@/components/forms"
+import {
+  FormFooter,
+  FormSelect,
+  FormText,
+  useFieldErrors,
+} from "@/components/forms"
 import { DhcpScopeDialog } from "@/components/integrations/dhcp-scope-dialog"
 
 /** Create or edit a DHCP reservation. Saving pushes to the Windows server
@@ -32,6 +35,7 @@ export function DhcpReservationDialog({
 }) {
   const qc = useQueryClient()
   const { canDo } = useMe()
+  const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const isEdit = !!reservation
   const [addingScope, setAddingScope] = useState(false)
   const canAddScope = canDo("dhcpscope", "add")
@@ -58,6 +62,7 @@ export function DhcpReservationDialog({
       })
     },
     onSuccess: () => {
+      reset()
       toast.success(
         isEdit ? "Reservation updated on the server" : "Reservation created"
       )
@@ -65,8 +70,13 @@ export function DhcpReservationDialog({
       qc.invalidateQueries({ queryKey: ["dhcp-scopes"] })
       onOpenChange(false)
     },
-    onError: (e) => apiErrorToast(e),
+    onError: (err) => {
+      const msg = handleApiError(err)
+      if (msg) toast.error(msg)
+    },
   })
+
+  const ready = mac.trim() && (isEdit || (ip.trim() && scope))
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -76,7 +86,13 @@ export function DhcpReservationDialog({
             {isEdit ? `Edit reservation ${reservation.ip}` : "New reservation"}
           </DialogTitle>
         </DialogHeader>
-        <div className="grid gap-3">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (ready) save.mutate()
+          }}
+          className="grid gap-3"
+        >
           {!isEdit && (
             <div className="flex items-end gap-2">
               <div className="flex-1">
@@ -88,6 +104,7 @@ export function DhcpReservationDialog({
                     value: s.id,
                     label: `${s.scope_id}${s.name ? ` — ${s.name}` : ""}`,
                   }))}
+                  error={fieldErrors.scope}
                 />
               </div>
               {canAddScope && (
@@ -111,6 +128,7 @@ export function DhcpReservationDialog({
               required
               mono
               placeholder="10.77.0.60"
+              error={fieldErrors.ip}
             />
           )}
           <FormText
@@ -120,38 +138,31 @@ export function DhcpReservationDialog({
             required
             mono
             placeholder="aa:bb:cc:00:11:22"
+            error={fieldErrors.mac}
           />
           <FormText
             label="Name"
             value={name}
             onChange={setName}
             placeholder="printer-1"
+            error={fieldErrors.name}
           />
           <FormText
             label="Description"
             value={description}
             onChange={setDescription}
             placeholder="optional"
+            error={fieldErrors.description}
           />
           <p className="text-[11px] text-muted-foreground">
             Saving writes the reservation to the DHCP server immediately.
           </p>
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            disabled={
-              save.isPending ||
-              !mac.trim() ||
-              (!isEdit && (!ip.trim() || !scope))
-            }
-            onClick={() => save.mutate()}
-          >
-            {save.isPending ? "Saving…" : isEdit ? "Save" : "Create"}
-          </Button>
-        </DialogFooter>
+          <FormFooter
+            onCancel={() => onOpenChange(false)}
+            submitting={save.isPending}
+            submitLabel={isEdit ? "Save changes" : "Create"}
+          />
+        </form>
       </DialogContent>
       {addingScope && (
         <DhcpScopeDialog

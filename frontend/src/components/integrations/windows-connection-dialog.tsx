@@ -3,16 +3,19 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api, type WindowsConnection } from "@/lib/api"
-import { apiErrorToast } from "@/lib/api-toast"
-import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { FormCheckbox, FormSelect, FormText } from "@/components/forms"
+import {
+  FormCheckbox,
+  FormFooter,
+  FormSelect,
+  FormText,
+  useFieldErrors,
+} from "@/components/forms"
 
 /** Create or edit a Windows server connection (WinRM). The password is
  * write-only: on edit, leaving it blank keeps the stored one. */
@@ -25,6 +28,7 @@ export function WindowsConnectionDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const qc = useQueryClient()
+  const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const isEdit = !!connection
   const [name, setName] = useState(connection?.name ?? "")
   const [host, setHost] = useState(connection?.host ?? "")
@@ -70,12 +74,16 @@ export function WindowsConnectionDialog({
       })
     },
     onSuccess: () => {
+      reset()
       toast.success(isEdit ? "Server saved" : "Server added")
       qc.invalidateQueries({ queryKey: ["windows-connections"] })
       qc.invalidateQueries({ queryKey: ["windows-connection"] })
       onOpenChange(false)
     },
-    onError: (e) => apiErrorToast(e),
+    onError: (err) => {
+      const msg = handleApiError(err)
+      if (msg) toast.error(msg)
+    },
   })
 
   const valid =
@@ -89,88 +97,99 @@ export function WindowsConnectionDialog({
             {isEdit ? "Edit Windows server" : "Add Windows server"}
           </DialogTitle>
         </DialogHeader>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormText
-            label="Name"
-            value={name}
-            onChange={setName}
-            required
-            placeholder="dc-01"
-          />
-          <FormText
-            label="Host"
-            value={host}
-            onChange={setHost}
-            required
-            placeholder="10.0.0.45"
-          />
-          <FormText label="WinRM port" value={port} onChange={setPort} />
-          <FormSelect
-            label="Authentication"
-            value={authMode}
-            onChange={(v) => setAuthMode(v ?? "ntlm")}
-            options={[
-              { value: "ntlm", label: "NTLM" },
-              { value: "kerberos", label: "Kerberos" },
-            ]}
-          />
-          <FormText
-            label="Username"
-            value={username}
-            onChange={setUsername}
-            required
-            placeholder="svc-danbyte"
-          />
-          <FormText
-            label="Password"
-            value={password}
-            onChange={setPassword}
-            type="password"
-            placeholder={isEdit ? "(unchanged)" : ""}
-            required={!isEdit}
-          />
-          <FormText
-            label="Poll interval (minutes)"
-            value={interval}
-            onChange={setInterval}
-          />
-          <div className="flex flex-col justify-end gap-2 pb-1">
-            <FormCheckbox
-              label="Use TLS (port 5986)"
-              checked={useTls}
-              onChange={setUseTls}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (valid) save.mutate()
+          }}
+        >
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormText
+              label="Name"
+              value={name}
+              onChange={setName}
+              required
+              placeholder="dc-01"
+              error={fieldErrors.name}
             />
-            {useTls && (
+            <FormText
+              label="Host"
+              value={host}
+              onChange={setHost}
+              required
+              placeholder="10.0.0.45"
+              error={fieldErrors.host}
+            />
+            <FormText
+              label="WinRM port"
+              value={port}
+              onChange={setPort}
+              error={fieldErrors.port}
+            />
+            <FormSelect
+              label="Authentication"
+              value={authMode}
+              onChange={(v) => setAuthMode(v ?? "ntlm")}
+              options={[
+                { value: "ntlm", label: "NTLM" },
+                { value: "kerberos", label: "Kerberos" },
+              ]}
+            />
+            <FormText
+              label="Username"
+              value={username}
+              onChange={setUsername}
+              required
+              placeholder="svc-danbyte"
+              error={fieldErrors.username}
+            />
+            <FormText
+              label="Password"
+              value={password}
+              onChange={setPassword}
+              type="password"
+              placeholder={isEdit ? "(unchanged)" : ""}
+              required={!isEdit}
+              error={fieldErrors.password}
+            />
+            <FormText
+              label="Poll interval (minutes)"
+              value={interval}
+              onChange={setInterval}
+              error={fieldErrors.poll_interval_minutes}
+            />
+            <div className="flex flex-col justify-end gap-2 pb-1">
               <FormCheckbox
-                label="Verify TLS certificate"
-                checked={verifySsl}
-                onChange={setVerifySsl}
+                label="Use TLS (port 5986)"
+                checked={useTls}
+                onChange={setUseTls}
+              />
+              {useTls && (
+                <FormCheckbox
+                  label="Verify TLS certificate"
+                  checked={verifySsl}
+                  onChange={setVerifySsl}
+                />
+              )}
+            </div>
+          </div>
+          <div className="mt-1 grid gap-2 border-t border-border pt-3 sm:grid-cols-3">
+            <FormCheckbox label="Sync DHCP" checked={dhcp} onChange={setDhcp} />
+            <FormCheckbox label="Sync DNS" checked={dns} onChange={setDns} />
+            {isEdit && (
+              <FormCheckbox
+                label="Enabled"
+                checked={enabled}
+                onChange={setEnabled}
               />
             )}
           </div>
-        </div>
-        <div className="mt-1 grid gap-2 border-t border-border pt-3 sm:grid-cols-3">
-          <FormCheckbox label="Sync DHCP" checked={dhcp} onChange={setDhcp} />
-          <FormCheckbox label="Sync DNS" checked={dns} onChange={setDns} />
-          {isEdit && (
-            <FormCheckbox
-              label="Enabled"
-              checked={enabled}
-              onChange={setEnabled}
-            />
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            disabled={!valid || save.isPending}
-            onClick={() => save.mutate()}
-          >
-            {save.isPending ? "Saving…" : isEdit ? "Save" : "Add server"}
-          </Button>
-        </DialogFooter>
+          <FormFooter
+            onCancel={() => onOpenChange(false)}
+            submitting={save.isPending}
+            submitLabel={isEdit ? "Save changes" : "Add server"}
+          />
+        </form>
       </DialogContent>
     </Dialog>
   )

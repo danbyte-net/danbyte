@@ -8,16 +8,19 @@ import {
   type Paginated,
   type WindowsConnection,
 } from "@/lib/api"
-import { apiErrorToast } from "@/lib/api-toast"
-import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { FormCheckbox, FormSelect, FormText } from "@/components/forms"
+import {
+  FormCheckbox,
+  FormFooter,
+  FormSelect,
+  FormText,
+  useFieldErrors,
+} from "@/components/forms"
 
 /**
  * Author a DNS zone. DNS is Danbyte-authoritative for managed content (a push
@@ -30,6 +33,7 @@ export function DnsZoneDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const qc = useQueryClient()
+  const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const [connection, setConnection] = useState("")
   const [name, setName] = useState("")
   const [isReverse, setIsReverse] = useState(false)
@@ -37,7 +41,9 @@ export function DnsZoneDialog({
   const conns = useQuery({
     queryKey: ["windows-connections", "dns-picker"],
     queryFn: () =>
-      api<Paginated<WindowsConnection>>("/api/windows-connections/?page_size=200"),
+      api<Paginated<WindowsConnection>>(
+        "/api/windows-connections/?page_size=200"
+      ),
     staleTime: 5 * 60_000,
   })
   const servers = useMemo(
@@ -56,11 +62,15 @@ export function DnsZoneDialog({
         }),
       }),
     onSuccess: () => {
+      reset()
       toast.success("Zone created")
       qc.invalidateQueries({ queryKey: ["dns-zones"] })
       onOpenChange(false)
     },
-    onError: (e) => apiErrorToast(e),
+    onError: (err) => {
+      const msg = handleApiError(err)
+      if (msg) toast.error(msg)
+    },
   })
 
   const ready = connection && name.trim()
@@ -71,13 +81,20 @@ export function DnsZoneDialog({
         <DialogHeader>
           <DialogTitle>New DNS zone</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-3">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (ready) save.mutate()
+          }}
+          className="grid gap-3"
+        >
           <FormSelect
             label="Server"
             value={connection || null}
             onChange={(v) => setConnection(v ?? "")}
             placeholder={servers.length ? "Select a server…" : "No DNS servers"}
             options={servers.map((c) => ({ value: c.id, label: c.name }))}
+            error={fieldErrors.connection}
           />
           <FormText
             label="Zone name"
@@ -86,6 +103,7 @@ export function DnsZoneDialog({
             required
             mono
             placeholder="lab.example.com"
+            error={fieldErrors.name}
           />
           <FormCheckbox
             label="Reverse zone"
@@ -97,15 +115,12 @@ export function DnsZoneDialog({
             The zone is authored in Danbyte and never pruned by sync. Pushing
             zones to the DNS server is a later phase.
           </p>
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button disabled={save.isPending || !ready} onClick={() => save.mutate()}>
-            {save.isPending ? "Creating…" : "Create zone"}
-          </Button>
-        </DialogFooter>
+          <FormFooter
+            onCancel={() => onOpenChange(false)}
+            submitting={save.isPending}
+            submitLabel="Create zone"
+          />
+        </form>
       </DialogContent>
     </Dialog>
   )

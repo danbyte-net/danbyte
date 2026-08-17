@@ -1,11 +1,11 @@
-import { useState } from "react"
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api, type DnsLiveRecord, type DnsZone } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
@@ -14,8 +14,15 @@ import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
 import { DetailShell, DetailHero, DetailTab } from "@/components/detail-shell"
 import { SimpleTable, type SimpleColumn } from "@/components/ui/simple-table"
-import { dash } from "@/components/kv-card"
+import { ChangeLogPanel } from "@/components/audit/change-log-panel"
+import { JournalPanel } from "@/components/audit/journal-panel"
+import { KvCard, dash, type KvRow } from "@/components/kv-card"
+import { TimeCell } from "@/components/cells/time-ago"
 import { DnsRecordsTable } from "@/components/integrations/dns-records-table"
+
+const OBJECT_TYPE = "integrations.dnszone"
+const TABS = ["overview", "records", "live", "journal", "history"] as const
+type Tab = (typeof TABS)[number]
 
 export const Route = createFileRoute("/dns-zones/$id")({
   component: ZoneDetail,
@@ -42,7 +49,7 @@ function ZoneDetail() {
 function Body({ zone }: { zone: DnsZone }) {
   const qc = useQueryClient()
   const { canDo } = useMe()
-  const [showLive, setShowLive] = useState(false)
+  const [tab, setTab] = useUrlTab<Tab>("overview", "tab", TABS)
 
   const canImport = canDo("ipaddress", "add")
 
@@ -75,20 +82,66 @@ function Body({ zone }: { zone: DnsZone }) {
     onError: (e) => apiErrorToast(e),
   })
 
+  const attributes: KvRow[] = [
+    { label: "Zone", value: <span className="font-mono">{zone.name}</span> },
+    {
+      label: "Server",
+      value: zone.connection ? (
+        <Link
+          to="/windows-servers/$id"
+          params={{ id: zone.connection }}
+          className="link"
+        >
+          {zone.connection_name}
+        </Link>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "Type",
+      value: zone.managed
+        ? "Managed (authored in Danbyte)"
+        : zone.zone_type || dash,
+    },
+    {
+      label: "Direction",
+      value: zone.is_reverse ? "Reverse (PTR)" : "Forward",
+    },
+    {
+      label: "Records on server",
+      value: <span className="num">{zone.record_count}</span>,
+    },
+    {
+      label: "Last seen by sync",
+      value: zone.last_seen_at ? <TimeCell iso={zone.last_seen_at} /> : dash,
+    },
+  ]
+
   return (
     <DetailShell
-      backTo="/windows-servers"
-      backLabel={zone.connection_name || "Windows servers"}
+      backTo="/dns-zones"
+      backLabel="DNS zones"
       title={zone.name}
+      presence={{ type: "dnszone", id: zone.id }}
       hero={
         <DetailHero
           title={zone.name}
+          mono
           badges={
             <>
               <Badge variant="outline" className="text-[10px]">
-                {zone.zone_type}
+                {zone.zone_type || "zone"}
                 {zone.is_reverse ? " · reverse" : ""}
               </Badge>
+              {zone.managed && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] text-muted-foreground"
+                >
+                  managed
+                </Badge>
+              )}
               {zone.sync ? (
                 <Badge variant="success" className="text-[10px]">
                   reconciled
@@ -102,7 +155,7 @@ function Body({ zone }: { zone: DnsZone }) {
           }
           subtitle={
             <span className="text-[12px] text-muted-foreground">
-              {zone.record_count} records on the server
+              {zone.connection_name}
             </span>
           }
         />
@@ -135,15 +188,32 @@ function Body({ zone }: { zone: DnsZone }) {
           </div>
         )
       }
-      tabs={[{ value: "records", label: "Records" }]}
-      tab="records"
-      onTabChange={() => {}}
+      tabs={[
+        { value: "overview", label: "Overview" },
+        {
+          value: "records",
+          label: "Records",
+          count: zone.sync ? zone.record_count : undefined,
+        },
+        { value: "live", label: "Live records" },
+        { value: "journal", label: "Journal" },
+        { value: "history", label: "History" },
+      ]}
+      tab={tab}
+      onTabChange={(t) => setTab(t as Tab)}
     >
+      <DetailTab value="overview">
+        <div className="max-w-2xl">
+          <KvCard title="Attributes" rows={attributes} />
+        </div>
+      </DetailTab>
+
       <DetailTab value="records">
         {!zone.sync ? (
           <EmptyState title="This zone isn't reconciled.">
             Turn on Reconcile to store its A/AAAA/PTR records here and link them
-            to your IP addresses. You can still view the live records below.
+            to your IP addresses. The Live records tab always shows the server's
+            current contents.
           </EmptyState>
         ) : (
           <div className="space-y-2">
@@ -153,7 +223,7 @@ function Body({ zone }: { zone: DnsZone }) {
                 <InfoTip>
                   Address records (A/AAAA/PTR) synced from this zone, linked to
                   their IP addresses. Other types (CNAME, MX, TXT…) aren't
-                  stored — use the live view below for the full dump.
+                  stored — see the Live records tab for the full dump.
                 </InfoTip>
               </h3>
               {canImport && (
@@ -177,16 +247,17 @@ function Body({ zone }: { zone: DnsZone }) {
             />
           </div>
         )}
-        <div className="mt-6">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowLive((v) => !v)}
-          >
-            {showLive ? "Hide live records" : "Show all record types (live)"}
-          </Button>
-          {showLive && <LiveRecords zone={zone} />}
-        </div>
+      </DetailTab>
+
+      <DetailTab value="live">
+        <LiveRecords zone={zone} />
+      </DetailTab>
+
+      <DetailTab value="journal">
+        <JournalPanel objectType={OBJECT_TYPE} objectId={zone.id} />
+      </DetailTab>
+      <DetailTab value="history">
+        <ChangeLogPanel objectType={OBJECT_TYPE} objectId={zone.id} />
       </DetailTab>
     </DetailShell>
   )
@@ -223,7 +294,7 @@ function LiveRecords({ zone }: { zone: DnsZone }) {
   })
   const rows = q.data?.records ?? []
   return (
-    <div className="mt-3">
+    <div>
       {q.isLoading && (
         <p className="text-sm text-muted-foreground">
           Asking the server directly…
@@ -233,7 +304,7 @@ function LiveRecords({ zone }: { zone: DnsZone }) {
         <p className="text-sm text-destructive">{q.data.error}</p>
       )}
       {rows.length > 0 && (
-        <div className="max-h-[60vh] overflow-auto">
+        <div className="max-h-[70vh] overflow-auto">
           <SimpleTable
             columns={liveColumns}
             data={rows}

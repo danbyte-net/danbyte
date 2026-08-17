@@ -4,6 +4,8 @@ import { toast } from "sonner"
 
 import {
   api,
+  type DhcpReservation,
+  type DhcpScope,
   type IPAddress,
   type IPRoleOption,
   type StatusOption,
@@ -15,6 +17,7 @@ import {
   type TagOption,
   type VRFOption,
 } from "@/lib/api"
+import { ipToBigInt } from "@/lib/prefix-tree"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -226,6 +229,78 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
     if (def) setStatusId(def.id)
   }, [ip, statusId, statuses.data])
 
+  // ── DHCP reservation (MAC binding) ────────────────────────────────────
+  // When the address sits inside a DHCP scope's pool, the form offers to
+  // reserve it: saving pushes Add/Remove-DhcpServerv4Reservation to the
+  // Windows server after the IP write, using the MAC field above. Queries
+  // 404 harmlessly when the DHCP integration is off — the section just hides.
+  const dhcpScopes = useQuery({
+    queryKey: ["dhcp-scopes", "ip-form"],
+    queryFn: () => api<Paginated<DhcpScope>>("/api/dhcp-scopes/?page_size=500"),
+    staleTime: 60_000,
+    retry: false,
+  })
+  const addrInt = ipToBigInt(address.trim())
+  const poolScope = (dhcpScopes.data?.results ?? []).find((s) => {
+    if (addrInt == null || !s.start_range || !s.end_range) return false
+    const lo = ipToBigInt(s.start_range)
+    const hi = ipToBigInt(s.end_range)
+    return lo != null && hi != null && addrInt >= lo && addrInt <= hi
+  })
+  const dhcpResQuery = useQuery({
+    queryKey: ["dhcp-reservation", "for-ip", address.trim()],
+    queryFn: () =>
+      api<Paginated<DhcpReservation>>(
+        `/api/dhcp-reservations/?${new URLSearchParams({ search: address.trim() })}`
+      ),
+    enabled: !!address.trim() && !!dhcpScopes.data,
+    staleTime: 30_000,
+    retry: false,
+  })
+  const existingRes = (dhcpResQuery.data?.results ?? []).find(
+    (r) => r.ip === address.trim()
+  )
+  const [dhcpReserve, setDhcpReserve] = useState(false)
+  // Reflect the server's answer once it arrives (and on address change).
+  useEffect(() => {
+    setDhcpReserve(!!existingRes)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingRes?.id])
+  const canDhcp = !!poolScope || !!existingRes
+
+  /** Post-save reconciliation: create or remove the reservation to match the
+   * toggle. The IP itself is already saved — a DHCP push failure must not
+   * look like a failed save, so it reports separately. */
+  const syncDhcpReservation = async (savedIp: string) => {
+    try {
+      if (dhcpReserve && !existingRes && poolScope) {
+        await api("/api/dhcp-reservations/", {
+          method: "POST",
+          body: JSON.stringify({
+            scope: poolScope.id,
+            ip: savedIp,
+            mac: mac.trim(),
+            name: dnsName.trim().split(".")[0] ?? "",
+            description: description.trim(),
+          }),
+        })
+        toast.success("DHCP reservation created on the server")
+      } else if (!dhcpReserve && existingRes) {
+        await api(`/api/dhcp-reservations/${existingRes.id}/`, {
+          method: "DELETE",
+        })
+        toast.success("DHCP reservation removed from the server")
+      }
+      qc.invalidateQueries({ queryKey: ["dhcp-reservations"] })
+      qc.invalidateQueries({ queryKey: ["dhcp-reservation", "for-ip"] })
+    } catch (err) {
+      const msg = handleApiError(err)
+      toast.error(
+        `The IP was saved, but the DHCP server refused the reservation change${msg ? `: ${msg}` : "."}`
+      )
+    }
+  }
+
   const mutation = useMutation({
     mutationFn: async () => {
       const payload: IPWritePayload = {
@@ -256,6 +331,9 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
           body: JSON.stringify({ primary_ip_id: saved.id }),
         }).catch(() => {})
       }
+      // DHCP reservation rides along after the IP write (real writes only —
+      // a plan can't push to an external server).
+      if (!planning && canDhcp) await syncDhcpReservation(saved.ip_address)
       return saved
     },
     onSuccess: (saved) => {
@@ -519,6 +597,45 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
           />
         </Field>
       </div>
+
+      {canDhcp && (
+        <div className="rounded-md border border-border p-3">
+          <label
+            className={
+              "flex items-center gap-2 text-sm " +
+              (planning || (!existingRes && !mac.trim())
+                ? "text-muted-foreground"
+                : "cursor-pointer")
+            }
+          >
+            <Checkbox
+              checked={dhcpReserve}
+              disabled={planning || (!existingRes && !mac.trim())}
+              onCheckedChange={(v) => setDhcpReserve(!!v)}
+            />
+            <span>Reserve in DHCP (MAC binding)</span>
+            <InfoTip>
+              This address is inside the DHCP scope pool{" "}
+              <span className="font-mono">
+                {poolScope?.scope_id ?? existingRes?.scope_display}
+              </span>{" "}
+              on {poolScope?.connection_name ?? existingRes?.connection_name}.
+              Reserving binds it to the MAC address above and pushes the
+              reservation to the Windows server on save; unticking removes it
+              there.
+            </InfoTip>
+          </label>
+          <p className="mt-1 pl-6 text-[11px] text-muted-foreground">
+            {planning
+              ? "Unavailable in plan mode — reservations push to the DHCP server immediately."
+              : !existingRes && !mac.trim()
+                ? "Enter the MAC address above to reserve this address."
+                : existingRes
+                  ? `Currently reserved on ${existingRes.connection_name} (${existingRes.mac}).`
+                  : `Will reserve on ${poolScope?.connection_name} when you save.`}
+          </p>
+        </div>
+      )}
 
       {deviceId && (
         <label

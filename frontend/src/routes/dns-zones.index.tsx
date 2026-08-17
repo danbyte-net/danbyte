@@ -140,25 +140,29 @@ function DnsZonesPage() {
             <span className="text-xs text-muted-foreground">—</span>
           ),
       },
-      {
-        id: "actions",
-        header: "",
-        enableSorting: false,
-        cell: ({ row }) => (
-          <RowActions
-            editTo="/dns-zones/$id"
-            editParams={{ id: row.original.id }}
-            // Only Danbyte-authored zones can be deleted; a synced zone would
-            // just return on the next sync.
-            onDelete={
-              canDelete && row.original.managed
-                ? () => del.mutate(row.original)
-                : undefined
-            }
-            deleteLabel="Delete zone"
-          />
-        ),
-      },
+      // The zone name is the Open link; a zone's settings (reconcile,
+      // auto-add) live on its detail page, so there is no row Edit. Delete
+      // only applies to Danbyte-authored zones — a synced zone would just
+      // return on the next sync.
+      ...(canDelete
+        ? [
+            {
+              id: "actions",
+              header: "",
+              enableSorting: false,
+              cell: ({ row }) => (
+                <RowActions
+                  onDelete={
+                    row.original.managed
+                      ? () => del.mutate(row.original)
+                      : undefined
+                  }
+                  deleteLabel="Delete zone"
+                />
+              ),
+            } satisfies ColumnDef<DnsZone>,
+          ]
+        : []),
     ],
     [canDelete, del]
   )
@@ -205,8 +209,8 @@ function DnsZonesPage() {
       {rows.length === 0 && query.data && !q ? (
         <EmptyState title="No DNS zones yet.">
           Connect a Windows DNS server under Integrations → Windows servers to
-          sync its zones, or use <strong>Add zone</strong> to author one. Turn on
-          reconcile for a synced zone to store its records.
+          sync its zones, or use <strong>Add zone</strong> to author one. Turn
+          on reconcile for a synced zone to store its records.
         </EmptyState>
       ) : (
         <DataTable

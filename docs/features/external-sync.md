@@ -111,9 +111,11 @@ Rules:
 
 Static reservations (a **MAC → IP** binding) are bidirectional: create, edit or
 delete one from the **DHCP reservations** page (Add button + per-row edit/
-delete) or a server's page, and Danbyte calls
-`Add/Set/Remove-DhcpServerv4Reservation` on the owning server immediately — the
-row only saves once the server accepted it. Pushed reservations carry a
+delete), a server's page, or the **IP address form** — when an address sits
+inside a scope pool, the form offers **Reserve in DHCP (MAC binding)**, which
+binds it to the form's MAC field; unticking removes the reservation. All paths
+call `Add/Set/Remove-DhcpServerv4Reservation` on the owning server immediately —
+the row only saves once the server accepted it. Pushed reservations carry a
 `[danbyte]` marker in their description so their origin is visible in the
 Windows DHCP console too.
 

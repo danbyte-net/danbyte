@@ -8,16 +8,18 @@ import {
   type Paginated,
   type WindowsConnection,
 } from "@/lib/api"
-import { apiErrorToast } from "@/lib/api-toast"
-import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { FormSelect, FormText } from "@/components/forms"
+import {
+  FormFooter,
+  FormSelect,
+  FormText,
+  useFieldErrors,
+} from "@/components/forms"
 
 /**
  * Author a DHCP scope. Saving pushes it to the Windows server first
@@ -32,6 +34,7 @@ export function DhcpScopeDialog({
   onCreated?: (scope: DhcpScope) => void
 }) {
   const qc = useQueryClient()
+  const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const [connection, setConnection] = useState("")
   const [name, setName] = useState("")
   const [subnet, setSubnet] = useState("")
@@ -42,7 +45,9 @@ export function DhcpScopeDialog({
   const conns = useQuery({
     queryKey: ["windows-connections", "dhcp-picker"],
     queryFn: () =>
-      api<Paginated<WindowsConnection>>("/api/windows-connections/?page_size=200"),
+      api<Paginated<WindowsConnection>>(
+        "/api/windows-connections/?page_size=200"
+      ),
     staleTime: 5 * 60_000,
   })
   const servers = useMemo(
@@ -64,12 +69,16 @@ export function DhcpScopeDialog({
         }),
       }),
     onSuccess: (scope) => {
+      reset()
       toast.success("Scope created on the server")
       qc.invalidateQueries({ queryKey: ["dhcp-scopes"] })
       onCreated?.(scope)
       onOpenChange(false)
     },
-    onError: (e) => apiErrorToast(e),
+    onError: (err) => {
+      const msg = handleApiError(err)
+      if (msg) toast.error(msg)
+    },
   })
 
   const ready =
@@ -81,13 +90,22 @@ export function DhcpScopeDialog({
         <DialogHeader>
           <DialogTitle>New DHCP scope</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-3">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (ready) save.mutate()
+          }}
+          className="grid gap-3"
+        >
           <FormSelect
             label="Server"
             value={connection || null}
             onChange={(v) => setConnection(v ?? "")}
-            placeholder={servers.length ? "Select a server…" : "No DHCP servers"}
+            placeholder={
+              servers.length ? "Select a server…" : "No DHCP servers"
+            }
             options={servers.map((c) => ({ value: c.id, label: c.name }))}
+            error={fieldErrors.connection}
           />
           <FormText
             label="Name"
@@ -95,6 +113,7 @@ export function DhcpScopeDialog({
             onChange={setName}
             required
             placeholder="Lab clients"
+            error={fieldErrors.name}
           />
           <FormText
             label="Subnet"
@@ -103,6 +122,7 @@ export function DhcpScopeDialog({
             required
             mono
             placeholder="10.50.0.0/24"
+            error={fieldErrors.subnet}
           />
           <div className="grid grid-cols-2 gap-3">
             <FormText
@@ -112,6 +132,7 @@ export function DhcpScopeDialog({
               required
               mono
               placeholder="10.50.0.50"
+              error={fieldErrors.start_range}
             />
             <FormText
               label="Range end"
@@ -120,6 +141,7 @@ export function DhcpScopeDialog({
               required
               mono
               placeholder="10.50.0.200"
+              error={fieldErrors.end_range}
             />
           </div>
           <FormText
@@ -127,19 +149,17 @@ export function DhcpScopeDialog({
             value={description}
             onChange={setDescription}
             placeholder="optional"
+            error={fieldErrors.description}
           />
           <p className="text-[11px] text-muted-foreground">
             Saving creates the scope on the DHCP server immediately.
           </p>
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button disabled={save.isPending || !ready} onClick={() => save.mutate()}>
-            {save.isPending ? "Creating…" : "Create scope"}
-          </Button>
-        </DialogFooter>
+          <FormFooter
+            onCancel={() => onOpenChange(false)}
+            submitting={save.isPending}
+            submitLabel="Create scope"
+          />
+        </form>
       </DialogContent>
     </Dialog>
   )
