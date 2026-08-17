@@ -1,7 +1,23 @@
 import { Suspense, useEffect, useState, type ReactNode } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { LayoutGrid, Plus, RotateCcw, X } from "lucide-react"
+import { GripVertical, LayoutGrid, Plus, RotateCcw, X } from "lucide-react"
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  arrayMove,
+  rectSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable"
 
 import { api, type DashboardData } from "@/lib/api"
 import { useUserPrefs } from "@/lib/use-user-prefs"
@@ -73,6 +89,22 @@ function Dashboard() {
   const remove = (id: WidgetId) => persist(layout.filter((x) => x !== id))
   const reset = () => persist(DEFAULT_LAYOUT)
 
+  // Drag-to-reorder. A handle (not the whole tile) starts the drag, so links
+  // and buttons inside widgets stay clickable; a small distance threshold keeps
+  // plain clicks from registering as drags.
+  const [dragId, setDragId] = useState<WidgetId | null>(null)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  )
+  const onDragEnd = (e: DragEndEvent) => {
+    setDragId(null)
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const from = layout.indexOf(active.id as WidgetId)
+    const to = layout.indexOf(over.id as WidgetId)
+    if (from >= 0 && to >= 0) persist(arrayMove(layout, from, to))
+  }
+
   const d = q.data
   const available = CATALOG.filter((w) => !layout.includes(w.id))
 
@@ -127,54 +159,87 @@ function Dashboard() {
 
         {d && <StatBand d={d} />}
 
-        {/* Masonry: cards size to content and pack tightly — no dead space. */}
+        {/* Masonry: cards size to content and pack tightly — no dead space.
+            Drag a tile's handle to reorder (dnd-kit); the DragOverlay keeps the
+            masonry from thrashing while dragging. */}
         {d && hydrated && (
-          <div className="gap-4 [column-fill:_balance] sm:columns-2 xl:columns-3 [&>*]:mb-4">
-            {layout.map((id) => {
-              const w = CATALOG_BY_ID[id]
-              if (!w) return null
-              return (
-                <Tile
-                  key={id}
-                  title={w.title}
-                  description={w.description}
-                  onRemove={() => remove(id)}
-                >
-                  {w.render(d)}
-                </Tile>
-              )
-            })}
-            {layout.length === 0 && (
-              <div className="flex break-inside-avoid flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border py-10 text-center">
-                <LayoutGrid className="h-6 w-6 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  No widgets. Use{" "}
-                  <span className="font-medium">Add widget</span> to build your
-                  dashboard.
-                </p>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={(e: DragStartEvent) =>
+              setDragId(e.active.id as WidgetId)
+            }
+            onDragEnd={onDragEnd}
+            onDragCancel={() => setDragId(null)}
+          >
+            <SortableContext items={layout} strategy={rectSortingStrategy}>
+              <div className="gap-4 [column-fill:_balance] sm:columns-2 xl:columns-3 [&>*]:mb-4">
+                {layout.map((id) => {
+                  const w = CATALOG_BY_ID[id]
+                  if (!w) return null
+                  return (
+                    <SortableTile
+                      key={id}
+                      id={id}
+                      title={w.title}
+                      description={w.description}
+                      onRemove={() => remove(id)}
+                    >
+                      {w.render(d)}
+                    </SortableTile>
+                  )
+                })}
+                {layout.length === 0 && (
+                  <div className="flex break-inside-avoid flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border py-10 text-center">
+                    <LayoutGrid className="h-6 w-6 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      No widgets. Use{" "}
+                      <span className="font-medium">Add widget</span> to build
+                      your dashboard.
+                    </p>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </SortableContext>
+            <DragOverlay dropAnimation={null}>
+              {dragId ? (
+                <div className="rounded-lg border border-border bg-card p-3.5 text-sm font-medium shadow-lg">
+                  {CATALOG_BY_ID[dragId]?.title}
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         )}
       </div>
     </div>
   )
 }
 
-/** A content-sized widget card that won't split across masonry columns. */
-function Tile({
+/** A content-sized widget card that won't split across masonry columns, with a
+ * drag handle for reordering. We deliberately don't apply dnd-kit's transform
+ * to the tile (it would fight the CSS-column masonry) — the DragOverlay shows
+ * the drag, and the drop reorders the array. */
+function SortableTile({
+  id,
   title,
   description,
   onRemove,
   children,
 }: {
+  id: WidgetId
   title: string
   description: string
   onRemove: () => void
   children: ReactNode
 }) {
+  const { setNodeRef, listeners, attributes, isDragging } = useSortable({ id })
   return (
-    <div className="group/tile relative break-inside-avoid overflow-hidden rounded-lg border border-border bg-card p-3.5">
+    <div
+      ref={setNodeRef}
+      className={`group/tile relative break-inside-avoid overflow-hidden rounded-lg border border-border bg-card p-3.5 ${
+        isDragging ? "opacity-40" : ""
+      }`}
+    >
       <div className="mb-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-sm font-medium">{title}</div>
@@ -182,14 +247,26 @@ function Tile({
             {description}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="shrink-0 rounded-md p-1 text-muted-foreground opacity-0 transition-opacity group-hover/tile:opacity-100 hover:bg-muted hover:text-foreground"
-          title="Remove widget"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            {...listeners}
+            {...attributes}
+            className="cursor-grab touch-none rounded-md p-1 text-muted-foreground opacity-0 transition-opacity group-hover/tile:opacity-100 hover:bg-muted hover:text-foreground active:cursor-grabbing"
+            title="Drag to reorder"
+            aria-label="Drag to reorder"
+          >
+            <GripVertical className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={onRemove}
+            className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity group-hover/tile:opacity-100 hover:bg-muted hover:text-foreground"
+            title="Remove widget"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
       <Suspense
         fallback={<div className="h-32 animate-pulse rounded-md bg-muted/40" />}

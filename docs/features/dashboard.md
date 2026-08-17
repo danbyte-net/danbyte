@@ -45,6 +45,7 @@ You decide which widgets to show and in what order.
 | Action | Effect |
 |---|---|
 | **Add widget** | Opens a list of widgets you haven't added yet. |
+| **Drag the ⠿ handle** | Reorder — grab a widget's grip (top-right, on hover) and drop it where you want. |
 | **× on a widget** | Removes that widget. |
 | **Reset** | Restores the default layout. |
 
