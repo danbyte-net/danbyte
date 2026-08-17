@@ -36,8 +36,8 @@ create path.
 | Automation target | ✅ | ✅ | ✅ | ✅ | — | ✅ |
 | DHCP reservation | ✅ | ✅ | ✅ | ✅ (pushes to Windows) | ✅ (mirror) | ✅ |
 | DNS record | ✅ (managed) | ✅ (managed) | ✅ (managed) | ✅ | ✅ (mirror) | ✅ |
-| **DHCP scope** | 🔴 | 🟡 (`lease_sync` toggle only) | 🔴 | 🔴 (`get`/`patch`) | ✅ | 🔴 |
-| **DNS zone** | 🔴 | 🟡 (`sync`/`auto_create` toggles) | 🔴 | 🔴 (`get`/`patch`) | ✅ | 🔴 |
+| DHCP scope | ✅ (pushes to Windows) | 🟡 (`lease_sync` toggle) | ✅ (removes on server) | ✅ | ✅ | ✅ |
+| DNS zone | ✅ (managed, local) | 🟡 (`sync`/`auto_create`) | ✅ (managed only) | ✅ | ✅ | ✅ |
 | **DHCP exclusion** | 🔴 | 🔴 | 🔴 | 🔴 (no viewset) | ✅ | 🔴 |
 | **Virtual network** | 🔴 | 🔴 | 🔴 | 🔴 (`get` only) | ✅ | 🔴 |
 | **Virtual disk** | 🔴 | 🔴 | 🔴 | 🔴 (no viewset) | ✅ | 🔴 |
@@ -56,23 +56,24 @@ create path.
     is the *observed* hypervisor guest the virtualization sync records and links
     to it; that linkage is sync-owned by design.
 
-## The real gaps (🔴), in priority order
+## Closed
 
-1. **DHCP scope** — a scope can only be born from a Windows DHCP sync. An
-   operator can't declare one in Danbyte (and then let it push to the server, or
-   stand alone). This is the most-requested gap. Fixing it means a scope-create
-   endpoint plus an `Add-DhcpServerv4Scope` push, mirroring how reservations
-   already create-and-push. Needs: server connection, subnet/prefix, name, lease
-   range, mask.
-2. **DNS zone** — same shape as scopes: only sync creates zones; the UI exposes
-   only per-zone `sync` / `auto_create` toggles. Manual zone authoring (and a
-   path for zones Danbyte owns rather than mirrors) is the sibling fix.
-3. **Virtual network** — read-only mirror of hypervisor port groups / bridges.
-   Its VLAN mapping can only come from sync. Lower urgency; revisit if operators
-   need to pre-declare networks.
-4. **DHCP exclusion** — no API or UI at all; only the sync creates them. An
+1. **DHCP scope** — ✅ **done.** Authorable from **Add scope** (and the inline
+   **+** in the reservation dialog); create runs `Add-DhcpServerv4Scope` on the
+   server and delete removes it there. `DhcpScopeViewSet` now does
+   `get`/`post`/`patch`/`delete`.
+2. **DNS zone** — ✅ **done.** Authorable from **Add zone** as a Danbyte-owned
+   `managed` zone (stored locally, never pruned by sync; pushing to the DNS
+   server is a later phase). Only managed zones are deletable.
+
+## Remaining gaps (🔴), in priority order
+
+1. **Virtual network** — read-only mirror of hypervisor port groups / bridges.
+   Its VLAN mapping can only come from sync. Revisit if operators need to
+   pre-declare networks.
+2. **DHCP exclusion** — no API or UI at all; only the sync creates them. An
    operator can't carve an exclusion by hand. Niche but a genuine hole.
-5. **Virtual disk** — display-only under a VM, though the data model allows
+3. **Virtual disk** — display-only under a VM, though the data model allows
    operator-added disks. Add create/edit/delete when VM disk authoring is
    wanted.
 

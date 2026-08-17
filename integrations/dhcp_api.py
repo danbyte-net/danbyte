@@ -17,7 +17,9 @@ from api.viewsets import TenantScopedViewSet
 from .dhcp_sync import (
     WinRMError,
     push_reservation,
+    push_scope,
     remove_reservation,
+    remove_scope,
 )
 from .models import DhcpLease, DhcpReservation, DhcpScope
 from .toggles import IntegrationToggleMixin
@@ -42,17 +44,116 @@ class DhcpScopeSerializer(serializers.ModelSerializer):
         read_only_fields = [f for f in fields if f != "lease_sync"]
 
 
+class DhcpScopeWriteSerializer(serializers.ModelSerializer):
+    """Author a scope in Danbyte and push it to the Windows server. The scope id
+    and subnet mask are derived from ``subnet`` (a CIDR); the range is the lease
+    pool inside it."""
+
+    subnet = serializers.CharField(
+        write_only=True, help_text="Subnet CIDR, e.g. 10.50.0.0/24"
+    )
+
+    class Meta:
+        model = DhcpScope
+        fields = ["id", "connection", "name", "description",
+                  "start_range", "end_range", "subnet"]
+
+    def validate(self, attrs):
+        import ipaddress
+
+        try:
+            net = ipaddress.ip_network(attrs["subnet"], strict=False)
+        except ValueError as exc:
+            raise serializers.ValidationError(
+                {"subnet": "Enter a valid subnet, e.g. 10.50.0.0/24."}
+            ) from exc
+        if not isinstance(net, ipaddress.IPv4Network):
+            raise serializers.ValidationError(
+                {"subnet": "Only IPv4 DHCP scopes are supported."}
+            )
+        try:
+            start = ipaddress.ip_address(attrs["start_range"])
+            end = ipaddress.ip_address(attrs["end_range"])
+        except ValueError as exc:
+            raise serializers.ValidationError(
+                {"start_range": "Enter valid start and end addresses."}
+            ) from exc
+        if start not in net or end not in net:
+            raise serializers.ValidationError(
+                {"start_range": f"The range must lie inside {net}."}
+            )
+        if int(start) > int(end):
+            raise serializers.ValidationError(
+                {"end_range": "End address is before the start."}
+            )
+        attrs["_net"] = net
+        return attrs
+
+
 class DhcpScopeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
-    """Scopes are created by sync, never by clients — only ``lease_sync`` is
-    writable here."""
+    """Scopes are read from sync; the per-scope ``lease_sync`` opt-in is PATCHable.
+    A scope can also be **authored** here (POST) — Danbyte creates it on the
+    Windows server first (``Add-DhcpServerv4Scope``) and only saves the row once
+    the server accepts it — and removed (DELETE, which also removes it there)."""
 
     integration_keys = ("dhcp",)
     tenant_field = "connection__tenant"
-    http_method_names = ["get", "patch"]
+    http_method_names = ["get", "post", "patch", "delete"]
     queryset = DhcpScope.objects.select_related("connection", "prefix").order_by(
         "scope_id"
     )
     serializer_class = DhcpScopeSerializer
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return DhcpScopeWriteSerializer
+        return DhcpScopeSerializer
+
+    def _conn_in_tenant(self, conn):
+        tenant = self._tenant_or_403()
+        if conn is None or conn.tenant_id != tenant.id:
+            raise ValidationError({"connection": "Unknown server connection."})
+        return conn
+
+    def perform_create(self, serializer):
+        from django.utils import timezone
+
+        from .dhcp_sync import _prefix_for_scope
+
+        v = serializer.validated_data
+        conn = self._conn_in_tenant(v.get("connection"))
+        net = v.pop("_net")
+        v.pop("subnet", None)
+        scope_id = str(net.network_address)
+        mask = str(net.netmask)
+        if DhcpScope.objects.filter(connection=conn, scope_id=scope_id).exists():
+            raise ValidationError(
+                {"subnet": "A scope for this subnet already exists on that server."}
+            )
+        try:
+            push_scope(
+                conn, name=v.get("name", ""), start=str(v["start_range"]),
+                end=str(v["end_range"]), mask=mask,
+                description=v.get("description", ""),
+            )
+        except WinRMError as exc:
+            raise ValidationError(
+                {"detail": f"The DHCP server refused: {exc}"}
+            ) from exc
+        prefix, _ = _prefix_for_scope(conn, scope_id, mask)
+        serializer.save(
+            scope_id=scope_id, subnet_mask=mask, prefix=prefix,
+            state="Active", last_seen_at=timezone.now(),
+        )
+
+    def perform_destroy(self, instance):
+        try:
+            remove_scope(instance.connection, instance.scope_id)
+        except WinRMError as exc:
+            raise ValidationError(
+                {"detail": f"The DHCP server refused: {exc}"}
+            ) from exc
+        instance.delete()
 
     def get_queryset(self):
         from django.db.models import Count, Q

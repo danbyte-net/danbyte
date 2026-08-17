@@ -1,9 +1,11 @@
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
+import { Plus } from "lucide-react"
 
 import { api, type DhcpReservation, type DhcpScope } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -13,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { FormSelect, FormText } from "@/components/forms"
+import { DhcpScopeDialog } from "@/components/integrations/dhcp-scope-dialog"
 
 /** Create or edit a DHCP reservation. Saving pushes to the Windows server
  * first — the row only exists once the server accepted it. Scope and IP are
@@ -28,7 +31,10 @@ export function DhcpReservationDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const qc = useQueryClient()
+  const { canDo } = useMe()
   const isEdit = !!reservation
+  const [addingScope, setAddingScope] = useState(false)
+  const canAddScope = canDo("dhcpscope", "add")
   const [scope, setScope] = useState(reservation?.scope ?? scopes[0]?.id ?? "")
   const [ip, setIp] = useState(reservation?.ip ?? "")
   const [mac, setMac] = useState(reservation?.mac ?? "")
@@ -72,15 +78,30 @@ export function DhcpReservationDialog({
         </DialogHeader>
         <div className="grid gap-3">
           {!isEdit && (
-            <FormSelect
-              label="Scope"
-              value={scope}
-              onChange={(v) => setScope(v ?? "")}
-              options={scopes.map((s) => ({
-                value: s.id,
-                label: `${s.scope_id}${s.name ? ` — ${s.name}` : ""}`,
-              }))}
-            />
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <FormSelect
+                  label="Scope"
+                  value={scope}
+                  onChange={(v) => setScope(v ?? "")}
+                  options={scopes.map((s) => ({
+                    value: s.id,
+                    label: `${s.scope_id}${s.name ? ` — ${s.name}` : ""}`,
+                  }))}
+                />
+              </div>
+              {canAddScope && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  title="Create a new scope"
+                  onClick={() => setAddingScope(true)}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           )}
           {!isEdit && (
             <FormText
@@ -132,6 +153,12 @@ export function DhcpReservationDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+      {addingScope && (
+        <DhcpScopeDialog
+          onOpenChange={setAddingScope}
+          onCreated={(s) => setScope(s.id)}
+        />
+      )}
     </Dialog>
   )
 }

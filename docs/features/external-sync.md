@@ -117,6 +117,22 @@ row only saves once the server accepted it. Pushed reservations carry a
 `[danbyte]` marker in their description so their origin is visible in the
 Windows DHCP console too.
 
+### Authoring scopes and zones
+
+Scopes and zones are usually born from a sync, but you can also create them by
+hand:
+
+- **DHCP scope** — **Add scope** on the DHCP scopes page (server, name, subnet
+  CIDR, lease range, description). Danbyte runs `Add-DhcpServerv4Scope` on the
+  server first and only saves the row once it's accepted; deleting a scope
+  removes it on the server too. You can also create one inline from the **+**
+  next to the Scope picker in the New reservation dialog.
+- **DNS zone** — **Add zone** on the DNS zones page (server, name, forward or
+  reverse). DNS is Danbyte-authoritative for managed content — pushing zones to
+  the server is a later phase — so an authored zone is stored locally, tagged
+  **managed**, and never pruned by sync. Only managed zones can be deleted;
+  mirrored zones would just return on the next sync.
+
 ### Spotting DHCP in IPAM
 
 DHCP-managed space is flagged so it's obvious in IPAM, in one blue hue at two

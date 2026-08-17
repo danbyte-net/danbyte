@@ -635,6 +635,9 @@ class DnsZone(TimestampedModel):
     # address isn't in IPAM yet (only where a containing prefix exists). Off by
     # default — zero-prefilled-data means importing is a deliberate choice.
     auto_create = models.BooleanField(default=False)
+    # Authored in Danbyte (not mirrored from a server). Managed zones are never
+    # pruned by sync — Danbyte is their source of truth. Mirrors DnsRecord.managed.
+    managed = models.BooleanField(default=False)
     record_count = models.PositiveIntegerField(default=0)
     last_seen_at = models.DateTimeField(null=True, blank=True)
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from api.viewsets import TenantScopedViewSet
@@ -20,21 +21,69 @@ class DnsZoneSerializer(serializers.ModelSerializer):
     class Meta:
         model = DnsZone
         fields = ["id", "connection", "connection_name", "name", "zone_type",
-                  "is_reverse", "sync", "auto_create", "record_count",
+                  "is_reverse", "sync", "auto_create", "managed", "record_count",
                   "drift_count", "last_seen_at", "updated_at"]
         read_only_fields = [f for f in fields
                             if f not in ("sync", "auto_create")]
 
 
+class DnsZoneWriteSerializer(serializers.ModelSerializer):
+    """Author a zone in Danbyte. DNS is Danbyte-authoritative for managed
+    content (pushing to a DNS backend is a later phase), so this stores the zone
+    locally — it is not created on the server."""
+
+    class Meta:
+        model = DnsZone
+        fields = ["id", "connection", "name", "is_reverse", "sync", "auto_create"]
+
+    def validate_name(self, value):
+        name = (value or "").strip().rstrip(".").lower()
+        if not name:
+            raise serializers.ValidationError("Enter a zone name, e.g. lab.example.com.")
+        return name
+
+
 class DnsZoneViewSet(IntegrationToggleMixin, TenantScopedViewSet):
-    """Zones come from sync; only the per-zone ``sync`` opt-in is writable."""
+    """Zones are read from sync; the per-zone ``sync`` / ``auto_create`` opt-ins
+    are PATCHable. A zone can also be **authored** here (POST) — stored as a
+    Danbyte-owned ``managed`` zone that sync never prunes — and a managed zone
+    can be removed (DELETE). Synced zones can't be deleted (sync would recreate
+    them)."""
 
     integration_keys = ("dns",)
     tenant_field = "connection__tenant"
-    http_method_names = ["get", "patch"]
+    http_method_names = ["get", "post", "patch", "delete"]
     queryset = DnsZone.objects.select_related("connection").order_by("name")
     serializer_class = DnsZoneSerializer
     rbac_action_map = {"records": "view"}
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return DnsZoneWriteSerializer
+        return DnsZoneSerializer
+
+    def _conn_in_tenant(self, conn):
+        tenant = self._tenant_or_403()
+        if conn is None or conn.tenant_id != tenant.id:
+            raise ValidationError({"connection": "Unknown server connection."})
+        return conn
+
+    def perform_create(self, serializer):
+        conn = self._conn_in_tenant(serializer.validated_data.get("connection"))
+        name = serializer.validated_data["name"]
+        if DnsZone.objects.filter(connection=conn, name=name).exists():
+            raise ValidationError(
+                {"name": "A zone with that name already exists on that server."}
+            )
+        serializer.save(managed=True)
+
+    def perform_destroy(self, instance):
+        if not instance.managed:
+            raise ValidationError(
+                {"detail": "Only zones authored in Danbyte can be deleted; this "
+                           "one is mirrored from the server."}
+            )
+        instance.delete()
 
     def get_queryset(self):
         from django.db.models import Count

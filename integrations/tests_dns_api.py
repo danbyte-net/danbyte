@@ -296,3 +296,30 @@ class DnsApiTests(APITestCase):
         self.assertEqual(res.status_code, 200, res.content)
         self.zone.refresh_from_db()
         self.assertTrue(self.zone.auto_create)
+
+    def test_create_managed_zone(self):
+        res = self.client.post("/api/dns-zones/", {
+            "connection": str(self.conn.id), "name": "lab.example.com",
+        }, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        z = DnsZone.objects.get(name="lab.example.com")
+        self.assertTrue(z.managed)
+
+    def test_create_zone_normalises_and_dedupes(self):
+        res = self.client.post("/api/dns-zones/", {
+            "connection": str(self.conn.id), "name": "DANBYTE.LAN.",
+        }, format="json")
+        self.assertEqual(res.status_code, 400, res.content)  # collides with self.zone
+
+    def test_delete_managed_zone(self):
+        z = DnsZone.objects.create(
+            connection=self.conn, name="own.lan", managed=True
+        )
+        res = self.client.delete(f"/api/dns-zones/{z.id}/")
+        self.assertEqual(res.status_code, 204, res.content)
+        self.assertFalse(DnsZone.objects.filter(id=z.id).exists())
+
+    def test_cannot_delete_synced_zone(self):
+        res = self.client.delete(f"/api/dns-zones/{self.zone.id}/")
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertTrue(DnsZone.objects.filter(id=self.zone.id).exists())

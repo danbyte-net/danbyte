@@ -153,3 +153,47 @@ class DhcpApiTests(APITestCase):
             }, format="json")
         self.assertEqual(res.status_code, 400)
         self.assertEqual(DhcpReservation.objects.count(), 0)
+
+    def test_create_scope_pushes_then_saves(self):
+        with mock.patch("integrations.dhcp_api.push_scope") as push:
+            res = self.client.post("/api/dhcp-scopes/", {
+                "connection": str(self.conn.id), "name": "New scope",
+                "subnet": "10.88.0.0/24", "start_range": "10.88.0.50",
+                "end_range": "10.88.0.200", "description": "test",
+            }, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        push.assert_called_once()
+        row = DhcpScope.objects.get(scope_id="10.88.0.0")
+        self.assertEqual(row.subnet_mask, "255.255.255.0")
+        self.assertEqual(row.name, "New scope")
+        self.assertIsNotNone(row.prefix)
+
+    def test_create_scope_rejects_range_outside_subnet(self):
+        with mock.patch("integrations.dhcp_api.push_scope") as push:
+            res = self.client.post("/api/dhcp-scopes/", {
+                "connection": str(self.conn.id), "name": "Bad",
+                "subnet": "10.88.0.0/24", "start_range": "10.99.0.1",
+                "end_range": "10.99.0.9",
+            }, format="json")
+        self.assertEqual(res.status_code, 400, res.content)
+        push.assert_not_called()
+
+    def test_create_scope_winrm_failure_saves_nothing(self):
+        from integrations.dhcp_sync import WinRMError
+
+        with mock.patch("integrations.dhcp_api.push_scope",
+                        side_effect=WinRMError("refused")):
+            res = self.client.post("/api/dhcp-scopes/", {
+                "connection": str(self.conn.id), "name": "X",
+                "subnet": "10.88.0.0/24", "start_range": "10.88.0.50",
+                "end_range": "10.88.0.60",
+            }, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(DhcpScope.objects.filter(scope_id="10.88.0.0").exists())
+
+    def test_delete_scope_removes_on_server(self):
+        with mock.patch("integrations.dhcp_api.remove_scope") as rm:
+            res = self.client.delete(f"/api/dhcp-scopes/{self.scope.id}/")
+        self.assertEqual(res.status_code, 204, res.content)
+        rm.assert_called_once()
+        self.assertFalse(DhcpScope.objects.filter(id=self.scope.id).exists())

@@ -412,6 +412,33 @@ def push_reservation(conn, scope, *, ip: str, mac: str, name: str,
     run_ps(conn, script)
 
 
+def push_scope(conn, *, name: str, start: str, end: str, mask: str,
+               description: str = "") -> None:
+    """Create a scope on the server (``Add-DhcpServerv4Scope``). The scope id
+    (network address) is derived by Windows from the start range + mask. Raises
+    WinRMError if the server refuses it."""
+    from .winrm_client import run_ps
+
+    desc = f"{description} {MANAGED_MARK}".strip()
+    run_ps(
+        conn,
+        f"Add-DhcpServerv4Scope -Name {ps_str(name)} "
+        f"-StartRange {ps_str(start)} -EndRange {ps_str(end)} "
+        f"-SubnetMask {ps_str(mask)} -Description {ps_str(desc)} "
+        f"-State Active -ErrorAction Stop",
+    )
+
+
+def remove_scope(conn, scope_id: str) -> None:
+    from .winrm_client import run_ps
+
+    run_ps(
+        conn,
+        f"Remove-DhcpServerv4Scope -ScopeId {ps_str(scope_id)} -Force "
+        f"-ErrorAction Stop",
+    )
+
+
 def remove_reservation(conn, scope, ip: str) -> None:
     from .winrm_client import run_ps
 
@@ -432,5 +459,5 @@ def record_sync_failure(conn, exc: Exception) -> None:
 
 __all__ = [
     "MANAGED_MARK", "WinRMError", "push_reservation", "remove_reservation",
-    "record_sync_failure", "sync_dhcp",
+    "push_scope", "remove_scope", "record_sync_failure", "sync_dhcp",
 ]

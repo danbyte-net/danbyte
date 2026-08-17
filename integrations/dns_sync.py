@@ -216,7 +216,11 @@ def sync_dns(conn) -> dict:
                     "last_seen_at": now,
                 },
             )
-        DnsZone.objects.filter(connection=conn).exclude(name__in=seen).delete()
+        # Prune zones that vanished from the server — but never Danbyte-authored
+        # (managed) zones, which Danbyte owns and the server may not carry.
+        DnsZone.objects.filter(connection=conn, managed=False).exclude(
+            name__in=seen
+        ).delete()
 
     # Records/drift only make sense for reconciled zones — drop any left behind
     # by a zone whose reconcile was switched off (or that vanished).

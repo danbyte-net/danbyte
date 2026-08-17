@@ -6997,6 +6997,8 @@ export interface DnsZone {
   is_reverse: boolean
   sync: boolean
   auto_create: boolean
+  /** Authored in Danbyte (not mirrored from a server); never pruned by sync. */
+  managed: boolean
   record_count: number
   drift_count: number
   last_seen_at: string | null

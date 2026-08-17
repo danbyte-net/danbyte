@@ -1,14 +1,21 @@
 import { useMemo, useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
+import { Plus } from "lucide-react"
+import { toast } from "sonner"
 
 import { api, type DhcpScope, type Paginated } from "@/lib/api"
+import { apiErrorToast } from "@/lib/api-toast"
+import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
+import { RowActions } from "@/components/row-actions"
 import { dash } from "@/components/kv-card"
+import { DhcpScopeDialog } from "@/components/integrations/dhcp-scope-dialog"
 import { useFacetRail } from "@/lib/use-facet-rail"
 
 export const Route = createFileRoute("/dhcp-scopes/")({
@@ -16,7 +23,12 @@ export const Route = createFileRoute("/dhcp-scopes/")({
 })
 
 function DhcpScopesPage() {
+  const qc = useQueryClient()
+  const { canDo } = useMe()
   const [q, setQ] = useState("")
+  const [creating, setCreating] = useState(false)
+  const canManage = canDo("dhcpscope", "add")
+  const canDelete = canDo("dhcpscope", "delete")
   const query = useQuery({
     queryKey: ["dhcp-scopes", "all", q],
     queryFn: () =>
@@ -25,6 +37,16 @@ function DhcpScopesPage() {
       ),
   })
   const rows = query.data?.results ?? []
+
+  const del = useMutation({
+    mutationFn: (s: DhcpScope) =>
+      api(`/api/dhcp-scopes/${s.id}/`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast.success("Scope removed from the server")
+      qc.invalidateQueries({ queryKey: ["dhcp-scopes"] })
+    },
+    onError: (e) => apiErrorToast(e),
+  })
 
   const columns = useMemo<ColumnDef<DhcpScope>[]>(
     () => [
@@ -118,8 +140,22 @@ function DhcpScopesPage() {
             <span className="num text-muted-foreground">0</span>
           ),
       },
+      ...(canDelete
+        ? [
+            {
+              id: "actions",
+              enableSorting: false,
+              cell: ({ row }: { row: { original: DhcpScope } }) => (
+                <RowActions
+                  onDelete={() => del.mutate(row.original)}
+                  deleteLabel="Delete scope (removes it on the server)"
+                />
+              ),
+            } as ColumnDef<DhcpScope>,
+          ]
+        : []),
     ],
-    []
+    [canDelete, del]
   )
 
   const { rail, filtered } = useFacetRail(rows, [
@@ -142,11 +178,18 @@ function DhcpScopesPage() {
       query={query}
       rail={rail}
       search={{ value: q, onChange: setQ, placeholder: "Filter scopes…" }}
+      actions={
+        canManage ? (
+          <Button size="sm" onClick={() => setCreating(true)}>
+            <Plus className="h-3.5 w-3.5" /> Add scope
+          </Button>
+        ) : undefined
+      }
     >
       {rows.length === 0 && query.data && !q ? (
-        <EmptyState title="No DHCP scopes synced.">
-          Connect a Windows DHCP server under Integrations → Windows servers and
-          its scopes appear here.
+        <EmptyState title="No DHCP scopes yet.">
+          Connect a Windows DHCP server under Integrations → Windows servers to
+          sync its scopes, or use <strong>Add scope</strong> to create one.
         </EmptyState>
       ) : (
         <DataTable
@@ -155,6 +198,7 @@ function DhcpScopesPage() {
           tableId="dhcp-scopes-all"
         />
       )}
+      {creating && <DhcpScopeDialog onOpenChange={setCreating} />}
     </ListPageShell>
   )
 }
