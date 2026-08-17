@@ -143,6 +143,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.ClusterGroup", "Cluster groups", "Virtualization"),
     ("api.VirtualMachine", "Virtual machines", "Virtualization"),
     ("api.VMInterface", "VM interfaces", "Virtualization"),
+    ("api.VirtualDisk", "Virtual disks", "Virtualization"),
+    ("api.VirtualSwitch", "Virtual switches", "Virtualization"),
     # ─── Governance / monitoring ────────────────────────────────────
     ("monitoring.CheckTemplate", "Check templates", "Monitoring"),
     ("monitoring.CheckAssignment", "Check assignments", "Monitoring"),
