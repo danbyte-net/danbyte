@@ -71,6 +71,11 @@ the range's VRF to match the prefix. The range's detail page shows an
 recorded as IPs, with used / available / total counts (very large ranges are
 truncated so the page stays fast).
 
+Containment is surfaced both ways: the prefix IPs tab has a **Range** column
+(the containing range's role chip), and an IP's own detail page shows a
+**Range** row in its Network card — linked, with the range's role and, for
+DHCP exclusions, the dashed **DHCP EXCL** badge.
+
 ## RIRs & aggregates
 
 A **RIR** is your catalog of the registries — or private spaces — that allocate

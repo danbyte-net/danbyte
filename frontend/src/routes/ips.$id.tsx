@@ -16,8 +16,9 @@ import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 
-import { api, type IPAddress } from "@/lib/api"
-import { parseCidr, bigIntToIp } from "@/lib/prefix-tree"
+import { api, type IPAddress, type IPRange, type Paginated } from "@/lib/api"
+import { parseCidr, bigIntToIp, ipToBigInt } from "@/lib/prefix-tree"
+import { DhcpBadge } from "@/components/dhcp-badge"
 import { copyText } from "@/lib/clipboard"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -93,6 +94,26 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
 
   const family: 4 | 6 = ip.ip_address.includes(":") ? 6 : 4
   const dnsEnabled = useDnsEnabled()
+
+  // The IP range this address falls inside, if any — containment is computed
+  // client-side over the prefix's few ranges, same as the prefix IPs pane.
+  const rangesQuery = useQuery({
+    queryKey: ["prefix-ip-ranges", ip.prefix?.id],
+    queryFn: () =>
+      api<Paginated<IPRange>>(`/api/ip-ranges/?prefix=${ip.prefix!.id}`),
+    enabled: !!ip.prefix,
+    staleTime: 60_000,
+  })
+  const containingRange = (() => {
+    const n = ipToBigInt(ip.ip_address)
+    if (n == null) return null
+    for (const r of rangesQuery.data?.results ?? []) {
+      const lo = ipToBigInt(r.start_address)
+      const hi = ipToBigInt(r.end_address)
+      if (lo != null && hi != null && n >= lo && n <= hi) return r
+    }
+    return null
+  })()
 
   // ─── Row collections — single source of truth for table render + copy ─
 
@@ -295,6 +316,34 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       ),
       copy: ip.prefix?.cidr ?? "",
     },
+    // Only when the address actually falls inside a range — a "—" row for
+    // every IP would just be noise.
+    ...(containingRange
+      ? [
+          {
+            label: "Range",
+            value: (
+              <span className="inline-flex items-center gap-1.5">
+                <Link
+                  to="/ip-ranges/$id"
+                  params={{ id: containingRange.id }}
+                  className="link font-mono"
+                >
+                  {containingRange.start_address} –{" "}
+                  {containingRange.end_address}
+                </Link>
+                {containingRange.role && (
+                  <RoleChip role={containingRange.role} />
+                )}
+                {containingRange.dhcp === "exclusion" && (
+                  <DhcpBadge state="exclusion" />
+                )}
+              </span>
+            ),
+            copy: `${containingRange.start_address}-${containingRange.end_address}`,
+          } satisfies KvRow,
+        ]
+      : []),
     {
       label: "VRF",
       value: <VrfCell vrf={ip.prefix?.vrf ?? null} />,
@@ -442,6 +491,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
                 showVirtualTag
                 isVirtual={ip.role?.is_virtual}
               />
+              {ip.dhcp && <DhcpBadge state={ip.dhcp} />}
               {/* The containing subnet's zone (via its VLAN) — where this IP
                   lives, firewall-wise. */}
               {ip.prefix?.vlan?.zone && (
