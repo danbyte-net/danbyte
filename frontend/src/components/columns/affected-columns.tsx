@@ -45,6 +45,7 @@ export function ipColumns(): ColumnDef<IPAddress>[] {
     include: [
       "ip",
       "status",
+      "dhcp",
       "role",
       "dns",
       "assigned",

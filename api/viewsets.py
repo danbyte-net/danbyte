@@ -200,6 +200,26 @@ from .serializers import (
 )
 
 
+def annotate_dhcp(qs):
+    """Add the counts the IPAddress serializer's ``dhcp`` field reads, so every
+    surface that lists IPs marks DHCP state consistently: a reservation, a lease,
+    or membership in a scope's pool range (address between start/end). The
+    reverse path ``prefix__dhcp_scopes`` keeps ``api`` free of an ``integrations``
+    import; the ``inet`` columns compare directly."""
+    return qs.annotate(
+        dhcp_resv_n=Count("dhcp_reservations", distinct=True),
+        dhcp_lease_n=Count("dhcp_leases", distinct=True),
+        dhcp_pool_n=Count(
+            "prefix__dhcp_scopes",
+            distinct=True,
+            filter=Q(
+                prefix__dhcp_scopes__start_range__lte=F("ip_address"),
+                prefix__dhcp_scopes__end_range__gte=F("ip_address"),
+            ),
+        ),
+    )
+
+
 def _apply_lifecycle_filter(qs, value: str):
     """``?lifecycle=`` buckets for LifecycleMixin models. Buckets are
     exclusive and mirror ``lifecycle_state``: eol · security_ended · eos ·
@@ -1134,23 +1154,13 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         # ipaddress grant must not enumerate them). Mirrors DeviceViewSet.ips /
         # InterfaceViewSet.ips.
         qs = rbac.restrict_queryset(
-            IPAddress.objects
-            .filter(prefix=prefix)
-            .select_related("status", "role", "assigned_device")
-            .prefetch_related("tags")
-            # Feed the serializer's `dhcp` flag — the prefix IPs pane builds its
-            # own queryset, so it needs the same DHCP counts IPAddressViewSet adds.
-            .annotate(
-                dhcp_resv_n=Count("dhcp_reservations", distinct=True),
-                dhcp_lease_n=Count("dhcp_leases", distinct=True),
-                dhcp_pool_n=Count(
-                    "prefix__dhcp_scopes",
-                    distinct=True,
-                    filter=Q(
-                        prefix__dhcp_scopes__start_range__lte=F("ip_address"),
-                        prefix__dhcp_scopes__end_range__gte=F("ip_address"),
-                    ),
-                ),
+            # annotate_dhcp feeds the serializer's `dhcp` flag — this pane builds
+            # its own queryset, so it needs the same counts IPAddressViewSet adds.
+            annotate_dhcp(
+                IPAddress.objects
+                .filter(prefix=prefix)
+                .select_related("status", "role", "assigned_device")
+                .prefetch_related("tags")
             ),
             request.user, prefix.tenant, "ipaddress", "view",
         )
@@ -1365,21 +1375,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         IP-assign picker scales to very large address spaces (filter, don't
         ship millions of rows): ``?search=`` (address or DNS), ``?prefix=``,
         ``?vrf=``, ``?site=``, ``?assigned_interface=``."""
-        qs = super().get_queryset().annotate(
-            dhcp_resv_n=Count("dhcp_reservations", distinct=True),
-            dhcp_lease_n=Count("dhcp_leases", distinct=True),
-            # In a DHCP scope's pool range (start–end) on this address's prefix.
-            # Reverse path `prefix__dhcp_scopes` keeps api free of an integrations
-            # import; the inet columns compare directly.
-            dhcp_pool_n=Count(
-                "prefix__dhcp_scopes",
-                distinct=True,
-                filter=Q(
-                    prefix__dhcp_scopes__start_range__lte=F("ip_address"),
-                    prefix__dhcp_scopes__end_range__gte=F("ip_address"),
-                ),
-            ),
-        )
+        qs = annotate_dhcp(super().get_queryset())
         if not self.request:
             return qs
         p = self.request.query_params
@@ -3299,8 +3295,10 @@ class DeviceViewSet(
         from auth_api import rbac
 
         device = self.get_object()
-        qs = (IPAddress.objects.filter(assigned_device=device)
-              .select_related("status", "role", "prefix").prefetch_related("tags"))
+        qs = annotate_dhcp(
+            IPAddress.objects.filter(assigned_device=device)
+            .select_related("status", "role", "prefix").prefetch_related("tags")
+        )
         qs = rbac.restrict_queryset(
             qs, request.user, device.tenant, "ipaddress", "view"
         )
@@ -3431,7 +3429,7 @@ class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
         """IPs assigned to this interface — backs the IP section on the
         interface detail page."""
         iface = self.get_object()  # tenant-scoped via device__tenant
-        qs = (
+        qs = annotate_dhcp(
             IPAddress.objects.filter(
                 assigned_interface=iface, tenant=iface.device.tenant
             )

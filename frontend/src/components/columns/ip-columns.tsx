@@ -32,6 +32,7 @@ import {
 export type IpColumnId =
   | "ip"
   | "status"
+  | "dhcp"
   | "role"
   | "scope"
   | "dns"
@@ -45,6 +46,7 @@ export type IpColumnId =
 const CANONICAL_ORDER: IpColumnId[] = [
   "ip",
   "status",
+  "dhcp",
   "role",
   "scope",
   "dns",
@@ -106,19 +108,13 @@ export function buildIpColumns<T = IPAddress>(
       header: ({ column }) => <SortHeader column={column} label="Address" />,
       cell: ({ row }) => {
         const ip = getIp(row.original)
-        const dhcpState = opts.dhcpState
-          ? opts.dhcpState(row.original)
-          : (ip?.dhcp ?? null)
-        const dhcpBadge = dhcpState ? <DhcpBadge state={dhcpState} /> : null
         if (!ip) {
-          if (!opts.freeRow) return dash
-          return (
-            <span className="inline-flex items-center gap-1.5">
-              <span className="font-mono text-xs text-muted-foreground italic">
-                {opts.freeRow.address(row.original)}
-              </span>
-              {dhcpBadge}
+          return opts.freeRow ? (
+            <span className="font-mono text-xs text-muted-foreground italic">
+              {opts.freeRow.address(row.original)}
             </span>
+          ) : (
+            dash
           )
         }
         const link = (
@@ -137,18 +133,41 @@ export function buildIpColumns<T = IPAddress>(
           return (
             <span className="inline-flex items-center gap-1.5">
               {link}
-              {dhcpBadge}
               {marker}
             </span>
           )
         return (
           <div className="flex items-center gap-1">
             {link}
-            {dhcpBadge}
             {marker}
             <CopyButton value={ip.ip_address} />
           </div>
         )
+      },
+    }),
+    dhcp: () => ({
+      id: "dhcp",
+      accessorFn: (r) =>
+        (opts.dhcpState ? opts.dhcpState(r) : (getIp(r)?.dhcp ?? null)) ?? "",
+      header: ({ column }) => <SortHeader column={column} label="DHCP" />,
+      cell: ({ row }) => {
+        const s = opts.dhcpState
+          ? opts.dhcpState(row.original)
+          : (getIp(row.original)?.dhcp ?? null)
+        return s ? <DhcpBadge state={s} /> : dash
+      },
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "DHCP",
+          get: (r: T) =>
+            (opts.dhcpState ? opts.dhcpState(r) : (getIp(r)?.dhcp ?? null)) ??
+            "__none__",
+          formatValue: (v) => ({
+            label:
+              v === "leased" ? "Leased" : v === "scope" ? "DHCP scope" : "—",
+          }),
+        },
       },
     }),
     status: () => ({

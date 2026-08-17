@@ -1192,7 +1192,7 @@ function DeviceIpsPane({
 
   const columns = useMemo<ColumnDef<IPAddress>[]>(() => {
     const cols = buildIpColumns<IPAddress>({
-      include: ["ip", "status", "role", "description"],
+      include: ["ip", "status", "dhcp", "role", "description"],
       copyButton: true,
     })
     const insertAfter = (id: string, ...extra: ColumnDef<IPAddress>[]) => {

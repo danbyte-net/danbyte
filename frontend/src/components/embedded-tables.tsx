@@ -90,7 +90,7 @@ export function EmbeddedIpTable({
   const columns = useMemo<ColumnDef<IPAddress>[]>(
     () =>
       buildIpColumns({
-        include: ["ip", "status", "dns", "assigned"],
+        include: ["ip", "status", "dhcp", "dns", "assigned"],
         copyButton: true,
       }),
     []
