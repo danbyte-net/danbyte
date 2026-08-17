@@ -203,6 +203,8 @@ sync imports into the **existing cluster/VM inventory**:
 | --- | --- | --- |
 | Cluster | Cluster (single-cluster vCenters; else the source name) | **Cluster** (a *Proxmox VE* / *VMware vCenter* cluster type is created on demand) |
 | QEMU / LXC guest | Virtual machine | **Virtual machine** (vCPUs, memory, disk, description) |
+| Guest tags (`prod;web`) | — | **Tags** (added, never removed) — Proxmox only |
+| Notes / annotation | VM annotation | **Description** (blank-filled, never overwrites yours) |
 | Guest NIC (`netX`) | Ethernet adapter | **VM interface** with its MAC |
 | Disk (`scsiN`/`virtioN`/…) | Virtual disk device | **Virtual disk** (name, size, storage/datastore, controller) — *opt-in* |
 | Bridge + VLAN tag (`vmbr0,tag=42`) | Port-group VLAN | **VLAN** (in the source's VLAN group) + the interface's access VLAN — *opt-in* |

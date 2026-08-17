@@ -45,6 +45,8 @@ QEMU_CONFIG = {
     "scsi1": "ceph-vm:vm-100-disk-1,size=100G",
     "ide2": "local:iso/debian.iso,media=cdrom",  # optical — must be ignored
     "cores": 4,
+    "tags": "prod;web",
+    "description": "Frontend router",
 }
 LXC_CONFIG = {"net0": "name=eth0,bridge=vmbr0,hwaddr=AA:BB:CC:00:11:33,ip=dhcp"}
 AGENT = {
@@ -266,6 +268,27 @@ class ProxmoxSyncTests(TestCase):
         self.sync()  # source.sync_networks defaults False
         self.assertEqual(VirtualSwitch.objects.count(), 0)
         self.assertFalse(VMInterface.objects.exclude(vlan__isnull=True).exists())
+
+    def test_tags_and_notes_synced(self):
+        self.sync()
+        vm = VirtualMachine.objects.get(name="router-vm")
+        self.assertEqual(vm.description, "Frontend router")  # notes → description
+        self.assertEqual(
+            set(vm.tags.values_list("name", flat=True)), {"prod", "web"}
+        )
+
+    def test_notes_dont_overwrite_operator_description(self):
+        ctype = ClusterType.objects.create(tenant=self.tenant, name="M", slug="m")
+        cl = Cluster.objects.create(tenant=self.tenant, name="ops", type=ctype)
+        VirtualMachine.objects.create(
+            tenant=self.tenant, name="router-vm", cluster=cl,
+            description="hand-written",
+        )
+        self.sync()
+        vm = VirtualMachine.objects.get(name="router-vm")
+        self.assertEqual(vm.description, "hand-written")  # kept
+        # tags still added (additive)
+        self.assertIn("prod", set(vm.tags.values_list("name", flat=True)))
 
     def test_uplinks_linked_from_bridge_ports(self):
         from api.models import Device, Interface

@@ -131,6 +131,58 @@ def _upsert_disk(vm, key, *, name="", size_gb=None, storage="",
         disk.save(update_fields=changed)
 
 
+def _apply_notes(vm, notes) -> None:
+    """Blank-fill the VM description from the hypervisor's notes — only when the
+    operator hasn't written one (a sync-created VM's «Synced from …» placeholder
+    counts as empty). Never overwrites a real description."""
+    notes = (notes or "").strip()
+    if not notes:
+        return
+    cur = (vm.description or "").strip()
+    if cur and not cur.startswith("Synced from"):
+        return
+    if cur != notes:
+        vm.description = notes
+        vm.save(update_fields=["description"])
+
+
+def _apply_tags(vm, names) -> None:
+    """Additively attach hypervisor tags to the VM — get-or-create each Tag in
+    the tenant, add the ones missing. Never removes operator-added tags."""
+    from django.utils.text import slugify
+
+    from core.models import Tag
+
+    want = [n.strip() for n in names if n and n.strip()]
+    if not want:
+        return
+    have = {t.name for t in vm.tags.all()}
+    for name in want:
+        if name in have:
+            continue
+        tag, _ = Tag.objects.get_or_create(
+            tenant=vm.tenant, slug=slugify(name)[:100] or name[:100],
+            defaults={"name": name},
+        )
+        vm.tags.add(tag)
+
+
+def _sync_meta_proxmox(guest, cfg) -> None:
+    """Proxmox VM tags (`tags: a;b`) → Tags; Notes (`description`) → description."""
+    if guest.vm is None or not cfg:
+        return
+    _apply_notes(guest.vm, cfg.get("description"))
+    _apply_tags(guest.vm, re.split(r"[;,]", str(cfg.get("tags") or "")))
+
+
+def _sync_meta_vcenter(guest, meta) -> None:
+    """vCenter VM annotation (notes) → description. (vSphere tags live behind a
+    separate tagging API — not synced here.)"""
+    if guest.vm is None or not meta:
+        return
+    _apply_notes(guest.vm, meta.get("notes"))
+
+
 def _network_group(source, cluster):
     """A dedicated VLANGroup for one source's synced VLANs — keeps their VIDs
     scoped so they never collide with operator-defined VLANs."""
@@ -302,12 +354,13 @@ def sync_proxmox(source) -> dict:
             except VirtAPIError:
                 pass  # agent not installed/running — IPs just stay unknown
         details[vmid] = {"ifaces": cfg, "ips": agent_ifaces,
-                         "disks": cfg, "nets": cfg}
+                         "disks": cfg, "nets": cfg, "meta": cfg}
 
     result = _run_pass(source, cluster_name, resources, details, now, counts,
                        _sync_interfaces, _sync_ips,
                        sync_disks_fn=_sync_disks,
-                       sync_nets_fn=_sync_networks_proxmox, label="proxmox")
+                       sync_nets_fn=_sync_networks_proxmox,
+                       sync_meta_fn=_sync_meta_proxmox, label="proxmox")
     # Switches exist now — link their bridge uplinks to the node's real NICs.
     if source.sync_networks:
         result["uplinks"] = _sync_proxmox_uplinks(source, cluster_name, nodes)
@@ -316,7 +369,7 @@ def sync_proxmox(source) -> dict:
 
 def _run_pass(source, cluster_name, resources, details, now, counts,
               sync_ifaces, sync_ips, *, sync_disks_fn=None,
-              sync_nets_fn=None, label) -> dict:
+              sync_nets_fn=None, sync_meta_fn=None, label) -> dict:
     """Reconcile one fetched inventory against Danbyte — hypervisor-agnostic.
 
     ``resources`` is a list of normalised guest dicts (``vmid``, ``name``,
@@ -368,6 +421,8 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
                     counts["networks"] += sync_nets_fn(
                         source, cluster, guest, d.get("nets"), now
                     )
+                if sync_meta_fn:
+                    sync_meta_fn(guest, d.get("meta"))
 
         # Guests gone from the hypervisor.
         for gone in VirtGuest.objects.filter(source=source).exclude(vmid__in=seen):
@@ -752,12 +807,14 @@ def sync_vcenter(source) -> dict:
                 except VirtAPIError:
                     pass  # VMware Tools absent/starting — IPs stay unknown
             details[vmid] = {"ifaces": nics, "ips": guest_nets,
-                             "disks": info.get("disks"), "nets": nics}
+                             "disks": info.get("disks"), "nets": nics,
+                             "meta": {"notes": info.get("notes")}}
 
         return _run_pass(source, cluster_name, resources, details, now, counts,
                          _sync_vcenter_interfaces, _sync_vcenter_ips,
                          sync_disks_fn=_sync_vcenter_disks,
-                         sync_nets_fn=_sync_networks_vcenter, label="vcenter")
+                         sync_nets_fn=_sync_networks_vcenter,
+                         sync_meta_fn=_sync_meta_vcenter, label="vcenter")
     finally:
         client.close()
 
