@@ -35,7 +35,11 @@ export function Field({
   children,
 }: FieldProps) {
   return (
-    <div className={cn("grid gap-1.5", className)}>
+    // content-start: when a grid stretches this cell to match a taller
+    // neighbour (e.g. a checkbox stack), pack label+input at the top instead
+    // of distributing the leftover height between them (the "floating input
+    // far below its label" bug).
+    <div className={cn("grid content-start gap-1.5", className)}>
       <div className="flex items-baseline justify-between">
         <Label className="flex items-center gap-1 text-xs">
           {label}
