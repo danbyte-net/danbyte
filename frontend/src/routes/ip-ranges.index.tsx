@@ -212,7 +212,7 @@ function buildColumns({
         <Link
           to="/ip-ranges/$id"
           params={{ id: row.original.id }}
-          className="font-mono text-[13px] font-medium hover:underline"
+          className="link font-mono text-[13px] font-medium"
         >
           {row.original.start_address} – {row.original.end_address}
         </Link>

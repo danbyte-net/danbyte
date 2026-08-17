@@ -55,7 +55,7 @@ function CircuitTypesPage() {
           <Link
             to="/circuit-types/$id"
             params={{ id: row.original.id }}
-            className="font-medium hover:underline"
+            className="link font-medium"
           >
             <ColorBadge
               name={row.original.name}

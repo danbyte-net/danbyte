@@ -179,10 +179,7 @@ function ForYouTab() {
         id: "channel",
         header: "Channel",
         cell: ({ row }) => (
-          <ScopeLink
-            ch={row.original.channel}
-            className="font-medium hover:underline"
-          >
+          <ScopeLink ch={row.original.channel} className="link font-medium">
             {row.original.channel.name}
           </ScopeLink>
         ),
@@ -267,7 +264,7 @@ function ForYouTab() {
                 className="flex items-center justify-between gap-4 px-4 py-3"
               >
                 <div>
-                  <ScopeLink ch={ch} className="font-medium hover:underline">
+                  <ScopeLink ch={ch} className="link font-medium">
                     {ch.name}
                   </ScopeLink>
                   <div className="text-[12px] text-muted-foreground">

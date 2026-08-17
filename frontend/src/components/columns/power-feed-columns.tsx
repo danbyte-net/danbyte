@@ -86,7 +86,7 @@ export function buildPowerFeedColumns<T extends PowerFeed = PowerFeed>(
           <Link
             to="/power-feeds/$id"
             params={{ id: row.original.id }}
-            className="font-medium hover:underline"
+            className="link font-medium"
           >
             {row.original.name}
           </Link>
@@ -107,7 +107,7 @@ export function buildPowerFeedColumns<T extends PowerFeed = PowerFeed>(
         <Link
           to="/power-panels/$id"
           params={{ id: row.original.power_panel.id }}
-          className="text-xs hover:underline"
+          className="link text-xs"
         >
           {row.original.power_panel.name}
         </Link>

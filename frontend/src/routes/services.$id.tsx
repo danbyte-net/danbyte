@@ -136,7 +136,7 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
         <Link
           to="/ips/$id"
           params={{ id: s.ip_address.id }}
-          className="font-mono text-[13px] hover:underline"
+          className="link font-mono text-[13px]"
         >
           {s.ip_address.ip_address}
         </Link>
@@ -148,18 +148,14 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
     {
       label: "Parent",
       value: s.device ? (
-        <Link
-          to="/devices/$id"
-          params={{ id: s.device.id }}
-          className="hover:underline"
-        >
+        <Link to="/devices/$id" params={{ id: s.device.id }} className="link">
           {s.device.name}
         </Link>
       ) : s.virtual_machine ? (
         <Link
           to="/virtual-machines/$id"
           params={{ id: s.virtual_machine.id }}
-          className="hover:underline"
+          className="link"
         >
           {s.virtual_machine.name}
         </Link>

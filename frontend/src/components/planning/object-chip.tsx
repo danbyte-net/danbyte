@@ -152,7 +152,7 @@ export function ObjectRow({
         {route ? (
           <Link
             to={route}
-            className="block truncate text-[13px] font-medium hover:underline"
+            className="link block truncate text-[13px] font-medium"
           >
             {name}
           </Link>

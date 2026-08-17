@@ -72,7 +72,7 @@ export function buildWirelessLANColumns<T extends WirelessLAN = WirelessLAN>(
           <Link
             to="/wireless-lans/$id"
             params={{ id: row.original.id }}
-            className="font-medium hover:underline"
+            className="link font-medium"
           >
             {row.original.ssid}
           </Link>
@@ -92,7 +92,7 @@ export function buildWirelessLANColumns<T extends WirelessLAN = WirelessLAN>(
           <Link
             to="/wireless-lan-groups/$id"
             params={{ id: row.original.group.id }}
-            className="text-xs hover:underline"
+            className="link text-xs"
           >
             {row.original.group.name}
           </Link>

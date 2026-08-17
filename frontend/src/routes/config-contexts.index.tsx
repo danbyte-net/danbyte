@@ -57,7 +57,7 @@ function ConfigContextsPage() {
           <Link
             to="/config-contexts/$id"
             params={{ id: row.original.id }}
-            className="flex items-center gap-2 font-medium hover:underline"
+            className="link flex items-center gap-2 font-medium"
           >
             {row.original.name}
             {!row.original.is_active && (

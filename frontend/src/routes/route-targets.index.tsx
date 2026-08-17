@@ -195,7 +195,7 @@ function buildColumns({
         <Link
           to="/route-targets/$id"
           params={{ id: row.original.id }}
-          className="font-mono font-medium hover:underline"
+          className="link font-mono font-medium"
         >
           {row.original.name}
         </Link>

@@ -47,7 +47,7 @@ export function UpcomingMaintenancePanel({
             <Link
               to="/maintenance/$id/edit"
               params={{ id: e.id }}
-              className="min-w-0 flex-1 truncate text-[13px] font-medium hover:underline"
+              className="link min-w-0 flex-1 truncate text-[13px] font-medium"
             >
               {e.name}
             </Link>

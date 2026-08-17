@@ -104,7 +104,7 @@ function buildColumns({
         <Link
           to="/vlan-groups/$id"
           params={{ id: row.original.id }}
-          className="font-medium hover:underline"
+          className="link font-medium"
         >
           {row.original.name}
         </Link>

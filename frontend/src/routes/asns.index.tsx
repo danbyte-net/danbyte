@@ -175,7 +175,7 @@ function buildColumns({
         <Link
           to="/asns/$id"
           params={{ id: row.original.id }}
-          className="font-mono text-[13px] font-medium hover:underline"
+          className="link font-mono text-[13px] font-medium"
         >
           AS{row.original.asn}
         </Link>

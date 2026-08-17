@@ -46,7 +46,7 @@ export function SilencesList() {
         <Link
           to="/silences/$id/edit"
           params={{ id: row.original.id }}
-          className="font-medium hover:underline"
+          className="link font-medium"
         >
           {row.original.reason || "(no reason)"}
         </Link>

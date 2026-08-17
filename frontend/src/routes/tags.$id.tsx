@@ -214,10 +214,7 @@ function TagUsageTable({ tagId }: { tagId: number }) {
         // Plain anchor: the target route varies by object type, so we let the
         // browser resolve the concrete path rather than thread typed Links.
         cell: ({ row }) => (
-          <a
-            href={row.original.url}
-            className="font-mono text-[13px] hover:underline"
-          >
+          <a href={row.original.url} className="link font-mono text-[13px]">
             {row.original.name}
           </a>
         ),

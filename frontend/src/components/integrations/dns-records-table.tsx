@@ -73,7 +73,7 @@ export function dnsRecordColumns(showZone: boolean): ColumnDef<DnsRecord>[] {
           <Link
             to="/ips/$id"
             params={{ id: row.original.ip_address }}
-            className="font-mono text-xs hover:underline"
+            className="link font-mono text-xs"
           >
             {row.original.ip}
           </Link>
@@ -93,7 +93,7 @@ export function dnsRecordColumns(showZone: boolean): ColumnDef<DnsRecord>[] {
         <Link
           to="/dns-zones/$id"
           params={{ id: row.original.zone }}
-          className="font-mono text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+          className="link font-mono text-[11px] text-muted-foreground hover:text-foreground"
         >
           {row.original.zone_name}
         </Link>

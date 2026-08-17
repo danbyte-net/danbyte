@@ -49,7 +49,7 @@ function buildColumns(
       if (i === 0 && spec.detail_route) {
         const href = spec.detail_route.replace("$id", String(row.original.id))
         return (
-          <Link to={href as never} className="font-mono hover:underline">
+          <Link to={href as never} className="link font-mono">
             {String(v ?? "—")}
           </Link>
         )

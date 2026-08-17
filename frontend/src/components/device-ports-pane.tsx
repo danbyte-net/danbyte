@@ -37,7 +37,7 @@ function CableCell({ cable }: { cable: RearPort["cable"] }) {
     <Link
       to="/cables/$id"
       params={{ id: cable.id }}
-      className="inline-flex items-center gap-1.5 hover:underline"
+      className="link inline-flex items-center gap-1.5"
     >
       <span
         className="h-2.5 w-2.5 rounded-sm border border-border"

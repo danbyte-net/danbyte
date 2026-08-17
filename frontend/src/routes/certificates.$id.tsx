@@ -352,7 +352,7 @@ function CertificateOverview({ cert }: { cert: Certificate }) {
         <Link
           to="/certificates/$id"
           params={{ id: cert.issuer_certificate }}
-          className="text-[13px] font-medium hover:underline"
+          className="link text-[13px] font-medium"
         >
           {cert.issuer_certificate_subject_cn || cert.issuer_cn || "CA"}
         </Link>
@@ -707,7 +707,7 @@ function ChainTab({ cert }: { cert: Certificate }) {
               <Link
                 to="/certificates/$id"
                 params={{ id: c.id }}
-                className="font-medium hover:underline"
+                className="link font-medium"
               >
                 {certLabel(c)}
               </Link>

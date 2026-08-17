@@ -58,7 +58,7 @@ function L2vpnsPage() {
           <Link
             to="/l2vpns/$id"
             params={{ id: row.original.id }}
-            className="font-medium hover:underline"
+            className="link font-medium"
           >
             {row.original.name}
           </Link>

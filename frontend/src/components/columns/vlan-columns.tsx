@@ -90,7 +90,7 @@ export function buildVlanColumns<T extends VLAN = VLAN>(
         <Link
           to="/vlans/$id"
           params={{ id: row.original.id }}
-          className="num font-mono text-xs font-medium hover:underline"
+          className="num link font-mono text-xs font-medium"
         >
           {row.original.vlan_id}
         </Link>
@@ -115,7 +115,7 @@ export function buildVlanColumns<T extends VLAN = VLAN>(
           <Link
             to="/vlans/$id"
             params={{ id: row.original.id }}
-            className="font-medium hover:underline"
+            className="link font-medium"
           >
             {row.original.name}
           </Link>
@@ -140,11 +140,7 @@ export function buildVlanColumns<T extends VLAN = VLAN>(
       cell: ({ row }) => {
         const g = row.original.group
         return g ? (
-          <Link
-            to="/vlan-groups/$id"
-            params={{ id: g.id }}
-            className="hover:underline"
-          >
+          <Link to="/vlan-groups/$id" params={{ id: g.id }} className="link">
             {g.name}
           </Link>
         ) : (

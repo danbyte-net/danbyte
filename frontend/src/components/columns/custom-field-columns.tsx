@@ -70,7 +70,7 @@ export function buildCustomFieldColumns<T extends CustomField = CustomField>(
           <Link
             to="/custom-fields/$id"
             params={{ id: row.original.id }}
-            className="font-mono font-medium hover:underline"
+            className="link font-mono font-medium"
           >
             {row.original.key}
           </Link>
@@ -129,7 +129,7 @@ export function buildCustomFieldColumns<T extends CustomField = CustomField>(
           <Link
             to="/custom-field-groups/$id"
             params={{ id: row.original.group }}
-            className="text-xs hover:underline"
+            className="link text-xs"
           >
             {row.original.group_name}
           </Link>

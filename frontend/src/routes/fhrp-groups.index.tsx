@@ -176,7 +176,7 @@ function buildColumns({
         <Link
           to="/fhrp-groups/$id"
           params={{ id: row.original.id }}
-          className="font-medium hover:underline"
+          className="link font-medium"
         >
           {row.original.protocol_display}{" "}
           <span className="font-mono">{row.original.group_id}</span>

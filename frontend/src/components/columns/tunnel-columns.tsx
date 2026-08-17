@@ -76,7 +76,7 @@ export function buildTunnelColumns<T extends Tunnel = Tunnel>(
           <Link
             to="/tunnels/$id"
             params={{ id: row.original.id }}
-            className="font-medium hover:underline"
+            className="link font-medium"
           >
             {row.original.name}
           </Link>
@@ -131,7 +131,7 @@ export function buildTunnelColumns<T extends Tunnel = Tunnel>(
           <Link
             to="/tunnel-groups/$id"
             params={{ id: row.original.group.id }}
-            className="text-xs hover:underline"
+            className="link text-xs"
           >
             {row.original.group.name}
           </Link>
@@ -158,7 +158,7 @@ export function buildTunnelColumns<T extends Tunnel = Tunnel>(
           <Link
             to="/ipsec-profiles/$id"
             params={{ id: row.original.ipsec_profile.id }}
-            className="text-xs hover:underline"
+            className="link text-xs"
           >
             {row.original.ipsec_profile.name}
           </Link>

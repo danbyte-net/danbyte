@@ -193,11 +193,7 @@ export function DeviceInspector({
       {d.site && (
         <div className="text-[12px] text-muted-foreground">
           Site:{" "}
-          <Link
-            to="/sites/$id"
-            params={{ id: d.site.id }}
-            className="hover:underline"
-          >
+          <Link to="/sites/$id" params={{ id: d.site.id }} className="link">
             {d.site.name}
           </Link>
         </div>
@@ -405,19 +401,11 @@ export function ConnectionInspector({
         )}
       </div>
       <div className="text-[12px] text-muted-foreground">
-        <Link
-          to="/sites/$id"
-          params={{ id: e.site_a.id }}
-          className="hover:underline"
-        >
+        <Link to="/sites/$id" params={{ id: e.site_a.id }} className="link">
           {e.site_a.name}
         </Link>
         {" ↔ "}
-        <Link
-          to="/sites/$id"
-          params={{ id: e.site_z.id }}
-          className="hover:underline"
-        >
+        <Link to="/sites/$id" params={{ id: e.site_z.id }} className="link">
           {e.site_z.name}
         </Link>
       </div>

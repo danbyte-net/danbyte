@@ -45,7 +45,7 @@ export function TemplatesList() {
         <>
           <button
             type="button"
-            className="font-medium hover:underline"
+            className="link font-medium"
             onClick={() => setEditing(row.original)}
           >
             {row.original.name}

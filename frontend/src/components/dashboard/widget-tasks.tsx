@@ -54,7 +54,7 @@ export function MyTasksWidget() {
         <Link
           to="/planning/$boardId/tasks/$taskId"
           params={{ boardId: t.board, taskId: t.id }}
-          className="truncate font-medium hover:underline"
+          className="link truncate font-medium"
         >
           {t.title}
         </Link>

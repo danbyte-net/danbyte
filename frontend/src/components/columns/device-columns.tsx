@@ -114,7 +114,7 @@ export function DeviceIpRef({
     <Link
       to="/ips/$id"
       params={{ id: ip.id }}
-      className="font-mono text-xs hover:underline"
+      className="link font-mono text-xs"
       title={ip.dns_name || undefined}
     >
       {ip.ip_address}
@@ -164,7 +164,7 @@ export function buildDeviceColumns<T extends Device = Device>(
           <Link
             to="/devices/$id"
             params={{ id: row.original.id }}
-            className="font-mono font-medium hover:underline"
+            className="link font-mono font-medium"
           >
             {row.original.name}
           </Link>
@@ -263,7 +263,13 @@ export function buildDeviceColumns<T extends Device = Device>(
       cell: ({ row }) =>
         row.original.device_type ? (
           <span className="inline-flex items-center gap-1.5">
-            {row.original.device_type.name}
+            <Link
+              to="/device-types/$id"
+              params={{ id: row.original.device_type.id }}
+              className="link"
+            >
+              {row.original.device_type.name}
+            </Link>
             <LifecycleFlag state={row.original.device_type.lifecycle_state} />
           </span>
         ) : (

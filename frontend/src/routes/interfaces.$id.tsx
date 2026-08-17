@@ -76,7 +76,7 @@ function Body({ iface: i }: { iface: Interface }) {
         <Link
           to="/devices/$id"
           params={{ id: i.device.id }}
-          className="font-mono hover:underline"
+          className="link font-mono"
         >
           {i.device.name}
         </Link>

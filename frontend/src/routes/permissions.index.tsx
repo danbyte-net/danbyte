@@ -111,7 +111,7 @@ function buildColumns({
         <Link
           to="/permissions/$id/edit"
           params={{ id: row.original.id }}
-          className="flex items-center gap-2 font-medium hover:underline"
+          className="link flex items-center gap-2 font-medium"
         >
           {row.original.name}
           {!row.original.enabled && (

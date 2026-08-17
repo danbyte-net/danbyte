@@ -211,7 +211,7 @@ function RegionSitesTable({ regionId }: { regionId: string }) {
             <Link
               to="/sites/$id"
               params={{ id: s.id }}
-              className="font-medium hover:underline"
+              className="link font-medium"
             >
               {s.name}
             </Link>
@@ -262,7 +262,7 @@ function SubRegionsTable({ parentId }: { parentId: string }) {
             <Link
               to="/regions/$id"
               params={{ id: sr.id }}
-              className="font-medium hover:underline"
+              className="link font-medium"
             >
               {sr.name}
             </Link>

@@ -164,7 +164,7 @@ function buildColumns(): ColumnDef<ChangeLogEntry>[] {
         <Link
           to="/audit-log/$id"
           params={{ id: row.original.id }}
-          className="hover:underline"
+          className="link"
         >
           <TimeCell iso={row.original.timestamp} />
         </Link>
@@ -206,7 +206,7 @@ function buildColumns(): ColumnDef<ChangeLogEntry>[] {
               <Link
                 to={route}
                 params={{ id: e.object_id }}
-                className="font-medium hover:underline"
+                className="link font-medium"
               >
                 {e.object_repr}
               </Link>

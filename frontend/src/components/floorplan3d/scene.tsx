@@ -1340,7 +1340,7 @@ function PortHud({
                     <Link
                       to="/devices/$id"
                       params={{ id: t.device.id }}
-                      className="min-w-0 flex-1 font-mono break-words text-foreground hover:underline"
+                      className="link min-w-0 flex-1 font-mono break-words text-foreground"
                     >
                       {t.device.name}
                       <span className="text-muted-foreground">:</span>
@@ -1585,7 +1585,7 @@ function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
           key={t.id}
           to="/devices/$id"
           params={{ id: t.device.id }}
-          className="min-w-0 font-mono break-words text-foreground hover:underline"
+          className="link min-w-0 font-mono break-words text-foreground"
         >
           {t.device.name}
           <span className="text-muted-foreground">:</span>

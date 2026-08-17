@@ -286,7 +286,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
         <Link
           to="/prefixes/$id"
           params={{ id: ip.prefix.id }}
-          className="font-mono hover:underline"
+          className="link font-mono"
         >
           {ip.prefix.cidr}
         </Link>

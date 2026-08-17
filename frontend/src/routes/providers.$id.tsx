@@ -261,7 +261,7 @@ function ProviderNetworksTable({ providerId }: { providerId: string }) {
             <Link
               to="/provider-networks/$id"
               params={{ id: r.id }}
-              className="font-medium hover:underline"
+              className="link font-medium"
             >
               {r.name}
             </Link>

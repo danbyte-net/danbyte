@@ -85,7 +85,7 @@ export function buildServiceColumns<T extends Service = Service>(
             <Link
               to="/services/$id"
               params={{ id: row.original.id }}
-              className="font-medium hover:underline"
+              className="link font-medium"
             >
               {row.original.name}
             </Link>

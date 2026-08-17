@@ -24,10 +24,7 @@ export function BookmarksWidget() {
           className="group flex items-center gap-2 py-1.5 text-[13px]"
         >
           <BookmarkIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <Link
-            to={b.url as never}
-            className="shrink-0 font-medium hover:underline"
-          >
+          <Link to={b.url as never} className="link shrink-0 font-medium">
             {b.label}
           </Link>
           <span className="min-w-0 flex-1 truncate text-right font-mono text-[11px] text-muted-foreground">

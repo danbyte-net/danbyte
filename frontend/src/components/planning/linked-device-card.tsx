@@ -74,7 +74,7 @@ export function LinkedDeviceCard({
         <Link
           to="/devices/$id"
           params={{ id: deviceId }}
-          className="truncate text-[13px] font-medium hover:underline"
+          className="link truncate text-[13px] font-medium"
         >
           {dev?.name ?? (q.isLoading ? "Loading..." : "Unavailable")}
         </Link>
@@ -107,7 +107,7 @@ export function LinkedDeviceCard({
               <Link
                 to="/ips/$id"
                 params={{ id: dev.primary_ip.id }}
-                className="num hover:underline"
+                className="num link"
               >
                 {dev.primary_ip.ip_address}
               </Link>
@@ -118,7 +118,7 @@ export function LinkedDeviceCard({
               <Link
                 to="/sites/$id"
                 params={{ id: dev.site.id }}
-                className="hover:underline"
+                className="link"
               >
                 {dev.site.name}
               </Link>

@@ -41,7 +41,7 @@ export function EngineHealthBanner() {
       ))}
       <Link
         to="/monitoring-engines"
-        className="ml-auto font-medium underline-offset-2 hover:underline"
+        className="link ml-auto font-medium underline-offset-2"
       >
         Engines →
       </Link>

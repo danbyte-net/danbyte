@@ -104,7 +104,7 @@ function BoardListPage() {
           <Link
             to="/planning/$boardId"
             params={{ boardId: row.original.id }}
-            className="font-medium hover:underline"
+            className="link font-medium"
           >
             {row.original.name}
           </Link>

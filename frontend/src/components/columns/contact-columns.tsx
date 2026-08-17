@@ -73,7 +73,7 @@ export function buildContactColumns<T extends Contact = Contact>(
           <Link
             to="/contacts/$id"
             params={{ id: row.original.id }}
-            className="font-medium hover:underline"
+            className="link font-medium"
           >
             {row.original.name}
           </Link>
@@ -130,7 +130,7 @@ export function buildContactColumns<T extends Contact = Contact>(
           <Link
             to="/contact-groups/$id"
             params={{ id: row.original.group.id }}
-            className="text-xs hover:underline"
+            className="link text-xs"
           >
             {row.original.group.name}
           </Link>

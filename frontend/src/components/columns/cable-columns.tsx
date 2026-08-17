@@ -211,7 +211,7 @@ export function buildCableColumns(
         <Link
           to="/cables/$id"
           params={{ id: row.original.id }}
-          className="font-mono text-xs hover:underline"
+          className="link font-mono text-xs"
         >
           {termSummary(get(row.original))}
         </Link>
@@ -233,7 +233,7 @@ export function buildCableColumns(
           <Link
             to="/cables/$id"
             params={{ id: row.original.id }}
-            className="text-xs hover:underline"
+            className="link text-xs"
           >
             {row.original.label || (
               <span className="text-muted-foreground">
@@ -245,7 +245,7 @@ export function buildCableColumns(
           <Link
             to="/cables/$id"
             params={{ id: row.original.id }}
-            className="text-xs font-medium hover:underline"
+            className="link text-xs font-medium"
           >
             {row.original.label}
           </Link>

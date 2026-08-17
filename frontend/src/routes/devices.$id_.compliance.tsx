@@ -117,14 +117,14 @@ function ViolationCard({ v }: { v: DeviceComplianceViolation }) {
           {v.severity}
         </Badge>
         {isDrift ? (
-          <Link to="/config-drift" className="font-medium hover:underline">
+          <Link to="/config-drift" className="link font-medium">
             {v.rule_name}
           </Link>
         ) : (
           <Link
             to="/compliance-rules/$id"
             params={{ id: v.rule_id }}
-            className="font-medium hover:underline"
+            className="link font-medium"
           >
             {v.rule_name}
           </Link>

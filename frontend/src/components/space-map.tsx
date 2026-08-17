@@ -206,7 +206,7 @@ function Breadcrumbs({
             <button
               type="button"
               onClick={() => onJump(i)}
-              className="font-mono hover:text-foreground hover:underline"
+              className="link font-mono hover:text-foreground"
             >
               {cidr}
             </button>

@@ -20,7 +20,7 @@ const COLUMNS: SimpleColumn<Certificate>[] = [
       <Link
         to="/certificates/$id"
         params={{ id: c.id }}
-        className="truncate font-medium hover:underline"
+        className="link truncate font-medium"
       >
         {c.subject_cn || c.subject || `${c.fingerprint_sha256.slice(0, 16)}…`}
       </Link>

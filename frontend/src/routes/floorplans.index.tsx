@@ -105,7 +105,7 @@ function buildColumns({
         <Link
           to="/floorplans/$id"
           params={{ id: row.original.id }}
-          className="font-medium hover:underline"
+          className="link font-medium"
         >
           {row.original.name}
         </Link>

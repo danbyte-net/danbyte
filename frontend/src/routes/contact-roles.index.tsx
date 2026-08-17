@@ -92,7 +92,7 @@ function buildColumns({
         <Link
           to="/contact-roles/$id"
           params={{ id: row.original.id }}
-          className="font-medium hover:underline"
+          className="link font-medium"
         >
           {row.original.name}
         </Link>

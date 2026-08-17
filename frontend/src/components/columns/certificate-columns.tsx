@@ -170,7 +170,7 @@ export function buildCertificateColumns<T extends Certificate = Certificate>(
         <Link
           to="/certificates/$id"
           params={{ id: row.original.id }}
-          className="font-medium hover:underline"
+          className="link font-medium"
         >
           {row.original.subject_cn ||
             row.original.subject ||

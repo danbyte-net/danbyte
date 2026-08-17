@@ -215,7 +215,7 @@ export function AutomationExplainer({
                   <dd>
                     <Link
                       to={row.to}
-                      className="font-mono text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+                      className="link font-mono text-[11px] text-muted-foreground hover:text-foreground"
                     >
                       {row.where}
                     </Link>
@@ -236,7 +236,7 @@ export function AutomationExplainer({
               href={docsUrl("features/iac-runner/")}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:underline"
+              className="link inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
             >
               <BookOpen className="size-3.5" />
               Read the config-drift guide

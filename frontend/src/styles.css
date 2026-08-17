@@ -421,10 +421,8 @@
    it is deliberately off by default to avoid per-row clutter and hover reflow
    in tables. */
 .link {
-  color: inherit;
   text-decoration: none;
   text-underline-offset: 2px;
-  border-radius: 2px;
 }
 .link:hover,
 .link:focus-visible {
@@ -433,6 +431,7 @@
 .link:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
+  border-radius: 2px;
 }
 /* `.link-icon` forces the glyph on a single prominent link; the `.link-icons`
    root class (the "show link icon on linked objects" preference) turns it on for

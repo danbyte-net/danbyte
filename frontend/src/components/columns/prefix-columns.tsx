@@ -142,7 +142,7 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
             <Link
               to="/prefixes/$id"
               params={{ id: row.original.id }}
-              className="font-mono font-medium hover:underline"
+              className="link font-mono font-medium"
             >
               {row.original.cidr}
             </Link>

@@ -34,7 +34,7 @@ const COLUMNS: ColumnDef<ChangeLogEntry>[] = [
       <Link
         to="/audit-log/$id"
         params={{ id: row.original.id }}
-        className="hover:underline"
+        className="link"
       >
         <TimeCell iso={row.original.timestamp} />
       </Link>

@@ -260,7 +260,7 @@ function SavedFiltersPage() {
         cell: ({ row }) => {
           const target = LISTS[row.original.object_type]
           return target ? (
-            <Link to={target.to} className="hover:underline">
+            <Link to={target.to} className="link">
               {target.label}
             </Link>
           ) : (

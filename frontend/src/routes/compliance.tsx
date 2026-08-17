@@ -292,7 +292,7 @@ function ViolationsTab({
             <Link
               to={route}
               params={{ id: row.original.object_id }}
-              className="font-mono font-medium hover:underline"
+              className="link font-mono font-medium"
             >
               {row.original.object_repr}
             </Link>
@@ -313,7 +313,7 @@ function ViolationsTab({
           row.original.rule_id === "config-drift" ? (
             <Link
               to="/config-drift"
-              className="text-muted-foreground hover:text-foreground hover:underline"
+              className="link text-muted-foreground hover:text-foreground"
             >
               {row.original.rule_name}
             </Link>
@@ -321,7 +321,7 @@ function ViolationsTab({
             <Link
               to="/compliance-rules/$id"
               params={{ id: row.original.rule_id }}
-              className="text-muted-foreground hover:text-foreground hover:underline"
+              className="link text-muted-foreground hover:text-foreground"
             >
               {row.original.rule_name}
             </Link>
@@ -473,7 +473,7 @@ function RulesTab({ evaluation }: { evaluation?: ComplianceEvaluation }) {
             <Link
               to="/compliance-rules/$id"
               params={{ id: row.original.id }}
-              className="font-medium hover:underline"
+              className="link font-medium"
             >
               {row.original.name}
             </Link>
@@ -535,7 +535,7 @@ function RulesTab({ evaluation }: { evaluation?: ComplianceEvaluation }) {
                 <Link
                   to="/compliance-rules/$id"
                   params={{ id: r.id }}
-                  className="num font-medium text-destructive hover:underline"
+                  className="num link font-medium text-destructive"
                 >
                   {n}
                 </Link>

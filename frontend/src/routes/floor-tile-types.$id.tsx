@@ -283,7 +283,7 @@ function SiteMarkersSection({ typeId }: { typeId: string }) {
             header: "Label",
             flex: true,
             cell: (m) => (
-              <Link to="/site-map" className="font-medium hover:underline">
+              <Link to="/site-map" className="link font-medium">
                 {m.label || "Unlabelled marker"}
               </Link>
             ),
@@ -305,7 +305,7 @@ function SiteMarkersSection({ typeId }: { typeId: string }) {
                 <Link
                   to="/devices/$id"
                   params={{ id: m.device.id }}
-                  className="text-xs hover:underline"
+                  className="link text-xs"
                 >
                   {m.device.name}
                 </Link>

@@ -53,7 +53,7 @@ function DhcpScopesPage() {
             <Link
               to="/prefixes/$id"
               params={{ id: row.original.prefix }}
-              className="font-mono text-xs hover:underline"
+              className="link font-mono text-xs"
             >
               {row.original.prefix_cidr}
             </Link>
@@ -105,7 +105,7 @@ function DhcpScopesPage() {
             <Link
               to="/dhcp-reservations"
               search={{ scope: row.original.id }}
-              className="hover:underline"
+              className="link"
             >
               <span className="num">{row.original.reservation_count}</span>
               {row.original.drift_count > 0 && (

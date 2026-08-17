@@ -68,7 +68,7 @@ export function buildCertificateAssignmentColumns<
         <Link
           to="/certificates/$id"
           params={{ id: row.original.certificate }}
-          className="font-medium hover:underline"
+          className="link font-medium"
         >
           {row.original.certificate_subject_cn ||
             `${(row.original.certificate_fingerprint ?? "").slice(0, 16)}…`}
@@ -92,7 +92,7 @@ export function buildCertificateAssignmentColumns<
           <Link
             to={t.route}
             params={{ id: row.original.object_id }}
-            className="font-medium hover:underline"
+            className="link font-medium"
           >
             {label}
           </Link>

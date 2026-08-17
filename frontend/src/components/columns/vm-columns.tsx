@@ -96,7 +96,7 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
           <Link
             to="/virtual-machines/$id"
             params={{ id: row.original.id }}
-            className="font-medium hover:underline"
+            className="link font-medium"
           >
             {row.original.name}
           </Link>
@@ -189,7 +189,7 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
           <Link
             to="/ips/$id"
             params={{ id: row.original.primary_ip.id }}
-            className="font-mono text-xs hover:underline"
+            className="link font-mono text-xs"
           >
             {row.original.primary_ip.ip_address}
           </Link>

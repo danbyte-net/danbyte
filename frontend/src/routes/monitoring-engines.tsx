@@ -171,7 +171,7 @@ function MonitoringEnginesPage() {
             ) : (
               <button
                 type="button"
-                className="font-medium hover:underline"
+                className="link font-medium"
                 onClick={() => setDetail(e)}
               >
                 {e.name}

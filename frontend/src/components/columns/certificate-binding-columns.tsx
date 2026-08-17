@@ -67,7 +67,7 @@ export function buildCertificateBindingColumns(
           <Link
             to="/ips/$id"
             params={{ id: row.original.target_ip }}
-            className="font-mono text-xs hover:underline"
+            className="link font-mono text-xs"
           >
             {row.original.target_ip_address}
           </Link>

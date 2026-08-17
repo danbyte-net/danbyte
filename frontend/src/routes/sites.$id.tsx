@@ -158,7 +158,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
-        <SiteOverview site={s} humanIds={humanIds} />
+        <SiteOverview site={s} humanIds={humanIds} onGoTab={setTab} />
       </DetailTab>
       <DetailTab value="devices">
         <EmbeddedDeviceTable
@@ -300,7 +300,7 @@ function SiteAccessPanel({
                   <Link
                     to="/permissions/$id/edit"
                     params={{ id: p.id }}
-                    className="text-[13px] font-medium hover:underline"
+                    className="link text-[13px] font-medium"
                   >
                     {p.name}
                   </Link>
@@ -467,9 +467,11 @@ function SiteLocalTime({ tz }: { tz: string }) {
 function SiteOverview({
   site: s,
   humanIds,
+  onGoTab,
 }: {
   site: Site
   humanIds: boolean
+  onGoTab: (tab: "prefixes" | "vlans") => void
 }) {
   const details: KvRow[] = [
     ...(humanIds && s.numid != null
@@ -492,8 +494,30 @@ function SiteOverview({
   ]
 
   const scope: KvRow[] = [
-    { label: "Prefixes", value: <span className="num">{s.prefix_count}</span> },
-    { label: "VLANs", value: <span className="num">{s.vlan_count}</span> },
+    {
+      label: "Prefixes",
+      value: (
+        <button
+          type="button"
+          onClick={() => onGoTab("prefixes")}
+          className="link num"
+        >
+          {s.prefix_count}
+        </button>
+      ),
+    },
+    {
+      label: "VLANs",
+      value: (
+        <button
+          type="button"
+          onClick={() => onGoTab("vlans")}
+          className="link num"
+        >
+          {s.vlan_count}
+        </button>
+      ),
+    },
   ]
 
   return (

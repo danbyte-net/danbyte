@@ -271,7 +271,7 @@ function AlertsTable({ rows }: { rows: MonitoringAlert[] }) {
         <Link
           to="/ips/$id"
           params={{ id: row.original.target_ip.id }}
-          className="font-mono font-medium hover:underline"
+          className="link font-mono font-medium"
         >
           {row.original.target_ip.ip_address}
         </Link>

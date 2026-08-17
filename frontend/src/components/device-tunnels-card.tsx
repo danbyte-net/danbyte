@@ -43,7 +43,7 @@ export function DeviceTunnelsCard({ deviceId }: { deviceId: string }) {
                   <Link
                     to="/tunnels/$id"
                     params={{ id: t.id }}
-                    className="font-medium hover:underline"
+                    className="link font-medium"
                   >
                     {t.name}
                   </Link>

@@ -446,7 +446,7 @@ function MonitoringPage() {
                             <Link
                               to="/ips/$id"
                               params={{ id: t.target_ip.id }}
-                              className="ml-2 truncate font-mono font-medium hover:underline"
+                              className="link ml-2 truncate font-mono font-medium"
                             >
                               {t.target_ip.ip_address}
                             </Link>
@@ -490,7 +490,7 @@ function MonitoringPage() {
                           <Link
                             to="/ips/$id"
                             params={{ id: f.ip_id }}
-                            className="truncate font-mono font-medium hover:underline"
+                            className="link truncate font-mono font-medium"
                           >
                             {f.ip_address}
                           </Link>

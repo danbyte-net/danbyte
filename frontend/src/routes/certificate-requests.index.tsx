@@ -55,7 +55,7 @@ function CertificateRequestsPage() {
           <Link
             to="/certificate-requests/$id"
             params={{ id: row.original.id }}
-            className="font-medium hover:underline"
+            className="link font-medium"
           >
             {row.original.common_name}
           </Link>
@@ -105,7 +105,7 @@ function CertificateRequestsPage() {
             <Link
               to="/certificates/$id"
               params={{ id: row.original.issued_certificate }}
-              className="text-xs font-medium hover:underline"
+              className="link text-xs font-medium"
             >
               {row.original.issued_certificate_subject_cn || "View"}
             </Link>

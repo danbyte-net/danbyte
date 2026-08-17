@@ -235,7 +235,7 @@ function EmbeddedModuleTypeTable({
             <Link
               to="/module-types/$id"
               params={{ id: r.id }}
-              className="font-medium hover:underline"
+              className="link font-medium"
             >
               {r.name}
             </Link>

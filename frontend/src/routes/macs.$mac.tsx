@@ -46,7 +46,7 @@ const seenColumns: ColumnDef<MacSighting>[] = [
       <Link
         to="/devices/$id"
         params={{ id: row.original.device.id }}
-        className="font-medium hover:underline"
+        className="link font-medium"
       >
         {row.original.device.name}
       </Link>
@@ -419,7 +419,7 @@ function buildInterfaceColumns(): ColumnDef<MacInterface>[] {
         <Link
           to="/devices/$id"
           params={{ id: row.original.device.id }}
-          className="font-mono text-xs hover:underline"
+          className="link font-mono text-xs"
         >
           {row.original.device.name}
         </Link>
@@ -433,7 +433,7 @@ function buildInterfaceColumns(): ColumnDef<MacInterface>[] {
         <Link
           to="/interfaces/$id"
           params={{ id: row.original.id }}
-          className="font-mono font-medium hover:underline"
+          className="link font-mono font-medium"
         >
           {row.original.name}
         </Link>
@@ -464,7 +464,7 @@ function buildIpColumns(): ColumnDef<MacIp>[] {
           <Link
             to="/ips/$id"
             params={{ id: row.original.id }}
-            className="font-mono text-xs font-medium hover:underline"
+            className="link font-mono text-xs font-medium"
           >
             {row.original.ip_address}
           </Link>
@@ -488,7 +488,7 @@ function buildIpColumns(): ColumnDef<MacIp>[] {
           <Link
             to="/devices/$id"
             params={{ id: device.id }}
-            className="font-mono text-xs hover:underline"
+            className="link font-mono text-xs"
           >
             {device.name}
           </Link>
@@ -507,7 +507,7 @@ function buildIpColumns(): ColumnDef<MacIp>[] {
           <Link
             to="/interfaces/$id"
             params={{ id: iface.id }}
-            className="font-mono text-xs hover:underline"
+            className="link font-mono text-xs"
           >
             {iface.name}
           </Link>

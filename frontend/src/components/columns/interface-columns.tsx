@@ -204,7 +204,7 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
             <Link
               to="/interfaces/$id"
               params={{ id: row.original.id }}
-              className="font-mono font-medium hover:underline"
+              className="link font-mono font-medium"
             >
               {row.original.name}
             </Link>
@@ -301,7 +301,7 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
           <Link
             to="/macs/$mac"
             params={{ mac: row.original.mac_address }}
-            className="font-mono text-xs hover:underline"
+            className="link font-mono text-xs"
           >
             {row.original.mac_address}
           </Link>
@@ -391,7 +391,7 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
                 key={ip.id}
                 to="/ips/$id"
                 params={{ id: ip.id }}
-                className="font-mono text-xs hover:underline"
+                className="link font-mono text-xs"
               >
                 {ip.ip_address}
               </Link>

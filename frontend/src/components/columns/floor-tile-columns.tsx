@@ -84,7 +84,7 @@ export function buildFloorTileColumns<T extends FloorPlanTile = FloorPlanTile>(
           <Link
             to="/floorplans/$id"
             params={{ id: plan.id }}
-            className="font-medium hover:underline"
+            className="link font-medium"
           >
             {plan.name}
           </Link>
@@ -181,7 +181,7 @@ export function buildFloorTileColumns<T extends FloorPlanTile = FloorPlanTile>(
           <Link
             to={LINK_ROUTES[l.kind]}
             params={{ id: l.id }}
-            className="text-xs hover:underline"
+            className="link text-xs"
           >
             {l.name}
           </Link>

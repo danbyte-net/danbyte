@@ -747,7 +747,7 @@ function MastersChain({ prefix }: { prefix: Prefix }) {
             <Link
               to="/prefixes/$id"
               params={{ id: m.id }}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-[11px] hover:bg-muted hover:underline"
+              className="link inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-[11px] hover:bg-muted"
               title={m.description || m.cidr}
             >
               {m.cidr}

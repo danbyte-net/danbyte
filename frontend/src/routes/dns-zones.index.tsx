@@ -35,7 +35,7 @@ function DnsZonesPage() {
           <Link
             to="/dns-zones/$id"
             params={{ id: row.original.id }}
-            className="font-mono text-xs font-medium hover:underline"
+            className="link font-mono text-xs font-medium"
           >
             {row.original.name}
           </Link>
@@ -71,7 +71,7 @@ function DnsZonesPage() {
             <Link
               to="/dns-records"
               search={{ zone: row.original.id }}
-              className="num hover:underline"
+              className="num link"
             >
               {row.original.record_count}
             </Link>

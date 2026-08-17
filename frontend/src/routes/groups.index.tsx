@@ -96,7 +96,7 @@ function buildColumns({
         <Link
           to="/groups/$id/edit"
           params={{ id: String(row.original.id) }}
-          className="flex items-center gap-2 font-medium hover:underline"
+          className="link flex items-center gap-2 font-medium"
         >
           {row.original.name}
           {row.original.built_in && (

@@ -372,7 +372,7 @@ function buildColumns({
           <Link
             to="/prefixes/$id"
             params={{ id: ip.prefix.id }}
-            className="font-mono text-[12px] text-muted-foreground hover:underline"
+            className="link font-mono text-[12px] text-muted-foreground"
           >
             {ip.prefix.cidr}
           </Link>

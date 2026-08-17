@@ -64,7 +64,7 @@ export function buildContactAssignmentColumns<
         <Link
           to="/contacts/$id"
           params={{ id: row.original.contact.id }}
-          className="font-medium hover:underline"
+          className="link font-medium"
         >
           {row.original.contact.name}
         </Link>
@@ -83,7 +83,7 @@ export function buildContactAssignmentColumns<
           <Link
             to={t.route}
             params={{ id: row.original.object_id }}
-            className="font-mono font-medium hover:underline"
+            className="link font-mono font-medium"
           >
             {row.original.object_id.slice(0, 8)}
           </Link>
@@ -114,7 +114,7 @@ export function buildContactAssignmentColumns<
           <Link
             to="/contact-roles/$id"
             params={{ id: row.original.role.id }}
-            className="text-xs hover:underline"
+            className="link text-xs"
           >
             {row.original.role.name}
           </Link>

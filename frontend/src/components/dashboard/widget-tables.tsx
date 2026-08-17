@@ -20,7 +20,7 @@ const PREFIX_COLUMNS: SimpleColumn<DashRecentPrefix>[] = [
       <Link
         to="/prefixes/$id"
         params={{ id: p.id }}
-        className="font-mono font-medium hover:underline"
+        className="link font-mono font-medium"
       >
         {p.cidr}
       </Link>
@@ -101,7 +101,7 @@ const IP_COLUMNS: SimpleColumn<DashRecentIp>[] = [
       <Link
         to="/ips/$id"
         params={{ id: x.id }}
-        className="font-mono font-medium hover:underline"
+        className="link font-mono font-medium"
       >
         {x.ip}
       </Link>

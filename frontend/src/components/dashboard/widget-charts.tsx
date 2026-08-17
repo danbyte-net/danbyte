@@ -279,7 +279,7 @@ export function TopPrefixes({ data }: { data: DashTopPrefix[] }) {
             <Link
               to="/prefixes/$id"
               params={{ id: p.id }}
-              className="w-32 shrink-0 truncate font-mono hover:underline"
+              className="link w-32 shrink-0 truncate font-mono"
             >
               {p.cidr}
             </Link>
@@ -356,7 +356,7 @@ export function RecentActivity({ rows }: { rows: DashActivity[] }) {
             <Link
               to="/ips/$id"
               params={{ id: r.ip_id }}
-              className="ml-1 truncate font-mono font-medium hover:underline"
+              className="link ml-1 truncate font-mono font-medium"
             >
               {r.ip}
             </Link>

@@ -38,7 +38,7 @@ const COLUMNS: SimpleColumn<CheckListRow>[] = [
       <Link
         to="/ips/$id"
         params={{ id: r.target_ip.id }}
-        className="font-mono font-medium hover:underline"
+        className="link font-mono font-medium"
       >
         {r.target_ip.ip_address}
       </Link>

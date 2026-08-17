@@ -51,7 +51,7 @@ function ProviderNetworksPage() {
           <Link
             to="/provider-networks/$id"
             params={{ id: row.original.id }}
-            className="font-medium hover:underline"
+            className="link font-medium"
           >
             {row.original.name}
           </Link>

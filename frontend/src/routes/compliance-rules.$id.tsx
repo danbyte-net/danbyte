@@ -233,7 +233,7 @@ function AffectedObjects({
             <Link
               to={route}
               params={{ id: row.original.object_id }}
-              className="font-mono font-medium hover:underline"
+              className="link font-mono font-medium"
             >
               {row.original.object_repr}
             </Link>

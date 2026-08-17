@@ -94,7 +94,7 @@ export function buildClusterColumns<T extends Cluster = Cluster>(
           <Link
             to="/clusters/$id"
             params={{ id: row.original.id }}
-            className="font-medium hover:underline"
+            className="link font-medium"
           >
             {row.original.name}
           </Link>
@@ -115,7 +115,7 @@ export function buildClusterColumns<T extends Cluster = Cluster>(
               <Link
                 to="/cluster-types/$id"
                 params={{ id: row.original.type.id }}
-                className="hover:underline"
+                className="link"
               >
                 <ColorBadge name={row.original.type.name} color={undefined} />
               </Link>

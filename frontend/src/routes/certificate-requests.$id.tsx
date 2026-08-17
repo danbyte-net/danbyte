@@ -148,7 +148,7 @@ function Body({ req }: { req: CertificateRequest }) {
         <Link
           to="/certificates/$id"
           params={{ id: req.issued_certificate }}
-          className="font-medium hover:underline"
+          className="link font-medium"
         >
           {req.issued_certificate_subject_cn || "View certificate"}
         </Link>
@@ -553,7 +553,7 @@ function OrderCard({
           <Link
             to="/certificates/$id"
             params={{ id: order.issued_certificate }}
-            className="font-medium hover:underline"
+            className="link font-medium"
           >
             {order.issued_certificate_subject_cn || "View certificate"}
           </Link>

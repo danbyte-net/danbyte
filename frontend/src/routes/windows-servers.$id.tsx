@@ -359,7 +359,7 @@ function Overview({
             <Link
               to="/prefixes/$id"
               params={{ id: row.original.prefix }}
-              className="font-mono text-xs hover:underline"
+              className="link font-mono text-xs"
             >
               {row.original.prefix_cidr}
             </Link>
@@ -521,7 +521,7 @@ function Reservations({
             <Link
               to="/ips/$id"
               params={{ id: row.original.ip_address }}
-              className="font-mono text-xs hover:underline"
+              className="link font-mono text-xs"
             >
               {row.original.ip}
             </Link>
@@ -706,7 +706,7 @@ function Leases({
             <Link
               to="/ips/$id"
               params={{ id: row.original.ip_address }}
-              className="font-mono text-xs hover:underline"
+              className="link font-mono text-xs"
             >
               {row.original.ip}
             </Link>

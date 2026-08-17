@@ -144,7 +144,7 @@ function GroupTable({ label, hits }: { label: string; hits: SearchHit[] }) {
                 <TableCell className="py-2">
                   <Link
                     to={hit.url as never}
-                    className="font-mono text-[13px] text-foreground hover:underline"
+                    className="link font-mono text-[13px] text-foreground"
                   >
                     {hit.label}
                   </Link>

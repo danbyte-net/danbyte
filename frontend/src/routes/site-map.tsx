@@ -1984,19 +1984,11 @@ function ConnectionPopover({
         )}
       </div>
       <div className="text-[12px] text-muted-foreground">
-        <Link
-          to="/sites/$id"
-          params={{ id: e.site_a.id }}
-          className="hover:underline"
-        >
+        <Link to="/sites/$id" params={{ id: e.site_a.id }} className="link">
           {e.site_a.name}
         </Link>
         {" ↔ "}
-        <Link
-          to="/sites/$id"
-          params={{ id: e.site_z.id }}
-          className="hover:underline"
-        >
+        <Link to="/sites/$id" params={{ id: e.site_z.id }} className="link">
           {e.site_z.name}
         </Link>
       </div>
@@ -2057,7 +2049,7 @@ function MarkerDeviceLink({
             {m.device.name}
           </Link>
           <button
-            className="text-[11px] text-destructive hover:underline"
+            className="link text-[11px] text-destructive"
             onClick={() => onLink(null)}
           >
             Unlink

@@ -345,7 +345,7 @@ function AddColumn({
       <Link
         to="/statuses"
         search={{ tab: "tasks" }}
-        className="mt-2 block px-1 text-[11px] text-muted-foreground hover:underline"
+        className="link mt-2 block px-1 text-[11px] text-muted-foreground"
       >
         Manage columns (rename, color, Done)…
       </Link>

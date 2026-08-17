@@ -68,7 +68,7 @@ function TerminationBox({ t }: { t: Termination }) {
       <Link
         to={feed ? "/power-panels/$id" : "/devices/$id"}
         params={{ id: t.device.id }}
-        className="font-mono text-xs text-muted-foreground hover:underline"
+        className="link font-mono text-xs text-muted-foreground"
       >
         {t.device.name}
       </Link>
@@ -77,7 +77,7 @@ function TerminationBox({ t }: { t: Termination }) {
           <Link
             to={feed ? "/power-feeds/$id" : "/interfaces/$id"}
             params={{ id: t.id }}
-            className="hover:underline"
+            className="link"
           >
             {t.name}
           </Link>

@@ -127,7 +127,7 @@ function buildColumns({
         <Link
           to="/users/$id/edit"
           params={{ id: String(row.original.id) }}
-          className="flex items-center gap-2 font-mono text-xs font-medium hover:underline"
+          className="link flex items-center gap-2 font-mono text-xs font-medium"
         >
           {row.original.username}
           {row.original.is_superuser && (

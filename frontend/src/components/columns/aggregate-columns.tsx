@@ -82,11 +82,7 @@ export function buildAggregateColumns<T extends Aggregate = Aggregate>(
           <Link
             to="/aggregates/$id"
             params={{ id: row.original.id }}
-            className={cn(
-              "font-mono",
-              opts.prefixClass,
-              "font-medium hover:underline"
-            )}
+            className={cn("font-mono", opts.prefixClass, "link font-medium")}
           >
             {row.original.prefix}
           </Link>

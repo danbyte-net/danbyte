@@ -158,7 +158,7 @@ export function PathStrip({
               <Link
                 to={s.chip.powerPanel ? "/power-panels/$id" : "/devices/$id"}
                 params={{ id: s.chip.deviceId }}
-                className="block px-2.5 pt-1.5 pb-1 text-[11px] font-medium whitespace-nowrap hover:underline"
+                className="link block px-2.5 pt-1.5 pb-1 text-[11px] font-medium whitespace-nowrap"
               >
                 {s.chip.device}
               </Link>
@@ -243,7 +243,7 @@ export function PathStrip({
                 <Link
                   to="/cables/$id"
                   params={{ id: s.seg.cableId }}
-                  className="hover:underline"
+                  className="link"
                 >
                   {s.seg.label}
                 </Link>

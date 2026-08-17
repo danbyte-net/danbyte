@@ -101,7 +101,7 @@ export function DnsPanel({ conn }: { conn: WindowsConnection }) {
           <Link
             to="/dns-zones/$id"
             params={{ id: row.original.id }}
-            className="font-mono text-xs font-medium hover:underline"
+            className="link font-mono text-xs font-medium"
           >
             {row.original.name}
           </Link>

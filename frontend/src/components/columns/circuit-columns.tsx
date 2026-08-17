@@ -78,7 +78,7 @@ export function buildCircuitColumns<T extends Circuit = Circuit>(
           <Link
             to="/circuits/$id"
             params={{ id: row.original.id }}
-            className="font-mono text-xs font-medium hover:underline"
+            className="link font-mono text-xs font-medium"
           >
             {row.original.cid}
           </Link>

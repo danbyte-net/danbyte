@@ -57,7 +57,7 @@ export function FovEditor({
           Field of view
         </span>
         <button
-          className="text-[11px] text-destructive hover:underline"
+          className="link text-[11px] text-destructive"
           onClick={() => {
             setDraft(null)
             onDraft(null)

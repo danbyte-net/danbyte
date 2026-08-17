@@ -113,7 +113,7 @@ export function buildIpColumns<T = IPAddress>(
           <Link
             to="/ips/$id"
             params={{ id: ip.id }}
-            className="font-mono font-medium hover:underline"
+            className="link font-mono font-medium"
           >
             {ip.ip_address}
           </Link>
@@ -258,7 +258,7 @@ export function buildIpColumns<T = IPAddress>(
             <Link
               to="/virtual-machines/$id"
               params={{ id: ip.assigned_vm.id }}
-              className="text-xs hover:underline"
+              className="link text-xs"
             >
               {ip.assigned_vm.name}
             </Link>
@@ -287,7 +287,7 @@ export function buildIpColumns<T = IPAddress>(
             <Link
               to="/interfaces/$id"
               params={{ id: si.id }}
-              className="font-mono hover:underline"
+              className="link font-mono"
             >
               {si.name}
             </Link>

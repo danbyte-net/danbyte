@@ -118,7 +118,7 @@ function buildColumns(): ColumnDef<MacEntry>[] {
         <Link
           to="/macs/$mac"
           params={{ mac: row.original.mac }}
-          className="font-mono text-[13px] font-medium hover:underline"
+          className="link font-mono text-[13px] font-medium"
         >
           {row.original.mac}
         </Link>
@@ -138,7 +138,7 @@ function buildColumns(): ColumnDef<MacEntry>[] {
                 key={i.id}
                 to="/interfaces/$id"
                 params={{ id: i.id }}
-                className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] hover:underline"
+                className="link rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px]"
               >
                 {i.device.name}:{i.name}
               </Link>
@@ -171,7 +171,7 @@ function buildColumns(): ColumnDef<MacEntry>[] {
                 key={ip.id}
                 to="/ips/$id"
                 params={{ id: ip.id }}
-                className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] hover:underline"
+                className="link rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px]"
               >
                 {ip.ip_address}
               </Link>

@@ -2190,7 +2190,7 @@ function LinkedObjectLink({
     </>
   )
   const className =
-    "mt-2 inline-flex items-center gap-1.5 text-xs underline-offset-2 hover:underline"
+    "mt-2 inline-flex items-center gap-1.5 text-xs underline-offset-2 link"
   const params = { id: linked.id }
   switch (linked.kind) {
     case "rack":
@@ -2784,7 +2784,7 @@ function RackDeepView({
                 <Link
                   to="/devices/$id"
                   params={{ id: d.id }}
-                  className="min-w-0 truncate font-medium hover:underline"
+                  className="link min-w-0 truncate font-medium"
                 >
                   {d.name}
                 </Link>

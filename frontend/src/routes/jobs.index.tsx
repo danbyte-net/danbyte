@@ -270,7 +270,7 @@ const columns: ColumnDef<JobBrief>[] = [
             <Link
               to="/jobs/$id"
               params={{ id: j.id }}
-              className="truncate font-mono text-[13px] font-medium hover:underline"
+              className="link truncate font-mono text-[13px] font-medium"
             >
               {j.func_short}
             </Link>

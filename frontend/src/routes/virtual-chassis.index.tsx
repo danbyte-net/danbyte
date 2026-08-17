@@ -51,7 +51,7 @@ function VirtualChassisPage() {
           <Link
             to="/virtual-chassis/$id"
             params={{ id: row.original.id }}
-            className="font-medium hover:underline"
+            className="link font-medium"
           >
             {row.original.name}
           </Link>
@@ -77,7 +77,7 @@ function VirtualChassisPage() {
             <Link
               to="/devices/$id"
               params={{ id: row.original.master.id }}
-              className="font-mono text-xs hover:underline"
+              className="link font-mono text-xs"
             >
               {row.original.master.name}
             </Link>
@@ -112,7 +112,7 @@ function VirtualChassisPage() {
             <Link
               to="/ips/$id"
               params={{ id: row.original.primary_ip.id }}
-              className="font-mono text-xs hover:underline"
+              className="link font-mono text-xs"
             >
               {row.original.primary_ip.ip_address}
             </Link>
@@ -129,7 +129,7 @@ function VirtualChassisPage() {
             <Link
               to="/ips/$id"
               params={{ id: row.original.oob_ip.id }}
-              className="font-mono text-xs hover:underline"
+              className="link font-mono text-xs"
             >
               {row.original.oob_ip.ip_address}
             </Link>
