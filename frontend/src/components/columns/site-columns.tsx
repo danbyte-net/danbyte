@@ -130,7 +130,7 @@ export function buildSiteColumns<T extends Site = Site>(
     location: () => ({
       id: "location",
       accessorKey: "location",
-      header: head("location", "Location"),
+      header: head("location", "Address"),
       cell: ({ row }) =>
         row.original.location ? (
           <span className="text-xs text-muted-foreground">
