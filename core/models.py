@@ -587,6 +587,9 @@ class DeploymentSettings(TimestampedModel):
     # and applied manually. When on, upgrade.py / auto_upgrade.py short-circuit
     # before any network call.
     disable_update_check = models.BooleanField(default=False)
+    # Hide the "update available" badge in the top bar without disabling the
+    # check itself (admins still see updates on the Updates page).
+    hide_update_badge = models.BooleanField(default=False)
     auto_update_enabled = models.BooleanField(default=False)
     update_channel = models.CharField(
         max_length=8,

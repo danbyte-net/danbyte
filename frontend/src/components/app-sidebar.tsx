@@ -121,6 +121,7 @@ import {
   type Bookmark as BookmarkRow,
   type BookmarkFolder,
   type Paginated,
+  type SystemInfo,
   type TenantPicker,
 } from "@/lib/api"
 import { docsUrl } from "@/lib/docs"
@@ -1648,12 +1649,22 @@ function TenantSwitcher() {
 // ─── Signed-in user (bottom) ─────────────────────────────────────────────
 
 function UserMenu() {
-  const { me, canManage } = useMe()
+  const { me, canManage, canManageDeployment } = useMe()
   const qc = useQueryClient()
   const navigate = useNavigate()
   const name = me.username || "Account"
   const email = me.email || ""
   const initials = name.slice(0, 2).toUpperCase()
+
+  // Running Danbyte version — a neat footer in the menu. system/info is
+  // users.manage-gated, so only show it to those who can see it.
+  const info = useQuery({
+    queryKey: ["system-info"],
+    queryFn: () => api<SystemInfo>("/api/system/info/"),
+    enabled: canManageDeployment,
+    staleTime: 60 * 60_000,
+    retry: false,
+  })
 
   const logout = useMutation({
     mutationFn: () => auth.logout(),
@@ -1727,6 +1738,20 @@ function UserMenu() {
           <LogOut className="size-4" />
           Log out
         </DropdownMenuItem>
+        {info.data?.version && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild className="cursor-default">
+              <Link
+                to="/settings/updates"
+                className="justify-between text-[11px] text-muted-foreground"
+              >
+                <span>Danbyte version</span>
+                <span className="font-mono">{info.data.version}</span>
+              </Link>
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )

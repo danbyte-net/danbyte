@@ -3972,6 +3972,8 @@ export interface SystemUpdates {
   current: { version: string; commit: string }
   repo_url: string
   update_available: boolean
+  /** The admin has hidden the top-bar "update available" badge. */
+  badge_hidden?: boolean
   releases: {
     tag: string
     name: string
@@ -4888,6 +4890,7 @@ export interface DeploymentSettings {
   release_repo_url: string
   release_repo_token_set: boolean
   disable_update_check: boolean
+  hide_update_badge: boolean
   auto_update_enabled: boolean
   update_channel: "stable" | "any"
   update_window_days: string

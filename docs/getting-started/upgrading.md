@@ -25,6 +25,15 @@ current `/opt` layout.
     slow, failing, or disabled, the version and environment still show right
     away.
 
+!!! info "The top-bar update badge"
+    When a newer release exists, a blue **Update available** badge appears
+    beside the product name in the top bar — only for users who can manage
+    deployment settings (it links to **Settings → Updates**). The running
+    Danbyte version also shows at the bottom of the account menu. To hide the
+    badge while still checking for updates, tick **Settings → Updates → Hide the
+    "update available" badge** (airgapped mode hides it too, since no check
+    runs).
+
 !!! tip "Open tabs reload themselves after an upgrade"
     A new release ships freshly-hashed frontend assets, so a browser tab still
     running the previous build would ask for chunk files that no longer exist.

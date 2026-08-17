@@ -53,6 +53,7 @@ function UpdatesSettingsPage() {
   const [repoUrl, setRepoUrl] = useState("")
   const [token, setToken] = useState("")
   const [airgapped, setAirgapped] = useState(false)
+  const [hideBadge, setHideBadge] = useState(false)
   const [auto, setAuto] = useState(false)
   const [channel, setChannel] = useState<"stable" | "any">("stable")
   const [winDays, setWinDays] = useState("")
@@ -62,6 +63,7 @@ function UpdatesSettingsPage() {
     if (!settings.data) return
     setRepoUrl(settings.data.release_repo_url)
     setAirgapped(settings.data.disable_update_check)
+    setHideBadge(settings.data.hide_update_badge)
     setAuto(settings.data.auto_update_enabled)
     setChannel(settings.data.update_channel)
     setWinDays(settings.data.update_window_days)
@@ -77,6 +79,7 @@ function UpdatesSettingsPage() {
           release_repo_url: repoUrl.trim(),
           ...(token.trim() ? { release_repo_token: token.trim() } : {}),
           disable_update_check: airgapped,
+          hide_update_badge: hideBadge,
           // Airgapped ⇒ auto-update can't run; force it off so the two flags
           // never disagree.
           auto_update_enabled: airgapped ? false : auto,
@@ -274,6 +277,17 @@ function UpdatesSettingsPage() {
             When on, Danbyte never contacts the release repo — no version check,
             no automatic updates. Upgrade only by uploading a bundle below. Turn
             this on for installs with no outbound internet access.
+          </p>
+          <FormCheckbox
+            className="text-[13px] font-medium"
+            label="Hide the “update available” badge"
+            checked={hideBadge}
+            onChange={setHideBadge}
+            disabled={airgapped}
+          />
+          <p className="text-[12px] text-muted-foreground">
+            Keeps checking for updates (visible here) but hides the blue badge
+            in the top bar for everyone.
           </p>
         </div>
 

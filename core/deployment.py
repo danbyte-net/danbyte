@@ -114,6 +114,7 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "release_repo_token",
             "release_repo_token_set",
             "disable_update_check",
+            "hide_update_badge",
             "auto_update_enabled",
             "update_channel",
             "update_window_days",
@@ -771,6 +772,7 @@ def system_updates(request):
         return Response({
             "current": cur, "repo_url": repo, "releases": [],
             "update_available": False, "disabled": True,
+            "badge_hidden": dep.hide_update_badge,
         })
     try:
         releases = list_releases(repo, token)
@@ -789,6 +791,7 @@ def system_updates(request):
         "repo_url": repo,
         "releases": releases,
         "update_available": update_available,
+        "badge_hidden": dep.hide_update_badge,
     })
 
 
