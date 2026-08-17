@@ -1174,6 +1174,97 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             {"count": len(rows), "results": ser.data, "dhcp_ranges": dhcp_ranges}
         )
 
+    # ── Populate a pool of addresses ─────────────────────────────────────
+    @action(detail=True, methods=["post"], url_path="populate")
+    def populate(self, request, pk=None):
+        """Bulk-create host IP rows across a range — "add a pool of addresses".
+
+        Body: ``{start, end, status_id?, role_id?, description?}``. Every address
+        in ``[start, end]`` that doesn't already exist is created as an IP in this
+        prefix; addresses that already exist (per tenant + VRF) and the prefix's
+        own network/broadcast are skipped. Capped at ``POOL_MAX`` per call so one
+        request can't mint an unbounded number of rows.
+        """
+        import ipaddress as ipmod
+
+        from auth_api import rbac
+
+        POOL_MAX = 1024
+        prefix = self.get_object()  # enforces prefix `view` + tenant scope
+        tenant = prefix.tenant
+        user = request.user
+
+        # `ipaddress.add` is its own grant — a viewable prefix doesn't confer it.
+        if not rbac.has_action(user, tenant, "ipaddress", "add"):
+            raise PermissionDenied("You do not have permission to add IP addresses.")
+        allowed_sites = rbac.site_scope(user, tenant, "ipaddress", "add")
+        if allowed_sites is not None and prefix.site_id not in allowed_sites:
+            raise PermissionDenied(
+                "Adding addresses in this prefix's site is outside your scope."
+            )
+
+        net = ipmod.ip_network(prefix.cidr, strict=False)
+        try:
+            start = ipmod.ip_address(str(request.data.get("start", "")))
+            end = ipmod.ip_address(str(request.data.get("end", "")))
+        except ValueError as exc:
+            raise ValidationError(
+                {"start": "Provide valid start and end addresses."}
+            ) from exc
+        if start.version != end.version or start.version != net.version:
+            raise ValidationError({"start": "Addresses must match the prefix family."})
+        if int(start) > int(end):
+            raise ValidationError({"end": "End address is before the start address."})
+        if start not in net or end not in net:
+            raise ValidationError({"start": f"The range must lie inside {prefix.cidr}."})
+        total = int(end) - int(start) + 1
+        if total > POOL_MAX:
+            raise ValidationError(
+                {"end": f"That range is {total} addresses; the limit is {POOL_MAX} "
+                        "per pool — add it in smaller ranges."}
+            )
+
+        # FK options must resolve inside this tenant (bypasses the serializer).
+        status_id = request.data.get("status_id") or None
+        role_id = request.data.get("role_id") or None
+        if status_id and not Status.objects.filter(pk=status_id, tenant=tenant).exists():
+            raise ValidationError({"status_id": "Not found in this tenant."})
+        if role_id and not IPRole.objects.filter(pk=role_id, tenant=tenant).exists():
+            raise ValidationError({"role_id": "Not found in this tenant."})
+        description = (request.data.get("description") or "").strip()
+
+        wanted = [str(ipmod.ip_address(n)) for n in range(int(start), int(end) + 1)]
+        # Never mint the prefix's network/broadcast as host rows (v4, /30 and up).
+        skip_addrs: set[str] = set()
+        if isinstance(net, ipmod.IPv4Network) and net.prefixlen <= 30:
+            skip_addrs = {str(net.network_address), str(net.broadcast_address)}
+        # An address is unique per VRF, not per prefix — dedupe against that.
+        existing = set(
+            IPAddress.objects.filter(
+                tenant=tenant, vrf=prefix.vrf, ip_address__in=wanted
+            ).values_list("ip_address", flat=True)
+        )
+        to_create = [a for a in wanted if a not in existing and a not in skip_addrs]
+
+        created = []
+        with transaction.atomic():
+            for addr in to_create:
+                obj = IPAddress(
+                    tenant=tenant, vrf=prefix.vrf, prefix=prefix, site=prefix.site,
+                    ip_address=addr, status_id=status_id, role_id=role_id,
+                    description=description,
+                )
+                obj.save()  # per-object save → audit CREATE signal fires
+                created.append(obj)
+            if created:
+                self._assert_bulk_write_in_site_scope(
+                    [o.pk for o in created], action="add"
+                )
+        return Response(
+            {"created": len(created), "skipped": len(wanted) - len(to_create)},
+            status=drf_status.HTTP_201_CREATED,
+        )
+
     # ── Bulk delete ─────────────────────────────────────────────────────
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):

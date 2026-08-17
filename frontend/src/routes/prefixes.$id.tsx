@@ -3,7 +3,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { ChevronRight, CopyPlus, Pencil, Plus, Search } from "lucide-react"
+import { ChevronRight, CopyPlus, Layers, Pencil, Plus, Search } from "lucide-react"
 
 import {
   api,
@@ -52,6 +52,7 @@ import {
 } from "@/components/monitoring/auto-discover-button"
 import { PrefixBulkBar } from "@/components/prefix-bulk-bar"
 import { IpDeleteDialog } from "@/components/ip-delete-dialog"
+import { IpPoolDialog } from "@/components/ip-pool-dialog"
 import { IpBulkBar } from "@/components/ip-bulk-bar"
 import { DataTable } from "@/components/data-table"
 import { useMe, objCan } from "@/lib/use-me"
@@ -125,6 +126,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
 
   // IP-level delete confirm.
   const [deletingIp, setDeletingIp] = useState<IPAddress | null>(null)
+  const [showPool, setShowPool] = useState(false)
   const [selectedIps, setSelectedIps] = useState<IPAddress[]>([])
 
   // IP filter state.
@@ -271,6 +273,11 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
               >
                 <Plus className="h-3.5 w-3.5" /> Add child prefix
               </Link>
+            </Button>
+          )}
+          {canAddIp && canShowAvailable && (
+            <Button size="sm" variant="outline" onClick={() => setShowPool(true)}>
+              <Layers className="h-3.5 w-3.5" /> Add pool
             </Button>
           )}
           {canAddIp && (
@@ -459,6 +466,15 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       )}
       {deletingIp && (
         <IpDeleteDialog ip={deletingIp} onOpenChange={closeDeleteIp} />
+      )}
+      {showPool && (
+        <IpPoolDialog
+          prefixId={p.id}
+          cidr={p.cidr}
+          dhcpRanges={ipsQuery.data?.dhcp_ranges}
+          existingAddresses={ipRows.map((ip) => ip.ip_address)}
+          onOpenChange={setShowPool}
+        />
       )}
       {selectedIps.length > 0 && (
         <IpBulkBar

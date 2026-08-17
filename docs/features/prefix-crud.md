@@ -81,6 +81,24 @@ contains** onto the new prefix — pulling them down from the broader parent so
 they aren't stranded. It never steals IPs that belong to an existing
 more-specific child, and only affects the same tenant + VRF.
 
+## Add a pool of addresses
+
+Rather than adding hosts one at a time, the **Add pool** button on a prefix's
+**IPs** tab bulk-creates every address across a range in one step. It appears on
+enumerable leaf prefixes (not containers or prefixes with child prefixes).
+
+The dialog takes a **start** and **end** address, an optional **status**,
+**role**, and **description** applied to every address, and a **Populate from**
+shortcut that fills the range from:
+
+- a **DHCP scope pool** on the prefix (see [External sync](external-sync.md)), or
+- the **whole prefix** (its usable host range).
+
+Addresses that already exist are skipped, and the prefix's network and broadcast
+addresses are never created. A single pool is capped at 1024 addresses — add a
+wider span in smaller ranges. Each address is created individually, so it lands
+in the change log and history like any other IP.
+
 ## Gateway autospawn
 
 If you leave the **gateway** field blank and the prefix's site has a gateway

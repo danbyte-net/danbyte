@@ -629,3 +629,97 @@ class RackPlacementTests(APITestCase):
             f"/api/racks/{self.rack.id}/", {"outer_depth_mm": 9}, format="json"
         )
         self.assertEqual(r.status_code, 400)
+
+
+class PrefixPopulatePoolTests(APITestCase):
+    """POST /api/prefixes/<id>/populate/ — bulk-add a pool of host IPs."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        self.prefix = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.0.10.0/24", status=status_for(self.tenant)
+        )
+        self.user = get_user_model().objects.create_superuser("admin", "a@b.c", "pw")
+        self.client.force_login(self.user)
+        sess = self.client.session
+        sess["current_tenant_id"] = str(self.tenant.id)
+        sess.save()
+
+    def _url(self):
+        return f"/api/prefixes/{self.prefix.id}/populate/"
+
+    def test_creates_range_and_skips_existing(self):
+        IPAddress.objects.create(
+            tenant=self.tenant, prefix=self.prefix, ip_address="10.0.10.52"
+        )
+        r = self.client.post(
+            self._url(), {"start": "10.0.10.50", "end": "10.0.10.54"}, format="json"
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json(), {"created": 4, "skipped": 1})
+        addrs = set(
+            IPAddress.objects.filter(prefix=self.prefix).values_list(
+                "ip_address", flat=True
+            )
+        )
+        self.assertEqual(
+            addrs,
+            {"10.0.10.50", "10.0.10.51", "10.0.10.52", "10.0.10.53", "10.0.10.54"},
+        )
+
+    def test_applies_status_role_description(self):
+        st = status_for(self.tenant)
+        r = self.client.post(
+            self._url(),
+            {"start": "10.0.10.60", "end": "10.0.10.61",
+             "status_id": str(st.id), "description": "pool"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        row = IPAddress.objects.get(prefix=self.prefix, ip_address="10.0.10.60")
+        self.assertEqual(row.status_id, st.id)
+        self.assertEqual(row.description, "pool")
+
+    def test_skips_network_and_broadcast(self):
+        # A range spanning the network (.0) and broadcast (.255) never mints
+        # those two, but every host between them is created.
+        r = self.client.post(
+            self._url(), {"start": "10.0.10.0", "end": "10.0.10.255"}, format="json"
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["created"], 254)
+        addrs = set(
+            IPAddress.objects.filter(prefix=self.prefix).values_list(
+                "ip_address", flat=True
+            )
+        )
+        self.assertNotIn("10.0.10.0", addrs)
+        self.assertNotIn("10.0.10.255", addrs)
+        self.assertIn("10.0.10.1", addrs)
+        self.assertIn("10.0.10.254", addrs)
+
+    def test_rejects_range_outside_prefix(self):
+        r = self.client.post(
+            self._url(), {"start": "10.0.11.1", "end": "10.0.11.5"}, format="json"
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(IPAddress.objects.filter(prefix=self.prefix).count(), 0)
+
+    def test_rejects_reversed_range(self):
+        r = self.client.post(
+            self._url(), {"start": "10.0.10.20", "end": "10.0.10.10"}, format="json"
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_rejects_over_cap(self):
+        # /23 usable is 510 hosts — but a range of >1024 trips the cap. Use a
+        # wide contiguous span inside a large prefix.
+        big = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.20.0.0/16", status=status_for(self.tenant)
+        )
+        r = self.client.post(
+            f"/api/prefixes/{big.id}/populate/",
+            {"start": "10.20.0.0", "end": "10.20.10.0"}, format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
