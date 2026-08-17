@@ -45,6 +45,11 @@ export function IpPoolDialog({
 }) {
   const qc = useQueryClient()
   const usable = useMemo(() => cidrHostRange(cidr), [cidr])
+  // Default to the prefix's first DHCP pool when it has one — that's the
+  // common reason to bulk-add — and keep the select ticked accordingly.
+  const [preset, setPreset] = useState<string | null>(
+    dhcpRanges?.[0] ? `dhcp:${dhcpRanges[0].scope_id}` : usable ? "prefix" : null
+  )
   const [start, setStart] = useState(dhcpRanges?.[0]?.start ?? usable?.start ?? "")
   const [end, setEnd] = useState(dhcpRanges?.[0]?.end ?? usable?.end ?? "")
   const [statusId, setStatusId] = useState("")
@@ -83,11 +88,21 @@ export function IpPoolDialog({
   }, [dhcpRanges, usable])
 
   const applyPreset = (v: string | null) => {
+    setPreset(v)
     const p = presets.find((x) => x.value === v)
     if (p) {
       setStart(p.start)
       setEnd(p.end)
     }
+  }
+  // Hand-editing an address means the range no longer matches the preset.
+  const editStart = (v: string) => {
+    setStart(v)
+    setPreset(null)
+  }
+  const editEnd = (v: string) => {
+    setEnd(v)
+    setPreset(null)
   }
 
   // Live totals: how many the range spans, and how many already exist.
@@ -146,7 +161,7 @@ export function IpPoolDialog({
           {presets.length > 0 && (
             <FormSelect
               label="Populate from"
-              value={null}
+              value={preset}
               onChange={applyPreset}
               noneLabel="Custom range"
               options={presets.map((p) => ({ value: p.value, label: p.label }))}
@@ -156,7 +171,7 @@ export function IpPoolDialog({
             <FormText
               label="Start address"
               value={start}
-              onChange={setStart}
+              onChange={editStart}
               required
               mono
               placeholder={usable?.start}
@@ -164,7 +179,7 @@ export function IpPoolDialog({
             <FormText
               label="End address"
               value={end}
-              onChange={setEnd}
+              onChange={editEnd}
               required
               mono
               placeholder={usable?.end}

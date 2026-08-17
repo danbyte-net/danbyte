@@ -140,23 +140,25 @@ function DnsZonesPage() {
             <span className="text-xs text-muted-foreground">—</span>
           ),
       },
-      ...(canDelete
-        ? [
-            {
-              id: "actions",
-              enableSorting: false,
-              cell: ({ row }: { row: { original: DnsZone } }) =>
-                // Only Danbyte-authored zones can be deleted; synced zones would
-                // just return on the next sync.
-                row.original.managed ? (
-                  <RowActions
-                    onDelete={() => del.mutate(row.original)}
-                    deleteLabel="Delete zone"
-                  />
-                ) : null,
-            } as ColumnDef<DnsZone>,
-          ]
-        : []),
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <RowActions
+            editTo="/dns-zones/$id"
+            editParams={{ id: row.original.id }}
+            // Only Danbyte-authored zones can be deleted; a synced zone would
+            // just return on the next sync.
+            onDelete={
+              canDelete && row.original.managed
+                ? () => del.mutate(row.original)
+                : undefined
+            }
+            deleteLabel="Delete zone"
+          />
+        ),
+      },
     ],
     [canDelete, del]
   )

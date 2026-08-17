@@ -144,14 +144,15 @@ function DhcpScopesPage() {
         ? [
             {
               id: "actions",
+              header: "",
               enableSorting: false,
-              cell: ({ row }: { row: { original: DhcpScope } }) => (
+              cell: ({ row }) => (
                 <RowActions
                   onDelete={() => del.mutate(row.original)}
                   deleteLabel="Delete scope (removes it on the server)"
                 />
               ),
-            } as ColumnDef<DhcpScope>,
+            } satisfies ColumnDef<DhcpScope>,
           ]
         : []),
     ],

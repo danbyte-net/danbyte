@@ -36,7 +36,7 @@ export function DhcpBadge({ state }: { state: DhcpState }) {
           DHCP
         </Badge>
       </TooltipTrigger>
-      <TooltipContent>{hint}</TooltipContent>
+      <TooltipContent variant="panel">{hint}</TooltipContent>
     </Tooltip>
   )
 }

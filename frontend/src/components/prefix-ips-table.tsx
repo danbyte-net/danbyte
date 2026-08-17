@@ -47,6 +47,9 @@ interface PrefixIpsTableProps {
   onToggleTag: (slug: string) => void
   search: string
   showAvailable: boolean
+  /** Show the DHCP scope pool's addresses as ghost rows even when they have no
+   * IP row yet — the pool laid out without creating anything. */
+  showDhcpPool: boolean
   /** The prefix CIDR — needed to enumerate free host addresses. */
   cidr: string
   hasDescendants: boolean
@@ -67,6 +70,7 @@ function PrefixIpsTableImpl({
   onToggleTag,
   search,
   showAvailable,
+  showDhcpPool,
   cidr,
   hasDescendants,
   onEdit,
@@ -81,6 +85,21 @@ function PrefixIpsTableImpl({
     queryKey: ["prefix-ips", prefixId],
     queryFn: () => api<IPListResponse>(`/api/prefixes/${prefixId}/ips/`),
   })
+
+  // DHCP scope pool ranges (from the ips endpoint) → shade free addresses that
+  // fall inside a pool, and back the "Show DHCP pool" ghost rows. Registered
+  // rows carry their own `dhcp` state already.
+  const dhcpSpans = useMemo(
+    () =>
+      (query.data?.dhcp_ranges ?? [])
+        .map((r: DhcpScopeRange) => {
+          const start = ipToBigInt(r.start)
+          const end = ipToBigInt(r.end)
+          return start != null && end != null ? { start, end } : null
+        })
+        .filter((x): x is { start: bigint; end: bigint } => !!x),
+    [query.data]
+  )
 
   const rows = useMemo<IpRow[]>(() => {
     const all = query.data?.results ?? []
@@ -113,28 +132,42 @@ function PrefixIpsTableImpl({
       ip,
     }))
 
-    // "Show available": fill in the unregistered hosts as ghost rows. Only when
-    // no status/role/tag filter is active (free addresses have none) and the
-    // prefix is small enough to enumerate (≤ cap → null = too big, e.g. a /64).
+    // Ghost rows for unregistered addresses. Only when no status/role/tag
+    // filter is active (free addresses have none).
+    //   "Show available" — every free host in the prefix (≤ enumeration cap;
+    //     null = too big, e.g. a /64).
+    //   "Show DHCP pool" — just the scope pool's free addresses, laid out
+    //     without creating anything. Pools are bounded ranges, so this works
+    //     even in prefixes too large to enumerate fully.
     const freeRows: IpRow[] = []
-    if (
-      showAvailable &&
-      statusFilter.size === 0 &&
-      roleFilter.size === 0 &&
-      tagFilter.size === 0
-    ) {
-      const hosts = enumerableHostInts(cidr)
-      if (hosts) {
-        const taken = new Set<bigint>()
-        for (const ip of all) {
-          const b = ipToBigInt(ip.ip_address)
-          if (b !== null) taken.add(b)
-        }
-        for (const n of hosts.ints) {
-          if (taken.has(n)) continue
-          const address = bigIntToIp(n, hosts.family)
-          if (q && !address.toLowerCase().includes(q)) continue
-          freeRows.push({ kind: "free", address })
+    const noFacetFilter =
+      statusFilter.size === 0 && roleFilter.size === 0 && tagFilter.size === 0
+    if ((showAvailable || showDhcpPool) && noFacetFilter) {
+      const taken = new Set<bigint>()
+      for (const ip of all) {
+        const b = ipToBigInt(ip.ip_address)
+        if (b !== null) taken.add(b)
+      }
+      const family: 4 | 6 = cidr.includes(":") ? 6 : 4
+      const pushFree = (n: bigint) => {
+        if (taken.has(n)) return
+        taken.add(n) // dedupe across sources (prefix hosts vs pool spans)
+        const address = bigIntToIp(n, family)
+        if (q && !address.toLowerCase().includes(q)) return
+        freeRows.push({ kind: "free", address })
+      }
+      if (showAvailable) {
+        const hosts = enumerableHostInts(cidr)
+        if (hosts) for (const n of hosts.ints) pushFree(n)
+      } else {
+        // Pool-only view: enumerate each scope span directly, capped so a
+        // misconfigured giant range can't flood the table.
+        let budget = 4096
+        for (const s of dhcpSpans) {
+          for (let n = s.start; n <= s.end && budget > 0; n++) {
+            pushFree(n)
+            budget--
+          }
         }
       }
     }
@@ -158,6 +191,8 @@ function PrefixIpsTableImpl({
     tagFilter,
     search,
     showAvailable,
+    showDhcpPool,
+    dhcpSpans,
     cidr,
   ])
 
@@ -221,19 +256,6 @@ function PrefixIpsTableImpl({
     [rangeSpans]
   )
 
-  // DHCP scope pool ranges (from the ips endpoint) → shade free addresses that
-  // fall inside a pool. Registered rows carry their own `dhcp` state already.
-  const dhcpSpans = useMemo(
-    () =>
-      (query.data?.dhcp_ranges ?? [])
-        .map((r: DhcpScopeRange) => {
-          const start = ipToBigInt(r.start)
-          const end = ipToBigInt(r.end)
-          return start != null && end != null ? { start, end } : null
-        })
-        .filter((x): x is { start: bigint; end: bigint } => !!x),
-    [query.data]
-  )
   const dhcpStateForRow = useCallback(
     (r: IpRow): DhcpState | null => {
       if (r.kind === "registered") return r.ip.dhcp ?? null

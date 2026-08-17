@@ -30,6 +30,10 @@ export interface IpFilterRailProps {
   showAvailable: boolean
   onToggleShowAvailable: (v: boolean) => void
   canShowAvailable: boolean
+  /** Prefix has DHCP scope pools — offers the "Show DHCP pool" toggle. */
+  hasDhcpPool?: boolean
+  showDhcpPool?: boolean
+  onToggleShowDhcpPool?: (v: boolean) => void
 }
 
 function IpFilterRailImpl({
@@ -43,6 +47,9 @@ function IpFilterRailImpl({
   showAvailable,
   onToggleShowAvailable,
   canShowAvailable,
+  hasDhcpPool,
+  showDhcpPool,
+  onToggleShowDhcpPool,
 }: IpFilterRailProps) {
   const facets = useMemo(() => buildFacets(rows), [rows])
   return (
@@ -54,6 +61,18 @@ function IpFilterRailImpl({
             onCheckedChange={(v) => onToggleShowAvailable(!!v)}
           />
           <span>Show available</span>
+        </label>
+      )}
+      {hasDhcpPool && onToggleShowDhcpPool && (
+        <label
+          className="-mx-1.5 -mt-3 flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/50"
+          title="Lay out the DHCP scope pool's addresses even before any are registered"
+        >
+          <Checkbox
+            checked={!!showDhcpPool}
+            onCheckedChange={(v) => onToggleShowDhcpPool(!!v)}
+          />
+          <span>Show DHCP pool</span>
         </label>
       )}
       <FacetGroup

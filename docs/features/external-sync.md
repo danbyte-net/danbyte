@@ -139,12 +139,15 @@ DHCP-managed space is flagged so it's obvious in IPAM, in one blue hue at two
 intensities so the states read as the same family:
 
 - A prefix that **backs a DHCP scope** shows a **DHCP** badge in the prefix
-  list.
-- On the IP lists — and the prefix's own IPs tab, free addresses included —
-  each address carries the badge in one of two states:
+  list (its own sortable/filterable column).
+- Every IP table has a dedicated **DHCP** column carrying the badge in one of
+  two states:
     - **solid** — *leased*: held right now by a reservation or an active lease.
     - **faint outline** — *scope*: inside a scope's pool range but not currently
       handed out (DHCP-managed space, not necessarily in use).
+- On a prefix's IPs tab, the **Show DHCP pool** toggle (next to *Show
+  available*) lays out the scope pool's addresses as ghost rows even before any
+  of them exist in IPAM — the pool is visible without creating anything.
 
 DHCP addresses are marked *only* by this badge; they never raise the operator's
 manual **reservation note** marker, which stays reserved for addresses a person

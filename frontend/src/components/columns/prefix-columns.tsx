@@ -41,6 +41,7 @@ export type PrefixColumnId =
   | "cidr"
   | "family"
   | "status"
+  | "dhcp"
   | "monitoring"
   | "vrf"
   | "vlan"
@@ -55,6 +56,7 @@ const CANONICAL_ORDER: PrefixColumnId[] = [
   "cidr",
   "family",
   "status",
+  "dhcp",
   "monitoring",
   "vrf",
   "vlan",
@@ -147,7 +149,6 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
             >
               {row.original.cidr}
             </Link>
-            {row.original.dhcp && <DhcpBadge state="scope" />}
             {opts.violations && (
               <ViolationBadge
                 objectId={row.original.id}
@@ -198,6 +199,21 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
             color: sample.status?.color,
             textColor: sample.status?.text_color,
           }),
+        },
+      },
+    }),
+    dhcp: () => ({
+      id: "dhcp",
+      accessorFn: (r) => (r.dhcp ? "scope" : ""),
+      header: ({ column }) => <SortHeader column={column} label="DHCP" />,
+      cell: ({ row }) =>
+        row.original.dhcp ? <DhcpBadge state="scope" /> : dash,
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "DHCP",
+          get: (r: T) => (r.dhcp ? "scope" : "__none__"),
+          formatValue: (v) => ({ label: v === "scope" ? "DHCP scope" : "—" }),
         },
       },
     }),
