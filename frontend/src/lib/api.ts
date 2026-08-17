@@ -6967,6 +6967,8 @@ export interface DhcpReservation {
   id: string
   scope: string
   scope_display: string
+  /** The scope's backing Prefix id — links the Scope cell into IPAM. */
+  scope_prefix: string | null
   /** Windows server connection id — links the Server cell to its page. */
   connection: string
   connection_name: string

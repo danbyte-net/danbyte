@@ -176,19 +176,24 @@ class DhcpScopeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 
 class DhcpReservationSerializer(serializers.ModelSerializer):
     scope_display = serializers.CharField(source="scope.scope_id", read_only=True)
-    # Server id + name so tables can link the Server cell to its detail page.
+    # Server id + name so tables can link the Server cell to its detail page,
+    # and the scope's backing prefix so the Scope cell can link into IPAM.
     connection = serializers.CharField(source="scope.connection_id", read_only=True)
     connection_name = serializers.CharField(
         source="scope.connection.name", read_only=True
     )
+    scope_prefix = serializers.SerializerMethodField()
+
+    def get_scope_prefix(self, obj) -> str | None:
+        return str(obj.scope.prefix_id) if obj.scope.prefix_id else None
 
     class Meta:
         model = DhcpReservation
-        fields = ["id", "scope", "scope_display", "connection",
+        fields = ["id", "scope", "scope_display", "scope_prefix", "connection",
                   "connection_name", "ip", "mac", "name", "description",
                   "ip_address", "managed", "drift", "drift_detail",
                   "last_seen_at", "updated_at"]
-        read_only_fields = ["id", "scope_display", "connection",
+        read_only_fields = ["id", "scope_display", "scope_prefix", "connection",
                             "connection_name", "ip_address", "managed",
                             "drift", "drift_detail", "last_seen_at",
                             "updated_at"]

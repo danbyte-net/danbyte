@@ -49,11 +49,20 @@ function DhcpLeasesPage() {
         id: "mac",
         accessorKey: "mac",
         header: ({ column }) => <SortHeader column={column} label="MAC" />,
-        cell: ({ row }) => (
-          <span className="font-mono text-[11px] text-muted-foreground">
-            {row.original.mac || "—"}
-          </span>
-        ),
+        cell: ({ row }) =>
+          row.original.mac ? (
+            <Link
+              to="/macs/$mac"
+              params={{ mac: row.original.mac }}
+              className="link font-mono text-[11px]"
+            >
+              {row.original.mac}
+            </Link>
+          ) : (
+            <span className="font-mono text-[11px] text-muted-foreground">
+              —
+            </span>
+          ),
       },
       {
         id: "hostname",

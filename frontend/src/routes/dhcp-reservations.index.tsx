@@ -97,9 +97,13 @@ function DhcpReservationsPage() {
         accessorKey: "mac",
         header: ({ column }) => <SortHeader column={column} label="MAC" />,
         cell: ({ row }) => (
-          <span className="font-mono text-[11px] text-muted-foreground">
+          <Link
+            to="/macs/$mac"
+            params={{ mac: row.original.mac }}
+            className="link font-mono text-[11px]"
+          >
             {row.original.mac}
-          </span>
+          </Link>
         ),
       },
       {
@@ -112,11 +116,22 @@ function DhcpReservationsPage() {
         id: "scope",
         accessorKey: "scope_display",
         header: ({ column }) => <SortHeader column={column} label="Scope" />,
-        cell: ({ row }) => (
-          <span className="font-mono text-[11px] text-muted-foreground">
-            {row.original.scope_display}
-          </span>
-        ),
+        // Scopes have no detail page — the informative destination is the
+        // prefix the scope backs in IPAM.
+        cell: ({ row }) =>
+          row.original.scope_prefix ? (
+            <Link
+              to="/prefixes/$id"
+              params={{ id: row.original.scope_prefix }}
+              className="link font-mono text-[11px]"
+            >
+              {row.original.scope_display}
+            </Link>
+          ) : (
+            <span className="font-mono text-[11px] text-muted-foreground">
+              {row.original.scope_display}
+            </span>
+          ),
       },
       {
         id: "server",
