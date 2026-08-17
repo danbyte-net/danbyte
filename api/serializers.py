@@ -1452,7 +1452,10 @@ class DeviceTypeMiniSerializer(NumIdModelSerializer):
     lifecycle_state = serializers.ReadOnlyField()
     # Manufacturer NAME (not the nested object) — enough to drive the device
     # list's Manufacturer facet, which deep-links from the dashboard by name.
+    # `manufacturer_id` rides alongside so the list can link the name to the
+    # manufacturer page without inflating the payload with the nested object.
     manufacturer = serializers.SerializerMethodField()
+    manufacturer_id = serializers.ReadOnlyField()
 
     def get_front_image(self, obj) -> str | None:
         return _img_url(self, obj.front_image)
@@ -1466,7 +1469,7 @@ class DeviceTypeMiniSerializer(NumIdModelSerializer):
 
     class Meta:
         model = DeviceType
-        fields = ["id", "name", "manufacturer",
+        fields = ["id", "name", "manufacturer", "manufacturer_id",
                   "u_height", "rack_width", "is_full_depth",
                   "front_image", "rear_image",
                   "release_date", "end_of_support", "lifecycle_state"]

@@ -1187,6 +1187,7 @@ export interface Device {
     id: string
     name: string
     manufacturer: string | null
+    manufacturer_id: string | null
     u_height: number
     rack_width: "full" | "half"
     is_full_depth: boolean

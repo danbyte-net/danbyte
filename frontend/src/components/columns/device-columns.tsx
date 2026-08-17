@@ -292,7 +292,21 @@ export function buildDeviceColumns<T extends Device = Device>(
       header: ({ column }) => (
         <SortHeader column={column} label="Manufacturer" />
       ),
-      cell: ({ row }) => row.original.device_type?.manufacturer ?? dash,
+      cell: ({ row }) => {
+        const dt = row.original.device_type
+        if (!dt?.manufacturer) return dash
+        return dt.manufacturer_id ? (
+          <Link
+            to="/manufacturers/$id"
+            params={{ id: dt.manufacturer_id }}
+            className="link"
+          >
+            {dt.manufacturer}
+          </Link>
+        ) : (
+          dt.manufacturer
+        )
+      },
       meta: {
         facet: {
           kind: "enum",
@@ -323,7 +337,14 @@ export function buildDeviceColumns<T extends Device = Device>(
       accessorKey: "ip_count",
       header: "IPs",
       cell: ({ row }) => (
-        <span className="num text-xs">{row.original.ip_count}</span>
+        <Link
+          to="/devices/$id"
+          params={{ id: row.original.id }}
+          search={{ tab: "ips" }}
+          className="num link text-xs"
+        >
+          {row.original.ip_count}
+        </Link>
       ),
       meta: {
         facet: {
