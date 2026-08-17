@@ -29,6 +29,7 @@ from api.models import (
     Location,
     Prefix,
     Site,
+    VirtualMachine,
 )
 from api.views import _get_active_tenant
 from auth_api import rbac
@@ -63,7 +64,7 @@ from danbyte_checks.snmp_facts import (
     fetch_system_facts_sync,
 )
 from .snmp_resolve import resolve_device_profile
-from .snmp_poll import poll_device
+from .snmp_poll import poll_device, poll_vm
 from .snmp_util import compute_device_utilization
 from .snmp_drift import apply_drift_action, compute_device_drift, sync_device_from_snmp
 
@@ -1913,6 +1914,84 @@ def device_snmp_utilization_view(request, device_id):
         return err
     device, _tenant = resolved
     return Response({"interfaces": compute_device_utilization(device)})
+
+
+# ─── VM (virtual router / appliance) SNMP — #13 ──────────────────────────────
+
+def _resolve_vm(request, vm_id, action="view"):
+    """(vm, tenant) for a VM in the caller's RBAC scope, or (None, response)."""
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return None, Response({"detail": "No active tenant."}, status=403)
+    vm, _ = _scoped_get(request, VirtualMachine, "virtualmachine", action, vm_id)
+    if vm is None:
+        return None, Response({"detail": "Virtual machine not found."}, status=404)
+    return (vm, tenant), None
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def vm_snmp_view(request, vm_id):
+    """A VM's last observed SNMP facts (read-only). Empty shape if never polled."""
+    resolved, err = _resolve_vm(request, vm_id)
+    if err is not None:
+        return err
+    vm, tenant = resolved
+    state = (
+        DeviceSnmp.objects.filter(vm=vm, tenant=tenant)
+        .select_related("profile")
+        .first()
+    )
+    if state is None:
+        return Response({
+            "vm": str(vm.id), "device": None, "profile": None,
+            "profile_name": None, "data": {}, "interfaces": [], "neighbors": [],
+            "arp": [], "sensors": [], "reachable": None, "error": "",
+            "polled_at": None,
+        })
+    return Response(DeviceSnmpSerializer(state).data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def vm_snmp_poll_view(request, vm_id):
+    """On-demand SNMP poll of a VM. Body: ``{profile_id?}`` (falls back to the
+    VM → platform → cluster → site → tenant-default resolution)."""
+    resolved, err = _resolve_vm(request, vm_id, "change")
+    if err is not None:
+        return err
+    vm, tenant = resolved
+
+    profile = None
+    profile_id = request.data.get("profile_id")
+    if profile_id:
+        profile = SnmpProfile.objects.filter(pk=profile_id, tenant=tenant).first()
+        if profile is None:
+            return Response({"detail": "SNMP profile not found."}, status=400)
+
+    state, reason = poll_vm(vm, tenant, profile)
+    if reason == "no_profile":
+        return Response(
+            {"detail": "No SNMP profile resolves for this VM — assign one on the "
+             "VM, its platform/cluster, or set a tenant default."},
+            status=400,
+        )
+    if reason == "no_target":
+        return Response(
+            {"detail": "VM has no primary IP to poll."}, status=400
+        )
+    return Response(DeviceSnmpSerializer(state).data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def vm_snmp_utilization_view(request, vm_id):
+    """Per-interface utilisation series for a VM, from stored counter samples."""
+    resolved, err = _resolve_vm(request, vm_id)
+    if err is not None:
+        return err
+    vm, _tenant = resolved
+    return Response({"interfaces": compute_device_utilization(vm=vm)})
 
 
 @extend_schema(

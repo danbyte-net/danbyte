@@ -88,3 +88,35 @@ def resolve_device_profile(device, tenant):
     if default is not None:
         return default, "tenant_default"
     return None, None
+
+
+def _default_profile(tenant):
+    """The tenant's default SNMP profile, or the sole one if only one exists."""
+    default = SnmpProfile.objects.filter(tenant=tenant, is_default=True).first()
+    if default is None:
+        profiles = list(SnmpProfile.objects.filter(tenant=tenant)[:2])
+        default = profiles[0] if len(profiles) == 1 else None
+    return default
+
+
+def resolve_vm_profile(vm, tenant):
+    """Return ``(SnmpProfile | None, source)`` for a virtual machine.
+
+    Resolution mirrors the device hierarchy, adapted to what a VM has:
+    **vm → platform → cluster → site → tenant default** — most specific wins.
+    """
+    chain = [
+        (SnmpProfileBinding.SCOPE_VM, vm.id),
+        (SnmpProfileBinding.SCOPE_PLATFORM, getattr(vm, "platform_id", None)),
+        (SnmpProfileBinding.SCOPE_CLUSTER, getattr(vm, "cluster_id", None)),
+        (SnmpProfileBinding.SCOPE_SITE, getattr(vm, "site_id", None)),
+    ]
+    for scope, object_id in chain:
+        binding = _binding_profile(tenant, scope, object_id)
+        if binding is not None:
+            return binding.profile, scope
+
+    default = _default_profile(tenant)
+    if default is not None:
+        return default, "tenant_default"
+    return None, None

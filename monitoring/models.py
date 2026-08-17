@@ -1561,8 +1561,16 @@ class DeviceSnmp(TimestampedModel):
     tenant = models.ForeignKey(
         Tenant, on_delete=models.CASCADE, related_name="device_snmp"
     )
+    # Target is a physical Device *or* a VirtualMachine (a virtual router /
+    # appliance) — exactly one, enforced by the constraint below. Both stay
+    # nullable so existing device rows are untouched and VM rows slot in.
     device = models.OneToOneField(
-        "api.Device", on_delete=models.CASCADE, related_name="snmp"
+        "api.Device", on_delete=models.CASCADE, related_name="snmp",
+        null=True, blank=True,
+    )
+    vm = models.OneToOneField(
+        "api.VirtualMachine", on_delete=models.CASCADE, related_name="snmp",
+        null=True, blank=True,
     )
     profile = models.ForeignKey(
         SnmpProfile, null=True, blank=True, on_delete=models.SET_NULL,
@@ -1599,9 +1607,22 @@ class DeviceSnmp(TimestampedModel):
 
     class Meta:
         ordering = ["-polled_at"]
+        constraints = [
+            models.CheckConstraint(
+                name="devicesnmp_device_xor_vm",
+                condition=(
+                    models.Q(device__isnull=False, vm__isnull=True)
+                    | models.Q(device__isnull=True, vm__isnull=False)
+                ),
+            )
+        ]
+
+    @property
+    def target(self):
+        return self.device or self.vm
 
     def __str__(self) -> str:
-        return f"SNMP({self.device_id})"
+        return f"SNMP({self.device_id or self.vm_id})"
 
 
 class SnmpSensor(TimestampedModel):
@@ -1767,12 +1788,19 @@ class SnmpProfileBinding(TimestampedModel):
     SCOPE_TYPE = "device_type"
     SCOPE_LOCATION = "location"
     SCOPE_SITE = "site"
+    # VM (virtual router / appliance) scopes — #13.
+    SCOPE_VM = "vm"
+    SCOPE_PLATFORM = "platform"
+    SCOPE_CLUSTER = "cluster"
     SCOPE_CHOICES = [
         (SCOPE_DEVICE, "Device"),
         (SCOPE_ROLE, "Device role"),
         (SCOPE_TYPE, "Device type"),
         (SCOPE_LOCATION, "Location"),
         (SCOPE_SITE, "Site"),
+        (SCOPE_VM, "Virtual machine"),
+        (SCOPE_PLATFORM, "Platform"),
+        (SCOPE_CLUSTER, "Cluster"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -1783,7 +1811,9 @@ class SnmpProfileBinding(TimestampedModel):
         SnmpProfile, on_delete=models.CASCADE, related_name="bindings"
     )
     scope = models.CharField(max_length=16, choices=SCOPE_CHOICES)
-    object_id = models.UUIDField(help_text="id of the device / role / type.")
+    object_id = models.UUIDField(
+        help_text="id of the device / role / type / vm / platform / cluster."
+    )
     target = models.CharField(
         max_length=255, blank=True, default="",
         help_text="Poll this address instead of the device's own IPs (device "
@@ -1814,7 +1844,12 @@ class SnmpInterfaceSample(TimestampedModel):
         Tenant, on_delete=models.CASCADE, related_name="snmp_samples"
     )
     device = models.ForeignKey(
-        "api.Device", on_delete=models.CASCADE, related_name="snmp_samples"
+        "api.Device", on_delete=models.CASCADE, related_name="snmp_samples",
+        null=True, blank=True,
+    )
+    vm = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.CASCADE,
+        related_name="snmp_samples", null=True, blank=True,
     )
     if_index = models.CharField(max_length=32)
     # ifHCInOctets/ifHCOutOctets are SNMP Counter64 — unsigned 64-bit (up to
@@ -1827,10 +1862,13 @@ class SnmpInterfaceSample(TimestampedModel):
 
     class Meta:
         ordering = ["sampled_at"]
-        indexes = [models.Index(fields=["device", "if_index", "sampled_at"])]
+        indexes = [
+            models.Index(fields=["device", "if_index", "sampled_at"]),
+            models.Index(fields=["vm", "if_index", "sampled_at"]),
+        ]
 
     def __str__(self) -> str:
-        return f"{self.device_id}/{self.if_index} @ {self.sampled_at:%H:%M}"
+        return f"{self.device_id or self.vm_id}/{self.if_index} @ {self.sampled_at:%H:%M}"
 
 
 # ─── Certificate inventory ────────────────────────────────────────────────

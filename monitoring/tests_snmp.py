@@ -1028,9 +1028,10 @@ class SnmpHardeningTests(APITestCase):
         from monitoring.models import SnmpInterfaceSample
         big = 10_000_000_000_000_000_000  # 1e19 > signed bigint max (9.2e18)
         n = record_samples(
-            self.device, self.tenant,
+            self.tenant,
             [{"if_index": "1", "in_octets": big, "out_octets": big, "speed_mbps": 1000}],
             timezone.now(),
+            device=self.device,
         )
         self.assertEqual(n, 1)
         sample = SnmpInterfaceSample.objects.get(device=self.device, if_index="1")

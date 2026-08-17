@@ -73,6 +73,20 @@ the tenant has exactly one profile — otherwise it declines rather than guess
 which credential to poll with. The device's SNMP card shows where the effective
 credential came from.
 
+## Virtual routers & appliances {#virtual-machines}
+
+SNMP polling isn't only for physical devices — a **virtual machine** running a
+router/firewall OS (MikroTik CHR, VyOS, pfSense, …) can be polled too. Open a VM
+→ its **SNMP** tab → **Poll now**. Danbyte reads the same system group +
+interface tables over the VM's **primary IP** and stores them on the same
+observed store, so facts, interfaces, LLDP neighbours and ARP show exactly as
+they do for a device.
+
+Profile resolution follows the equivalent hierarchy for what a VM *is* and where
+it *runs*: **VM → platform → cluster → site → tenant default**. Bind a profile
+at whichever level fits (a per-VM binding can also carry a `target` override to
+poll a management address instead of the primary IP).
+
 ## Poll a device {#poll-a-device}
 
 Open a device → its **Monitoring** tab → the **Observed** card → **Poll now**.

@@ -14,7 +14,7 @@ from django.utils import timezone
 from danbyte_checks.snmp_facts import fetch_snmp
 
 from .models import DeviceSnmp
-from .snmp_resolve import resolve_device_profile
+from .snmp_resolve import resolve_device_profile, resolve_vm_profile
 from .snmp_util import record_samples
 
 
@@ -59,12 +59,14 @@ def _device_target(device):
     return name
 
 
-def persist_snmp_result(device, tenant, profile, result) -> DeviceSnmp:
-    """Write a fetched SNMP result onto ``DeviceSnmp`` (+ counter samples). The
-    ``result`` dict is exactly what ``fetch_snmp`` produces, whether it ran here
-    or on an Outpost — so both paths persist identically."""
+def persist_snmp_result(tenant, profile, result, *, device=None, vm=None) -> DeviceSnmp:
+    """Write a fetched SNMP result onto ``DeviceSnmp`` (+ counter samples) for a
+    Device or a VM target. The ``result`` dict is exactly what ``fetch_snmp``
+    produces, whether it ran here or on an Outpost — so both paths persist
+    identically."""
+    lookup = {"vm": vm} if vm is not None else {"device": device}
     state, _ = DeviceSnmp.objects.get_or_create(
-        device=device, defaults={"tenant": tenant}
+        **lookup, defaults={"tenant": tenant}
     )
     state.tenant = tenant
     state.profile = profile
@@ -78,7 +80,8 @@ def persist_snmp_result(device, tenant, profile, result) -> DeviceSnmp:
     state.polled_at = timezone.now()
     state.save()
     if state.reachable and state.interfaces:
-        record_samples(device, tenant, state.interfaces, state.polled_at)
+        record_samples(tenant, state.interfaces, state.polled_at,
+                       device=device, vm=vm)
     return state
 
 
@@ -102,4 +105,46 @@ def poll_device(device, tenant, profile=None):
         target, profile.version, profile.params, profile.secret_params,
         profile.timeout_ms,
     )
-    return persist_snmp_result(device, tenant, profile, result), None
+    return persist_snmp_result(tenant, profile, result, device=device), None
+
+
+def _vm_target(vm):
+    """The address to poll a VM at: an explicit per-VM binding override, else
+    its primary IP. VMs have no OOB IP or resolvable device name."""
+    from .models import SnmpProfileBinding
+
+    override = (
+        SnmpProfileBinding.objects.filter(
+            tenant_id=vm.tenant_id,
+            scope=SnmpProfileBinding.SCOPE_VM,
+            object_id=vm.id,
+        )
+        .values_list("target", flat=True)
+        .first()
+    )
+    if override:
+        return override
+    if vm.primary_ip_id and vm.primary_ip.ip_address:
+        return vm.primary_ip.ip_address
+    return None
+
+
+def poll_vm(vm, tenant, profile=None):
+    """Poll a virtual machine (a virtual router / appliance) and persist its
+    observed SNMP state — same engine and storage as :func:`poll_device`.
+
+    Returns ``(DeviceSnmp | None, reason)`` — ``reason`` is ``"no_profile"`` or
+    ``"no_target"`` on a setup error, otherwise ``None`` and a saved row."""
+    if profile is None:
+        profile, _source = resolve_vm_profile(vm, tenant)
+    if profile is None:
+        return None, "no_profile"
+    target = _vm_target(vm)
+    if not target:
+        return None, "no_target"
+
+    result = fetch_snmp(
+        target, profile.version, profile.params, profile.secret_params,
+        profile.timeout_ms,
+    )
+    return persist_snmp_result(tenant, profile, result, vm=vm), None

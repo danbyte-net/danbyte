@@ -12,8 +12,9 @@ from collections import defaultdict
 from .models import SnmpInterfaceSample
 
 
-def record_samples(device, tenant, interfaces, sampled_at) -> int:
-    """Persist one ``SnmpInterfaceSample`` per interface that reported counters."""
+def record_samples(tenant, interfaces, sampled_at, *, device=None, vm=None) -> int:
+    """Persist one ``SnmpInterfaceSample`` per interface that reported counters,
+    for either a Device or a VM target."""
     rows = []
     for iface in interfaces or []:
         if not iface.get("in_octets") and not iface.get("out_octets"):
@@ -25,7 +26,8 @@ def record_samples(device, tenant, interfaces, sampled_at) -> int:
         except (ValueError, TypeError):
             continue
         rows.append(SnmpInterfaceSample(
-            tenant=tenant, device=device, if_index=str(iface.get("if_index", "")),
+            tenant=tenant, device=device, vm=vm,
+            if_index=str(iface.get("if_index", "")),
             in_octets=in_octets, out_octets=out_octets, speed_mbps=speed,
             sampled_at=sampled_at,
         ))
@@ -41,12 +43,14 @@ def _pct(delta_octets: int, dt_seconds: float, speed_mbps: int):
     return round(100 * bps / (speed_mbps * 1_000_000), 2)
 
 
-def compute_device_utilization(device, points: int = 30) -> dict:
-    """``{if_index: [{at, in_pct, out_pct}, ...]}`` from stored samples."""
+def compute_device_utilization(device=None, points: int = 30, *, vm=None) -> dict:
+    """``{if_index: [{at, in_pct, out_pct}, ...]}`` from stored samples, for a
+    Device (positional, as before) or a VM (``vm=``)."""
     by_index: dict[str, list] = defaultdict(list)
+    flt = {"vm": vm} if vm is not None else {"device": device}
     samples = (
         SnmpInterfaceSample.objects
-        .filter(device=device)
+        .filter(**flt)
         .order_by("if_index", "sampled_at")
     )
     for s in samples:

@@ -406,7 +406,7 @@ def outpost_snmp_results_view(request):
         if device is None:  # unknown / other tenant → ignore
             continue
         profile, _ = resolve_device_profile(device, eng.tenant)
-        persist_snmp_result(device, eng.tenant, profile, r)
+        persist_snmp_result(eng.tenant, profile, r, device=device)
         ingested += 1
     return Response({"ingested": ingested})
 

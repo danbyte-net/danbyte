@@ -95,8 +95,9 @@ class DeviceSnmpSerializer(serializers.ModelSerializer):
     class Meta:
         model = DeviceSnmp
         fields = [
-            "id", "device", "profile", "profile_name", "data", "interfaces",
-            "neighbors", "arp", "sensors", "reachable", "error", "polled_at",
+            "id", "device", "vm", "profile", "profile_name", "data",
+            "interfaces", "neighbors", "arp", "sensors", "reachable", "error",
+            "polled_at",
         ]
         read_only_fields = fields
 
