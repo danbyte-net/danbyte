@@ -25,6 +25,9 @@ The page is a mosaic of tiles:
 - **Certificate widgets** — **Certificate health** (expiry buckets across the
   whole inventory), **Expiring certificates** (expired or within 30 days), and
   **Expired certificates** (already past expiry). Add them from *Add widget*.
+- **Activity widgets** — **Changelog** (the latest audit changes across the
+  tenant: who changed what, each linking to the full change and out to the audit
+  log) and **Recent activity** (latest monitoring status changes).
 
 Colours come from your own statuses and roles where you've set them, so the
 charts speak your network's language.

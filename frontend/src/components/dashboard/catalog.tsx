@@ -11,6 +11,7 @@ import {
 } from "./widget-charts-lazy"
 import { RecentDevices, RecentIps, RecentPrefixes } from "./widget-tables"
 import { BookmarksWidget } from "./widget-bookmarks"
+import { ChangelogWidget } from "./widget-changelog"
 import { OsmMapWidget } from "./widget-osm-map"
 import { ExpiredCertsWidget, ExpiringCertsWidget } from "./widget-certificates"
 import { CertHealthWidget } from "./widget-cert-health"
@@ -24,6 +25,7 @@ const FloorplanWidget = lazy(() =>
 export type WidgetId =
   | "bookmarks"
   | "object-counts"
+  | "changelog"
   | "recent-activity"
   | "recent-prefixes"
   | "recent-devices"
@@ -78,6 +80,13 @@ export const CATALOG: WidgetDef[] = [
     description: "Object counts across the tenant",
     size: "big",
     render: (d) => <ObjectCounts counts={d.counts} />,
+  },
+  {
+    id: "changelog",
+    title: "Changelog",
+    description: "Recent changes across the tenant — who changed what",
+    size: "wide",
+    render: () => <ChangelogWidget />,
   },
   {
     id: "recent-activity",
@@ -353,6 +362,7 @@ export const CATALOG_BY_ID = Object.fromEntries(
 export const DEFAULT_LAYOUT: WidgetId[] = [
   "my-tasks",
   "bookmarks",
+  "changelog",
   "recent-activity",
   "reachable-gauge",
   "check-status",
