@@ -71,6 +71,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/cluster-groups": "dcim/",
   "/virtual-machines": "dcim/",
   "/virtual-switches": "features/external-sync/",
+  "/virtual-topology": "features/external-sync/",
   "/circuits": "features/circuits/",
   "/circuit-types": "features/circuits/",
   "/providers": "features/circuits/",

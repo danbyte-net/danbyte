@@ -630,6 +630,12 @@ const sections: NavSection[] = [
             objectType: "virtualswitch",
           },
           {
+            title: "Network topology",
+            url: "/virtual-topology",
+            icon: Waypoints,
+            objectType: "virtualswitch",
+          },
+          {
             title: "Clusters",
             url: "/clusters",
             icon: Boxes,

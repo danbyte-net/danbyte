@@ -230,6 +230,12 @@ Both follow the same adoption rules as the rest of the sync: sync-created rows
 are refreshed and pruned when they vanish; operator-created rows are only
 blank-filled and never deleted.
 
+Once networks are synced, each **virtual switch** page has a **Networks** tab
+(its port-groups/bridges → VLANs → the VMs on them), and
+**Virtualization → Network topology** draws the whole picture — switches, their
+networks (VLANs) as bars, and the VMs on each — an OpenStack-style map, with VM
+boxes tinted by status.
+
 Both hypervisors run through the same reconcile engine, so sync modes,
 adoption, blank-fill and the review inbox behave identically — only the fetch
 and the identifiers differ (Proxmox integer VMIDs; vCenter VM MoRefs, whose
