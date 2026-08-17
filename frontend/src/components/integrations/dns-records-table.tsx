@@ -1,17 +1,25 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
 
-import { api, type DnsRecord, type Paginated } from "@/lib/api"
+import { ApiError, api, type DnsRecord, type Paginated } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { DataTable } from "@/components/data-table"
+import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
+import { FormText } from "@/components/forms"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 /** True when Windows DNS sync is enabled for the active tenant. Cached, so the
  * IPAM detail pages can cheaply decide whether to show a DNS tab/section. */
@@ -38,7 +46,7 @@ export function dnsRecordColumns(showZone: boolean): ColumnDef<DnsRecord>[] {
     {
       id: "name",
       accessorKey: "name",
-      header: "Name",
+      header: ({ column }) => <SortHeader column={column} label="Name" />,
       cell: ({ row }) => (
         <span className="font-mono text-xs">{row.original.name}</span>
       ),
@@ -46,7 +54,7 @@ export function dnsRecordColumns(showZone: boolean): ColumnDef<DnsRecord>[] {
     {
       id: "type",
       accessorKey: "record_type",
-      header: "Type",
+      header: ({ column }) => <SortHeader column={column} label="Type" />,
       cell: ({ row }) => (
         <Badge
           variant={TYPE_VARIANT[row.original.record_type] ?? "outline"}
@@ -59,7 +67,7 @@ export function dnsRecordColumns(showZone: boolean): ColumnDef<DnsRecord>[] {
     {
       id: "data",
       accessorKey: "data",
-      header: "Data",
+      header: ({ column }) => <SortHeader column={column} label="Data" />,
       cell: ({ row }) => (
         <span className="font-mono text-xs">{row.original.data}</span>
       ),
@@ -88,7 +96,7 @@ export function dnsRecordColumns(showZone: boolean): ColumnDef<DnsRecord>[] {
     cols.push({
       id: "zone",
       accessorKey: "zone_name",
-      header: "Zone",
+      header: ({ column }) => <SortHeader column={column} label="Zone" />,
       cell: ({ row }) => (
         <Link
           to="/dns-zones/$id"
@@ -131,16 +139,46 @@ export function DnsRecordsTable({
   })
   const rows = providedRows ?? query.data?.results ?? []
 
+  // When an import fails only because no prefix contains the address, we open a
+  // small "create prefix" dialog (pre-filled with a suggested CIDR) and retry.
+  const [needPrefix, setNeedPrefix] = useState<{
+    rec: DnsRecord
+    cidr: string
+  } | null>(null)
+
   const importOne = useMutation({
     mutationFn: (rec: DnsRecord) =>
       api<{ ok: boolean; error?: string }>(
         `/api/dns-records/${rec.id}/import/`,
         { method: "POST", body: "{}" }
       ),
-    onSuccess: (r) => {
-      if (r.ok) toast.success("Added to IPAM")
-      else toast.error(r.error || "Could not import")
+    onSuccess: () => {
+      toast.success("Added to IPAM")
       qc.invalidateQueries({ queryKey: ["dns-records"] })
+    },
+    onError: (e, rec) => {
+      const body =
+        e instanceof ApiError ? (e.body as Record<string, unknown>) : null
+      if (body?.reason === "no_prefix") {
+        setNeedPrefix({ rec, cidr: String(body.suggested_prefix ?? "") })
+      } else {
+        apiErrorToast(e)
+      }
+    },
+  })
+
+  const createPrefix = useMutation({
+    mutationFn: (cidr: string) =>
+      api("/api/prefixes/", {
+        method: "POST",
+        body: JSON.stringify({ cidr }),
+      }),
+    onSuccess: () => {
+      const rec = needPrefix?.rec
+      setNeedPrefix(null)
+      qc.invalidateQueries({ queryKey: ["prefixes"] })
+      toast.success("Prefix created")
+      if (rec) importOne.mutate(rec) // retry the import into the new prefix
     },
     onError: (e) => apiErrorToast(e),
   })
@@ -169,14 +207,54 @@ export function DnsRecordsTable({
   }, [showZone, canImport, importOne])
 
   if (query.isError) return <QueryError error={query.error} />
-  if (rows.length === 0 && (providedRows !== undefined || query.data))
-    return <EmptyState title={empty} />
+  const table =
+    rows.length === 0 && (providedRows !== undefined || query.data) ? (
+      <EmptyState title={empty} />
+    ) : (
+      <DataTable
+        data={rows}
+        columns={columns}
+        tableId={tableId}
+        flexColumn="name"
+      />
+    )
   return (
-    <DataTable
-      data={rows}
-      columns={columns}
-      tableId={tableId}
-      flexColumn="name"
-    />
+    <>
+      {table}
+      <Dialog
+        open={needPrefix !== null}
+        onOpenChange={(o) => !o && setNeedPrefix(null)}
+      >
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>Create prefix</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            No prefix contains{" "}
+            <span className="font-mono">{needPrefix?.rec.ip}</span>. Create one
+            to import this record into IPAM.
+          </p>
+          <FormText
+            label="Prefix (CIDR)"
+            value={needPrefix?.cidr ?? ""}
+            onChange={(v) => setNeedPrefix((n) => (n ? { ...n, cidr: v } : n))}
+            mono
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setNeedPrefix(null)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!needPrefix?.cidr.trim() || createPrefix.isPending}
+              onClick={() =>
+                needPrefix && createPrefix.mutate(needPrefix.cidr.trim())
+              }
+            >
+              {createPrefix.isPending ? "Creating…" : "Create & import"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

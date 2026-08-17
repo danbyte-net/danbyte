@@ -100,6 +100,27 @@ class DnsApiTests(APITestCase):
         self.assertEqual(self.ip.dns_name, "mine.danbyte.lan")
         self.assertEqual(DnsDrift.objects.count(), 0)
 
+    def test_import_no_prefix_returns_reason_and_suggestion(self):
+        rec = DnsRecord.objects.create(
+            zone=self.zone, name="v6.danbyte.lan", record_type="AAAA",
+            data="2a09:5e41:b04:40:9d4:1166:767:5034",
+            ip="2a09:5e41:b04:40:9d4:1166:767:5034",
+        )
+        res = self.client.post(f"/api/dns-records/{rec.id}/import/", {},
+                               format="json")
+        self.assertEqual(res.status_code, 400, res.content)
+        body = res.json()
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["reason"], "no_prefix")
+        self.assertEqual(body["suggested_prefix"], "2a09:5e41:b04:40::/64")
+        # Create the suggested prefix, then the retry succeeds.
+        Prefix.objects.create(tenant=self.tenant, cidr="2a09:5e41:b04:40::/64")
+        res2 = self.client.post(f"/api/dns-records/{rec.id}/import/", {},
+                                format="json")
+        self.assertEqual(res2.status_code, 200, res2.content)
+        rec.refresh_from_db()
+        self.assertIsNotNone(rec.ip_address_id)
+
     def test_endpoints_404_without_toggle(self):
         IntegrationSettings.objects.filter(tenant=self.tenant).update(
             dns_sync_enabled=False

@@ -128,14 +128,20 @@ class DnsRecordViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     @action(detail=True, methods=["post"], url_path="import")
     def import_(self, request, pk=None):
         """Create the IPAddress for this record and link it."""
-        from .dns_sync import DnsImportError, import_record
+        from .dns_sync import DnsImportError, import_record, suggested_prefix_cidr
 
         self._require_ip_add(request)
         record = self.get_object()
         try:
             ip = import_record(record)
         except DnsImportError as exc:
-            return Response({"ok": False, "error": str(exc)}, status=400)
+            # A missing containing prefix is recoverable: tell the client so it
+            # can offer to create one (with a suggested CIDR) and retry.
+            return Response(
+                {"ok": False, "error": str(exc), "reason": "no_prefix",
+                 "suggested_prefix": suggested_prefix_cidr(record.ip)},
+                status=400,
+            )
         return Response({"ok": True, "ip_address": str(ip.id)})
 
     @action(detail=False, methods=["post"])

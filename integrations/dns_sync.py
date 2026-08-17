@@ -63,6 +63,14 @@ def containing_prefix(tenant, ip: str):
     return best[1] if best else None
 
 
+def suggested_prefix_cidr(ip: str) -> str:
+    """A sensible containing CIDR to offer when no prefix exists yet — a /64 for
+    IPv6, a /24 for IPv4 (the address's network at that length)."""
+    addr = ipaddress.ip_address(ip)
+    plen = 64 if addr.version == 6 else 24
+    return str(ipaddress.ip_network(f"{ip}/{plen}", strict=False))
+
+
 def import_record(record):
     """Create an IPAddress for a DNS record's address and link it back.
 
