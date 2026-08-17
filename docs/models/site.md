@@ -13,7 +13,7 @@ A physical location — DC, office, POP, edge.
 | `id` | UUID | `uuid4()` | |
 | `tenant` | FK → `Tenant` | required | |
 | `name` | char(255) | required | |
-| `location` | char(255) | `""` | Free-form (city, address, …) |
+| `location` | char(255) | `""` | Free-form postal address (city, street, …). Labelled **Address** in the UI (to avoid clashing with the `Location` object). The API also exposes it read+write as `address`, an alias of this field — either name works; `location` is kept for backward compatibility. |
 | `time_zone` | char(63) | `""` | IANA name (e.g. `Europe/Copenhagen`); validated against the zoneinfo set. The detail page shows the current local time so you can read the offset between sites. |
 | `description` | text | `""` | |
 | `gateway_policy` | choice | `first` | `first` · `last` · `none` |

@@ -27,6 +27,12 @@ edits it. It shows the parent region plus a **Sites** tab (the sites that sit
 directly in the region) and a **Sub-regions** tab, each with counts, backed by
 `GET /api/sites/?region=<id>` and `?parent=<id>` on regions.
 
+The chain continues on the objects themselves: a **site** page has a
+**Locations** tab listing the locations inside it (`GET /api/locations/?site=<id>`);
+a **location** links back to its site and parent location and lists its racks;
+and a **rack** links back to its location and site — so you can walk
+region → site → location → rack (and back) entirely through links.
+
 ## Add a location
 
 A location is a place inside a single site — a building, a floor, a room — and

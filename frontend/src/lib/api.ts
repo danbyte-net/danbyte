@@ -2998,7 +2998,10 @@ export interface Site {
   numid: number | null
   name: string
   region: { id: string; name: string } | null
+  /** Free-text postal address (labelled "Address" in the UI). `address` is a
+   * read+write alias of the same value; `location` stays for compatibility. */
   location: string
+  address: string
   latitude: string | null
   longitude: string | null
   description: string
@@ -3025,6 +3028,8 @@ export interface SiteWritePayload {
   name: string
   region_id?: string | null
   location?: string
+  /** Alias of `location`; either may be sent. */
+  address?: string
   time_zone?: string
   latitude?: string | null
   longitude?: string | null

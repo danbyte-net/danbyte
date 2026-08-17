@@ -7,6 +7,7 @@ import { useCallback, useMemo, useState } from "react"
 
 import {
   api,
+  type Location,
   type ObjectPermission,
   type Paginated,
   type Prefix,
@@ -14,6 +15,7 @@ import {
   type VLAN,
 } from "@/lib/api"
 import { TagList } from "@/components/cells/tag-list"
+import { StatusBadge } from "@/components/status-badge"
 import { VrfCell } from "@/components/cells/vrf-cell"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { buildVlanColumns } from "@/components/columns/vlan-columns"
@@ -67,6 +69,7 @@ function SiteDetail() {
 function SiteDetailBody({ site: s }: { site: Site }) {
   const [tab, setTab] = useUrlTab<
     | "overview"
+    | "locations"
     | "devices"
     | "prefixes"
     | "vlans"
@@ -144,6 +147,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
+        { value: "locations", label: "Locations" },
         { value: "devices", label: "Devices", count: s.device_count },
         { value: "prefixes", label: "Prefixes", count: s.prefix_count },
         { value: "vlans", label: "VLANs", count: s.vlan_count },
@@ -159,6 +163,9 @@ function SiteDetailBody({ site: s }: { site: Site }) {
     >
       <DetailTab value="overview">
         <SiteOverview site={s} humanIds={humanIds} onGoTab={setTab} />
+      </DetailTab>
+      <DetailTab value="locations">
+        <SiteLocationsTable siteId={s.id} />
       </DetailTab>
       <DetailTab value="devices">
         <EmbeddedDeviceTable
@@ -332,6 +339,76 @@ function SiteAccessPanel({
   )
 }
 
+/** The site's locations (buildings / floors / rooms), each linked. Closes the
+ * region → site → location → rack navigation chain (#26). */
+function SiteLocationsTable({ siteId }: { siteId: string }) {
+  const q = useQuery({
+    queryKey: ["site-locations", siteId],
+    queryFn: () =>
+      api<Paginated<Location>>(`/api/locations/?site=${siteId}&page_size=500`),
+  })
+  const columns = useMemo<ColumnDef<Location>[]>(
+    () => [
+      {
+        id: "name",
+        accessorKey: "name",
+        header: "Name",
+        cell: ({ row }) => (
+          <Link
+            to="/locations/$id"
+            params={{ id: row.original.id }}
+            className="link font-medium"
+          >
+            {row.original.name}
+          </Link>
+        ),
+      },
+      {
+        id: "devices",
+        accessorKey: "device_count",
+        header: "Devices",
+        cell: ({ row }) => (
+          <span className="num text-xs">{row.original.device_count}</span>
+        ),
+      },
+      {
+        id: "racks",
+        accessorKey: "rack_count",
+        header: "Racks",
+        cell: ({ row }) => (
+          <span className="num text-xs">{row.original.rack_count}</span>
+        ),
+      },
+      {
+        id: "status",
+        header: "Status",
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+      },
+    ],
+    []
+  )
+
+  if (q.isLoading)
+    return <p className="text-sm text-muted-foreground">Loading locations…</p>
+  if (q.isError) return <QueryError error={q.error} />
+  const rows = q.data?.results ?? []
+  if (rows.length === 0)
+    return (
+      <EmptyState title="No locations yet.">
+        This site has no locations (buildings / floors / rooms) yet.
+      </EmptyState>
+    )
+  return (
+    <DataTable
+      data={rows}
+      columns={columns}
+      tableId="site-locations-embedded"
+      flexColumn="name"
+      embedded
+    />
+  )
+}
+
 function SitePrefixesTable({
   siteId,
   siteName,
@@ -482,7 +559,7 @@ function SiteOverview({
           } satisfies KvRow,
         ]
       : []),
-    { label: "Location", value: s.location || dash },
+    { label: "Address", value: s.location || dash },
     {
       label: "Time zone",
       value: s.time_zone ? <SiteLocalTime tz={s.time_zone} /> : dash,

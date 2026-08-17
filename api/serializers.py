@@ -607,6 +607,13 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
     region = serializers.SerializerMethodField()
     prefix_count = serializers.SerializerMethodField()
     vlan_count = serializers.SerializerMethodField()
+    # `location` on Site is a free-text postal address (not the Location
+    # object). The UI calls it "Address"; `address` is a read+write alias so
+    # API clients can use either name — `location` stays for backward
+    # compatibility. Both map to the same model field.
+    address = serializers.CharField(
+        source="location", required=False, allow_blank=True
+    )
 
     region_id = TenantScopedPrimaryKeyRelatedField(
         source="region", queryset=Region.objects.all(),
@@ -699,7 +706,8 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
     class Meta:
         model = Site
         fields = [
-            "id", "name", "region", "region_id", "location", "description",
+            "id", "name", "region", "region_id", "location", "address",
+            "description",
             "time_zone",
             "latitude", "longitude",
             "gateway_policy",
