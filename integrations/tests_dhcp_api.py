@@ -197,3 +197,30 @@ class DhcpApiTests(APITestCase):
         self.assertEqual(res.status_code, 204, res.content)
         rm.assert_called_once()
         self.assertFalse(DhcpScope.objects.filter(id=self.scope.id).exists())
+
+    def test_ip_dhcp_state_leased_exclusion_scope(self):
+        """Serializer `dhcp`: leased > exclusion > scope > None."""
+        from api.models import IPAddress
+        from api.serializers import IPAddressSerializer
+        from api.viewsets import annotate_dhcp
+        from integrations.models import DhcpExclusion
+
+        self.scope.start_range = "10.77.0.50"
+        self.scope.end_range = "10.77.0.200"
+        self.scope.save(update_fields=["start_range", "end_range"])
+        DhcpExclusion.objects.create(
+            scope=self.scope, start_address="10.77.0.100",
+            end_address="10.77.0.119",
+        )
+        mk = lambda a: IPAddress.objects.create(  # noqa: E731
+            tenant=self.tenant, prefix=self.prefix, ip_address=a
+        )
+        pool_ip, excl_ip, outside_ip = mk("10.77.0.60"), mk("10.77.0.105"), mk("10.77.0.10")
+        DhcpReservation.objects.create(scope=self.scope, ip="10.77.0.60",
+                                       mac="aa:bb:cc:00:00:60", ip_address=pool_ip)
+        qs = annotate_dhcp(IPAddress.objects.filter(prefix=self.prefix))
+        states = {r["ip_address"]: r["dhcp"]
+                  for r in IPAddressSerializer(qs, many=True).data}
+        self.assertEqual(states["10.77.0.60"], "leased")
+        self.assertEqual(states["10.77.0.105"], "exclusion")
+        self.assertEqual(states["10.77.0.10"], None)

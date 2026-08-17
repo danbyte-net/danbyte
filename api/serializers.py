@@ -1080,19 +1080,21 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
         """DHCP state of the address (all counts are viewset-annotated):
 
         * ``"leased"`` — held right now, by a reservation or an active lease.
+        * ``"exclusion"`` — inside a scope's exclusion range: carved out of the
+          pool for static use, DHCP never hands it out.
         * ``"scope"`` — inside a DHCP scope's pool range but not currently
           leased (DHCP-managed space, not necessarily handed out).
-        * ``None`` — nothing to do with DHCP. An address inside an **exclusion
-          range** is also None: the exclusion carves it out of the pool, so it
-          is static space DHCP never hands out (the IPRange the exclusion
-          created carries that story).
+        * ``None`` — nothing to do with DHCP.
 
-        The two states are drawn in different shades so the operator can tell
-        "the pool lives here" apart from "this address is actually in use".
+        The states are drawn distinctly so the operator can tell "the pool
+        lives here", "this is actually in use", and "this is a carved-out hole"
+        apart at a glance.
         """
         if getattr(obj, "dhcp_resv_n", 0) > 0 or getattr(obj, "dhcp_lease_n", 0) > 0:
             return "leased"
-        if getattr(obj, "dhcp_pool_n", 0) > 0 and getattr(obj, "dhcp_excl_n", 0) == 0:
+        if getattr(obj, "dhcp_excl_n", 0) > 0:
+            return "exclusion"
+        if getattr(obj, "dhcp_pool_n", 0) > 0:
             return "scope"
         return None
     prefix = PrefixMiniSerializer(read_only=True)

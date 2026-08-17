@@ -165,7 +165,13 @@ export function buildIpColumns<T = IPAddress>(
             "__none__",
           formatValue: (v) => ({
             label:
-              v === "leased" ? "Leased" : v === "scope" ? "DHCP scope" : "—",
+              v === "leased"
+                ? "Leased"
+                : v === "scope"
+                  ? "DHCP scope"
+                  : v === "exclusion"
+                    ? "DHCP exclusion"
+                    : "—",
           }),
         },
       },

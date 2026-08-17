@@ -109,15 +109,18 @@ function PrefixIpsTableImpl({
         .filter((x): x is NonNullable<typeof x> => !!x),
     [query.data]
   )
-  const inPool = useCallback(
+  const inExclusion = useCallback(
     (n: bigint) =>
-      dhcpSpans.some(
-        (s) =>
-          n >= s.start &&
-          n <= s.end &&
-          !s.exclusions.some((e) => n >= e.start && n <= e.end)
+      dhcpSpans.some((s) =>
+        s.exclusions.some((e) => n >= e.start && n <= e.end)
       ),
     [dhcpSpans]
+  )
+  const inPool = useCallback(
+    (n: bigint) =>
+      !inExclusion(n) &&
+      dhcpSpans.some((s) => n >= s.start && n <= s.end),
+    [dhcpSpans, inExclusion]
   )
 
   const rows = useMemo<IpRow[]>(() => {
@@ -282,9 +285,10 @@ function PrefixIpsTableImpl({
       if (r.kind === "registered") return r.ip.dhcp ?? null
       const n = ipToBigInt(r.address)
       if (n == null) return null
+      if (inExclusion(n)) return "exclusion"
       return inPool(n) ? "scope" : null
     },
-    [inPool]
+    [inExclusion, inPool]
   )
 
   const columns = useMemo<ColumnDef<IpRow>[]>(

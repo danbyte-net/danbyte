@@ -741,9 +741,10 @@ export interface IPAddress {
   ip_address: string
   /**
    * DHCP state: `"leased"` = held now (reservation or active lease),
-   * `"scope"` = inside a DHCP scope pool but not leased, `null` = not DHCP.
+   * `"exclusion"` = inside a scope's exclusion range (static space, never
+   * handed out), `"scope"` = inside a pool but not leased, `null` = not DHCP.
    */
-  dhcp?: "leased" | "scope" | null
+  dhcp?: "leased" | "scope" | "exclusion" | null
   prefix: PrefixMini | null
   site: { id: string; name: string } | null
   status: StatusMini | null
