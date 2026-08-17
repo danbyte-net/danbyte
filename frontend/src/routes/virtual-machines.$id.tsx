@@ -24,6 +24,7 @@ import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { VMInterfacesPane } from "@/components/vm-interfaces-pane"
 import { VmSnmpCard } from "@/components/vm-snmp-card"
+import { VmTopologyCard } from "@/components/vm-topology-card"
 import { CertificatesPanel } from "@/components/monitoring/certificates-panel"
 import { ConfigContextPanel } from "@/components/config-context-panel"
 import { ServicesPane } from "@/components/services-pane"
@@ -148,8 +149,8 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
-        { value: "components", label: "Components" },
-        { value: "services", label: "Services" },
+        { value: "components", label: "Components", count: vm.interface_count },
+        { value: "services", label: "Services", count: vm.service_count },
         { value: "monitoring", label: "Monitoring" },
         { value: "snmp", label: "SNMP" },
         { value: "certificates", label: "Certificates" },
@@ -326,6 +327,7 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
         <KvCard title="Management" rows={managementRows} />
       </div>
       {vm.disks.length > 0 && <VmDisks disks={vm.disks} />}
+      <VmTopologyCard vmId={vm.id} />
       <CustomFieldValues model="virtualmachine" values={vm.custom_fields} />
     </div>
   )

@@ -19,11 +19,14 @@ class VirtNetworkSerializer(serializers.ModelSerializer):
 
     vlan = serializers.SerializerMethodField()
     vms = serializers.SerializerMethodField()
+    vswitch_name = serializers.CharField(
+        source="vswitch.name", read_only=True, default=None
+    )
 
     class Meta:
         model = VirtNetwork
-        fields = ["id", "name", "ext_key", "vlan", "vswitch", "vms",
-                  "last_seen_at"]
+        fields = ["id", "name", "ext_key", "vlan", "vswitch", "vswitch_name",
+                  "vms", "last_seen_at"]
 
     def get_vlan(self, obj):
         if not obj.vlan_id:

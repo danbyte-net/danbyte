@@ -3198,6 +3198,9 @@ export interface VirtualMachine {
   memory_mb: number | null
   disk_gb: number | null
   disks: VirtualDisk[]
+  interface_count?: number
+  disk_count?: number
+  service_count?: number
   primary_ip: { id: string; ip_address: string; dns_name: string } | null
   description: string
   tags: Tag[]
@@ -3224,6 +3227,7 @@ export interface VirtNetwork {
   ext_key: string
   vlan: { id: string; vlan_id: number; name: string } | null
   vswitch: string | null
+  vswitch_name: string | null
   vms: { id: string; name: string; status: string | null }[]
   last_seen_at: string | null
 }

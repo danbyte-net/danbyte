@@ -3612,6 +3612,23 @@ class VirtualSwitchSerializer(serializers.ModelSerializer):
 class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cluster = ClusterMiniSerializer(read_only=True)
     disks = VirtualDiskSerializer(many=True, read_only=True)
+    # Detail-only tab counters (like the device page). Zero on list responses so
+    # a table of VMs doesn't fire a COUNT per row.
+    interface_count = serializers.SerializerMethodField()
+    disk_count = serializers.SerializerMethodField()
+    service_count = serializers.SerializerMethodField()
+
+    def _detail(self) -> bool:
+        return isinstance(self.instance, VirtualMachine)
+
+    def get_interface_count(self, obj) -> int:
+        return obj.interfaces.count() if self._detail() else 0
+
+    def get_disk_count(self, obj) -> int:
+        return obj.disks.count() if self._detail() else 0
+
+    def get_service_count(self, obj) -> int:
+        return obj.services.count() if self._detail() else 0
     cluster_id = TenantScopedPrimaryKeyRelatedField(
         source="cluster", queryset=Cluster.objects.all(), write_only=True
     )
@@ -3664,6 +3681,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
                   "device", "device_id",
                   "site", "site_id", "status", "status_id",
                   "vcpus", "memory_mb", "disk_gb", "disks",
+                  "interface_count", "disk_count", "service_count",
                   "primary_ip", "primary_ip_id", "description",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
