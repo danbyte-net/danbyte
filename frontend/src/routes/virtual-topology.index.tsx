@@ -28,17 +28,21 @@ export const Route = createFileRoute("/virtual-topology/")({
 const PAD = 32
 const EXT_Y = 12
 const EXT_H = 30
-const SW_Y = 92
+const ADP_Y = 78
+const ADP_H = 46
+const ADP_W = 120
+const ADP_GAP = 14
+const SW_Y = 184
 const SW_H = 46
 const SW_W = 190
-const NET_Y = 196
+const NET_Y = 288
 const NET_H = 34
-const VM_Y = 278
+const VM_Y = 366
 const VM_W = 132
 const VM_H = 50
 const VM_GAP = 16
 const NET_GAP = 44
-const SW_GAP = 72
+const SW_GAP = 80
 const NET_MIN_W = 150
 
 function vmColors(status: string | null): { stroke: string; fill: string } {
@@ -58,12 +62,13 @@ function fit(s: string, max: number): string {
 interface Laid {
   width: number
   height: number
-  switches: {
-    id: string
+  switches: { id: string; cx: number; name: string; kind: string }[]
+  adapters: {
+    key: string
+    ifaceId: string
     cx: number
-    name: string
-    kind: string
-    uplinks: string[]
+    nic: string
+    host: string
   }[]
   networks: {
     id: string
@@ -88,36 +93,49 @@ function layout(
   swById: Map<string, VirtualSwitch>
 ): Laid {
   const switches: Laid["switches"] = []
+  const adapters: Laid["adapters"] = []
   const networks: Laid["networks"] = []
   const vms: Laid["vms"] = []
   const edges: Laid["edges"] = []
 
-  let x = PAD
   const swMidY = (SW_Y + SW_H + NET_Y) / 2
+  const adpMidY = (ADP_Y + ADP_H + SW_Y) / 2
 
+  const netW = (n: VirtNetwork) =>
+    n.vms.length > 0
+      ? n.vms.length * VM_W + (n.vms.length - 1) * VM_GAP
+      : NET_MIN_W
+
+  let x = PAD
   for (const [swId, nets] of groups) {
     const sw = swById.get(swId)
-    const swStart = x
+    const ups = sw?.uplink_interfaces ?? []
 
+    // Reserve a column wide enough for whichever is wider: the VM rows or the
+    // physical-adapter row (many hypervisors on one switch never overlap).
+    const netsTotal =
+      nets.reduce((a, n) => a + netW(n), 0) +
+      Math.max(0, nets.length - 1) * NET_GAP
+    const adpTotal =
+      ups.length > 0 ? ups.length * (ADP_W + ADP_GAP) - ADP_GAP : 0
+    const groupW = Math.max(netsTotal, adpTotal, SW_W)
+    const center = x + groupW / 2
+
+    // networks + their VMs, centred in the column
+    let nx = center - netsTotal / 2
     for (const net of nets) {
-      const list = net.vms
-      const rowW =
-        list.length > 0
-          ? list.length * VM_W + (list.length - 1) * VM_GAP
-          : NET_MIN_W
-      const netX = x
-      const netCx = netX + rowW / 2
+      const w = netW(net)
+      const netCx = nx + w / 2
       networks.push({
         id: net.id,
-        x: netX,
-        w: rowW,
+        x: nx,
+        w,
         cx: netCx,
         label: net.name || net.ext_key,
         vlan: net.vlan,
       })
-      list.forEach((vm, i) => {
-        const vmX = netX + i * (VM_W + VM_GAP)
-        const vmCx = vmX + VM_W / 2
+      net.vms.forEach((vm, i) => {
+        const vmCx = nx + i * (VM_W + VM_GAP) + VM_W / 2
         vms.push({
           key: `${net.id}:${vm.id}`,
           id: vm.id,
@@ -125,45 +143,57 @@ function layout(
           name: vm.name,
           status: vm.status,
         })
-        // network bar → VM (straight drop)
         edges.push({
           key: `nv-${net.id}-${vm.id}`,
           d: `M ${vmCx} ${NET_Y + NET_H} L ${vmCx} ${VM_Y}`,
         })
       })
-      x += rowW + NET_GAP
-    }
-
-    const swEnd = x - NET_GAP
-    const swCx = nets.length ? (swStart + swEnd) / 2 : swStart + SW_W / 2
-    switches.push({
-      id: swId,
-      cx: swCx,
-      name: sw?.name ?? "switch",
-      kind: sw?.kind_display ?? "",
-      uplinks: (sw?.uplink_interfaces ?? []).map(
-        (u) => `${u.device.name}/${u.name}`
-      ),
-    })
-    // external → switch
-    edges.push({
-      key: `es-${swId}`,
-      d: `M ${swCx} ${EXT_Y + EXT_H} L ${swCx} ${SW_Y}`,
-    })
-    // switch → each of its networks (orthogonal)
-    for (const net of nets) {
-      const n = networks.find((nn) => nn.id === net.id)!
       edges.push({
         key: `sn-${swId}-${net.id}`,
-        d: `M ${swCx} ${SW_Y + SW_H} L ${swCx} ${swMidY} L ${n.cx} ${swMidY} L ${n.cx} ${NET_Y}`,
+        d: `M ${center} ${SW_Y + SW_H} L ${center} ${swMidY} L ${netCx} ${swMidY} L ${netCx} ${NET_Y}`,
       })
+      nx += w + NET_GAP
     }
-    x += SW_GAP - NET_GAP
+
+    // physical adapters (host NICs) feeding the switch, centred above it
+    let ax = center - adpTotal / 2
+    ups.forEach((u) => {
+      const adpCx = ax + ADP_W / 2
+      adapters.push({
+        key: `${swId}:${u.id}`,
+        ifaceId: u.id,
+        cx: adpCx,
+        nic: u.name,
+        host: u.device.name,
+      })
+      edges.push({
+        key: `ea-${swId}-${u.id}`,
+        d: `M ${adpCx} ${EXT_Y + EXT_H} L ${adpCx} ${ADP_Y}`,
+      })
+      edges.push({
+        key: `as-${swId}-${u.id}`,
+        d: `M ${adpCx} ${ADP_Y + ADP_H} L ${adpCx} ${adpMidY} L ${center} ${adpMidY} L ${center} ${SW_Y}`,
+      })
+      ax += ADP_W + ADP_GAP
+    })
+    if (ups.length === 0)
+      edges.push({
+        key: `es-${swId}`,
+        d: `M ${center} ${EXT_Y + EXT_H} L ${center} ${SW_Y}`,
+      })
+
+    switches.push({
+      id: swId,
+      cx: center,
+      name: sw?.name ?? "switch",
+      kind: sw?.kind_display ?? "",
+    })
+    x += groupW + SW_GAP
   }
 
-  const width = Math.max(x + PAD, 640)
+  const width = Math.max(x - SW_GAP + PAD, 640)
   const height = VM_Y + VM_H + PAD
-  return { width, height, switches, networks, vms, edges }
+  return { width, height, switches, adapters, networks, vms, edges }
 }
 
 function VirtualTopologyPage() {
@@ -281,6 +311,50 @@ function VirtualTopologyPage() {
               External network
             </text>
 
+            {/* physical adapters — host NICs feeding a switch (many hosts ok) */}
+            {laid.adapters.map((a) => (
+              <g
+                key={a.key}
+                className="cursor-pointer"
+                onClick={() =>
+                  nav({
+                    to: "/interfaces/$id",
+                    params: { id: a.ifaceId },
+                  })
+                }
+              >
+                <rect
+                  x={a.cx - ADP_W / 2}
+                  y={ADP_Y}
+                  width={ADP_W}
+                  height={ADP_H}
+                  rx={6}
+                  fill="var(--muted)"
+                  stroke="var(--border)"
+                />
+                <text
+                  x={a.cx}
+                  y={ADP_Y + 19}
+                  fontSize={12}
+                  fontWeight={600}
+                  textAnchor="middle"
+                  fill="var(--foreground)"
+                  className="font-mono"
+                >
+                  {fit(a.nic, 14)}
+                </text>
+                <text
+                  x={a.cx}
+                  y={ADP_Y + 35}
+                  fontSize={10}
+                  textAnchor="middle"
+                  fill="var(--muted-foreground)"
+                >
+                  {fit(a.host, 16)}
+                </text>
+              </g>
+            ))}
+
             {/* switches */}
             {laid.switches.map((s) => (
               <g
@@ -316,9 +390,7 @@ function VirtualTopologyPage() {
                   textAnchor="middle"
                   fill="var(--muted-foreground)"
                 >
-                  {s.uplinks.length
-                    ? `uplinks: ${fit(s.uplinks.join(", "), 26)}`
-                    : s.kind}
+                  {s.kind}
                 </text>
               </g>
             ))}
@@ -411,7 +483,8 @@ function VirtualTopologyPage() {
       )}
       <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
         <Cloud className="h-3.5 w-3.5" />
-        External → switches → networks (VLANs) → VMs. Click any node to open it.
+        External → physical adapters (host NICs) → switches → networks (VLANs) →
+        VMs. Click any node to open it.
       </div>
     </ListPageShell>
   )
