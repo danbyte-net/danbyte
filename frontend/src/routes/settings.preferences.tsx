@@ -7,7 +7,7 @@ import { TABLES, type TableMeta } from "@/lib/tables"
 import { api, type ColumnPrefSummary } from "@/lib/api"
 import { useUserPrefs } from "@/lib/use-user-prefs"
 import { useTheme } from "@/components/theme-provider"
-import { useLinkIcons } from "@/components/link-icons-provider"
+import { useLinkPrefs } from "@/components/link-prefs-provider"
 import { FormCheckbox, FormCombobox, FormSelect } from "@/components/forms"
 import { Button } from "@/components/ui/button"
 import { TwoFactorSection } from "@/components/two-factor-section"
@@ -94,6 +94,19 @@ function TableLayoutsSection() {
 // auth_api.user_prefs (user override → tenant default → deployment default).
 const AUTO = "auto"
 
+// Link-colour choices (accessibility aid). "" keeps links neutral. The rest are
+// spread across hues so a colour-blind user can pick one they distinguish; each
+// reads on both light and dark. "Brand blue" reuses the theme's --primary.
+const LINK_COLOR_OPTIONS = [
+  { value: "none", label: "Default (theme text)" },
+  { value: "var(--primary)", label: "Brand blue" },
+  { value: "#0ea5e9", label: "Sky" },
+  { value: "#14b8a6", label: "Teal" },
+  { value: "#a855f7", label: "Violet" },
+  { value: "#f59e0b", label: "Amber" },
+  { value: "#22c55e", label: "Green" },
+]
+
 const DATE_FORMAT_OPTIONS = [
   { value: "YYYY-MM-DD", label: "2026-01-31 (ISO)" },
   { value: "DD.MM.YYYY", label: "31.01.2026" },
@@ -112,7 +125,7 @@ function timezoneOptions(): { value: string; label: string }[] {
 
 function DisplaySection() {
   const { theme, toggleTheme } = useTheme()
-  const { linkIcons, setLinkIcons } = useLinkIcons()
+  const { linkIcons, setLinkIcons, linkColor, setLinkColor } = useLinkPrefs()
   const { values, setPref } = useUserPrefs()
   const density = String(values.table_density ?? "comfortable")
   const stripes = values.table_stripes === true
@@ -148,6 +161,13 @@ function DisplaySection() {
           hint="Adds a small chain glyph after links so clickable references stand out. Off keeps links as plain text that only underline on hover."
           checked={linkIcons}
           onChange={setLinkIcons}
+        />
+        <FormSelect
+          label="Link colour"
+          hint="Colour used for links. Default keeps them the same colour as text (underline on hover). Pick a hue if you want links to stand out — an accessibility aid."
+          value={linkColor || "none"}
+          onChange={(v) => setLinkColor(v === "none" ? "" : (v ?? ""))}
+          options={LINK_COLOR_OPTIONS}
         />
         <FormSelect
           label="Table density"

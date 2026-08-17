@@ -423,6 +423,7 @@
 .link {
   text-decoration: none;
   text-underline-offset: 2px;
+  cursor: pointer;
 }
 .link:hover,
 .link:focus-visible {
@@ -448,6 +449,19 @@
   opacity: 0.55;
   -webkit-mask: var(--link-icon) no-repeat center / contain;
   mask: var(--link-icon) no-repeat center / contain;
+}
+
+/* Optional link colour (the "Link colour" preference — an accessibility aid,
+   e.g. a colour-blind user picking a hue they can distinguish). Default unset →
+   `inherit`, so links stay neutral. Placed in `@layer components` so an explicit
+   colour utility on a link (text-destructive on a delete link, text-muted-
+   foreground on a subdued one) still wins and keeps its meaning; only links
+   with no colour of their own take the preference. `--link-color` is set on
+   <html> by the boot script / provider. */
+@layer components {
+  .link {
+    color: var(--link-color, inherit);
+  }
 }
 
 /* Sticky form action bar. On full-page create/edit forms (EditPageShell adds
