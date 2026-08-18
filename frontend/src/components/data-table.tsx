@@ -335,14 +335,25 @@ export function DataTable<T>({
   const selectedCount = Object.keys(rowSelection).length
 
   // Bubble the actual row originals up so parents don't have to map keys.
-  // Keyed effect: only fires when the selection set or the data identity
-  // changes, not on every render.
+  // Only when the selection actually CHANGED: a parent typically stores this
+  // in state, so emitting a fresh array on every `data` identity change turns
+  // an unstable upstream memo into an infinite render loop (React #185 — it
+  // took down the tenants page). The equality guard keeps every table immune.
+  const lastEmitted = useRef<T[] | null>(null)
   useEffect(() => {
     if (!onSelectedRowsChange) return
     const leaves = table
       .getSelectedRowModel()
       .flatRows.filter((r) => !r.getIsGrouped())
       .map((r) => r.original as T)
+    const prev = lastEmitted.current
+    if (
+      prev &&
+      prev.length === leaves.length &&
+      prev.every((row, i) => row === leaves[i])
+    )
+      return
+    lastEmitted.current = leaves
     onSelectedRowsChange(leaves)
     // table is stable; re-emit when selection or data changes
     // eslint-disable-next-line react-hooks/exhaustive-deps

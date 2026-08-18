@@ -61,14 +61,18 @@ function TenantsPage() {
   })
 
   const handleDelete = useCallback((t: Tenant) => setDeleting(t), [])
+  // Depend on `mutate` (stable), never the mutation object — that object is a
+  // new identity every render, which made `columns` — and everything memoised
+  // from it — change every render.
+  const switchTenant = switchMutation.mutate
   const handleSwitch = useCallback(
-    (t: Tenant) => switchMutation.mutate(t.id),
-    [switchMutation]
+    (t: Tenant) => switchTenant(t.id),
+    [switchTenant]
   )
 
   const columns = useMemo<ColumnDef<Tenant>[]>(
     () =>
-      buildColumns({
+      buildTenantColumns({
         activeId,
         onDelete: handleDelete,
         onSwitch: handleSwitch,
@@ -134,7 +138,7 @@ interface ColumnOpts {
   canDelete: boolean
 }
 
-function buildColumns({
+export function buildTenantColumns({
   activeId,
   onDelete,
   onSwitch,
