@@ -723,3 +723,34 @@ class PrefixPopulatePoolTests(APITestCase):
             {"start": "10.20.0.0", "end": "10.20.10.0"}, format="json",
         )
         self.assertEqual(r.status_code, 400, r.content)
+
+
+class VlanColorTests(APITestCase):
+    """VLAN carries its own optional display colour."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        self.user = get_user_model().objects.create_superuser("admin", "a@b.c", "pw")
+        self.client.force_login(self.user)
+        sess = self.client.session
+        sess["current_tenant_id"] = str(self.tenant.id)
+        sess.save()
+
+    def test_color_round_trip_and_validation(self):
+        r = self.client.post(
+            "/api/vlans/",
+            {"vlan_id": 10, "name": "Prod", "color": "#1D63ED"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["color"], "#1d63ed")  # normalised lower
+        vid = r.json()["id"]
+        # Clearing is allowed; junk is rejected.
+        ok = self.client.patch(f"/api/vlans/{vid}/", {"color": ""}, format="json")
+        self.assertEqual(ok.status_code, 200, ok.content)
+        self.assertEqual(ok.json()["color"], "")
+        bad = self.client.patch(
+            f"/api/vlans/{vid}/", {"color": "blue"}, format="json"
+        )
+        self.assertEqual(bad.status_code, 400)

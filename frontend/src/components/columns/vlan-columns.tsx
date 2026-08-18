@@ -96,7 +96,7 @@ export function buildVlanColumns<T extends VLAN = VLAN>(
         >
           <ColorBadge
             name={String(row.original.vlan_id)}
-            color={row.original.zone?.color || undefined}
+            color={row.original.color || row.original.zone?.color || undefined}
             className="font-mono"
           />
         </Link>

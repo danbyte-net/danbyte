@@ -78,7 +78,7 @@ export function VmTopologyCard({
   const railsY = (i: number) => PAD + VM_H + DROP + i * (RAIL_H + RAIL_GAP)
   const height = railsY(conns.length - 1) + RAIL_H + PAD
   const colorFor = (i: number) =>
-    conns[i].net?.vlan?.zone_color || PALETTE[i % PALETTE.length]
+    conns[i].net?.vlan?.color || PALETTE[i % PALETTE.length]
 
   return (
     <section>
@@ -158,7 +158,7 @@ export function VmTopologyCard({
                   height={RAIL_H}
                   rx={6}
                   fill={color}
-                  fillOpacity={0.92}
+                  fillOpacity={1}
                 />
                 <text
                   x={PAD + 12}

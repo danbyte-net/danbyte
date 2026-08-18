@@ -6,7 +6,9 @@ export interface VlanLike {
   id: string
   vlan_id: number
   name: string
-  /** The VLAN's zone — Danbyte's colour layer for VLANs. */
+  /** The VLAN's own display colour ("" when unset). */
+  color?: string | null
+  /** Its zone (firewall semantics) — colour fallback only. */
   zone?: { name?: string; color: string | null } | null
 }
 
@@ -30,7 +32,7 @@ export function VlanBadge({
     >
       <ColorBadge
         name={`${vlan.vlan_id} · ${vlan.name}`}
-        color={vlan.zone?.color || undefined}
+        color={vlan.color || vlan.zone?.color || undefined}
         className={className}
       />
     </Link>

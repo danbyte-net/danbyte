@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/select"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
-import { useFieldErrors } from "@/components/forms"
+import { FormColor, useFieldErrors } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
 
 export interface VlanFormInitial {
@@ -67,6 +67,7 @@ export function VlanForm({
   const [siteId, setSiteId] = useState<string | null>(src?.site?.id ?? null)
   const [groupId, setGroupId] = useState<string | null>(src?.group?.id ?? null)
   const [zoneId, setZoneId] = useState<string | null>(src?.zone?.id ?? null)
+  const [color, setColor] = useState(src?.color ?? "")
   const [description, setDescription] = useState(src?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
     src?.tags?.map((t) => t.id) ?? []
@@ -82,6 +83,7 @@ export function VlanForm({
     setSiteId(vlan.site?.id ?? null)
     setGroupId(vlan.group?.id ?? null)
     setZoneId(vlan.zone?.id ?? null)
+    setColor(vlan.color ?? "")
     setDescription(vlan.description)
     setTagIds(vlan.tags.map((t) => t.id))
     setCustomFields(vlan.custom_fields ?? {})
@@ -128,6 +130,7 @@ export function VlanForm({
         site_id: siteId,
         group_id: groupId,
         zone_id: zoneId,
+        color,
         description: description.trim(),
         tag_ids: tagIds,
         custom_fields: customFields,
@@ -249,6 +252,14 @@ export function VlanForm({
           </SelectContent>
         </Select>
       </Field>
+
+      <FormColor
+        label="Color"
+        hint="Optional — colours the VLAN's badge and topology rail"
+        value={color}
+        onChange={setColor}
+        error={fieldErrors.color}
+      />
 
       <Field label="Description" error={fieldErrors.description}>
         <Textarea

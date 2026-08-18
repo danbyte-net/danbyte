@@ -508,7 +508,7 @@ class VLANMiniSerializer(NumIdModelSerializer):
 
     class Meta:
         model = VLAN
-        fields = ["id", "vlan_id", "name", "zone"]
+        fields = ["id", "vlan_id", "name", "color", "zone"]
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_zone(self, obj):
@@ -566,6 +566,15 @@ class VLANSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
             "color": z.color, "text_color": z.text_color,
         }
 
+    def validate_color(self, value):
+        import re
+
+        if value and not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+            raise serializers.ValidationError(
+                "Enter a 7-char hex colour like #10b981, or leave it empty."
+            )
+        return value.lower()
+
     def validate(self, attrs):
         group = attrs.get("group", getattr(self.instance, "group", None))
         vid = attrs.get("vlan_id", getattr(self.instance, "vlan_id", None))
@@ -580,7 +589,7 @@ class VLANSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
     class Meta:
         model = VLAN
         fields = [
-            "id", "vlan_id", "name",
+            "id", "vlan_id", "name", "color",
             "site", "site_id",
             "group", "group_id",
             "zone", "zone_id",

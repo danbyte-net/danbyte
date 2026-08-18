@@ -43,6 +43,12 @@ status, a description, tags, and any custom fields. Interfaces reference a VLAN
 for access or trunk membership. The list filters by site, status, and group, and
 supports **bulk edit** for changing many VLANs at once.
 
+A VLAN also has an optional **colour** (set on its edit form) that paints its
+badge everywhere VLANs appear — tables, the IP/prefix panes, and the virtual
+network topology rails. Colour precedence: the VLAN's own colour, then its
+zone's colour (zones stay firewall semantics — inside/outside/prod — never a
+colour requirement), then a neutral badge / blue palette shade.
+
 ### VLAN groups
 
 A **VLAN group** is a named grouping that scopes VID uniqueness and defines a

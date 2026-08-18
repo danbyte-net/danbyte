@@ -171,6 +171,8 @@ export interface VLANMini {
   id: string
   vlan_id: number
   name: string
+  /** The VLAN's own display colour ("" when unset). */
+  color?: string
   zone?: { id: string; name: string; color: string; text_color: string } | null
 }
 
@@ -2682,6 +2684,8 @@ export interface VLAN {
   numid: number | null
   vlan_id: number
   name: string
+  /** The VLAN's own display colour ("" when unset). */
+  color: string
   site: { id: string; name: string } | null
   group: { id: string; name: string } | null
   zone: { id: string; name: string; color: string; text_color: string } | null
@@ -2696,6 +2700,7 @@ export interface VLAN {
 export interface VLANWritePayload {
   vlan_id: number
   name: string
+  color?: string
   site_id?: string | null
   group_id?: string | null
   zone_id?: string | null
@@ -3251,8 +3256,8 @@ export interface VirtNetwork {
     id: string
     vlan_id: number
     name: string
-    /** The VLAN's zone colour — Danbyte's colour layer for VLANs. */
-    zone_color: string | null
+    /** VLAN colour (own colour first, zone colour second, null = neither). */
+    color: string | null
   } | null
   vswitch: string | null
   vswitch_name: string | null

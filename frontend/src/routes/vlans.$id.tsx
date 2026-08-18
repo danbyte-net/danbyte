@@ -7,6 +7,7 @@ import { useCallback, useMemo, useState } from "react"
 
 import { api, type Paginated, type Prefix, type VLAN } from "@/lib/api"
 import { TagList } from "@/components/cells/tag-list"
+import { ColorBadge } from "@/components/cells/color-badge"
 import { TimeCell } from "@/components/cells/time-ago"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { DataTable } from "@/components/data-table"
@@ -103,8 +104,15 @@ function VlanDetailBody({ vlan: v }: { vlan: VLAN }) {
       }
       hero={
         <DetailHero
-          title={`VLAN ${v.vlan_id}`}
-          mono
+          // Coloured catalog object → the ColorBadge is the title (design
+          // system rule), so the VLAN's colour is visible on its own page.
+          title={
+            <ColorBadge
+              name={`VLAN ${v.vlan_id}`}
+              color={v.color || v.zone?.color || undefined}
+              className="font-mono"
+            />
+          }
           badges={
             <>
               <span className="text-sm text-muted-foreground">{v.name}</span>

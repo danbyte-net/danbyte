@@ -1900,6 +1900,9 @@ class VLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         related_name="vlans",
         help_text="Security zone this segment belongs to (zone-based firewalling).",
     )
+    # The VLAN's own display colour (badges, topology rails). Optional — zones
+    # stay firewall semantics, never a colour requirement.
+    color = models.CharField(max_length=7, blank=True, default="")
     description = models.TextField(blank=True)
 
     class Meta:

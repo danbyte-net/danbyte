@@ -229,7 +229,7 @@ function layout(
       laidRails.push({
         id: net.id,
         y,
-        color: net.vlan?.zone_color || PALETTE[i % PALETTE.length],
+        color: net.vlan?.color || PALETTE[i % PALETTE.length],
         label:
           (net.name || net.ext_key) +
           (net.vlan ? `  ·  VLAN ${net.vlan.vlan_id}` : ""),
@@ -503,7 +503,7 @@ function VirtualTopologyPage() {
                   height={RAIL_H}
                   rx={6}
                   fill={r.color}
-                  fillOpacity={0.92}
+                  fillOpacity={1}
                 />
                 <text
                   x={PAD + 12}
