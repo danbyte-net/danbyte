@@ -14,6 +14,7 @@ import { FormCombobox, FormSelect } from "@/components/forms"
 import { OverrideCard } from "@/components/settings/override-card"
 import { QueryError } from "@/components/query-error"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useTimezoneOptions } from "@/lib/use-timezones"
 
 export const Route = createFileRoute("/settings/tenant")({
   component: TenantGeneralPage,
@@ -31,14 +32,6 @@ const TIME_STYLE_OPTIONS = [
   { value: "24h", label: "24-hour (14:30)" },
   { value: "12h", label: "12-hour (2:30 PM)" },
 ]
-
-function timezoneOptions(): { value: string; label: string }[] {
-  const zones =
-    typeof Intl.supportedValuesOf === "function"
-      ? Intl.supportedValuesOf("timeZone")
-      : ["UTC"]
-  return zones.map((z) => ({ value: z, label: z }))
-}
 
 const DEVICE_FIELDS: { key: string; label: string; hint: string }[] = [
   { key: "comments", label: "Comments", hint: "Long-form notes on a device" },
@@ -58,6 +51,7 @@ const DEVICE_FIELDS: { key: string; label: string; hint: string }[] = [
 ]
 
 function TenantGeneralPage() {
+  const timezoneOptions = useTimezoneOptions()
   const { canManage, isLoading } = useMe()
   const qc = useQueryClient()
   const q = useQuery({
@@ -238,7 +232,7 @@ function TenantGeneralPage() {
             noneLabel="Server default"
             placeholder="Server default"
             searchPlaceholder="Search timezones…"
-            options={timezoneOptions()}
+            options={timezoneOptions}
           />
         </div>
       </OverrideCard>

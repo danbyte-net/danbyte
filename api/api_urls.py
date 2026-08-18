@@ -454,6 +454,7 @@ urlpatterns = [
     # auth_api HTML urlconf isn't mounted (archived), so these JSON views are
     # surfaced here under /api/ where the SPA can reach them.
     path("me/", auth_views.me_json, name="me"),
+    path("timezones/", auth_views.timezones_json, name="timezones"),
     path("me/prefs/", auth_views.me_prefs, name="me-prefs"),
     path("notifications/", core_notifications.notifications, name="notifications"),
     path("notifications/read/", core_notifications.notifications_read,

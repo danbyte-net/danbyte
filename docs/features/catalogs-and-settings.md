@@ -80,7 +80,7 @@ and behaves for you:
 | **Timestamps** | Relative ("3h ago") or absolute in tables — the exact form is always on hover. |
 | **Date format** | How calendar dates render: ISO (`2026-01-31`), `31.01.2026`, `01/31/2026`, `31 Jan 2026`, … |
 | **Clock** | 24-hour (`14:30`) or 12-hour (`2:30 PM`). |
-| **Timezone** | The IANA timezone times render in (e.g. `Europe/Copenhagen`). |
+| **Timezone** | The IANA timezone times render in (e.g. `Europe/Copenhagen`). The list comes from the server's own timezone database, so every offered zone is one it accepts; renamed zones (`Europe/Kiev` → `Europe/Kyiv`) are converted on save. |
 | **Striped rows** | Alternating row shading on/off. |
 | **Confirm before deleting** | Whether delete actions ask for confirmation. |
 

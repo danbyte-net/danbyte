@@ -20,6 +20,7 @@ import {
 } from "@/components/settings/settings-card"
 import { useDeploymentSettings } from "@/components/settings/use-deployment-settings"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useTimezoneOptions } from "@/lib/use-timezones"
 
 const DATE_FORMAT_OPTIONS = [
   { value: "YYYY-MM-DD", label: "2026-01-31 (ISO)" },
@@ -33,14 +34,6 @@ const TIME_STYLE_OPTIONS = [
   { value: "24h", label: "24-hour (14:30)" },
   { value: "12h", label: "12-hour (2:30 PM)" },
 ]
-
-function timezoneOptions(): { value: string; label: string }[] {
-  const zones =
-    typeof Intl.supportedValuesOf === "function"
-      ? Intl.supportedValuesOf("timeZone")
-      : ["UTC"]
-  return zones.map((z) => ({ value: z, label: z }))
-}
 
 export const Route = createFileRoute("/settings/admin")({
   component: AdminPage,
@@ -138,6 +131,7 @@ function IdentityCard() {
 }
 
 function DateTimeCard() {
+  const timezoneOptions = useTimezoneOptions()
   const { data, save, savingKey } = useDeploymentSettings()
   const [dateFormat, setDateFormat] = useState<string>("YYYY-MM-DD")
   const [timeStyle, setTimeStyle] = useState<string>("24h")
@@ -194,7 +188,7 @@ function DateTimeCard() {
         noneLabel="Server default"
         placeholder="Server default"
         searchPlaceholder="Search timezones…"
-        options={timezoneOptions()}
+        options={timezoneOptions}
       />
     </SettingsCard>
   )

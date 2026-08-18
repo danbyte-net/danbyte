@@ -27,20 +27,18 @@ from .models import DeploymentSettings
 
 
 def clean_display_timezone(value: str) -> str:
-    """Validate an IANA timezone name. Blank = inherit (server / deployment).
-    Shared by the deployment and tenant settings serializers."""
-    from zoneinfo import ZoneInfo
+    """Validate an IANA timezone name, canonicalising legacy ones. Blank =
+    inherit (server / deployment). Shared by the deployment and tenant
+    settings serializers."""
+    from .timezones import resolve_timezone
 
-    value = (value or "").strip()
-    if not value:
-        return ""
-    try:
-        ZoneInfo(value)
-    except (ValueError, KeyError, OSError):
+    canonical = resolve_timezone(value)
+    if canonical is None:
         raise serializers.ValidationError(
-            f"'{value}' is not a valid IANA timezone (e.g. Europe/Copenhagen)."
+            f"'{(value or '').strip()}' is not a valid IANA timezone "
+            "(e.g. Europe/Copenhagen)."
         )
-    return value
+    return canonical
 
 
 class DeploymentSettingsSerializer(serializers.ModelSerializer):

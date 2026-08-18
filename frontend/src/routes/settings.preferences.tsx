@@ -23,6 +23,7 @@ import {
   SettingsHeader,
 } from "@/components/settings/settings-card"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useTimezoneOptions } from "@/lib/use-timezones"
 
 export const Route = createFileRoute("/settings/preferences")({
   component: PreferencesPage,
@@ -107,15 +108,8 @@ const DATE_FORMAT_OPTIONS = [
   { value: "DD MMM YYYY", label: "31 Jan 2026" },
 ]
 
-function timezoneOptions(): { value: string; label: string }[] {
-  const zones =
-    typeof Intl.supportedValuesOf === "function"
-      ? Intl.supportedValuesOf("timeZone")
-      : ["UTC"]
-  return zones.map((z) => ({ value: z, label: z }))
-}
-
 function DisplaySection() {
+  const timezoneOptions = useTimezoneOptions()
   const { theme, toggleTheme } = useTheme()
   const { linkIcons, setLinkIcons, linkColor, setLinkColor } = useLinkPrefs()
   const { values, setPref } = useUserPrefs()
@@ -217,7 +211,7 @@ function DisplaySection() {
           noneLabel="Auto (tenant default)"
           placeholder="Auto (tenant default)"
           searchPlaceholder="Search timezones…"
-          options={timezoneOptions()}
+          options={timezoneOptions}
         />
         <FormSelect
           label="Landing page"

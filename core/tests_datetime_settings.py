@@ -181,3 +181,62 @@ class DatetimeEndpointTests(APITestCase):
             "/api/tenant-settings/", {"date_format": "bogus"}, format="json"
         )
         self.assertEqual(r.status_code, 400)
+
+
+class LegacyTimezoneNameTests(APITestCase):
+    """Browsers still offer renamed zones (Europe/Kiev → Europe/Kyiv). A
+    canonical-only tz database rejects them, so the app listed values it then
+    refused to save (#31). Writes canonicalise instead of erroring, and the
+    picker's list now comes from the server."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        self.user = User.objects.create_superuser("admin", "a@b.c", "pw")
+        self.client.force_login(self.user)
+        sess = self.client.session
+        sess["current_tenant_id"] = str(self.tenant.id)
+        sess.save()
+
+    def test_resolve_maps_legacy_names(self):
+        from core.timezones import resolve_timezone
+
+        self.assertEqual(resolve_timezone("Europe/Kiev"), "Europe/Kyiv")
+        self.assertEqual(resolve_timezone("Asia/Calcutta"), "Asia/Kolkata")
+        self.assertEqual(resolve_timezone("US/Eastern"), "America/New_York")
+        # Canonical names pass straight through; blank means "inherit".
+        self.assertEqual(resolve_timezone("Europe/Copenhagen"), "Europe/Copenhagen")
+        self.assertEqual(resolve_timezone("  "), "")
+        self.assertIsNone(resolve_timezone("Mars/Olympus"))
+
+    def test_tenant_settings_accept_legacy_name(self):
+        r = self.client.put(
+            "/api/tenant-settings/",
+            {"override_datetime": True, "display_timezone": "Europe/Kiev"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["display_timezone"], "Europe/Kyiv")
+
+    def test_user_pref_rejects_bogus_and_canonicalises_legacy(self):
+        bad = self.client.put(
+            "/api/me/prefs/", {"timezone": "Mars/Olympus"}, format="json"
+        )
+        self.assertEqual(bad.status_code, 400, bad.content)
+        ok = self.client.put(
+            "/api/me/prefs/", {"timezone": "Europe/Kiev"}, format="json"
+        )
+        self.assertEqual(ok.status_code, 200, ok.content)
+        self.assertEqual(ok.json()["values"]["timezone"], "Europe/Kyiv")
+
+    def test_timezone_list_endpoint_matches_what_writes_accept(self):
+        r = self.client.get("/api/timezones/")
+        self.assertEqual(r.status_code, 200, r.content)
+        zones = r.json()["timezones"]
+        self.assertIn("Europe/Copenhagen", zones)
+        self.assertEqual(zones, sorted(zones))
+        # Every offered zone must actually save — that was the whole bug.
+        from core.deployment import clean_display_timezone
+
+        for z in zones:
+            clean_display_timezone(z)

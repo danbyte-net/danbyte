@@ -150,12 +150,13 @@ def datetime_prefs(user, tenant=None) -> dict:
         out["time_style"] = style
     tz = get(user, "timezone", tenant=tenant)
     if isinstance(tz, str) and tz and tz != "auto":
-        try:
-            ZoneInfo(tz)
-        except (ValueError, KeyError, OSError):
-            pass
-        else:
-            out["timezone"] = tz
+        # resolve_timezone accepts legacy names (Europe/Kiev → Europe/Kyiv),
+        # so a pref stored before a zone was renamed still applies.
+        from core.timezones import resolve_timezone
+
+        canonical = resolve_timezone(tz)
+        if canonical:
+            out["timezone"] = canonical
     return out
 
 

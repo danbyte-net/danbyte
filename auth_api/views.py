@@ -131,6 +131,22 @@ def _settings_sites_payload(user, tenant):
 
 
 @require_GET
+def timezones_json(request):
+    """The zone names this deployment resolves.
+
+    The settings pickers used to build their list from the *browser's* tz
+    database, which offers names a canonical-only server build rejects
+    (Europe/Kiev, Asia/Calcutta, US/*) — the app listed values it then refused
+    to save. Serving the list keeps the two in step.
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "auth required"}, status=401)
+    from core.timezones import supported_timezones
+
+    return JsonResponse({"timezones": supported_timezones()})
+
+
+@require_GET
 @ensure_csrf_cookie
 def me_json(request):
     """Identity + effective permissions for the React frontend.
@@ -277,6 +293,18 @@ def me_prefs(request):
         bad = [k for k in body if k not in user_prefs.DEFAULTS]
         if bad:
             return JsonResponse({"error": f"unknown keys: {', '.join(bad)}"}, status=400)
+        # A timezone is stored verbatim, so validate it here or a bogus value
+        # silently does nothing later. Legacy names canonicalise (#31).
+        tz = body.get("timezone")
+        if isinstance(tz, str) and tz and tz != "auto":
+            from core.timezones import resolve_timezone
+
+            canonical = resolve_timezone(tz)
+            if not canonical:
+                return JsonResponse(
+                    {"error": f"'{tz}' is not a valid IANA timezone."}, status=400
+                )
+            body["timezone"] = canonical
         for k, v in body.items():
             user_prefs.set_user(request.user, k, v)
 
