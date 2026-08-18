@@ -86,13 +86,19 @@ export function buildVlanColumns<T extends VLAN = VLAN>(
       header: ({ column }) => (
         <SortHeader column={column} label={opts.vidHeader ?? "VLAN"} />
       ),
+      // The VLAN id as a zone-coloured badge — VLANs read like zones/tags
+      // everywhere now; unzoned VLANs get the neutral badge (colour optional).
       cell: ({ row }) => (
         <Link
           to="/vlans/$id"
           params={{ id: row.original.id }}
-          className="num link font-mono text-xs font-medium"
+          className="inline-flex hover:opacity-90"
         >
-          {row.original.vlan_id}
+          <ColorBadge
+            name={String(row.original.vlan_id)}
+            color={row.original.zone?.color || undefined}
+            className="font-mono"
+          />
         </Link>
       ),
       meta: {

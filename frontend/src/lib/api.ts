@@ -3256,7 +3256,7 @@ export interface VirtNetwork {
   } | null
   vswitch: string | null
   vswitch_name: string | null
-  vms: { id: string; name: string; status: string | null }[]
+  vms: { id: string; name: string; status: string | null; iface?: string }[]
   last_seen_at: string | null
 }
 

@@ -53,6 +53,9 @@ class VirtNetworkSerializer(serializers.ModelSerializer):
                 seen[vm.id] = {
                     "id": str(vm.id), "name": vm.name,
                     "status": vm.status.name if vm.status_id else None,
+                    # Which VM interface rides this network — the topology
+                    # labels the connector leg with it.
+                    "iface": i.name,
                 }
         return list(seen.values())
 

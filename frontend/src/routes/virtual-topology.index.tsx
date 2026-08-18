@@ -57,13 +57,14 @@ const PALETTE = [
   "#d946ef", // fuchsia
 ]
 
-function vmColors(status: string | null): { stroke: string; fill: string } {
+/** Colour for the little status pill on a VM box's corner. */
+function statusPill(status: string | null): { bg: string; fg: string } {
   const s = (status || "").toLowerCase()
   if (/(active|running|up|online|powered.?on)/.test(s))
-    return { stroke: "#10b981", fill: "rgba(16,185,129,0.08)" }
+    return { bg: "#10b981", fg: "#fff" }
   if (/(off|down|decom|failed|stopped|suspend)/.test(s))
-    return { stroke: "#ef4444", fill: "rgba(239,68,68,0.08)" }
-  return { stroke: "var(--border)", fill: "var(--muted)" }
+    return { bg: "#ef4444", fg: "#fff" }
+  return { bg: "var(--muted)", fg: "var(--muted-foreground)" }
 }
 
 /** Truncate to fit a node width (SVG text doesn't wrap). */
@@ -109,7 +110,14 @@ interface Laid {
   strips: LaidStrip[]
   rails: LaidRail[]
   vms: LaidVm[]
-  lines: { key: string; x: number; y1: number; y2: number; color: string }[]
+  lines: {
+    key: string
+    x: number
+    y1: number
+    y2: number
+    color: string
+    label?: string
+  }[]
 }
 
 function layout(
@@ -130,13 +138,22 @@ function layout(
   // 2. Dedupe VMs across every rail → the rail indexes each VM attaches to.
   const byVm = new Map<
     string,
-    { name: string; status: string | null; railIdxs: number[] }
+    {
+      name: string
+      status: string | null
+      railIdxs: number[]
+      ifaces: Map<number, string>
+    }
   >()
   rails.forEach((r, idx) => {
     for (const vm of r.net.vms) {
-      const e = byVm.get(vm.id)
-      if (e) e.railIdxs.push(idx)
-      else byVm.set(vm.id, { name: vm.name, status: vm.status, railIdxs: [idx] })
+      let e = byVm.get(vm.id)
+      if (!e) {
+        e = { name: vm.name, status: vm.status, railIdxs: [], ifaces: new Map() }
+        byVm.set(vm.id, e)
+      }
+      e.railIdxs.push(idx)
+      if (vm.iface) e.ifaces.set(idx, vm.iface)
     }
   })
   const vmsSorted = [...byVm.entries()].sort((a, b) => {
@@ -155,20 +172,26 @@ function layout(
     col: number
     band: number
     railIdxs: number[]
+    ifaces: Map<number, string>
   }[] = []
   for (const [id, v] of vmsSorted) {
     const first = v.railIdxs[0]
     const last = v.railIdxs[v.railIdxs.length - 1]
+    // Reserve the column through the leg's LAST band too — otherwise a VM in
+    // the terminal band sits directly under the leg and looks attached to it.
     const span: number[] = []
-    for (let b = first; b <= Math.max(first, last - 1); b++) span.push(b)
+    for (let b = first; b <= last; b++) span.push(b)
     let col = 0
     while (span.some((b) => bandCols[b].has(col))) col++
     span.forEach((b) => bandCols[b].add(col))
-    placed.push({ id, name: v.name, status: v.status, col, band: first, railIdxs: v.railIdxs })
+    placed.push({
+      id, name: v.name, status: v.status, col, band: first,
+      railIdxs: v.railIdxs, ifaces: v.ifaces,
+    })
   }
   const maxCols = placed.reduce((m, p) => Math.max(m, p.col + 1), 0)
   const width = Math.max(
-    PAD * 2 + LABEL_RESERVE + maxCols * COL_PITCH,
+    PAD * 2 + LABEL_RESERVE + maxCols * COL_PITCH + COL_PITCH / 2,
     900
   )
 
@@ -221,7 +244,8 @@ function layout(
   const vms: LaidVm[] = []
   const lines: Laid["lines"] = []
   for (const p of placed) {
-    const x = PAD + LABEL_RESERVE + p.col * COL_PITCH + VM_W / 2
+    const stagger = (p.band % 2) * (COL_PITCH / 2)
+    const x = PAD + LABEL_RESERVE + stagger + p.col * COL_PITCH + VM_W / 2
     const boxY = bandY[p.band] + BAND_PAD
     vms.push({ id: p.id, x, y: boxY, name: p.name, status: p.status })
     const firstRail = p.railIdxs[0]
@@ -232,6 +256,7 @@ function layout(
       y1: railY[firstRail] + RAIL_H - 2,
       y2: boxY,
       color: laidRails[firstRail].color,
+      label: p.ifaces.get(firstRail),
     })
     // Down to each further rail — each leg coloured by the rail it plugs into.
     let fromY = boxY + VM_H
@@ -242,6 +267,7 @@ function layout(
         y1: fromY,
         y2: railY[r] + 2,
         color: laidRails[r].color,
+        label: p.ifaces.get(r),
       })
       fromY = railY[r] + RAIL_H
     }
@@ -357,16 +383,28 @@ function VirtualTopologyPage() {
 
             {/* connectors (behind boxes) — solid, in the network's colour */}
             {laid.lines.map((l) => (
-              <line
-                key={l.key}
-                x1={l.x}
-                y1={l.y1}
-                x2={l.x}
-                y2={l.y2}
-                stroke={l.color}
-                strokeWidth={3}
-                strokeLinecap="round"
-              />
+              <g key={l.key}>
+                <line
+                  x1={l.x}
+                  y1={l.y1}
+                  x2={l.x}
+                  y2={l.y2}
+                  stroke={l.color}
+                  strokeWidth={3}
+                  strokeLinecap="round"
+                />
+                {l.label && Math.abs(l.y2 - l.y1) > 22 && (
+                  <text
+                    x={l.x + 7}
+                    y={Math.max(l.y1, l.y2) - 6}
+                    fontSize={9}
+                    className="font-mono"
+                    fill="var(--muted-foreground)"
+                  >
+                    {l.label}
+                  </text>
+                )}
+              </g>
             ))}
 
             {/* switch strips + their physical adapters */}
@@ -469,9 +507,11 @@ function VirtualTopologyPage() {
               </g>
             ))}
 
-            {/* VM boxes — one per VM, sandwiched between its networks */}
+            {/* VM boxes — one per VM, neutral card with a corner status pill */}
             {laid.vms.map((vm) => {
-              const c = vmColors(vm.status)
+              const pill = statusPill(vm.status)
+              const label = fit(vm.status || "", 14)
+              const pw = label ? label.length * 5.4 + 12 : 0
               return (
                 <g
                   key={vm.id}
@@ -487,19 +527,11 @@ function VirtualTopologyPage() {
                     height={VM_H}
                     rx={8}
                     fill="var(--card)"
-                    stroke={c.stroke}
-                  />
-                  <rect
-                    x={vm.x - VM_W / 2}
-                    y={vm.y}
-                    width={VM_W}
-                    height={VM_H}
-                    rx={8}
-                    fill={c.fill}
+                    stroke="var(--border)"
                   />
                   <text
                     x={vm.x}
-                    y={vm.y + 20}
+                    y={vm.y + VM_H / 2 + 4}
                     fontSize={12}
                     fontWeight={600}
                     textAnchor="middle"
@@ -507,15 +539,30 @@ function VirtualTopologyPage() {
                   >
                     {fit(vm.name, 16)}
                   </text>
-                  <text
-                    x={vm.x}
-                    y={vm.y + 36}
-                    fontSize={10}
-                    textAnchor="middle"
-                    fill="var(--muted-foreground)"
-                  >
-                    {vm.status || "—"}
-                  </text>
+                  {label && (
+                    <g>
+                      <rect
+                        x={vm.x + VM_W / 2 - pw + 4}
+                        y={vm.y - 8}
+                        width={pw}
+                        height={16}
+                        rx={8}
+                        fill={pill.bg}
+                        stroke="var(--background)"
+                        strokeWidth={2}
+                      />
+                      <text
+                        x={vm.x + VM_W / 2 - pw / 2 + 4}
+                        y={vm.y + 3.5}
+                        fontSize={9}
+                        fontWeight={600}
+                        textAnchor="middle"
+                        fill={pill.fg}
+                      >
+                        {label}
+                      </text>
+                    </g>
+                  )}
                 </g>
               )
             })}
