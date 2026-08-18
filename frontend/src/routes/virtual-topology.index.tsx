@@ -38,23 +38,26 @@ const VM_W = 140
 const VM_H = 48
 const VM_GAP = 18
 const COL_PITCH = VM_W + VM_GAP
-const BAND_PAD = 12 // space above/below a VM row inside its band
+const BAND_PAD = 18 // space above/below a VM row (room for leg labels)
 const BAND_H = VM_H + 2 * BAND_PAD
 const LABEL_RESERVE = 216 // rail label zone — VM columns start after it
 const ADP_W = 116
 const ADP_H = 34
 const ADP_GAP = 8
 
-// Deterministic rail palette (used when the network's VLAN has no zone colour).
+// Deterministic rail palette — shades of the Danbyte blue, used when the
+// network's VLAN has no zone colour. A zone colour (zones carry firewall
+// semantics: inside/outside/prod/admin…) overrides it; a zone is never
+// required just to get a colour.
 const PALETTE = [
-  "#0ea5e9", // sky
-  "#8b5cf6", // violet
-  "#10b981", // emerald
-  "#f59e0b", // amber
-  "#f43f5e", // rose
-  "#06b6d4", // cyan
-  "#84cc16", // lime
-  "#d946ef", // fuchsia
+  "#1d63ed",
+  "#0ea5e9",
+  "#1e40af",
+  "#38bdf8",
+  "#2563eb",
+  "#0369a1",
+  "#60a5fa",
+  "#075985",
 ]
 
 /** Colour for the little status pill on a VM box's corner. */
@@ -249,28 +252,32 @@ function layout(
     const boxY = bandY[p.band] + BAND_PAD
     vms.push({ id: p.id, x, y: boxY, name: p.name, status: p.status })
     const firstRail = p.railIdxs[0]
-    // Up into the rail the box sits under, in that rail's colour.
-    lines.push({
-      key: `u-${p.id}`,
-      x,
-      y1: railY[firstRail] + RAIL_H - 2,
-      y2: boxY,
-      color: laidRails[firstRail].color,
-      label: p.ifaces.get(firstRail),
+    // One full leg per attachment, box → rail, fanned into parallel lanes a
+    // few px apart (ribbon-cable style) so every colour stays trackable and
+    // visibly plugs into the VM — sequential segments read as disconnected.
+    const n = p.railIdxs.length
+    p.railIdxs.forEach((r, k) => {
+      const lx = x + (k - (n - 1) / 2) * 6
+      if (r === firstRail) {
+        lines.push({
+          key: `u-${p.id}`,
+          x: lx,
+          y1: railY[r] + RAIL_H - 2,
+          y2: boxY,
+          color: laidRails[r].color,
+          label: p.ifaces.get(r),
+        })
+      } else {
+        lines.push({
+          key: `d-${p.id}-${r}`,
+          x: lx,
+          y1: boxY + VM_H,
+          y2: railY[r] + 2,
+          color: laidRails[r].color,
+          label: p.ifaces.get(r),
+        })
+      }
     })
-    // Down to each further rail — each leg coloured by the rail it plugs into.
-    let fromY = boxY + VM_H
-    for (const r of p.railIdxs.slice(1)) {
-      lines.push({
-        key: `d-${p.id}-${r}`,
-        x,
-        y1: fromY,
-        y2: railY[r] + 2,
-        color: laidRails[r].color,
-        label: p.ifaces.get(r),
-      })
-      fromY = railY[r] + RAIL_H
-    }
   }
 
   const height = y + PAD / 2
@@ -393,10 +400,10 @@ function VirtualTopologyPage() {
                   strokeWidth={3}
                   strokeLinecap="round"
                 />
-                {l.label && Math.abs(l.y2 - l.y1) > 22 && (
+                {l.label && (
                   <text
                     x={l.x + 7}
-                    y={Math.max(l.y1, l.y2) - 6}
+                    y={Math.max(l.y1, l.y2) - 5}
                     fontSize={9}
                     className="font-mono"
                     fill="var(--muted-foreground)"
@@ -546,7 +553,7 @@ function VirtualTopologyPage() {
                         y={vm.y - 8}
                         width={pw}
                         height={16}
-                        rx={8}
+                        rx={4}
                         fill={pill.bg}
                         stroke="var(--background)"
                         strokeWidth={2}

@@ -19,15 +19,16 @@ const RAIL_H = 30
 const RAIL_GAP = 12
 const DROP = 26 // space between the box and the first rail
 
+// Shades of the Danbyte blue — zone colours (firewall semantics) override.
 const PALETTE = [
+  "#1d63ed",
   "#0ea5e9",
-  "#8b5cf6",
-  "#10b981",
-  "#f59e0b",
-  "#f43f5e",
-  "#06b6d4",
-  "#84cc16",
-  "#d946ef",
+  "#1e40af",
+  "#38bdf8",
+  "#2563eb",
+  "#0369a1",
+  "#60a5fa",
+  "#075985",
 ]
 
 function fit(s: string, max: number): string {
