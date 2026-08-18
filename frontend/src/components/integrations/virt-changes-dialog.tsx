@@ -31,21 +31,75 @@ const KIND_VARIANT: Record<
   removed_guest: "destructive",
 }
 
-/** Summarise a change's detail for the table's "What changes" column. */
-function summarise(c: VirtChange): string {
-  if (c.kind === "new_guest") {
-    const d = c.detail as { vcpus?: number; memory_mb?: number }
-    return `Create VM${d.vcpus ? ` — ${d.vcpus} vCPU` : ""}${
-      d.memory_mb ? `, ${d.memory_mb} MB` : ""
-    }`
-  }
-  if (c.kind === "removed_guest") return "Delete the synced VM"
-  // spec_change: {field: {danbyte, hypervisor}}
-  return Object.entries(
-    c.detail as Record<string, { danbyte: unknown; hypervisor: unknown }>
+// Spec fields as they appear in change payloads, with display labels and
+// value formatting (RAM in GB when it divides cleanly, disk in GB).
+const SPEC_FIELDS: {
+  key: string
+  label: string
+  fmt: (v: unknown) => string
+}[] = [
+  { key: "vcpus", label: "vCPU", fmt: (v) => String(v) },
+  {
+    key: "memory_mb",
+    label: "RAM",
+    fmt: (v) => {
+      const mb = Number(v)
+      return mb >= 1024 && mb % 1024 === 0 ? `${mb / 1024} GB` : `${mb} MB`
+    },
+  },
+  { key: "disk_gb", label: "Disk", fmt: (v) => `${v} GB` },
+]
+
+/** One labeled spec value, e.g. "RAM · 32 GB" or "RAM · 2 GB → 32 GB". */
+function SpecChip({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[11px] whitespace-nowrap">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-mono">{value}</span>
+    </span>
   )
-    .map(([f, v]) => `${f}: ${String(v.danbyte)} → ${String(v.hypervisor)}`)
-    .join(", ")
+}
+
+/** Structured "What changes" cell: the affected spec columns as chips. */
+function ChangeDetail({ c }: { c: VirtChange }) {
+  if (c.kind === "removed_guest") {
+    return (
+      <span className="text-xs text-muted-foreground">
+        Removes the synced VM
+      </span>
+    )
+  }
+  if (c.kind === "new_guest") {
+    const d = c.detail as Record<string, unknown>
+    const chips = SPEC_FIELDS.filter((f) => d[f.key] != null).map((f) => (
+      <SpecChip key={f.key} label={f.label} value={f.fmt(d[f.key])} />
+    ))
+    return (
+      <span className="flex flex-wrap items-center gap-1">
+        {chips.length ? chips : <span className="text-xs">Create VM</span>}
+      </span>
+    )
+  }
+  // spec_change: {field: {danbyte, hypervisor}} — old → new per column.
+  const diffs = c.detail as Record<
+    string,
+    { danbyte: unknown; hypervisor: unknown }
+  >
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {Object.entries(diffs).map(([key, v]) => {
+        const f = SPEC_FIELDS.find((s) => s.key === key)
+        const fmt = f?.fmt ?? ((x: unknown) => String(x))
+        return (
+          <SpecChip
+            key={key}
+            label={f?.label ?? key}
+            value={`${fmt(v.danbyte)} → ${fmt(v.hypervisor)}`}
+          />
+        )
+      })}
+    </span>
+  )
 }
 
 /** The review inbox for one virtualization source — accept applies a change,
@@ -124,13 +178,7 @@ export function VirtChangesDialog({
         id: "detail",
         header: "What changes",
         enableSorting: false,
-        cell: ({ row }) => (
-          // Wraps: a multi-field spec change would otherwise stretch the table
-          // past the dialog and spawn an inner horizontal scrollbar.
-          <span className="text-xs break-words whitespace-normal text-muted-foreground">
-            {summarise(row.original)}
-          </span>
-        ),
+        cell: ({ row }) => <ChangeDetail c={row.original} />,
       },
       {
         id: "actions",
