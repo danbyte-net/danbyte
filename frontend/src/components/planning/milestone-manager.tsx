@@ -206,9 +206,9 @@ function MilestoneRow({
       </span>
       {canDelete && (
         <Button
-          size="sm"
+          size="icon"
           variant="ghost"
-          className="ml-auto"
+          className="ml-auto h-7 w-7 text-muted-foreground hover:text-destructive"
           onClick={onDelete}
           title="Delete milestone"
         >

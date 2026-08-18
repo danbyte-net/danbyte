@@ -181,17 +181,18 @@ function SnmpProfilesPage() {
                 )}
                 <div className="ml-auto flex items-center gap-1">
                   <Button
-                    size="sm"
+                    size="icon"
                     variant="ghost"
+                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
                     onClick={() => startEdit(p)}
                     aria-label={`Edit ${p.name}`}
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
                   <Button
-                    size="sm"
+                    size="icon"
                     variant="ghost"
-                    className="text-destructive hover:text-destructive"
+                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
                     disabled={remove.isPending}
                     onClick={() => remove.mutate(p.id)}
                     aria-label={`Delete ${p.name}`}

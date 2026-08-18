@@ -218,12 +218,14 @@ function DeleteButton({ issuer }: { issuer: Issuer }) {
   return (
     <>
       <Button
-        size="icon-sm"
+        size="icon"
         variant="ghost"
-        className="text-destructive hover:text-destructive"
+        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+        title="Delete issuer"
         onClick={() => setOpen(true)}
       >
         <Trash2 className="h-3.5 w-3.5" />
+        <span className="sr-only">Delete issuer</span>
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent size="sm">

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
+import { RowActions } from "@/components/row-actions"
 import { DhcpReservationDialog } from "@/components/integrations/dhcp-reservation-dialog"
 import { dash } from "@/components/kv-card"
 import { useFacetRail } from "@/lib/use-facet-rail"
@@ -188,30 +189,13 @@ function DhcpReservationsPage() {
               header: "",
               enableSorting: false,
               cell: ({ row }) => (
-                <div className="flex justify-end gap-1">
-                  {canChange && (
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      title="Edit reservation"
-                      onClick={() => setEditing(row.original)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                  {canDelete && (
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      className="text-destructive hover:text-destructive"
-                      title="Delete reservation"
-                      disabled={del.isPending}
-                      onClick={() => del.mutate(row.original)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
+                <RowActions
+                  onEdit={canChange ? () => setEditing(row.original) : undefined}
+                  onDelete={
+                    canDelete ? () => del.mutate(row.original) : undefined
+                  }
+                  deleteLabel="Delete reservation"
+                />
               ),
             } satisfies ColumnDef<DhcpReservation>,
           ]

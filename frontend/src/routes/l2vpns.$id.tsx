@@ -42,6 +42,7 @@ import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { VlanBadge } from "@/components/cells/vlan-badge"
+import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -340,27 +341,14 @@ function TerminationsTab({
                   </TableCell>
                   {canEdit && (
                     <TableCell className="py-1 text-right">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7"
-                        aria-label="Edit termination"
-                        onClick={() => {
+                      <RowActions
+                        onEdit={() => {
                           setEditing(term)
                           setDialogOpen(true)
                         }}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 text-destructive hover:text-destructive"
-                        aria-label="Delete termination"
-                        onClick={() => setDeleting(term)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                        onDelete={() => setDeleting(term)}
+                        deleteLabel="Delete termination"
+                      />
                     </TableCell>
                   )}
                 </TableRow>
