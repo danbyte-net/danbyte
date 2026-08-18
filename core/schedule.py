@@ -94,6 +94,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Alert escalation, auto-resolve and silences",
     ),
     ScheduledTask(
+        unit="danbyte-external-sync",
+        commands=("external_sync",),
+        every=MINUTE,
+        label="Enqueue due Windows DHCP/DNS and virtualization syncs",
+    ),
+    ScheduledTask(
         unit="danbyte-discover",
         commands=("discover_subnets",),
         every=5 * MINUTE,
