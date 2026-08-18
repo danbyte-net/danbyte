@@ -125,7 +125,9 @@ export function VirtChangesDialog({
         header: "What changes",
         enableSorting: false,
         cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground">
+          // Wraps: a multi-field spec change would otherwise stretch the table
+          // past the dialog and spawn an inner horizontal scrollbar.
+          <span className="text-xs break-words whitespace-normal text-muted-foreground">
             {summarise(row.original)}
           </span>
         ),
@@ -165,7 +167,7 @@ export function VirtChangesDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent size="2xl">
+      <DialogContent size="3xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-1.5">
             Pending changes — {source.name}
