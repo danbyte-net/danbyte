@@ -251,8 +251,11 @@ export function DetailHero({
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-3">
           <h1
+            // flex + items-center: a node title (a ColorBadge for a coloured
+            // catalog object) would otherwise sit on the h1's baseline inside
+            // a 32px line box and read as misaligned next to its badges.
             className={cn(
-              "text-2xl font-semibold tracking-tight",
+              "flex items-center text-2xl font-semibold tracking-tight",
               mono && "font-mono"
             )}
           >

@@ -30,6 +30,11 @@ import { DeviceCell } from "@/components/cells/device-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { vrfColumn } from "@/components/cells/vrf-cell"
 import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card"
+import {
   actionsColumn,
   type ActionsColumnOpts,
 } from "@/components/columns/actions-column"
@@ -363,9 +368,27 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
           <span className="flex items-center gap-1.5 font-mono text-xs">
             {r.vlan ? <VlanBadge vlan={r.vlan} /> : "—"}
             {r.mode === "tagged" && tagged > 0 && (
-              <Badge variant="secondary" className="h-4 px-1 text-[10px]">
-                trunk +{tagged}
-              </Badge>
+              // Hover reveals the truncated trunk members as VLAN badges.
+              <HoverCard openDelay={100} closeDelay={80}>
+                <HoverCardTrigger asChild>
+                  <Badge
+                    variant="secondary"
+                    className="h-4 cursor-default px-1 text-[10px]"
+                  >
+                    trunk +{tagged}
+                  </Badge>
+                </HoverCardTrigger>
+                <HoverCardContent className="w-72">
+                  <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">
+                    Tagged VLANs on this trunk
+                  </p>
+                  <span className="flex flex-wrap gap-1">
+                    {r.tagged_vlans.map((v) => (
+                      <VlanBadge key={v.id} vlan={v} />
+                    ))}
+                  </span>
+                </HoverCardContent>
+              </HoverCard>
             )}
             {r.mode === "tagged-all" && (
               <Badge variant="secondary" className="h-4 px-1 text-[10px]">

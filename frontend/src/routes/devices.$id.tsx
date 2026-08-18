@@ -1192,7 +1192,10 @@ function DeviceIpsPane({
 
   const columns = useMemo<ColumnDef<IPAddress>[]>(() => {
     const cols = buildIpColumns<IPAddress>({
-      include: ["ip", "status", "dhcp", "role", "description"],
+      include: [
+        "ip", "status", "dhcp", "role", "vlan", "zone", "scope", "dns",
+        "switch", "switch_interface", "description", "tags", "updated",
+      ],
       copyButton: true,
     })
     const insertAfter = (id: string, ...extra: ColumnDef<IPAddress>[]) => {
@@ -1269,7 +1272,17 @@ function DeviceIpsPane({
           data={rows}
           columns={columns}
           flexColumn="description"
-          tableId="ip-embedded"
+          tableId="device-ips"
+          // The wide set is available in the Columns menu; only the columns a
+          // device page actually needs at a glance are on by default.
+          initialColumnVisibility={{
+            scope: false,
+            dns: false,
+            switch: false,
+            switch_interface: false,
+            tags: false,
+            updated: false,
+          }}
         />
       )}
       <AssignIpDialog
