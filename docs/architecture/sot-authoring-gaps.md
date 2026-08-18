@@ -87,5 +87,5 @@ correct, not a defect.
 
 ## See also
 
-- [External sync](../features/external-sync.md) — the DHCP/DNS sync engines.
+- [Windows DHCP & DNS sync](../features/windows-sync.md) — the DHCP/DNS sync engines.
 - [Prefix CRUD](../features/prefix-crud.md) — includes bulk **Add pool**.

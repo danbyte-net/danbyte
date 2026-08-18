@@ -91,7 +91,7 @@ The dialog takes a **start** and **end** address, an optional **status**,
 **role**, and **description** applied to every address, and a **Populate from**
 shortcut that fills the range from:
 
-- a **DHCP scope pool** on the prefix (see [External sync](external-sync.md)), or
+- a **DHCP scope pool** on the prefix (see [Windows DHCP & DNS sync](windows-sync.md)), or
 - the **whole prefix** (its usable host range).
 
 Addresses that already exist are skipped, and the prefix's network and broadcast

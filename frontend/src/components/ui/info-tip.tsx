@@ -25,6 +25,10 @@ export function InfoTip({
         <button
           type="button"
           aria-label="More information"
+          // Out of the tab order: HoverCard also opens on keyboard focus, and
+          // a dialog auto-focuses its first tabbable element — when that's an
+          // info icon the tip pops open before the user touches anything.
+          tabIndex={-1}
           className={`inline-flex items-center text-muted-foreground/70 transition-colors hover:text-foreground ${className ?? ""}`}
         >
           <Info className="h-3.5 w-3.5" />
