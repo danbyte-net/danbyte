@@ -147,8 +147,9 @@ function DnsZonesPage() {
       // The zone name is the Open link; a zone's settings (reconcile,
       // auto-add) live on its detail page, so there is no row Edit. Delete
       // only applies to Danbyte-authored zones — a synced zone would just
-      // return on the next sync.
-      ...(canDelete
+      // return on the next sync. With no managed zones every cell would be
+      // empty, so the column itself is dropped rather than left as a sliver.
+      ...(canDelete && rows.some((z) => z.managed)
         ? [
             {
               id: "actions",
@@ -168,7 +169,7 @@ function DnsZonesPage() {
           ]
         : []),
     ],
-    [canDelete, del]
+    [canDelete, del, rows]
   )
 
   const { rail, filtered } = useFacetRail(rows, [
