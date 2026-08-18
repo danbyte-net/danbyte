@@ -125,11 +125,15 @@ Windows DHCP console too.
 Scopes and zones are usually born from a sync, but you can also create them by
 hand:
 
-- **DHCP scope** — **Add scope** on the DHCP scopes page (server, name, subnet
-  CIDR, lease range, description). Danbyte runs `Add-DhcpServerv4Scope` on the
-  server first and only saves the row once it's accepted; deleting a scope
-  removes it on the server too. You can also create one inline from the **+**
-  next to the Scope picker in the New reservation dialog.
+- **DHCP scope** — **Add scope** on the DHCP scopes page. Pick the **server**
+  (or **Local — Danbyte-managed** for deployments without a synced DHCP server:
+  the scope is stored in Danbyte only, nothing is pushed). The subnet comes
+  from an **existing prefix** (keeping its VRF) or a typed CIDR in a chosen
+  **VRF**; the lease range sits inside it. With a server picked, Danbyte runs
+  `Add-DhcpServerv4Scope` first and only saves once it's accepted; deleting a
+  pushed scope removes it on the server too. Reservations in a local scope are
+  likewise stored locally without a push. You can also create a scope inline
+  from the **+** next to the Scope picker in the New reservation dialog.
 - **DNS zone** — **Add zone** on the DNS zones page (server, name, forward or
   reverse). DNS is Danbyte-authoritative for managed content — pushing zones to
   the server is a later phase — so an authored zone is stored locally, tagged

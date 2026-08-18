@@ -117,6 +117,8 @@ def _parse_when(iso: str | None):
 
 
 def _source_note(conn) -> str:
+    if conn is None:  # local (Danbyte-owned) scope — no server behind it
+        return "Danbyte-local DHCP scope"
     return f"Synced from Windows DHCP «{conn.name}»"
 
 
@@ -300,22 +302,28 @@ def _apply(conn, data: dict, now) -> dict:
     return counts
 
 
-def _prefix_for_scope(conn, scope_id: str, mask: str | None):
-    """Find or create the Prefix a scope syncs into. Returns (prefix, created)."""
+def _prefix_for_scope(conn, scope_id: str, mask: str | None, *,
+                      tenant=None, vrf=None, note: str | None = None):
+    """Find or create the Prefix a scope maps to. Returns (prefix, created).
+
+    Sync passes just the connection (global VRF — Windows DHCP has no VRF
+    concept); the authoring API may pass an explicit tenant/VRF, and a note
+    for local scopes that have no connection to describe them.
+    """
     from api.models import Prefix
 
+    tenant = tenant or conn.tenant
     try:
         net = ipaddress.ip_network(f"{scope_id}/{mask}", strict=False)
     except ValueError:
         return None, False
     cidr = str(net)
-    existing = Prefix.objects.filter(
-        tenant=conn.tenant, vrf__isnull=True, cidr=cidr
-    ).first()
+    existing = Prefix.objects.filter(tenant=tenant, vrf=vrf, cidr=cidr).first()
     if existing:
         return existing, False
     return Prefix.objects.create(
-        tenant=conn.tenant, cidr=cidr, description=_source_note(conn)
+        tenant=tenant, cidr=cidr, vrf=vrf,
+        description=note if note is not None else _source_note(conn),
     ), True
 
 
@@ -338,15 +346,21 @@ def _adopt_ip(conn, scope, ip: str, mac: str, dns_name: str, note: str):
     """Find the tenant's row for ``ip`` or mint one; fill blanks only."""
     from api.models import IPAddress
 
+    # Local scopes (no connection) carry the tenant themselves and follow
+    # their prefix's VRF; synced scopes are connection-tenant + global VRF.
+    tenant = conn.tenant if conn is not None else scope.tenant
+    vrf_id = None if conn is not None else (
+        scope.prefix.vrf_id if scope.prefix_id else None
+    )
     row = IPAddress.objects.filter(
-        tenant=conn.tenant, vrf__isnull=True, ip_address=ip
+        tenant=tenant, vrf_id=vrf_id, ip_address=ip
     ).first()
     created = False
     if row is None:
         if scope.prefix_id is None:  # unparsable scope mask — nothing to attach to
             return None, False
         row = IPAddress(
-            tenant=conn.tenant, ip_address=ip, prefix=scope.prefix,
+            tenant=tenant, ip_address=ip, prefix=scope.prefix,
             description=note,
         )
         created = True
@@ -369,7 +383,11 @@ def _ip_for_reservation(conn, scope, res):
     # affordance (it raises the amber marker on the IP). A DHCP reservation is
     # not that — it's surfaced by the DHCP badge instead — so we never set it,
     # and we retire the marker earlier syncs wrote here.
-    if row is not None and row.reservation_note == f"DHCP reservation ({conn.name})":
+    if (
+        conn is not None
+        and row is not None
+        and row.reservation_note == f"DHCP reservation ({conn.name})"
+    ):
         row.reservation_note = ""
         row.save(update_fields=["reservation_note"])
     return row

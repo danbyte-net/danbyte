@@ -6943,8 +6943,10 @@ export interface DhcpScopeOption {
 
 export interface DhcpScope {
   id: string
-  connection: string
-  connection_name: string
+  /** Null = a local (Danbyte-owned) scope with no Windows server behind it. */
+  connection: string | null
+  connection_name: string | null
+  is_local: boolean
   scope_id: string
   name: string
   description: string
@@ -6956,6 +6958,7 @@ export interface DhcpScope {
   options: DhcpScopeOption[]
   prefix: string | null
   prefix_cidr: string | null
+  vrf_name: string | null
   lease_sync: boolean
   reservation_count: number
   drift_count: number
@@ -6969,9 +6972,9 @@ export interface DhcpReservation {
   scope_display: string
   /** The scope's backing Prefix id — links the Scope cell into IPAM. */
   scope_prefix: string | null
-  /** Windows server connection id — links the Server cell to its page. */
-  connection: string
-  connection_name: string
+  /** Windows server connection id — null for reservations in local scopes. */
+  connection: string | null
+  connection_name: string | null
   ip: string
   mac: string
   name: string

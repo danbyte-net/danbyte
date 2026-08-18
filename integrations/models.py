@@ -474,8 +474,17 @@ class DhcpScope(TimestampedModel):
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # Null connection = a **local** scope: authored and owned by Danbyte, with
+    # no DHCP server behind it (documentation of DHCP space for deployments
+    # that don't sync a Windows server). Local scopes carry `tenant` directly;
+    # synced scopes ride their connection's tenant.
     connection = models.ForeignKey(
-        WindowsServerConnection, on_delete=models.CASCADE, related_name="dhcp_scopes"
+        WindowsServerConnection, on_delete=models.CASCADE,
+        related_name="dhcp_scopes", null=True, blank=True,
+    )
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="dhcp_scopes",
+        null=True, blank=True,
     )
     scope_id = models.CharField(max_length=64)  # Windows scope id, e.g. "10.77.0.0"
     name = models.CharField(max_length=255, blank=True, default="")
@@ -502,8 +511,19 @@ class DhcpScope(TimestampedModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["connection", "scope_id"], name="uniq_dhcpscope_conn_scope"
-            )
+            ),
+            # Local scopes have no connection — dedupe them per tenant instead
+            # (NULL connections are distinct, so the pair above can't).
+            models.UniqueConstraint(
+                fields=["tenant", "scope_id"],
+                condition=models.Q(connection__isnull=True),
+                name="uniq_dhcpscope_local_tenant_scope",
+            ),
         ]
+
+    @property
+    def is_local(self) -> bool:
+        return self.connection_id is None
 
     def __str__(self) -> str:
         return f"{self.scope_id} ({self.name})"

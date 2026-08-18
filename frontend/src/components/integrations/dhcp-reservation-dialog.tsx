@@ -77,6 +77,7 @@ export function DhcpReservationDialog({
   })
 
   const ready = mac.trim() && (isEdit || (ip.trim() && scope))
+  const selectedScope = scopes.find((s) => s.id === scope)
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -102,7 +103,9 @@ export function DhcpReservationDialog({
                   onChange={(v) => setScope(v ?? "")}
                   options={scopes.map((s) => ({
                     value: s.id,
-                    label: `${s.scope_id}${s.name ? ` — ${s.name}` : ""}`,
+                    label: `${s.scope_id}${s.name ? ` — ${s.name}` : ""}${
+                      s.is_local ? " · local" : ""
+                    }`,
                   }))}
                   error={fieldErrors.scope}
                 />
@@ -155,7 +158,9 @@ export function DhcpReservationDialog({
             error={fieldErrors.description}
           />
           <p className="text-[11px] text-muted-foreground">
-            Saving writes the reservation to the DHCP server immediately.
+            {selectedScope?.is_local
+              ? "Local scope — the reservation is stored in Danbyte only."
+              : "Saving writes the reservation to the DHCP server immediately."}
           </p>
           <FormFooter
             onCancel={() => onOpenChange(false)}

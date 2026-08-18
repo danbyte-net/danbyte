@@ -137,15 +137,23 @@ function DhcpReservationsPage() {
         id: "server",
         accessorKey: "connection_name",
         header: ({ column }) => <SortHeader column={column} label="Server" />,
-        cell: ({ row }) => (
-          <Link
-            to="/windows-servers/$id"
-            params={{ id: row.original.connection }}
-            className="link text-xs"
-          >
-            {row.original.connection_name}
-          </Link>
-        ),
+        cell: ({ row }) =>
+          row.original.connection ? (
+            <Link
+              to="/windows-servers/$id"
+              params={{ id: row.original.connection }}
+              className="link text-xs"
+            >
+              {row.original.connection_name}
+            </Link>
+          ) : (
+            <span
+              className="text-xs text-muted-foreground"
+              title="Reservation in a local (Danbyte-owned) scope"
+            >
+              Local
+            </span>
+          ),
       },
       {
         id: "origin",
@@ -216,7 +224,10 @@ function DhcpReservationsPage() {
     {
       key: "server",
       label: "Server",
-      get: (r) => ({ value: r.connection_name, label: r.connection_name }),
+      get: (r) => ({
+        value: r.connection_name ?? "Local",
+        label: r.connection_name ?? "Local",
+      }),
     },
     {
       key: "origin",

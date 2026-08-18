@@ -224,3 +224,92 @@ class DhcpApiTests(APITestCase):
         self.assertEqual(states["10.77.0.60"], "leased")
         self.assertEqual(states["10.77.0.105"], "exclusion")
         self.assertEqual(states["10.77.0.10"], None)
+
+    def test_create_local_scope_no_push(self):
+        with mock.patch("integrations.dhcp_api.push_scope") as push:
+            res = self.client.post("/api/dhcp-scopes/", {
+                "name": "Local lab", "subnet": "10.90.0.0/24",
+                "start_range": "10.90.0.10", "end_range": "10.90.0.99",
+            }, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        push.assert_not_called()
+        row = DhcpScope.objects.get(scope_id="10.90.0.0")
+        self.assertIsNone(row.connection_id)
+        self.assertEqual(row.tenant_id, self.tenant.id)
+        self.assertTrue(row.is_local)
+        # Listed alongside synced scopes for the tenant.
+        listing = self.client.get("/api/dhcp-scopes/")
+        ids = {r["scope_id"] for r in listing.json()["results"]}
+        self.assertIn("10.90.0.0", ids)
+
+    def test_create_scope_from_existing_prefix_with_vrf(self):
+        from api.models import VRF, Prefix
+
+        vrf = VRF.objects.create(tenant=self.tenant, name="lab-vrf", rd="65000:1")
+        pfx = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.91.0.0/24", vrf=vrf
+        )
+        res = self.client.post("/api/dhcp-scopes/", {
+            "name": "From prefix", "prefix": str(pfx.id),
+            "start_range": "10.91.0.10", "end_range": "10.91.0.50",
+        }, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        row = DhcpScope.objects.get(scope_id="10.91.0.0")
+        self.assertEqual(row.prefix_id, pfx.id)
+        self.assertEqual(row.prefix.vrf_id, vrf.id)
+
+    def test_create_scope_subnet_in_vrf(self):
+        from api.models import VRF, Prefix
+
+        vrf = VRF.objects.create(tenant=self.tenant, name="v2", rd="65000:2")
+        res = self.client.post("/api/dhcp-scopes/", {
+            "name": "VRF subnet", "subnet": "10.92.0.0/24", "vrf": str(vrf.id),
+            "start_range": "10.92.0.10", "end_range": "10.92.0.50",
+        }, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        row = DhcpScope.objects.get(scope_id="10.92.0.0")
+        self.assertEqual(row.prefix.vrf_id, vrf.id)
+        self.assertTrue(
+            Prefix.objects.filter(cidr="10.92.0.0/24", vrf=vrf).exists()
+        )
+
+    def test_local_reservation_no_push_links_ip(self):
+        r = self.client.post("/api/dhcp-scopes/", {
+            "name": "Local", "subnet": "10.93.0.0/24",
+            "start_range": "10.93.0.10", "end_range": "10.93.0.99",
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        scope_id = r.json()["id"]
+        with mock.patch("integrations.dhcp_api.push_reservation") as push:
+            res = self.client.post("/api/dhcp-reservations/", {
+                "scope": scope_id, "ip": "10.93.0.20",
+                "mac": "aa:bb:cc:00:93:20", "name": "local-host",
+            }, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        push.assert_not_called()
+        row = DhcpReservation.objects.get(ip="10.93.0.20")
+        self.assertTrue(row.managed)
+        self.assertIsNotNone(row.ip_address_id)
+        # Delete needs no server either.
+        with mock.patch("integrations.dhcp_api.remove_reservation") as rm:
+            d = self.client.delete(f"/api/dhcp-reservations/{row.id}/")
+        self.assertEqual(d.status_code, 204, d.content)
+        rm.assert_not_called()
+
+    def test_delete_local_scope_no_push(self):
+        r = self.client.post("/api/dhcp-scopes/", {
+            "name": "Bye", "subnet": "10.94.0.0/24",
+            "start_range": "10.94.0.10", "end_range": "10.94.0.20",
+        }, format="json")
+        sid = r.json()["id"]
+        with mock.patch("integrations.dhcp_api.remove_scope") as rm:
+            d = self.client.delete(f"/api/dhcp-scopes/{sid}/")
+        self.assertEqual(d.status_code, 204, d.content)
+        rm.assert_not_called()
+
+    def test_local_scope_foreign_tenant_invisible(self):
+        other = Tenant.objects.create(org=self.tenant.org, name="T3", slug="t3")
+        DhcpScope.objects.create(tenant=other, scope_id="10.95.0.0", name="theirs")
+        listing = self.client.get("/api/dhcp-scopes/")
+        ids = {r["scope_id"] for r in listing.json()["results"]}
+        self.assertNotIn("10.95.0.0", ids)

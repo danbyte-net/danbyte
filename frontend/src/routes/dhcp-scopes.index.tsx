@@ -72,13 +72,20 @@ function DhcpScopesPage() {
         enableSorting: false,
         cell: ({ row }) =>
           row.original.prefix ? (
-            <Link
-              to="/prefixes/$id"
-              params={{ id: row.original.prefix }}
-              className="link font-mono text-xs"
-            >
-              {row.original.prefix_cidr}
-            </Link>
+            <span className="inline-flex items-center gap-1.5">
+              <Link
+                to="/prefixes/$id"
+                params={{ id: row.original.prefix }}
+                className="link font-mono text-xs"
+              >
+                {row.original.prefix_cidr}
+              </Link>
+              {row.original.vrf_name && (
+                <span className="text-[10px] text-muted-foreground">
+                  · {row.original.vrf_name}
+                </span>
+              )}
+            </span>
           ) : (
             dash
           ),
@@ -97,15 +104,23 @@ function DhcpScopesPage() {
         id: "server",
         accessorKey: "connection_name",
         header: ({ column }) => <SortHeader column={column} label="Server" />,
-        cell: ({ row }) => (
-          <Link
-            to="/windows-servers/$id"
-            params={{ id: row.original.connection }}
-            className="link text-xs"
-          >
-            {row.original.connection_name}
-          </Link>
-        ),
+        cell: ({ row }) =>
+          row.original.connection ? (
+            <Link
+              to="/windows-servers/$id"
+              params={{ id: row.original.connection }}
+              className="link text-xs"
+            >
+              {row.original.connection_name}
+            </Link>
+          ) : (
+            <span
+              className="text-xs text-muted-foreground"
+              title="Danbyte-owned scope — no DHCP server behind it"
+            >
+              Local
+            </span>
+          ),
       },
       {
         id: "state",
@@ -167,7 +182,10 @@ function DhcpScopesPage() {
     {
       key: "server",
       label: "Server",
-      get: (r) => ({ value: r.connection_name, label: r.connection_name }),
+      get: (r) => ({
+        value: r.connection_name ?? "Local",
+        label: r.connection_name ?? "Local",
+      }),
     },
     {
       key: "state",

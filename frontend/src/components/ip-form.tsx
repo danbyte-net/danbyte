@@ -631,8 +631,8 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
               : !existingRes && !mac.trim()
                 ? "Enter the MAC address above to reserve this address."
                 : existingRes
-                  ? `Currently reserved on ${existingRes.connection_name} (${existingRes.mac}).`
-                  : `Will reserve on ${poolScope?.connection_name} when you save.`}
+                  ? `Currently reserved on ${existingRes.connection_name ?? "Danbyte (local)"} (${existingRes.mac}).`
+                  : `Will reserve on ${poolScope?.connection_name ?? "Danbyte (local)"} when you save.`}
           </p>
         </div>
       )}
