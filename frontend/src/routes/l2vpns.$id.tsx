@@ -41,6 +41,7 @@ import {
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { CustomFieldValues } from "@/components/custom-field-display"
+import { VlanBadge } from "@/components/cells/vlan-badge"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -237,13 +238,7 @@ function L2vpnOverview({ l2vpn: v }: { l2vpn: L2VPN }) {
  * the VM). */
 function EndpointCell({ termination: t }: { termination: L2VPNTermination }) {
   if (t.vlan) {
-    return (
-      <Link to="/vlans/$id" params={{ id: t.vlan.id }}>
-        <Badge variant="secondary" className="font-mono text-[11px]">
-          {t.vlan.vlan_id} · {t.vlan.name}
-        </Badge>
-      </Link>
-    )
+    return <VlanBadge vlan={t.vlan} className="font-mono text-[11px]" />
   }
   if (t.interface) {
     return (

@@ -58,6 +58,7 @@ import { DataTable } from "@/components/data-table"
 import { useMe, objCan } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { VlanBadge } from "@/components/cells/vlan-badge"
 import {
   DetailHero,
   DetailShell,
@@ -544,13 +545,7 @@ function PrefixOverview({
     },
     {
       label: "VLAN",
-      value: p.vlan ? (
-        <span className="font-mono text-[13px]">
-          {p.vlan.vlan_id} · {p.vlan.name}
-        </span>
-      ) : (
-        dash
-      ),
+      value: p.vlan ? <VlanBadge vlan={p.vlan} /> : dash,
     },
     {
       label: "Gateway",

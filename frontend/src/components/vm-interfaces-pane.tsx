@@ -44,6 +44,7 @@ import {
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
 import { QueryError } from "@/components/query-error"
+import { VlanBadge } from "@/components/cells/vlan-badge"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useSaveObject } from "@/lib/save-object"
@@ -129,13 +130,7 @@ export function VMInterfacesPane({ vmId }: { vmId: string }) {
         header: "VLAN",
         cell: ({ row }) =>
           row.original.vlan ? (
-            <Link
-              to="/vlans/$id"
-              params={{ id: row.original.vlan.id }}
-              className="link font-mono text-xs"
-            >
-              {row.original.vlan.vlan_id} · {row.original.vlan.name}
-            </Link>
+            <VlanBadge vlan={row.original.vlan} />
           ) : (
             <span className="text-muted-foreground">—</span>
           ),

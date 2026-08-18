@@ -32,6 +32,7 @@ import {
 } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { VlanBadge } from "@/components/cells/vlan-badge"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/interfaces/$id")({
@@ -356,17 +357,7 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
     { label: "802.1Q mode", value: i.mode_display || dash },
     {
       label: "Untagged VLAN",
-      value: i.vlan ? (
-        <Link
-          to="/vlans/$id"
-          params={{ id: i.vlan.id }}
-          className="link font-mono text-[13px]"
-        >
-          {i.vlan.vlan_id} · {i.vlan.name}
-        </Link>
-      ) : (
-        dash
-      ),
+      value: i.vlan ? <VlanBadge vlan={i.vlan} /> : dash,
     },
     {
       label: "Tagged VLANs",
@@ -374,14 +365,7 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
         i.tagged_vlans.length > 0 ? (
           <span className="flex flex-wrap gap-1">
             {i.tagged_vlans.map((v) => (
-              <Link
-                key={v.id}
-                to="/vlans/$id"
-                params={{ id: v.id }}
-                className="link font-mono text-[12px]"
-              >
-                {v.vlan_id}
-              </Link>
+              <VlanBadge key={v.id} vlan={v} />
             ))}
           </span>
         ) : (

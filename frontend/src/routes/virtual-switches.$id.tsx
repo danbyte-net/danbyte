@@ -37,6 +37,7 @@ import {
 } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { VlanBadge } from "@/components/cells/vlan-badge"
 import { useUrlTab } from "@/lib/use-url-tab"
 
 export const Route = createFileRoute("/virtual-switches/$id")({
@@ -314,13 +315,7 @@ function SwitchNetworks({
         header: "VLAN",
         cell: ({ row }) =>
           row.original.vlan ? (
-            <Link
-              to="/vlans/$id"
-              params={{ id: row.original.vlan.id }}
-              className="link font-mono text-xs"
-            >
-              {row.original.vlan.vlan_id} · {row.original.vlan.name}
-            </Link>
+            <VlanBadge vlan={row.original.vlan} />
           ) : (
             <span className="text-xs text-muted-foreground">—</span>
           ),

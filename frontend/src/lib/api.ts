@@ -1865,7 +1865,7 @@ export interface Interface {
   /** Untagged / access (native) VLAN. */
   vlan: VLANMini | null
   /** Tagged VLANs carried on a trunk (mode = tagged). */
-  tagged_vlans: { id: string; vlan_id: number; name: string }[]
+  tagged_vlans: VLANMini[]
   /** The VRF this interface routes in (null = Global). */
   vrf: { id: string; name: string } | null
   tags: Tag[]
@@ -3314,7 +3314,7 @@ export interface VMInterface {
   vlan: VLANMini | null
   mode: "" | "access" | "tagged" | "tagged-all"
   mode_display: string
-  tagged_vlans: { id: string; vlan_id: number; name: string }[]
+  tagged_vlans: VLANMini[]
   vrf: { id: string; name: string } | null
   description: string
   ip_addresses: { id: string; ip_address: string }[]

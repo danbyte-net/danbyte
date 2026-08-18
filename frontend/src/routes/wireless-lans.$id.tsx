@@ -19,6 +19,7 @@ import { WirelessLANDeleteDialog } from "@/components/wireless-lan-delete-dialog
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { VlanBadge } from "@/components/cells/vlan-badge"
 
 const OBJECT_TYPE = "api.wirelesslan"
 
@@ -188,7 +189,7 @@ function WlanOverview({ wlan: w }: { wlan: WirelessLAN }) {
           params={{ id: w.vlan.id }}
           className="link"
         >
-          <span className="num font-mono">{w.vlan.vlan_id}</span> {w.vlan.name}
+          <VlanBadge vlan={w.vlan} />
         </Link>
       ) : (
         dash

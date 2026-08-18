@@ -14,6 +14,7 @@ import type {
   Paginated,
   SnmpDriftItem,
   TerminationKind,
+  VLANMini,
 } from "@/lib/api"
 import {
   CONNECTOR_MM,
@@ -47,6 +48,7 @@ import {
 import { InventoryItemDialog } from "@/components/device-inventory-pane"
 import { InstallModuleDialog } from "@/components/device-modules-pane"
 import { CableForm } from "@/components/cable-form"
+import { VlanBadge } from "@/components/cells/vlan-badge"
 import {
   Dialog,
   DialogContent,
@@ -138,16 +140,8 @@ const PORT_STATE_CLASS: Record<PortState, string> = {
   disabled: "border-dashed border-border/70 text-muted-foreground/40",
 }
 
-function VlanLink({
-  vlan,
-}: {
-  vlan: { id: string; vlan_id: number; name: string }
-}) {
-  return (
-    <Link to="/vlans/$id" params={{ id: vlan.id }} className="link">
-      {vlan.vlan_id} · {vlan.name}
-    </Link>
-  )
+function VlanLink({ vlan }: { vlan: VLANMini }) {
+  return <VlanBadge vlan={vlan} />
 }
 
 function VlanRow({ i }: { i: Interface }) {

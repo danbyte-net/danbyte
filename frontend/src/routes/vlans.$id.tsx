@@ -202,7 +202,7 @@ function VlanPrefixesTable({ vlanId }: { vlanId: string }) {
   })
 
   const columns = useMemo<ColumnDef<Prefix>[]>(
-    () => buildPrefixColumns({ omit: ["vlan"] }),
+    () => buildPrefixColumns(),
     []
   )
 
