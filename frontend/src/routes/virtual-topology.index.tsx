@@ -120,6 +120,7 @@ interface Laid {
     y2: number
     color: string
     label?: string
+    labelY?: number
   }[]
 }
 
@@ -262,19 +263,21 @@ function layout(
         lines.push({
           key: `u-${p.id}`,
           x: lx,
-          y1: railY[r] + RAIL_H - 2,
+          y1: railY[r] + RAIL_H / 2, // under the bar — rails draw on top
           y2: boxY,
           color: laidRails[r].color,
           label: p.ifaces.get(r),
+          labelY: boxY - 4,
         })
       } else {
         lines.push({
           key: `d-${p.id}-${r}`,
           x: lx,
           y1: boxY + VM_H,
-          y2: railY[r] + 2,
+          y2: railY[r] + RAIL_H / 2,
           color: laidRails[r].color,
           label: p.ifaces.get(r),
+          labelY: railY[r] - 4,
         })
       }
     })
@@ -403,7 +406,7 @@ function VirtualTopologyPage() {
                 {l.label && (
                   <text
                     x={l.x + 7}
-                    y={Math.max(l.y1, l.y2) - 5}
+                    y={l.labelY ?? Math.max(l.y1, l.y2) - 5}
                     fontSize={9}
                     className="font-mono"
                     fill="var(--muted-foreground)"
@@ -538,7 +541,7 @@ function VirtualTopologyPage() {
                   />
                   <text
                     x={vm.x}
-                    y={vm.y + VM_H / 2 + 4}
+                    y={vm.y + (label ? 34 : VM_H / 2 + 4)}
                     fontSize={12}
                     fontWeight={600}
                     textAnchor="middle"
@@ -549,18 +552,16 @@ function VirtualTopologyPage() {
                   {label && (
                     <g>
                       <rect
-                        x={vm.x + VM_W / 2 - pw + 4}
-                        y={vm.y - 8}
+                        x={vm.x + VM_W / 2 - pw - 5}
+                        y={vm.y + 5}
                         width={pw}
-                        height={16}
+                        height={14}
                         rx={4}
                         fill={pill.bg}
-                        stroke="var(--background)"
-                        strokeWidth={2}
                       />
                       <text
-                        x={vm.x + VM_W / 2 - pw / 2 + 4}
-                        y={vm.y + 3.5}
+                        x={vm.x + VM_W / 2 - pw / 2 - 5}
+                        y={vm.y + 15}
                         fontSize={9}
                         fontWeight={600}
                         textAnchor="middle"
