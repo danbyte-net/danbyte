@@ -35,7 +35,7 @@ const STRIP_GAP = 16
 const RAIL_H = 30
 const RAIL_GAP = 14 // gap under a rail with no VMs in its band
 const VM_W = 140
-const VM_H = 48
+const VM_H = 60
 const VM_GAP = 18
 const COL_PITCH = VM_W + VM_GAP
 const BAND_PAD = 18 // space above/below a VM row (room for leg labels)
@@ -541,7 +541,7 @@ function VirtualTopologyPage() {
                   />
                   <text
                     x={vm.x}
-                    y={vm.y + (label ? 34 : VM_H / 2 + 4)}
+                    y={vm.y + (label ? 43 : VM_H / 2 + 4)}
                     fontSize={12}
                     fontWeight={600}
                     textAnchor="middle"
