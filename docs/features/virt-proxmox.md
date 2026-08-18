@@ -24,7 +24,7 @@ sources**; see [External sync](external-sync.md) for the shared ground rules.
 | --- | --- |
 | Cluster | **Cluster** (a *Proxmox VE* cluster type is created on demand) |
 | QEMU / LXC guest | **Virtual machine** (vCPUs, memory, disk, description) |
-| Guest tags (`prod;web`) | **Tags** (added, never removed) |
+| Guest tags (`prod;web`) | **Tags** (added, never removed; colors from the cluster's tag color-map, blank-fill only) |
 | Notes | **Description** (blank-filled, never overwrites yours) |
 | Guest NIC (`netX`) | **VM interface** with its MAC |
 | Disk (`scsiN`/`virtioN`/…) | **Virtual disk** (name, size, storage, controller) — *opt-in* |

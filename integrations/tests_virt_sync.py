@@ -72,6 +72,9 @@ NODE_NET_PVE1 = [
 def fake_get(source, path):
     if path == "cluster/status":
         return CLUSTER_STATUS
+    if path == "cluster/options":
+        # Explicit tag colors for `prod`; `web` falls back to uncoloured.
+        return {"tag-style": "color-map=prod:EF4444:FFFFFF,shape=full"}
     if path.startswith("cluster/resources"):
         return RESOURCES
     if path == "nodes/pve1/qemu/100/config":
@@ -275,6 +278,21 @@ class ProxmoxSyncTests(TestCase):
         self.assertEqual(vm.description, "Frontend router")  # notes → description
         self.assertEqual(
             set(vm.tags.values_list("name", flat=True)), {"prod", "web"}
+        )
+        # Cluster color-map colors ride along; unmapped tags stay uncoloured.
+        colors = dict(vm.tags.values_list("name", "color"))
+        self.assertEqual(colors["prod"], "#ef4444")
+        self.assertEqual(colors["web"], "")
+
+    def test_tag_color_never_overwrites_operator_choice(self):
+        from core.models import Tag
+
+        Tag.objects.create(
+            tenant=self.tenant, name="prod", slug="prod", color="#123456"
+        )
+        self.sync()
+        self.assertEqual(
+            Tag.objects.get(tenant=self.tenant, slug="prod").color, "#123456"
         )
 
     def test_notes_dont_overwrite_operator_description(self):

@@ -24,6 +24,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import re
+from functools import partial
 
 from django.db import transaction
 from django.utils import timezone
@@ -146,9 +147,30 @@ def _apply_notes(vm, notes) -> None:
         vm.save(update_fields=["description"])
 
 
-def _apply_tags(vm, names) -> None:
+def _parse_tag_colors(tag_style) -> dict:
+    """Parse Proxmox ``tag-style`` (cluster/options) into ``{name: "#rrggbb"}``.
+
+    Format: ``color-map=<tag>:<RRGGBB>[:<text RRGGBB>];…,shape=…,…`` — only the
+    explicit color-map is usable; without one Proxmox derives colors from a
+    UI-side name hash, which isn't worth replicating.
+    """
+    out: dict = {}
+    for part in str(tag_style or "").split(","):
+        part = part.strip()
+        if not part.startswith("color-map="):
+            continue
+        for entry in part[len("color-map="):].split(";"):
+            bits = entry.split(":")
+            if len(bits) >= 2 and bits[0] and re.fullmatch(r"[0-9a-fA-F]{6}", bits[1]):
+                out[bits[0]] = f"#{bits[1].lower()}"
+    return out
+
+
+def _apply_tags(vm, names, colors: dict | None = None) -> None:
     """Additively attach hypervisor tags to the VM — get-or-create each Tag in
-    the tenant, add the ones missing. Never removes operator-added tags."""
+    the tenant, add the ones missing. Never removes operator-added tags. The
+    hypervisor's tag color (Proxmox color-map) is blank-filled — set on create
+    or on an uncoloured tag, never overwriting a color an operator picked."""
     from django.utils.text import slugify
 
     from core.models import Tag
@@ -156,23 +178,32 @@ def _apply_tags(vm, names) -> None:
     want = [n.strip() for n in names if n and n.strip()]
     if not want:
         return
-    have = {t.name for t in vm.tags.all()}
+    colors = colors or {}
+    have = {t.name: t for t in vm.tags.all()}
     for name in want:
-        if name in have:
-            continue
-        tag, _ = Tag.objects.get_or_create(
-            tenant=vm.tenant, slug=slugify(name)[:100] or name[:100],
-            defaults={"name": name},
-        )
-        vm.tags.add(tag)
+        color = colors.get(name, "")
+        tag = have.get(name)
+        if tag is None:
+            tag, _ = Tag.objects.get_or_create(
+                tenant=vm.tenant, slug=slugify(name)[:100] or name[:100],
+                defaults={"name": name, "color": color},
+            )
+            vm.tags.add(tag)
+        if color and not tag.color:
+            tag.color = color
+            tag.save(update_fields=["color"])
 
 
-def _sync_meta_proxmox(guest, cfg) -> None:
-    """Proxmox VM tags (`tags: a;b`) → Tags; Notes (`description`) → description."""
+def _sync_meta_proxmox(guest, cfg, tag_colors: dict | None = None) -> None:
+    """Proxmox VM tags (`tags: a;b`) → Tags (with color-map colors); Notes
+    (`description`) → description."""
     if guest.vm is None or not cfg:
         return
     _apply_notes(guest.vm, cfg.get("description"))
-    _apply_tags(guest.vm, re.split(r"[;,]", str(cfg.get("tags") or "")))
+    _apply_tags(
+        guest.vm, re.split(r"[;,]", str(cfg.get("tags") or "")),
+        colors=tag_colors,
+    )
 
 
 def _sync_meta_vcenter(guest, meta) -> None:
@@ -356,11 +387,22 @@ def sync_proxmox(source) -> dict:
         details[vmid] = {"ifaces": cfg, "ips": agent_ifaces,
                          "disks": cfg, "nets": cfg, "meta": cfg}
 
+    # Cluster tag colors (explicit color-map only) ride along into Tag rows.
+    try:
+        opts = proxmox_get(source, "cluster/options") or {}
+    except VirtAPIError:
+        opts = {}
+    tag_colors = _parse_tag_colors(
+        opts.get("tag-style") if isinstance(opts, dict) else ""
+    )
+
     result = _run_pass(source, cluster_name, resources, details, now, counts,
                        _sync_interfaces, _sync_ips,
                        sync_disks_fn=_sync_disks,
                        sync_nets_fn=_sync_networks_proxmox,
-                       sync_meta_fn=_sync_meta_proxmox, label="proxmox")
+                       sync_meta_fn=partial(_sync_meta_proxmox,
+                                            tag_colors=tag_colors),
+                       label="proxmox")
     # Switches exist now — link their bridge uplinks to the node's real NICs.
     if source.sync_networks:
         result["uplinks"] = _sync_proxmox_uplinks(source, cluster_name, nodes)
