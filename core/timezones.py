@@ -83,30 +83,31 @@ LEGACY_ALIASES: dict[str, str] = {
 
 @lru_cache(maxsize=1)
 def supported_timezones() -> list[str]:
-    """Sorted zone names this deployment resolves — the picker's source."""
-    return sorted(available_timezones())
+    """Sorted zone names to offer — the picker's source.
+
+    Legacy spellings are dropped even where the local tz database still
+    carries them, so the list is the same on every host and nobody picks a
+    name that will be rewritten on save.
+    """
+    return sorted(z for z in available_timezones() if z not in LEGACY_ALIASES)
 
 
 def resolve_timezone(value: str) -> str | None:
     """Canonical zone name for ``value``, or None when it isn't a real zone.
 
-    Accepts anything the local tz database resolves, then falls back to the
-    legacy-alias table so a browser (or a settings row written before a zone
-    was renamed) doesn't hit a dead end.
+    Legacy names map to their modern spelling **first**, before asking the tz
+    database. Some builds ship the "backward" links and resolve
+    ``Europe/Kiev`` happily while others don't, so trusting the local database
+    would store a different string depending on the host — and a value written
+    on one would fail to load on the other. Canonicalising first makes the
+    stored value the same everywhere.
     """
     name = (value or "").strip()
     if not name:
         return ""
+    name = LEGACY_ALIASES.get(name, name)
     try:
         ZoneInfo(name)
-        return name
     except (ValueError, KeyError, OSError):
-        pass
-    canonical = LEGACY_ALIASES.get(name)
-    if canonical:
-        try:
-            ZoneInfo(canonical)
-            return canonical
-        except (ValueError, KeyError, OSError):
-            return None
-    return None
+        return None
+    return name

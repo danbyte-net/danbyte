@@ -198,6 +198,26 @@ class LegacyTimezoneNameTests(APITestCase):
         sess["current_tenant_id"] = str(self.tenant.id)
         sess.save()
 
+    def test_canonicalises_even_where_the_tz_database_resolves_legacy(self):
+        """Some builds ship the tzdata "backward" links and resolve
+        Europe/Kiev natively; others don't. Canonicalise regardless, so the
+        stored string doesn't depend on the host — a value written on one
+        would otherwise fail to load on the other."""
+        from unittest import mock
+
+        import core.timezones as tzmod
+
+        real = tzmod.ZoneInfo
+
+        def full_db(name):
+            if name in {"Europe/Kiev", "Asia/Calcutta", "US/Eastern"}:
+                return None  # pretend the backward links are present
+            return real(name)
+
+        with mock.patch.object(tzmod, "ZoneInfo", full_db):
+            self.assertEqual(tzmod.resolve_timezone("Europe/Kiev"), "Europe/Kyiv")
+            self.assertEqual(tzmod.resolve_timezone("US/Eastern"), "America/New_York")
+
     def test_resolve_maps_legacy_names(self):
         from core.timezones import resolve_timezone
 
@@ -234,6 +254,11 @@ class LegacyTimezoneNameTests(APITestCase):
         self.assertEqual(r.status_code, 200, r.content)
         zones = r.json()["timezones"]
         self.assertIn("Europe/Copenhagen", zones)
+        self.assertIn("Europe/Kyiv", zones)
+        # Legacy spellings never appear, even on hosts whose tz database still
+        # resolves them — otherwise the picker offers a name it rewrites.
+        self.assertNotIn("Europe/Kiev", zones)
+        self.assertNotIn("US/Eastern", zones)
         self.assertEqual(zones, sorted(zones))
         # Every offered zone must actually save — that was the whole bug.
         from core.deployment import clean_display_timezone
