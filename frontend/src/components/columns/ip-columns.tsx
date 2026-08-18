@@ -6,6 +6,8 @@ import type { CustomField, IPAddress } from "@/lib/api"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { DhcpBadge, type DhcpState } from "@/components/dhcp-badge"
+import { ColorBadge } from "@/components/cells/color-badge"
+import { VlanBadge } from "@/components/cells/vlan-badge"
 import { StatusBadge } from "@/components/status-badge"
 import { RoleChip } from "@/components/role-chip"
 import { CopyButton } from "@/components/kv-card"
@@ -34,6 +36,8 @@ export type IpColumnId =
   | "status"
   | "dhcp"
   | "role"
+  | "vlan"
+  | "zone"
   | "scope"
   | "dns"
   | "assigned"
@@ -48,6 +52,8 @@ const CANONICAL_ORDER: IpColumnId[] = [
   "status",
   "dhcp",
   "role",
+  "vlan",
+  "zone",
   "scope",
   "dns",
   "assigned",
@@ -244,6 +250,52 @@ export function buildIpColumns<T = IPAddress>(
               textColor: role?.text_color ?? undefined,
             }
           },
+        },
+      },
+    }),
+    vlan: () => ({
+      id: "vlan",
+      accessorFn: (r) => {
+        const v = getIp(r)?.prefix?.vlan
+        return v ? `${v.vlan_id} · ${v.name}` : ""
+      },
+      header: ({ column }) => <SortHeader column={column} label="VLAN" />,
+      cell: ({ row }) => {
+        const v = getIp(row.original)?.prefix?.vlan
+        return v ? <VlanBadge vlan={v} /> : dash
+      },
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "VLAN",
+          get: (r: T) => getIp(r)?.prefix?.vlan?.id ?? "__none__",
+          formatValue: (_v, sample) => {
+            const v = getIp(sample)?.prefix?.vlan
+            return { label: v ? `${v.vlan_id} · ${v.name}` : "No VLAN" }
+          },
+        },
+      },
+    }),
+    zone: () => ({
+      id: "zone",
+      accessorFn: (r) => getIp(r)?.prefix?.vlan?.zone?.name ?? "",
+      header: ({ column }) => <SortHeader column={column} label="Zone" />,
+      cell: ({ row }) => {
+        const z = getIp(row.original)?.prefix?.vlan?.zone
+        return z ? (
+          <ColorBadge name={z.name} color={z.color || undefined} />
+        ) : (
+          dash
+        )
+      },
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Zone",
+          get: (r: T) => getIp(r)?.prefix?.vlan?.zone?.id ?? "__none__",
+          formatValue: (_v, sample) => ({
+            label: getIp(sample)?.prefix?.vlan?.zone?.name ?? "No zone",
+          }),
         },
       },
     }),

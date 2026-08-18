@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Pencil, Trash2 } from "lucide-react"
+import { Pencil, Plus, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api, type Paginated, type VLAN, type Zone } from "@/lib/api"
@@ -16,6 +16,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { ZoneDeleteDialog } from "@/components/zone-delete-dialog"
+import { ZoneAssignVlanDialog } from "@/components/zone-assign-vlan-dialog"
 import {
   DetailHero,
   DetailShell,
@@ -140,7 +141,7 @@ function Body({ zone: z }: { zone: Zone }) {
         <ZoneOverview zone={z} />
       </DetailTab>
       <DetailTab value="vlans">
-        <ZoneVlansTable zoneId={z.id} />
+        <ZoneVlansTable zoneId={z.id} zoneName={z.name} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.zone" objectId={z.id} />
@@ -212,7 +213,15 @@ function ZoneOverview({ zone: z }: { zone: Zone }) {
   )
 }
 
-function ZoneVlansTable({ zoneId }: { zoneId: string }) {
+function ZoneVlansTable({
+  zoneId,
+  zoneName,
+}: {
+  zoneId: string
+  zoneName: string
+}) {
+  const { canDo } = useMe()
+  const [assigning, setAssigning] = useState(false)
   const q = useQuery({
     queryKey: ["vlans"],
     queryFn: () => api<Paginated<VLAN>>("/api/vlans/"),
@@ -232,18 +241,34 @@ function ZoneVlansTable({ zoneId }: { zoneId: string }) {
   if (q.isLoading)
     return <p className="text-sm text-muted-foreground">Loading…</p>
   if (q.isError) return <QueryError error={q.error} />
-  if (rows.length === 0)
-    return (
-      <p className="text-sm text-muted-foreground">
-        No VLANs in this zone yet.
-      </p>
-    )
   return (
-    <DataTable
-      data={rows}
-      columns={columns}
-      flexColumn="description"
-      tableId="zone-vlans"
-    />
+    <div className="space-y-2">
+      {canDo("vlan", "change") && (
+        <div className="flex justify-end">
+          <Button size="sm" variant="outline" onClick={() => setAssigning(true)}>
+            <Plus className="h-3.5 w-3.5" /> Assign VLAN
+          </Button>
+        </div>
+      )}
+      {rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No VLANs in this zone yet. To remove one, edit that VLAN and clear
+          its zone.
+        </p>
+      ) : (
+        <DataTable
+          data={rows}
+          columns={columns}
+          flexColumn="description"
+          tableId="zone-vlans"
+        />
+      )}
+      <ZoneAssignVlanDialog
+        zoneId={zoneId}
+        zoneName={zoneName}
+        open={assigning}
+        onOpenChange={setAssigning}
+      />
+    </div>
   )
 }

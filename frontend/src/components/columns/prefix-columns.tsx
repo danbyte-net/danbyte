@@ -16,6 +16,7 @@ import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import { dash } from "@/components/cells/dash"
 import { UtilCell } from "@/components/cells/util-cell"
+import { ColorBadge } from "@/components/cells/color-badge"
 import { VlanBadge } from "@/components/cells/vlan-badge"
 import { siteColumn } from "@/components/cells/site-cell"
 import { vrfColumn } from "@/components/cells/vrf-cell"
@@ -45,6 +46,7 @@ export type PrefixColumnId =
   | "monitoring"
   | "vrf"
   | "vlan"
+  | "zone"
   | "site"
   | "gateway"
   | "description"
@@ -60,6 +62,7 @@ const CANONICAL_ORDER: PrefixColumnId[] = [
   "monitoring",
   "vrf",
   "vlan",
+  "zone",
   "site",
   "gateway",
   "description",
@@ -249,6 +252,29 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
             label: sample.vlan
               ? `${sample.vlan.vlan_id} · ${sample.vlan.name}`
               : "No VLAN",
+          }),
+        },
+      },
+    }),
+    zone: () => ({
+      id: "zone",
+      accessorFn: (r) => r.vlan?.zone?.name ?? "",
+      header: ({ column }) => <SortHeader column={column} label="Zone" />,
+      cell: ({ row }) => {
+        const z = row.original.vlan?.zone
+        return z ? (
+          <ColorBadge name={z.name} color={z.color || undefined} />
+        ) : (
+          dash
+        )
+      },
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Zone",
+          get: (r: T) => r.vlan?.zone?.id ?? "__none__",
+          formatValue: (_v, sample) => ({
+            label: sample.vlan?.zone?.name ?? "No zone",
           }),
         },
       },

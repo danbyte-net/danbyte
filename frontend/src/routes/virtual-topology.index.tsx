@@ -541,7 +541,7 @@ function VirtualTopologyPage() {
                   />
                   <text
                     x={vm.x}
-                    y={vm.y + (label ? 43 : VM_H / 2 + 4)}
+                    y={vm.y + VM_H / 2 + 4}
                     fontSize={12}
                     fontWeight={600}
                     textAnchor="middle"

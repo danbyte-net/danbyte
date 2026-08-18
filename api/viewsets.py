@@ -1169,7 +1169,9 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             annotate_dhcp(
                 IPAddress.objects
                 .filter(prefix=prefix)
-                .select_related("status", "role", "assigned_device")
+                .select_related(
+                    "status", "role", "assigned_device", "prefix__vlan__zone"
+                )
                 .prefetch_related("tags")
             ),
             request.user, prefix.tenant, "ipaddress", "view",
@@ -3314,7 +3316,8 @@ class DeviceViewSet(
         device = self.get_object()
         qs = annotate_dhcp(
             IPAddress.objects.filter(assigned_device=device)
-            .select_related("status", "role", "prefix").prefetch_related("tags")
+            .select_related("status", "role", "prefix__vlan__zone")
+            .prefetch_related("tags")
         )
         qs = rbac.restrict_queryset(
             qs, request.user, device.tenant, "ipaddress", "view"
@@ -3450,7 +3453,7 @@ class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
             IPAddress.objects.filter(
                 assigned_interface=iface, tenant=iface.device.tenant
             )
-            .select_related("status", "role", "prefix")
+            .select_related("status", "role", "prefix__vlan__zone")
             .prefetch_related("tags")
             .order_by("ip_address")
         )
