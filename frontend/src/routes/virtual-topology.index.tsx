@@ -71,6 +71,16 @@ function fit(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s
 }
 
+/** Black or white label for a solid rail, by perceived luminance (Rec. 709). */
+export function railText(hex: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex)
+  if (!m) return "#fff"
+  const n = parseInt(m[1], 16)
+  const l =
+    0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)
+  return l > 150 ? "#111" : "#fff"
+}
+
 interface LaidRail {
   id: string
   y: number
@@ -93,20 +103,13 @@ interface LaidVm {
   name: string
   status: string | null
 }
-interface LaidDot {
-  key: string
-  x: number
-  y: number
-  color: string
-}
 interface Laid {
   width: number
   height: number
   strips: LaidStrip[]
   rails: LaidRail[]
   vms: LaidVm[]
-  dots: LaidDot[]
-  lines: { key: string; x: number; y1: number; y2: number }[]
+  lines: { key: string; x: number; y1: number; y2: number; color: string }[]
 }
 
 function layout(
@@ -213,37 +216,39 @@ function layout(
     y += STRIP_GAP / 2
   }
 
-  // 5. VM boxes + connectors + attachment dots.
+  // 5. VM boxes + solid connectors, one coloured segment per attached network
+  //    (the OpenStack look: the stub carries the network's colour).
   const vms: LaidVm[] = []
-  const dots: LaidDot[] = []
   const lines: Laid["lines"] = []
   for (const p of placed) {
     const x = PAD + LABEL_RESERVE + p.col * COL_PITCH + VM_W / 2
     const boxY = bandY[p.band] + BAND_PAD
     vms.push({ id: p.id, x, y: boxY, name: p.name, status: p.status })
     const firstRail = p.railIdxs[0]
-    const lastRail = p.railIdxs[p.railIdxs.length - 1]
-    // Up to the rail it sits under…
+    // Up into the rail the box sits under, in that rail's colour.
     lines.push({
       key: `u-${p.id}`,
       x,
-      y1: railY[firstRail] + RAIL_H,
+      y1: railY[firstRail] + RAIL_H - 2,
       y2: boxY,
+      color: laidRails[firstRail].color,
     })
-    // …and down through to the last attached rail (crossing bands in between).
-    if (lastRail > firstRail)
-      lines.push({ key: `d-${p.id}`, x, y1: boxY + VM_H, y2: railY[lastRail] })
-    for (const r of p.railIdxs)
-      dots.push({
-        key: `dot-${p.id}-${r}`,
+    // Down to each further rail — each leg coloured by the rail it plugs into.
+    let fromY = boxY + VM_H
+    for (const r of p.railIdxs.slice(1)) {
+      lines.push({
+        key: `d-${p.id}-${r}`,
         x,
-        y: railY[r] + RAIL_H / 2,
+        y1: fromY,
+        y2: railY[r] + 2,
         color: laidRails[r].color,
       })
+      fromY = railY[r] + RAIL_H
+    }
   }
 
   const height = y + PAD / 2
-  return { width, height, strips, rails: laidRails, vms, dots, lines }
+  return { width, height, strips, rails: laidRails, vms, lines }
 }
 
 function VirtualTopologyPage() {
@@ -350,7 +355,7 @@ function VirtualTopologyPage() {
               External network
             </text>
 
-            {/* connectors (behind boxes) */}
+            {/* connectors (behind boxes) — solid, in the network's colour */}
             {laid.lines.map((l) => (
               <line
                 key={l.key}
@@ -358,8 +363,9 @@ function VirtualTopologyPage() {
                 y1={l.y1}
                 x2={l.x}
                 y2={l.y2}
-                stroke="var(--border)"
-                strokeWidth={1.5}
+                stroke={l.color}
+                strokeWidth={3}
+                strokeLinecap="round"
               />
             ))}
 
@@ -449,31 +455,18 @@ function VirtualTopologyPage() {
                   height={RAIL_H}
                   rx={6}
                   fill={r.color}
-                  fillOpacity={0.12}
-                  stroke={r.color}
-                  strokeOpacity={0.5}
-                />
-                <circle
-                  cx={PAD + 14}
-                  cy={r.y + RAIL_H / 2}
-                  r={4}
-                  fill={r.color}
+                  fillOpacity={0.92}
                 />
                 <text
-                  x={PAD + 26}
+                  x={PAD + 12}
                   y={r.y + RAIL_H / 2 + 4}
                   fontSize={12}
                   fontWeight={600}
-                  fill="var(--foreground)"
+                  fill={railText(r.color)}
                 >
-                  {fit(r.label, 30)}
+                  {fit(r.label, 34)}
                 </text>
               </g>
-            ))}
-
-            {/* attachment dots — where a VM's connector meets a rail */}
-            {laid.dots.map((d) => (
-              <circle key={d.key} cx={d.x} cy={d.y} r={3.5} fill={d.color} />
             ))}
 
             {/* VM boxes — one per VM, sandwiched between its networks */}

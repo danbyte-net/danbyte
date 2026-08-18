@@ -19,6 +19,7 @@ import { ViolationBadge } from "@/components/compliance/violation-badge"
 import { api, type IPAddress, type IPRange, type Paginated } from "@/lib/api"
 import { parseCidr, bigIntToIp, ipToBigInt } from "@/lib/prefix-tree"
 import { DhcpBadge } from "@/components/dhcp-badge"
+import { VlanBadge } from "@/components/cells/vlan-badge"
 import { copyText } from "@/lib/clipboard"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -359,9 +360,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
     {
       label: "VLAN",
       value: ip.prefix?.vlan ? (
-        <span className="font-mono">
-          {ip.prefix.vlan.vlan_id} · {ip.prefix.vlan.name}
-        </span>
+        <VlanBadge vlan={ip.prefix.vlan} />
       ) : (
         <span className="text-muted-foreground">—</span>
       ),

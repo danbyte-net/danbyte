@@ -16,7 +16,7 @@ import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import { dash } from "@/components/cells/dash"
 import { UtilCell } from "@/components/cells/util-cell"
-import { ColorBadge } from "@/components/cells/color-badge"
+import { VlanBadge } from "@/components/cells/vlan-badge"
 import { siteColumn } from "@/components/cells/site-cell"
 import { vrfColumn } from "@/components/cells/vrf-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
@@ -238,25 +238,7 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
       header: "VLAN",
       cell: ({ row }) => {
         const v = row.original.vlan
-        return v ? (
-          <span className="inline-flex items-center gap-1.5">
-            <Link
-              to="/vlans/$id"
-              params={{ id: v.id }}
-              className="link font-mono text-xs text-muted-foreground"
-            >
-              {v.vlan_id} · {v.name}
-            </Link>
-            {v.zone && (
-              <ColorBadge
-                name={v.zone.name}
-                color={v.zone.color || undefined}
-              />
-            )}
-          </span>
-        ) : (
-          dash
-        )
+        return v ? <VlanBadge vlan={v} /> : dash
       },
       meta: {
         facet: {

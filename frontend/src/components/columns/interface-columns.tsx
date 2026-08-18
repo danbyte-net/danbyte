@@ -25,6 +25,7 @@ import { CableStatusControl } from "@/components/cable-status-control"
 import { SnmpLinkBadge } from "@/components/snmp-link-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { dash } from "@/components/cells/dash"
+import { VlanBadge } from "@/components/cells/vlan-badge"
 import { DeviceCell } from "@/components/cells/device-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { vrfColumn } from "@/components/cells/vrf-cell"
@@ -360,7 +361,7 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
         const tagged = r.tagged_vlans?.length ?? 0
         return r.vlan || tagged ? (
           <span className="flex items-center gap-1.5 font-mono text-xs">
-            {r.vlan ? `${r.vlan.vlan_id} · ${r.vlan.name}` : "—"}
+            {r.vlan ? <VlanBadge vlan={r.vlan} /> : "—"}
             {r.mode === "tagged" && tagged > 0 && (
               <Badge variant="secondary" className="h-4 px-1 text-[10px]">
                 trunk +{tagged}
