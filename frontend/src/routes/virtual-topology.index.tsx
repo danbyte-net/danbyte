@@ -120,6 +120,7 @@ interface Laid {
     y2: number
     color: string
     label?: string
+    labelX?: number
     labelY?: number
   }[]
 }
@@ -259,6 +260,7 @@ function layout(
     const n = p.railIdxs.length
     p.railIdxs.forEach((r, k) => {
       const lx = x + (k - (n - 1) / 2) * 6
+      const labelX = x + ((n - 1) / 2) * 6 + 8 // clear of the whole ribbon
       if (r === firstRail) {
         lines.push({
           key: `u-${p.id}`,
@@ -267,6 +269,7 @@ function layout(
           y2: boxY,
           color: laidRails[r].color,
           label: p.ifaces.get(r),
+          labelX,
           labelY: boxY - 4,
         })
       } else {
@@ -277,6 +280,7 @@ function layout(
           y2: railY[r] + RAIL_H / 2,
           color: laidRails[r].color,
           label: p.ifaces.get(r),
+          labelX,
           labelY: railY[r] - 4,
         })
       }
@@ -393,29 +397,32 @@ function VirtualTopologyPage() {
 
             {/* connectors (behind boxes) — solid, in the network's colour */}
             {laid.lines.map((l) => (
-              <g key={l.key}>
-                <line
-                  x1={l.x}
-                  y1={l.y1}
-                  x2={l.x}
-                  y2={l.y2}
-                  stroke={l.color}
-                  strokeWidth={3}
-                  strokeLinecap="round"
-                />
-                {l.label && (
-                  <text
-                    x={l.x + 7}
-                    y={l.labelY ?? Math.max(l.y1, l.y2) - 5}
-                    fontSize={9}
-                    className="font-mono"
-                    fill="var(--muted-foreground)"
-                  >
-                    {l.label}
-                  </text>
-                )}
-              </g>
+              <line
+                key={l.key}
+                x1={l.x}
+                y1={l.y1}
+                x2={l.x}
+                y2={l.y2}
+                stroke={l.color}
+                strokeWidth={3}
+                strokeLinecap="round"
+              />
             ))}
+            {/* labels after the lanes, clear of the ribbon bundle */}
+            {laid.lines.map((l) =>
+              l.label ? (
+                <text
+                  key={`lbl-${l.key}`}
+                  x={l.labelX ?? l.x + 7}
+                  y={l.labelY ?? Math.max(l.y1, l.y2) - 5}
+                  fontSize={9}
+                  className="font-mono"
+                  fill="var(--muted-foreground)"
+                >
+                  {l.label}
+                </text>
+              ) : null
+            )}
 
             {/* switch strips + their physical adapters */}
             {laid.strips.map((s) => (

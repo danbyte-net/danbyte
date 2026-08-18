@@ -93,28 +93,33 @@ export function VmTopologyCard({
             const color = colorFor(i)
             const lx = vmCx + (i - (conns.length - 1) / 2) * 8
             return (
-              <g key={iface.id}>
-                <line
-                  x1={lx}
-                  y1={PAD + VM_H}
-                  x2={lx}
-                  y2={railsY(i) + RAIL_H / 2}
-                  stroke={color}
-                  strokeWidth={3}
-                  strokeLinecap="round"
-                />
-                <text
-                  x={lx + 7}
-                  y={railsY(i) - 4}
-                  fontSize={10}
-                  className="font-mono"
-                  fill="var(--muted-foreground)"
-                >
-                  {iface.name}
-                </text>
-              </g>
+              <line
+                key={iface.id}
+                x1={lx}
+                y1={PAD + VM_H}
+                x2={lx}
+                y2={railsY(i) + RAIL_H / 2}
+                stroke={color}
+                strokeWidth={3}
+                strokeLinecap="round"
+              />
             )
           })}
+
+          {/* interface labels — drawn after the lanes and placed clear of the
+              whole ribbon, so a lane never crosses its own or another label */}
+          {conns.map(({ iface }, i) => (
+            <text
+              key={`lbl-${iface.id}`}
+              x={vmCx + ((conns.length - 1) / 2) * 8 + 10}
+              y={railsY(i) - 5}
+              fontSize={10}
+              className="font-mono"
+              fill="var(--muted-foreground)"
+            >
+              {iface.name}
+            </text>
+          ))}
 
           {/* the VM */}
           <rect
