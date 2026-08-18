@@ -16,7 +16,7 @@ const PAD = 8
 const VM_W = 150
 const VM_H = 44
 const RAIL_H = 30
-const RAIL_GAP = 12
+const RAIL_GAP = 22 // room for the interface label sitting above each rail
 const DROP = 26 // space between the box and the first rail
 
 // Shades of the Danbyte blue — zone colours (firewall semantics) override.
