@@ -87,25 +87,25 @@ export function VmTopologyCard({
       </h2>
       <div className="overflow-x-auto rounded-lg border border-border bg-muted/10 p-2">
         <svg width={W} height={height} style={{ fontFamily: "inherit" }}>
-          {/* legs — one solid coloured line per attachment, labelled with the
-              interface name */}
+          {/* legs — ribbon-cable lanes: each attachment runs box → its rail in
+              its own parallel lane, labelled above the rail it plugs into */}
           {conns.map(({ iface }, i) => {
             const color = colorFor(i)
-            const y2 = railsY(i) + 2
+            const lx = vmCx + (i - (conns.length - 1) / 2) * 8
             return (
               <g key={iface.id}>
                 <line
-                  x1={vmCx}
-                  y1={i === 0 ? PAD + VM_H : railsY(i - 1) + RAIL_H}
-                  x2={vmCx}
-                  y2={y2}
+                  x1={lx}
+                  y1={PAD + VM_H}
+                  x2={lx}
+                  y2={railsY(i) + RAIL_H / 2}
                   stroke={color}
                   strokeWidth={3}
                   strokeLinecap="round"
                 />
                 <text
-                  x={vmCx + 8}
-                  y={(i === 0 ? PAD + VM_H : railsY(i - 1) + RAIL_H) + 15}
+                  x={lx + 7}
+                  y={railsY(i) - 4}
                   fontSize={10}
                   className="font-mono"
                   fill="var(--muted-foreground)"
