@@ -3247,7 +3247,13 @@ export interface VirtNetwork {
   id: string
   name: string
   ext_key: string
-  vlan: { id: string; vlan_id: number; name: string } | null
+  vlan: {
+    id: string
+    vlan_id: number
+    name: string
+    /** The VLAN's zone colour — Danbyte's colour layer for VLANs. */
+    zone_color: string | null
+  } | null
   vswitch: string | null
   vswitch_name: string | null
   vms: { id: string; name: string; status: string | null }[]

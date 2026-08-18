@@ -31,8 +31,12 @@ class VirtNetworkSerializer(serializers.ModelSerializer):
     def get_vlan(self, obj):
         if not obj.vlan_id:
             return None
+        # The zone is Danbyte's colour layer for VLANs — the topology view uses
+        # it to tint the network rail (palette fallback when unzoned).
+        zone = obj.vlan.zone
         return {"id": str(obj.vlan_id), "vlan_id": obj.vlan.vlan_id,
-                "name": obj.vlan.name}
+                "name": obj.vlan.name,
+                "zone_color": zone.color if zone else None}
 
     def get_vms(self, obj):
         if not obj.vlan_id:
@@ -60,7 +64,7 @@ class VirtNetworkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     tenant_field = "source__tenant"
     http_method_names = ["get"]
     queryset = VirtNetwork.objects.select_related(
-        "source", "vlan", "vswitch"
+        "source", "vlan", "vlan__zone", "vswitch"
     ).order_by("name", "ext_key")
     serializer_class = VirtNetworkSerializer
 

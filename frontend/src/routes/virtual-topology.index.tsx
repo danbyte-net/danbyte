@@ -25,25 +25,37 @@ export const Route = createFileRoute("/virtual-topology/")({
 })
 
 // ─── layout geometry ─────────────────────────────────────────────────────────
+// OpenStack-style rails: each network is a full-width horizontal bar, VMs are
+// drawn ONCE and sit in the band under their topmost network, with a vertical
+// connector down to every other network they attach to.
 const PAD = 32
-const EXT_Y = 12
 const EXT_H = 30
-const ADP_Y = 78
-const ADP_H = 46
-const ADP_W = 120
-const ADP_GAP = 14
-const SW_Y = 184
-const SW_H = 46
-const SW_W = 190
-const NET_Y = 288
-const NET_H = 34
-const VM_Y = 366
-const VM_W = 132
-const VM_H = 50
-const VM_GAP = 16
-const NET_GAP = 44
-const SW_GAP = 80
-const NET_MIN_W = 150
+const STRIP_H = 42
+const STRIP_GAP = 16
+const RAIL_H = 30
+const RAIL_GAP = 14 // gap under a rail with no VMs in its band
+const VM_W = 140
+const VM_H = 48
+const VM_GAP = 18
+const COL_PITCH = VM_W + VM_GAP
+const BAND_PAD = 12 // space above/below a VM row inside its band
+const BAND_H = VM_H + 2 * BAND_PAD
+const LABEL_RESERVE = 216 // rail label zone — VM columns start after it
+const ADP_W = 116
+const ADP_H = 34
+const ADP_GAP = 8
+
+// Deterministic rail palette (used when the network's VLAN has no zone colour).
+const PALETTE = [
+  "#0ea5e9", // sky
+  "#8b5cf6", // violet
+  "#10b981", // emerald
+  "#f59e0b", // amber
+  "#f43f5e", // rose
+  "#06b6d4", // cyan
+  "#84cc16", // lime
+  "#d946ef", // fuchsia
+]
 
 function vmColors(status: string | null): { stroke: string; fill: string } {
   const s = (status || "").toLowerCase()
@@ -59,141 +71,179 @@ function fit(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s
 }
 
+interface LaidRail {
+  id: string
+  y: number
+  color: string
+  label: string
+  vlan: { id: string; vlan_id: number } | null
+}
+interface LaidStrip {
+  id: string
+  y: number
+  name: string
+  kind: string
+  clickable: boolean
+  adapters: { key: string; ifaceId: string; x: number; nic: string; host: string }[]
+}
+interface LaidVm {
+  id: string
+  x: number
+  y: number
+  name: string
+  status: string | null
+}
+interface LaidDot {
+  key: string
+  x: number
+  y: number
+  color: string
+}
 interface Laid {
   width: number
   height: number
-  switches: { id: string; cx: number; name: string; kind: string }[]
-  adapters: {
-    key: string
-    ifaceId: string
-    cx: number
-    nic: string
-    host: string
-  }[]
-  networks: {
-    id: string
-    x: number
-    w: number
-    cx: number
-    label: string
-    vlan: { id: string; vlan_id: number } | null
-  }[]
-  vms: {
-    key: string
-    id: string
-    cx: number
-    name: string
-    status: string | null
-  }[]
-  edges: { key: string; d: string }[]
+  strips: LaidStrip[]
+  rails: LaidRail[]
+  vms: LaidVm[]
+  dots: LaidDot[]
+  lines: { key: string; x: number; y1: number; y2: number }[]
 }
 
 function layout(
   groups: [string, VirtNetwork[]][],
   swById: Map<string, VirtualSwitch>
 ): Laid {
-  const switches: Laid["switches"] = []
-  const adapters: Laid["adapters"] = []
-  const networks: Laid["networks"] = []
-  const vms: Laid["vms"] = []
-  const edges: Laid["edges"] = []
+  // 1. Flatten rails in section order; remember which section each belongs to.
+  const rails: { net: VirtNetwork; section: number }[] = []
+  const sections = groups.map(([swId, nets], si) => {
+    const sorted = [...nets].sort(
+      (a, b) => (a.vlan?.vlan_id ?? 9999) - (b.vlan?.vlan_id ?? 9999)
+    )
+    const start = rails.length
+    for (const n of sorted) rails.push({ net: n, section: si })
+    return { swId, start, end: rails.length - 1 }
+  })
 
-  const swMidY = (SW_Y + SW_H + NET_Y) / 2
-  const adpMidY = (ADP_Y + ADP_H + SW_Y) / 2
+  // 2. Dedupe VMs across every rail → the rail indexes each VM attaches to.
+  const byVm = new Map<
+    string,
+    { name: string; status: string | null; railIdxs: number[] }
+  >()
+  rails.forEach((r, idx) => {
+    for (const vm of r.net.vms) {
+      const e = byVm.get(vm.id)
+      if (e) e.railIdxs.push(idx)
+      else byVm.set(vm.id, { name: vm.name, status: vm.status, railIdxs: [idx] })
+    }
+  })
+  const vmsSorted = [...byVm.entries()].sort((a, b) => {
+    const ra = a[1].railIdxs[0]
+    const rb = b[1].railIdxs[0]
+    return ra !== rb ? ra - rb : a[1].name.localeCompare(b[1].name)
+  })
 
-  const netW = (n: VirtNetwork) =>
-    n.vms.length > 0
-      ? n.vms.length * VM_W + (n.vms.length - 1) * VM_GAP
-      : NET_MIN_W
+  // 3. Column allocation — a VM occupies its column in every band its
+  //    connector passes through, so nothing ever overlaps.
+  const bandCols: Set<number>[] = rails.map(() => new Set())
+  const placed: {
+    id: string
+    name: string
+    status: string | null
+    col: number
+    band: number
+    railIdxs: number[]
+  }[] = []
+  for (const [id, v] of vmsSorted) {
+    const first = v.railIdxs[0]
+    const last = v.railIdxs[v.railIdxs.length - 1]
+    const span: number[] = []
+    for (let b = first; b <= Math.max(first, last - 1); b++) span.push(b)
+    let col = 0
+    while (span.some((b) => bandCols[b].has(col))) col++
+    span.forEach((b) => bandCols[b].add(col))
+    placed.push({ id, name: v.name, status: v.status, col, band: first, railIdxs: v.railIdxs })
+  }
+  const maxCols = placed.reduce((m, p) => Math.max(m, p.col + 1), 0)
+  const width = Math.max(
+    PAD * 2 + LABEL_RESERVE + maxCols * COL_PITCH,
+    900
+  )
 
-  let x = PAD
-  for (const [swId, nets] of groups) {
-    const sw = swById.get(swId)
+  // 4. Vertical pass: external bar → per section: strip → rails with bands.
+  const strips: LaidStrip[] = []
+  const laidRails: LaidRail[] = []
+  const railY: number[] = []
+  const bandY: number[] = []
+  let y = PAD / 2 + EXT_H + STRIP_GAP
+  for (const sec of sections) {
+    const sw = swById.get(sec.swId)
     const ups = sw?.uplink_interfaces ?? []
-
-    // Reserve a column wide enough for whichever is wider: the VM rows or the
-    // physical-adapter row (many hypervisors on one switch never overlap).
-    const netsTotal =
-      nets.reduce((a, n) => a + netW(n), 0) +
-      Math.max(0, nets.length - 1) * NET_GAP
-    const adpTotal =
-      ups.length > 0 ? ups.length * (ADP_W + ADP_GAP) - ADP_GAP : 0
-    const groupW = Math.max(netsTotal, adpTotal, SW_W)
-    const center = x + groupW / 2
-
-    // networks + their VMs, centred in the column
-    let nx = center - netsTotal / 2
-    for (const net of nets) {
-      const w = netW(net)
-      const netCx = nx + w / 2
-      networks.push({
+    const adapters = ups.map((u, i) => ({
+      key: `${sec.swId}:${u.id}`,
+      ifaceId: u.id,
+      x: width - PAD - (ups.length - i) * (ADP_W + ADP_GAP) + ADP_GAP,
+      nic: u.name,
+      host: u.device.name,
+    }))
+    strips.push({
+      id: sec.swId,
+      y,
+      name: sw?.name ?? "Unassigned networks",
+      kind: sw?.kind_display ?? "",
+      clickable: !!sw,
+      adapters,
+    })
+    y += STRIP_H + STRIP_GAP
+    for (let i = sec.start; i <= sec.end; i++) {
+      const { net } = rails[i]
+      laidRails.push({
         id: net.id,
-        x: nx,
-        w,
-        cx: netCx,
-        label: net.name || net.ext_key,
+        y,
+        color: net.vlan?.zone_color || PALETTE[i % PALETTE.length],
+        label:
+          (net.name || net.ext_key) +
+          (net.vlan ? `  ·  VLAN ${net.vlan.vlan_id}` : ""),
         vlan: net.vlan,
       })
-      net.vms.forEach((vm, i) => {
-        const vmCx = nx + i * (VM_W + VM_GAP) + VM_W / 2
-        vms.push({
-          key: `${net.id}:${vm.id}`,
-          id: vm.id,
-          cx: vmCx,
-          name: vm.name,
-          status: vm.status,
-        })
-        edges.push({
-          key: `nv-${net.id}-${vm.id}`,
-          d: `M ${vmCx} ${NET_Y + NET_H} L ${vmCx} ${VM_Y}`,
-        })
-      })
-      edges.push({
-        key: `sn-${swId}-${net.id}`,
-        d: `M ${center} ${SW_Y + SW_H} L ${center} ${swMidY} L ${netCx} ${swMidY} L ${netCx} ${NET_Y}`,
-      })
-      nx += w + NET_GAP
+      railY[i] = y
+      y += RAIL_H
+      bandY[i] = y
+      y += bandCols[i].size > 0 ? BAND_H : RAIL_GAP
     }
-
-    // physical adapters (host NICs) feeding the switch, centred above it
-    let ax = center - adpTotal / 2
-    ups.forEach((u) => {
-      const adpCx = ax + ADP_W / 2
-      adapters.push({
-        key: `${swId}:${u.id}`,
-        ifaceId: u.id,
-        cx: adpCx,
-        nic: u.name,
-        host: u.device.name,
-      })
-      edges.push({
-        key: `ea-${swId}-${u.id}`,
-        d: `M ${adpCx} ${EXT_Y + EXT_H} L ${adpCx} ${ADP_Y}`,
-      })
-      edges.push({
-        key: `as-${swId}-${u.id}`,
-        d: `M ${adpCx} ${ADP_Y + ADP_H} L ${adpCx} ${adpMidY} L ${center} ${adpMidY} L ${center} ${SW_Y}`,
-      })
-      ax += ADP_W + ADP_GAP
-    })
-    if (ups.length === 0)
-      edges.push({
-        key: `es-${swId}`,
-        d: `M ${center} ${EXT_Y + EXT_H} L ${center} ${SW_Y}`,
-      })
-
-    switches.push({
-      id: swId,
-      cx: center,
-      name: sw?.name ?? "switch",
-      kind: sw?.kind_display ?? "",
-    })
-    x += groupW + SW_GAP
+    y += STRIP_GAP / 2
   }
 
-  const width = Math.max(x - SW_GAP + PAD, 640)
-  const height = VM_Y + VM_H + PAD
-  return { width, height, switches, adapters, networks, vms, edges }
+  // 5. VM boxes + connectors + attachment dots.
+  const vms: LaidVm[] = []
+  const dots: LaidDot[] = []
+  const lines: Laid["lines"] = []
+  for (const p of placed) {
+    const x = PAD + LABEL_RESERVE + p.col * COL_PITCH + VM_W / 2
+    const boxY = bandY[p.band] + BAND_PAD
+    vms.push({ id: p.id, x, y: boxY, name: p.name, status: p.status })
+    const firstRail = p.railIdxs[0]
+    const lastRail = p.railIdxs[p.railIdxs.length - 1]
+    // Up to the rail it sits under…
+    lines.push({
+      key: `u-${p.id}`,
+      x,
+      y1: railY[firstRail] + RAIL_H,
+      y2: boxY,
+    })
+    // …and down through to the last attached rail (crossing bands in between).
+    if (lastRail > firstRail)
+      lines.push({ key: `d-${p.id}`, x, y1: boxY + VM_H, y2: railY[lastRail] })
+    for (const r of p.railIdxs)
+      dots.push({
+        key: `dot-${p.id}-${r}`,
+        x,
+        y: railY[r] + RAIL_H / 2,
+        color: laidRails[r].color,
+      })
+  }
+
+  const height = y + PAD / 2
+  return { width, height, strips, rails: laidRails, vms, dots, lines }
 }
 
 function VirtualTopologyPage() {
@@ -280,21 +330,10 @@ function VirtualTopologyPage() {
             className="min-w-full"
             style={{ fontFamily: "inherit" }}
           >
-            {/* connectors first (behind nodes) */}
-            {laid.edges.map((e) => (
-              <path
-                key={e.key}
-                d={e.d}
-                fill="none"
-                stroke="var(--border)"
-                strokeWidth={1.5}
-              />
-            ))}
-
             {/* external network bar */}
             <rect
               x={PAD}
-              y={EXT_Y}
+              y={PAD / 2}
               width={laid.width - 2 * PAD}
               height={EXT_H}
               rx={6}
@@ -303,7 +342,7 @@ function VirtualTopologyPage() {
             />
             <text
               x={PAD + 12}
-              y={EXT_Y + EXT_H / 2 + 4}
+              y={PAD / 2 + EXT_H / 2 + 4}
               fontSize={12}
               fontWeight={600}
               fill="var(--muted-foreground)"
@@ -311,154 +350,163 @@ function VirtualTopologyPage() {
               External network
             </text>
 
-            {/* physical adapters — host NICs feeding a switch (many hosts ok) */}
-            {laid.adapters.map((a) => (
+            {/* connectors (behind boxes) */}
+            {laid.lines.map((l) => (
+              <line
+                key={l.key}
+                x1={l.x}
+                y1={l.y1}
+                x2={l.x}
+                y2={l.y2}
+                stroke="var(--border)"
+                strokeWidth={1.5}
+              />
+            ))}
+
+            {/* switch strips + their physical adapters */}
+            {laid.strips.map((s) => (
+              <g key={s.id}>
+                <g
+                  className={s.clickable ? "cursor-pointer" : undefined}
+                  onClick={() =>
+                    s.clickable &&
+                    nav({ to: "/virtual-switches/$id", params: { id: s.id } })
+                  }
+                >
+                  <text
+                    x={PAD}
+                    y={s.y + 18}
+                    fontSize={13}
+                    fontWeight={600}
+                    fill="var(--foreground)"
+                  >
+                    {fit(s.name, 40)}
+                  </text>
+                  <text
+                    x={PAD}
+                    y={s.y + 34}
+                    fontSize={10}
+                    fill="var(--muted-foreground)"
+                  >
+                    {s.kind}
+                  </text>
+                </g>
+                {s.adapters.map((a) => (
+                  <g
+                    key={a.key}
+                    className="cursor-pointer"
+                    onClick={() =>
+                      nav({ to: "/interfaces/$id", params: { id: a.ifaceId } })
+                    }
+                  >
+                    <rect
+                      x={a.x}
+                      y={s.y + (STRIP_H - ADP_H) / 2}
+                      width={ADP_W}
+                      height={ADP_H}
+                      rx={6}
+                      fill="var(--muted)"
+                      stroke="var(--border)"
+                    />
+                    <text
+                      x={a.x + ADP_W / 2}
+                      y={s.y + STRIP_H / 2 - 2}
+                      fontSize={10}
+                      fontWeight={600}
+                      textAnchor="middle"
+                      fill="var(--foreground)"
+                      className="font-mono"
+                    >
+                      {fit(a.nic, 14)}
+                    </text>
+                    <text
+                      x={a.x + ADP_W / 2}
+                      y={s.y + STRIP_H / 2 + 11}
+                      fontSize={9}
+                      textAnchor="middle"
+                      fill="var(--muted-foreground)"
+                    >
+                      {fit(a.host, 16)}
+                    </text>
+                  </g>
+                ))}
+              </g>
+            ))}
+
+            {/* network rails — full-width coloured bars */}
+            {laid.rails.map((r) => (
               <g
-                key={a.key}
-                className="cursor-pointer"
+                key={r.id}
+                className={r.vlan ? "cursor-pointer" : undefined}
                 onClick={() =>
-                  nav({
-                    to: "/interfaces/$id",
-                    params: { id: a.ifaceId },
-                  })
+                  r.vlan && nav({ to: "/vlans/$id", params: { id: r.vlan.id } })
                 }
               >
                 <rect
-                  x={a.cx - ADP_W / 2}
-                  y={ADP_Y}
-                  width={ADP_W}
-                  height={ADP_H}
+                  x={PAD}
+                  y={r.y}
+                  width={laid.width - 2 * PAD}
+                  height={RAIL_H}
                   rx={6}
-                  fill="var(--muted)"
-                  stroke="var(--border)"
+                  fill={r.color}
+                  fillOpacity={0.12}
+                  stroke={r.color}
+                  strokeOpacity={0.5}
+                />
+                <circle
+                  cx={PAD + 14}
+                  cy={r.y + RAIL_H / 2}
+                  r={4}
+                  fill={r.color}
                 />
                 <text
-                  x={a.cx}
-                  y={ADP_Y + 19}
+                  x={PAD + 26}
+                  y={r.y + RAIL_H / 2 + 4}
                   fontSize={12}
                   fontWeight={600}
-                  textAnchor="middle"
                   fill="var(--foreground)"
-                  className="font-mono"
                 >
-                  {fit(a.nic, 14)}
-                </text>
-                <text
-                  x={a.cx}
-                  y={ADP_Y + 35}
-                  fontSize={10}
-                  textAnchor="middle"
-                  fill="var(--muted-foreground)"
-                >
-                  {fit(a.host, 16)}
+                  {fit(r.label, 30)}
                 </text>
               </g>
             ))}
 
-            {/* switches */}
-            {laid.switches.map((s) => (
-              <g
-                key={s.id}
-                className="cursor-pointer"
-                onClick={() =>
-                  nav({ to: "/virtual-switches/$id", params: { id: s.id } })
-                }
-              >
-                <rect
-                  x={s.cx - SW_W / 2}
-                  y={SW_Y}
-                  width={SW_W}
-                  height={SW_H}
-                  rx={8}
-                  fill="var(--card)"
-                  stroke="var(--border)"
-                />
-                <text
-                  x={s.cx}
-                  y={SW_Y + 19}
-                  fontSize={13}
-                  fontWeight={600}
-                  textAnchor="middle"
-                  fill="var(--foreground)"
-                >
-                  {fit(s.name, 24)}
-                </text>
-                <text
-                  x={s.cx}
-                  y={SW_Y + 35}
-                  fontSize={10}
-                  textAnchor="middle"
-                  fill="var(--muted-foreground)"
-                >
-                  {s.kind}
-                </text>
-              </g>
+            {/* attachment dots — where a VM's connector meets a rail */}
+            {laid.dots.map((d) => (
+              <circle key={d.key} cx={d.x} cy={d.y} r={3.5} fill={d.color} />
             ))}
 
-            {/* network (VLAN) bars */}
-            {laid.networks.map((n) => (
-              <g
-                key={n.id}
-                className={n.vlan ? "cursor-pointer" : undefined}
-                onClick={() =>
-                  n.vlan && nav({ to: "/vlans/$id", params: { id: n.vlan.id } })
-                }
-              >
-                <rect
-                  x={n.x}
-                  y={NET_Y}
-                  width={n.w}
-                  height={NET_H}
-                  rx={6}
-                  fill="var(--primary)"
-                  fillOpacity={0.1}
-                  stroke="var(--primary)"
-                  strokeOpacity={0.4}
-                />
-                <text
-                  x={n.x + 10}
-                  y={NET_Y + NET_H / 2 + 4}
-                  fontSize={12}
-                  fontWeight={600}
-                  fill="var(--foreground)"
-                >
-                  {fit(n.label, Math.max(6, Math.floor(n.w / 8)))}
-                  {n.vlan ? (
-                    <tspan fill="var(--muted-foreground)" fontWeight={400}>
-                      {"  · VLAN "}
-                      {n.vlan.vlan_id}
-                    </tspan>
-                  ) : null}
-                </text>
-              </g>
-            ))}
-
-            {/* VM boxes */}
+            {/* VM boxes — one per VM, sandwiched between its networks */}
             {laid.vms.map((vm) => {
               const c = vmColors(vm.status)
               return (
                 <g
-                  key={vm.key}
+                  key={vm.id}
                   className="cursor-pointer"
                   onClick={() =>
-                    nav({
-                      to: "/virtual-machines/$id",
-                      params: { id: vm.id },
-                    })
+                    nav({ to: "/virtual-machines/$id", params: { id: vm.id } })
                   }
                 >
                   <rect
-                    x={vm.cx - VM_W / 2}
-                    y={VM_Y}
+                    x={vm.x - VM_W / 2}
+                    y={vm.y}
+                    width={VM_W}
+                    height={VM_H}
+                    rx={8}
+                    fill="var(--card)"
+                    stroke={c.stroke}
+                  />
+                  <rect
+                    x={vm.x - VM_W / 2}
+                    y={vm.y}
                     width={VM_W}
                     height={VM_H}
                     rx={8}
                     fill={c.fill}
-                    stroke={c.stroke}
                   />
                   <text
-                    x={vm.cx}
-                    y={VM_Y + 21}
+                    x={vm.x}
+                    y={vm.y + 20}
                     fontSize={12}
                     fontWeight={600}
                     textAnchor="middle"
@@ -467,8 +515,8 @@ function VirtualTopologyPage() {
                     {fit(vm.name, 16)}
                   </text>
                   <text
-                    x={vm.cx}
-                    y={VM_Y + 37}
+                    x={vm.x}
+                    y={vm.y + 36}
                     fontSize={10}
                     textAnchor="middle"
                     fill="var(--muted-foreground)"
@@ -483,8 +531,10 @@ function VirtualTopologyPage() {
       )}
       <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
         <Cloud className="h-3.5 w-3.5" />
-        External → physical adapters (host NICs) → switches → networks (VLANs) →
-        VMs. Click any node to open it.
+        Networks are rails; each VM appears once, connected by a line to every
+        network it attaches to. Rail colour follows the VLAN's zone (set a zone
+        on the VLAN to pick it); unzoned networks get a palette shade. Click any
+        node to open it.
       </div>
     </ListPageShell>
   )
