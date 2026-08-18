@@ -7,6 +7,7 @@ import { toast } from "sonner"
 
 import { api, type Paginated, type VirtualizationSource } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { SyncStatusBadge } from "@/components/integrations/sync-status-badge"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -179,23 +180,10 @@ function VirtualizationSourcesPage() {
           const s = row.original
           return (
             <span className="flex items-center gap-2">
-              {!s.last_sync_status ? (
-                <span className="text-xs text-muted-foreground">
-                  never synced
-                </span>
-              ) : s.last_sync_status === "ok" ? (
-                <Badge variant="success" className="text-[10px]">
-                  ok
-                </Badge>
-              ) : (
-                <Badge
-                  variant="destructive"
-                  className="text-[10px]"
-                  title={s.last_sync_error}
-                >
-                  failed
-                </Badge>
-              )}
+              <SyncStatusBadge
+                status={s.last_sync_status}
+                error={s.last_sync_error}
+              />
               {s.last_sync_at && <TimeCell iso={s.last_sync_at} />}
             </span>
           )

@@ -7,6 +7,7 @@ import { toast } from "sonner"
 
 import { api, type Paginated, type WindowsConnection } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { SyncStatusBadge as ConnSyncStatusBadge } from "@/components/integrations/sync-status-badge"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -26,22 +27,11 @@ export function SyncStatusBadge({
 }: {
   conn: Pick<WindowsConnection, "last_sync_status" | "last_sync_error">
 }) {
-  if (!conn.last_sync_status)
-    return <span className="text-xs text-muted-foreground">never synced</span>
-  if (conn.last_sync_status === "ok")
-    return (
-      <Badge variant="success" className="text-[10px]">
-        ok
-      </Badge>
-    )
   return (
-    <Badge
-      variant="destructive"
-      className="max-w-56 text-[10px]"
-      title={conn.last_sync_error}
-    >
-      failed
-    </Badge>
+    <ConnSyncStatusBadge
+      status={conn.last_sync_status}
+      error={conn.last_sync_error}
+    />
   )
 }
 
