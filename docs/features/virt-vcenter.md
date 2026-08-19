@@ -98,3 +98,4 @@ Rules:
 
 - [Proxmox VE sync](virt-proxmox.md) — the sibling connector.
 - [External sync](external-sync.md) — toggles, allowlist, where things live.
+- [Virtual machines & clusters](virtualization.md) — the objects a sync fills in.

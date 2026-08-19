@@ -108,6 +108,7 @@ nav = [
     { "Advanced: custom-field-driven playbook" = "features/cf-driven-playbook.md" },
     { "Webhooks"          = "features/webhooks.md" },
     { "Import from NetBox" = "features/netbox-import.md" },
+    { "Virtual machines & clusters" = "features/virtualization.md" },
     { "External sync overview" = "features/external-sync.md" },
     { "Windows DHCP & DNS sync" = "features/windows-sync.md" },
     { "Proxmox VE sync" = "features/virt-proxmox.md" },
