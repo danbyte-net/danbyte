@@ -20,7 +20,7 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 | **Role**, **platform** | Also the device catalogs, so one role can span physical and virtual. |
 | **Cluster** | The [cluster](clusters.md) it runs on. |
 | **Host device** | The physical host *inside* that cluster — see [Placement](#placement-site-and-host-device). |
-| **Site** | Where it is — also [Placement](#placement-site-and-host-device). |
+| **Site** | Its own location, independent of the cluster's — see [Placement](#placement-site-and-host-device). |
 | **vCPUs**, **Memory**, **Disk** | Resource sizing. Memory is entered in MB, disk in GB. |
 | **Primary IP** | The address the VM is reached on; monitoring uses it. |
 | **Description**, **tags**, **custom fields** | Free-form notes, labels and your own attributes. |
@@ -44,9 +44,10 @@ diagram. Then:
 
 Two different questions, two different fields:
 
-- **Site** — *where in the world*. Set it on the **cluster** and everything in
-  that cluster is located there; set it **per VM** only when one sits somewhere
-  else.
+- **Site** — *where in the world*. This is the VM's **own** field and is not
+  inherited from its cluster: a cluster in your datacentre can host VMs whose
+  site is a branch office, which is usually what you want to record. A VM with
+  no site set has no site, even if its cluster has one.
 - **Host device** — *which physical machine*. Model the ESXi host or Proxmox
   node as a **Device**, then pick it as the VM's *Host device*. The device's
   own page lists the VMs it hosts.
@@ -100,7 +101,7 @@ overwritten, and never deleted by a sync.
 
 ## See also
 
-- [Clusters](clusters.md) — where VMs run, and the site they inherit.
+- [Clusters](clusters.md) — where VMs run.
 - [Virtual switches & topology](virtual-switches.md) — how VMs reach the network.
 - [Proxmox VE sync](virt-proxmox.md) · [VMware vCenter sync](virt-vcenter.md)
 - [Devices](../dcim/devices.md) — the physical counterpart.

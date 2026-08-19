@@ -16,17 +16,22 @@ only place you need to set a site.
 | **Name** | The cluster's label. |
 | **Type** | What kind of cluster it is (see below). |
 | **Group** | Optional grouping across clusters. |
-| **Site** | Where the cluster physically lives — the VMs on it are located here. |
+| **Site** | Where the cluster itself lives. It is *not* inherited by its VMs — see below. |
 | **Status** | From your status catalog. |
 | **Description**, **tags** | Notes and labels. |
 
 Its detail page lists the **virtual machines** on it (with a count on the tab),
 plus Journal and History.
 
-!!! tip "Set the site once, on the cluster"
-    A VM has its own site field, but you rarely need it: give the cluster a
-    site and everything on it is located there. Use the per-VM field only for
-    the exception — a VM that sits somewhere other than its cluster.
+!!! note "Cluster site and VM site are independent"
+    A cluster's site describes **the cluster**. A VM's site is its own field and
+    is **not** derived from its cluster — a VM with no site set simply has no
+    site, even when its cluster has one.
+
+    That is deliberate: the compute often lives in one datacentre while the
+    workloads belong to the branch or department they serve. Set a VM's site
+    when you want it located; leave it blank when only the cluster's location
+    matters.
 
 ## Cluster types
 
