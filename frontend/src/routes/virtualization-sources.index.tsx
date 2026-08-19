@@ -376,6 +376,9 @@ function SourceDialog({
     source?.sync_networks ?? false
   )
   const [syncHosts, setSyncHosts] = useState(source?.sync_hosts ?? false)
+  const [syncHostHw, setSyncHostHw] = useState(
+    source?.sync_host_hardware ?? false
+  )
   const [enabled, setEnabled] = useState(source?.enabled ?? true)
   // Where discovered addresses may land. Empty = the Global VRF, which is a
   // real routing context here, not "unset".
@@ -402,6 +405,7 @@ function SourceDialog({
         sync_disks: syncDisks,
         sync_networks: syncNetworks,
         sync_hosts: syncHosts,
+        sync_host_hardware: syncHostHw,
         vrf_id: vrfId || null,
         vrf_mode: vrfMode,
         enabled,
@@ -557,10 +561,18 @@ function SourceDialog({
             />
             <FormCheckbox
               label="Create hosts as devices"
-              hint="Add each hypervisor node as a Device, so VMs link to their host and bridge uplinks find its NICs. Device type and site stay yours to set."
+              hint="Add each hypervisor node as a Device, so VMs link to their host and bridge uplinks find its NICs."
               checked={syncHosts}
               onChange={setSyncHosts}
             />
+            {isVcenter && syncHosts && (
+              <FormCheckbox
+                label="Read host hardware"
+                hint="Fill in model, vendor and serial from vSphere. Creates a device type and manufacturer on demand, so it is separate from the switch above."
+                checked={syncHostHw}
+                onChange={setSyncHostHw}
+              />
+            )}
             {isEdit && (
               <FormCheckbox
                 label="Enabled"

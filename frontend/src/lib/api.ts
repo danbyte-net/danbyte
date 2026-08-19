@@ -7096,6 +7096,9 @@ export interface VirtualizationSource {
   sync_networks: boolean
   /** Create each hypervisor node/host as a Device. Off by default. */
   sync_hosts: boolean
+  /** Enrich those Devices with model, vendor and serial over vSphere SOAP.
+   * vCenter only, and off by default - it mints catalog rows. */
+  sync_host_hardware: boolean
   /** Where addresses this connection discovers may land. Empty vrf_id =
    * the Global VRF, a real routing context rather than "unset". */
   vrf_id: string | null

@@ -1,7 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Plug, RefreshCw, Trash2 } from "lucide-react"
+import { type ColumnDef } from "@tanstack/react-table"
+import { Plug, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -15,8 +16,9 @@ import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { DataTable } from "@/components/data-table"
+import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
+import { RowActions } from "@/components/row-actions"
 import { buildVmColumns } from "@/components/columns/vm-columns"
 import { FormSelect, FormText } from "@/components/forms"
 import { InfoTip } from "@/components/ui/info-tip"
@@ -52,6 +54,13 @@ function SourceDetailPage() {
   const query = useQuery({
     queryKey: ["virtualization-source", id],
     queryFn: () => api<VirtualizationSource>(`/api/virtualization-sources/${id}/`),
+  })
+  const ruleCount = useQuery({
+    queryKey: ["virt-placement-rules", id],
+    queryFn: () =>
+      api<Paginated<VirtPlacementRule>>(
+        `/api/virt-placement-rules/?source=${id}`
+      ),
   })
   const vms = useQuery({
     queryKey: ["source-vms", id],
@@ -164,6 +173,14 @@ function SourceDetailPage() {
     { label: "Disks", value: source.sync_disks ? "Yes" : "No" },
     { label: "Switches & networks", value: source.sync_networks ? "Yes" : "No" },
     { label: "Hosts as devices", value: source.sync_hosts ? "Yes" : "No" },
+    ...(source.kind === "vcenter"
+      ? [
+          {
+            label: "Host hardware",
+            value: source.sync_host_hardware ? "Yes" : "No",
+          } satisfies KvRow,
+        ]
+      : []),
   ]
 
   return (
@@ -224,7 +241,11 @@ function SourceDetailPage() {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "vms", label: "Virtual machines", count: vmCount },
-        { value: "placement", label: "Placement" },
+        {
+          value: "placement",
+          label: "Placement",
+          count: ruleCount.data?.count || undefined,
+        },
         { value: "skipped", label: "Skipped", count: skipped.length },
       ]}
       tab={tab}
@@ -408,6 +429,67 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
   })
 
   const rows = rules.data?.results ?? []
+  const ruleColumns = useMemo<ColumnDef<VirtPlacementRule>[]>(
+    () => [
+      {
+        id: "scope",
+        accessorFn: (r) => r.scope_display,
+        header: ({ column }) => <SortHeader column={column} label="Match on" />,
+        cell: ({ row }) => (
+          <Badge variant="outline" className="text-[10px]">
+            {row.original.scope_display}
+          </Badge>
+        ),
+      },
+      {
+        id: "pattern",
+        accessorKey: "pattern",
+        header: ({ column }) => <SortHeader column={column} label="Pattern" />,
+        cell: ({ row }) => (
+          <span className="font-mono text-xs">{row.original.pattern}</span>
+        ),
+      },
+      {
+        id: "site",
+        accessorFn: (r) => r.site.name,
+        header: ({ column }) => <SortHeader column={column} label="Site" />,
+        cell: ({ row }) => (
+          <Link
+            to="/sites/$id"
+            params={{ id: row.original.site.id }}
+            className="link"
+          >
+            {row.original.site.name}
+          </Link>
+        ),
+      },
+      {
+        id: "location",
+        accessorFn: (r) => r.location?.name ?? "",
+        header: "Location",
+        cell: ({ row }) => row.original.location?.name ?? dash,
+      },
+      {
+        id: "weight",
+        accessorKey: "weight",
+        header: ({ column }) => <SortHeader column={column} label="Weight" />,
+        cell: ({ row }) => (
+          <span className="num">{row.original.weight}</span>
+        ),
+      },
+      {
+        id: "actions",
+        enableHiding: false,
+        cell: ({ row }) => (
+          <RowActions
+            onDelete={canEdit ? () => del.mutate(row.original) : undefined}
+            deleteLabel="Remove"
+          />
+        ),
+      },
+    ],
+    [canEdit, del]
+  )
   // Indexing the whole payload by scope would also reach `ok`, so pick the
   // list explicitly.
   const byScope: Record<string, string[]> = found.data?.ok
@@ -446,32 +528,13 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
           when the names don&rsquo;t line up.
         </EmptyState>
       ) : (
-        <ul className="divide-y divide-border rounded-md border border-border">
-          {rows.map((r) => (
-            <li key={r.id} className="flex items-center gap-3 px-3 py-2 text-sm">
-              <Badge variant="outline" className="w-24 shrink-0 justify-center text-[10px]">
-                {r.scope_display}
-              </Badge>
-              <span className="flex-1 truncate font-mono text-xs">
-                {r.pattern}
-              </span>
-              <span className="text-muted-foreground">&rarr;</span>
-              <span className="w-40 truncate">{r.site.name}</span>
-              {canEdit && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  aria-label={`Remove rule ${r.pattern}`}
-                  disabled={del.isPending}
-                  onClick={() => del.mutate(r)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
+        <DataTable
+          data={rows}
+          columns={ruleColumns}
+          tableId="placement-rules"
+          flexColumn="pattern"
+          embedded
+        />
       )}
 
       {canEdit && (

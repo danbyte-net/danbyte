@@ -15,7 +15,7 @@ run from a VM all the way to a cabled port.
 | --- | --- |
 | **Name** | As the hypervisor knows it (`vSwitch0`, `vmbr0`, …). |
 | **Cluster** | The [cluster](clusters.md) it belongs to. |
-| **Kind** | Standard switch · Distributed switch · Linux bridge · Open vSwitch · Bond. |
+| **Kind** | Standard switch · Distributed switch · Linux bridge · Open vSwitch · Bond. Read from the hypervisor where it says (vCenter reports the port-group type), otherwise inferred from the connector. |
 | **Uplinks** | The physical port names the hypervisor reports. |
 
 Its detail page has a **Networks** tab - the port groups / bridges on the

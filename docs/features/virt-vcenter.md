@@ -48,6 +48,19 @@ Per-source switches widen what a source imports:
   port-group becomes a **VLAN** in a VLAN group named after the source. A VM
   interface's access VLAN is **blank-filled** from the port-group tag (never
   overwriting a VLAN you set).
+- **Read host hardware** (off by default, needs *Create hosts as devices*) -
+  fills each host Device's **model**, **vendor** and **serial** from vSphere,
+  and its platform (e.g. *VMware ESXi 8.0.3*). The model becomes a **device
+  type** under a **manufacturer**, both created on demand, which is why it is a
+  separate switch: wanting host placeholders is not the same as wanting rows
+  minted in a catalog you curate. All of it is blank-fill - anything you have
+  already set is left alone, and a host that reports no serial (nested ESXi,
+  for instance) simply keeps an empty one.
+
+    This is the one thing that needs the **vSphere SOAP** API: the REST API
+    returns four fields per host and has no host-detail endpoint at all, so
+    `pyvmomi` is used for it. It is loaded only when this switch is on, and a
+    failure there is reported without failing the rest of the sync.
 - **Create hosts as devices** (off by default) - each ESXi host becomes
   a **Device**: name, cluster and status, with a *Hypervisor* role created on
   demand. Device type and site are left empty - nothing on the wire says what
