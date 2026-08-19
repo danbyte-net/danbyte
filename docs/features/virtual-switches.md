@@ -29,12 +29,20 @@ the switch's uplinks (host device → interface) from the switch's Overview.
 
 This is the vSphere "Physical Adapters" layer. Once set, the uplink traces
 straight through to its cabled port, and the topology view shows the adapters
-feeding each switch — including the multi-host case, where several hypervisors
-contribute ports to one cluster-wide switch.
+feeding each switch.
 
-- **Proxmox** fills these in **automatically**: each bridge's ports are matched
-  to the node Device's interfaces. The node must be modelled as a Device with
-  those interfaces; matching is additive and never removes an uplink you set.
+A switch that spans hosts legitimately carries several hosts' adapters: a
+cluster-wide bridge collects the matching ports from **every** node, so one
+switch can show `eno1` on `pve1` and `eno1` on `pve2` side by side. Each entry
+names its host device, so it stays clear which port belongs where.
+
+- **Proxmox** fills these in **automatically**, per bridge — not per host: it
+  reads each bridge's own port list (`bridge_ports` / `ovs_ports`) and matches
+  those names to interfaces on **that node's** Device. So `vmbr0` with
+  `bridge_ports eno1 eno2` gets exactly those two; a NIC that belongs to no
+  bridge is never linked. Nothing is guessed — the node must be modelled as a
+  Device carrying interfaces with matching names — and matching is additive, so
+  an uplink you set by hand is never removed.
 - **vCenter** doesn't expose standard-switch pNICs cleanly through its REST
   API, so assign those uplinks by hand on the switch page.
 
