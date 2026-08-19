@@ -32,6 +32,7 @@ from django.utils import timezone
 
 from api import vrf_placement
 
+from . import placement
 from .virt_client import VirtAPIError, proxmox_get
 
 logger = logging.getLogger("danbyte.virt_sync")
@@ -425,7 +426,8 @@ def sync_proxmox(source) -> dict:
 
 def _run_pass(source, cluster_name, resources, details, now, counts,
               sync_ifaces, sync_ips, *, sync_disks_fn=None,
-              sync_nets_fn=None, sync_meta_fn=None, label) -> dict:
+              sync_nets_fn=None, sync_meta_fn=None, extra_warnings=None,
+              label) -> dict:
     """Reconcile one fetched inventory against Danbyte — hypervisor-agnostic.
 
     ``resources`` is a list of normalised guest dicts (``vmid``, ``name``,
@@ -435,6 +437,8 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
     callables that turn that detail into VMInterface/IPAddress rows. Everything
     else — adoption, spec diffing, the review queue, orphan pruning — is shared.
     """
+    from api.models import Site
+
     from .models import VirtChange, VirtGuest
 
     apply = source.sync_mode == "auto"
@@ -446,7 +450,16 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
     # network can only be configured after it has been discovered, so on the
     # pass that first creates one this is simply empty — no reordering needed.
     net_vrfs = _network_vrf_map(source)
-    warnings: list[str] = []
+    # Placement inputs, read once: the operator's rules and the tenant's sites
+    # by name (the hierarchy fallback). Both are small.
+    rules = list(
+        source.placement_rules.select_related("site", "location").all()
+    )
+    site_by_name = {
+        s.name.lower(): s
+        for s in Site.objects.filter(tenant=source.tenant).only("id", "name")
+    }
+    warnings: list[str] = list(extra_warnings or [])
     with transaction.atomic():
         # Clusters are containers — only materialise one when a guest actually
         # lands on it (so a review-mode source with nothing accepted stays
@@ -482,8 +495,23 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
             # reports one for the whole source, so its behaviour is unchanged.
             guest_cluster_name = r.get("cluster") or cluster_name
             guest_cluster = partial(cluster_for, guest_cluster_name)
+            guest_path = placement.PlacementPath(
+                datacenter=r.get("datacenter") or "",
+                cluster=guest_cluster_name,
+                host=r.get("node") or "",
+                folders=list(r.get("folders") or []),
+            )
+            place = placement.resolve(
+                guest_path, rules, site_by_name=site_by_name
+            )
+            # Only worth saying when placement could plausibly have worked —
+            # a deployment with no sites and no rules isn't using this, and
+            # nagging it every pass would be noise. Duplicates collapse in
+            # record_skipped, so this is one line per distinct location.
+            if not place.ok and (rules or site_by_name):
+                warnings.append(placement.unplaced_warning(guest_path))
             _reconcile_guest(source, guest_cluster, guest_cluster_name, guest, r,
-                             apply, now, counts, fresh_changes)
+                             apply, now, counts, fresh_changes, place)
             if guest.vm_id:
                 d = details.get(vmid) or {}
                 counts["interfaces"] += sync_ifaces(guest, d.get("ifaces"))
@@ -532,9 +560,9 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
             f"placed. Create a prefix that contains them in {where}, or change "
             f"this source's Address VRF."
         )
-    source.record_warnings(warnings, summary=summary)
+    source.record_skipped(warnings, summary=summary)
     source.save(update_fields=["last_sync_at", "last_sync_status",
-                               "last_sync_error", "last_sync_warnings"])
+                               "last_sync_error", "last_sync_skipped"])
     logger.info("%s sync %s (%s): %s", label, source.name, source.sync_mode, counts)
     return counts
 
@@ -550,7 +578,7 @@ def _desired_specs(resource: dict) -> dict:
 
 
 def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
-                     counts, fresh_changes) -> None:
+                     counts, fresh_changes, place=None) -> None:
     """Bring one guest into line with the inventory — applying (auto) or
     queuing a change (review/manual)."""
     from api.models import VirtualMachine
@@ -568,7 +596,7 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
             guest.vm = adopted
             guest.created_vm = False
             guest.save(update_fields=["vm", "created_vm"])
-            _blank_fill(adopted, specs, source, guest)
+            _blank_fill(adopted, specs, source, guest, place)
             _clear_change(guest, "new_guest")
             return
         if apply:
@@ -579,7 +607,7 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
             guest.vm = vm
             guest.created_vm = True
             guest.save(update_fields=["vm", "created_vm"])
-            _blank_fill(vm, {}, source, guest)  # node → device
+            _blank_fill(vm, {}, source, guest, place)  # node → device
             counts["vms_created"] += 1
         else:
             detail = {"name": name, "node": guest.node, "kind": guest.kind,
@@ -605,14 +633,14 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
                 _queue_change(guest, "spec_change", diffs, now, fresh_changes)
         else:
             _clear_change(guest, "spec_change")
-    _blank_fill(vm, {} if guest.created_vm else specs, source, guest)
+    _blank_fill(vm, {} if guest.created_vm else specs, source, guest, place)
 
 
 def _nonnull(specs: dict) -> dict:
     return {k: v for k, v in specs.items() if v is not None}
 
 
-def _blank_fill(vm, specs, source, guest) -> None:
+def _blank_fill(vm, specs, source, guest, place=None) -> None:
     """Fill only empty spec fields (adopted rows) and the host device link.
     Never overwrites operator data."""
     from api.models import Device
@@ -629,8 +657,11 @@ def _blank_fill(vm, specs, source, guest) -> None:
         if host is not None:
             vm.device = host
             changed.append("device")
-    # Site stays the operator's — unless the cluster opts in, in which case the
-    # cluster's site is blank-filled like everything else here.
+    # Site stays the operator's, but is blank-filled from two sources: a
+    # placement rule (or a site named after the datacenter/cluster), and then
+    # the cluster's own site when it opts in. Placement is the more specific
+    # statement, so it goes first.
+    _apply_placement(vm, place, changed)
     if vm.site_id is None and vm.cluster_id is not None:
         cl = vm.cluster
         if cl.apply_site_to_vms and cl.site_id is not None:
@@ -701,16 +732,116 @@ def _cluster_for(source, name: str):
 _HYPERVISOR_ROLE = ("Hypervisor", "hypervisor")
 
 
-def _sync_hosts(source, cluster_name: str, hosts) -> int:
+def _vcenter_folder_paths(client, want: bool) -> dict:
+    """``{folder_moref: ["Test site", "Linux"]}`` for every VM/host folder.
+
+    The REST payload carries no parent, so the tree is walked **downward** with
+    ``?parent_folders=``. That is one call per folder, which is why it is
+    skipped entirely unless the source actually has folder rules. Identity is
+    the MoRef, never the name — vCenter happily hosts several folders called
+    ``vm``.
+    """
+    if not want:
+        return {}
+    try:
+        folders = client.get("vcenter/folder") or []
+    except VirtAPIError:
+        return {}
+    parent_of: dict = {}
+    for f in folders:
+        fid = f.get("folder")
+        if not fid:
+            continue
+        try:
+            for kid in client.get(f"vcenter/folder?parent_folders={fid}") or []:
+                if kid.get("folder"):
+                    parent_of[kid["folder"]] = fid
+        except VirtAPIError:
+            continue
+    name_of = {f.get("folder"): f.get("name") or "" for f in folders}
+
+    paths: dict = {}
+    for fid in name_of:
+        chain, seen, cur = [], set(), fid
+        while cur and cur not in seen:
+            seen.add(cur)  # a cycle can't happen, but don't hang if it does
+            chain.append(name_of.get(cur, ""))
+            cur = parent_of.get(cur)
+        paths[fid] = placement.strip_builtin_folders(reversed(chain))
+    return paths
+
+
+def _vcenter_placement_maps(client, source, datacenters, hosts) -> dict:
+    """Everything the placement evaluator needs, fetched once per pass.
+
+    Returns ``{"dc_of_vm", "dc_of_host", "folders_of_vm"}``. Each lookup is
+    skipped when no rule needs it, so a source with no placement rules pays
+    nothing beyond the datacenter list it already has.
+    """
+    scopes = set(source.placement_rules.values_list("scope", flat=True))
+    # The datacenter is also the hierarchy fallback, so it is always useful.
+    dc_of_vm: dict = {}
+    dc_of_host: dict = {}
+    for dc in datacenters:
+        dm, dn = dc.get("datacenter"), dc.get("name") or ""
+        if not dm:
+            continue
+        try:
+            for v in client.get(f"vcenter/vm?datacenters={dm}") or []:
+                dc_of_vm[v.get("vm")] = dn
+        except VirtAPIError:
+            pass
+        try:
+            for h in client.get(f"vcenter/host?datacenters={dm}") or []:
+                dc_of_host[h.get("host")] = dn
+        except VirtAPIError:
+            pass
+
+    folders_of_vm: dict = {}
+    paths = _vcenter_folder_paths(client, "folder" in scopes)
+    for fid, path in paths.items():
+        if not path:
+            continue  # a built-in folder, or the root
+        try:
+            for v in client.get(f"vcenter/vm?folders={fid}") or []:
+                # Direct membership only — the ancestor chain is the path.
+                folders_of_vm[v.get("vm")] = path
+        except VirtAPIError:
+            continue
+    return {"dc_of_vm": dc_of_vm, "dc_of_host": dc_of_host,
+            "folders_of_vm": folders_of_vm}
+
+
+def _apply_placement(obj, place, changed: list) -> None:
+    """Blank-fill a resolved site/location onto a Device, Cluster or VM."""
+    if place is None or not place.ok:
+        return
+    if getattr(obj, "site_id", None) is None:
+        obj.site = place.site
+        changed.append("site")
+    if (
+        place.location is not None
+        and hasattr(obj, "location_id")
+        and obj.location_id is None
+        # Only inside the site the object actually ended up in.
+        and getattr(obj, "site_id", None) == place.site.id
+    ):
+        obj.location = place.location
+        changed.append("location")
+
+
+def _sync_hosts(source, cluster_name: str, hosts, *, placements=None,
+                warnings=None) -> int:
     """Create the hypervisor's own nodes/hosts as Devices — opt-in (#34).
 
     ``hosts`` is ``[{"name": .., "online": bool}]``, normalised by the caller.
 
-    A Device needs only a tenant and a name, so this fills exactly what the
-    hypervisor actually reports: name, cluster, status. It deliberately leaves
-    **device type and site empty** — nothing on the wire says what they are,
-    and guessing would put fiction in the physical inventory. Enrich them by
-    hand, or later from Redfish/SNMP.
+    A Device needs only a tenant and a name, so this fills what the hypervisor
+    actually reports: name, cluster, status — plus a **site**, when placement
+    resolves one from the operator's rules or from a site named after the
+    datacenter. It still leaves **device type empty**: nothing on the wire says
+    what the hardware is, and guessing would put fiction in the physical
+    inventory. Enrich that by hand, or later from Redfish/SNMP.
 
     Matching is ``name__iexact`` because that is how ``_blank_fill`` already
     finds a host; the uniqueness constraint is case-sensitive, so matching any
@@ -736,6 +867,7 @@ def _sync_hosts(source, cluster_name: str, hosts) -> int:
         dev = Device.objects.filter(
             tenant=source.tenant, name__iexact=name
         ).first()
+        place = (placements or {}).get(name)
         if dev is None:
             if role is None:
                 role = _hypervisor_role(source)
@@ -748,12 +880,17 @@ def _sync_hosts(source, cluster_name: str, hosts) -> int:
                 description=f"Synced from «{source.name}»",
             )
             made += 1
-            continue
-        # Adopted: blank-fill the cluster link, and nothing else. A Device the
-        # operator already models is theirs — the sync doesn't restyle it.
+        # Adopted or fresh: blank-fill the cluster link and the resolved site.
+        # A Device the operator already models is theirs — nothing is restyled.
+        changed = []
         if dev.cluster_id is None:
             dev.cluster = cluster
-            dev.save(update_fields=["cluster"])
+            changed.append("cluster")
+        _apply_placement(dev, place, changed)
+        if changed:
+            dev.save(update_fields=changed)
+        if place is not None and not place.ok and warnings is not None:
+            warnings.append(place.reason)
     return made
 
 
@@ -977,7 +1114,8 @@ def _moref_id(moref: str):
 
 
 def _vcenter_resource(summary: dict, info: dict, vmid: int, node: str,
-                      cluster: str = "") -> dict:
+                      cluster: str = "", datacenter: str = "",
+                      folders=None) -> dict:
     """Normalise a vCenter VM into the shared resource shape ``_run_pass`` wants."""
     mem_mib = (info.get("memory") or {}).get("size_MiB") \
         or summary.get("memory_size_MiB") or 0
@@ -996,6 +1134,9 @@ def _vcenter_resource(summary: dict, info: dict, vmid: int, node: str,
         # "" when the guest is on a standalone host — _run_pass falls back to
         # the pass-level cluster name.
         "cluster": cluster,
+        # Placement inputs; empty for Proxmox, which has neither concept.
+        "datacenter": datacenter,
+        "folders": list(folders or []),
         "status": _VC_POWER.get(power, power.lower()),
         "maxcpu": cpu,
         "maxmem": int(mem_mib) * 1024 * 1024,
@@ -1011,6 +1152,13 @@ def sync_vcenter(source) -> dict:
         vms = client.get("vcenter/vm") or []
         clusters = client.get("vcenter/cluster") or []
         hosts = client.get("vcenter/host") or []
+        try:
+            datacenters = client.get("vcenter/datacenter") or []
+        except VirtAPIError:
+            datacenters = []
+        # Where everything sits, for placement. Folder walking is skipped
+        # unless the source actually has folder rules.
+        maps = _vcenter_placement_maps(client, source, datacenters, hosts)
 
         # Fallback name for guests that belong to no cluster (standalone hosts).
         cluster_name = clusters[0]["name"] if len(clusters) == 1 else source.name
@@ -1055,13 +1203,38 @@ def sync_vcenter(source) -> dict:
                   "networks": 0, "pending": 0}
 
         # Hosts first, so the VM pass can link each guest to its ESXi Device.
+        host_warnings: list[str] = []
         if source.sync_hosts:
-            counts["hosts"] = _sync_hosts(source, cluster_name, [
-                {"name": h.get("name") or "",
-                 "online": h.get("connection_state") == "CONNECTED",
-                 "cluster": host_cluster.get(h.get("host")) or ""}
-                for h in hosts
-            ])
+            from api.models import Site
+
+            rules = list(
+                source.placement_rules.select_related("site", "location").all()
+            )
+            by_name = {
+                st.name.lower(): st
+                for st in Site.objects.filter(tenant=source.tenant).only(
+                    "id", "name"
+                )
+            }
+            places = {}
+            for h in hosts:
+                hn = h.get("name") or ""
+                places[hn] = placement.resolve(
+                    placement.PlacementPath(
+                        datacenter=maps["dc_of_host"].get(h.get("host"), ""),
+                        cluster=host_cluster.get(h.get("host")) or "",
+                        host=hn,
+                    ),
+                    rules, site_by_name=by_name,
+                )
+            counts["hosts"] = _sync_hosts(
+                source, cluster_name,
+                [{"name": h.get("name") or "",
+                  "online": h.get("connection_state") == "CONNECTED",
+                  "cluster": host_cluster.get(h.get("host")) or ""}
+                 for h in hosts],
+                placements=places, warnings=host_warnings,
+            )
 
         resources: list = []
         details: dict = {}
@@ -1076,8 +1249,12 @@ def sync_vcenter(source) -> dict:
                 logger.warning("vcenter vm %s fetch failed: %s", moref, exc)
                 info = {}
             resources.append(
-                _vcenter_resource(v, info, vmid, host_of.get(moref, ""),
-                                  cluster_of.get(moref, ""))
+                _vcenter_resource(
+                    v, info, vmid, host_of.get(moref, ""),
+                    cluster_of.get(moref, ""),
+                    maps["dc_of_vm"].get(moref, ""),
+                    maps["folders_of_vm"].get(moref) or [],
+                )
             )
             nics = info.get("nics") or {}
             guest_nets = []
@@ -1094,6 +1271,7 @@ def sync_vcenter(source) -> dict:
 
         return _run_pass(source, cluster_name, resources, details, now, counts,
                          _sync_vcenter_interfaces, _sync_vcenter_ips,
+                         extra_warnings=host_warnings,
                          sync_disks_fn=_sync_vcenter_disks,
                          sync_nets_fn=_sync_networks_vcenter,
                          sync_meta_fn=_sync_meta_vcenter, label="vcenter")

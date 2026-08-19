@@ -58,8 +58,59 @@ connect. Test connection tells you exactly that when the target isn't listed.
   see below.
 - **Writing into the physical inventory is opt-in.** A virtualization source
   can create its hypervisor nodes as **Devices** (*Create hosts as devices*),
-  off by default; it fills only what the hypervisor reports and leaves device
-  type and site to you.
+  off by default. It fills what the hypervisor reports, plus the site when
+  [placement](#where-synced-hosts-and-vms-land) resolves one; the device type
+  stays yours, because nothing on the wire says what it is.
+
+## Where synced hosts and VMs land
+
+A virtualization source can put the machines it discovers into the right
+**site** — using where they sit in the hypervisor, never their IP address.
+
+### The hierarchy, with no configuration
+
+If a **site already has the same name** as the vCenter datacenter (or, on
+Proxmox, the cluster), everything under it lands there. Nothing to set up.
+
+### Placement rules, when the names don't line up
+
+**Placement** on a source's row opens its rules. Each rule matches one part of
+the hypervisor's structure and points at a site you already have:
+
+| Match on | Example pattern |
+| --- | --- |
+| **Datacenter** | `Lab*` |
+| **Cluster** | `*-DR` |
+| **Folder** | `Test site` |
+| **Host** | `regex:^esxi-0[12]$` |
+
+Patterns are globs; prefix with `regex:` for a regular expression. A folder
+pattern matches either the folder's name or its full path
+(`Test site/Linux`).
+
+**A folder rule covers everything nested under it.** Point one rule at
+`Test site` and the VMs in `Test site / Linux` and `Test site / Windows` follow,
+without a rule each.
+
+**Nearest wins:** host beats folder beats cluster beats datacenter, and the
+closest matching folder beats a more distant ancestor. *Weight* only breaks ties
+within one level, so overriding a single machine never means re-thinking the
+order of everything else.
+
+### What it will not do
+
+- **It never creates a site.** Sites are physical facts you own. A rule points
+  at a real site, and the hierarchy only ever *matches* one by name. When
+  nothing matches, nothing is placed and the connection's **Last sync** badge
+  says which name it couldn't resolve and what to do about it.
+- **It never overwrites a site you set.** Placement is blank-fill, like
+  everything else a sync writes.
+- **It doesn't match on IP address.** A host's management address isn't in the
+  sync payload at all, and an address is a poor stand-in for a location you
+  already model properly.
+
+Rules apply to Proxmox too — it has no datacenters or folders, so cluster and
+host rules are the useful ones there.
 
 ## Where synced addresses land
 

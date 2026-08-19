@@ -309,9 +309,9 @@ def _apply(conn, data: dict, now) -> dict:
     conn.last_sync_at = now
     conn.last_sync_status = "ok"
     conn.last_sync_error = ""
-    conn.record_warnings(warnings)
+    conn.record_skipped(warnings)
     conn.save(update_fields=["last_sync_at", "last_sync_status",
-                             "last_sync_error", "last_sync_warnings"])
+                             "last_sync_error", "last_sync_skipped"])
     return counts
 
 

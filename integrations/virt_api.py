@@ -6,11 +6,11 @@ from rest_framework import serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from api.models import VRF
+from api.models import VRF, Location, Site
 from api.serializers import TenantScopedPrimaryKeyRelatedField
 from api.viewsets import TenantScopedViewSet
 
-from .models import VirtChange, VirtNetwork
+from .models import VirtChange, VirtNetwork, VirtPlacementRule
 from .toggles import IntegrationToggleMixin
 
 
@@ -176,3 +176,80 @@ class VirtChangeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         change = self.get_object()
         ignore_change(change)
         return Response({"ok": True})
+
+
+class VirtPlacementRuleSerializer(serializers.ModelSerializer):
+    """A rule mapping the hypervisor's own structure to a Site."""
+
+    scope_display = serializers.CharField(
+        source="get_scope_display", read_only=True
+    )
+    site = serializers.SerializerMethodField()
+    site_id = TenantScopedPrimaryKeyRelatedField(
+        source="site", queryset=Site.objects.all(), write_only=True
+    )
+    location = serializers.SerializerMethodField()
+    location_id = TenantScopedPrimaryKeyRelatedField(
+        source="location", queryset=Location.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    def get_site(self, obj):
+        return {"id": str(obj.site_id), "name": obj.site.name}
+
+    def get_location(self, obj):
+        if not obj.location_id:
+            return None
+        return {"id": str(obj.location_id), "name": obj.location.name}
+
+    def validate(self, attrs):
+        # The source is a plain FK in the payload, so it must be checked
+        # against the active tenant — a posted id is never trusted.
+        src = attrs.get("source") or getattr(self.instance, "source", None)
+        request = self.context.get("request") if self.context else None
+        if src is not None and request is not None:
+            from api.views import _get_active_tenant
+
+            tenant = _get_active_tenant(request)
+            if tenant is not None and src.tenant_id != tenant.id:
+                raise serializers.ValidationError(
+                    {"source": "Unknown virtualization source."}
+                )
+        # A Location outside the rule's Site would place a device somewhere it
+        # physically isn't; refuse it here rather than silently dropping it.
+        site = attrs.get("site") or getattr(self.instance, "site", None)
+        loc = attrs.get("location", getattr(self.instance, "location", None))
+        if loc is not None and site is not None and loc.site_id != site.id:
+            raise serializers.ValidationError(
+                {"location_id": f"«{loc.name}» is not in site «{site.name}»."}
+            )
+        return attrs
+
+    class Meta:
+        model = VirtPlacementRule
+        fields = ["id", "source", "scope", "scope_display", "pattern",
+                  "site", "site_id", "location", "location_id", "weight",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "scope_display", "created_at", "updated_at"]
+
+
+class VirtPlacementRuleViewSet(IntegrationToggleMixin, TenantScopedViewSet):
+    """Placement rules for a source; filter with ``?source=``."""
+
+    integration_keys = ("virtualization",)
+    tenant_field = "source__tenant"
+    queryset = VirtPlacementRule.objects.select_related(
+        "site", "location", "source"
+    ).order_by("scope", "weight", "pattern")
+    serializer_class = VirtPlacementRuleSerializer
+
+    def perform_create(self, serializer):
+        # Tenant is implied by the source, so there is nothing to stamp —
+        # the base class would try to pass the `source__tenant` traversal as a
+        # model kwarg and blow up. `source` is validated below instead.
+        serializer.save()
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        src = self.request.query_params.get("source") if self.request else None
+        return qs.filter(source_id=src) if src else qs

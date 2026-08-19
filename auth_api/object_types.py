@@ -213,6 +213,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("integrations.DnsRecord", "DNS records", "Integrations"),
     ("integrations.VirtChange", "Virtualization changes", "Integrations"),
     ("integrations.VirtNetwork", "Virtualization networks", "Integrations"),
+    ("integrations.VirtPlacementRule", "Virtualization placement rules",
+     "Integrations"),
     # ─── Planning ───────────────────────────────────────────────────
     ("planning.Board", "Boards", "Planning"),
     ("planning.TaskStatus", "Task statuses", "Planning"),

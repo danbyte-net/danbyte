@@ -31,8 +31,8 @@ class AddressPlacementSerializerMixin(serializers.Serializer):
     since that is a real routing context, not a blank.
     """
 
-    PLACEMENT_FIELDS = ["vrf_mode", "vrf_id", "vrf_name", "last_sync_warnings"]
-    PLACEMENT_READ_ONLY = ["vrf_name", "last_sync_warnings"]
+    PLACEMENT_FIELDS = ["vrf_mode", "vrf_id", "vrf_name", "last_sync_skipped"]
+    PLACEMENT_READ_ONLY = ["vrf_name", "last_sync_skipped"]
 
     vrf_id = TenantScopedPrimaryKeyRelatedField(
         source="vrf", queryset=VRF.objects.all(),
@@ -307,6 +307,57 @@ class VirtualizationSourceViewSet(IntegrationToggleMixin, TenantScopedViewSet):
             "nodes": len(nodes),
             "online_nodes": sum(1 for n in nodes if n.get("status") == "online"),
         })
+
+    @action(detail=True, methods=["get"], url_path="discovered")
+    def discovered(self, request, pk=None):
+        """What this source actually contains, for authoring placement rules.
+
+        Typing a pattern by hand invites typos that fail silently — a rule that
+        matches nothing looks identical to no rule. So the rule editor offers
+        the real datacenter / cluster / folder / host names, read live.
+        """
+        from .placement import strip_builtin_folders
+        from .virt_client import VCenterClient, VirtAPIError, proxmox_get
+
+        source = self.get_object()
+        out = {"datacenter": [], "cluster": [], "folder": [], "host": []}
+        try:
+            if source.kind == "vcenter":
+                client = VCenterClient(source)
+                try:
+                    client.login()
+                    out["datacenter"] = sorted(
+                        {d.get("name") for d in client.get("vcenter/datacenter") or []}
+                        - {None, ""}
+                    )
+                    out["cluster"] = sorted(
+                        {c.get("name") for c in client.get("vcenter/cluster") or []}
+                        - {None, ""}
+                    )
+                    out["host"] = sorted(
+                        {h.get("name") for h in client.get("vcenter/host") or []}
+                        - {None, ""}
+                    )
+                    out["folder"] = sorted(
+                        set(strip_builtin_folders(
+                            f.get("name") for f in client.get("vcenter/folder") or []
+                        ))
+                    )
+                finally:
+                    client.close()
+            else:
+                status = proxmox_get(source, "cluster/status") or []
+                out["cluster"] = sorted(
+                    {s.get("name") for s in status if s.get("type") == "cluster"}
+                    - {None, ""}
+                ) or [source.name]
+                out["host"] = sorted(
+                    {s.get("name") for s in status if s.get("type") == "node"}
+                    - {None, ""}
+                )
+        except VirtAPIError as exc:
+            return Response({"ok": False, "error": str(exc)}, status=502)
+        return Response({"ok": True, **out})
 
     @action(detail=True, methods=["post"])
     def sync(self, request, pk=None):

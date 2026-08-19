@@ -504,6 +504,16 @@ VC_CLUSTERS = [{"cluster": "domain-c1", "name": "Lab-Cluster"},
 # vm-100 runs on Lab-Cluster/host-1, vm-101 on DR-Cluster/host-2.
 VC_BY_CLUSTER = {"domain-c1": ["vm-100"], "domain-c2": ["vm-101"]}
 VC_HOSTS_BY_CLUSTER = {"domain-c1": ["host-1"], "domain-c2": ["host-2"]}
+VC_DATACENTERS = [{"datacenter": "datacenter-3", "name": "Lab"}]
+# The folder tree, as `?parent_folders=` walks it: "vm" is a vCenter
+# built-in and gets stripped, so web01 reads as "Test site / Linux".
+VC_FOLDERS = [
+    {"folder": "group-v1", "name": "vm", "type": "VIRTUAL_MACHINE"},
+    {"folder": "group-v2", "name": "Test site", "type": "VIRTUAL_MACHINE"},
+    {"folder": "group-v3", "name": "Linux", "type": "VIRTUAL_MACHINE"},
+]
+VC_FOLDER_KIDS = {"group-v1": ["group-v2"], "group-v2": ["group-v3"]}
+VC_VMS_BY_FOLDER = {"group-v3": ["vm-100"]}
 VC_DETAIL = {
     "vm-100": {
         "name": "web01", "power_state": "POWERED_ON",
@@ -558,6 +568,21 @@ class FakeVCenter:
         if path.startswith("vcenter/host?clusters="):
             cm = path.split("=", 1)[1]
             return [{"host": h} for h in VC_HOSTS_BY_CLUSTER.get(cm, [])]
+        if path == "vcenter/datacenter":
+            return VC_DATACENTERS
+        if path == "vcenter/folder":
+            return VC_FOLDERS
+        if path.startswith("vcenter/folder?parent_folders="):
+            fid = path.split("=", 1)[1]
+            kids = VC_FOLDER_KIDS.get(fid, [])
+            return [f for f in VC_FOLDERS if f["folder"] in kids]
+        if path.startswith("vcenter/vm?folders="):
+            fid = path.split("=", 1)[1]
+            return [{"vm": v} for v in VC_VMS_BY_FOLDER.get(fid, [])]
+        if path.startswith("vcenter/vm?datacenters="):
+            return [{"vm": v["vm"]} for v in VC_VMS]
+        if path.startswith("vcenter/host?datacenters="):
+            return [{"host": h["host"]} for h in VC_HOSTS]
         if path.endswith("/guest/networking/interfaces"):
             moref = path.split("/")[2]  # vcenter/vm/<moref>/guest/...
             return VC_GUEST_NET.get(moref, [])
@@ -870,7 +895,7 @@ class AddressPlacementTests(TestCase):
         self.assertEqual(counts["ips"], 0)
         self.assertEqual(counts["ips_skipped"], 1)
         self.source.refresh_from_db()
-        warning = " ".join(self.source.last_sync_warnings)
+        warning = " ".join(self.source.last_sync_skipped)
         self.assertIn("prod", warning)
         self.assertIn("dr", warning)
 
@@ -904,18 +929,18 @@ class AddressPlacementTests(TestCase):
         self._pin(self.prod)  # no prefix anywhere
         self.sync()
         self.source.refresh_from_db()
-        self.assertTrue(self.source.last_sync_warnings)
-        self.assertIn("prod", " ".join(self.source.last_sync_warnings))
+        self.assertTrue(self.source.last_sync_skipped)
+        self.assertIn("prod", " ".join(self.source.last_sync_skipped))
 
     def test_a_clean_run_clears_stale_warnings(self):
         self._pin(self.prod)
         self.sync()
         self.assertTrue(self.source.__class__.objects.get(
-            pk=self.source.pk).last_sync_warnings)
+            pk=self.source.pk).last_sync_skipped)
         self._prefix(vrf=self.prod)
         self.sync()
         self.source.refresh_from_db()
-        self.assertEqual(self.source.last_sync_warnings, [])
+        self.assertEqual(self.source.last_sync_skipped, [])
 
 
 class NetworkPlacementTests(TestCase):
@@ -1222,3 +1247,120 @@ class HostDeviceTests(TestCase):
         self.sync()
         self.assertEqual(DeviceRole.objects.count(), 1)
         self.assertEqual(Device.objects.get(name="pve1").role_id, mine.id)
+
+
+class SitePlacementSyncTests(TestCase):
+    """Placement wired through the vCenter sync (#34).
+
+    The reporter asked for site assignment driven by structure rather than IP
+    addresses. These cover the whole path: hierarchy fallback, explicit rules,
+    folder inheritance, and the refusal to invent a Site.
+    """
+
+    def setUp(self):
+        from api.models import Site
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="vc", host="192.0.2.20", kind="vcenter",
+            credentials={"username": "u", "password": "p"}, sync_mode="auto",
+            sync_hosts=True,
+        )
+        Prefix.objects.create(tenant=self.tenant, cidr="10.77.0.0/24")
+        self.Site = Site
+
+    def sync(self):
+        with mock.patch("integrations.virt_client.VCenterClient", FakeVCenter):
+            return virt_sync.sync_vcenter(self.source)
+
+    def _rule(self, scope, pattern, site, **kw):
+        from integrations.models import VirtPlacementRule
+
+        return VirtPlacementRule.objects.create(
+            source=self.source, scope=scope, pattern=pattern, site=site, **kw
+        )
+
+    def test_a_site_named_after_the_datacenter_is_used(self):
+        """The hierarchy, as the implicit last rule — zero configuration."""
+        lab = self.Site.objects.create(tenant=self.tenant, name="Lab")
+        self.sync()
+        self.assertEqual(VirtualMachine.objects.get(name="web01").site_id, lab.id)
+        self.assertEqual(Device.objects.get(name="esxi-lab-01").site_id, lab.id)
+
+    def test_nothing_is_placed_when_no_site_matches(self):
+        """A Site is a physical fact — the sync must never invent one.
+
+        A site exists but isn't named after anything here, which is the real
+        "why didn't my host get a site?" case.
+        """
+        self.Site.objects.create(tenant=self.tenant, name="Somewhere else")
+        self.sync()
+        self.assertEqual(self.Site.objects.count(), 1)
+        self.assertIsNone(VirtualMachine.objects.get(name="web01").site_id)
+        self.source.refresh_from_db()
+        self.assertTrue(
+            any("Lab" in w for w in self.source.last_sync_skipped),
+            f"expected an unplaced warning, got {self.source.last_sync_skipped}",
+        )
+
+    def test_a_rule_beats_the_datacenter_name(self):
+        self.Site.objects.create(tenant=self.tenant, name="Lab")
+        dr = self.Site.objects.create(tenant=self.tenant, name="DR")
+        self._rule("cluster", "DR-*", dr)
+        self.sync()
+        # db01 runs on DR-Cluster, web01 on Lab-Cluster.
+        self.assertEqual(VirtualMachine.objects.get(name="db01").site_id, dr.id)
+        self.assertEqual(
+            VirtualMachine.objects.get(name="web01").site.name, "Lab"
+        )
+
+    def test_a_folder_rule_reaches_a_vm_in_a_subfolder(self):
+        """web01 sits in "Test site / Linux"; the rule names only "Test site"."""
+        branch = self.Site.objects.create(tenant=self.tenant, name="Branch")
+        self._rule("folder", "Test site", branch)
+        self.sync()
+        self.assertEqual(
+            VirtualMachine.objects.get(name="web01").site_id, branch.id
+        )
+
+    def test_a_deeper_folder_rule_wins(self):
+        branch = self.Site.objects.create(tenant=self.tenant, name="Branch")
+        inner = self.Site.objects.create(tenant=self.tenant, name="Inner")
+        self._rule("folder", "Test site", branch)
+        self._rule("folder", "Linux", inner)
+        self.sync()
+        self.assertEqual(
+            VirtualMachine.objects.get(name="web01").site_id, inner.id
+        )
+
+    def test_an_operator_site_is_never_overwritten(self):
+        lab = self.Site.objects.create(tenant=self.tenant, name="Lab")
+        other = self.Site.objects.create(tenant=self.tenant, name="Mine")
+        self.sync()
+        vm = VirtualMachine.objects.get(name="web01")
+        vm.site = other
+        vm.save(update_fields=["site"])
+
+        self.sync()
+
+        vm.refresh_from_db()
+        self.assertEqual(vm.site_id, other.id)
+        self.assertNotEqual(vm.site_id, lab.id)
+
+    def test_folders_are_not_walked_without_a_folder_rule(self):
+        """The tree walk is a call per folder — it must not run for nothing."""
+        self.Site.objects.create(tenant=self.tenant, name="Lab")
+        seen = []
+        real = FakeVCenter.get
+
+        def spy(self_, path):
+            seen.append(path)
+            return real(self_, path)
+
+        with mock.patch.object(FakeVCenter, "get", spy):
+            self.sync()
+        self.assertFalse(
+            [p for p in seen if "parent_folders" in p],
+            "walked the folder tree with no folder rules configured",
+        )

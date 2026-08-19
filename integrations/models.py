@@ -381,12 +381,13 @@ class AddressPlacementMixin(models.Model):
         help_text="Routing context for addresses this connection discovers. "
                   "NULL = Global VRF.",
     )
-    #: Operator-facing notes from the last run — addresses that couldn't be
-    #: placed, and why. Bounded on write; a scheduled run has no toast to show.
-    last_sync_warnings = models.JSONField(default=list, blank=True)
+    #: What the last run saw but couldn't record — an address with no
+    #: containing prefix, a host with no matching site. Not errors: the sync
+    #: succeeded. Bounded on write, since a scheduled run has no toast.
+    last_sync_skipped = models.JSONField(default=list, blank=True)
 
-    def record_warnings(self, warnings, *, summary="", cap: int = 20) -> list[str]:
-        """Trim a run's warnings to something a badge can hold.
+    def record_skipped(self, warnings, *, summary="", cap: int = 20) -> list[str]:
+        """Trim a run's skipped notes to something a badge can hold.
 
         A cluster with no prefixes modelled yet can produce hundreds of these,
         and hundreds of near-identical lines carry no more information than a
@@ -399,8 +400,8 @@ class AddressPlacementMixin(models.Model):
                 seen.append(w)
         if len(seen) > cap:
             seen = seen[:cap] + [f"… and {len(seen) - cap} more"]
-        self.last_sync_warnings = ([summary] if summary else []) + seen
-        return self.last_sync_warnings
+        self.last_sync_skipped = ([summary] if summary else []) + seen
+        return self.last_sync_skipped
 
 
 class WindowsServerConnection(AddressPlacementMixin, TimestampedModel):
@@ -496,9 +497,10 @@ class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
     sync_disks = models.BooleanField(default=True)
     #: Virtual switches + networks (port-groups/bridges → VLANs).
     sync_networks = models.BooleanField(default=False)
-    #: Create the hypervisor's own nodes/hosts as Devices. Off by default: this
-    #: writes into the physical inventory, which is the operator's territory,
-    #: and a host's type/site are decisions only they can make.
+    #: Create the hypervisor's own nodes/hosts as Devices. Off by default:
+    #: this writes into the physical inventory, which is the operator's
+    #: territory. The site comes from placement rules when they resolve one;
+    #: the device type stays theirs — nothing on the wire says what it is.
     sync_hosts = models.BooleanField(default=False)
 
     last_sync_at = models.DateTimeField(null=True, blank=True)
@@ -515,6 +517,68 @@ class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.get_kind_display()})"
+
+
+class VirtPlacementRule(TimestampedModel):
+    """Which Site a synced host or VM belongs to, decided by where it sits.
+
+    Operators asked for this as a config string keyed on management IP
+    (``192.168.110.* = UA``). Two problems with that: a host's address isn't in
+    the sync payload at all, and a site name in a string is a name Danbyte has
+    to trust. So a rule matches the hypervisor's own **structure** — datacenter,
+    folder, cluster or host name — and points at a real :class:`api.Site`, which
+    makes "never invent a Site" a property of the schema rather than a check
+    someone has to remember.
+
+    Resolution is **nearest wins**: host beats folder beats cluster beats
+    datacenter, and for folders the closest matching ancestor wins, so a rule on
+    ``Test site`` covers ``Test site / Linux`` without a rule per subfolder.
+    ``weight`` only breaks ties within one level — nobody should have to reason
+    about global ordering to override a single machine.
+    """
+
+    #: Ordered outermost → innermost. The index is the specificity, so
+    #: `SCOPE_ORDER.index(scope)` ranks two matches against each other.
+    SCOPE_ORDER = ["datacenter", "cluster", "folder", "host"]
+    SCOPE_CHOICES = [
+        ("datacenter", "Datacenter"),
+        ("cluster", "Cluster"),
+        ("folder", "Folder"),
+        ("host", "Host"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    source = models.ForeignKey(
+        VirtualizationSource, on_delete=models.CASCADE,
+        related_name="placement_rules",
+    )
+    scope = models.CharField(max_length=12, choices=SCOPE_CHOICES)
+    #: Glob by default (``Lab*``, ``*-DR``) because that is what operators
+    #: write; a ``regex:`` prefix opts into a regular expression for the cases
+    #: a glob can't express. A folder pattern may match the folder's own name
+    #: or its ``/``-joined path.
+    pattern = models.CharField(
+        max_length=255,
+        help_text="Glob such as Lab* or *-DR. Prefix with regex: for a regular "
+                  "expression. Folder patterns match the name or the full path.",
+    )
+    site = models.ForeignKey(
+        "api.Site", on_delete=models.CASCADE, related_name="virt_placement_rules"
+    )
+    location = models.ForeignKey(
+        "api.Location", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="virt_placement_rules",
+        help_text="Optional. Ignored unless it belongs to the site above.",
+    )
+    #: Tie-break within one scope only.
+    weight = models.PositiveSmallIntegerField(default=100)
+
+    class Meta:
+        ordering = ["weight", "pattern"]
+        indexes = [models.Index(fields=["source", "scope"])]
+
+    def __str__(self) -> str:
+        return f"{self.get_scope_display()} {self.pattern} → {self.site_id}"
 
 
 # ─── Windows DHCP sync state ──────────────────────────────────────────────────
