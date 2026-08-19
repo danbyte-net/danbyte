@@ -12,6 +12,7 @@ import {
   type Paginated,
   type Prefix,
   type Site,
+  type VirtualMachine,
   type VLAN,
 } from "@/lib/api"
 import { TagList } from "@/components/cells/tag-list"
@@ -19,6 +20,7 @@ import { StatusBadge } from "@/components/status-badge"
 import { VrfCell } from "@/components/cells/vrf-cell"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { buildVlanColumns } from "@/components/columns/vlan-columns"
+import { buildVmColumns } from "@/components/columns/vm-columns"
 import { EmptyState } from "@/components/empty-state"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
@@ -71,6 +73,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
     | "overview"
     | "locations"
     | "devices"
+    | "vms"
     | "prefixes"
     | "vlans"
     | "circuits"
@@ -149,6 +152,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
         { value: "overview", label: "Overview" },
         { value: "locations", label: "Locations" },
         { value: "devices", label: "Devices", count: s.device_count },
+        { value: "vms", label: "Virtual machines", count: s.vm_count },
         { value: "prefixes", label: "Prefixes", count: s.prefix_count },
         { value: "vlans", label: "VLANs", count: s.vlan_count },
         { value: "circuits", label: "Circuits", count: s.circuit_count },
@@ -175,6 +179,9 @@ function SiteDetailBody({ site: s }: { site: Site }) {
       </DetailTab>
       <DetailTab value="prefixes">
         <SitePrefixesTable siteId={s.id} siteName={s.name} />
+      </DetailTab>
+      <DetailTab value="vms">
+        <SiteVmsTable siteId={s.id} />
       </DetailTab>
       <DetailTab value="vlans">
         <SiteVlansTable siteId={s.id} />
@@ -489,6 +496,40 @@ function SitePrefixesTable({
       />
     </div>
   )
+}
+
+/** VMs located at this site. A VM's site is its own field — a cluster's site is
+ * not inherited unless that cluster opts in — so this lists what is actually
+ * placed here, wherever its compute lives. */
+function SiteVmsTable({ siteId }: { siteId: string }) {
+  const q = useQuery({
+    queryKey: ["site-vms", siteId],
+    queryFn: () =>
+      api<Paginated<VirtualMachine>>(
+        `/api/virtual-machines/?site=${siteId}&page_size=500`
+      ),
+  })
+  const columns = useMemo<ColumnDef<VirtualMachine>[]>(
+    () =>
+      buildVmColumns({
+        include: ["name", "status", "cluster", "vcpus", "memory", "primary_ip"],
+      }),
+    []
+  )
+
+  if (q.isLoading)
+    return <p className="text-sm text-muted-foreground">Loading VMs…</p>
+  if (q.isError) return <QueryError error={q.error} />
+  const rows = q.data?.results ?? []
+  if (rows.length === 0)
+    return (
+      <p className="text-sm text-muted-foreground">
+        No virtual machines are placed at this site. A VM's site is its own
+        field — set it on the VM, or tick “Give VMs on this cluster its site”
+        on a cluster that really is here.
+      </p>
+    )
+  return <DataTable data={rows} columns={columns} flexColumn="primary_ip" />
 }
 
 function SiteVlansTable({ siteId }: { siteId: string }) {

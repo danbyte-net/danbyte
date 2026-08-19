@@ -670,6 +670,7 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
         return value
 
     device_count = serializers.SerializerMethodField()
+    vm_count = serializers.SerializerMethodField()
     rack_count = serializers.SerializerMethodField()
     contact_count = serializers.SerializerMethodField()
     circuit_count = serializers.SerializerMethodField()
@@ -682,6 +683,9 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
 
     def get_device_count(self, obj) -> int:
         return obj.device_set.count()
+
+    def get_vm_count(self, obj) -> int:
+        return obj.virtual_machines.count()
 
     def get_rack_count(self, obj) -> int:
         return obj.racks.count()
@@ -725,7 +729,8 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
             "vrfs", "vrf_ids",
             "tags", "tag_ids",
             "prefix_count", "vlan_count",
-            "device_count", "rack_count", "contact_count", "circuit_count",
+            "device_count", "vm_count", "rack_count", "contact_count",
+            "circuit_count",
             "custom_fields",
             "created_at", "updated_at",
         ]
@@ -3592,7 +3597,8 @@ class ClusterSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdMod
     class Meta:
         model = Cluster
         fields = ["id", "name", "type", "type_id", "group", "group_id",
-                  "site", "site_id", "status", "status_id",  "description",
+                  "site", "site_id", "apply_site_to_vms",
+                  "status", "status_id",  "description",
                   "vm_count", "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "vm_count", "created_at", "updated_at"]

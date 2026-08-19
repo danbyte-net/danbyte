@@ -19,6 +19,7 @@ import { CustomFieldValues } from "@/components/custom-field-display"
 import { QueryError } from "@/components/query-error"
 import { ClusterDeleteDialog } from "@/components/cluster-delete-dialog"
 import { StatusBadge } from "@/components/status-badge"
+import { Badge } from "@/components/ui/badge"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import {
   DetailHero,
@@ -223,9 +224,16 @@ function ClusterOverview({ cluster: c }: { cluster: Cluster }) {
     {
       label: "Site",
       value: c.site ? (
-        <Link to="/sites/$id" params={{ id: c.site.id }} className="link">
-          {c.site.name}
-        </Link>
+        <span className="inline-flex items-center gap-1.5">
+          <Link to="/sites/$id" params={{ id: c.site.id }} className="link">
+            {c.site.name}
+          </Link>
+          {c.apply_site_to_vms && (
+            <Badge variant="outline" className="text-[10px]">
+              applied to VMs
+            </Badge>
+          )}
+        </span>
       ) : (
         dash
       ),

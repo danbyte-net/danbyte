@@ -4441,6 +4441,21 @@ class ClusterViewSet(TenantScopedViewSet):
     serializer_class = ClusterSerializer
     pagination_class = StandardPagination
 
+    def perform_create(self, serializer):
+        super().perform_create(serializer)
+        self._fill_vm_sites(serializer.instance)
+
+    def perform_update(self, serializer):
+        super().perform_update(serializer)
+        self._fill_vm_sites(serializer.instance)
+
+    def _fill_vm_sites(self, cluster) -> None:
+        """Ticking `apply_site_to_vms` (or changing the site while it is on)
+        backfills the VMs that have no site of their own."""
+        from .cluster_site import apply_cluster_site
+
+        apply_cluster_site(cluster)
+
     def get_serializer_class(self):
         if self.action == "list" and self.request and \
                 self.request.query_params.get("picker") == "1":
@@ -4503,6 +4518,19 @@ class VirtualSwitchViewSet(TenantScopedViewSet):
 class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
     queryset = VirtualMachine.objects.all().order_by(NATURAL_NAME)
     serializer_class = VirtualMachineSerializer
+
+    def perform_create(self, serializer):
+        super().perform_create(serializer)
+        self._fill_site(serializer.instance)
+
+    def perform_update(self, serializer):
+        super().perform_update(serializer)
+        self._fill_site(serializer.instance)
+
+    def _fill_site(self, vm) -> None:
+        from .cluster_site import apply_cluster_site
+
+        apply_cluster_site(vm.cluster, only_vm=vm)
     pagination_class = StandardPagination
     # Name + primary IP are identity; carry placement + sizing.
     clone_fields = (
@@ -4538,6 +4566,9 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
             cluster = self.request.query_params.get("cluster")
             if cluster:
                 qs = qs.filter(cluster_id=cluster)
+            site = self.request.query_params.get("site")
+            if site:
+                qs = qs.filter(site_id=site)
             for k, f in (("role", "role_id"), ("platform", "platform_id")):
                 v = self.request.query_params.get(k)
                 if v:

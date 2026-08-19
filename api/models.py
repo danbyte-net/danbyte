@@ -3292,6 +3292,14 @@ class Cluster(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         blank=True,
         related_name="clusters",
     )
+    # Opt-in: a cluster's site describes the cluster, not its workloads — a
+    # central cluster often runs VMs that belong to branch offices. Tick this
+    # where the two really are the same place and the site is blank-filled onto
+    # the cluster's VMs (never overwriting one an operator set).
+    apply_site_to_vms = models.BooleanField(
+        default=False,
+        help_text="Give VMs on this cluster its site when they have none.",
+    )
     status = models.ForeignKey(
         "Status", on_delete=models.PROTECT, null=True, blank=True,
         related_name="clusters",

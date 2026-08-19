@@ -44,10 +44,12 @@ diagram. Then:
 
 Two different questions, two different fields:
 
-- **Site** — *where in the world*. This is the VM's **own** field and is not
-  inherited from its cluster: a cluster in your datacentre can host VMs whose
-  site is a branch office, which is usually what you want to record. A VM with
-  no site set has no site, even if its cluster has one.
+- **Site** — *where in the world*. This is the VM's **own** field: a cluster in
+  your datacentre can host VMs whose site is a branch office, which is usually
+  what you want to record, so a cluster's site is not inherited by default. When
+  the two really are the same place, tick **Give VMs on this cluster its site**
+  on the [cluster](clusters.md#site-and-the-vms-on-it) and it is filled in for
+  VMs that have none. Either way, a site's page lists the VMs placed there.
 - **Host device** — *which physical machine*. Model the ESXi host or Proxmox
   node as a **Device**, then pick it as the VM's *Host device*. The device's
   own page lists the VMs it hosts.

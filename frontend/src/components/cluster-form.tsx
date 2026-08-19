@@ -11,6 +11,7 @@ import {
   type Status,
 } from "@/lib/api"
 import {
+  FormCheckbox,
   FormCombobox,
   QuickAddDialog,
   FormFooter,
@@ -50,6 +51,9 @@ export function ClusterForm({ cluster, onSaved, onCancel }: ClusterFormProps) {
     cluster?.group?.id ?? null
   )
   const [siteId, setSiteId] = useState<string | null>(cluster?.site?.id ?? null)
+  const [applySiteToVms, setApplySiteToVms] = useState(
+    cluster?.apply_site_to_vms ?? false
+  )
   const [statusId, setStatusId] = useState<string | null>(
     cluster?.status?.id ?? null
   )
@@ -109,6 +113,7 @@ export function ClusterForm({ cluster, onSaved, onCancel }: ClusterFormProps) {
         type_id: typeId,
         group_id: groupId,
         site_id: siteId,
+        apply_site_to_vms: applySiteToVms,
         status_id: statusId,
         description: description.trim(),
         tag_ids: tagIds,
@@ -230,6 +235,15 @@ export function ClusterForm({ cluster, onSaved, onCancel }: ClusterFormProps) {
         searchPlaceholder="Search sites…"
         emptyText="No sites."
         error={fieldErrors.site_id}
+      />
+
+      {/* A cluster's site describes the cluster: central compute often runs
+          branch-office workloads, so VMs keep their own site unless asked. */}
+      <FormCheckbox
+        label="Give VMs on this cluster its site"
+        hint="Only VMs with no site of their own — an existing one is kept"
+        checked={applySiteToVms}
+        onChange={setApplySiteToVms}
       />
 
       <FormCombobox

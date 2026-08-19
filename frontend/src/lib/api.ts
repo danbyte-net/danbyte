@@ -3043,6 +3043,8 @@ export interface Site {
   prefix_count: number
   vlan_count: number
   device_count: number
+  /** VMs whose own site is this one (a cluster's site isn't inherited). */
+  vm_count: number
   rack_count: number
   contact_count: number
   circuit_count: number
@@ -3182,6 +3184,8 @@ export interface Cluster {
   type: { id: string; name: string; slug: string }
   group: { id: string; name: string; slug: string } | null
   site: { id: string; name: string } | null
+  /** Give VMs on this cluster its site when they have none of their own. */
+  apply_site_to_vms: boolean
   status: StatusMini | null
   description: string
   vm_count: number
@@ -3196,6 +3200,7 @@ export interface ClusterWritePayload {
   type_id: string
   group_id?: string | null
   site_id?: string | null
+  apply_site_to_vms?: boolean
   status_id?: string | null
   description?: string
   tag_ids?: number[]

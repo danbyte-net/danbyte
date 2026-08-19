@@ -583,6 +583,13 @@ def _blank_fill(vm, specs, source, guest) -> None:
         if host is not None:
             vm.device = host
             changed.append("device")
+    # Site stays the operator's — unless the cluster opts in, in which case the
+    # cluster's site is blank-filled like everything else here.
+    if vm.site_id is None and vm.cluster_id is not None:
+        cl = vm.cluster
+        if cl.apply_site_to_vms and cl.site_id is not None:
+            vm.site_id = cl.site_id
+            changed.append("site")
     if changed:
         vm.save(update_fields=changed)
 

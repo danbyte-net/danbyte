@@ -16,22 +16,36 @@ only place you need to set a site.
 | **Name** | The cluster's label. |
 | **Type** | What kind of cluster it is (see below). |
 | **Group** | Optional grouping across clusters. |
-| **Site** | Where the cluster itself lives. It is *not* inherited by its VMs — see below. |
+| **Site** | Where the cluster itself lives. Not inherited by its VMs unless you tick the option below. |
+| **Give VMs on this cluster its site** | Opt-in: fills the cluster's site into VMs that have none. |
 | **Status** | From your status catalog. |
 | **Description**, **tags** | Notes and labels. |
 
 Its detail page lists the **virtual machines** on it (with a count on the tab),
 plus Journal and History.
 
-!!! note "Cluster site and VM site are independent"
-    A cluster's site describes **the cluster**. A VM's site is its own field and
-    is **not** derived from its cluster — a VM with no site set simply has no
-    site, even when its cluster has one.
+### Site, and the VMs on it
 
-    That is deliberate: the compute often lives in one datacentre while the
-    workloads belong to the branch or department they serve. Set a VM's site
-    when you want it located; leave it blank when only the cluster's location
-    matters.
+A cluster's site describes **the cluster**. By default it is **not** inherited:
+a VM's site is its own field, and a VM with none simply has none even when its
+cluster has one.
+
+That default is deliberate — the compute often lives in one datacentre while
+the workloads belong to the branch or department they serve, and that is what
+you want recorded.
+
+Where the two really are the same place, tick **Give VMs on this cluster its
+site**:
+
+- Saving the cluster **backfills** VMs on it that have no site.
+- New VMs added to it — by hand or by a [sync](external-sync.md) — get the site
+  as they arrive.
+- It is **blank-fill only**: a site you set on a VM is never overwritten, and
+  clearing the cluster's site later never clears the VMs'.
+- A site-scoped user can then see those VMs, so turn it on deliberately.
+
+Either way, a site's own page has a **Virtual machines** tab listing what is
+placed there.
 
 ## Cluster types
 
