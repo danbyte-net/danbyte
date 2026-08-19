@@ -258,6 +258,20 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
           } satisfies KvRow,
         ]
       : []),
+    {
+      label: "Synced from",
+      value: vm.synced_from ? (
+        <Link
+          to="/virtualization-sources/$id"
+          params={{ id: vm.synced_from_id! }}
+          className="link"
+        >
+          {vm.synced_from}
+        </Link>
+      ) : (
+        <span className="text-muted-foreground">Not synced</span>
+      ),
+    },
     { label: "Role", value: vm.role?.name ?? dash },
     { label: "Platform", value: vm.platform?.name ?? dash },
     { label: "Description", value: vm.description || dash },

@@ -3234,6 +3234,9 @@ export interface VirtualMachine {
   power_state: string | null
   /** When that reading was taken; a stale power state shown as live misleads. */
   power_state_at: string | null
+  /** Which virtualization source syncs this VM; null when nobody does. */
+  synced_from: string | null
+  synced_from_id: string | null
   vcpus: number | null
   memory_mb: number | null
   disk_gb: number | null
@@ -6962,8 +6965,9 @@ export interface WindowsConnection {
   vrf_id: string | null
   vrf_name: string
   vrf_mode: "pinned" | "search"
-  /** Notes from the last run — addresses that couldn't be placed, and why. */
-  last_sync_warnings: string[]
+  /** What the last run saw but couldn't record — an address with no
+   * prefix, a host with no matching site. Not errors. */
+  last_sync_skipped: string[]
   enabled: boolean
   last_sync_at: string | null
   last_sync_status: string
@@ -7095,13 +7099,28 @@ export interface VirtualizationSource {
   vrf_id: string | null
   vrf_name: string
   vrf_mode: "pinned" | "search"
-  /** Notes from the last run — addresses that couldn't be placed, and why. */
-  last_sync_warnings: string[]
+  /** What the last run saw but couldn't record — an address with no
+   * prefix, a host with no matching site. Not errors. */
+  last_sync_skipped: string[]
   enabled: boolean
   pending_count: number
   last_sync_at: string | null
   last_sync_status: string
   last_sync_error: string
+  created_at: string
+  updated_at: string
+}
+
+export interface VirtPlacementRule {
+  id: string
+  source: string
+  scope: "datacenter" | "cluster" | "folder" | "host"
+  scope_display: string
+  /** Glob, or a regular expression when prefixed with `regex:`. */
+  pattern: string
+  site: { id: string; name: string }
+  location: { id: string; name: string } | null
+  weight: number
   created_at: string
   updated_at: string
 }

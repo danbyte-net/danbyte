@@ -4560,6 +4560,9 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
         latest = VirtGuest.objects.filter(vm=OuterRef("pk")).order_by(
             "-last_seen_at"
         )
+        # Provenance: a synced VM should say so on its own page, and the
+        # source's page should be able to list what it syncs.
+        latest_src = latest.values("source__name")[:1]
         qs = (
             super()
             .get_queryset()
@@ -4570,6 +4573,8 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
             .annotate(
                 power_state=Subquery(latest.values("power_state")[:1]),
                 power_state_at=Subquery(latest.values("last_seen_at")[:1]),
+                synced_from=Subquery(latest_src),
+                synced_from_id=Subquery(latest.values("source_id")[:1]),
             )
         )
         if self.request:
@@ -4581,6 +4586,9 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
             power = self.request.query_params.get("power")
             if power:
                 qs = qs.filter(power_state=power)
+            src = self.request.query_params.get("virt_source")
+            if src:
+                qs = qs.filter(virt_guests__source_id=src).distinct()
             cluster = self.request.query_params.get("cluster")
             if cluster:
                 qs = qs.filter(cluster_id=cluster)

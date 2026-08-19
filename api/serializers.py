@@ -3744,6 +3744,9 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
     # because a stale reading presented as live is worse than none.
     power_state = serializers.CharField(read_only=True, default=None)
     power_state_at = serializers.DateTimeField(read_only=True, default=None)
+    #: Which virtualization source syncs this VM — null when nobody does.
+    synced_from = serializers.CharField(read_only=True, default=None)
+    synced_from_id = serializers.CharField(read_only=True, default=None)
 
     class Meta:
         model = VirtualMachine
@@ -3752,12 +3755,14 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
                   "device", "device_id",
                   "site", "site_id", "status", "status_id",
                   "power_state", "power_state_at",
+                  "synced_from", "synced_from_id",
                   "vcpus", "memory_mb", "disk_gb", "disks",
                   "interface_count", "disk_count", "service_count",
                   "primary_ip", "primary_ip_id", "description",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "power_state", "power_state_at",
+                            "synced_from", "synced_from_id",
                             "created_at", "updated_at"]
 
 

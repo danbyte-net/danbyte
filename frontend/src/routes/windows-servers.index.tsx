@@ -37,14 +37,14 @@ export function SyncStatusBadge({
 }: {
   conn: Pick<
     WindowsConnection,
-    "last_sync_status" | "last_sync_error" | "last_sync_warnings"
+    "last_sync_status" | "last_sync_error" | "last_sync_skipped"
   >
 }) {
   return (
     <ConnSyncStatusBadge
       status={conn.last_sync_status}
       error={conn.last_sync_error}
-      warnings={conn.last_sync_warnings}
+      skipped={conn.last_sync_skipped}
     />
   )
 }

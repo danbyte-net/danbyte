@@ -68,7 +68,10 @@ Two different questions, two different fields:
   what you want to record, so a cluster's site is not inherited by default. When
   the two really are the same place, tick **Give VMs on this cluster its site**
   on the [cluster](clusters.md#site-and-the-vms-on-it) and it is filled in for
-  VMs that have none. Either way, a site's page lists the VMs placed there.
+  VMs that have none. A synced VM can also get its site from
+  [placement](external-sync.md#where-synced-hosts-and-vms-land), which reads
+  the hypervisor's own datacenter/folder/cluster structure. Either way, a
+  site's page lists the VMs placed there.
 - **Host device** — *which physical machine*. Model the ESXi host or Proxmox
   node as a **Device**, then pick it as the VM's *Host device*. The device's
   own page lists the VMs it hosts.
@@ -79,9 +82,10 @@ Two different questions, two different fields:
 
     You can create those hosts yourself, or tick **Create hosts as devices** on
     the [source](external-sync.md) and let the sync add each hypervisor node as
-    a Device — name, cluster and status, with a *Hypervisor* role created on
-    demand. It deliberately leaves **device type and site empty**: nothing the
-    hypervisor reports says what they are, and those are yours to decide. A
+    a Device — name, cluster, status and, when
+    [placement](external-sync.md#where-synced-hosts-and-vms-land) resolves one,
+    a site. A *Hypervisor* role is created on demand. It still leaves **device
+    type empty**: nothing the hypervisor reports says what the hardware is. A
     host you already model is matched case-insensitively and adopted, never
     duplicated or restyled.
 

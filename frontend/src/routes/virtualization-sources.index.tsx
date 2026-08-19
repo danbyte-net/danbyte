@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { Inbox, Plug, Plus, RefreshCw } from "lucide-react"
@@ -141,7 +141,13 @@ function VirtualizationSourcesPage() {
         header: ({ column }) => <SortHeader column={column} label="Name" />,
         cell: ({ row }) => (
           <span className="flex items-center gap-2 font-medium">
-            {row.original.name}
+            <Link
+              to="/virtualization-sources/$id"
+              params={{ id: row.original.id }}
+              className="link"
+            >
+              {row.original.name}
+            </Link>
             {!row.original.enabled && (
               <Badge variant="secondary" className="text-[10px]">
                 disabled
@@ -209,7 +215,7 @@ function VirtualizationSourcesPage() {
               <SyncStatusBadge
                 status={s.last_sync_status}
                 error={s.last_sync_error}
-                warnings={s.last_sync_warnings}
+                skipped={s.last_sync_skipped}
               />
               {s.last_sync_at && <TimeCell iso={s.last_sync_at} />}
             </span>

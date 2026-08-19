@@ -182,6 +182,7 @@ import { Route as VlansBulkEditRouteImport } from './routes/vlans.bulk-edit'
 import { Route as VlansIdRouteImport } from './routes/vlans.$id'
 import { Route as VlanGroupsNewRouteImport } from './routes/vlan-groups.new'
 import { Route as VlanGroupsIdRouteImport } from './routes/vlan-groups.$id'
+import { Route as VirtualizationSourcesIdRouteImport } from './routes/virtualization-sources.$id'
 import { Route as VirtualSwitchesIdRouteImport } from './routes/virtual-switches.$id'
 import { Route as VirtualMachinesNewRouteImport } from './routes/virtual-machines.new'
 import { Route as VirtualMachinesIdRouteImport } from './routes/virtual-machines.$id'
@@ -1276,6 +1277,11 @@ const VlanGroupsIdRoute = VlanGroupsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => VlanGroupsRoute,
+} as any)
+const VirtualizationSourcesIdRoute = VirtualizationSourcesIdRouteImport.update({
+  id: '/virtualization-sources/$id',
+  path: '/virtualization-sources/$id',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const VirtualSwitchesIdRoute = VirtualSwitchesIdRouteImport.update({
   id: '/virtual-switches/$id',
@@ -2645,6 +2651,7 @@ export interface FileRoutesByFullPath {
   '/virtual-machines/$id': typeof VirtualMachinesIdRoute
   '/virtual-machines/new': typeof VirtualMachinesNewRoute
   '/virtual-switches/$id': typeof VirtualSwitchesIdRoute
+  '/virtualization-sources/$id': typeof VirtualizationSourcesIdRoute
   '/vlan-groups/$id': typeof VlanGroupsIdRoute
   '/vlan-groups/new': typeof VlanGroupsNewRoute
   '/vlans/$id': typeof VlansIdRoute
@@ -2991,6 +2998,7 @@ export interface FileRoutesByTo {
   '/virtual-machines/$id': typeof VirtualMachinesIdRoute
   '/virtual-machines/new': typeof VirtualMachinesNewRoute
   '/virtual-switches/$id': typeof VirtualSwitchesIdRoute
+  '/virtualization-sources/$id': typeof VirtualizationSourcesIdRoute
   '/vlan-groups/$id': typeof VlanGroupsIdRoute
   '/vlan-groups/new': typeof VlanGroupsNewRoute
   '/vlans/$id': typeof VlansIdRoute
@@ -3394,6 +3402,7 @@ export interface FileRoutesById {
   '/virtual-machines/$id': typeof VirtualMachinesIdRoute
   '/virtual-machines/new': typeof VirtualMachinesNewRoute
   '/virtual-switches/$id': typeof VirtualSwitchesIdRoute
+  '/virtualization-sources/$id': typeof VirtualizationSourcesIdRoute
   '/vlan-groups/$id': typeof VlanGroupsIdRoute
   '/vlan-groups/new': typeof VlanGroupsNewRoute
   '/vlans/$id': typeof VlansIdRoute
@@ -3798,6 +3807,7 @@ export interface FileRouteTypes {
     | '/virtual-machines/$id'
     | '/virtual-machines/new'
     | '/virtual-switches/$id'
+    | '/virtualization-sources/$id'
     | '/vlan-groups/$id'
     | '/vlan-groups/new'
     | '/vlans/$id'
@@ -4144,6 +4154,7 @@ export interface FileRouteTypes {
     | '/virtual-machines/$id'
     | '/virtual-machines/new'
     | '/virtual-switches/$id'
+    | '/virtualization-sources/$id'
     | '/vlan-groups/$id'
     | '/vlan-groups/new'
     | '/vlans/$id'
@@ -4546,6 +4557,7 @@ export interface FileRouteTypes {
     | '/virtual-machines/$id'
     | '/virtual-machines/new'
     | '/virtual-switches/$id'
+    | '/virtualization-sources/$id'
     | '/vlan-groups/$id'
     | '/vlan-groups/new'
     | '/vlans/$id'
@@ -4832,6 +4844,7 @@ export interface RootRouteChildren {
   VirtualMachinesIdRoute: typeof VirtualMachinesIdRoute
   VirtualMachinesNewRoute: typeof VirtualMachinesNewRoute
   VirtualSwitchesIdRoute: typeof VirtualSwitchesIdRoute
+  VirtualizationSourcesIdRoute: typeof VirtualizationSourcesIdRoute
   WindowsServersIdRoute: typeof WindowsServersIdRoute
   CertificateIssuersIndexRoute: typeof CertificateIssuersIndexRoute
   CertificateRequestsIndexRoute: typeof CertificateRequestsIndexRoute
@@ -6095,6 +6108,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/vlan-groups/$id'
       preLoaderRoute: typeof VlanGroupsIdRouteImport
       parentRoute: typeof VlanGroupsRoute
+    }
+    '/virtualization-sources/$id': {
+      id: '/virtualization-sources/$id'
+      path: '/virtualization-sources/$id'
+      fullPath: '/virtualization-sources/$id'
+      preLoaderRoute: typeof VirtualizationSourcesIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/virtual-switches/$id': {
       id: '/virtual-switches/$id'
@@ -8808,6 +8828,7 @@ const rootRouteChildren: RootRouteChildren = {
   VirtualMachinesIdRoute: VirtualMachinesIdRoute,
   VirtualMachinesNewRoute: VirtualMachinesNewRoute,
   VirtualSwitchesIdRoute: VirtualSwitchesIdRoute,
+  VirtualizationSourcesIdRoute: VirtualizationSourcesIdRoute,
   WindowsServersIdRoute: WindowsServersIdRoute,
   CertificateIssuersIndexRoute: CertificateIssuersIndexRoute,
   CertificateRequestsIndexRoute: CertificateRequestsIndexRoute,
