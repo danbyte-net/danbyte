@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from django.db import transaction
 from django.db.models.functions import Collate
-from django.db.models import Count, F, Q
+from django.db.models import Count, F, OuterRef, Q, Subquery
 from django.utils.text import slugify
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import permissions, status as drf_status, viewsets
@@ -4551,11 +4551,26 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
         return VirtualMachineSerializer
 
     def get_queryset(self):
+        # The hypervisor's power state lives on the integrations-side tracking
+        # row. Annotate it rather than walking the relation in the serializer,
+        # which would cost a query per row on the list endpoint. `integrations`
+        # imports `api`, never the reverse, so the import stays local.
+        from integrations.models import VirtGuest
+
+        latest = VirtGuest.objects.filter(vm=OuterRef("pk")).order_by(
+            "-last_seen_at"
+        )
         qs = (
             super()
             .get_queryset()
             .select_related("cluster", "device", "site", "primary_ip")
-            .prefetch_related("tags")
+            # `disks` is serialised inline, so without this the list endpoint
+            # fires one query per VM.
+            .prefetch_related("tags", "disks")
+            .annotate(
+                power_state=Subquery(latest.values("power_state")[:1]),
+                power_state_at=Subquery(latest.values("last_seen_at")[:1]),
+            )
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -4563,6 +4578,9 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
                 qs = qs.filter(name__icontains=s) | qs.filter(
                     description__icontains=s
                 )
+            power = self.request.query_params.get("power")
+            if power:
+                qs = qs.filter(power_state=power)
             cluster = self.request.query_params.get("cluster")
             if cluster:
                 qs = qs.filter(cluster_id=cluster)

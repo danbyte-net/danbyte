@@ -3738,18 +3738,27 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
         p = obj.platform
         return {"id": str(p.id), "name": p.name, "slug": p.slug} if p else None
 
+    # Hypervisor-reported runtime state, annotated by the viewset. Distinct
+    # from `status`, which is the operator's lifecycle field: a VM can be
+    # Active and powered off at the same time. `power_state_at` ships with it
+    # because a stale reading presented as live is worse than none.
+    power_state = serializers.CharField(read_only=True, default=None)
+    power_state_at = serializers.DateTimeField(read_only=True, default=None)
+
     class Meta:
         model = VirtualMachine
         fields = ["id", "name", "cluster", "cluster_id",
                   "role", "role_id", "platform", "platform_id",
                   "device", "device_id",
                   "site", "site_id", "status", "status_id",
+                  "power_state", "power_state_at",
                   "vcpus", "memory_mb", "disk_gb", "disks",
                   "interface_count", "disk_count", "service_count",
                   "primary_ip", "primary_ip_id", "description",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "power_state", "power_state_at",
+                            "created_at", "updated_at"]
 
 
 class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):

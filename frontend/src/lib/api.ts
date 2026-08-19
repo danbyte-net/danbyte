@@ -3228,6 +3228,12 @@ export interface VirtualMachine {
   role: { id: string; name: string; slug: string; color: string } | null
   platform: { id: string; name: string; slug: string } | null
   status: StatusMini | null
+  /** Hypervisor-reported runtime state — "running" | "stopped" | "suspended".
+   * Null for a VM no sync tracks. Distinct from `status`, which is the
+   * operator's lifecycle field: a VM can be Active and powered off. */
+  power_state: string | null
+  /** When that reading was taken; a stale power state shown as live misleads. */
+  power_state_at: string | null
   vcpus: number | null
   memory_mb: number | null
   disk_gb: number | null

@@ -19,6 +19,8 @@ import {
 import { QueryError } from "@/components/query-error"
 import { VmDeleteDialog } from "@/components/vm-delete-dialog"
 import { StatusBadge } from "@/components/status-badge"
+import { PowerBadge } from "@/components/cells/power-badge"
+import { TimeCell } from "@/components/cells/time-ago"
 import { useMe } from "@/lib/use-me"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -109,7 +111,12 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       hero={
         <DetailHero
           title={vm.name}
-          badges={<StatusBadge status={vm.status} />}
+          badges={
+            <>
+              <StatusBadge status={vm.status} />
+              <PowerBadge state={vm.power_state} />
+            </>
+          }
           tags={vm.tags.length > 0 && <TagList tags={vm.tags} />}
           description={vm.description}
           statCols={3}
@@ -234,6 +241,23 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
       label: "Status",
       value: <StatusBadge status={vm.status} />,
     },
+    ...(vm.power_state
+      ? [
+          {
+            label: "Power",
+            value: (
+              <span className="flex items-center gap-2">
+                <PowerBadge state={vm.power_state} />
+                {vm.power_state_at && (
+                  <span className="text-xs text-muted-foreground">
+                    as of <TimeCell iso={vm.power_state_at} />
+                  </span>
+                )}
+              </span>
+            ),
+          } satisfies KvRow,
+        ]
+      : []),
     { label: "Role", value: vm.role?.name ?? dash },
     { label: "Platform", value: vm.platform?.name ?? dash },
     { label: "Description", value: vm.description || dash },

@@ -17,6 +17,7 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 | Field | Notes |
 | --- | --- |
 | **Name**, **status** | As for a device — the same status catalog. |
+| **Power** | Read-only, from the hypervisor — see [Power state](#power-state). |
 | **Role**, **platform** | Also the device catalogs, so one role can span physical and virtual. |
 | **Cluster** | The [cluster](clusters.md) it runs on. |
 | **Host device** | The physical host *inside* that cluster — see [Placement](#placement-site-and-host-device). |
@@ -39,6 +40,24 @@ diagram. Then:
 | **Certificates** | TLS certificates seen on its endpoints. |
 | **Config** | The rendered config context for this VM. |
 | **Journal**, **History** | Notes you write, and the full change log. |
+
+## Power state
+
+For a VM a [sync](external-sync.md) tracks, Danbyte shows the hypervisor's
+reported **power state** — *Powered on*, *Powered off* or *Suspended* — on the
+VM's hero, in its Overview with the time the reading was taken, and as a
+filterable **Power** column in VM tables.
+
+It is deliberately separate from **Status**, and the distinction matters:
+
+- **Status** is *yours*. It's the lifecycle — staged, active, decommissioning —
+  and nothing overwrites it.
+- **Power** is the *hypervisor's*. It changes whenever someone shuts a machine
+  down.
+
+A VM is routinely **Active and powered off** at the same time; collapsing the
+two would make a nightly-shutdown dev box look decommissioned. A VM no sync
+tracks shows no power state at all, rather than an unknown-looking dash.
 
 ## Placement: site and host device
 

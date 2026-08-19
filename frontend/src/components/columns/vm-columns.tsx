@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router"
 import type { VirtualMachine } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { StatusBadge } from "@/components/status-badge"
+import { PowerBadge } from "@/components/cells/power-badge"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
@@ -35,6 +36,7 @@ export type VmColumnId =
   | "name"
   | "cluster"
   | "status"
+  | "power"
   | "vcpus"
   | "memory"
   | "disk"
@@ -50,6 +52,7 @@ const CANONICAL_ORDER: VmColumnId[] = [
   "name",
   "cluster",
   "status",
+  "power",
   "vcpus",
   "memory",
   "disk",
@@ -141,6 +144,34 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
           formatValue: (_v, r) => ({
             label: r.status?.name ?? "No status",
             color: r.status?.color,
+          }),
+        },
+      },
+    }),
+    power: () => ({
+      id: "power",
+      accessorFn: (r) => r.power_state ?? "",
+      header: ({ column }) => <SortHeader column={column} label="Power" />,
+      cell: ({ row }) =>
+        row.original.power_state ? (
+          <PowerBadge state={row.original.power_state} />
+        ) : (
+          dash
+        ),
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Power",
+          get: (r: T) => r.power_state ?? "__none__",
+          formatValue: (v) => ({
+            label:
+              v === "running"
+                ? "Powered on"
+                : v === "stopped"
+                  ? "Powered off"
+                  : v === "__none__"
+                    ? "Not tracked"
+                    : String(v),
           }),
         },
       },
