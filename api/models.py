@@ -1925,6 +1925,26 @@ class VLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 # ─── Prefix / IPAddress (VRF-scoped) ──────────────────────────────────────
 
 
+_UNSET = object()  # "we didn't look" — distinct from a real NULL vrf
+
+
+def _include_update_field(kwargs: dict, field: str) -> None:
+    """Make a field a ``save()`` derives survive a scoped write.
+
+    ``save(update_fields=[...])`` writes *only* the listed columns, so a value a
+    ``save()`` override computes is silently dropped unless the override adds
+    itself to the list. Callers can't be expected to know which columns are
+    derived, so the override owns that. A save with no ``update_fields`` writes
+    everything and needs nothing done.
+    """
+    fields = kwargs.get("update_fields")
+    if fields is None:
+        return
+    fields = set(fields)
+    fields.add(field)
+    kwargs["update_fields"] = fields
+
+
 class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """An IP prefix (CIDR), scoped to a (tenant, VRF) pair.
 
@@ -2006,7 +2026,21 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         # site-scoped queries (and auto_assign_site) have a single source.
         if self.location_id and self.location.site_id:
             self.site_id = self.location.site_id
+        # The prefix owns the routing context, and its addresses and ranges
+        # denormalise it. Those rows only re-derive it on their own save, so
+        # moving a prefix between VRFs would otherwise strand every child in
+        # the old one — invisible, and wrong for every VRF-filtered query.
+        previous_vrf_id = _UNSET
+        if not self._state.adding:
+            was = Prefix.objects.filter(pk=self.pk).values("vrf_id").first()
+            if was is not None:
+                previous_vrf_id = was["vrf_id"]
         super().save(*args, **kwargs)
+        if previous_vrf_id is not _UNSET and previous_vrf_id != self.vrf_id:
+            # Bulk, deliberately: this is a derived column following its parent,
+            # not an edit of its own. The prefix's change log records the move.
+            self.ip_addresses.update(vrf_id=self.vrf_id)
+            self.ip_ranges.update(vrf_id=self.vrf_id)
 
     @property
     def network(self):
@@ -2197,9 +2231,11 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         return self.ip_address
 
     def save(self, *args, **kwargs):
-        # Always keep vrf in sync with the parent prefix
+        # Always keep vrf in sync with the parent prefix — including on a
+        # scoped save(update_fields=…), which would otherwise drop it.
         if self.prefix_id and self.vrf_id != self.prefix.vrf_id:
             self.vrf_id = self.prefix.vrf_id
+            _include_update_field(kwargs, "vrf")
         if self.prefix_id and self.tenant_id != self.prefix.tenant_id:
             self.tenant_id = self.prefix.tenant_id
         # Binding to an interface implies its device.
@@ -3521,6 +3557,16 @@ class VirtualSwitch(TimestampedModel):
         "Interface", blank=True, related_name="uplink_switches",
     )
     mtu = models.IntegerField(null=True, blank=True)
+    # Routing context for addresses discovered on this switch's networks — the
+    # switch-wide default, which a network on it can override. NULL means "no
+    # opinion": placement falls through to the source's own policy, not to
+    # Global. See ``api.vrf_placement``.
+    vrf = models.ForeignKey(
+        "VRF", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="virtual_switches",
+        help_text="Default routing context for addresses on this switch's "
+                  "networks. Leave empty to follow the sync source.",
+    )
     created_switch = models.BooleanField(default=False)
     description = models.TextField(blank=True)
 
@@ -4126,6 +4172,17 @@ class IPRange(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     def __str__(self) -> str:
         return f"{self.start_address}–{self.end_address}"
+
+    def save(self, *args, **kwargs):
+        # A range under a prefix lives in that prefix's VRF — the same
+        # denormalisation IPAddress does, and the rule IPRangeSerializer already
+        # applies. Enforcing it here covers the ORM paths the serializer never
+        # sees (the DHCP sync creates exclusion ranges directly). A range with
+        # no prefix keeps whatever VRF it was given.
+        if self.prefix_id and self.vrf_id != self.prefix.vrf_id:
+            self.vrf_id = self.prefix.vrf_id
+            _include_update_field(kwargs, "vrf")
+        super().save(*args, **kwargs)
 
     @property
     def _start_ip(self):

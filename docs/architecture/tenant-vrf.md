@@ -40,7 +40,31 @@ separation.
 | **Fields** | `name`, `rd` (route distinguisher), `description`, `enforce_unique`, `color` |
 | **Parent** | `Tenant` |
 
-`Prefix.vrf` and `IPAddress.vrf` are nullable; `NULL` means the **Global VRF**.
+`Prefix.vrf`, `IPAddress.vrf` and `IPRange.vrf` are nullable; `NULL` means the
+**Global VRF**.
+
+### The prefix owns the routing context
+
+Only `Prefix.vrf` is set directly. An address's and a range's VRF are
+**denormalised** from the prefix they belong to — they exist so a query can
+filter by VRF without a join, and they are kept in step automatically:
+
+- saving an `IPAddress` or `IPRange` re-derives its VRF from its prefix;
+- moving a **prefix** into (or out of) a VRF carries every address and range in
+  it along, in one update.
+
+So there is no way to put an address in a different VRF from its prefix, and no
+state where the two disagree. To move an address between VRFs, move it to a
+prefix in the target VRF.
+
+### Placing addresses that arrive from outside
+
+The same rule decides where a **synced** address lands: the sync picks a
+containing prefix, and the prefix's VRF follows. So the configurable part is
+*which VRF's prefixes are eligible*, never what VRF to stamp on the address.
+`api/vrf_placement.py` is the single resolver — used by the Proxmox/vCenter,
+Windows DHCP/DNS and SNMP-discovery paths alike. See [where synced addresses
+land](../features/external-sync.md#where-synced-addresses-land).
 
 ## The uniqueness trick
 

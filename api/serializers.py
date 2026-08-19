@@ -3649,6 +3649,11 @@ class VirtualSwitchSerializer(serializers.ModelSerializer):
         source="uplink_interfaces", queryset=Interface.objects.all(),
         write_only=True, required=False, many=True,
     )
+    vrf = VRFMiniSerializer(read_only=True)
+    vrf_id = TenantScopedPrimaryKeyRelatedField(
+        source="vrf", queryset=VRF.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_uplink_interfaces(self, obj):
@@ -3662,7 +3667,7 @@ class VirtualSwitchSerializer(serializers.ModelSerializer):
         model = VirtualSwitch
         fields = ["id", "name", "kind", "kind_display", "cluster", "cluster_id",
                   "uplinks", "uplink_interfaces", "uplink_interface_ids",
-                  "mtu", "created_switch", "description",
+                  "mtu", "vrf", "vrf_id", "created_switch", "description",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "kind_display", "created_switch",
                             "created_at", "updated_at"]

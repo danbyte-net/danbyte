@@ -36,6 +36,10 @@ UniqueConstraint(
 
 Same IP in two VRFs is fine.
 
+`vrf` is never set directly — it always mirrors `prefix.vrf`. Saving the address
+re-derives it, and moving the **prefix** into another VRF carries its addresses
+with it. To move an address between VRFs, point it at a prefix in the target VRF.
+
 ## Status vs role
 
 | Concept | What it means | Examples |

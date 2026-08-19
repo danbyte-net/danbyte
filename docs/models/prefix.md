@@ -39,6 +39,12 @@ The `nulls_distinct=False` (Postgres 15+) is what makes `vrf=NULL` (Global) act
 like a real VRF for uniqueness — without it, two `(tenant, NULL,
 '10.0.10.0/24')` rows would both be allowed.
 
+## Moving a prefix between VRFs
+
+The prefix owns the routing context; its `IPAddress` and `IPRange` children
+denormalise it. Changing `vrf` therefore updates every child in one go, so the
+prefix and its contents can never disagree about which VRF they are in.
+
 ## Computed properties
 
 | Property | Returns | Notes |
