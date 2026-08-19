@@ -1,4 +1,4 @@
-"""Certificate digest — summary counts, rendering, and independent scheduling."""
+"""Certificate digest - summary counts, rendering, and independent scheduling."""
 from __future__ import annotations
 
 import datetime as dt

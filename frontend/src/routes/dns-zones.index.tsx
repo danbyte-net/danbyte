@@ -66,7 +66,7 @@ function DnsZonesPage() {
               <Badge
                 variant="outline"
                 className="text-[9px] text-muted-foreground"
-                title="Authored in Danbyte — not mirrored from a server"
+                title="Authored in Danbyte - not mirrored from a server"
               >
                 managed
               </Badge>
@@ -114,7 +114,7 @@ function DnsZonesPage() {
             </Link>
           ) : (
             <span className="num">
-              {row.original.sync ? row.original.record_count : "—"}
+              {row.original.sync ? row.original.record_count : "-"}
             </span>
           ),
       },
@@ -141,12 +141,12 @@ function DnsZonesPage() {
               {row.original.drift_count}
             </Badge>
           ) : (
-            <span className="text-xs text-muted-foreground">—</span>
+            <span className="text-xs text-muted-foreground">-</span>
           ),
       },
       // The zone name is the Open link; a zone's settings (reconcile,
       // auto-add) live on its detail page, so there is no row Edit. Delete
-      // only applies to Danbyte-authored zones — a synced zone would just
+      // only applies to Danbyte-authored zones - a synced zone would just
       // return on the next sync. With no managed zones every cell would be
       // empty, so the column itself is dropped rather than left as a sliver.
       ...(canDelete && rows.some((z) => z.managed)

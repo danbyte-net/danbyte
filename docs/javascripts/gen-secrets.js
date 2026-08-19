@@ -2,17 +2,17 @@
  * Client-side secret generator for the install guide.
  *
  * The guide's code blocks contain placeholder TOKENS (e.g. GENDJANGOKEY). On
- * load, each token is replaced — in the reader's browser — with a crypto-random
+ * load, each token is replaced - in the reader's browser - with a crypto-random
  * value, so two people copying the same guide get different secrets and a
  * "copy-paste the defaults" user still ends up unique. The same token reused
  * across blocks (the DB password in the SQL and in the .env) gets the SAME
  * value, so the blocks stay internally consistent.
  *
  * Tokens are filled in place inside ordinary fenced code blocks, so the theme's
- * own "copy" button copies the generated value — no second, differently-styled
+ * own "copy" button copies the generated value - no second, differently-styled
  * copy button. A "↻ Regenerate" button reshuffles.
  *
- * Not a substitute for a secrets manager — just a safer default for a quick
+ * Not a substitute for a secrets manager - just a safer default for a quick
  * install. The guide still tells people they can rotate these.
  */
 ;(function () {

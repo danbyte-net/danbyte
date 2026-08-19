@@ -450,7 +450,7 @@ function DocumentFormDialog({
           }),
         })
       }
-      // File upload — multipart. Omit unset optional fields so the browser
+      // File upload - multipart. Omit unset optional fields so the browser
       // doesn't send empty strings the serializer would reject.
       const fd = new FormData()
       fd.append("object_type", objectType)

@@ -67,7 +67,7 @@ class TcpChecker:
             return CheckOutcome("up", latency, detail)
         except (ConnectionRefusedError, asyncio.TimeoutError, OSError) as e:
             return CheckOutcome("down", None, {"port": port, "error": str(e) or type(e).__name__})
-        except Exception as e:  # noqa: BLE001 — unexpected → unknown, never down
+        except Exception as e:  # noqa: BLE001 - unexpected → unknown, never down
             return CheckOutcome.unknown(f"tcp error: {e}", port=port)
         finally:
             if writer is not None:

@@ -70,7 +70,7 @@ export function objectIcon(slug: string): LucideIcon {
 }
 
 /** Resolve a generic (model slug, object id) to its label + deep link via the
- * customization object-labels endpoint — the same primitive custom-field object
+ * customization object-labels endpoint - the same primitive custom-field object
  * references use. Cached per (slug, id), so the same device costs one request
  * no matter how many cards show it. */
 export function useObjectLabel(slug: string, id: string) {

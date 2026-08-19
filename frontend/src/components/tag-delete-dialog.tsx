@@ -47,7 +47,7 @@ export function TagDeleteDialog({
           <AlertDialogTitle>Delete tag {tag?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {usage > 0
-              ? `Used by ${usage} object${usage === 1 ? "" : "s"} — the tag will be removed from them.`
+              ? `Used by ${usage} object${usage === 1 ? "" : "s"} - the tag will be removed from them.`
               : "This action can't be undone."}
           </AlertDialogDescription>
         </AlertDialogHeader>

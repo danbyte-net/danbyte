@@ -8,13 +8,13 @@ export interface VlanLike {
   name: string
   /** The VLAN's own display colour ("" when unset). */
   color?: string | null
-  /** Its zone (firewall semantics) — colour fallback only. */
+  /** Its zone (firewall semantics) - colour fallback only. */
   zone?: { name?: string; color: string | null } | null
 }
 
 /**
  * A VLAN rendered like zones/tags: a badge in the VLAN's zone colour, linked
- * to the VLAN. Colour is optional — an unzoned VLAN gets the neutral badge.
+ * to the VLAN. Colour is optional - an unzoned VLAN gets the neutral badge.
  */
 export function VlanBadge({
   vlan,

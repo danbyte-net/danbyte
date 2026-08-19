@@ -61,7 +61,7 @@ function AggregatesPage() {
     > = {}
     for (const a of allRows) {
       const rk = a.rir?.id ?? "__none__"
-      if (!rirs[rk]) rirs[rk] = { name: a.rir?.name ?? "—", count: 0 }
+      if (!rirs[rk]) rirs[rk] = { name: a.rir?.name ?? "-", count: 0 }
       rirs[rk].count++
       for (const t of a.tags) {
         if (!tags[t.slug])

@@ -109,7 +109,7 @@ export function ConfigContextForm({
       }
       setJsonError(null)
       // Number("abc") is NaN, which would serialize as null and silently
-      // clobber the weight — validate before building the payload.
+      // clobber the weight - validate before building the payload.
       const trimmedWeight = weight.trim()
       const weightNum = trimmedWeight === "" ? 1000 : Number(trimmedWeight)
       if (!Number.isFinite(weightNum)) {
@@ -206,7 +206,7 @@ export function ConfigContextForm({
       />
 
       <p className="text-[11px] text-muted-foreground">
-        Assignment — a context applies to a device/VM that matches{" "}
+        Assignment - a context applies to a device/VM that matches{" "}
         <span className="font-medium">all</span> the dimensions you set below.
         Leave a dimension empty to match everything.
       </p>

@@ -29,7 +29,7 @@ const GROUP_TYPES: { value: LdapGroupType; label: string }[] = [
   { value: "posix", label: "POSIX groups" },
 ]
 
-/** The API surface a directory page talks to — deployment or tenant. */
+/** The API surface a directory page talks to - deployment or tenant. */
 export interface LdapEndpoints {
   settings: string
   test: string
@@ -60,8 +60,8 @@ export const TENANT_LDAP: LdapEndpoints = {
 
 type AnyLdap = LdapSettings & Partial<TenantLdapSettings>
 
-/** The full directory admin surface — connection form, dry-run login, group
- * mappings — parameterized by endpoints so the deployment page and the
+/** The full directory admin surface - connection form, dry-run login, group
+ * mappings - parameterized by endpoints so the deployment page and the
  * per-tenant override page render the exact same UI. `tenantMode` adds the
  * override toggle + login-domain routing fields. */
 export function LdapDirectory({
@@ -224,7 +224,7 @@ export function LdapDirectory({
           <Field
             label="Bind password"
             hint={
-              form.bind_password_set ? "Saved — leave blank to keep" : undefined
+              form.bind_password_set ? "Saved - leave blank to keep" : undefined
             }
           >
             <Input
@@ -296,7 +296,7 @@ export function LdapDirectory({
               }
               options={GROUP_TYPES}
             />
-            <Field label="Require group" hint="Optional — DN a user must be in">
+            <Field label="Require group" hint="Optional - DN a user must be in">
               <Input
                 placeholder="CN=Danbyte Users,…"
                 value={form.ldap_require_group}
@@ -369,7 +369,7 @@ function TestLogin({ endpoints }: { endpoints: LdapEndpoints }) {
     <section className="space-y-3">
       <h2 className="text-sm font-semibold">Test a user login</h2>
       <p className="text-[13px] text-muted-foreground">
-        Dry-runs the real directory login and shows the full trace — use it when
+        Dry-runs the real directory login and shows the full trace - use it when
         a user can sign in to AD but not to Danbyte. Nothing is persisted.
       </p>
       <div className="flex flex-wrap items-end gap-2">
@@ -410,9 +410,9 @@ function TestLogin({ endpoints }: { endpoints: LdapEndpoints }) {
               Authenticated as{" "}
               <span className="font-mono">{result.username}</span>
               {result.groups && result.groups.length > 0 ? (
-                <> — mapped groups: {result.groups.join(", ")}</>
+                <> - mapped groups: {result.groups.join(", ")}</>
               ) : (
-                <> — no Danbyte groups mapped (check the mappings below)</>
+                <> - no Danbyte groups mapped (check the mappings below)</>
               )}
             </p>
           ) : (
@@ -511,7 +511,7 @@ function GroupMappings({
           const m = row.original
           return (
             <div>
-              <div className="font-medium">{m.ldap_group_cn || "—"}</div>
+              <div className="font-medium">{m.ldap_group_cn || "-"}</div>
               <div className="font-mono text-[11px] text-muted-foreground">
                 {m.ldap_group_dn}
               </div>

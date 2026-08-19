@@ -4,7 +4,7 @@ import type { SiteMapConnection } from "@/lib/api"
 
 // Site-to-site connection arcs. Geometry is a quadratic bezier computed in
 // lat/lng space (control point offset perpendicular to the chord), sampled
-// into a polyline — Leaflet re-projects it every zoom, so arcs stay crisp
+// into a polyline - Leaflet re-projects it every zoom, so arcs stay crisp
 // with zero custom rendering. Each edge renders twice: a visible thin line
 // and an invisible fat "hit" line that carries hover + click.
 
@@ -40,7 +40,7 @@ export function bezierPoints(a: Pt, z: Pt, bend: number, samples = 24): Pt[] {
 
 export interface ConnectionsLayer {
   group: L.LayerGroup
-  /** Bezier midpoint per edge id — the popover anchor. */
+  /** Bezier midpoint per edge id - the popover anchor. */
   midpoints: Map<string, Pt>
 }
 

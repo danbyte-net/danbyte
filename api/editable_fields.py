@@ -3,14 +3,14 @@ what editor.
 
 ``GET /api/editable-fields/`` answers "what can I change here?" for any viewset
 that declares a :class:`~api.viewsets.FieldWriteAllowList`. Two consumers need
-that answer — the bulk-edit dialog, which has historically carried a
+that answer - the bulk-edit dialog, which has historically carried a
 hand-written field list per call site, and planning's *planned changes*, where a
 task declares "interface Gi2/1: Enabled Yes → No".
 
 The design rule is **names are curated, metadata is derived**. The only
 hand-written thing is which field names a field-level write path may touch (on
-the viewset, next to the code that enforces it). Everything else — editor kind,
-label, hint, option list, nullability — comes from ``model._meta`` and the
+the viewset, next to the code that enforces it). Everything else - editor kind,
+label, hint, option list, nullability - comes from ``model._meta`` and the
 registries that already exist, so this module cannot drift from the model.
 
 :func:`coerce_value` and :func:`read_value` are deliberately shared with the
@@ -37,7 +37,7 @@ from rest_framework.response import Response
 
 from auth_api import rbac
 
-# Long taxonomies already published by /api/dcim/choices/ — the frontend fetches
+# Long taxonomies already published by /api/dcim/choices/ - the frontend fetches
 # that payload once, so the descriptor names the list instead of inlining a few
 # hundred options per request. Verified against the model's own flatchoices by
 # api/tests_editable_fields.py, which is what stops this map drifting.
@@ -60,7 +60,7 @@ DCIM_CHOICE_KEYS: dict[tuple[str, str], str] = {
 
 # Free-text fields with well-known values worth offering as suggestions. The
 # resolved list travels with the descriptor (a handful of short strings) rather
-# than a key the client must look up — `suggestions` is a value list on both the
+# than a key the client must look up - `suggestions` is a value list on both the
 # wire type and the frontend's authored spec union.
 def _speed_suggestions() -> list[str]:
     from api.dcim_choices import COMMON_SPEEDS
@@ -115,7 +115,7 @@ class EditableField:
     object_model: str | None = None            # customization reference slug
     endpoint: str | None = None
     picker: bool = False
-    # Not serialised — the model field this descriptor came from.
+    # Not serialised - the model field this descriptor came from.
     _field: object = dc_field(default=None, repr=False, compare=False)
 
     def payload(self) -> dict:
@@ -146,8 +146,8 @@ def _routed_viewsets():
 
     Broader than :func:`_viewsets` on purpose. That one answers "which fields can
     be bulk-edited", so it is limited to viewsets carrying an allow-list. Deciding
-    *which serializer owns a model's writes* needs no allow-list — every routed
-    model has exactly one — and planning needs the wider answer, since a plan can
+    *which serializer owns a model's writes* needs no allow-list - every routed
+    model has exactly one - and planning needs the wider answer, since a plan can
     target anything an edit form can.
     """
     from api.api_urls import router
@@ -192,7 +192,7 @@ def _describe(model, key: str, target_model=None, *, is_fk=False) -> EditableFie
     """Derive a descriptor for one allow-listed field name."""
     label = model._meta.label_lower  # "api.interface"
     # FK allow-lists use the "<name>_id" payload key while the model field is
-    # <name>. Only strip for FK keys — InventoryItem.part_id is a real CharField
+    # <name>. Only strip for FK keys - InventoryItem.part_id is a real CharField
     # whose name genuinely ends in _id.
     name = key[:-3] if (is_fk and key.endswith("_id")) else key
     try:
@@ -291,7 +291,7 @@ def field_for(model, key: str) -> EditableField | None:
 
 
 def serializer_for(model):
-    """The viewset serializer that owns this model's write invariants — the
+    """The viewset serializer that owns this model's write invariants - the
     planned-change apply path writes through it rather than setattr.
 
     Resolved from the router alone, so any model the API exposes can be planned;

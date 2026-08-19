@@ -35,7 +35,7 @@ export interface ClusterFormProps {
 }
 
 // Sentinel thrown from mutationFn when a client-side required-field check
-// fails — onError swallows it so we don't fire a toast on top of the
+// fails - onError swallows it so we don't fire a toast on top of the
 // inline field error.
 const CLIENT_VALIDATION = "__client_validation__"
 
@@ -241,7 +241,7 @@ export function ClusterForm({ cluster, onSaved, onCancel }: ClusterFormProps) {
           branch-office workloads, so VMs keep their own site unless asked. */}
       <FormCheckbox
         label="Give VMs on this cluster its site"
-        hint="Only VMs with no site of their own — an existing one is kept"
+        hint="Only VMs with no site of their own - an existing one is kept"
         checked={applySiteToVms}
         onChange={setApplySiteToVms}
       />

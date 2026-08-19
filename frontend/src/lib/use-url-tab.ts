@@ -27,7 +27,7 @@ export function writeStoredDefault(
     if (value) window.localStorage.setItem(DEFAULT_TAB_PREFIX + pageKey, value)
     else window.localStorage.removeItem(DEFAULT_TAB_PREFIX + pageKey)
   } catch {
-    /* storage unavailable (private mode / quota) — pinning is best-effort */
+    /* storage unavailable (private mode / quota) - pinning is best-effort */
   }
 }
 
@@ -42,7 +42,7 @@ function usePageKey(tabKey: string): string | null {
 
 /**
  * Detail-page tab state backed by the URL (`?tab=<value>`), so the active tab
- * survives reloads, is shareable, and moves with browser back/forward — instead
+ * survives reloads, is shareable, and moves with browser back/forward - instead
  * of resetting to the default the way local `useState` did.
  *
  * Drop-in for `const [tab, setTab] = useState<T>("overview")`:
@@ -74,7 +74,7 @@ export function useUrlTab<T extends string = string>(
   const pageKey = usePageKey(key)
   // Read the pinned default only AFTER hydration. Reading localStorage during
   // render makes the server (no localStorage → defaultTab) and the client (the
-  // pinned tab) disagree on the first paint — an SSR hydration mismatch + flash.
+  // pinned tab) disagree on the first paint - an SSR hydration mismatch + flash.
   // Starting null means the first client render matches the server; the effect
   // then applies the pin.
   const [stored, setStored] = useState<string | null>(null)
@@ -109,14 +109,14 @@ const SUB_TAB_KEY = "sub"
  * (a device's Components → Power, a device type's Components → Power outlets),
  * backed by `?sub=<value>`.
  *
- * A sub-tab kept in `useState` is unshareable and forgotten — the inactive pane
+ * A sub-tab kept in `useState` is unshareable and forgotten - the inactive pane
  * is unmounted, so the selection dies on a reload, a deep link, or a trip
  * through any other top-level tab. `?tab=` and `?sub=` are written
  * independently (each setter merges into the existing search), so
  * `?tab=components&sub=power` links straight at a device's power ports, and
  * leaving Components and coming back restores the sub-tab you were on.
  *
- * `valid` is required here — a sub-tab strip is always a fixed, small set, and
+ * `valid` is required here - a sub-tab strip is always a fixed, small set, and
  * this fallback is what keeps a junk `?sub=` from rendering an empty pane
  * (the router happily passes through a value no route validated). A route with
  * a `validateSearch` should still declare `sub` next to `tab`, so the param is

@@ -1,4 +1,4 @@
-"""First-run onboarding endpoint — member-readable state + dismiss, per-tenant."""
+"""First-run onboarding endpoint - member-readable state + dismiss, per-tenant."""
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
@@ -15,7 +15,7 @@ class OnboardingEndpointTests(TestCase):
         org = Organization.objects.create(name="O", slug="o")
         self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
         self.other = Tenant.objects.create(org=org, name="U", slug="u")
-        # A plain member (not a superuser) — the endpoint must be member-readable.
+        # A plain member (not a superuser) - the endpoint must be member-readable.
         from auth_api.models import UserProfile
 
         self.user = User.objects.create_user("member", "m@x.com", "x")

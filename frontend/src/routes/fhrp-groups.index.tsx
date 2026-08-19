@@ -191,7 +191,7 @@ function buildColumns({
         row.original.name ? (
           <span className="text-xs">{row.original.name}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -204,7 +204,7 @@ function buildColumns({
             {row.original.virtual_ip.ip_address}
           </span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -215,7 +215,7 @@ function buildColumns({
         row.original.auth_type ? (
           <span className="text-xs">{row.original.auth_type_display}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -232,7 +232,7 @@ function buildColumns({
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     },

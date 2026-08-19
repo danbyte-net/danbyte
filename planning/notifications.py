@@ -1,14 +1,14 @@
-"""Personal task emails — assignment, team queue, comments, @mentions.
+"""Personal task emails - assignment, team queue, comments, @mentions.
 
 One module owns who hears about a task event and how the mail reads, so the
 viewset and journal hooks stay one-liners. Delivery is enqueued on the low RQ
 queue (falling back to inline when Redis is down) and every recipient passes
 an allowlist: active user, an email address on file, membership of the task's
 tenant, and the matching notification preference left on (auth_api.user_prefs
-``notify_task_*`` keys — each user can switch any of these off).
+``notify_task_*`` keys - each user can switch any of these off).
 
-These are *personal* mails — one message per recipient, never a shared To:
-line — distinct from the deployment-wide daily digest.
+These are *personal* mails - one message per recipient, never a shared To:
+line - distinct from the deployment-wide daily digest.
 """
 from __future__ import annotations
 
@@ -17,14 +17,14 @@ import re
 
 log = logging.getLogger(__name__)
 
-#: @username — usernames may carry dots, dashes, +, @ (email-style logins).
+#: @username - usernames may carry dots, dashes, +, @ (email-style logins).
 #: The trailing strip below keeps "thanks @rene." from eating the period.
 MENTION_RE = re.compile(r"@([A-Za-z0-9_.@+-]+)")
 
 
 def parse_mentions(text: str, tenant):
     """The tenant's active users actually @named in ``text`` (case-insensitive,
-    matched against real usernames — "@everyone" or a typo matches nobody)."""
+    matched against real usernames - "@everyone" or a typo matches nobody)."""
     from django.contrib.auth import get_user_model
 
     names = {m.rstrip(".,:;!?").lower() for m in MENTION_RE.findall(text or "")}
@@ -38,7 +38,7 @@ def parse_mentions(text: str, tenant):
 
 def _eligible(user, task) -> bool:
     """The base recipient gate: active, and able to see the task's tenant.
-    This is what the in-app bell uses — email adds its own conditions."""
+    This is what the in-app bell uses - email adds its own conditions."""
     if not user.is_active:
         return False
     if user.is_superuser:
@@ -60,7 +60,7 @@ def _wants(user, task, pref_key: str) -> bool:
 
 
 def _push_bell(users, task, *, kind, title, body="", actor=None):
-    """In-app rows for the topbar bell — always on, unlike the mails."""
+    """In-app rows for the topbar bell - always on, unlike the mails."""
     from core.models import Notification
 
     eligible = [u for u in users if _eligible(u, task)]
@@ -82,12 +82,12 @@ def _task_context(task):
 
 
 def _send(task, users, subject: str, body_html: str, text_lines: list[str], url: str):
-    """One personal mail per recipient — addresses are never shared."""
+    """One personal mail per recipient - addresses are never shared."""
     from core import email as ek
 
     dep, _ = _task_context(task)
     if url:
-        # Rebind, never mutate — callers reuse the same body/lines for the
+        # Rebind, never mutate - callers reuse the same body/lines for the
         # mention mail and the comment fan-out.
         body_html = body_html + ek.email_button(url, "Open the task")
         text_lines = [*text_lines, "", url]
@@ -115,7 +115,7 @@ def _task_facts_html(task):
     return ek.kv_table(rows)
 
 
-# ─── The events (run in a worker — ids in, fresh reads inside) ─────────────
+# ─── The events (run in a worker - ids in, fresh reads inside) ─────────────
 
 def send_assigned(task_id, user_ids, actor_id):
     """You were put on a task."""
@@ -197,7 +197,7 @@ def send_queued(task_id, group_id, actor_id):
 
 
 def send_commented(task_id, entry_id, actor_id, mentioned_ids):
-    """A comment landed on a task you're involved in — or you were @named."""
+    """A comment landed on a task you're involved in - or you were @named."""
     from django.contrib.auth import get_user_model
 
     from audit.models import JournalEntry
@@ -267,7 +267,7 @@ def send_commented(task_id, entry_id, actor_id, mentioned_ids):
 
 
 def send_due_reminders(today=None) -> int:
-    """The daily personal "your work" mail — overdue, due today, due this week.
+    """The daily personal "your work" mail - overdue, due today, due this week.
 
     One email per user, and only when there is something to say. "Your work"
     is the same definition the dashboard widget uses: tasks you're assigned,
@@ -363,7 +363,7 @@ def enqueue(func, *args) -> None:
 
     Notification delivery must never fail the write that caused it, so the
     inline fallback is also wrapped. Under the test runner everything runs
-    inline — a test must never park work on the developer's live queue."""
+    inline - a test must never park work on the developer's live queue."""
     import sys
 
     if "test" in sys.argv:
@@ -376,7 +376,7 @@ def enqueue(func, *args) -> None:
         import django_rq
 
         django_rq.get_queue("low").enqueue(func, *args)
-    except Exception:  # noqa: BLE001 — queue down ≠ task save fails
+    except Exception:  # noqa: BLE001 - queue down ≠ task save fails
         try:
             func(*args)
         except Exception:

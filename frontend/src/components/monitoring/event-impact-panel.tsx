@@ -16,7 +16,7 @@ import {
 } from "@/components/planning/object-chip"
 
 /**
- * What this event touches, and how hard — issue #20's Impact model.
+ * What this event touches, and how hard - issue #20's Impact model.
  *
  * Same affordances as a task's linked objects (one frame, quiet rows, add via
  * the customization object picker), plus the level. The server enforces that
@@ -102,7 +102,7 @@ export function EventImpactPanel({ event }: { event: MaintenanceEvent }) {
       {rows.length === 0 && !adding && (
         <p className="rounded-lg border border-dashed border-border px-3 py-4 text-[13px] text-muted-foreground">
           Nothing marked yet. Impacts say which circuits, devices or sites this
-          event touches — they show on those objects and on the calendar entry.
+          event touches - they show on those objects and on the calendar entry.
         </p>
       )}
 

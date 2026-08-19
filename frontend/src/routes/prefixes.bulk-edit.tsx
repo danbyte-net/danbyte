@@ -130,7 +130,7 @@ function BulkEditPrefixesPage() {
         { label: `Bulk edit (${ids.length})` },
       ]}
       title={`Bulk edit ${ids.length} prefix${ids.length === 1 ? "" : "es"}`}
-      subtitle="Only fields you change are applied. Tags are merged — add or remove these without disturbing the rest."
+      subtitle="Only fields you change are applied. Tags are merged - add or remove these without disturbing the rest."
     >
       <form
         onSubmit={(e) => {
@@ -146,7 +146,7 @@ function BulkEditPrefixesPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={KEEP}>(keep)</SelectItem>
-              <SelectItem value={NONE}>— none —</SelectItem>
+              <SelectItem value={NONE}>- none -</SelectItem>
               {statuses.data?.results.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
                   {s.name}

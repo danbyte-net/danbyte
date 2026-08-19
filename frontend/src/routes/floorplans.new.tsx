@@ -21,7 +21,7 @@ function NewFloorPlanPage() {
     <EditPageShell
       crumbs={[{ label: "Floor plans", to: "/floorplans" }, { label: "Add" }]}
       title="Add floor plan"
-      subtitle="A grid layout of a location — place tiles for racks, walls, cooling… and link them to real objects."
+      subtitle="A grid layout of a location - place tiles for racks, walls, cooling… and link them to real objects."
     >
       <FloorPlanForm
         initialLocationId={location}

@@ -105,7 +105,7 @@ export function DeviceDeployPanel({ deviceId }: { deviceId: string }) {
       <div className="space-y-3 rounded-lg border border-border p-4">
         {options.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No enabled automation targets — add one under{" "}
+            No enabled automation targets - add one under{" "}
             <Link
               to="/automation-targets/new"
               className="font-medium underline"
@@ -153,7 +153,7 @@ export function DeviceDeployPanel({ deviceId }: { deviceId: string }) {
             )}
 
             <p className="text-[11px] text-muted-foreground">
-              Danbyte launches the runner, which holds the device credentials —
+              Danbyte launches the runner, which holds the device credentials -
               it never connects to the device directly.
             </p>
           </>

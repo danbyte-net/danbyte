@@ -21,7 +21,7 @@ import { RowActions } from "@/components/row-actions"
 import { apiErrorToast } from "@/lib/api-toast"
 
 function humanSize(n: number): string {
-  if (!n) return "—"
+  if (!n) return "-"
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`
   return `${(n / 1024 / 1024).toFixed(1)} MB`
@@ -197,7 +197,7 @@ export function OutpostVersions() {
         r.is_default ? (
           <span
             className="inline-flex items-center gap-1 text-xs text-primary"
-            title="Golden image — auto-updating Outposts move to this version"
+            title="Golden image - auto-updating Outposts move to this version"
           >
             <Star className="h-3.5 w-3.5 fill-current" /> golden
           </span>
@@ -230,7 +230,7 @@ export function OutpostVersions() {
       <div>
         <h2 className="text-sm font-semibold">Outpost versions</h2>
         <p className="text-[13px] text-muted-foreground">
-          Builds this Danbyte instance serves — so airgapped hosts install
+          Builds this Danbyte instance serves - so airgapped hosts install
           without reaching GitHub/PyPI. Enrolling an Outpost pins one.
         </p>
       </div>
@@ -247,8 +247,8 @@ export function OutpostVersions() {
               {available.data.versions.map((v) => (
                 <SelectItem key={v.tag} value={v.tag} disabled={v.imported}>
                   {v.tag}
-                  {v.imported ? " — imported" : ""}
-                  {!v.has_binary ? " — no binary" : ""}
+                  {v.imported ? " - imported" : ""}
+                  {!v.has_binary ? " - no binary" : ""}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -351,7 +351,7 @@ export function OutpostVersions() {
           <Input
             value={gitToken}
             onChange={(e) => setGitToken(e.target.value)}
-            placeholder="GitHub token — only for a private repo (optional)"
+            placeholder="GitHub token - only for a private repo (optional)"
             type="password"
             className="h-8 font-mono text-xs"
           />

@@ -3,7 +3,7 @@
 The link is a statement about naming, not an extra alias: it says the agent
 reports this port as `eth0`, which also says the agent never reports the label.
 Treating it as an alias made the linked port drift as "not seen on device"
-forever — the exact opposite of what linking is for.
+forever - the exact opposite of what linking is for.
 """
 from __future__ import annotations
 
@@ -83,7 +83,7 @@ class SnmpNameLinkTests(_SnmpDriftTestBase):
         self.assertEqual(resp.status_code, 200, resp.content)
 
         # Neither side drifts: eth0 is accounted for, and IMM is NOT expected
-        # under its own label — that was the phantom.
+        # under its own label - that was the phantom.
         drift = self._drift()
         self.assertEqual(
             [d for d in drift if d["kind"] in ("interface_missing", "interface_stale")],
@@ -121,7 +121,7 @@ class SnmpNameLinkTests(_SnmpDriftTestBase):
         """Rows that predate the check still resolve sanely."""
         real = Interface.objects.create(device=self.device, name="eth0")
         imm = Interface.objects.create(device=self.device, name="IMM")
-        # Written straight to the DB — the API now refuses this.
+        # Written straight to the DB - the API now refuses this.
         Interface.objects.filter(pk=imm.pk).update(snmp_name="eth0")
         self._observe("eth0")
 
@@ -156,7 +156,7 @@ class SnmpNameLinkTests(_SnmpDriftTestBase):
 
     def test_sync_honours_the_link(self):
         """The reported bug: sync matched labels only, so a linked port's
-        observed row didn't match — sync created a DUPLICATE interface under
+        observed row didn't match - sync created a DUPLICATE interface under
         the discovered name and hung the speed/facts on it, while the linked
         port received nothing but what per-item accepts had written."""
         imm = Interface.objects.create(device=self.device, name="IMM")
@@ -190,7 +190,7 @@ class ObservedIpAttachTests(_SnmpDriftTestBase):
 
     A server's OOB address is recorded on the device with `assigned_interface`
     empty. Drift used to skip any address already on the device, so SNMP naming
-    the port that bears it was discarded as redundant — the address never
+    the port that bears it was discarded as redundant - the address never
     reached the port, on drift or on sync.
     """
 
@@ -295,7 +295,7 @@ class ObservedIpAttachTests(_SnmpDriftTestBase):
 
 
 class SpeedDriftTests(_SnmpDriftTestBase):
-    """Speed drifts like MAC does — compared as a number, not a string."""
+    """Speed drifts like MAC does - compared as a number, not a string."""
 
     def _speed_items(self):
         return [
@@ -322,7 +322,7 @@ class SpeedDriftTests(_SnmpDriftTestBase):
         self.assertEqual(iface.speed, "10 Gbps")
 
     def test_same_speed_in_different_costumes_is_not_drift(self):
-        """"1G" vs "1 Gbps" vs 1000 Mbps — one value, three spellings."""
+        """"1G" vs "1 Gbps" vs 1000 Mbps - one value, three spellings."""
         Interface.objects.create(device=self.device, name="eth1", speed="1G")
         self._observe(rows=[{"name": "eth1", "speed_mbps": 1000}])
         self.assertEqual(self._speed_items(), [])
@@ -344,7 +344,7 @@ class SpeedDriftTests(_SnmpDriftTestBase):
 
 
 class SnmpIgnoreTests(_SnmpDriftTestBase):
-    """`snmp_ignore` excludes a port from drift in both directions — for ports
+    """`snmp_ignore` excludes a port from drift in both directions - for ports
     the polled agent can never report, which otherwise flag forever."""
 
     def test_ignored_port_is_not_reported_stale(self):
@@ -395,7 +395,7 @@ class SnmpIgnoreTests(_SnmpDriftTestBase):
 
 class ShortLongNameBridgeTests(_SnmpDriftTestBase):
     """Cisco (and most vendors) report ifName short (Gi1/0/1) but ifDescr long
-    (GigabitEthernet1/0/1) — and the device-type library stamps the long form.
+    (GigabitEthernet1/0/1) - and the device-type library stamps the long form.
     Matching must bridge the two via the device's own name↔descr pair, without a
     manual link, or a library-built switch drifts every port twice."""
 

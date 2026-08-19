@@ -85,7 +85,7 @@ function BulkDeleteConfirm({
   onDone: () => void
 }) {
   const qc = useQueryClient()
-  // No bulk-delete endpoint for IPSec profiles — DELETE each one. allSettled so
+  // No bulk-delete endpoint for IPSec profiles - DELETE each one. allSettled so
   // a partial failure still reflects the profiles that were actually removed.
   const m = useMutation({
     mutationFn: () =>

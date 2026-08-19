@@ -1,4 +1,4 @@
-"""Sample renders of every Danbyte email — the "send a test of this template"
+"""Sample renders of every Danbyte email - the "send a test of this template"
 source.
 
 The operator-facing goal is simple: *let me see what each email actually looks
@@ -6,7 +6,7 @@ like* without waiting for a real alert to fire or a digest to run. So each
 builder here calls the **real** renderer (``monitoring.digest.render_html``,
 ``monitoring.cert_digest.render_html``, the alert HTML in ``monitoring.notify``,
 the auth emails) with representative synthetic data. Previews therefore drift
-with the templates automatically — there is no second copy of the layout to keep
+with the templates automatically - there is no second copy of the layout to keep
 in sync.
 
 Nothing here touches the database: the sample data is built in-memory, so the
@@ -173,14 +173,14 @@ def render_sample(key: str) -> tuple[str, str, str]:
         from monitoring.digest import render_html, render_text
 
         data = _sample_digest_data()
-        return (f"{name} monitoring digest — {data['tenant'].name}",
+        return (f"{name} monitoring digest - {data['tenant'].name}",
                 render_html(data, name), render_text(data))
 
     if key == "cert_digest":
         from monitoring.cert_digest import render_html, render_text
 
         summary = _sample_cert_summary()
-        return (f"{name} certificate digest — Example Tenant",
+        return (f"{name} certificate digest - Example Tenant",
                 render_html(summary, "Example Tenant", name),
                 render_text(summary, "Example Tenant"))
 
@@ -235,7 +235,7 @@ def render_sample(key: str) -> tuple[str, str, str]:
             deployment_name=name, kicker="Monitoring",
             preheader=f"{len(events)} status change(s)",
         )
-        return (f"{name} — {len(events)} monitoring status change(s)", html,
+        return (f"{name} - {len(events)} monitoring status change(s)", html,
                 "2 monitoring status change(s)\n")
 
     raise ValueError(f"unknown email template: {key}")

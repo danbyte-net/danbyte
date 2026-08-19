@@ -32,7 +32,7 @@ export interface ComponentDeleteDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-// Delete confirm shared by the console/power component tables — same pattern
+// Delete confirm shared by the console/power component tables - same pattern
 // as PortDeleteDialog, parameterised over the endpoint.
 export function ComponentDeleteDialog({
   endpoint,

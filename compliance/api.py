@@ -195,11 +195,11 @@ def compliance_evaluate(request):
     ``rules`` summary and ``total_violations`` always reflect the full,
     unfiltered evaluation):
 
-    - ``severity``    — comma-separated severities (critical,warning,info)
-    - ``object_type`` — comma-separated object types (device,prefix,…)
-    - ``rule``        — a rule id (or ``config-drift``)
-    - ``object``      — an object id (e.g. one device)
-    - ``q``           — case-insensitive substring over object repr + rule name
+    - ``severity``    - comma-separated severities (critical,warning,info)
+    - ``object_type`` - comma-separated object types (device,prefix,…)
+    - ``rule``        - a rule id (or ``config-drift``)
+    - ``object``      - an object id (e.g. one device)
+    - ``q``           - case-insensitive substring over object repr + rule name
     """
     tenant = _get_active_tenant(request)
     if tenant is None:
@@ -259,7 +259,7 @@ def compliance_device_status(request, device_id):
     their remediation guides), or an all-clear flag.
 
     RBAC: requires ``compliancerule.view`` plus row-scoped visibility of the
-    device itself — a device outside the caller's constraints 404s
+    device itself - a device outside the caller's constraints 404s
     (non-leaking), the same contract as the rest of the app.
     """
     from api.models import Device
@@ -328,7 +328,7 @@ def _device_has_config_drift(tenant, device) -> bool:
     ).exists()
 
 
-# Synthetic rule id for IaC config drift — not a real ComplianceRule. The
+# Synthetic rule id for IaC config drift - not a real ComplianceRule. The
 # frontend recognises it to route the badge/link to the Config-drift page.
 CONFIG_DRIFT_RULE_ID = "config-drift"
 
@@ -338,7 +338,7 @@ def _append_config_drift(result: dict, tenant) -> None:
     device gets the same ⚠ marker (and Compliance-page row) as a rule violation.
 
     Naturally opt-in: only devices a runner has reported as drifted appear, so
-    tenants that don't use IaC drift see nothing. Best-effort — never breaks the
+    tenants that don't use IaC drift see nothing. Best-effort - never breaks the
     evaluation if the integrations app/table isn't there.
     """
     try:

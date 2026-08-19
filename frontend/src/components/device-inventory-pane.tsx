@@ -55,7 +55,7 @@ const MEDIA_LABEL = Object.fromEntries(
   INVENTORY_MEDIA_OPTIONS.map((m) => [m.value, m.label])
 )
 
-/** "NVMe · 1.92 TB · PCIe 4.0" — the composed hardware summary cell. */
+/** "NVMe · 1.92 TB · PCIe 4.0" - the composed hardware summary cell. */
 function hardwareSummary(it: InventoryItemRow): string {
   return [
     it.media ? MEDIA_LABEL[it.media] : "",
@@ -66,7 +66,7 @@ function hardwareSummary(it: InventoryItemRow): string {
     .join(" · ")
 }
 
-/** Serial-tracked physical parts on the device — disks, CPUs, RAM, PSUs,
+/** Serial-tracked physical parts on the device - disks, CPUs, RAM, PSUs,
  * fans, discrete SFPs. Parts can nest one level visually (children indent
  * under their parent). */
 export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
@@ -75,7 +75,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
   const qc = useQueryClient()
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<InventoryItemRow | null>(null)
-  // Bulk selection — tick rows, the shared bulk bar floats up.
+  // Bulk selection - tick rows, the shared bulk bar floats up.
   const [selected, setSelected] = useState<InventoryItemRow[]>([])
 
   const q = useQuery({
@@ -97,7 +97,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
   })
   const delMutate = del.mutate
 
-  // Observed hardware health for this device, grouped by part — shares the
+  // Observed hardware health for this device, grouped by part - shares the
   // drift query the Monitoring tab uses, so no extra polling.
   const drift = useQuery({
     queryKey: ["device-snmp-drift", deviceId],
@@ -135,7 +135,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
       : []
   )
 
-  // Shared column factory — same DataTable/selection/actions primitives every
+  // Shared column factory - same DataTable/selection/actions primitives every
   // other component pane uses, so Hardware reads and behaves identically.
   const columns = useMemo<ColumnDef<InventoryItemRow, unknown>[]>(
     () => [
@@ -164,7 +164,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
           <span className="text-muted-foreground">
             {row.original.kind && row.original.kind !== "other"
               ? (KIND_LABEL[row.original.kind] ?? row.original.kind)
-              : "—"}
+              : "-"}
           </span>
         ),
       },
@@ -174,7 +174,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
         accessorFn: (r) => hardwareSummary(r),
         cell: ({ row }) => (
           <span className="text-muted-foreground">
-            {hardwareSummary(row.original) || "—"}
+            {hardwareSummary(row.original) || "-"}
           </span>
         ),
       },
@@ -186,7 +186,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
           <span className="flex items-center gap-1.5">
             <StatusBadge status={row.original.status} />
             {/* Observed health disagreeing with the set status is a difference
-                to review, not a silent overwrite — same treatment interfaces
+                to review, not a silent overwrite - same treatment interfaces
                 get. Accepting stays in the drift inbox. */}
             <DriftBadge items={driftByPart.get(row.original.id) ?? []} />
           </span>
@@ -198,7 +198,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
         accessorFn: (r) => r.manufacturer?.name ?? "",
         cell: ({ row }) => (
           <span className="text-muted-foreground">
-            {row.original.manufacturer?.name ?? "—"}
+            {row.original.manufacturer?.name ?? "-"}
           </span>
         ),
       },
@@ -208,7 +208,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
         accessorFn: (r) => r.part_id,
         cell: ({ row }) => (
           <span className="font-mono text-xs">
-            {row.original.part_id || "—"}
+            {row.original.part_id || "-"}
           </span>
         ),
       },
@@ -218,7 +218,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
         accessorFn: (r) => r.serial_number,
         cell: ({ row }) => (
           <span className="font-mono text-xs">
-            {row.original.serial_number || "—"}
+            {row.original.serial_number || "-"}
           </span>
         ),
       },
@@ -228,7 +228,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
         accessorFn: (r) => r.description,
         cell: ({ row }) => (
           <span className="text-muted-foreground">
-            {row.original.description || "—"}
+            {row.original.description || "-"}
           </span>
         ),
       },
@@ -238,7 +238,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
         accessorFn: (r) => r.asset_tag,
         cell: ({ row }) => (
           <span className="font-mono text-xs">
-            {row.original.asset_tag || "—"}
+            {row.original.asset_tag || "-"}
           </span>
         ),
       },
@@ -264,7 +264,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
         <p className="p-4 text-sm text-muted-foreground">Loading…</p>
       ) : items.length === 0 ? (
         <p className="p-4 text-sm text-muted-foreground">
-          No inventory items — serial-tracked parts (disks, PSUs, fans, CPUs,
+          No inventory items - serial-tracked parts (disks, PSUs, fans, CPUs,
           transceivers) live here.
         </p>
       ) : (
@@ -353,7 +353,7 @@ export function InventoryItemDialog({
   deviceId: string
   item: InventoryItemRow | null
   siblings: InventoryItemRow[]
-  /** Name to pre-fill when creating — the bay marker that was clicked. */
+  /** Name to pre-fill when creating - the bay marker that was clicked. */
   initialName?: string
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -437,7 +437,7 @@ export function InventoryItemDialog({
           id: item!.id,
           payload,
         }).then(() => ({ count: 1 }))
-      // A [a-b] range in the name fans out — "Disk[1-5]" adds five bays. In plan
+      // A [a-b] range in the name fans out - "Disk[1-5]" adds five bays. In plan
       // mode saveObject stages one create per expanded name.
       const names = expandNameRange(payload.name)
       if (names.length > 1 && isPlanning)
@@ -458,10 +458,10 @@ export function InventoryItemDialog({
     onSuccess: ({ count }) => {
       qc.invalidateQueries({ queryKey: ["device-inventory", deviceId] })
       // Setting a part's status to what SNMP observed resolves its drift, so
-      // the pill and the faceplate ring have to be re-asked — otherwise they
+      // the pill and the faceplate ring have to be re-asked - otherwise they
       // sit stale until React Query happens to refetch.
       qc.invalidateQueries({ queryKey: ["device-snmp-drift", deviceId] })
-      // 3D hardware markers wear the part's status via /face-ports/ — recolour
+      // 3D hardware markers wear the part's status via /face-ports/ - recolour
       // them too, not just the inventory-backed 2D markers.
       qc.invalidateQueries({ queryKey: ["device-face-ports", deviceId] })
       toast.success(
@@ -544,7 +544,7 @@ export function InventoryItemDialog({
                 value={media || null}
                 onChange={(v) => setMedia((v ?? "") as InventoryMedia)}
                 options={INVENTORY_MEDIA_OPTIONS}
-                placeholder="—"
+                placeholder="-"
                 error={fieldErrors.media}
               />
             )}

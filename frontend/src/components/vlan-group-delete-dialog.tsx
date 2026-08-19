@@ -47,7 +47,7 @@ export function VlanGroupDeleteDialog({
           <AlertDialogTitle>Delete group {group?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {blocked
-              ? `This group still has ${group?.vlan_count} VLAN${group?.vlan_count === 1 ? "" : "s"}. Reassign or delete them first — the API will protect them anyway.`
+              ? `This group still has ${group?.vlan_count} VLAN${group?.vlan_count === 1 ? "" : "s"}. Reassign or delete them first - the API will protect them anyway.`
               : "This action can't be undone."}
           </AlertDialogDescription>
         </AlertDialogHeader>

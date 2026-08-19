@@ -12,7 +12,7 @@ import {
 } from "./world"
 import type { SceneDevice, SceneRack } from "./world"
 
-/** Real rack PDUs are near-black extruded aluminium — dark so the outlet
+/** Real rack PDUs are near-black extruded aluminium - dark so the outlet
  * cells and the feed spine read against it. */
 const STRIP_BODY = "#17171b"
 const STRIP_SELECTED = "#0ea5e9"
@@ -21,14 +21,14 @@ const PORT_SELECTED = "#fbbf24"
 
 /**
  * A side-mounted 0U strip (vertical PDU) standing in the cabinet's zero-U
- * space — the render the shelf-appliance box could never be for a 42U power
+ * space - the render the shelf-appliance box could never be for a 42U power
  * strip. Clickable like any device (HUD + Open device); rendered in BOTH LOD
  * tiers (one box is cheap and a PDU that pops in and out reads as a glitch).
  *
  * It looks like a PDU: a dark extruded body, a coloured spine down its face
  * showing which redundant feed powers it (blue = primary/A, red =
- * redundant/B — see `feedTint`), and a column of outlet cells each tinted by
- * its own phase leg. `showPorts` (detail tier) makes those cells clickable —
+ * redundant/B - see `feedTint`), and a column of outlet cells each tinted by
+ * its own phase leg. `showPorts` (detail tier) makes those cells clickable -
  * laid out by `world.stripPortLocalM`, the SAME function the cable layer
  * anchors runs with, so a cord and its outlet can't disagree.
  */
@@ -50,10 +50,10 @@ export function SideStripMesh({
   selected: boolean
   /** Name of the port currently selected on THIS strip, if any. */
   selectedPort?: string | null
-  /** Detail tier only — a far hall must not carry thousands of quads. */
+  /** Detail tier only - a far hall must not carry thousands of quads. */
   showPorts?: boolean
   onSelect: () => void
-  /** An outlet/port quad was clicked — same contract as DeviceMesh's. */
+  /** An outlet/port quad was clicked - same contract as DeviceMesh's. */
   onSelectPort?: (marker: ImagePortMarker, side: "front" | "rear") => void
 }) {
   const [hovered, setHovered] = useState(false)
@@ -110,7 +110,7 @@ export function SideStripMesh({
           metalness={0.5}
         />
       </mesh>
-      {/* Feed spine — a slim bar down the outlet face in the feed's colour. */}
+      {/* Feed spine - a slim bar down the outlet face in the feed's colour. */}
       {showSpine && (
         <mesh
           position={[x, y + h / 2, z + out * (STRIP_D_M / 2 + 0.001)]}
@@ -142,7 +142,7 @@ export function SideStripMesh({
             onClick={(e) => {
               e.stopPropagation()
               // Unmarked power components resolve under face-ports' REAR
-              // list (power lives on the back) — pass the matching side.
+              // list (power lives on the back) - pass the matching side.
               onSelectPort?.({ ...p, x: 0.5, y: 0.5, w: 1, h: 1 }, "rear")
             }}
             onPointerOver={(e) => {

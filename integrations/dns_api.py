@@ -30,7 +30,7 @@ class DnsZoneSerializer(serializers.ModelSerializer):
 class DnsZoneWriteSerializer(serializers.ModelSerializer):
     """Author a zone in Danbyte. DNS is Danbyte-authoritative for managed
     content (pushing to a DNS backend is a later phase), so this stores the zone
-    locally — it is not created on the server."""
+    locally - it is not created on the server."""
 
     class Meta:
         model = DnsZone
@@ -45,8 +45,8 @@ class DnsZoneWriteSerializer(serializers.ModelSerializer):
 
 class DnsZoneViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     """Zones are read from sync; the per-zone ``sync`` / ``auto_create`` opt-ins
-    are PATCHable. A zone can also be **authored** here (POST) — stored as a
-    Danbyte-owned ``managed`` zone that sync never prunes — and a managed zone
+    are PATCHable. A zone can also be **authored** here (POST) - stored as a
+    Danbyte-owned ``managed`` zone that sync never prunes - and a managed zone
     can be removed (DELETE). Synced zones can't be deleted (sync would recreate
     them)."""
 
@@ -221,7 +221,7 @@ class DnsRecordViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     ).order_by("name")
     serializer_class = DnsRecordSerializer
     # These POST actions gate on ipaddress.add (checked in the handler), not on
-    # a dnsrecord write — so map them to the read action for the type-level gate.
+    # a dnsrecord write - so map them to the read action for the type-level gate.
     rbac_action_map = {"import_": "view", "import_unmatched": "view"}
 
     def get_serializer_class(self):
@@ -236,7 +236,7 @@ class DnsRecordViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 
     def perform_create(self, serializer):
         # DnsRecord scopes through zone→connection→tenant (a traversal, not an
-        # own tenant field), so the base tenant-injection can't apply here — the
+        # own tenant field), so the base tenant-injection can't apply here - the
         # zone (validated to the tenant) carries it.
         serializer.save()
 
@@ -369,8 +369,8 @@ class DnsDriftViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     def resolve(self, request, pk=None):
         """Settle one drift. Body: ``{"strategy": "accept" | "push"}``.
 
-        accept — the server wins: take its name onto the IP (or clear the
-        name when the server has no record). push — Danbyte wins: rewrite
+        accept - the server wins: take its name onto the IP (or clear the
+        name when the server has no record). push - Danbyte wins: rewrite
         the record on the server to match the IP's DNS name.
         """
         from .dns_sync import push_record

@@ -1,4 +1,4 @@
-"""SSO configuration API — deployment-admin CRUD for identity providers and
+"""SSO configuration API - deployment-admin CRUD for identity providers and
 their group mappings. The OIDC client secret is write-only (Fernet-encrypted on
 the model); reads expose only ``client_secret_set``.
 """
@@ -11,7 +11,7 @@ from .permissions import can_manage_deployment
 
 
 class DeploymentAdmin(permissions.BasePermission):
-    """Only deployment admins (superuser / global users.manage) manage SSO —
+    """Only deployment admins (superuser / global users.manage) manage SSO -
     a tenant-narrowed admin grant does not qualify, same as the LDAP config."""
 
     message = "Deployment admin (users.manage) required."
@@ -55,7 +55,7 @@ class IdentityProviderSerializer(serializers.ModelSerializer):
         return self._abs(f"/api/auth/sso/{obj.slug}/metadata/")
 
     def get_sp_entity_id(self, obj) -> str:
-        # SAML SP entity id / Identifier — matches auth_api.saml.sp_entity_id.
+        # SAML SP entity id / Identifier - matches auth_api.saml.sp_entity_id.
         return self._abs(f"/api/auth/sso/{obj.slug}/metadata/")
 
     class Meta:

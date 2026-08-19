@@ -45,7 +45,7 @@ import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
-// Lazy like the topology canvas — React Flow stays out of the main bundle.
+// Lazy like the topology canvas - React Flow stays out of the main bundle.
 const TunnelMap = lazy(() =>
   import("@/components/tunnels/tunnel-map").then((m) => ({
     default: m.TunnelMap,
@@ -246,7 +246,7 @@ function TunnelOverview({ tunnel: t }: { tunnel: Tunnel }) {
   )
 }
 
-/** Endpoint cell — device:interface (linked to the interface) or
+/** Endpoint cell - device:interface (linked to the interface) or
  * VM:vm-interface (linked to the VM). */
 function EndpointCell({ termination: t }: { termination: TunnelTermination }) {
   if (t.interface) {

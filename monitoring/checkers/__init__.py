@@ -1,7 +1,7 @@
 """Checker registry for the core.
 
 The protocol checkers live in the standalone, Django-free **danbyte_checks**
-package (shared verbatim with the Outpost agent — no drift). This module
+package (shared verbatim with the Outpost agent - no drift). This module
 re-exports that registry and adds the one Django-coupled checker, ``exec``
 (gated by ``settings.MONITORING_EXEC_ENABLED``), which can't live in the pure
 package. Everything importing ``monitoring.checkers`` keeps working unchanged.

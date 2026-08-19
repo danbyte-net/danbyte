@@ -36,7 +36,7 @@ import { apiErrorToast } from "@/lib/api-toast"
 
 type Tab = "violations" | "rules"
 
-/** URL-backed state of the Violations tab — filters live in the query string
+/** URL-backed state of the Violations tab - filters live in the query string
  * so a filtered view is shareable and survives back/forward. Deep-linkable:
  * `/compliance?tab=violations&device=<id>&rule=<id>&severity=critical`. */
 interface ComplianceSearch {
@@ -308,7 +308,7 @@ function ViolationsTab({
         accessorKey: "rule_name",
         header: ({ column }) => <SortHeader column={column} label="Rule" />,
         cell: ({ row }) =>
-          // Synthetic IaC drift "rule" isn't a real ComplianceRule — link it to
+          // Synthetic IaC drift "rule" isn't a real ComplianceRule - link it to
           // the Config-drift page instead of a (404) rule detail.
           row.original.rule_id === "config-drift" ? (
             <Link
@@ -530,7 +530,7 @@ function RulesTab({ evaluation }: { evaluation?: ComplianceEvaluation }) {
           return (
             <div className="text-right">
               {!r.enabled ? (
-                <span className="text-muted-foreground">—</span>
+                <span className="text-muted-foreground">-</span>
               ) : n && n > 0 ? (
                 <Link
                   to="/compliance-rules/$id"

@@ -7,12 +7,12 @@ import {
 
 /** Last-sync state for a connection/source.
  *
- * A failed badge reveals the sync error in the app tooltip (panel variant —
+ * A failed badge reveals the sync error in the app tooltip (panel variant -
  * errors are multi-line prose, and the native `title` bubble is unstyled and
  * truncates).
  *
  * A run that succeeded but couldn't record everything reads as `ok · N
- * skipped`. Those are not errors and not drift — the sync worked, it just saw
+ * skipped`. Those are not errors and not drift - the sync worked, it just saw
  * things it had nowhere to put (an address with no prefix, a host with no
  * matching site). The full list lives on the source's detail page; the tooltip
  * shows the first few. */
@@ -52,7 +52,7 @@ export function SyncStatusBadge({
       <TooltipContent variant="panel" className="max-w-96">
         <span className="font-mono text-[11px] break-words whitespace-pre-wrap">
           {notes.slice(0, 6).join("\n")}
-          {notes.length > 6 && `\n… ${notes.length - 6} more — open the source`}
+          {notes.length > 6 && `\n… ${notes.length - 6} more - open the source`}
         </span>
       </TooltipContent>
     </Tooltip>

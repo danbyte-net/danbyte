@@ -86,7 +86,7 @@ export function resolvePluginPage(
   return null
 }
 
-// ─── Plugin management (admin) — mirrors /api/plugins/ ──────────────────────
+// ─── Plugin management (admin) - mirrors /api/plugins/ ──────────────────────
 
 export interface PluginInfo {
   module: string
@@ -107,7 +107,7 @@ export interface PluginInfo {
 export interface PluginList {
   plugins: PluginInfo[]
   has_pending_migrations: boolean
-  /** An uploaded plugin is on disk but not loaded yet — restart needed. */
+  /** An uploaded plugin is on disk but not loaded yet - restart needed. */
   pending_restart: boolean
   /** Whether to show the "Apply changes" prompt (migrations or pending load). */
   needs_apply: boolean
@@ -128,7 +128,7 @@ export interface PluginConfigState {
   default_enabled: boolean
 }
 
-// ─── Service control — mirrors /api/services/ ───────────────────────────────
+// ─── Service control - mirrors /api/services/ ───────────────────────────────
 
 export interface ServiceInfo {
   key: string

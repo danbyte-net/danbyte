@@ -6,7 +6,7 @@ import { planSearch, type PlanSearch } from "@/lib/save-object"
 
 export const Route = createFileRoute("/floor-tile-types/new")({
   component: NewFloorTileTypePage,
-  // ?from=<floor plan id> — arriving from a plan's palette "+" sends the
+  // ?from=<floor plan id> - arriving from a plan's palette "+" sends the
   // user straight back to that plan after save/cancel.
   validateSearch: (
     s: Record<string, unknown>
@@ -30,7 +30,7 @@ function NewFloorTileTypePage() {
         { label: "Add" },
       ]}
       title="Add floor tile type"
-      subtitle="A tile kind for the floor-plan palette — its name, color, and icon. Device roles double as tile types automatically."
+      subtitle="A tile kind for the floor-plan palette - its name, color, and icon. Device roles double as tile types automatically."
     >
       <FloorTileTypeForm onSaved={back} onCancel={back} />
     </EditPageShell>

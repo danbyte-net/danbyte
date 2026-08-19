@@ -56,7 +56,7 @@ function AdminPage() {
     <div className="space-y-6">
       <SettingsHeader title="General">
         Core identity, formats, and IDs for this whole install. Each card saves
-        on its own — the button only writes the fields above it.
+        on its own - the button only writes the fields above it.
       </SettingsHeader>
       <SettingsGrid>
         <IdentityCard />
@@ -103,7 +103,7 @@ function IdentityCard() {
       <Field
         label="Deployment name"
         hint={
-          "The app name — shown in the sidebar header, the browser tab title, " +
+          "The app name - shown in the sidebar header, the browser tab title, " +
           'and the login page. Blank = "Danbyte".'
         }
       >
@@ -209,7 +209,7 @@ function HumanIdsCard() {
       description={
         <>
           Show a short per-tenant number (e.g. <span className="num">#27</span>)
-          alongside each object's ID — handy when migrating from a tool whose
+          alongside each object's ID - handy when migrating from a tool whose
           integer IDs are printed on physical labels. Numbers are assigned per
           tenant, so each tenant counts from 1 independently.
         </>

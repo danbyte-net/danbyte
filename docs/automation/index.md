@@ -1,10 +1,10 @@
 # Automation & integrations
 
-Use Danbyte as the source of truth for your automation — feed config data to
+Use Danbyte as the source of truth for your automation - feed config data to
 devices, render configs, and notify other systems when things change.
 
 !!! tip "New to this? Start with the orientation"
-    Danbyte **never touches your devices** — it stores the intended config and
+    Danbyte **never touches your devices** - it stores the intended config and
     hands the work to a runner *you* control. The
     [config-drift guide](../features/iac-runner.md#where-do-i-click-orientation)
     has a "where do I click" map, and **Integrations → Automation targets →

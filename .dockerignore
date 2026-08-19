@@ -1,4 +1,4 @@
-# Keep the build context (and image) lean — the Dockerfile rebuilds these from
+# Keep the build context (and image) lean - the Dockerfile rebuilds these from
 # source. Without this, COPY . . drags .venv/node_modules/.git into the image.
 .git
 .venv

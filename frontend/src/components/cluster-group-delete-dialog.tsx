@@ -48,7 +48,7 @@ export function ClusterGroupDeleteDialog({
           <AlertDialogTitle>Delete {clusterGroup?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {inUse
-              ? `${clusterGroup?.cluster_count} cluster(s) reference this group — reassign or delete them first.`
+              ? `${clusterGroup?.cluster_count} cluster(s) reference this group - reassign or delete them first.`
               : "This action can't be undone."}
           </AlertDialogDescription>
         </AlertDialogHeader>

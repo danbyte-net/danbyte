@@ -60,7 +60,7 @@ export function PresenceBar({
               <span className="font-medium">{p.name}</span>
               <span className="text-muted-foreground">
                 {" "}
-                · {p.mode === "editing" ? "editing — form open" : "viewing"}
+                · {p.mode === "editing" ? "editing - form open" : "viewing"}
               </span>
             </TooltipContent>
           </Tooltip>

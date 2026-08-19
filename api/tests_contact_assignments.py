@@ -51,7 +51,7 @@ class ContactAssignmentFilterTests(APITestCase):
         self.assertEqual(body["results"][0]["role"]["name"], "Technical")
 
     def test_role_filter_narrows_the_tenant_scoped_set(self):
-        """A foreign role id must return nothing — the filter is applied after
+        """A foreign role id must return nothing - the filter is applied after
         the tenant restriction, so it can never widen the visible rows."""
         foreign_site = Site.objects.create(tenant=self.other, name="LON")
         foreign_contact = Contact.objects.create(tenant=self.other, name="Grace")
@@ -81,7 +81,7 @@ class ContactAssignmentFilterTests(APITestCase):
 
 
 class ContactGroupParentFilterTests(APITestCase):
-    """``/api/contact-groups/?parent=`` — the Child groups tab on a group's
+    """``/api/contact-groups/?parent=`` - the Child groups tab on a group's
     detail page. ContactGroup self-nests, so the tab needs one hop down."""
 
     def setUp(self):
@@ -114,7 +114,7 @@ class ContactGroupParentFilterTests(APITestCase):
         self.assertEqual(body["results"][0]["parent"]["name"], "Networking")
 
     def test_parent_filter_narrows_the_tenant_scoped_set(self):
-        """A foreign parent id returns nothing — the filter runs after the
+        """A foreign parent id returns nothing - the filter runs after the
         tenant restriction, so it can only narrow an authorised queryset."""
         foreign_root = ContactGroup.objects.create(
             tenant=self.other, name="Networking", slug="networking"

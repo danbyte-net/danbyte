@@ -106,7 +106,7 @@ function Body({ vc }: { vc: VirtualChassis }) {
   const members = useMemo(() => sortMembers(vc.members), [vc.members])
   const stackIfaces = useStackInterfaces(members)
   // Same row actions (and the dialogs behind them) as the device page's
-  // interfaces table — the stack table must look and behave identically here.
+  // interfaces table - the stack table must look and behave identically here.
   const [assignTarget, setAssignTarget] = useState<AssignIpTarget | null>(null)
   const [traceTarget, setTraceTarget] = useState<TraceTarget | null>(null)
   // Plain object: StackInterfacesTable memoises its columns on these primitives
@@ -225,7 +225,7 @@ function Body({ vc }: { vc: VirtualChassis }) {
         onOpenChange={(o) => !o && setDeleting(null)}
         onDeleted={goBack}
       />
-      {/* Behind the interface row actions — same pair the device page renders. */}
+      {/* Behind the interface row actions - same pair the device page renders. */}
       <AssignIpDialog
         target={assignTarget}
         onOpenChange={(o) => !o && setAssignTarget(null)}
@@ -367,7 +367,7 @@ function MembersTable({
     qc.invalidateQueries({ queryKey: ["devices"] })
   }
 
-  // Leaving the stack is a device write — membership lives on the Device.
+  // Leaving the stack is a device write - membership lives on the Device.
   const remove = useMutation({
     mutationFn: () =>
       api<Device>(`/api/devices/${removing!.id}/`, {

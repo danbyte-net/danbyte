@@ -4,7 +4,7 @@ icon: lucide/paperclip
 
 # Documents
 
-Attach **documents** to any object — a device, rack, site, location, or any other
+Attach **documents** to any object - a device, rack, site, location, or any other
 record. A document is either an **uploaded file** (a datasheet, a runbook, a
 warranty PDF) or an **external link** (a wiki page, a vendor portal). Both live
 together on the object's **Documents** tab.
@@ -13,18 +13,18 @@ together on the object's **Documents** tab.
 
 On an object's detail page, open the **Documents** tab:
 
-- **Add file** — upload a file with a name, an optional description, and a
+- **Add file** - upload a file with a name, an optional description, and a
   category. Files are size-limited and restricted to a safe set of types
   (PDF, text/CSV, images, common office formats, archives). Scriptable types
   (e.g. SVG, executables) are rejected.
-- **Add link** — record an external URL instead of a file. The URL is validated
-  when you save (it must resolve to a public address — internal/loopback URLs are
+- **Add link** - record an external URL instead of a file. The URL is validated
+  when you save (it must resolve to a public address - internal/loopback URLs are
   refused), and a background check flags it if it later goes dead.
 
 ## Categories
 
 Group documents with your own **categories** (e.g. *Runbook*, *Warranty*,
-*Diagram*). Categories are an editable catalog — create them inline from the
+*Diagram*). Categories are an editable catalog - create them inline from the
 add/edit dialog. There are no built-in categories; you define the vocabulary
 that fits your organization.
 
@@ -45,7 +45,7 @@ to probe internal addresses.
 ## Access & safety
 
 - Documents are **tenant-scoped** and follow the object they're attached to:
-  you can only attach a document to — or see documents on — an object you're
+  you can only attach a document to - or see documents on - an object you're
   allowed to view, and site separation applies.
 - Uploaded files are served through an **authenticated download** endpoint, not a
   public media URL, so a file can't be pulled by guessing its address.
@@ -55,6 +55,6 @@ to probe internal addresses.
 
 ## Related
 
-- [Journals](journals.md) — free-text notes on an object (documents are files and
+- [Journals](journals.md) - free-text notes on an object (documents are files and
   links; journals are prose).
-- [Permissions & access](permissions.md) — grant the Documents permission.
+- [Permissions & access](permissions.md) - grant the Documents permission.

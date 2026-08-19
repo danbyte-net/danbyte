@@ -1,4 +1,4 @@
-"""Milestone 4 tests — HTTP/UDP/SSH/SNMP/Telnet checkers.
+"""Milestone 4 tests - HTTP/UDP/SSH/SNMP/Telnet checkers.
 
 Live checks use loopback fixtures (a throwaway HTTP server, a closed UDP port)
 so they need no external network. Auth-bearing protocols (SSH/SNMP) are tested
@@ -105,7 +105,7 @@ class NetguardPolicyTests(TestCase):
     when the central server opts in via configure()."""
 
     def tearDown(self):
-        # Policy is process-global — restore the permissive default so the
+        # Policy is process-global - restore the permissive default so the
         # HTTP-checker tests (which dial 127.0.0.1) keep working.
         from danbyte_checks import netguard
 
@@ -195,7 +195,7 @@ class UdpCheckerTests(TestCase):
 
 class SshCheckerTests(TestCase):
     def test_no_username_does_not_crash(self):
-        # Connect to a closed port without creds — must be a clean down, never
+        # Connect to a closed port without creds - must be a clean down, never
         # an exception (regression: asyncssh rejects username=None).
         oc = _run("ssh", "127.0.0.1", {"port": 9})
         self.assertEqual(oc.status, "down")

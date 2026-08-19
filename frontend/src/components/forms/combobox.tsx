@@ -13,12 +13,12 @@ export interface FormComboboxProps extends Base {
   searchPlaceholder?: string
   emptyText?: string
   disabled?: boolean
-  /** Optional trailing control — e.g. a <QuickAddDialog/> "+" button to create
+  /** Optional trailing control - e.g. a <QuickAddDialog/> "+" button to create
    * the related object inline. Rendered to the right of the combobox. */
   quickAdd?: React.ReactNode
 }
 
-// Searchable drop-in for FormSelect — same Field wrapper + value/onChange
+// Searchable drop-in for FormSelect - same Field wrapper + value/onChange
 // contract, but type-to-filter. Use it wherever the option list is long.
 export function FormCombobox({
   value,

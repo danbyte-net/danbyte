@@ -51,7 +51,7 @@ export function FloorPlanForm({
   const [description, setDescription] = useState(plan?.description ?? "")
 
   const sites = useSiteOptions()
-  // Locations are per-site — the list follows the chosen site. With no site
+  // Locations are per-site - the list follows the chosen site. With no site
   // picked yet (e.g. prefilled location from a Location page) list them all
   // so the prefill resolves.
   const locations = useQuery({
@@ -171,7 +171,7 @@ export function FloorPlanForm({
       <FormRow>
         <FormText
           label="Cell size (mm)"
-          hint="Physical size of one grid cell — 600 = a raised-floor tile"
+          hint="Physical size of one grid cell - 600 = a raised-floor tile"
           type="number"
           min={50}
           max={5000}

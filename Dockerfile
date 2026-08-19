@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 #
 # Production image for Danbyte, built in stages:
-#   frontend  — Node builds the React SPA (frontend/dist)
-#   web       — nginx serving that SPA + proxying api/ws/static/media
-#   runtime   — Python app (gunicorn WSGI, daphne ASGI/WS, rq workers)
+#   frontend  - Node builds the React SPA (frontend/dist)
+#   web       - nginx serving that SPA + proxying api/ws/static/media
+#   runtime   - Python app (gunicorn WSGI, daphne ASGI/WS, rq workers)
 #
 # `runtime` is last so a bare `docker build .` yields the app image; the compose
 # files pick the stage per service via `target:`. See docs/getting-started/docker.md
@@ -43,9 +43,9 @@ WORKDIR /app
 # plugins lean on (assume nothing else is present): ping/traceroute/mtr for
 # reachability, dnsutils for DNS checks, snmp clients for manual SNMP, fping,
 # netcat for TCP probes, curl for the healthcheck. ICMP itself goes through
-# icmplib's unprivileged datagram sockets — see the ping_group_range sysctl on
+# icmplib's unprivileged datagram sockets - see the ping_group_range sysctl on
 # the workers service in docker-compose.prod.yml.
-# WeasyPrint (label-template PDFs) renders via Pango/cairo/GDK-PixBuf — these are
+# WeasyPrint (label-template PDFs) renders via Pango/cairo/GDK-PixBuf - these are
 # shared libraries, not pip-installable, so they must be baked into the image.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

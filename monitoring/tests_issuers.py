@@ -1,4 +1,4 @@
-"""Issuer + ACME order models/API (M4a). No protocol here — the engine (M4b)
+"""Issuer + ACME order models/API (M4a). No protocol here - the engine (M4b)
 is tested separately. These pin tenant scoping and EAB-secret handling."""
 from __future__ import annotations
 

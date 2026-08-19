@@ -34,8 +34,8 @@ interface ImportRun {
   error: string
 }
 
-/** A lone github.com folder URL — /tree/ or an extension-less /blob/ path
- * (people paste either) — routed to the background importer. */
+/** A lone github.com folder URL - /tree/ or an extension-less /blob/ path
+ * (people paste either) - routed to the background importer. */
 const FOLDER_RE =
   /^https:\/\/github\.com\/[^/]+\/[^/]+\/(?:tree|blob)\/[^/]+(?:\/(.*))?$/
 function folderUrlOf(items: string[]): string | null {
@@ -49,10 +49,10 @@ function folderUrlOf(items: string[]): string | null {
 
 /**
  * Import device types from NetBox's community devicetype-library
- * (github.com/netbox-community/devicetype-library — public domain). Accepts
+ * (github.com/netbox-community/devicetype-library - public domain). Accepts
  * pasted YAML, pasted GitHub URLs (one per line; blob links auto-convert to
  * raw), or uploaded .yaml files. The optional stack tick rewrites the leading
- * slot digit to Danbyte's `{position}` token — the library targets NetBox,
+ * slot digit to Danbyte's `{position}` token - the library targets NetBox,
  * which has no stack-position concept.
  */
 export function DeviceTypeImportDialog({
@@ -80,7 +80,7 @@ export function DeviceTypeImportDialog({
     if (fileRef.current) fileRef.current.value = ""
   }
 
-  // Background run polling — for a whole-folder import that's too big to fetch
+  // Background run polling - for a whole-folder import that's too big to fetch
   // synchronously. Stops when the run reaches a terminal state.
   const runQ = useQuery({
     queryKey: ["dt-import-run", runId],
@@ -160,7 +160,7 @@ export function DeviceTypeImportDialog({
               : "")
         )
       } else {
-        toast.error("Nothing imported — see the report below.")
+        toast.error("Nothing imported - see the report below.")
       }
     },
     onError: (err) => apiErrorToast(err),
@@ -218,7 +218,7 @@ export function DeviceTypeImportDialog({
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder={
-              "https://github.com/netbox-community/devicetype-library/tree/master/device-types/Cisco\n— a single file, or the YAML itself —"
+              "https://github.com/netbox-community/devicetype-library/tree/master/device-types/Cisco\n- a single file, or the YAML itself -"
             }
             className="min-h-28 font-mono text-[12px]"
           />
@@ -241,7 +241,7 @@ export function DeviceTypeImportDialog({
             className="text-[12px] text-muted-foreground"
             label={
               <>
-                Stackable — rewrite the leading slot digit to{" "}
+                Stackable - rewrite the leading slot digit to{" "}
                 <code className="font-mono">{"{position}"}</code>
               </>
             }
@@ -292,7 +292,7 @@ export function DeviceTypeImportDialog({
                 <ul className="mt-2 max-h-32 space-y-0.5 overflow-auto text-[11px] text-muted-foreground">
                   {bg.failures.slice(0, 20).map((f, i) => (
                     <li key={i} className="truncate">
-                      <span className="font-mono">{f.name}</span> — {f.error}
+                      <span className="font-mono">{f.name}</span> - {f.error}
                     </li>
                   ))}
                 </ul>
@@ -320,7 +320,7 @@ export function DeviceTypeImportDialog({
                     </span>
                     {r.ok ? (
                       <span className="text-muted-foreground">
-                        {" — "}
+                        {" - "}
                         {Object.entries(r.created)
                           .filter(([, n]) => n > 0)
                           .map(([k, n]) => `${n} ${k.replaceAll("_", " ")}`)
@@ -328,7 +328,7 @@ export function DeviceTypeImportDialog({
                       </span>
                     ) : (
                       <span className="text-red-600 dark:text-red-400">
-                        {" — "}
+                        {" - "}
                         {r.error}
                       </span>
                     )}

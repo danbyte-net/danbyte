@@ -21,7 +21,7 @@ import { Field } from "@/components/forms/field"
 
 /**
  * Author a certificate from a pasted or uploaded **public** PEM. The private
- * key is never accepted — the backend refuses a PRIVATE KEY block with a clean
+ * key is never accepted - the backend refuses a PRIVATE KEY block with a clean
  * 400, surfaced here via `apiErrorToast`. On success it reports whether a new
  * row was authored (201) or the fingerprint matched an already-seen certificate
  * (200), then invalidates the certificate lists so the row appears at once.
@@ -64,7 +64,7 @@ export function UploadCertificateDialog({
       // uploaded. The two are genuinely different outcomes for the operator.
       if (status === 200) {
         toast.success("Matched an already-seen certificate", {
-          description: "It was already on record — now marked as uploaded too.",
+          description: "It was already on record - now marked as uploaded too.",
         })
       } else {
         toast.success("Certificate added")
@@ -99,7 +99,7 @@ export function UploadCertificateDialog({
           <DialogTitle>Upload certificate</DialogTitle>
           <DialogDescription>
             Paste a public certificate PEM, or load a <code>.pem</code>/
-            <code>.crt</code> file. Only the public certificate is stored —
+            <code>.crt</code> file. Only the public certificate is stored -
             never a private key.
           </DialogDescription>
         </DialogHeader>

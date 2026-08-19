@@ -81,7 +81,7 @@ function RackTypesPage() {
     >
       {rows.length === 0 ? (
         <p className="max-w-xl text-sm text-muted-foreground">
-          No rack types yet. A rack type is a cabinet model — picking one on a
+          No rack types yet. A rack type is a cabinet model - picking one on a
           rack pre-fills its dimensions, and the type's accessory strips
           (vertical PDUs) can be stamped onto new racks automatically.
         </p>
@@ -130,7 +130,7 @@ export function RackTypeDeleteDialog({
           <AlertDialogTitle>Delete {rackType?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {used > 0
-              ? `${used} rack${used === 1 ? "" : "s"} use this type — unassign them first.`
+              ? `${used} rack${used === 1 ? "" : "s"} use this type - unassign them first.`
               : "Removes this rack model and its accessory list. Racks and devices are never touched."}
           </AlertDialogDescription>
         </AlertDialogHeader>

@@ -1,16 +1,16 @@
-"""Planning — kanban boards, tasks, and generic links into the inventory.
+"""Planning - kanban boards, tasks, and generic links into the inventory.
 
 The board model follows the "status as a row, not an enum" design: each board
 owns editable :class:`TaskStatus` rows whose ``semantic_group`` (backlog /
 unstarted / started / completed / cancelled) carries the meaning code keys off,
 while the row itself (name, colour, order) stays user-editable. Creating a
-board seeds four deterministic, fully-editable statuses — required bootstrap,
+board seeds four deterministic, fully-editable statuses - required bootstrap,
 never demo data.
 
 Tasks attach any Danbyte object through :class:`TaskLink`, which copies the
 ``Document`` generic-reference pattern (``object_type`` label + ``object_id`` +
 denormalised ``object_site_id``) so RBAC and site separation apply the same way
-everywhere. Comments reuse ``audit.JournalEntry`` — a task is just another
+everywhere. Comments reuse ``audit.JournalEntry`` - a task is just another
 registered object type.
 """
 from __future__ import annotations
@@ -24,7 +24,7 @@ from core.models import Tenant, TimestampedModel, TaggableMixin
 
 
 class Board(TaggableMixin, TimestampedModel):
-    """A named kanban surface — e.g. "DC migration" or "Daily ops"."""
+    """A named kanban surface - e.g. "DC migration" or "Daily ops"."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -59,7 +59,7 @@ class SemanticGroup(models.TextChoices):
 
 
 # The deterministic bootstrap statuses every new board starts with. Editable
-# and deletable afterwards — the seed exists so a fresh board is usable, not to
+# and deletable afterwards - the seed exists so a fresh board is usable, not to
 # impose a workflow.
 DEFAULT_STATUSES = [
     ("Backlog", SemanticGroup.BACKLOG, "#a1a1aa", 100),
@@ -132,7 +132,7 @@ class TaskLabel(TimestampedModel):
 
 
 class Milestone(TimestampedModel):
-    """A named target on a board — "Rack A cutover", "Q3 audit" — that tasks
+    """A named target on a board - "Rack A cutover", "Q3 audit" - that tasks
     roll up to. Optional due date; surfaces on cards and (phase 2) on the
     planning calendar."""
 
@@ -169,7 +169,7 @@ class TaskPriority(models.TextChoices):
 
 
 class Task(TimestampedModel):
-    """A card on a board. Dates are optional — a dated task also appears on the
+    """A card on a board. Dates are optional - a dated task also appears on the
     planning calendar (phase 2)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -230,7 +230,7 @@ class Task(TimestampedModel):
 
 
 class TaskLink(TimestampedModel):
-    """A generic reference from a task to any registered Danbyte object —
+    """A generic reference from a task to any registered Danbyte object -
     the Document pattern: label + id + denormalised site for separation."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -271,7 +271,7 @@ class PlannedChangeKind(models.TextChoices):
 
 
 class PlannedChange(TimestampedModel):
-    """A change a task says it will make to the inventory — one saved edit.
+    """A change a task says it will make to the inventory - one saved edit.
 
     Planning *is* editing: the operator opens the object's own edit form, changes
     whatever they want, and saves. Nothing is written; the fields that actually
@@ -279,18 +279,18 @@ class PlannedChange(TimestampedModel):
     object's create form. When the work is done an operator **applies** it and
     Danbyte writes the values through the target's normal serializer.
 
-    Applying updates *Danbyte's* record — pushing configuration to hardware is
+    Applying updates *Danbyte's* record - pushing configuration to hardware is
     the separate automation/deploy path. Nothing applies itself: a plan is
     documentation until a human confirms the work happened, so there is no
     scheduler here.
 
     ``payload`` is write-shaped (the same keys the API accepts) and, for an
-    update, holds **only the keys that differ** — the server diffs the submitted
+    update, holds **only the keys that differ** - the server diffs the submitted
     form against the live object so no diff logic is duplicated per form.
     ``before`` snapshots just those keys, which drives both the displayed diff
     and the staleness check at apply time. ``display`` is rendered at plan time
     so the task still reads "Status: Active → Decommissioning" after the
-    referenced Status row is renamed or deleted — the same denormalisation
+    referenced Status row is renamed or deleted - the same denormalisation
     rationale as ``object_site_id``.
     """
 
@@ -306,7 +306,7 @@ class PlannedChange(TimestampedModel):
         max_length=6, choices=PlannedChangeKind.choices,
         default=PlannedChangeKind.UPDATE,
     )
-    # Generic reference — the Document/TaskLink triple. For a create this names
+    # Generic reference - the Document/TaskLink triple. For a create this names
     # the model to create and object_id is empty until it is applied.
     object_type = models.CharField(
         max_length=64, help_text="Model label, e.g. api.interface."
@@ -332,7 +332,7 @@ class PlannedChange(TimestampedModel):
     # Optional per-change implementation date. One task often changes several
     # things on different days ("Friday disable the port, Monday decommission
     # the device"), and the target's badge needs *that* object's date. Null
-    # falls back to the task's due date — see `effective_date`.
+    # falls back to the task's due date - see `effective_date`.
     planned_for = models.DateField(null=True, blank=True)
 
     state = models.CharField(
@@ -354,7 +354,7 @@ class PlannedChange(TimestampedModel):
     class Meta:
         ordering = ["planned_for", "created_at"]
         # No uniqueness: a task may legitimately stage several edits to one
-        # object (and two tasks may propose the same change — the badge's count
+        # object (and two tasks may propose the same change - the badge's count
         # says more about that than a 400 would).
         indexes = [
             # The badge's reverse lookup only ever asks about open plans.
@@ -385,7 +385,7 @@ class PlannedChange(TimestampedModel):
 
 def seed_default_statuses(board: Board) -> None:
     """Create the four bootstrap statuses for a new board. Deterministic and
-    idempotent — safe to call twice; existing names are left alone."""
+    idempotent - safe to call twice; existing names are left alone."""
     for name, group, color, weight in DEFAULT_STATUSES:
         TaskStatus.objects.get_or_create(
             board=board, name=name,

@@ -21,7 +21,7 @@ export interface IconPickerProps {
 }
 
 /**
- * Searchable Lucide icon picker — type "cam", see the camera icons, click to
+ * Searchable Lucide icon picker - type "cam", see the camera icons, click to
  * set. Same popover shape as ColorPicker so palette forms read as one family.
  */
 export function IconPicker({
@@ -95,7 +95,7 @@ export function IconPicker({
         )}
         {matches.length > SHOWN && (
           <p className="text-[10px] text-muted-foreground">
-            {matches.length - SHOWN} more — keep typing to narrow down.
+            {matches.length - SHOWN} more - keep typing to narrow down.
           </p>
         )}
         {allowEmpty && value && (

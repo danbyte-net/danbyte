@@ -71,7 +71,7 @@ class DhcpSyncTests(TestCase):
         ip = IPAddress.objects.get(tenant=self.tenant, ip_address="10.77.0.60")
         self.assertEqual(ip.mac_address, "aa:bb:cc:00:11:22")
         # DHCP reservations surface via the DHCP badge, not the operator's own
-        # `reservation_note` marker — sync must leave that field alone.
+        # `reservation_note` marker - sync must leave that field alone.
         self.assertFalse(ip.reservation_note)
         res = DhcpReservation.objects.get(scope=scope, ip="10.77.0.60")
         self.assertFalse(res.managed)
@@ -160,7 +160,7 @@ class DhcpSyncTests(TestCase):
 
         The sync looks up the scope's prefix in the Global VRF. When an operator
         moves it into a real VRF that lookup misses, and the sync used to create
-        a second prefix with the same CIDR and re-point the scope at it —
+        a second prefix with the same CIDR and re-point the scope at it -
         inventing address space it had been told not to invent.
         """
         from api.models import VRF
@@ -182,7 +182,7 @@ class DhcpSyncTests(TestCase):
         self.assertEqual(IPRange.objects.get().vrf_id, vrf.id)
 
     def test_exclusion_range_takes_its_prefixs_vrf(self):
-        """IPRange.vrf is denormalised from the prefix — including via the ORM.
+        """IPRange.vrf is denormalised from the prefix - including via the ORM.
 
         Only the serializer used to apply that rule, so exclusion ranges the
         sync creates directly sat in the Global VRF under a VRF'd prefix.
@@ -262,7 +262,7 @@ class DhcpSyncTests(TestCase):
         self.assertEqual(DhcpLease.objects.count(), 0)
 
     def test_single_element_json_collapse_handled(self):
-        """ConvertTo-Json collapses 1-element arrays — _as_list covers it."""
+        """ConvertTo-Json collapses 1-element arrays - _as_list covers it."""
         data = payload()
         data["scopes"] = data["scopes"][0]
         data["reservations"] = data["reservations"][0]

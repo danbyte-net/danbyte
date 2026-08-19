@@ -4,7 +4,7 @@ For a device, run every applicable ``SnmpSensor`` (bound to its device type or
 to all) using the device's own resolved SNMP profile, then reconcile the
 readings into inventory items: each reading maps its raw SNMP value through the
 sensor's ``value_map`` to a status slug, and the matching item's status is
-flipped (created if absent). Facts other than status are never touched — this
+flipped (created if absent). Facts other than status are never touched - this
 mirrors the Redfish reconciler's "don't stomp intent" rule.
 """
 from __future__ import annotations
@@ -77,7 +77,7 @@ def poll_device_sensors(device, tenant, profile=None) -> dict:
             continue
         # Danbyte is a source of truth with drift visualisation: a reading is
         # OBSERVED data. In the default mode it is recorded and the difference
-        # is listed for review — it never overwrites a status a human set. Only
+        # is listed for review - it never overwrites a status a human set. Only
         # an explicitly `auto` sensor writes through.
         writes = sensor.apply_mode == sensor.APPLY_AUTO
         seen: set[str] = set()
@@ -102,12 +102,12 @@ def poll_device_sensors(device, tenant, profile=None) -> dict:
                 )
                 by_name[name] = item
             elif item.status_id != status.id:
-                old = item.status.name if item.status_id else "—"
+                old = item.status.name if item.status_id else "-"
                 item.status = status
                 item.save(update_fields=["status", "updated_at"])
                 flips.append(f"{name}: {old} → {status.name}")
 
-        # Items this sensor covers that the agent never mentioned — the empty
+        # Items this sensor covers that the agent never mentioned - the empty
         # bays a chassis template stamped, which would otherwise keep claiming
         # to hold healthy hardware.
         #
@@ -134,7 +134,7 @@ def poll_device_sensors(device, tenant, profile=None) -> dict:
                         and item.name not in seen
                         and item.status_id != absent.id
                     ):
-                        old = item.status.name if item.status_id else "—"
+                        old = item.status.name if item.status_id else "-"
                         item.status = absent
                         item.save(update_fields=["status", "updated_at"])
                         flips.append(f"{item.name}: {old} → {absent.name}")

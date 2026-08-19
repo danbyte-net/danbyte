@@ -2,7 +2,7 @@
 Description=Danbyte frontend (Vite dev server, port 3000)
 After=network.target
 # Don't let reloader/crash loops trip the start-limit and leave the dev server
-# permanently down (the recurring-502 cause — nginx proxies :80 → :3000).
+# permanently down (the recurring-502 cause - nginx proxies :80 → :3000).
 StartLimitIntervalSec=0
 
 [Service]

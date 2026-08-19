@@ -1,4 +1,4 @@
-"""RBAC enforcement tests — built-in groups + object permissions + constraints."""
+"""RBAC enforcement tests - built-in groups + object permissions + constraints."""
 from __future__ import annotations
 
 from django.contrib.auth.models import Group, User

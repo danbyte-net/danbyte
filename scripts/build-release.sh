@@ -30,7 +30,7 @@ PBS_TAG="${PBS_TAG:-20260623}"
 PBS_PYTHON="${PBS_PYTHON:-3.13.14}"
 PLATFORM="linux-x86_64"
 
-# Pinned SHA-256 of each downloaded runtime archive — an upstream/mirror swap or
+# Pinned SHA-256 of each downloaded runtime archive - an upstream/mirror swap or
 # a MITM can't slip modified code into the bundle. Bump these in lockstep with
 # NODE_VERSION / PBS_TAG+PBS_PYTHON above (node: nodejs.org/dist/vX/SHASUMS256.txt;
 # PBS: the release's SHA256SUMS asset).
@@ -57,7 +57,7 @@ mkdir -p "$STAGE" "$OUT"
 
 log() { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
 
-# ── 1. Clean source (git-tracked files only — no .venv/node_modules/dist) ─────
+# ── 1. Clean source (git-tracked files only - no .venv/node_modules/dist) ─────
 log "Exporting source tree @ ${VERSION}"
 git archive --format=tar HEAD | tar -x -C "$STAGE"
 
@@ -92,7 +92,7 @@ log "Building wheelhouse"
 "$PYBIN" -m pip install --upgrade pip wheel >/dev/null
 "$PYBIN" -m pip wheel -r "$STAGE/requirements.txt" -w "$STAGE/vendor/wheels"
 
-# ── 6. collectstatic (offline — validates the wheelhouse too) ─────────────────
+# ── 6. collectstatic (offline - validates the wheelhouse too) ─────────────────
 log "Collecting static"
 BUILD_VENV="$(mktemp -d)/venv"
 "$PYBIN" -m venv "$BUILD_VENV"

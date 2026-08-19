@@ -91,7 +91,7 @@ import {
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
-// The eight PLACEABLE kinds (SlotKind ⊂ TemplateKind — module bays are
+// The eight PLACEABLE kinds (SlotKind ⊂ TemplateKind - module bays are
 // templates but not faceplate slots in M1).
 const KINDS: SlotKind[] = [
   "interface",
@@ -118,7 +118,7 @@ const KIND_TITLE: Record<TemplateKind, string> = {
   "aux-port": "Aux ports",
 }
 
-// Builder scale — larger than the read-only renderer so cages are easy to
+// Builder scale - larger than the read-only renderer so cages are easy to
 // grab (an SFP cage lands at ~31×21px).
 const BUILDER_SCALE = 2.2
 
@@ -133,7 +133,7 @@ const GAP_PRESETS: { value: number; label: string }[] = [
   { value: 20, label: "Large gap" },
 ]
 
-// Drag-id separator — a control char that can never appear in a template name.
+// Drag-id separator - a control char that can never appear in a template name.
 const SEP = "\u001f"
 
 const slotKey = (s: FaceplateSlot, gi: number, si: number) =>
@@ -145,12 +145,12 @@ let groupSeq = 0
 const newGroupId = () => `g${Date.now().toString(36)}-${groupSeq++}`
 
 /**
- * Drag-and-drop faceplate builder. The canvas IS the true-scale panel — the
+ * Drag-and-drop faceplate builder. The canvas IS the true-scale panel - the
  * same visual as the device page's front panel, with every cage draggable.
  * Click a group to edit its label / rows / banking in the toolbar. Front and
  * rear are separate sides of one saved doc. Explicit Save only.
  */
-/** What the builder needs from its owner — a DeviceType, or a ModuleType
+/** What the builder needs from its owner - a DeviceType, or a ModuleType
  * dressed up as one (modules are 1U, full-width panels). */
 export interface FaceplateHost {
   id: string
@@ -172,7 +172,7 @@ export function DeviceTypeFaceplatePane({
   const qc = useQueryClient()
   const kinds: SlotKind[] = moduleMode ? ["interface"] : KINDS
 
-  // All template lists — same query keys as the Components tab (module
+  // All template lists - same query keys as the Components tab (module
   // types have a single interface-template list).
   const templateQueries = useQueries({
     queries: kinds.map((k) => ({
@@ -207,7 +207,7 @@ export function DeviceTypeFaceplatePane({
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
   // "+ Label" on the selected group: the id of the group the text is for (null
-  // = closed), plus the draft text. A dialog rather than window.prompt — a
+  // = closed), plus the draft text. A dialog rather than window.prompt - a
   // native prompt is unstyleable and reads as a browser artefact.
   const [labelFor, setLabelFor] = useState<string | null>(null)
   const [labelText, setLabelText] = useState("")
@@ -235,7 +235,7 @@ export function DeviceTypeFaceplatePane({
     return map
   }, [templatesByKind])
 
-  // Ports already placed on EITHER side — a port is front or rear, not both.
+  // Ports already placed on EITHER side - a port is front or rear, not both.
   const placed = useMemo(() => {
     const set = new Set<string>()
     for (const s of ["front", "rear"] as const)
@@ -318,7 +318,7 @@ export function DeviceTypeFaceplatePane({
         queryKey: [moduleMode ? "module-types" : "device-types"],
       })
       // A module type's faceplate is composed into every device that has one
-      // of its modules installed — refresh those device renders too. (Device
+      // of its modules installed - refresh those device renders too. (Device
       // types are read live off the key invalidated above, so they need no
       // extra nudge.)
       if (moduleMode)
@@ -360,7 +360,7 @@ export function DeviceTypeFaceplatePane({
     const id = String(e.active.id)
     const parts = id.split(SEP)
     // Resolve the dragged thing to a cage (family + number) so the overlay is
-    // a small mm-true box under the cursor — a long name there hides the
+    // a small mm-true box under the cursor - a long name there hides the
     // drop target.
     if (parts[0] === "pal") {
       const [, kind, name] = parts
@@ -402,7 +402,7 @@ export function DeviceTypeFaceplatePane({
     const a = String(active.id)
     const o = String(over.id)
 
-    // Dropping a module bay drops a *placeholder* group — an installed module's
+    // Dropping a module bay drops a *placeholder* group - an installed module's
     // faceplate composes into it on a device (blank cage until then). Bays are
     // their own group; a lane target sets which U it lands in.
     if (a.startsWith(`bay${SEP}`)) {
@@ -514,7 +514,7 @@ export function DeviceTypeFaceplatePane({
   if (!hasTemplates)
     return (
       <p className="max-w-2xl text-sm text-muted-foreground">
-        This device type has no component templates yet — add interfaces (and
+        This device type has no component templates yet - add interfaces (and
         console / power / aux ports) on the Components tab first, then lay them
         out here.
       </p>
@@ -546,7 +546,7 @@ export function DeviceTypeFaceplatePane({
           className="items-center gap-1.5 text-[12px] text-muted-foreground"
         />
         <p className="text-[12px] text-muted-foreground">
-          Drag ports — or a module bay — from the palette onto the panel. It
+          Drag ports - or a module bay - from the palette onto the panel. It
           draws at true scale, exactly as devices of this type will render; a
           placed bay fills with its installed module’s faceplate. Click a group
           to edit it.
@@ -610,7 +610,7 @@ export function DeviceTypeFaceplatePane({
             )}
           </div>
 
-          {/* Canvas — the panel itself */}
+          {/* Canvas - the panel itself */}
           <div className="min-w-0 space-y-3">
             {/* Group toolbar (edits the selected group) */}
             <div className="flex h-9 flex-wrap items-center gap-2">
@@ -820,7 +820,7 @@ export function DeviceTypeFaceplatePane({
               )}
             </div>
 
-            {/* The panel strip — one lane per rack unit (each with its own
+            {/* The panel strip - one lane per rack unit (each with its own
                 "+" zone), width the whole blade when the full-width tick is
                 on. */}
             <div
@@ -839,7 +839,7 @@ export function DeviceTypeFaceplatePane({
               }}
             >
               {(() => {
-                // Lanes swallowed by a group above them that spans >1 U —
+                // Lanes swallowed by a group above them that spans >1 U -
                 // they become part of that group's taller canvas, so they get
                 // no separate row/"+" zone (unless they hold their own group).
                 const covered = new Set<number>()
@@ -970,13 +970,13 @@ export function DeviceTypeFaceplatePane({
         )}
         {ghosts > 0 && (
           <span className="text-[11px] text-amber-700 dark:text-amber-300">
-            {ghosts} slot{ghosts === 1 ? "" : "s"} reference missing templates —
+            {ghosts} slot{ghosts === 1 ? "" : "s"} reference missing templates -
             they render as ghosts.
           </span>
         )}
         {deviceType.faceplate === null && !dirty && (
           <span className="text-[11px] text-muted-foreground">
-            No saved layout — showing the automatic one as a starting point.
+            No saved layout - showing the automatic one as a starting point.
           </span>
         )}
       </div>
@@ -1044,7 +1044,7 @@ export function DeviceTypeFaceplatePane({
 
 // ─── pieces ─────────────────────────────────────────────────────────────────
 
-/** mm-true cage box (visual only) — the same look as the device page's free
+/** mm-true cage box (visual only) - the same look as the device page's free
  * ports, sized by the connector family at builder scale. */
 function cageStyle(family: ReturnType<typeof familyForType>) {
   const dims = CONNECTOR_MM[family]
@@ -1087,7 +1087,7 @@ function PaletteCage({
   )
 }
 
-/** Draggable module-bay chip — drops a placeholder group onto the panel that a
+/** Draggable module-bay chip - drops a placeholder group onto the panel that a
  * device fills with the installed module's faceplate. */
 function PaletteBay({ name, disabled }: { name: string; disabled?: boolean }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -1099,7 +1099,7 @@ function PaletteBay({ name, disabled }: { name: string; disabled?: boolean }) {
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      title={`Module bay: ${name} — drop onto the panel to place it`}
+      title={`Module bay: ${name} - drop onto the panel to place it`}
       className={cn(
         "flex cursor-grab items-center gap-1 rounded-[4px] border border-dashed border-primary/40 bg-primary/5 px-1.5 py-1 text-[9px] font-medium text-foreground hover:border-primary",
         isDragging && "opacity-40",
@@ -1228,14 +1228,14 @@ function BuilderGroup({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `group${SEP}${g.id}` })
 
-  // A module-bay placeholder draws as a labelled slot, not a port grid — a
+  // A module-bay placeholder draws as a labelled slot, not a port grid - a
   // device composes an installed module's faceplate here (see DeviceFaceplate).
   // No droppable ref: ports can't be dropped *into* a bay.
   if (g.bay) {
     return (
       <div
         onClick={onSelect}
-        title={`Module bay: ${g.bay} — an installed module's faceplate renders here`}
+        title={`Module bay: ${g.bay} - an installed module's faceplate renders here`}
         className={cn(
           "flex cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md border border-dashed px-3",
           selected
@@ -1341,7 +1341,7 @@ function NewGroupZone({
         "flex h-12 w-14 shrink-0 items-center justify-center rounded-md border border-dashed border-border text-muted-foreground hover:bg-muted/40",
         isOver && "border-primary/60 bg-primary/5 text-foreground"
       )}
-      title="New group — click or drop a port"
+      title="New group - click or drop a port"
     >
       <Plus className="h-4 w-4" />
     </button>
@@ -1350,7 +1350,7 @@ function NewGroupZone({
 
 /** The "auto-fill" popover: pick which component kinds to include, an optional
  * forced row count and bank size, then regenerate the whole panel from the
- * device type's templates. Fills the draft (non-destructive) — the operator
+ * device type's templates. Fills the draft (non-destructive) - the operator
  * still saves. */
 function AutoArrangePopover({
   present,

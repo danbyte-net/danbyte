@@ -1,7 +1,7 @@
 """TLS certificate collector.
 
 Opens a TLS connection to ``host:port``, completes the handshake, and reads the
-chain the server **presents**. Everything extracted is public X.509 data — the
+chain the server **presents**. Everything extracted is public X.509 data - the
 exact bytes every client receives when it connects.
 
 **No private key. Ever.** This module never reads, requests, accepts, or emits
@@ -14,7 +14,7 @@ Reading an untrusted cert without weakening verification
 --------------------------------------------------------
 An expired or self-signed certificate is precisely what an inventory most needs
 to record, so the read must not abort when verification fails. It also must not
-"just turn verification off" — an unverified read would then be
+"just turn verification off" - an unverified read would then be
 indistinguishable from a verified one.
 
 So the collector makes two clearly separated passes:
@@ -53,12 +53,12 @@ from .base import CheckConfigError, CheckOutcome, register, require_port
 
 DEFAULT_PORT = 443
 
-# ``validity`` — the trust outcome of the read, recorded as data.
+# ``validity`` - the trust outcome of the read, recorded as data.
 VERIFIED = "verified"
 UNVERIFIED = "unverified"
 UNKNOWN = "unknown"
 
-# ``error_kind`` — why a read produced no chain.
+# ``error_kind`` - why a read produced no chain.
 ERR_POLICY = "policy"  # refused by the target-address policy / unresolvable
 ERR_CONNECT = "connect"  # no TCP connection (refused, timeout, unreachable)
 ERR_TLS = "tls"  # TCP up, TLS handshake unusable
@@ -71,7 +71,7 @@ def target_allowed(host: str, *, allow_private: bool = False) -> tuple[bool, str
     """Whether this collector may dial ``host``.
 
     Default (``allow_private=False``) defers to the process-wide check-engine
-    policy in :mod:`danbyte_checks.netguard` — a user-defined check must not
+    policy in :mod:`danbyte_checks.netguard` - a user-defined check must not
     become a scanner for internal services.
 
     ``allow_private=True`` is the **explicitly scoped** allowance an
@@ -80,7 +80,7 @@ def target_allowed(host: str, *, allow_private: bool = False) -> tuple[bool, str
     certificate endpoint may reach them. It is a per-call argument, never a
     weakened default and never a mutation of the global policy. Loopback,
     link-local (cloud metadata), multicast and the unspecified address stay
-    refused either way — they are never a legitimate inventory target.
+    refused either way - they are never a legitimate inventory target.
     """
     try:
         infos = socket.getaddrinfo(host, None)
@@ -89,7 +89,7 @@ def target_allowed(host: str, *, allow_private: bool = False) -> tuple[bool, str
     for info in infos:
         addr = ipaddress.ip_address(info[4][0])
         if addr.is_loopback or addr.is_link_local or addr.is_unspecified or addr.is_multicast:
-            return False, f"{addr} is loopback/link-local/multicast — not an inventory target"
+            return False, f"{addr} is loopback/link-local/multicast - not an inventory target"
         if not allow_private and netguard.address_blocked(addr):
             return False, "target address not permitted"
     return True, ""
@@ -119,7 +119,7 @@ def _handshake(
     """Connect, handshake, return (chain DER list, tls version, cipher name)."""
     with socket.create_connection((host, port), timeout=timeout_s) as raw:
         with ctx.wrap_socket(raw, server_hostname=server_name) as tls:
-            # ``get_unverified_chain`` is what the peer actually presented — the
+            # ``get_unverified_chain`` is what the peer actually presented - the
             # right thing for an inventory, since a chain "completed" from the
             # local trust store would hide a server that omits its intermediate.
             # It landed in CPython 3.13; on an older Outpost we degrade to the
@@ -169,7 +169,7 @@ def _self_signed(cert: x509.Certificate) -> bool:
         return True
     except (ValueError, TypeError):
         return False
-    except Exception:  # noqa: BLE001 — unsupported algorithm → name match only
+    except Exception:  # noqa: BLE001 - unsupported algorithm → name match only
         return True
 
 
@@ -215,7 +215,7 @@ def parse_certificate(der: bytes, depth: int) -> dict[str, Any]:
 
 
 def _is_ca(cert) -> bool:
-    """basicConstraints CA:TRUE — the cert may sign other certs."""
+    """basicConstraints CA:TRUE - the cert may sign other certs."""
     try:
         bc = cert.extensions.get_extension_for_class(x509.BasicConstraints).value
         return bool(bc.ca)
@@ -272,14 +272,14 @@ def collect_chain(
 ) -> dict[str, Any]:
     """Read the certificate chain ``host:port`` presents.
 
-    Returns a JSON-safe observation dict — it travels in a ``CheckOutcome``
+    Returns a JSON-safe observation dict - it travels in a ``CheckOutcome``
     detail, through an Outpost's result upload, and into JSONB unchanged::
 
         {host, port, server_name, validity, verify_error, error_kind, error,
          chain: [<parse_certificate>, …], chain_length, expired, self_signed,
          expires_in_days, tls_version, cipher}
 
-    Never raises for a reachability or trust problem — those are the data.
+    Never raises for a reachability or trust problem - those are the data.
     """
     server_name = server_name or host
     timeout_s = max(timeout_ms / 1000, 0.1)
@@ -296,7 +296,7 @@ def collect_chain(
         validity = VERIFIED
     except ssl.SSLCertVerificationError as exc:
         # The interesting case: the cert is untrusted/expired/self-signed. Read
-        # it anyway — as an explicitly unverified second pass, so the outcome is
+        # it anyway - as an explicitly unverified second pass, so the outcome is
         # recorded rather than assumed.
         verify_error = str(exc.verify_message or exc) or exc.__class__.__name__
         try:
@@ -348,11 +348,11 @@ def collect_chain(
 
 @register
 class TlsCertChecker:
-    """``tls_cert`` — read the certificate an endpoint serves.
+    """``tls_cert`` - read the certificate an endpoint serves.
 
     ``up`` = a chain that verified against the trust store and is inside its
     validity window. ``degraded`` = the endpoint answered but the certificate is
-    untrusted, self-signed, expired, or not yet valid — reachable, impaired.
+    untrusted, self-signed, expired, or not yet valid - reachable, impaired.
     ``down`` = no usable TLS at all. ``unknown`` = policy/config error.
 
     ``secret_params`` is deliberately unused: reading a public certificate needs
@@ -392,7 +392,7 @@ class TlsCertChecker:
                 "down", None, _empty(target, int(port), server_name or target,
                                      ERR_CONNECT, "timeout"),
             )
-        except Exception as exc:  # noqa: BLE001 — unexpected → unknown, never down
+        except Exception as exc:  # noqa: BLE001 - unexpected → unknown, never down
             return CheckOutcome.unknown(f"tls_cert error: {exc}", host=target, port=int(port))
 
         if obs["validity"] == UNKNOWN:

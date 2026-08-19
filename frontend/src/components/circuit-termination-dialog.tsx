@@ -163,7 +163,7 @@ export function CircuitTerminationDialog({
             {isEdit ? `Edit ${side} side termination` : "Add termination"}
           </DialogTitle>
           <DialogDescription>
-            Terminate this circuit on a site or on a provider network — exactly
+            Terminate this circuit on a site or on a provider network - exactly
             one of the two.
           </DialogDescription>
         </DialogHeader>

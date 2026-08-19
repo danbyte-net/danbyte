@@ -237,7 +237,7 @@ function RackDevicesPane({ rackId }: { rackId: string }) {
           row.original.face ? (
             <span className="text-xs capitalize">{row.original.face}</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -261,7 +261,7 @@ function RackDevicesPane({ rackId }: { rackId: string }) {
   return <DataTable data={rows} columns={columns} flexColumn="name" embedded />
 }
 
-/** The rack's attributes, grouped into labelled tables — the detail that used
+/** The rack's attributes, grouped into labelled tables - the detail that used
  * to crowd the page header. Only name, status, and location stay up top. */
 function RackOverview({ rack: r }: { rack: Rack }) {
   const { humanIds } = useMe()
@@ -351,7 +351,7 @@ function RackOverview({ rack: r }: { rack: Rack }) {
   )
 }
 
-/** Paired elevations — front and rear side by side, one shared
+/** Paired elevations - front and rear side by side, one shared
  * display-mode toggle. Full-depth devices show hatched on the face they're
  * not mounted on. */
 // Zoom presets (px per mm). Names/Images default to a compact fit-on-screen
@@ -417,7 +417,7 @@ function RackFaces({ rack }: { rack: Rack }) {
             className="items-center gap-1 text-[11px] text-muted-foreground"
           />
         )}
-        {/* Zoom — shrink to fit the whole rack on screen, or zoom in for detail. */}
+        {/* Zoom - shrink to fit the whole rack on screen, or zoom in for detail. */}
         <div className="flex items-center gap-1">
           <Button
             variant="outline"
@@ -474,7 +474,7 @@ function RackFaces({ rack }: { rack: Rack }) {
   )
 }
 
-/** "demand / supply W" — demand prefers recorded allocated draw, falling
+/** "demand / supply W" - demand prefers recorded allocated draw, falling
  * back to the nameplate sum; red when demand exceeds the feeds' capacity. */
 function PowerStat({
   power,

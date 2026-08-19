@@ -170,7 +170,7 @@ function TenantDetailBody({ tenant: t }: { tenant: Tenant }) {
   )
 }
 
-/** The tenant's attributes, grouped into labelled tables — the counts that used
+/** The tenant's attributes, grouped into labelled tables - the counts that used
  * to crowd the page header. Only the name badge, slug, state and description
  * stay up top; everything else reads here. */
 function TenantOverview({ tenant: t }: { tenant: Tenant }) {
@@ -185,7 +185,7 @@ function TenantOverview({ tenant: t }: { tenant: Tenant }) {
       value: t.group ? (
         t.group.name
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
     },
     {

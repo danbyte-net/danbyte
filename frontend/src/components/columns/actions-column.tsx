@@ -5,7 +5,7 @@ import { RowActions } from "@/components/row-actions"
 
 // Canonical trailing "actions" column. Every table's row actions go through
 // here (and RowActions) so Edit/Delete affordances look and gate identically
-// everywhere — never hand-roll an actions cell or a per-row "…" dropdown.
+// everywhere - never hand-roll an actions cell or a per-row "…" dropdown.
 //
 //   actionsColumn<Prefix>({
 //     editTo: "/prefixes/$id/edit",
@@ -22,7 +22,7 @@ export interface ActionsColumnOpts<T> {
   onEdit?: (row: T) => void
   onDelete?: (row: T) => void
   deleteLabel?: string
-  /** Per-row RBAC gates — when they return false the button is not rendered. */
+  /** Per-row RBAC gates - when they return false the button is not rendered. */
   canEdit?: (row: T) => boolean
   canDelete?: (row: T) => boolean
   /** Page-specific buttons rendered before Edit (already icon-sized). */

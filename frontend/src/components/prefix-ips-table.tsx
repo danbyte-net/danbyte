@@ -28,7 +28,7 @@ import { RoleChip } from "@/components/role-chip"
 import { Button } from "@/components/ui/button"
 import { RowActions } from "@/components/row-actions"
 
-// Synthetic row union — real registered IPs interleaved with placeholders
+// Synthetic row union - real registered IPs interleaved with placeholders
 // for free addresses when "Show available" is on.
 export type IpRow =
   | { kind: "registered"; ip: IPAddress }
@@ -40,7 +40,7 @@ const EMPTY_MON: Record<string, BulkStatusEntry> = {}
 
 interface PrefixIpsTableProps {
   prefixId: string
-  // Active filter sets — table calls back when a tag/etc gets toggled inline.
+  // Active filter sets - table calls back when a tag/etc gets toggled inline.
   statusFilter: Set<string>
   roleFilter: Set<string>
   tagFilter: Set<string>
@@ -48,9 +48,9 @@ interface PrefixIpsTableProps {
   search: string
   showAvailable: boolean
   /** Show the DHCP scope pool's addresses as ghost rows even when they have no
-   * IP row yet — the pool laid out without creating anything. */
+   * IP row yet - the pool laid out without creating anything. */
   showDhcpPool: boolean
-  /** The prefix CIDR — needed to enumerate free host addresses. */
+  /** The prefix CIDR - needed to enumerate free host addresses. */
   cidr: string
   hasDescendants: boolean
   onEdit: (ip: IPAddress) => void
@@ -88,7 +88,7 @@ function PrefixIpsTableImpl({
 
   // DHCP scope pool ranges (from the ips endpoint) → shade free addresses that
   // fall inside a pool, and back the "Show DHCP pool" ghost rows. Exclusion
-  // ranges carve holes in the pool — those addresses are static space, not
+  // ranges carve holes in the pool - those addresses are static space, not
   // pool space. Registered rows carry their own `dhcp` state already.
   const dhcpSpans = useMemo(
     () =>
@@ -156,9 +156,9 @@ function PrefixIpsTableImpl({
 
     // Ghost rows for unregistered addresses. Only when no status/role/tag
     // filter is active (free addresses have none).
-    //   "Show available" — every free host in the prefix (≤ enumeration cap;
+    //   "Show available" - every free host in the prefix (≤ enumeration cap;
     //     null = too big, e.g. a /64).
-    //   "Show DHCP pool" — just the scope pool's free addresses, laid out
+    //   "Show DHCP pool" - just the scope pool's free addresses, laid out
     //     without creating anything. Pools are bounded ranges, so this works
     //     even in prefixes too large to enumerate fully.
     const freeRows: IpRow[] = []
@@ -233,7 +233,7 @@ function PrefixIpsTableImpl({
   )
   const monQuery = useQuery({
     queryKey: ["ip-mon-status", ipIds],
-    // POST — a page of UUIDs makes a URL longer than proxy request-line
+    // POST - a page of UUIDs makes a URL longer than proxy request-line
     // limits (gunicorn 400s at ~110 ids), which blanked the whole column.
     queryFn: () =>
       api<BulkStatusResponse>("/api/monitoring/status/", {
@@ -378,7 +378,7 @@ function PrefixIpsTableImpl({
   )
 }
 
-// Memoised at the export — parent re-renders (dialog open toggles etc)
+// Memoised at the export - parent re-renders (dialog open toggles etc)
 // won't reconcile this subtree unless props actually change identity.
 export const PrefixIpsTable = memo(PrefixIpsTableImpl)
 
@@ -443,7 +443,7 @@ function buildColumns({
         if (row.original.kind !== "registered") return null
         const ip = row.original.ip
         if (!ip.prefix) {
-          return <span className="text-[11px] text-muted-foreground/60">—</span>
+          return <span className="text-[11px] text-muted-foreground/60">-</span>
         }
         return (
           <Link
@@ -488,7 +488,7 @@ function buildColumns({
             ? row.original.ip.ip_address
             : row.original.address
         const rng = findRange(addr)
-        if (!rng) return <span className="text-muted-foreground/60">—</span>
+        if (!rng) return <span className="text-muted-foreground/60">-</span>
         return (
           <Link
             to="/ip-ranges/$id"

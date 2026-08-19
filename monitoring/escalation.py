@@ -1,15 +1,15 @@
-"""Periodic alert maintenance (A5) — renotify, escalate, flap-dampen.
+"""Periodic alert maintenance (A5) - renotify, escalate, flap-dampen.
 
 The check engine opens/resolves alerts *reactively* (per scan batch). This
 module runs *on a timer* (``danbyte-alert-maintenance``) over the alerts that
 are already firing and applies the time-based policies a per-batch pass can't:
 
-* **Flap dampening** — an alert whose condition has opened many times in a short
+* **Flap dampening** - an alert whose condition has opened many times in a short
   window is marked ``flapping`` and excluded from renotify until it settles, so
   a flapping host can't page on a loop.
-* **Escalation** — an alert left firing + unacknowledged past the threshold is
+* **Escalation** - an alert left firing + unacknowledged past the threshold is
   bumped to ``critical`` and re-notified once (``escalated`` event).
-* **Renotify** — a still-firing, unacknowledged, un-silenced, non-flapping alert
+* **Renotify** - a still-firing, unacknowledged, un-silenced, non-flapping alert
   whose last notification is older than the renotify interval gets a reminder.
 
 All three respect ack + silence: acknowledging or silencing an alert stops the
@@ -32,7 +32,7 @@ _BAD = {"down", "stale", "degraded"}
 
 def _flap_count(alert, since) -> int:
     """How many times this alert's condition has opened (transitioned *into* a
-    bad status) since ``since`` — the flap signal."""
+    bad status) since ``since`` - the flap signal."""
     return StateTransition.objects.filter(
         tenant_id=alert.tenant_id,
         target_ip_id=alert.target_ip_id,

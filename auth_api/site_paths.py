@@ -2,9 +2,9 @@
 
 A permission with a non-empty ``sites`` set narrows each object type's queryset
 by filtering ``<path>__in=<site ids>`` (for the *view* action, rows whose site
-is NULL are also visible — shared context — but never writable; see
+is NULL are also visible - shared context - but never writable; see
 ``rbac._perm_q``). Types absent from this map have no site and therefore IGNORE
-site scope (the grant applies tenant-wide for them) — e.g. VRFs, tags, catalog
+site scope (the grant applies tenant-wide for them) - e.g. VRFs, tags, catalog
 objects.
 
 Keep keys as the RBAC object-type slugs (model ``_meta.model_name``).
@@ -49,14 +49,14 @@ SITE_PATHS: dict[str, str] = {
     "floorplanwall": "floor_plan__location__site",
     # A site's own scope is itself.
     "site": "id",
-    # Per-site settings rows — a change grant scoped to sites=[X] makes its
+    # Per-site settings rows - a change grant scoped to sites=[X] makes its
     # holders "site admins" of X (see core.site_settings).
     "sitesettings": "site",
 }
 
 # Catalog types that can be "local to a site" (owning_site FK, NULL = global
 # to the tenant). Unlike SITE_PATHS these are only site-scoped while the
-# tenant's ENHANCED SITE SEPARATION flag is on — with it off, catalogs behave
+# tenant's ENHANCED SITE SEPARATION flag is on - with it off, catalogs behave
 # tenant-wide exactly as before. VLAN is absent on purpose: its `site` FK is
 # already its locality and lives in SITE_PATHS unconditionally.
 CATALOG_SITE_PATHS: dict[str, str] = {

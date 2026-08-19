@@ -1,6 +1,6 @@
 // Generic export for any TanStack-backed DataTable. Reads the table's visible
-// columns (in the user's current order) and its filtered/sorted rows — or just
-// the selected rows — and renders CSV, a self-contained shareable HTML page, or
+// columns (in the user's current order) and its filtered/sorted rows - or just
+// the selected rows - and renders CSV, a self-contained shareable HTML page, or
 // a print view (Save-as-PDF in the browser). Cells export off each column's
 // accessor, with a `meta.export` escape hatch for rich cells.
 import { type Table } from "@tanstack/react-table"
@@ -100,7 +100,7 @@ function htmlEscape(s: string): string {
     .replace(/"/g, "&quot;")
 }
 
-// Self-contained document — inline CSS only, so it can be saved and shared as a
+// Self-contained document - inline CSS only, so it can be saved and shared as a
 // single file and prints cleanly to PDF.
 export function toHtml(
   columns: ExportColumn[],
@@ -180,7 +180,7 @@ export function downloadBlob(
 
 // ─── XLSX (real Office Open XML, no dependency) ──────────────────────────────
 // An .xlsx is a ZIP of XML parts. We emit the minimal SpreadsheetML and pack it
-// with a tiny store-only (uncompressed) ZIP writer — Excel/Sheets/LibreOffice
+// with a tiny store-only (uncompressed) ZIP writer - Excel/Sheets/LibreOffice
 // all open stored zips. Everything is written as inline strings so values like
 // CIDRs/IPs aren't mangled into numbers.
 

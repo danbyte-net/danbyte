@@ -38,7 +38,7 @@ export const Route = createFileRoute("/monitoring-engines")({
   component: MonitoringEnginesPage,
 })
 
-// Sentinel for "no engine pinned" — the Select primitive disallows an empty
+// Sentinel for "no engine pinned" - the Select primitive disallows an empty
 // SelectItem value, so it maps back to null on change.
 const LOCAL_ENGINE = "__local__"
 
@@ -151,7 +151,7 @@ function MonitoringEnginesPage() {
   }, [engines, search])
 
   // Built inline (not memoized) so the row buttons always close over the live
-  // mutation handles — the table is small and has no facet rail to churn.
+  // mutation handles - the table is small and has no facet rail to churn.
   const columns: ColumnDef<MonitoringEngine>[] = [
     {
       id: "engine",
@@ -233,7 +233,7 @@ function MonitoringEnginesPage() {
       header: ({ column }) => <SortHeader column={column} label="Version" />,
       cell: ({ row }) => (
         <span className="font-mono text-xs text-muted-foreground">
-          {row.original.agent_version || "—"}
+          {row.original.agent_version || "-"}
         </span>
       ),
     },
@@ -291,7 +291,7 @@ function MonitoringEnginesPage() {
         <p className="max-w-3xl text-[13px] text-muted-foreground">
           Where checks run. <b>Local</b> is the core server's workers; an{" "}
           <b>Outpost</b> is a remote agent at a site with no path to the core.
-          Assign Outposts to a site/location on their form — the default engine
+          Assign Outposts to a site/location on their form - the default engine
           catches everything else.
         </p>
 
@@ -304,7 +304,7 @@ function MonitoringEnginesPage() {
           exportTitle="Monitoring engines"
         />
 
-        {/* Secondary config — two columns so it stops stacking. */}
+        {/* Secondary config - two columns so it stops stacking. */}
         <div className="grid items-start gap-4 lg:grid-cols-2">
           <div className="space-y-2 rounded-lg border border-border bg-card p-4">
             <div>
@@ -365,7 +365,7 @@ function MonitoringEnginesPage() {
                 type="password"
                 placeholder={
                   settings.data?.outpost_repo_token_set
-                    ? "token set — leave blank"
+                    ? "token set - leave blank"
                     : "token (private repo)"
                 }
                 value={repoToken}
@@ -411,7 +411,7 @@ function MonitoringEnginesPage() {
   )
 }
 
-/** "Add Outpost" from the page header — name + how it connects. */
+/** "Add Outpost" from the page header - name + how it connects. */
 function AddOutpostDialog({
   open,
   onOpenChange,
@@ -508,7 +508,7 @@ function EnrollDialog({
       <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <RotateCcw className="h-4 w-4" /> {engine?.name} — install
+            <RotateCcw className="h-4 w-4" /> {engine?.name} - install
           </DialogTitle>
           <DialogDescription>
             Shown <b>once</b>. Install the Outpost on a host at the site, then

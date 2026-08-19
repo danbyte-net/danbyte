@@ -275,7 +275,7 @@ function Body({ iface: i }: { iface: Interface }) {
   )
 }
 
-/** The interface's attributes, grouped into labelled tables — the detail that
+/** The interface's attributes, grouped into labelled tables - the detail that
  * used to crowd the page header. Only headline data (name, state, device,
  * type) stays up top; everything else reads here. */
 function InterfaceOverview({ iface: i }: { iface: Interface }) {
@@ -494,7 +494,7 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
   )
 }
 
-// Config-drift callout on the interface detail page — lists exactly what SNMP
+// Config-drift callout on the interface detail page - lists exactly what SNMP
 // observed that differs from the source of truth, with a link into the device's
 // Drift panel to review/accept. Renders nothing when there's no drift.
 function InterfaceDriftAlert({
@@ -527,7 +527,7 @@ function InterfaceDriftAlert({
         <Link to="/devices/$id" params={{ id: deviceId }} className="link">
           Drift panel
         </Link>{" "}
-        — nothing changes here until you do.
+        - nothing changes here until you do.
       </p>
       <ul className="space-y-1.5 text-[13px]">
         {items.map((it) => (

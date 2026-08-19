@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { classifyRenderer } from "./render-quality"
 
-describe("classifyRenderer — GPU string → effects budget", () => {
+describe("classifyRenderer - GPU string → effects budget", () => {
   it("software rasterisers land on Low", () => {
     expect(classifyRenderer("Google SwiftShader", 1)).toBe("low")
     expect(classifyRenderer("llvmpipe (LLVM 15.0.7, 256 bits)", 2)).toBe("low")

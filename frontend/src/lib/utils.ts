@@ -5,7 +5,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// A stored colour may be a bare hex (`2f6f9f`) — seeds, imports and older rows
+// A stored colour may be a bare hex (`2f6f9f`) - seeds, imports and older rows
 // don't all carry the `#`. `backgroundColor: "2f6f9f"` is invalid CSS and paints
 // nothing, so normalise before using a colour as a style value. Non-hex values
 // (CSS names, `var(--x)`, already-`#`) pass through untouched.

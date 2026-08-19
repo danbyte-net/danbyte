@@ -2,8 +2,8 @@
 
 Two surfaces:
 
-* :class:`UserSettingsForm` — every user. Writes to ``UserProfile.prefs``.
-* :class:`AdminTenantSettingsForm` — admin-only. Writes to ``Tenant.prefs``
+* :class:`UserSettingsForm` - every user. Writes to ``UserProfile.prefs``.
+* :class:`AdminTenantSettingsForm` - admin-only. Writes to ``Tenant.prefs``
   + the tenant model's identity fields (name, description, color).
 
 Both read the canonical registry in :mod:`auth_api.user_prefs` for choices
@@ -33,8 +33,8 @@ THEME_CHOICES = [
 ]
 
 DENSITY_CHOICES = [
-    ("comfortable", "Comfortable — taller rows, more whitespace"),
-    ("compact",     "Compact — denser"),
+    ("comfortable", "Comfortable - taller rows, more whitespace"),
+    ("compact",     "Compact - denser"),
 ]
 
 
@@ -57,7 +57,7 @@ class UserSettingsForm(forms.Form):
         label="Striped rows by default",
         required=False,
         widget=forms.CheckboxInput(attrs={"class": "ck"}),
-        help_text="Alternating row backgrounds — quicker to track values across a wide table.",
+        help_text="Alternating row backgrounds - quicker to track values across a wide table.",
     )
 
     # ─── Visual ─────────────────────────────────────────────────────────
@@ -83,7 +83,7 @@ class UserSettingsForm(forms.Form):
         required=False,
         widget=SearchableSelectWidget(
             placeholder="Search tenants…",
-            empty_label="— first available —",
+            empty_label="- first available -",
         ),
         help_text="Pre-select this tenant when you sign in. Empty = your first allowed tenant.",
     )
@@ -120,7 +120,7 @@ class UserSettingsForm(forms.Form):
 
 
 class AdminTenantSettingsForm(forms.Form):
-    """Admin-only — sets defaults that apply to every user in the tenant
+    """Admin-only - sets defaults that apply to every user in the tenant
     who hasn't set their own override. Also edits the tenant's identity
     fields (name, description, color) in the same form so admins don't
     have to bounce between two pages.
@@ -152,7 +152,7 @@ class AdminTenantSettingsForm(forms.Form):
         required=False,
         widget=SearchableSelectWidget(
             placeholder="Search statuses…",
-            empty_label="— catalog default (is_default) —",
+            empty_label="- catalog default (is_default) -",
         ),
         help_text="Auto-filled on new IPs. Empty = whichever Status is flagged is_default in the catalog.",
     )
@@ -162,7 +162,7 @@ class AdminTenantSettingsForm(forms.Form):
         required=False,
         widget=SearchableSelectWidget(
             placeholder="Search roles…",
-            empty_label="— no role —",
+            empty_label="- no role -",
         ),
         help_text="Auto-filled on new IPs.",
     )
@@ -172,7 +172,7 @@ class AdminTenantSettingsForm(forms.Form):
         required=False,
         widget=SearchableSelectWidget(
             placeholder="Search roles…",
-            empty_label="— use catalog is_gateway flag —",
+            empty_label="- use catalog is_gateway flag -",
         ),
         help_text="Role used when auto-spawning a prefix's gateway IP.",
     )

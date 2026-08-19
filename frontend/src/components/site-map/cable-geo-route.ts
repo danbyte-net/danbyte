@@ -9,7 +9,7 @@ import {
 } from "@/components/site-map/geo"
 import { bezierPoints } from "@/components/site-map/connections-layer"
 
-// Every cable draws on the map — whether or not it's on a route. A cable on
+// Every cable draws on the map - whether or not it's on a route. A cable on
 // a route follows that geometry (Dijkstra through the route graph, run in a
 // local meter plane because raw degrees would make the snap ~83 km and skew
 // distances by cos(latitude)); a cable without a route draws as a gentle

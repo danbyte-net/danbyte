@@ -36,10 +36,10 @@ const LENGTH_UNITS = [
 
 export interface CableFormProps {
   cable?: Cable
-  /** Pre-seeded A-side terminations (create only) — e.g. "Connect cable"
+  /** Pre-seeded A-side terminations (create only) - e.g. "Connect cable"
    * from an interface arrives with that port already on the A end. */
   initialA?: TerminationInput[]
-  /** Pre-seeded B-side terminations (create only) — the 3D room's
+  /** Pre-seeded B-side terminations (create only) - the 3D room's
    * pick-both-ends flow arrives with both ports already chosen. */
   initialB?: TerminationInput[]
   onSaved: (c: Cable) => void
@@ -113,7 +113,7 @@ export function CableForm({
   })
 
   // A new cable defaults to the "Connected" status (or the first available),
-  // so freshly-drawn cables aren't left statusless — a null status can't tint
+  // so freshly-drawn cables aren't left statusless - a null status can't tint
   // the row or show a badge. Only seeds on create, never overrides an edit or
   // a status the user already picked.
   useEffect(() => {
@@ -150,7 +150,7 @@ export function CableForm({
       qc.invalidateQueries({ queryKey: ["cables"] })
       qc.invalidateQueries({ queryKey: ["cable", saved.id] })
       qc.invalidateQueries({ queryKey: ["interfaces"] })
-      // The per-device faceplate/port caches — broad on purpose: a cable flips
+      // The per-device faceplate/port caches - broad on purpose: a cable flips
       // `connected` on BOTH ends' markers (2D photo faceplate and 3D room),
       // and this form doesn't know which devices those ports live on.
       qc.invalidateQueries({ queryKey: ["device-face-ports"] })
@@ -181,7 +181,7 @@ export function CableForm({
     >
       <CableTerminationSide
         label="A side"
-        hint="One or more ports — breakout uses 1 here, many on B"
+        hint="One or more ports - breakout uses 1 here, many on B"
         error={fieldErrors.a}
         value={a}
         onChange={setA}

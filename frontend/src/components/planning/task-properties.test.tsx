@@ -9,7 +9,7 @@ import { PriorityPicker, PropertyTable, StatusPicker } from "./task-properties"
  * The task's property table makes each cell its own editor, and a cell is a
  * `DropdownMenuTrigger asChild` wrapping a shared trigger component. Radix
  * clones that child to inject the onClick, ref and aria state that make it a
- * trigger — so a wrapper that names only the props it cares about silently
+ * trigger - so a wrapper that names only the props it cares about silently
  * swallows them, and the cell renders perfectly while doing nothing at all.
  *
  * That shipped once. Typecheck cannot see it (the swallowed props are extra,

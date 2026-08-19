@@ -60,7 +60,7 @@ export function DnsPanel({ conn }: { conn: WindowsConnection }) {
     onSuccess: (_, { on }) => {
       toast.success(
         on
-          ? "Zone reconciliation on — records compare on the next sync"
+          ? "Zone reconciliation on - records compare on the next sync"
           : "Zone reconciliation off"
       )
       invalidate()
@@ -124,7 +124,7 @@ export function DnsPanel({ conn }: { conn: WindowsConnection }) {
         header: "Records",
         cell: ({ row }) => (
           <span className="num">
-            {row.original.sync ? row.original.record_count : "—"}
+            {row.original.sync ? row.original.record_count : "-"}
           </span>
         ),
       },
@@ -138,7 +138,7 @@ export function DnsPanel({ conn }: { conn: WindowsConnection }) {
               {row.original.drift_count}
             </Badge>
           ) : (
-            <span className="text-xs text-muted-foreground">—</span>
+            <span className="text-xs text-muted-foreground">-</span>
           ),
       },
       {
@@ -185,7 +185,7 @@ export function DnsPanel({ conn }: { conn: WindowsConnection }) {
         enableSorting: false,
         cell: ({ row }) => (
           <span className="font-mono text-[11px]">
-            {row.original.danbyte_name || "—"}{" "}
+            {row.original.danbyte_name || "-"}{" "}
             <span className="text-muted-foreground">vs</span>{" "}
             {row.original.server_name || "(no record)"}
           </span>
@@ -250,7 +250,7 @@ export function DnsPanel({ conn }: { conn: WindowsConnection }) {
         <h3 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
           Zones
           <InfoTip>
-            Reconciliation compares A/AAAA/PTR records against IP DNS names —
+            Reconciliation compares A/AAAA/PTR records against IP DNS names -
             opt in per zone. Open a zone for its records and IP links.
           </InfoTip>
         </h3>

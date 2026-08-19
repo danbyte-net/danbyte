@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { TimeCell } from "@/components/cells/time-ago"
 import { dash } from "@/components/cells/dash"
 
-// The one source of truth for "a table of certificate bindings" — the
+// The one source of truth for "a table of certificate bindings" - the
 // endpoints that served a certificate. Used by the Bindings tab on a
 // certificate's detail page, the tab that answers "what breaks when this
 // expires". Per-endpoint facts (chain depth, chain verified) live on the
@@ -119,7 +119,7 @@ export function buildCertificateBindingColumns(
         b.chain_verified === null ? "" : b.chain_verified ? "yes" : "no",
       header: "Chain",
       // A false verify is meaningful (self-signed / incomplete chain from this
-      // endpoint) — surfaced honestly, not hidden. null = not known.
+      // endpoint) - surfaced honestly, not hidden. null = not known.
       cell: ({ row }) => {
         const v = row.original.chain_verified
         if (v === null)

@@ -20,7 +20,7 @@ interface Resolved {
  * Short-link resolver for label QR codes: `/l/<tenant>/<type>/<numid>` looks up
  * the object by its per-tenant human number and opens the real detail page.
  * Encoding this instead of the full UUID keeps a printed QR small, and the
- * tenant segment makes it unambiguous — the resolver switches the session to
+ * tenant segment makes it unambiguous - the resolver switches the session to
  * that tenant (view-scoped, so it only switches when the user may see the
  * object). When the tenant actually changed we do a full-page navigation so the
  * SPA reloads its caches under the new tenant; otherwise an in-app redirect.
@@ -52,7 +52,7 @@ function ShortLinkRedirect() {
         </p>
       )
     if (q.data.switched) {
-      // Active tenant changed — hard-navigate so the SPA clears tenant-scoped
+      // Active tenant changed - hard-navigate so the SPA clears tenant-scoped
       // caches and loads the object in the right context.
       window.location.assign(route.replace("$id", q.data.id))
       return (

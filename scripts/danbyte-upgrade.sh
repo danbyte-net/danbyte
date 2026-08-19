@@ -22,7 +22,7 @@ ERR=""
 cd "$CODE_DIR" 2>/dev/null || { echo "no code dir $CODE_DIR" >&2; exit 1; }
 FROM="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 
-# uv isn't always on a service's PATH — find it. Fall back to pip if present.
+# uv isn't always on a service's PATH - find it. Fall back to pip if present.
 UV=""
 for u in "$(command -v uv 2>/dev/null)" "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv" "$CODE_DIR/.venv/bin/uv"; do
   [ -n "$u" ] && [ -x "$u" ] && { UV="$u"; break; }
@@ -43,7 +43,7 @@ status() {  # <state> <step> <pct>
   mv -f "$STATUS_FILE.tmp" "$STATUS_FILE"
 }
 restart_services() { systemctl --user restart $SERVICES 2>/dev/null; }
-# Only roll back code once we've actually checked out — a preflight failure must
+# Only roll back code once we've actually checked out - a preflight failure must
 # not touch the tree (that orphaned dev commits when run on a working checkout).
 CHECKED_OUT=""
 rollback() { [ -n "$CHECKED_OUT" ] && git checkout -q "$FROM" 2>/dev/null; restart_services; }
@@ -57,17 +57,17 @@ fail() {
 }
 
 status running preflight 5
-# A bundle install has no .git — the git upgrader can't run here. The in-app
+# A bundle install has no .git - the git upgrader can't run here. The in-app
 # updater must route these to the offline bundle upload path instead.
 [ -d "$CODE_DIR/.git" ] \
-  || fail preflight "this is a bundle install (no .git) — upgrade via the offline bundle upload, not the git updater"
-# Refuse to upgrade a **development working branch** — the in-app upgrade is for
+  || fail preflight "this is a bundle install (no .git) - upgrade via the offline bundle upload, not the git updater"
+# Refuse to upgrade a **development working branch** - the in-app upgrade is for
 # main/tag deployments. Running it on a dev checkout does destructive git ops on
 # a tree someone may be editing. Detached HEAD (a tag) and main are fine.
 BR="$(git symbolic-ref --short -q HEAD || echo '(detached)')"
 case "$BR" in
   main|master|'(detached)') : ;;
-  *) fail preflight "refusing to upgrade the working branch '$BR' — deploy from main or a tag, not a dev checkout" ;;
+  *) fail preflight "refusing to upgrade the working branch '$BR' - deploy from main or a tag, not a dev checkout" ;;
 esac
 git fetch --tags -q origin 2>/dev/null || fail preflight "git fetch failed"
 git rev-parse -q --verify "refs/tags/$VERSION^{commit}" >/dev/null 2>&1 \
@@ -96,7 +96,7 @@ PYEOF
   DUMP_TMP="$BACKUP_DIR/.pre-$VERSION.sql.tmp"
   DUMP_ERR="$BACKUP_DIR/.pre-$VERSION.err"
   # -w: never prompt for a password. Detached (no tty), a prompt would block
-  # forever — the classic "stuck on Backup…". `timeout` bounds a wedged
+  # forever - the classic "stuck on Backup…". `timeout` bounds a wedged
   # connection too. Capture stderr so the real reason reaches the UI.
   [ -n "${PGPASSWORD:-}" ] || PG_NOPW="-w"
   if command -v timeout >/dev/null 2>&1; then DUMP_TIMEOUT="timeout 900"; else DUMP_TIMEOUT=""; fi
@@ -109,10 +109,10 @@ PYEOF
     reason="$(tail -c 300 "$DUMP_ERR" 2>/dev/null | tr '\n' ' ')"
     rm -f "$DUMP_TMP" "$DUMP_ERR"
     [ -n "$reason" ] || reason="pg_dump errored or produced an empty dump (timed out after 900s, or auth/connection failed)"
-    fail backup "db backup failed — aborting before any migration: $reason"
+    fail backup "db backup failed - aborting before any migration: $reason"
   fi
 else
-  echo "upgrade: pg_dump not found — skipping db backup" >&2
+  echo "upgrade: pg_dump not found - skipping db backup" >&2
 fi
 
 status running checkout 30
@@ -138,7 +138,7 @@ status running frontend 75
 
 status running restart 90
 # Refresh unit symlinks so services/timers ADDED in this release (e.g. new
-# background timers) get linked + enabled — otherwise an in-app upgrade silently
+# background timers) get linked + enabled - otherwise an in-app upgrade silently
 # never runs them. Best-effort: never fail the upgrade over it.
 if command -v make >/dev/null 2>&1; then
   make -C "$CODE_DIR" install-services >/dev/null 2>&1 || true
@@ -151,7 +151,7 @@ i=0
 while [ "$i" -lt 12 ]; do
   i=$((i + 1)); sleep 3
   # Require the real readiness endpoint (200 only when Django is up AND the DB
-  # answers) — a 2xx/3xx from "/" would also pass on the nginx "updating" page
+  # answers) - a 2xx/3xx from "/" would also pass on the nginx "updating" page
   # or a login redirect while the app itself is broken.
   for probe in "https://127.0.0.1/api/health/" "http://127.0.0.1:8000/api/health/"; do
     c=$(curl -ks -o /dev/null -w '%{http_code}' "$probe" 2>/dev/null || echo 000)
@@ -161,6 +161,6 @@ while [ "$i" -lt 12 ]; do
 done
 [ -n "$ok" ] || fail healthcheck "app did not come back healthy after restart (/api/health/ never returned 200)"
 
-rm -f "$MAINT"   # healthy again — drop the "updating" page
+rm -f "$MAINT"   # healthy again - drop the "updating" page
 status done done 100
 echo "upgrade: now on $VERSION"

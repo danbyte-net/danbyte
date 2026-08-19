@@ -1,5 +1,5 @@
 [Unit]
-Description=Danbyte — auto-upgrade to the latest release (if enabled + in window)
+Description=Danbyte - auto-upgrade to the latest release (if enabled + in window)
 After=network-online.target
 Wants=network-online.target
 

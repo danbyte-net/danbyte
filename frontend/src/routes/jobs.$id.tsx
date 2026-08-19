@@ -120,7 +120,7 @@ function Body({ job }: { job: JobDetail }) {
         <div className="mx-auto max-w-4xl space-y-4">
           {job.corrupt && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[13px] text-amber-800 dark:text-amber-300">
-              This job's payload can't be deserialized — the code or module that
+              This job's payload can't be deserialized - the code or module that
               enqueued it no longer exists. Timestamps are still accurate; the
               function name and arguments are unavailable. You can safely cancel
               it to clear it from the queue.
@@ -134,7 +134,7 @@ function Body({ job }: { job: JobDetail }) {
               </Field>
               <Field label="Function">
                 <span className="font-mono text-[13px]">
-                  {job.func_name || "—"}
+                  {job.func_name || "-"}
                 </span>
               </Field>
               <Field label="Queue">
@@ -157,7 +157,7 @@ function Body({ job }: { job: JobDetail }) {
               </Field>
               <Field label="Timeout">
                 <span className="font-mono tabular-nums">
-                  {job.timeout ?? "—"}
+                  {job.timeout ?? "-"}
                 </span>
               </Field>
               {job.description && (
@@ -249,7 +249,7 @@ function Block({
 }
 
 function fmtTs(iso: string | null) {
-  if (!iso) return <span className="text-muted-foreground">—</span>
+  if (!iso) return <span className="text-muted-foreground">-</span>
   return (
     <span className="font-mono text-[12px]" title={iso}>
       {new Date(iso).toLocaleString()}

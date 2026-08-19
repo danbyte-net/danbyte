@@ -1,4 +1,4 @@
-"""API-token authentication — 'Authorization: Token <key>' for non-interactive
+"""API-token authentication - 'Authorization: Token <key>' for non-interactive
 callers. The token is scoped to a tenant (see ApiToken); _get_active_tenant
 reads it off request.auth."""
 from __future__ import annotations

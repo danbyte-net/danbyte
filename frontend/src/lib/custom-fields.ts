@@ -14,7 +14,7 @@ export interface ReferenceModelMeta {
 }
 
 export interface CustomizationMeta {
-  /** What a field can attach to — auto-derived from CustomFieldsMixin. */
+  /** What a field can attach to - auto-derived from CustomFieldsMixin. */
   models: { value: string; label: string }[]
   /** What an object-reference field can point at. */
   reference_models: ReferenceModelMeta[]
@@ -29,7 +29,7 @@ export function useCustomizationMeta() {
 }
 
 // A render section: ungrouped fields under a default "Custom fields" heading,
-// then each CustomFieldGroup by weight. Backward-compatible — with no groups
+// then each CustomFieldGroup by weight. Backward-compatible - with no groups
 // defined, every field lands in the single ungrouped section (one heading, as
 // before). The API already orders fields within a group by (weight, label).
 export const UNGROUPED_KEY = "__ungrouped__"
@@ -83,7 +83,7 @@ export function groupCustomFields(defs: CustomField[]): CustomFieldSection[] {
   return sections
 }
 
-// Field data types — mirrors customization/models.py CUSTOM_FIELD_TYPES.
+// Field data types - mirrors customization/models.py CUSTOM_FIELD_TYPES.
 export const CUSTOM_FIELD_TYPES: { value: CustomFieldType; label: string }[] = [
   { value: "text", label: "Text" },
   { value: "textarea", label: "Text (multi-line)" },
@@ -100,7 +100,7 @@ export const CUSTOM_FIELD_TYPES: { value: CustomFieldType; label: string }[] = [
 // Types that require a list of choices.
 export const CHOICE_TYPES: CustomFieldType[] = ["select", "multiselect"]
 
-// Domain models a custom field can attach to — mirrors
+// Domain models a custom field can attach to - mirrors
 // customization/models.py CUSTOMIZABLE_MODELS.
 export const CUSTOMIZABLE_MODELS: { value: string; label: string }[] = [
   { value: "prefix", label: "Prefixes" },

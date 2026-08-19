@@ -1,4 +1,4 @@
-"""seed_homelab — opt-in dev data modelled on a real homelab.
+"""seed_homelab - opt-in dev data modelled on a real homelab.
 
 Populates one tenant with a small but complete slice of infrastructure so every
 page (IPAM, devices, racks, clusters/VMs, prefixes, VLANs) has something real to
@@ -11,7 +11,7 @@ step-CA, Terraform, Ansible, the dev box), across three networks:
     192.168.0.0/24  office / management LAN
 
 Opt-in and re-runnable; never touched by bootstrap. `--wipe` tears the HomeLab
-org down first. This is illustrative dev data — keep it out of production.
+org down first. This is illustrative dev data - keep it out of production.
 
     manage.py seed_homelab            # into the first (bootstrapped) tenant
     manage.py seed_homelab --wipe
@@ -71,10 +71,10 @@ TAGS = [
 
 # (cidr, status, vlan, site_key, description, tags)
 PREFIXES = [
-    ("10.0.0.0/24", "active", 10, "homelab", "Core infrastructure LAN — hypervisors, service VMs", ["infra", "prod"]),
+    ("10.0.0.0/24", "active", 10, "homelab", "Core infrastructure LAN - hypervisors, service VMs", ["infra", "prod"]),
     ("10.10.0.0/16", "container", None, "homelab", "Workload / overlay aggregate", ["infra"]),
     ("10.10.10.0/24", "active", 30, "homelab", "Container / Kubernetes workloads", ["prod"]),
-    ("192.168.0.0/24", "active", 100, "office", "Office / management LAN — gateway, wifi, dev site", ["mgmt", "office"]),
+    ("192.168.0.0/24", "active", 100, "office", "Office / management LAN - gateway, wifi, dev site", ["mgmt", "office"]),
 ]
 
 # ── physical gear in the rack ───────────────────────────────────────────────
@@ -144,7 +144,7 @@ class Command(BaseCommand):
         self._cluster_and_vms(sites["homelab"])
 
         self.stdout.write(self.style.SUCCESS(
-            f"HomeLab ready — {Device.objects.filter(tenant=self.t).count()} devices, "
+            f"HomeLab ready - {Device.objects.filter(tenant=self.t).count()} devices, "
             f"{VirtualMachine.objects.filter(tenant=self.t).count()} VMs, "
             f"{IPAddress.objects.filter(tenant=self.t).count()} IPs. Visit /devices/"
         ))

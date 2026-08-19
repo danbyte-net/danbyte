@@ -73,7 +73,7 @@ def record_run(name: str, label: str | None = None):
             name=name, label=label or name, status=ScheduledRun.RUNNING,
             started_at=timezone.now(),
         )
-    except Exception:  # noqa: BLE001 — logging must never break the task
+    except Exception:  # noqa: BLE001 - logging must never break the task
         logger.exception("scheduled-run: could not open a run row for %s", name)
 
     handle = _RunHandle(run) if run is not None else _NULL_HANDLE

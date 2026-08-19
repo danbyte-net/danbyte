@@ -79,7 +79,7 @@ describe("useUrlSubTab", () => {
     ).toBe("interfaces")
   })
 
-  it("is independent of ?tab= — each setter keeps the other's param", () => {
+  it("is independent of ?tab= - each setter keeps the other's param", () => {
     search = { tab: "components" }
     renderHook(() => useUrlSubTab("interfaces", SUBS)).result.current[1](
       "power"

@@ -27,11 +27,11 @@ type Step = "credentials" | "code"
 
 function errText(err: unknown): string {
   if (err instanceof ApiError) {
-    // A CSRF rejection comes back as a 403 HTML page (no JSON body) — most
+    // A CSRF rejection comes back as a 403 HTML page (no JSON body) - most
     // often a stale/missing token. Tell the user something actionable rather
     // than dumping markup.
     if (err.status === 403) {
-      return "Your session needs a refresh — reload the page and try again."
+      return "Your session needs a refresh - reload the page and try again."
     }
     if (err.body && typeof err.body === "object") {
       const body = err.body as Record<string, unknown>
@@ -57,12 +57,12 @@ function LoginPage() {
   const nav = useNavigate()
   const qc = useQueryClient()
   const { redirect, sso_error } = Route.useSearch()
-  // `/api/me/` is what plants the CSRF cookie (it's @ensure_csrf_cookie) — wait
+  // `/api/me/` is what plants the CSRF cookie (it's @ensure_csrf_cookie) - wait
   // for it before allowing a submit so the login POST always carries a token.
   const { me, isLoading: meLoading } = useMe()
 
   // Enabled SSO providers for the "Sign in with…" buttons. Public endpoint, but
-  // skip it for an already-authenticated visitor — they're bounced immediately
+  // skip it for an already-authenticated visitor - they're bounced immediately
   // by the redirect effect below, so the fetch would be wasted.
   const providersQ = useQuery({
     queryKey: ["sso-providers"],
@@ -221,7 +221,7 @@ function LoginPage() {
                         variant="outline"
                         className="w-full"
                         onClick={() => {
-                          // Leaves the SPA — the backend 302-redirects to the
+                          // Leaves the SPA - the backend 302-redirects to the
                           // IdP, so this must be a real navigation, not a Link.
                           window.location.href = `/api/auth/sso/${p.slug}/login/`
                         }}

@@ -5,7 +5,7 @@ import { FaceLabel } from "./text-sprite"
 
 /**
  * Planning massing for tiles that aren't racks: a translucent box with the
- * tile's colour and name. This is what "build in advance" looks like in 3D —
+ * tile's colour and name. This is what "build in advance" looks like in 3D -
  * a typed tile needs NO linked object to hold its ground in the room, so a
  * future rack row reads as a row of ghosts instead of empty floor. Linked
  * racks render their real cabinets instead; zones stay flat floor patches.

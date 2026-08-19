@@ -12,7 +12,7 @@ import { selectionColumn } from "@/components/data-table"
 import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
-// The one source of truth for "a table of certificate assignments" — the
+// The one source of truth for "a table of certificate assignments" - the
 // generic (certificate → object) intent rows. Two surfaces read the same list
 // from opposite ends: a certificate's "Assignments" tab (omit "certificate")
 // and an object's "Certificates" section (omit "object"/"type"). Both build here

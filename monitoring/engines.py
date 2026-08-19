@@ -1,6 +1,6 @@
 """Resolve *which* monitoring engine runs a check for a given target.
 
-Resolution order, most-specific first — each level inherits from the next when
+Resolution order, most-specific first - each level inherits from the next when
 it has no binding of its own:
 
     1. the target IP's device **Location**, then walking up its **parent
@@ -10,7 +10,7 @@ it has no binding of its own:
     4. the tenant's **default engine** (``MonitoringSettings.default_engine``)
     5. the tenant's built-in **local** engine (always exists)
 
-Bindings live on the monitoring side (``MonitoringEngineBinding`` — scope +
+Bindings live on the monitoring side (``MonitoringEngineBinding`` - scope +
 object_id) so ``api`` never depends on ``monitoring``.
 """
 from __future__ import annotations
@@ -36,7 +36,7 @@ def _binding_engine(tenant, scope, object_id):
 
 
 def _location_chain_engine(tenant, location_id):
-    """Walk the location and its ancestors, returning the first bound engine —
+    """Walk the location and its ancestors, returning the first bound engine -
     so a child location set to inherit falls through to its parent."""
     if not location_id:
         return None
@@ -62,7 +62,7 @@ def _location_chain_engine(tenant, location_id):
 
 
 def engine_for_ip(ip) -> MonitoringEngine:
-    """The engine responsible for an ``IPAddress`` (never None — falls back to
+    """The engine responsible for an ``IPAddress`` (never None - falls back to
     the tenant's local engine)."""
     tenant = ip.tenant
     dev = getattr(ip, "assigned_device", None)
@@ -87,7 +87,7 @@ def engine_for_ip(ip) -> MonitoringEngine:
 
 
 def engine_for_prefix(prefix) -> MonitoringEngine:
-    """The engine responsible for a **prefix** (never None) — resolved via its
+    """The engine responsible for a **prefix** (never None) - resolved via its
     prefix binding, then site binding, then the tenant default, then local. Used
     to decide which Outpost sweeps a subnet for discovery."""
     tenant = prefix.tenant
@@ -107,7 +107,7 @@ def engine_for_prefix(prefix) -> MonitoringEngine:
 
 def engine_for_device(device) -> MonitoringEngine:
     """The engine responsible for a **device** (never None). Same resolution as
-    ``engine_for_ip`` but keyed off the device's own location/site — used to
+    ``engine_for_ip`` but keyed off the device's own location/site - used to
     decide which Outpost runs a device's SNMP discovery."""
     tenant = device.tenant
     engine = _location_chain_engine(tenant, device.location_id)
@@ -126,7 +126,7 @@ def engine_for_device(device) -> MonitoringEngine:
 
 def _location_subtree_ids(tenant, location_ids):
     """All location ids at or under ``location_ids`` (a child inherits a binding
-    set on a parent). Adjacency-list BFS — one query per depth, cheap for the
+    set on a parent). Adjacency-list BFS - one query per depth, cheap for the
     few levels a location tree has."""
     from api.models import Location
 
@@ -146,7 +146,7 @@ def _location_subtree_ids(tenant, location_ids):
 
 
 def devices_for_engine(engine):
-    """The tenant's devices whose resolved engine is ``engine`` — the candidates
+    """The tenant's devices whose resolved engine is ``engine`` - the candidates
     an Outpost should SNMP-poll. Narrowed to the engine's bound sites +
     location-subtrees, then each confirmed with ``engine_for_device`` (a nested,
     more-specific binding could steal a device back to another engine)."""
@@ -185,7 +185,7 @@ def set_binding(tenant, scope, object_id, engine):
 
 
 def binding_engine_id(tenant, scope, object_id):
-    """The engine id bound to a site/location, or None — for the form to prefill."""
+    """The engine id bound to a site/location, or None - for the form to prefill."""
     b = MonitoringEngineBinding.objects.filter(
         tenant=tenant, scope=scope, object_id=object_id
     ).first()

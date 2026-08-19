@@ -1,4 +1,4 @@
-"""Per-VM render endpoint — the Terraform-for-VMs pull surface."""
+"""Per-VM render endpoint - the Terraform-for-VMs pull surface."""
 from __future__ import annotations
 
 from django.contrib.auth.models import User

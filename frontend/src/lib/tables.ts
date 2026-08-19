@@ -1,7 +1,7 @@
 // Registry of list tables that participate in saved column preferences.
 //
 // The `id` is the `tableId` passed to <DataTable> AND the `<table_id>` slug
-// in /auth/prefs/columns/<table_id>/ — keep them in sync. Adding a table here
+// in /auth/prefs/columns/<table_id>/ - keep them in sync. Adding a table here
 // makes it show up in User → Preferences → Tables and Admin → Table defaults;
 // wiring `tableId="<id>"` on the matching <DataTable> is what actually turns
 // persistence on for that page.

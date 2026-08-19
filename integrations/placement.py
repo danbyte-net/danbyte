@@ -1,6 +1,6 @@
 """Decide which Site a synced host or VM belongs to.
 
-The hypervisor already knows where things sit — a datacenter, some folders, a
+The hypervisor already knows where things sit - a datacenter, some folders, a
 cluster, a host. This turns that **placement path** into a Danbyte Site, using
 the operator's rules first and the hierarchy as the last rule.
 
@@ -35,7 +35,7 @@ _BUILTIN_FOLDERS = {"vm", "host", "network", "datastore", "Datacenters"}
 
 @dataclass(frozen=True)
 class Placement:
-    """Where one object should sit, and why — ``reason`` is operator-facing."""
+    """Where one object should sit, and why - ``reason`` is operator-facing."""
 
     site: object = None
     location: object = None
@@ -60,7 +60,7 @@ class PlacementPath:
         """Candidate strings for one scope, **innermost first**.
 
         Folders yield both the bare name and the full path, so a rule can be
-        written either way — and they come innermost-first so the closest
+        written either way - and they come innermost-first so the closest
         matching ancestor wins.
         """
         if scope == "folder":
@@ -92,7 +92,7 @@ def resolve(path: PlacementPath, rules, *, site_by_name=None) -> Placement:
     """Resolve ``path`` to a Site.
 
     ``rules`` is this source's :class:`VirtPlacementRule` rows (already
-    fetched — this runs per object, so it must not query). ``site_by_name`` is
+    fetched - this runs per object, so it must not query). ``site_by_name`` is
     an optional ``{lowercased name: Site}`` map used for the hierarchy
     fallback; omit it to disable the fallback entirely.
     """
@@ -101,7 +101,7 @@ def resolve(path: PlacementPath, rules, *, site_by_name=None) -> Placement:
         try:
             rank = SCOPE_ORDER.index(rule.scope)
         except ValueError:
-            continue  # unknown scope — ignore rather than guess
+            continue  # unknown scope - ignore rather than guess
         for depth, value in enumerate(path.values_for(rule.scope)):
             if not _matches(rule.pattern, value):
                 continue
@@ -133,5 +133,5 @@ def unplaced_warning(path: PlacementPath) -> str:
     where = path.datacenter or path.cluster or path.host or "this source"
     return (
         f'"{where}": no placement rule matched and no site is named after it '
-        f"— add a rule for this source, or create a site with that name"
+        f"- add a rule for this source, or create a site with that name"
     )

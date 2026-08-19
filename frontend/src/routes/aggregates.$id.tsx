@@ -146,11 +146,11 @@ function AggregateOverview({ aggregate: a }: { aggregate: Aggregate }) {
       : []),
     {
       label: "Family",
-      value: <span className="num">{a.family ? `IPv${a.family}` : "—"}</span>,
+      value: <span className="num">{a.family ? `IPv${a.family}` : "-"}</span>,
     },
     {
       label: "Date added",
-      value: <span className="num text-xs">{a.date_added ?? "—"}</span>,
+      value: <span className="num text-xs">{a.date_added ?? "-"}</span>,
     },
   ]
   return (

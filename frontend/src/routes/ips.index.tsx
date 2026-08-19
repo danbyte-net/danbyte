@@ -52,7 +52,7 @@ function IpsPage() {
     []
   )
   // Seed the status / role / scope facets from the URL so the active filter is
-  // visible in the rail (the server already applied it — see the query above).
+  // visible in the rail (the server already applied it - see the query above).
   const initialEnums = useMemo(() => {
     const seed: Record<string, string[]> = {}
     if (status) seed.status = [status]

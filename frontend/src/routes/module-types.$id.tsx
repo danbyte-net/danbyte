@@ -223,7 +223,7 @@ function InterfaceTemplatesPane({ moduleTypeId }: { moduleTypeId: string }) {
       ) : rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No interface templates. Use{" "}
-          <code className="font-mono">{"{module}"}</code> in names — it resolves
+          <code className="font-mono">{"{module}"}</code> in names - it resolves
           to the bay's position when the module is installed.
         </p>
       ) : (
@@ -245,13 +245,13 @@ function InterfaceTemplatesPane({ moduleTypeId }: { moduleTypeId: string }) {
                     {t.name}
                   </TableCell>
                   <TableCell className="font-mono text-xs">
-                    {t.type || "—"}
+                    {t.type || "-"}
                   </TableCell>
                   <TableCell className="text-xs">
                     {t.enabled ? "Yes" : "No"}
                   </TableCell>
                   <TableCell className="text-xs">
-                    {t.mgmt_only ? "Yes" : "—"}
+                    {t.mgmt_only ? "Yes" : "-"}
                   </TableCell>
                   <TableCell>
                     {canWrite && (

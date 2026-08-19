@@ -1,4 +1,4 @@
-"""seed_builtin_statuses — create/merge the built-in Status catalog.
+"""seed_builtin_statuses - create/merge the built-in Status catalog.
 
 Idempotent. Use it to backfill tenants that predate the runtime seeding
 (e.g. created by the 0047 migration on an empty DB), or to repair a tenant whose
@@ -39,7 +39,7 @@ class Command(BaseCommand):
             tenants = list(Tenant.objects.all())
 
         if not tenants:
-            self.stdout.write("No tenants exist yet — nothing to seed.")
+            self.stdout.write("No tenants exist yet - nothing to seed.")
             return
 
         for tenant in tenants:

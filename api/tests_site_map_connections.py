@@ -1,4 +1,4 @@
-"""Site-map connections — circuits / tunnels / cross-site cables as edges."""
+"""Site-map connections - circuits / tunnels / cross-site cables as edges."""
 from __future__ import annotations
 
 from django.contrib.auth.models import User

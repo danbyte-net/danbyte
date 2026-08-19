@@ -135,7 +135,7 @@ export function EmbeddedRackTable({
 }
 
 /** Circuits scoped by provider / provider-network / site. Reuses the one
- * circuit column factory — the same row the /circuits list draws. `omitProvider`
+ * circuit column factory - the same row the /circuits list draws. `omitProvider`
  * drops the redundant Provider column on a provider's own detail page. */
 export function EmbeddedCircuitTable({
   filter,
@@ -175,7 +175,7 @@ export function EmbeddedCircuitTable({
 }
 
 /** Power feeds scoped by panel / rack / status. Reuses the one power-feed
- * column factory — the same row the /power-feeds list draws. `omitPanel` drops
+ * column factory - the same row the /power-feeds list draws. `omitPanel` drops
  * the redundant Panel column on a panel's own detail page. */
 export function EmbeddedPowerFeedTable({
   filter,
@@ -219,7 +219,7 @@ export function EmbeddedPowerFeedTable({
 }
 
 /** Tunnels scoped by group / IPSec profile / device. Reuses the one tunnel
- * column factory — the same row the /tunnels list draws. The two flags drop
+ * column factory - the same row the /tunnels list draws. The two flags drop
  * the column that repeats the object being viewed: a tunnel group's own page
  * omits Group, an IPSec profile's own page omits IPSec profile. */
 export function EmbeddedTunnelTable({
@@ -261,7 +261,7 @@ export function EmbeddedTunnelTable({
 }
 
 /** Wireless LANs scoped by group / status / VLAN. Reuses the one wireless-LAN
- * column factory — the same row the /wireless-lans list draws. `omitGroup`
+ * column factory - the same row the /wireless-lans list draws. `omitGroup`
  * drops the redundant Group column on a group's own detail page. */
 export function EmbeddedWirelessLANTable({
   filter,
@@ -359,7 +359,7 @@ export function EmbeddedClusterTable({
   )
 }
 
-/** Contact groups scoped by parent — the Child groups pane on a group's own
+/** Contact groups scoped by parent - the Child groups pane on a group's own
  * detail page. `parent` is a single hop down, not the whole subtree: each row
  * links to its own page, so deeper nesting is walked one level at a time. */
 export function EmbeddedContactGroupTable({

@@ -43,5 +43,5 @@ class ReparentOnCreateTests(APITestCase):
         r = self.client.post("/api/prefixes/", {"cidr": "10.0.0.0/20"}, format="json")
         self.assertEqual(r.status_code, 201, r.content)
         ip24.refresh_from_db()
-        # The IP belongs to the more-specific /24 — the new /20 must not steal it.
+        # The IP belongs to the more-specific /24 - the new /20 must not steal it.
         self.assertEqual(ip24.prefix_id, child24.id)

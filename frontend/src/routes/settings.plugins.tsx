@@ -79,7 +79,7 @@ function PluginsSection() {
 
   const apply = useMutation({
     mutationFn: () => api("/api/plugins/apply/", { method: "POST" }),
-    onSuccess: () => toast.success("Applying — Danbyte will restart shortly."),
+    onSuccess: () => toast.success("Applying - Danbyte will restart shortly."),
     onError: (e) => apiErrorToast(e),
   })
 
@@ -88,7 +88,7 @@ function PluginsSection() {
       api(`/api/plugins/${module}/uploaded/`, { method: "DELETE" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["plugins-list"] })
-      toast.success("Removed — Apply changes to finish.")
+      toast.success("Removed - Apply changes to finish.")
     },
     onError: (e) => apiErrorToast(e),
   })
@@ -170,7 +170,7 @@ function UploadPlugin({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
     <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
       <span className="text-muted-foreground">
         Offline install: upload a plugin archive (.tar.gz / .zip). Runs its code
-        on restart — superuser only.
+        on restart - superuser only.
       </span>
       <input
         ref={inputRef}
@@ -344,7 +344,7 @@ function WorkersControl({ workers }: { workers: WorkerConfig }) {
     onSuccess: (r) => {
       toast.success(
         r.ok
-          ? `Worker pool set to ${r.rq_workers} — restarting…`
+          ? `Worker pool set to ${r.rq_workers} - restarting…`
           : (r.detail ?? "Saved.")
       )
       setTimeout(() => qc.invalidateQueries({ queryKey: ["services"] }), 4000)
@@ -363,7 +363,7 @@ function WorkersControl({ workers }: { workers: WorkerConfig }) {
         Background workers (RQ pool)
       </div>
       <p className="mt-0.5 text-[12px] text-muted-foreground">
-        How many worker processes run jobs in parallel — more workers clear
+        How many worker processes run jobs in parallel - more workers clear
         queued scans/imports faster (uses more RAM/CPU). Applying restarts the
         worker pool; other services are untouched.
       </p>

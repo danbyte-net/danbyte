@@ -2,7 +2,7 @@
 
 Regression guard: these settings used to hang off ``if not DEBUG``. When the
 DEBUG default flipped to False, every install that never set DEBUG silently
-started marking the session cookie ``Secure`` and 301-ing to https — on a
+started marking the session cookie ``Secure`` and 301-ing to https - on a
 plain-http server the browser then DROPS the session cookie and login bounces
 back to the form with no error. Transport hardening is now opt-in via
 ``DANBYTE_HTTPS`` so that can never happen again.
@@ -55,7 +55,7 @@ class TransportHardeningTests(SimpleTestCase):
         self.assertEqual(s.SECURE_HSTS_SECONDS, 31536000)
 
     def test_https_flag_is_independent_of_debug(self):
-        # Even in DEBUG, an explicit opt-in is honoured — the two are orthogonal.
+        # Even in DEBUG, an explicit opt-in is honoured - the two are orthogonal.
         s = _reload_settings({"DEBUG": "True", "DANBYTE_HTTPS": "True"})
         self.assertTrue(s.DEBUG)
         self.assertTrue(s.SESSION_COOKIE_SECURE)

@@ -1,8 +1,8 @@
-"""SAML SP — sign→verify roundtrip + provisioning, with no live IdP.
+"""SAML SP - sign→verify roundtrip + provisioning, with no live IdP.
 
 We mint a throwaway self-signed cert, build a SAML Response + Assertion, sign it
 with signxml (as an IdP would), then run it through the SP's
-``parse_and_validate`` — proving signature verification, the condition/subject
+``parse_and_validate`` - proving signature verification, the condition/subject
 checks, claim extraction, and (via resolve_user) JIT provisioning all hold. A
 tampered assertion must be rejected.
 """
@@ -33,7 +33,7 @@ IDP_ENTITY = "https://idp.example/entity"
 
 
 def _expect(rid):
-    """A ``consume_request_id`` stub that accepts exactly one InResponseTo — the
+    """A ``consume_request_id`` stub that accepts exactly one InResponseTo - the
     unit-test stand-in for the DB-backed single-use check in the ACS view."""
     def _consume(in_response_to):
         if in_response_to != rid:

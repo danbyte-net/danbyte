@@ -11,7 +11,7 @@ from core.models import Organization, Tenant
 
 
 def _png_bytes() -> bytes:
-    """A 1x1 PNG — the smallest valid image Pillow/ImageField will accept."""
+    """A 1x1 PNG - the smallest valid image Pillow/ImageField will accept."""
     return bytes.fromhex(
         "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
         "0000000d49444154789c626001000000050001a5f645400000000049454e44ae42"
@@ -100,7 +100,7 @@ class ImageAttachmentTests(APITestCase):
         self.assertEqual(res.json()["sort_order"], 5)
 
     def test_generic_mixin_works_on_rack(self):
-        # Same mixin, different parent type — proves the generic FK path.
+        # Same mixin, different parent type - proves the generic FK path.
         self._login(self._user(["view", "change"], object_types=("rack",)))
         base = f"/api/racks/{self.rack.id}"
         res = self._upload(base, name="rack front")

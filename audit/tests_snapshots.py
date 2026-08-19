@@ -95,7 +95,7 @@ class ChangeLogDetailApiTests(APITestCase):
         in the flat related_labels map; non-FK fields are absent from it."""
         resp = self.client.get(f"/api/changelog/{self.entry.id}/")
         labels = resp.json()["related_labels"]
-        # The prefix's tenant FK is in the snapshots — its UUID resolves to the
+        # The prefix's tenant FK is in the snapshots - its UUID resolves to the
         # tenant's name.
         self.assertEqual(labels.get(str(self.tenant.id)), str(self.tenant))
         # A plain scalar value ("changed") is never treated as a relation.
@@ -115,7 +115,7 @@ class ChangeLogDetailApiTests(APITestCase):
 
 
 class SecretRedactionTests(TestCase):
-    """Credentials must never enter the change log in cleartext — not in the
+    """Credentials must never enter the change log in cleartext - not in the
     field diff, not in the snapshots. EncryptedJSONField columns decrypt
     transparently on read, so without redaction the SMTP/LDAP passwords and
     check credentials would be logged decrypted (and DeploymentSettings entries
@@ -149,7 +149,7 @@ class SecretRedactionTests(TestCase):
         created = ChangeLogEntry.objects.get(
             object_type="core.deploymentsettings", action="create"
         )
-        # Presence is still recorded — just never the value.
+        # Presence is still recorded - just never the value.
         self.assertEqual(created.post_change["secrets"], "•••")
 
     def test_webhook_secret_redacted(self):

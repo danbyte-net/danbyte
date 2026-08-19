@@ -5,14 +5,14 @@ icon: lucide/wifi
 # Wireless
 
 Wireless is where you record your **Wi-Fi networks (SSIDs)** and the groups that
-organize them — and you can link each SSID to the VLAN it bridges onto.
+organize them - and you can link each SSID to the VLAN it bridges onto.
 
 You build it in two layers: **wireless LAN groups** (how you organize SSIDs) and
 the **wireless LANs** (the SSIDs themselves).
 
 ## Add a wireless LAN group
 
-A group bundles related SSIDs together — for example *Corporate*, *Guest*, or
+A group bundles related SSIDs together - for example *Corporate*, *Guest*, or
 *IoT*.
 
 1. Open **Wireless → Wireless LAN groups** in the sidebar and click **Add
@@ -22,13 +22,13 @@ A group bundles related SSIDs together — for example *Corporate*, *Guest*, or
 4. Save.
 
 !!! note "Nothing is pre-filled"
-    Danbyte ships no sample groups or SSIDs — you create exactly the ones your
+    Danbyte ships no sample groups or SSIDs - you create exactly the ones your
     network uses.
 
 ## Add a wireless LAN (SSID)
 
 1. Open **Wireless → Wireless LANs** and click **Add wireless LAN**.
-2. Enter the **SSID** — the broadcast network name.
+2. Enter the **SSID** - the broadcast network name.
 3. Optionally put it in a **group**.
 4. Set a **status**, the **authentication** details, and an optional **VLAN
    bridge** (see below).
@@ -59,7 +59,7 @@ A group bundles related SSIDs together — for example *Corporate*, *Guest*, or
 
 ## Wireless LAN group pages
 
-Click a **wireless LAN group** name in its list to open its detail page — the
+Click a **wireless LAN group** name in its list to open its detail page - the
 pencil in the header edits it.
 
 The Overview shows the group's name, slug and description; the **Wireless LANs**
@@ -77,19 +77,19 @@ ones made before the page existed.
 Clicking an **SSID** in **Wireless → Wireless LANs** opens that SSID's own page
 (it used to drop you straight into the edit form).
 
-- **Overview** — the SSID, status, group, and description; then the **Network**
+- **Overview** - the SSID, status, group, and description; then the **Network**
   card, which is what you actually come here to read: the VLAN it bridges onto,
   the authentication type, and the cipher. Comments render below if there are
   any.
-- **Journal** — your notes on this SSID.
-- **History** — the change log for the row.
+- **Journal** - your notes on this SSID.
+- **History** - the change log for the row.
 
 Nothing in the data model points back at a wireless LAN, so the page has no
-related tabs — it links *out* to its group and VLAN, and stops there rather than
+related tabs - it links *out* to its group and VLAN, and stops there rather than
 padding itself with tabs that would always be empty.
 
 ## Tags & custom fields
 
-Need to track something extra — a controller name, a band, a PSK rotation date?
+Need to track something extra - a controller name, a band, a PSK rotation date?
 Add a **custom field** for wireless LANs and it appears on every form. See
 [Tags & custom fields](tags-and-custom-fields.md).

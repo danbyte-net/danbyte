@@ -22,7 +22,7 @@ interface DeviceCardData {
   primary_ip: { id: string; ip_address: string } | null
 }
 
-/** One labelled fact. Micro-label plus value beats a guessable glyph — nobody
+/** One labelled fact. Micro-label plus value beats a guessable glyph - nobody
  * should have to decode an icon to find an IP address. */
 function Fact({
   label,

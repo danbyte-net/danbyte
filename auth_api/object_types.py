@@ -8,7 +8,7 @@ what makes it RBAC-controlled; an unregistered model falls back to the legacy
 
 Permissions act over these actions: view / add / change / delete plus the
 capability verbs connect / reveal. The capability verbs are additive and
-independent — they are never implied by change; a type only honours a verb if
+independent - they are never implied by change; a type only honours a verb if
 its viewset checks it (e.g. a credential's ``reveal`` action). Granting an
 unused verb on a type that ignores it is harmless.
 """
@@ -25,7 +25,7 @@ from django.apps import apps
 CRUD_ACTIONS = ["view", "add", "change", "delete"]
 ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe"]
 
-# Which capability verbs a *specific* type actually honours — only these are
+# Which capability verbs a *specific* type actually honours - only these are
 # advertised for that type in the permission form, so the UI never offers e.g.
 # "reveal on a Site". A type absent here advertises the CRUD verbs alone. The
 # verb still has to be checked by the type's viewset to have any effect; this map
@@ -148,7 +148,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # ─── Governance / monitoring ────────────────────────────────────
     ("monitoring.CheckTemplate", "Check templates", "Monitoring"),
     ("monitoring.CheckAssignment", "Check assignments", "Monitoring"),
-    # SNMP profiles are credentials — unregistered they'd fall back to "any
+    # SNMP profiles are credentials - unregistered they'd fall back to "any
     # tenant member may write", which is exactly wrong for secrets.
     ("monitoring.SnmpProfile", "SNMP profiles", "Monitoring"),
     # Device credentials link a device to an externally-stored secret. Danbyte
@@ -159,12 +159,12 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("monitoring.WatchedEndpoint", "Watched endpoints", "Monitoring"),
     ("monitoring.RedfishEndpoint", "BMC (Redfish) endpoints", "Monitoring"),
     # Observed certificates are public data, but which endpoints a tenant
-    # runs is not — so viewing the inventory is a grantable permission.
+    # runs is not - so viewing the inventory is a grantable permission.
     ("monitoring.Certificate", "Certificates", "Monitoring"),
-    # Bindings say *which of your endpoints* serve a certificate — the blast
+    # Bindings say *which of your endpoints* serve a certificate - the blast
     # radius of an expiry, and a map of your estate. Grantable separately.
     ("monitoring.CertificateBinding", "Certificate bindings", "Monitoring"),
-    # Assignments are intent — which object *should* present a certificate.
+    # Assignments are intent - which object *should* present a certificate.
     # Writable source of truth, so its own add/change/delete grant.
     ("monitoring.CertificateAssignment", "Certificate assignments", "Monitoring"),
     ("monitoring.CertificateRequest", "Certificate requests", "Monitoring"),
@@ -183,7 +183,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("compliance.ComplianceRule", "Compliance rules", "Governance"),
     # ─── Customize ──────────────────────────────────────────────────
     ("api.Status", "Statuses", "Customize"),
-    # CustomField + CustomFieldGroup live in the `customization` app, not `api` —
+    # CustomField + CustomFieldGroup live in the `customization` app, not `api` -
     # the old "api.CustomField" path silently failed to resolve (LookupError →
     # skipped), leaving custom-field management RBAC-uncontrolled.
     ("customization.CustomField", "Custom fields", "Customize"),
@@ -230,7 +230,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
 ]
 
 
-# Dynamically-registered types — a plugin app appends here from its AppConfig
+# Dynamically-registered types - a plugin app appends here from its AppConfig
 # (or its ``io.py``) so its models are RBAC-controlled + import/export-capable
 # without editing this core list.
 _DYNAMIC: list[tuple[str, str, str]] = []
@@ -278,8 +278,8 @@ def slug_for_model(model) -> str:
 
 
 def label_for(value: str) -> str | None:
-    """Normalise an object-type reference — either an ``app.model`` label or a
-    bare RBAC slug (``model_name``) — to the canonical ``app.model`` lower label,
+    """Normalise an object-type reference - either an ``app.model`` label or a
+    bare RBAC slug (``model_name``) - to the canonical ``app.model`` lower label,
     or ``None`` when it isn't a registered type.
 
     Generic-attachment callers (documents, journal notes) accept either form but

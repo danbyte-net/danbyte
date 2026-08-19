@@ -80,7 +80,7 @@ function ModuleTypesPage() {
           <Link to="/device-types" className="link">
             Device types
           </Link>{" "}
-          page — module-type files are auto-detected.
+          page - module-type files are auto-detected.
         </p>
       ) : (
         <DataTable
@@ -135,7 +135,7 @@ function buildColumns({
         row.original.part_number ? (
           <span className="font-mono text-xs">{row.original.part_number}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -162,7 +162,7 @@ function buildColumns({
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     },
@@ -215,7 +215,7 @@ export function ModuleTypeDeleteDialog({
           <AlertDialogTitle>Delete {moduleType?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {installed > 0
-              ? `${installed} installed module${installed === 1 ? "" : "s"} reference this type — remove them first.`
+              ? `${installed} installed module${installed === 1 ? "" : "s"} reference this type - remove them first.`
               : "Removes this module type and its interface templates."}
           </AlertDialogDescription>
         </AlertDialogHeader>

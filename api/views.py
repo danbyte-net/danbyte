@@ -2,7 +2,7 @@
 
 Formerly the legacy server-rendered prefix/IP HTML views; those dead htmx
 endpoints were removed (#61). What remains are the live helpers other modules
-import — chiefly ``_get_active_tenant`` (used app-wide) and the space-map /
+import - chiefly ``_get_active_tenant`` (used app-wide) and the space-map /
 next-available / autospawn utilities the IPAM viewsets call.
 """
 from __future__ import annotations
@@ -80,7 +80,7 @@ def _get_active_tenant(request=None):
 
     Picks the user's session-stored tenant if they still have access; else
     falls back to the first allowed tenant. Anonymous callers or users
-    without any granted tenants get None — views should handle that with
+    without any granted tenants get None - views should handle that with
     ``api/no_org.html``.
 
     Unauthenticated calls (no request, or anonymous user) keep the legacy
@@ -93,7 +93,7 @@ def _get_active_tenant(request=None):
 
     from auth_api.permissions import user_tenants
     allowed = user_tenants(request.user)
-    # An API token is scoped to a tenant — honour it (runners have no session).
+    # An API token is scoped to a tenant - honour it (runners have no session).
     tok_tid = getattr(getattr(request, "auth", None), "tenant_id", None)
     if tok_tid:
         t = allowed.filter(pk=tok_tid).first()
@@ -104,7 +104,7 @@ def _get_active_tenant(request=None):
         t = allowed.filter(pk=tid).first()
         if t is not None:
             return t
-    # No session choice yet (fresh login): prefer the profile's home tenant —
+    # No session choice yet (fresh login): prefer the profile's home tenant -
     # site-role provisioning sets it to the tenant the user's grants live in,
     # so a multi-tenant user doesn't land on an arbitrary first tenant where
     # they can see nothing.
@@ -138,7 +138,7 @@ def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
     before creating a new prefix on top of them.
 
     ``max_v4`` / ``max_v6`` are the user's per-family "deepest prefix length to
-    show" preference. They can only make the map *shallower* — clamped after the
+    show" preference. They can only make the map *shallower* - clamped after the
     +8 / 256-cell safety cap, never beyond it.
 
     Returns the list shape ``_space_map.html`` consumes.
@@ -155,8 +155,8 @@ def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
 
     # Pre-fetch every IP in this tenant + VRF whose address sits inside
     # ``net``. We do the range check in Python with a sorted int list so
-    # the per-cell test is O(log n) — beats N * IP_count. Python ints are
-    # arbitrary-precision, so this is v6-safe (a /64 never explodes — we only
+    # the per-cell test is O(log n) - beats N * IP_count. Python ints are
+    # arbitrary-precision, so this is v6-safe (a /64 never explodes - we only
     # range-check the *registered* IPs, never the address space).
     from bisect import bisect_left, bisect_right
     net_first = int(net.network_address)
@@ -178,8 +178,8 @@ def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
 
     # Which child prefix-lengths to render as rows. We never go deeper than
     # +8 bits, so every row has ≤256 cells. v4 steps one bit at a time. v6
-    # steps a nibble (4 bits) for readability — a /64 shows /68·/72, not eight
-    # dense rows — but falls back to bit-steps for prefixes within a nibble of
+    # steps a nibble (4 bits) for readability - a /64 shows /68·/72, not eight
+    # dense rows - but falls back to bit-steps for prefixes within a nibble of
     # /128 (e.g. a /126 still shows /127·/128).
     hi = min(net.prefixlen + 8, deepest)
     # User "max depth" preference can only narrow the view (never beyond the
@@ -232,7 +232,7 @@ def _subnet_details(prefix) -> list[dict] | None:
     IP detail. Returns ``None`` for unparseable CIDRs so the card renders
     nothing instead of crashing the page.
 
-    Each row is ``{label, value, mono, copy}`` — ``copy`` is the exact
+    Each row is ``{label, value, mono, copy}`` - ``copy`` is the exact
     string copied to clipboard when the user clicks the row's copy
     button (usually ``value`` minus any " (.0)" annotation).
     """
@@ -262,7 +262,7 @@ def _subnet_details(prefix) -> list[dict] | None:
     })
 
     # First / last usable. /31 and /32 (IPv4) are point-to-point or host
-    # routes — every address is "usable", so show first==network and
+    # routes - every address is "usable", so show first==network and
     # last==broadcast directly without the "+1/-1" trim.
     if net.version == 4 and net.prefixlen <= 30:
         first_usable = str(net.network_address + 1)
@@ -315,7 +315,7 @@ def _next_available_ips(prefix, *, count: int = 5) -> list[str]:
 
     Useful on the prefix-detail header so an operator can spot the next
     free address (and click to register it) without scanning the IPs table.
-    Only runs for *enumerable* prefixes (≤ ``ENUMERABLE_HOST_CAP`` addresses) —
+    Only runs for *enumerable* prefixes (≤ ``ENUMERABLE_HOST_CAP`` addresses) -
     a /64 has no meaningful "next free" and we won't iterate 2⁶⁴ hosts.
     """
     from .models import is_enumerable
@@ -330,7 +330,7 @@ def _next_available_ips(prefix, *, count: int = 5) -> list[str]:
     )
     out: list[str] = []
     # `.hosts()` skips network + broadcast on /30 or shorter, which is what
-    # operators want here — those addresses aren't normally assignable.
+    # operators want here - those addresses aren't normally assignable.
     for host in net.hosts():
         addr = str(host)
         if addr not in used:
@@ -343,7 +343,7 @@ def _next_available_ips(prefix, *, count: int = 5) -> list[str]:
 def reparent_ips_into(prefix) -> int:
     """When a new prefix is created, pull in the IPs it now *most-specifically*
     contains: IPs in the same (tenant, VRF) that fall inside ``prefix`` but are
-    currently parented to a **broader ancestor** prefix — WITHOUT stealing IPs
+    currently parented to a **broader ancestor** prefix - WITHOUT stealing IPs
     that belong to an existing more-specific child of ``prefix``.
 
     Danbyte pins each IP to exactly one prefix (``IPAddress.prefix`` FK), so
@@ -359,7 +359,7 @@ def reparent_ips_into(prefix) -> int:
     new_len = net.prefixlen
 
     # Existing prefixes more specific than this one, same tenant+VRF, inside its
-    # range — an IP within one of those belongs there, not on ``prefix``.
+    # range - an IP within one of those belongs there, not on ``prefix``.
     children = []
     for p in (
         Prefix.objects.filter(tenant=prefix.tenant, vrf=prefix.vrf)
@@ -384,7 +384,7 @@ def reparent_ips_into(prefix) -> int:
         for ip in qs.iterator():
             cur = ip.prefix
             cur_net = cur.network if cur else None
-            # Only pull from a broader (or unparented) prefix — never steal from
+            # Only pull from a broader (or unparented) prefix - never steal from
             # a same-or-more-specific one.
             if cur_net is not None and cur_net.prefixlen >= new_len:
                 continue
@@ -561,7 +561,7 @@ def _next_free_address(prefix):
             if str(host) not in registered:
                 return str(host)
     else:
-        # IPv6 — sample the first usable
+        # IPv6 - sample the first usable
         try:
             return str(next(net.hosts()))
         except StopIteration:

@@ -25,10 +25,10 @@ import type { BulkFieldSpec } from "./field-spec"
 // The one per-kind field editor. It renders a single BulkFieldSpec, in either
 // of two modes:
 //
-//   mode="keep"   — bulk edit across N rows: an unset field means "keep what
+//   mode="keep"   - bulk edit across N rows: an unset field means "keep what
 //                   each row already has", so every control carries a KEEP
 //                   sentinel (selects) or an arming checkbox (inputs).
-//   mode="always" — a single-object form: the control is simply live.
+//   mode="always" - a single-object form: the control is simply live.
 //
 // Option lists are hoisted into useFieldEditorOptions so the hooks stay
 // unconditional and every consumer shares one react-query cache.
@@ -44,7 +44,7 @@ export interface FieldEditorOptions {
   vlans: SelectOption[]
   vrfs: SelectOption[]
   statuses: SelectOption[]
-  /** Tag picker options — fetched only when `opts.tags` is set. */
+  /** Tag picker options - fetched only when `opts.tags` is set. */
   tags: TagOption[]
 }
 
@@ -115,7 +115,7 @@ export interface FieldEditorProps {
   value: unknown
   onChange: (v: unknown) => void
   /** "keep": KEEP sentinel + arming checkbox, for bulk edit across N rows
-   *  (today's behaviour). "always": the field is always armed — single-object
+   *  (today's behaviour). "always": the field is always armed - single-object
    *  forms. */
   mode?: "keep" | "always"
   onClear?: () => void
@@ -358,9 +358,9 @@ export function FieldEditor({
  * A reference-registry object, rendered with the same picker custom fields use.
  * Split out so the customization-meta query only runs for specs that need it.
  *
- * No KEEP sentinel here: the picker's own "—" row clears to null, and nothing
+ * No KEEP sentinel here: the picker's own "-" row clears to null, and nothing
  * declares `kind: "object"` in a bulk-edit dialog today, so keep mode is a
- * pass-through — an untouched picker stays out of `values` either way.
+ * pass-through - an untouched picker stays out of `values` either way.
  */
 function ObjectFieldEditor({
   spec,

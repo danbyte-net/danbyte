@@ -53,7 +53,7 @@ const UNMIGRATED_FORMS = new Set<string>([
   // Deployment settings, not a domain object.
   "routes/settings.sso.tsx",
   // External-sync writes: saving pushes to a live Windows server over WinRM
-  // (Add/Set/Remove-DhcpServerv4Reservation, Add-DhcpServerv4Scope) — replaying
+  // (Add/Set/Remove-DhcpServerv4Reservation, Add-DhcpServerv4Scope) - replaying
   // one later as a planned change can't honour that contract, so these stay
   // direct on purpose. The DNS zone dialog is the sibling authoring flow and
   // stays with them.
@@ -120,7 +120,7 @@ describe("plan-capable forms", () => {
     const missing = claimed.filter((t) => !migrated.has(t))
     expect(
       missing,
-      "PLAN_CAPABLE names a type with no migrated form — plan mode would " +
+      "PLAN_CAPABLE names a type with no migrated form - plan mode would " +
         "write to the live object"
     ).toEqual([])
   })
@@ -132,13 +132,13 @@ describe("plan-capable forms", () => {
     expect(
       unexpected,
       "This form writes straight to the API. Route it through useSaveObject " +
-        "so planning can reuse it — see any *-form.tsx for the pattern."
+        "so planning can reuse it - see any *-form.tsx for the pattern."
     ).toEqual([])
   })
 
   it("isPlanCapable is exact, not prefix-matched", () => {
     expect(isPlanCapable("api.device")).toBe(true)
-    // Excluded on purpose — a cable's payload is termination arrays, not fields.
+    // Excluded on purpose - a cable's payload is termination arrays, not fields.
     expect(isPlanCapable("api.cable")).toBe(false)
     expect(isPlanCapable("api.dev")).toBe(false)
     expect(isPlanCapable("")).toBe(false)

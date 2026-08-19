@@ -54,7 +54,7 @@ function CertificatesPage() {
   })
   const allRows = useMemo(() => query.data?.results ?? [], [query.data])
 
-  // The rail carries the facets the factory declares — expiry urgency, key
+  // The rail carries the facets the factory declares - expiry urgency, key
   // algorithm and trust (self-signed vs CA-issued). The facet-source columns
   // and the render columns are the same set here.
   const columns = useMemo<ColumnDef<Certificate>[]>(
@@ -63,7 +63,7 @@ function CertificatesPage() {
   )
   // Seed the expiry / trust facets from the URL so a cert-health tile lands on
   // the pre-filtered list. Facet ids: "expiry" (expired|critical|warning|
-  // healthy) and "self_signed" (self|ca) — see certificate-columns.tsx.
+  // healthy) and "self_signed" (self|ca) - see certificate-columns.tsx.
   const initialEnums = useMemo(() => {
     const seed: Record<string, string[]> = {}
     if (

@@ -24,7 +24,7 @@ export function useUserPrefs() {
       }),
     onSuccess: (data) => {
       qc.setQueryData(["user-prefs"], data)
-      // /api/me/ carries values RESOLVED from prefs (me.datetime) — refresh it
+      // /api/me/ carries values RESOLVED from prefs (me.datetime) - refresh it
       // so formatting picks the change up without a reload.
       qc.invalidateQueries({ queryKey: ["me"] })
     },

@@ -2,7 +2,7 @@ import L from "leaflet"
 
 import { fovWedge } from "@/components/site-map/geo"
 
-// Field-of-view cones for the site map — devices and free markers alike.
+// Field-of-view cones for the site map - devices and free markers alike.
 // Geometry lives in lat/lng space (Leaflet re-projects on zoom, so cones
 // stay glued to the ground and crisp); styling mirrors the floorplan's
 // FovCone: dashed outline, translucent fill, the source's own color.

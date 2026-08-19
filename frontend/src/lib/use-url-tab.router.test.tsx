@@ -20,8 +20,8 @@ import { useUrlSubTab, useUrlTab } from "./use-url-tab"
 // A real (in-memory) router, because half of this behaviour is the router's:
 // two params written independently, a push per write, and the fallback when a
 // param is junk. Router v1.170 *preserves* params a route never validated, so
-// these cases pin that the sub-tab works either way and that the allow-list —
-// not `validateSearch` — is what makes a junk `?sub=` fall back.
+// these cases pin that the sub-tab works either way and that the allow-list -
+// not `validateSearch` - is what makes a junk `?sub=` fall back.
 
 const TABS = ["overview", "components"] as const
 const SUBS = ["interfaces", "console", "power", "hardware"] as const
@@ -41,7 +41,7 @@ function Detail() {
   )
 }
 
-/** `declareSub: false` mimics the pre-fix route — `tab` validated, `sub` not. */
+/** `declareSub: false` mimics the pre-fix route - `tab` validated, `sub` not. */
 function makeRouter(url: string, declareSub = true) {
   const root = createRootRoute()
   const detail = createRoute({

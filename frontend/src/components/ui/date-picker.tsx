@@ -16,7 +16,7 @@ import {
 import { useDateFormat } from "@/lib/datetime"
 import { cn } from "@/lib/utils"
 
-// shadcn-style date picker (Popover + a self-contained month grid — no
+// shadcn-style date picker (Popover + a self-contained month grid - no
 // react-day-picker dependency). Takes/returns a plain ISO `YYYY-MM-DD` string
 // ("" = no date) and DISPLAYS it per the user's effective date format, unlike
 // a native <input type="date"> which is locked to browser locale + chrome.

@@ -54,7 +54,7 @@ export const Route = createFileRoute("/certificates/$id")({
   component: CertificateDetail,
 })
 
-// app_label.model_name — matches the label registered in audit/apps.py
+// app_label.model_name - matches the label registered in audit/apps.py
 // ("monitoring.Certificate") and drives the Journal / History tabs.
 const OBJECT_TYPE = "monitoring.certificate"
 
@@ -211,7 +211,7 @@ function Body({ cert }: { cert: Certificate }) {
           <p className="text-sm text-muted-foreground">
             The inventory row and its assignments are removed. If an endpoint is
             still serving this certificate, the next poll re-creates the
-            observed row (identity is the fingerprint) — an uploaded-only row is
+            observed row (identity is the fingerprint) - an uploaded-only row is
             gone.
           </p>
           <DialogFooter>
@@ -237,7 +237,7 @@ function Body({ cert }: { cert: Certificate }) {
   )
 }
 
-/** Edit the only writable fields — the authored name and notes. Every
+/** Edit the only writable fields - the authored name and notes. Every
  * intrinsic fact is read-only (it comes from the DER bytes), so this touches
  * nothing else. */
 function EditMetadataDialog({
@@ -358,7 +358,7 @@ function CertificateOverview({ cert }: { cert: Certificate }) {
         </Link>
       ) : (
         <span className="text-[13px] text-muted-foreground">
-          {cert.issuer_cn || "unknown"} — not in inventory
+          {cert.issuer_cn || "unknown"} - not in inventory
         </span>
       ),
     },
@@ -405,7 +405,7 @@ function CertificateOverview({ cert }: { cert: Certificate }) {
     {
       label: "Certificate authority",
       value: cert.is_ca ? (
-        <Badge variant="secondary">CA — can sign certs</Badge>
+        <Badge variant="secondary">CA - can sign certs</Badge>
       ) : (
         <span className="text-[13px] text-muted-foreground">
           No (end-entity)
@@ -445,7 +445,7 @@ function CertificateOverview({ cert }: { cert: Certificate }) {
   )
 }
 
-/** Watched endpoints currently serving this certificate — closes the loop from
+/** Watched endpoints currently serving this certificate - closes the loop from
  * a cert back to the host:port monitor that observed it. */
 function WatchedBySection({ certificateId }: { certificateId: string }) {
   const q = useQuery({
@@ -485,7 +485,7 @@ function WatchedBySection({ certificateId }: { certificateId: string }) {
   )
 }
 
-/** The stored **public** PEM — present only for uploaded certificates. Scrolls
+/** The stored **public** PEM - present only for uploaded certificates. Scrolls
  * in its own box (a chain can be long and wide) with copy + download, matching
  * the config-context data-blob treatment. */
 function PemSection({ cert }: { cert: Certificate }) {
@@ -601,7 +601,7 @@ function AssignmentsTab({ cert }: { cert: Certificate }) {
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             The object will no longer be declared to present this certificate.
-            Nothing observed changes — only the intent.
+            Nothing observed changes - only the intent.
           </p>
           <DialogFooter>
             <Button
@@ -626,7 +626,7 @@ function AssignmentsTab({ cert }: { cert: Certificate }) {
   )
 }
 
-/** The endpoints that served this certificate — "what breaks when it
+/** The endpoints that served this certificate - "what breaks when it
  * expires". Bindings are never deleted, so a stale `last_seen` is the signal
  * an endpoint stopped presenting it; an unverified chain is surfaced, not
  * hidden. */
@@ -689,7 +689,7 @@ function ChainTab({ cert }: { cert: Certificate }) {
     <div className="max-w-2xl space-y-3">
       <p className="text-sm text-muted-foreground">
         The issuer chain Danbyte has resolved, leaf first. Each link is a
-        certificate in this tenant&apos;s inventory — a missing issuer simply
+        certificate in this tenant&apos;s inventory - a missing issuer simply
         hasn&apos;t been added yet.
       </p>
       <ol className="space-y-2">
@@ -725,7 +725,7 @@ function ChainTab({ cert }: { cert: Certificate }) {
       </ol>
       {rootMissing && (
         <p className="text-xs text-muted-foreground">
-          The root CA isn&apos;t in the inventory yet — upload or import it to
+          The root CA isn&apos;t in the inventory yet - upload or import it to
           complete the chain.
         </p>
       )}

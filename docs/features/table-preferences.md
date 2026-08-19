@@ -34,7 +34,7 @@ under **Admin → Settings**:
 | Action | Effect |
 |---|---|
 | **Publish my layout** | Makes your current layout the tenant default for a table. |
-| **Lock** | Forces that default — everyone uses it and can't change their own. |
+| **Lock** | Forces that default - everyone uses it and can't change their own. |
 | **Unlock** | Lets people customize again, starting from the default. |
 | **Clear default** | Removes the tenant default entirely. |
 
@@ -46,10 +46,10 @@ under **Admin → Settings**:
 
 ## Which tables remember layouts
 
-Top-level lists — **prefixes, prefix IPs, VLANs, VRFs, route targets, sites, and
-tenants** — remember your layout. Smaller tables embedded inside detail pages
+Top-level lists - **prefixes, prefix IPs, VLANs, VRFs, route targets, sites, and
+tenants** - remember your layout. Smaller tables embedded inside detail pages
 (like a site's VLANs) stay on their standard layout.
 
 ## Related
 
-- [Exporting tables](exporting-tables.md) — exports follow your visible columns.
+- [Exporting tables](exporting-tables.md) - exports follow your visible columns.

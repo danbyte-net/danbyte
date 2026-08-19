@@ -1,10 +1,10 @@
-"""RBAC resolution engine — turns a user's ObjectPermissions into effective
+"""RBAC resolution engine - turns a user's ObjectPermissions into effective
 actions + queryset constraints, scoped to the active tenant.
 
 Grants only: a user's effective actions for an object type are
 the union across every enabled permission assigned to them or one of their
 groups that applies in the active tenant. ``constraints`` then limit which rows
-— multiple applicable permissions OR together. Superusers bypass everything.
+- multiple applicable permissions OR together. Superusers bypass everything.
 """
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def effective_actions(user, tenant) -> dict[str, set[str]]:
     """``{object_type_slug: {actions}}`` granted to the user in this tenant.
 
     ``object_types`` may contain the wildcard ``"*"`` meaning "every registered
-    type" — the built-in Administrator/Operator/Read-only groups use it so new
+    type" - the built-in Administrator/Operator/Read-only groups use it so new
     object types are covered automatically.
     """
     from .object_types import ACTIONS, registry_payload
@@ -77,9 +77,9 @@ def constraints_for(user, tenant, slug: str, action: str):
     """Constraint dicts for (slug, action), or ``None`` if not granted at all.
 
     Returns:
-      * ``None``  — the action isn't granted → deny.
-      * ``[]``    — granted with no constraints → all rows.
-      * ``[{…}]`` — granted; rows matching ANY dict (OR).
+      * ``None``  - the action isn't granted → deny.
+      * ``[]``    - granted with no constraints → all rows.
+      * ``[{…}]`` - granted; rows matching ANY dict (OR).
     """
     if _is_super(user):
         return []
@@ -124,8 +124,8 @@ def _perm_q(perm, site_path, action="view") -> Q:
 
     NULL-site rule: site FKs are nullable on several scoped types (VLAN,
     Prefix, IPAddress) where NULL means "shared / not tied to one site". A
-    site-scoped grant can *view* those shared rows — they're context everyone
-    needs — but can never write them (add/change/delete stay strictly
+    site-scoped grant can *view* those shared rows - they're context everyone
+    needs - but can never write them (add/change/delete stay strictly
     ``site __in`` scope; shared rows are HQ's to manage). Skipped for the
     ``site`` slug itself, whose path is ``id`` and never NULL.
     """
@@ -155,7 +155,7 @@ def _perm_q(perm, site_path, action="view") -> Q:
 def restrict_queryset(qs, user, tenant, slug: str, action: str):
     """Filter ``qs`` to the rows the user may act on. Tenant scoping is applied
     separately (by the viewset); this adds, per granting permission, its row
-    ``constraints`` AND its ``sites`` scope — OR'd across permissions. A single
+    ``constraints`` AND its ``sites`` scope - OR'd across permissions. A single
     unconstrained + unscoped grant opens every row."""
     if _is_super(user):
         return qs
@@ -174,7 +174,7 @@ def restrict_queryset(qs, user, tenant, slug: str, action: str):
     try:
         return qs.filter(big_q)
     except FieldError:
-        # A malformed constraint/site path shouldn't leak data — deny.
+        # A malformed constraint/site path shouldn't leak data - deny.
         log.warning("RBAC: bad constraint/site on %s/%s", slug, action)
         return qs.none()
 
@@ -183,7 +183,7 @@ def row_filter(user, tenant, slug: str, action: str):
     """Per-object access decision for ``(slug, action)``, cacheable per request.
 
     Returns ``None`` (not granted → deny), ``True`` (all rows → allow), or a
-    ``Q`` to test a single row against. Site- *and* constraint-aware — the
+    ``Q`` to test a single row against. Site- *and* constraint-aware - the
     per-object companion to :func:`restrict_queryset`, so the UI Edit/Delete flag
     matches what the queryset (and the write guard) actually enforce.
     """
@@ -207,10 +207,10 @@ def row_filter(user, tenant, slug: str, action: str):
 def site_scope(user, tenant, slug: str, action: str):
     """The set of site ids the user is restricted to for ``(slug, action)``.
 
-    * ``None``  — unrestricted (superuser, type has no site, or at least one
+    * ``None``  - unrestricted (superuser, type has no site, or at least one
                   granting permission is site-unscoped).
-    * ``set()`` — not granted at all.
-    * ``{ids}`` — every granting permission is site-scoped; the union of sites.
+    * ``set()`` - not granted at all.
+    * ``{ids}`` - every granting permission is site-scoped; the union of sites.
     """
     if _is_super(user):
         return None
@@ -236,10 +236,10 @@ def editable_sites(user, tenant):
     Aggregates :func:`site_scope` for the ``change`` action across every
     site-bound object type. Returns:
 
-    * ``None``  — may edit any site (superuser, or an unscoped change grant on
+    * ``None``  - may edit any site (superuser, or an unscoped change grant on
                   some site-bound type).
-    * ``set()`` — edits no site (no change grant anywhere).
-    * ``{ids}`` — every change grant is site-scoped; the union of those sites.
+    * ``set()`` - edits no site (no change grant anywhere).
+    * ``{ids}`` - every change grant is site-scoped; the union of those sites.
 
     Used to gate delegated invites: a site editor may only invite viewers to
     sites in this set.
@@ -251,7 +251,7 @@ def editable_sites(user, tenant):
     ids: set = set()
     granted = False
     for slug in SITE_PATHS:
-        # "site" scopes itself; "sitesettings" is the settings-admin surface —
+        # "site" scopes itself; "sitesettings" is the settings-admin surface -
         # holding it must not make someone an infrastructure editor (with the
         # delegation and create-defaulting powers that implies).
         if slug in ("site", "sitesettings"):
@@ -285,11 +285,11 @@ def object_matches_constraints(obj, cons) -> bool:
 def can_act_on(user, tenant, slug: str, action: str, obj) -> bool:
     """Whether ``user`` may perform ``action`` on this *specific* ``obj``.
 
-    Site- *and* constraint-aware — delegates to :func:`row_filter` so it
+    Site- *and* constraint-aware - delegates to :func:`row_filter` so it
     enforces the exact same scope as ``restrict_queryset`` (an
     ``ObjectPermission`` narrowed by ``sites`` returns ``False`` for an object
     at another site, not just for a constraint mismatch). Cheap in the common
-    cases — superuser, ungranted, and fully-open grants never touch the DB;
+    cases - superuser, ungranted, and fully-open grants never touch the DB;
     only a scoped grant runs a single ``pk`` lookup.
     """
     if _is_super(user):

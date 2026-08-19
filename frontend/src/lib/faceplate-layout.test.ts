@@ -60,7 +60,7 @@ describe("composeModuleFaceplates", () => {
     const out = composeModuleFaceplates(base(), [
       moduleIn("Network Module", "1", moduleFp),
     ])
-    // Same length — the placeholder is replaced, not appended.
+    // Same length - the placeholder is replaced, not appended.
     expect(out.front).toHaveLength(3)
     expect(out.front.map((g) => g.id)).toEqual(["g1", "mod:m1:mg", "g2"])
     const composed = out.front[1]

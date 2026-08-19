@@ -10,13 +10,13 @@ import {
 } from "@/lib/faceplate-geometry"
 
 /**
- * The faceplate layout document — ONE schema for both worlds:
+ * The faceplate layout document - ONE schema for both worlds:
  *  - `autoLayout()` computes it on the fly from a device's interfaces
  *  - the device-type builder saves it to `DeviceType.faceplate` (v1 envelope)
  * so the renderer has exactly one resolution path.
  *
  * Port slots reference components by NAME (interface-template names, which may
- * carry the `{position}` stack token) — never pixel coordinates — so a single
+ * carry the `{position}` stack token) - never pixel coordinates - so a single
  * saved layout serves every member of a stack and survives bank re-flows.
  */
 
@@ -70,7 +70,7 @@ export interface FaceplateGroup {
   rows: 1 | 2 | 3 | 4
   /** Visual gap every N ports (0 = none). */
   bank: number
-  /** Extra spacing (mm) before this group on the panel — lets the builder push
+  /** Extra spacing (mm) before this group on the panel - lets the builder push
    * groups apart. 0/undefined = the default inter-group gap. */
   gapMm?: number
   /** Which rack unit of the panel this group sits in (1-based lane, top
@@ -93,14 +93,14 @@ export type FaceplateSide = "front" | "rear"
 export interface FaceplateDoc {
   v: 1
   front: FaceplateGroup[]
-  /** Rear-panel groups — most types leave this empty. */
+  /** Rear-panel groups - most types leave this empty. */
   rear: FaceplateGroup[]
   /** Render the full 19″ blade width even when ports don't span it. */
   full?: boolean
 }
 
 /** Minimal shape shared by every placeable component (interface, console
- * port, aux port, …) — enough to size and label a cage. */
+ * port, aux port, …) - enough to size and label a cage. */
 export interface PortComponent {
   id: string
   name: string
@@ -113,7 +113,7 @@ export interface ResolvedSlot {
   kind: SlotKind | null
   /** The matched component, or null (blank / label / ghost). */
   component: PortComponent | null
-  /** Full Interface when kind === "interface" — carries live state/hover. */
+  /** Full Interface when kind === "interface" - carries live state/hover. */
   iface: Interface | null
   /** Trailing port number for the cage label. */
   num: number | null
@@ -123,15 +123,15 @@ export interface ResolvedGroup extends FaceplateGroup {
   resolved: ResolvedSlot[]
   /** Rendered width of this group (mm), excluding inter-group gaps. */
   widthMm: number
-  /** Tallest connector in the group (mm) — drives row height. */
+  /** Tallest connector in the group (mm) - drives row height. */
   rowHeightMm: number
-  /** Dominant connector family — drives inter-group dividers. */
+  /** Dominant connector family - drives inter-group dividers. */
   family: ConnectorFamily
 }
 
 export interface ResolvedFaceplate {
   groups: ResolvedGroup[]
-  /** Total panel span (mm) including group gaps — drives fit-to-container. */
+  /** Total panel span (mm) including group gaps - drives fit-to-container. */
   spanMm: number
 }
 
@@ -153,7 +153,7 @@ function byPortOrder(a: PortComponent, b: PortComponent): number {
   return a.name.localeCompare(b.name, undefined, { numeric: true })
 }
 
-// Copper first, then small pluggables, then the big cages — preserves the
+// Copper first, then small pluggables, then the big cages - preserves the
 // "uplinks to the right" reading of real front panels.
 const FAMILY_ORDER: ConnectorFamily[] = [
   "rj45",
@@ -189,7 +189,7 @@ const familyRank = (f: ConnectorFamily) => {
 
 // ─── auto layout ────────────────────────────────────────────────────────────
 
-/** Compute a layout doc from a device's physical ports (interfaces only —
+/** Compute a layout doc from a device's physical ports (interfaces only -
  * other component kinds appear on the panel via saved layouts). Groups by
  * slot prefix, splits runs where the connector family changes, sizes rows
  * and banks the way real 1U hardware does. */
@@ -282,7 +282,7 @@ export interface AutoArrangeOpts {
   kinds?: SlotKind[]
 }
 
-/** Auto-arrange a full faceplate from every component kind — the builder's
+/** Auto-arrange a full faceplate from every component kind - the builder's
  * "auto-fill". Interfaces, front ports, console/power/aux land on the front;
  * rear ports on the rear. Each kind is grouped by slot prefix and split where
  * the connector family changes, exactly like {@link autoLayout}. */
@@ -359,8 +359,8 @@ export interface InstalledModuleFaceplate {
  *
  * A group carrying a `bay` marker (a placeholder dropped in the device-type
  * builder) is replaced *in place* by the faceplate of the module installed in
- * that bay, with `{module}` resolved to the bay position. An empty bay — or one
- * whose module has no saved faceplate — keeps its placeholder so the slot stays
+ * that bay, with `{module}` resolved to the bay position. An empty bay - or one
+ * whose module has no saved faceplate - keeps its placeholder so the slot stays
  * visible. Modules in bays the layout doesn't place are appended to the front,
  * preserving the behaviour from before bays were placeable.
  */
@@ -403,7 +403,7 @@ export function composeModuleFaceplates(
     }))
     if (!ifaces.length) return []
     if (placeholder) {
-      // One group in the bay's slot, honoring its rows/bank — the operator's
+      // One group in the bay's slot, honoring its rows/bank - the operator's
       // layout choice for a module type that ships no faceplate of its own.
       return [
         {
@@ -450,7 +450,7 @@ const norm = (s: string) => s.trim().toLowerCase()
  * - Port slot names are `{position}`-rendered with the device's stack
  *   position, then matched case-insensitively per kind.
  * - Slots matching nothing resolve with `component: null` → dashed ghosts.
- * - Interfaces the doc doesn't cover are appended as trailing auto groups —
+ * - Interfaces the doc doesn't cover are appended as trailing auto groups -
  *   nothing silently disappears.
  */
 export function resolveLayout(
@@ -469,7 +469,7 @@ export function resolveLayout(
   }
   const ifaceByName = new Map((interfaces ?? []).map((i) => [norm(i.name), i]))
 
-  // Interface names covered ANYWHERE in the doc (both sides) — a port placed
+  // Interface names covered ANYWHERE in the doc (both sides) - a port placed
   // on the rear must not re-appear in the front's trailing auto group.
   const claimed = new Set<string>()
   for (const s of ["front", "rear"] as const) {
@@ -525,7 +525,7 @@ export function resolveLayout(
 
     resolvedGroups.push(
       measureGroup(
-        // Group labels may carry the {position} token too — render it.
+        // Group labels may carry the {position} token too - render it.
         {
           ...g,
           label: g.label ? renderTemplateName(g.label, vcPosition) : undefined,
@@ -561,7 +561,7 @@ export function resolveLayout(
     }
   }
 
-  // Groups spread over U lanes — the panel span is the WIDEST lane, not the
+  // Groups spread over U lanes - the panel span is the WIDEST lane, not the
   // sum of every group.
   const laneWidths = new Map<number, { w: number; n: number }>()
   for (const g of resolvedGroups) {

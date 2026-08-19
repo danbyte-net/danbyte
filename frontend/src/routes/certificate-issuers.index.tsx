@@ -372,7 +372,7 @@ function IssuerFormDialog({
             label="EAB key id"
             value={eabKid}
             onChange={setEabKid}
-            info="External Account Binding — only if the CA requires it (some public CAs, e.g. ZeroSSL)."
+            info="External Account Binding - only if the CA requires it (some public CAs, e.g. ZeroSSL)."
           />
           {eabKid && (
             <FormText
@@ -381,7 +381,7 @@ function IssuerFormDialog({
               onChange={setEabHmac}
               type="password"
               hint={
-                issuer?.eab_hmac_set ? "set — blank keeps current" : undefined
+                issuer?.eab_hmac_set ? "set - blank keeps current" : undefined
               }
             />
           )}
@@ -434,7 +434,7 @@ function IssuerFormDialog({
                 type="password"
                 hint={
                   issuer?.tsig_secret_set
-                    ? "set — blank keeps current"
+                    ? "set - blank keeps current"
                     : undefined
                 }
               />

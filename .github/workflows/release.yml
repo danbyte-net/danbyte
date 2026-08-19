@@ -160,7 +160,7 @@ jobs:
           BUNDLE=$(find /tmp -maxdepth 1 -type d -name 'danbyte-*' | head -1)
           cd "$BUNDLE"
           # Boot the real WSGI server the way production does and prove the app
-          # actually serves requests — not just that migrate/check pass.
+          # actually serves requests - not just that migrate/check pass.
           /tmp/venv/bin/gunicorn danbyte.wsgi:application \
             --bind 127.0.0.1:8000 --workers 2 --timeout 30 \
             --access-logfile - --error-logfile - &

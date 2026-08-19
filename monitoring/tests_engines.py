@@ -307,7 +307,7 @@ class OutpostApiTests(_Base):
         self.assertEqual(checks[0]["target"], "10.9.0.5")
         sid = checks[0]["state_id"]
         self.assertTrue(CheckState.objects.get(id=sid).in_flight)  # claimed
-        # A second poll returns nothing — already claimed.
+        # A second poll returns nothing - already claimed.
         self.assertEqual(
             len(self.client.get("/api/outpost/work/", **self._auth()).json()["checks"]),
             0,
@@ -381,7 +381,7 @@ class OutpostApiTests(_Base):
 
 class SshTransportTests(_Base):
     """The SSH transport: Danbyte claims the engine's work, runs it over SSH
-    (injected here), and ingests — the same finalise path as pull."""
+    (injected here), and ingests - the same finalise path as pull."""
 
     def setUp(self):
         super().setUp()
@@ -525,7 +525,7 @@ class PackageStoreTests(_Base):
         body = r.content.decode()
         self.assertIn("git+https://github.com/acme/danbyte-outpost@v1.0.0", body)
         self.assertIn("danbyte-outpost run $RUNARGS", body)
-        # Token/URL go in a root-only 0600 env file, NOT on the command line —
+        # Token/URL go in a root-only 0600 env file, NOT on the command line -
         # the agent reads OUTPOST_URL/OUTPOST_TOKEN from the environment, so the
         # token never lands in the unit file or the process argv (ps).
         self.assertNotIn("--token=$TOKEN", body)
@@ -669,7 +669,7 @@ class PackageStoreTests(_Base):
 
 class OutpostSnmpTests(_Base):
     """SNMP discovery over the Outpost: the agent pulls the site's devices +
-    scoped creds, fetches facts remotely, and posts them back — persisted
+    scoped creds, fetches facts remotely, and posts them back - persisted
     through the same path as a local poll."""
 
     def setUp(self):

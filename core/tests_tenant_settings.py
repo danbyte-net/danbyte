@@ -1,4 +1,4 @@
-"""Per-tenant settings overrides — resolution, gating, secrets hygiene."""
+"""Per-tenant settings overrides - resolution, gating, secrets hygiene."""
 from __future__ import annotations
 
 from django.contrib.auth.models import User
@@ -78,7 +78,7 @@ class EndpointGatingTests(APITestCase):
         return u
 
     def _tenant_admin(self, name):
-        """A users.manage-equivalent grant NARROWED to the tenant — passes
+        """A users.manage-equivalent grant NARROWED to the tenant - passes
         can_manage_admin in the tenant but NOT can_manage_deployment."""
         u = User.objects.create_user(name, password="x")
         prof = UserProfile.objects.create(user=u, role="custom")
@@ -154,7 +154,7 @@ class EndpointGatingTests(APITestCase):
 
 
 class SeparationResolutionTests(APITestCase):
-    """`effective_separation` — its own override group, independent of
+    """`effective_separation` - its own override group, independent of
     sharing/UI."""
 
     def setUp(self):

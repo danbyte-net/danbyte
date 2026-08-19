@@ -4,7 +4,7 @@ icon: lucide/lock
 
 # VPN tunnels
 
-VPN tunnels are where you record the **encrypted links between sites or peers** —
+VPN tunnels are where you record the **encrypted links between sites or peers** -
 the tunnel itself, the groups that organize tunnels, and reusable crypto
 profiles you can share across many tunnels.
 
@@ -13,7 +13,7 @@ You build it in three layers: **tunnel groups** (how you organize tunnels),
 
 ## Add a tunnel group
 
-A group bundles related tunnels together — for example by region, customer, or
+A group bundles related tunnels together - for example by region, customer, or
 purpose.
 
 1. Open **VPN → Tunnel groups** in the sidebar and click **Add group**.
@@ -24,7 +24,7 @@ purpose.
 ## Add an IPSec profile
 
 An IPSec profile captures a set of crypto settings once so you can reuse it on
-every tunnel that shares that policy — no retyping the same parameters.
+every tunnel that shares that policy - no retyping the same parameters.
 
 1. Open **VPN → IPSec profiles** and click **Add IPSec profile**.
 2. Give it a **name**.
@@ -42,18 +42,18 @@ every tunnel that shares that policy — no retyping the same parameters.
 4. Save.
 
 !!! note "Nothing is pre-filled"
-    Danbyte ships no sample groups, profiles, or tunnels — you create exactly the
+    Danbyte ships no sample groups, profiles, or tunnels - you create exactly the
     ones your network uses.
 
 ## Add a tunnel
 
 1. Open **VPN → Tunnels** and click **Add tunnel**.
 2. Give it a **name** (must be unique).
-3. Pick the **encapsulation** — IPSec (tunnel or transport), GRE, IP-in-IP, or
+3. Pick the **encapsulation** - IPSec (tunnel or transport), GRE, IP-in-IP, or
    WireGuard.
 4. Set a **status** and, optionally, a **tunnel ID**.
 5. Optionally put it in a **group**. For IPSec encapsulations, you can also pick
-   an **IPSec profile** — that field only appears when the encapsulation is
+   an **IPSec profile** - that field only appears when the encapsulation is
    IPSec.
 6. Save.
 
@@ -63,9 +63,9 @@ A tunnel is inert until its ends are bound. Each **termination** attaches one
 end of the tunnel to a **device interface** or a **VM interface** (exactly
 one), with:
 
-- a **role** — *peer* (point-to-point), or *hub* / *spoke* for hub-and-spoke
+- a **role** - *peer* (point-to-point), or *hub* / *spoke* for hub-and-spoke
   topologies;
-- an optional **outside IP** — the underlay / public address the tunnel rides
+- an optional **outside IP** - the underlay / public address the tunnel rides
   on. The tunnel's *inside* addresses attach to the terminating interface the
   normal way.
 
@@ -78,7 +78,7 @@ one *hub* and many *spokes*.
 
 ## Tunnel map
 
-The tunnel's detail page has a **Map** tab — a read-only topology view of the
+The tunnel's detail page has a **Map** tab - a read-only topology view of the
 tunnel drawn from its terminations:
 
 - **Hub-and-spoke** tunnels put the hub(s) in the centre with every spoke on a
@@ -88,7 +88,7 @@ tunnel drawn from its terminations:
 
 Each card shows the terminating device (or VM), the interface, the **outside
 IP**, and the end's role; clicking a card jumps to that interface (or VM).
-The map fills in as you add terminations — an empty tunnel just points you to
+The map fills in as you add terminations - an empty tunnel just points you to
 the Terminations tab.
 
 ## Where tunnels show up on interfaces
@@ -103,7 +103,7 @@ listed:
   each tunnel with the end's role under **Relationships → Tunnels**.
 
 Behind this, the interface API (`/api/interfaces/`) exposes a read-only
-`tunnel_terminations` field — `[{id, role, role_display, tunnel: {id, name}}]`,
+`tunnel_terminations` field - `[{id, role, role_display, tunnel: {id, name}}]`,
 scoped to the interface's tenant.
 
 ### Tunnel status
@@ -121,12 +121,12 @@ scoped to the interface's tenant.
 ## Tunnel group & IPSec profile pages
 
 Click a **tunnel group** or **IPSec profile** name in its list to open its
-detail page — the pencil in the header edits it.
+detail page - the pencil in the header edits it.
 
 - A **tunnel group** page shows its name, slug and description, with a
   **Tunnels** tab listing every tunnel in the group.
-- An **IPSec profile** page puts the crypto parameters — IKE version,
-  encryption, authentication, DH and PFS groups, SA lifetime — on its Overview,
+- An **IPSec profile** page puts the crypto parameters - IKE version,
+  encryption, authentication, DH and PFS groups, SA lifetime - on its Overview,
   with a **Tunnels** tab listing every tunnel that inherits them. Read that tab
   before changing a profile: the edit lands on all of them at once.
 
@@ -140,7 +140,7 @@ the row, including ones made before the page existed.
 
 ## L2VPN overlays
 
-Alongside point-to-point tunnels, Danbyte models **L2VPNs** — layer-2 overlay
+Alongside point-to-point tunnels, Danbyte models **L2VPNs** - layer-2 overlay
 services such as EVPN, VXLAN, VPWS, and VPLS. An L2VPN records the overlay
 itself; **terminations** attach it to the VLANs and interfaces that carry it.
 
@@ -152,8 +152,8 @@ itself; **terminations** attach it to the VLANs and interfaces that carry it.
 | Field | What it records |
 |---|---|
 | **Name** and **slug** | A label and a URL-friendly identifier (slug unique per tenant). |
-| **Type** | The overlay technology — VXLAN, VXLAN-EVPN, MPLS-EVPN, PBB-EVPN, VPWS, VPLS, EPL, EVPL, SPB, or TRILL. |
-| **Identifier** | The overlay identifier — a VNI or VC-ID (optional). |
+| **Type** | The overlay technology - VXLAN, VXLAN-EVPN, MPLS-EVPN, PBB-EVPN, VPWS, VPLS, EPL, EVPL, SPB, or TRILL. |
+| **Identifier** | The overlay identifier - a VNI or VC-ID (optional). |
 | **Status** | Your own status catalog, same as elsewhere. |
 | **Import / export route targets** | BGP route targets, picked from your existing [route targets](ipam-objects.md). |
 
@@ -162,15 +162,15 @@ itself; **terminations** attach it to the VLANs and interfaces that carry it.
 ### Terminate an L2VPN
 
 Like a tunnel, an L2VPN is inert until it's attached to something. Each
-termination binds it to **exactly one** endpoint — a **VLAN**, a **device
-interface**, or a **VM interface** — from the L2VPN's detail page.
+termination binds it to **exactly one** endpoint - a **VLAN**, a **device
+interface**, or a **VM interface** - from the L2VPN's detail page.
 
-- An endpoint can terminate **at most one L2VPN** — Danbyte blocks a second.
+- An endpoint can terminate **at most one L2VPN** - Danbyte blocks a second.
 - Point-to-point types (VPWS, EPL, EVPL) typically get two terminations;
   multipoint types (VPLS, the EVPN family) get as many as the overlay spans.
 
 ## Tags & custom fields
 
-Need to track something extra — a peer IP, a pre-shared-key reference, a contract
+Need to track something extra - a peer IP, a pre-shared-key reference, a contract
 ID? Add a **custom field** for tunnels (or L2VPNs) and it appears on every form.
 See [Tags & custom fields](tags-and-custom-fields.md).

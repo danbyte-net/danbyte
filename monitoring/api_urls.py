@@ -1,4 +1,4 @@
-"""Monitoring URLs — included under ``/api/monitoring/`` from api.api_urls.
+"""Monitoring URLs - included under ``/api/monitoring/`` from api.api_urls.
 
 A DefaultRouter for the CRUD viewsets plus function views for per-IP actions.
 """

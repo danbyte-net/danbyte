@@ -71,7 +71,7 @@ function InterfacesPage() {
   }, [allRows])
 
   const handleDelete = useCallback((i: Interface) => setDeleting(i), [])
-  // Fleet-wide SNMP drift for every port on the page, in ONE request — the
+  // Fleet-wide SNMP drift for every port on the page, in ONE request - the
   // devices list marks drifted devices, and interfaces are what drift actually
   // references (MAC / admin-status / speed / VLAN, stale ports, discovered IPs).
   const drift = useInterfaceDriftMap()

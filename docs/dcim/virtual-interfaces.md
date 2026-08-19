@@ -5,19 +5,19 @@ icon: lucide/git-branch
 # Virtual & aggregate interfaces
 
 Not every interface is a physical port. Danbyte lets you model **logical**
-interfaces and the three ways real and logical ports relate to each other —
+interfaces and the three ways real and logical ports relate to each other -
 **sub-interfaces**, **link aggregation (LAG)**, and **bridges**.
 
 ## Virtual interfaces
 
-Tick **Virtual** on the interface form to mark a port as logical — it has no
+Tick **Virtual** on the interface form to mark a port as logical - it has no
 physical connector. Use this for loopbacks, tunnels, VLAN interfaces, and the
 aggregate interfaces below. Virtual interfaces are tagged with a small
 *virtual* badge in the list.
 
 ## Sub-interfaces (nesting)
 
-A **sub-interface** sits underneath a parent interface — think `ae1.100` under
+A **sub-interface** sits underneath a parent interface - think `ae1.100` under
 `ae1`, or `Gi0/1.10` under `Gi0/1`.
 
 To create one, set the **Parent interface** field on the child. In the device's
@@ -31,7 +31,7 @@ Rules:
 
 ## Link aggregation (LAG)
 
-A **LAG** (also called a port-channel, bundle, or aggregate — e.g. `ae1`, `Po1`,
+A **LAG** (also called a port-channel, bundle, or aggregate - e.g. `ae1`, `Po1`,
 `bond0`) groups several physical ports into one logical link.
 
 To model it:
@@ -52,7 +52,7 @@ bridge must be on the same device.
 
 | Field on the form | Use it for | Points at |
 |---|---|---|
-| **Virtual** (checkbox) | loopbacks, tunnels, aggregates, VLAN interfaces | — |
+| **Virtual** (checkbox) | loopbacks, tunnels, aggregates, VLAN interfaces | - |
 | **Parent interface** | sub-interfaces (`ae1.100` → `ae1`) | the parent port |
 | **LAG / aggregate** | bundle membership (a port → its aggregate) | the aggregate |
 | **Bridge** | layer-2 bridge membership | the bridge interface |

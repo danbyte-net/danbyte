@@ -1,4 +1,4 @@
-"""Drift history — append a DeviceConfigSnapshot when a device's drift changes.
+"""Drift history - append a DeviceConfigSnapshot when a device's drift changes.
 
 Connected as a post_save on DeviceConfigState (see apps.ready). A snapshot is
 written only when status or diff differs from the device's most recent snapshot,
@@ -30,7 +30,7 @@ def _on_state_save(sender, instance, **kwargs):
             diff=instance.diff,
             source=instance.source,
         )
-    except Exception:  # noqa: BLE001 — never break the originating save
+    except Exception:  # noqa: BLE001 - never break the originating save
         logger.exception("drift snapshot failed")
 
 

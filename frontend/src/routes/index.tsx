@@ -99,7 +99,7 @@ function Dashboard() {
   }, [])
 
   // New users (no saved layout) start from the admin-set tenant default when
-  // one exists — applied once, when the dashboard payload arrives.
+  // one exists - applied once, when the dashboard payload arrives.
   const appliedDefault = useRef(false)
   useEffect(() => {
     if (appliedDefault.current || !hydrated || hasLocal || !q.data) return
@@ -122,7 +122,7 @@ function Dashboard() {
   const [editing, setEditing] = useState(false)
 
   // Drag-to-reorder with LIVE feedback: onDragOver reorders the array as you
-  // move over a target (the masonry re-packs live — the dimmed source is the
+  // move over a target (the masonry re-packs live - the dimmed source is the
   // "ghost"), and we persist on drop. A snapshot restores order on cancel.
   const [dragId, setDragId] = useState<WidgetId | null>(null)
   const [preDrag, setPreDrag] = useState<WidgetId[] | null>(null)
@@ -241,7 +241,7 @@ function Dashboard() {
 
         {d && <StatBand d={d} />}
 
-        {/* Masonry: cards size to content and pack tightly — no dead space.
+        {/* Masonry: cards size to content and pack tightly - no dead space.
             Drag a tile's handle to reorder (dnd-kit); the DragOverlay keeps the
             masonry from thrashing while dragging. */}
         {d && hydrated && (
@@ -302,7 +302,7 @@ function Dashboard() {
 
 /** A content-sized widget card that won't split across masonry columns, with a
  * drag handle for reordering. We deliberately don't apply dnd-kit's transform
- * to the tile (it would fight the CSS-column masonry) — the DragOverlay shows
+ * to the tile (it would fight the CSS-column masonry) - the DragOverlay shows
  * the drag, and the drop reorders the array. */
 function SortableTile({
   id,
@@ -386,7 +386,7 @@ function StatBand({ d }: { d: DashboardData }) {
     { label: "Cables", value: d.counts.cables ?? 0, to: "/cables" },
     {
       label: "Reachable",
-      value: d.reachable_pct != null ? `${d.reachable_pct}%` : "—",
+      value: d.reachable_pct != null ? `${d.reachable_pct}%` : "-",
       tone:
         d.reachable_pct == null
           ? undefined

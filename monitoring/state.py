@@ -9,11 +9,11 @@ returns a ``StateTransition`` to persist when the status actually changed, else
 Rules:
 
 * ``up`` after ``rise`` consecutive successes (a *success* is any reachable
-  result — ``up`` or ``degraded``).
+  result - ``up`` or ``degraded``).
 * ``down`` after ``fall`` consecutive failures.
-* ``degraded`` surfaces immediately when reachable-but-impaired — impairment
+* ``degraded`` surfaces immediately when reachable-but-impaired - impairment
   shouldn't wait out the rise count.
-* ``unknown`` (internal/config error) never flips a known status to ``down`` —
+* ``unknown`` (internal/config error) never flips a known status to ``down`` -
   it leaves the counters and the current status untouched, so a transient
   misconfiguration doesn't read as an outage.
 """

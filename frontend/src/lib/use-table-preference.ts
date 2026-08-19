@@ -10,7 +10,7 @@ export interface TablePreference {
   order: string[]
   /** Saved hidden column ids. */
   hidden: string[]
-  /** Admin lock — when true the layout can't be changed by the user. */
+  /** Admin lock - when true the layout can't be changed by the user. */
   isForced: boolean
   /** Whether the user has their own saved row (enables Reset). */
   hasUserRow: boolean
@@ -58,7 +58,7 @@ export function useTablePreference(tableId?: string): TablePreference {
       if (!tableId) return
       const key = prefKey(tableId)
       const current = qc.getQueryData<ColumnPref>(key)
-      if (current?.is_forced) return // locked — ignore writes
+      if (current?.is_forced) return // locked - ignore writes
       const merged: ColumnPrefData = {
         order: next.order ?? current?.data?.order ?? [],
         hidden: next.hidden ?? current?.data?.hidden ?? [],

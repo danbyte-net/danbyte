@@ -15,7 +15,7 @@ function SetupPage() {
         { label: "Guided setup" },
       ]}
       title="Connect your automation"
-      subtitle="Point Danbyte at the system that runs your playbooks. Danbyte hands off the work — it never touches your devices."
+      subtitle="Point Danbyte at the system that runs your playbooks. Danbyte hands off the work - it never touches your devices."
     >
       <AutomationTargetWizard />
     </EditPageShell>

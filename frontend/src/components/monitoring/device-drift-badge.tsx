@@ -14,7 +14,7 @@ import {
 import { cn } from "@/lib/utils"
 
 /** Drift kinds that belong to a device's components rather than the device
- * record itself — used to mark the Components tab and its sub-tabs. */
+ * record itself - used to mark the Components tab and its sub-tabs. */
 const COMPONENT_KINDS = new Set([
   "interface_missing",
   "interface_mismatch",
@@ -25,8 +25,8 @@ const COMPONENT_KINDS = new Set([
 ])
 
 /**
- * The device's SNMP drift, shared by every consumer on the page — the header
- * badge, the tab markers, the drift inbox — so they all dedupe to one request
+ * The device's SNMP drift, shared by every consumer on the page - the header
+ * badge, the tab markers, the drift inbox - so they all dedupe to one request
  * and can never disagree about whether drift exists.
  */
 export function useDeviceDrift(deviceId: string): SnmpDriftItem[] {
@@ -52,7 +52,7 @@ export interface DeviceDriftRow {
 }
 
 /**
- * Fleet-wide drift, keyed by device id — the drift analogue of
+ * Fleet-wide drift, keyed by device id - the drift analogue of
  * `useViolationMap()`. ONE request for a whole table: the endpoint pre-groups
  * SNMP state and interfaces per device specifically so a fleet view doesn't
  * issue an N+1, which is what makes a per-row badge affordable at all.
@@ -88,7 +88,7 @@ const KIND_LABEL: Record<string, string> = {
 }
 
 /**
- * The quiet row marker for a table — the drift twin of `ViolationBadge`'s bare
+ * The quiet row marker for a table - the drift twin of `ViolationBadge`'s bare
  * triangle, and like it, renders nothing when the device is in sync so it can
  * sit next to any name without disturbing clean rows. Pass the shared map from
  * the table so 200 rows cost one request.
@@ -149,14 +149,14 @@ export function DeviceDriftMarker({
 /** One drifted interface from the fleet summary's opt-in `interfaces` map
  * (`GET /api/monitoring/snmp-drift/?interfaces=1`). */
 export interface InterfaceDriftEntry {
-  /** The owning device — so a marker can link without knowing its row's device. */
+  /** The owning device - so a marker can link without knowing its row's device. */
   device: string
   count: number
   kinds: string[]
 }
 
 /**
- * Fleet-wide drift keyed by *interface* id — the same one-request trick as
+ * Fleet-wide drift keyed by *interface* id - the same one-request trick as
  * `useDriftMap()`, for tables of interfaces rather than devices. The endpoint
  * already computes every device's drift items and pre-groups state + interfaces
  * per device to avoid an N+1; `?interfaces=1` just stops it throwing the
@@ -164,7 +164,7 @@ export interface InterfaceDriftEntry {
  *
  * Only interfaces that exist in Danbyte appear: an observed port Danbyte lacks
  * (`interface_missing`) has no row to mark, and neither do discovered prefixes or
- * IPs — no drift item references an existing Prefix or IPAddress at all.
+ * IPs - no drift item references an existing Prefix or IPAddress at all.
  */
 export function useInterfaceDriftMap(): Map<string, InterfaceDriftEntry> {
   const q = useQuery({
@@ -183,7 +183,7 @@ export function useInterfaceDriftMap(): Map<string, InterfaceDriftEntry> {
 }
 
 /**
- * The quiet row marker for a table of interfaces — same glyph and manners as
+ * The quiet row marker for a table of interfaces - same glyph and manners as
  * `DeviceDriftMarker` (renders nothing when the port is in sync, so it can sit
  * next to any interface name), pointing at the device's Components → Interfaces
  * table where the port's differences are listed in place.
@@ -269,7 +269,7 @@ export function DeviceDriftBadge({
   className,
 }: {
   deviceId: string
-  /** Filled, labelled pill with the count — for detail-page heroes. */
+  /** Filled, labelled pill with the count - for detail-page heroes. */
   prominent?: boolean
   className?: string
 }) {
@@ -312,7 +312,7 @@ export function DeviceDriftBadge({
         </span>
         <span className="text-[11px] text-muted-foreground">
           Observed by SNMP, differs from the source of truth. Review on the
-          Monitoring tab — nothing changes until you accept it.
+          Monitoring tab - nothing changes until you accept it.
         </span>
         <ul className="mt-0.5 space-y-0.5">
           {items.slice(0, 6).map((d, i) => (

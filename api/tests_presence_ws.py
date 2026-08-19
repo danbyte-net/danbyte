@@ -15,10 +15,10 @@ from core.models import Organization, Tenant
     CHANNEL_LAYERS={"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 )
 class PresenceWSTests(TransactionTestCase):
-    # TransactionTestCase flushes ALL tables when each test ends — including
+    # TransactionTestCase flushes ALL tables when each test ends - including
     # migration-seeded rows (the RBAC groups/grants from auth_api 0007). The
     # runner always orders these classes last, so within a run nothing is
-    # harmed — but under --keepdb the FINAL flush persists into the next run,
+    # harmed - but under --keepdb the FINAL flush persists into the next run,
     # which then fails on Group.DoesNotExist. Re-seed on the way out.
     @classmethod
     def tearDownClass(cls):

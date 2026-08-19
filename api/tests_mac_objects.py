@@ -1,6 +1,6 @@
 """MAC aggregation views with first-class MAC objects.
 
-`/api/macs/` and `/api/macs/<mac>/` union three sources — interface hardware
+`/api/macs/` and `/api/macs/<mac>/` union three sources - interface hardware
 addresses, IP↔MAC pairings, and :class:`~api.models.MACAddress` objects. These
 tests pin that a standalone MAC object (no matching interface/IP string) still
 shows up, and that object metadata (description / tags / assignment) rides along.
@@ -33,7 +33,7 @@ class MacAggregationTests(APITestCase):
             assigned_interface=self.iface,
             description="primary nic",
         )
-        # A standalone object — no interface or IP string references this MAC.
+        # A standalone object - no interface or IP string references this MAC.
         self.standalone = MACAddress.objects.create(
             tenant=self.tenant, mac_address="de:ad:be:ef:00:99", description="spare"
         )
@@ -87,7 +87,7 @@ class MacAggregationTests(APITestCase):
 
     def test_detail_of_mac_only_observed_via_snmp(self):
         # A MAC clicked on a device's ARP/FDB monitoring card may exist only
-        # in observed SNMP state — the page must say where it was seen, not 404.
+        # in observed SNMP state - the page must say where it was seen, not 404.
         from monitoring.models import DeviceSnmp
 
         DeviceSnmp.objects.create(

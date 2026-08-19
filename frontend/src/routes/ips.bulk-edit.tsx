@@ -132,7 +132,7 @@ function BulkEditIpsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={KEEP}>(keep)</SelectItem>
-                <SelectItem value={NONE}>— none —</SelectItem>
+                <SelectItem value={NONE}>- none -</SelectItem>
                 {statuses.data?.results.map((s) => (
                   <SelectItem key={s.id} value={s.id}>
                     {s.name}

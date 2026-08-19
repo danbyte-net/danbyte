@@ -1,4 +1,4 @@
-"""Scheduled email digest — a periodic monitoring/status summary per tenant.
+"""Scheduled email digest - a periodic monitoring/status summary per tenant.
 
 A daily systemd timer runs ``manage.py send_digest`` →
 ``run_scheduled_digests()``: for each active tenant whose *effective* digest
@@ -111,7 +111,7 @@ def build_digest(tenant, since) -> dict:
         from monitoring.cert_digest import cert_summary
 
         certs = cert_summary(tenant, now=timezone.now())
-    except Exception:  # noqa: BLE001 — cert strip must never break the digest
+    except Exception:  # noqa: BLE001 - cert strip must never break the digest
         logger.exception("digest certificate summary failed")
 
     tasks = None
@@ -119,7 +119,7 @@ def build_digest(tenant, since) -> dict:
         from planning.digest import task_summary
 
         tasks = task_summary(tenant, now=timezone.now())
-    except Exception:  # noqa: BLE001 — same rule: a section never sinks the mail
+    except Exception:  # noqa: BLE001 - same rule: a section never sinks the mail
         logger.exception("digest task summary failed")
 
     return {
@@ -147,7 +147,7 @@ def build_digest(tenant, since) -> dict:
 def _ip_label(ip) -> str:
     """``10.0.0.5`` or ``10.0.0.5 (host.example.net)`` when a DNS name is known."""
     if ip is None:
-        return "—"
+        return "-"
     dns = (getattr(ip, "dns_name", "") or "").strip()
     return f"{ip.ip_address} ({dns})" if dns else str(ip.ip_address)
 
@@ -155,7 +155,7 @@ def _ip_label(ip) -> str:
 def _build_chains(win_qs):
     """Group a window of transitions into ordered per-IP badge chains, keyed by
     prefix. Returns ``[(prefix_cidr, [{"label", "segments"}, …]), …]`` where each
-    chain's ``segments`` are ``[{"status", "at"}]`` — the first segment is the
+    chain's ``segments`` are ``[{"status", "at"}]`` - the first segment is the
     IP's status entering the window (no timestamp), each following segment a
     transition's resulting status + time.
     """
@@ -167,7 +167,7 @@ def _build_chains(win_qs):
     groups: OrderedDict = OrderedDict()
     for t in rows:
         ip = t.target_ip
-        pfx = ip.prefix.cidr if (ip and ip.prefix_id) else "—"
+        pfx = ip.prefix.cidr if (ip and ip.prefix_id) else "-"
         chains = groups.setdefault(pfx, OrderedDict())
         entry = chains.get(ip.id)
         if entry is None:
@@ -183,7 +183,7 @@ def _build_chains(win_qs):
 def _target_label(obj) -> str:
     ip = getattr(obj, "target_ip", None)
     tpl = getattr(obj, "template", None)
-    ip_s = ip.ip_address if ip else "—"
+    ip_s = ip.ip_address if ip else "-"
     tpl_s = f" · {tpl.name}" if tpl else ""
     return f"{ip_s}{tpl_s}"
 
@@ -191,7 +191,7 @@ def _target_label(obj) -> str:
 def render_text(data: dict) -> str:
     d = data
     lines = [
-        f"Monitoring digest — {d['tenant'].name}",
+        f"Monitoring digest - {d['tenant'].name}",
         f"Window: {d['since']:%Y-%m-%d} → {d['now']:%Y-%m-%d}",
         "",
         f"Checks: {d['total']} total"
@@ -218,7 +218,7 @@ def render_text(data: dict) -> str:
             flag = " (OVERDUE)" if r["overdue"] else ""
             lines.append(
                 f"  {r['due']:%Y-%m-%d}{flag}  {r['title']} "
-                f"[{r['board']}] — {r['assignees']}"
+                f"[{r['board']}] - {r['assignees']}"
             )
     if d["top_alerts"]:
         lines.append("")
@@ -306,7 +306,7 @@ def _chain_html(segments) -> str:
 
 def build_chains_from_rows(rows):
     """Group an iterable of StateTransition rows into per-IP badge chains keyed
-    by prefix — the list-based twin of :func:`_build_chains`, for a supplied set
+    by prefix - the list-based twin of :func:`_build_chains`, for a supplied set
     of transitions (e.g. one channel's batched window)."""
     def _key(t):
         ip = t.target_ip
@@ -316,7 +316,7 @@ def build_chains_from_rows(rows):
     groups: OrderedDict = OrderedDict()
     for t in sorted(rows, key=_key):
         ip = t.target_ip
-        pfx = ip.prefix.cidr if (ip and ip.prefix_id) else "—"
+        pfx = ip.prefix.cidr if (ip and ip.prefix_id) else "-"
         chains = groups.setdefault(pfx, OrderedDict())
         entry = chains.get(ip.id)
         if entry is None:
@@ -328,7 +328,7 @@ def build_chains_from_rows(rows):
 
 
 def _chains_html(chains) -> str:
-    """The per-prefix chain tables (no section heading) — shared by the full
+    """The per-prefix chain tables (no section heading) - shared by the full
     digest and the batched status mini-digest."""
     out = []
     for pfx, chain_list in chains:
@@ -353,7 +353,7 @@ def _chains_html(chains) -> str:
 
 
 def render_status_digest(rows, since, now, deployment_name: str) -> str:
-    """A batched status-change mini-digest email for one notification channel —
+    """A batched status-change mini-digest email for one notification channel -
     the recent transitions rendered as the same per-prefix badge chains as the
     monitoring digest's State-changes section."""
     from core import email as ek
@@ -374,7 +374,7 @@ def render_status_digest(rows, since, now, deployment_name: str) -> str:
 
 def render_status_digest_text(rows, since, now) -> str:
     lines = [
-        f"Status changes — {len(rows)} between "
+        f"Status changes - {len(rows)} between "
         f"{since:%Y-%m-%d %H:%M} and {now:%Y-%m-%d %H:%M}",
         "",
     ]
@@ -484,7 +484,7 @@ def render_html(data: dict, deployment_name: str) -> str:
     parts.append(ek.muted(
         f"{d['changes']} configuration change(s) recorded in this window."))
 
-    title = f"Monitoring digest — {d['tenant'].name}"
+    title = f"Monitoring digest - {d['tenant'].name}"
     return ek.render_layout(
         title, "".join(parts), deployment_name=deployment_name,
         kicker="Monitoring digest",
@@ -514,7 +514,7 @@ def send_tenant_digest(tenant, *, force: bool = False, recipients=None) -> bool:
     since = timezone.now() - timedelta(days=window)
     data = build_digest(tenant, since)
     name = _deployment_name()
-    subject = f"{name} monitoring digest — {tenant.name}"
+    subject = f"{name} monitoring digest - {tenant.name}"
     return send_html_email(
         subject,
         to,

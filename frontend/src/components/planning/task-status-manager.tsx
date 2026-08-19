@@ -224,7 +224,7 @@ export function TaskStatusManager() {
         header: ({ column }) => (
           <SortHeader column={column} label="Semantic group" />
         ),
-        cell: ({ row }) => GROUP_LABEL[row.original.semantic_group] ?? "—",
+        cell: ({ row }) => GROUP_LABEL[row.original.semantic_group] ?? "-",
       },
       {
         id: "done",
@@ -234,12 +234,12 @@ export function TaskStatusManager() {
           closedGroup(row.original.semantic_group) ? (
             <span
               className="inline-flex items-center gap-1 text-[12px]"
-              title="Counts as done — overdue tasks here stop sending reminder emails"
+              title="Counts as done - overdue tasks here stop sending reminder emails"
             >
               <Check className="h-3.5 w-3.5 text-primary" /> Done
             </span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -255,7 +255,7 @@ export function TaskStatusManager() {
               <Check className="h-3.5 w-3.5 text-primary" /> New boards
             </span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -283,7 +283,7 @@ export function TaskStatusManager() {
   if (boardsQ.data && boards.length === 0) {
     return (
       <EmptyState title="No boards yet.">
-        Task statuses are the columns of a planning board — create a board under
+        Task statuses are the columns of a planning board - create a board under
         Planning first.
       </EmptyState>
     )
@@ -332,7 +332,7 @@ export function TaskStatusManager() {
         tableId="task-statuses"
       />
       <p className="px-1 pt-2 text-[11px] text-muted-foreground">
-        Each row is a column name grouped across the boards that carry it —
+        Each row is a column name grouped across the boards that carry it -
         saving a row updates every board's copy in one go. "Completed" and
         "Cancelled" count as done regardless of name: their tasks stop
         generating due-date reminder emails. "Default" columns seed newly
@@ -478,7 +478,7 @@ function StatusDialog({
           </div>
           <label
             className="flex items-center gap-1.5 text-sm"
-            title="Tasks in this column count as done — overdue ones stop sending reminder emails"
+            title="Tasks in this column count as done - overdue ones stop sending reminder emails"
           >
             <Checkbox
               checked={done}
@@ -486,7 +486,7 @@ function StatusDialog({
                 setSemGroup(v ? "completed" : "unstarted")
               }
             />
-            Done — mutes due-date reminders for its tasks
+            Done - mutes due-date reminders for its tasks
           </label>
           <label
             className="flex items-center gap-1.5 text-sm"
@@ -496,7 +496,7 @@ function StatusDialog({
               checked={isDefault}
               onCheckedChange={(v) => setIsDefault(!!v)}
             />
-            Default — create this column on new boards
+            Default - create this column on new boards
           </label>
           {isEdit && group.members.length > 1 && (
             <p className="text-[11px] text-muted-foreground">

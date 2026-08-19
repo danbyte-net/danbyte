@@ -182,7 +182,7 @@ export function InterfaceForm({
           id: iface!.id,
           payload,
         }).then((saved) => ({ saved, count: 1 }))
-      // A [a-b] range in the name fans out — "eth[0-3]" adds four ports. For a
+      // A [a-b] range in the name fans out - "eth[0-3]" adds four ports. For a
       // whole switch face, /interfaces/bulk does it server-side. In plan mode
       // saveObject stages one create per expanded name, so a planned range
       // records four new interfaces rather than one.
@@ -221,7 +221,7 @@ export function InterfaceForm({
     },
   })
 
-  // Same-device interfaces (minus self) — candidates for parent / LAG / bridge.
+  // Same-device interfaces (minus self) - candidates for parent / LAG / bridge.
   const ifaceOptions = (parents.data?.results ?? [])
     .filter((p) => p.id !== iface?.id)
     .map((p) => ({ value: p.id, label: p.name }))
@@ -260,7 +260,7 @@ export function InterfaceForm({
         {isEdit && (
           <FormText
             label="SNMP name"
-            hint="what discovery calls this port — clear to unlink"
+            hint="what discovery calls this port - clear to unlink"
             value={snmpName}
             onChange={setSnmpName}
             mono
@@ -314,7 +314,7 @@ export function InterfaceForm({
           label="Duplex"
           value={duplex || null}
           onChange={(v) => setDuplex(v ?? "")}
-          noneLabel="—"
+          noneLabel="-"
           options={choices.interface_duplex}
           error={fieldErrors.duplex}
         />
@@ -330,7 +330,7 @@ export function InterfaceForm({
           label="PoE type"
           value={poeType || null}
           onChange={(v) => setPoeType(v ?? "")}
-          noneLabel="—"
+          noneLabel="-"
           options={choices.poe_types}
           error={fieldErrors.poe_type}
         />
@@ -359,7 +359,7 @@ export function InterfaceForm({
           label="802.1Q mode"
           value={mode || null}
           onChange={(v) => setMode(v ?? "")}
-          noneLabel="—"
+          noneLabel="-"
           options={[
             { value: "access", label: "Access" },
             { value: "tagged", label: "Tagged (trunk)" },
@@ -479,7 +479,7 @@ export function InterfaceForm({
         )}
         <FormCheckbox
           label="Uplink"
-          hint="faces other network gear — never suggest hosts on this port"
+          hint="faces other network gear - never suggest hosts on this port"
           checked={isUplink}
           onChange={setIsUplink}
         />

@@ -38,7 +38,7 @@ const ACC_LABEL: Record<string, string> = {
 
 const show = (v: unknown) =>
   v === null || v === ""
-    ? "—"
+    ? "-"
     : typeof v === "boolean"
       ? v
         ? "yes"
@@ -46,7 +46,7 @@ const show = (v: unknown) =>
       : String(v)
 
 /**
- * Re-align a rack with its rack type — the rack twin of the device page's
+ * Re-align a rack with its rack type - the rack twin of the device page's
  * sync-from-type. A type that gains a PDU (or has its dimensions corrected)
  * needs a way to reach the racks already built from it; without this the
  * model only ever applied at creation.
@@ -82,7 +82,7 @@ export function RackSyncTypeButton({ rack }: { rack: Rack }) {
         dimCount ? `${dimCount} dimension${dimCount === 1 ? "" : "s"}` : "",
       ].filter(Boolean)
       toast.success(
-        parts.length ? `Synced — ${parts.join(" · ")}` : "Nothing to change"
+        parts.length ? `Synced - ${parts.join(" · ")}` : "Nothing to change"
       )
       setPreview(null)
     },
@@ -119,7 +119,7 @@ export function RackSyncTypeButton({ rack }: { rack: Rack }) {
 
           {inStep ? (
             <p className="text-sm text-muted-foreground">
-              This rack already matches its type — nothing to apply.
+              This rack already matches its type - nothing to apply.
             </p>
           ) : (
             <div className="grid gap-4 text-sm">
@@ -190,7 +190,7 @@ export function RackSyncTypeButton({ rack }: { rack: Rack }) {
                   </span>
                   <span className="font-mono">{extra.join(", ")}</span>
                   <span className="text-[11px] text-muted-foreground">
-                    Left alone — syncing never deletes a strip. Remove them by
+                    Left alone - syncing never deletes a strip. Remove them by
                     hand if they really are gone.
                   </span>
                 </div>

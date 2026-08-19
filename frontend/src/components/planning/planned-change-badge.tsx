@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils"
  * Deliberately unlike its neighbours on a device hero: compliance is an amber
  * warning triangle ("a rule you wrote isn't satisfied"), drift is compare-arrows
  * ("the device reports something else"). This is a calendar clock in the primary
- * tint — informational and scheduled, not wrong-now — because a planned change
+ * tint - informational and scheduled, not wrong-now - because a planned change
  * means *nothing is wrong yet*. Renders nothing when nothing is planned, so it
  * can sit anywhere unconditionally.
  */
@@ -40,7 +40,7 @@ export function plannedKey(objectType: string, objectId: string): string {
 }
 
 /**
- * Every open plan, keyed by target. ONE request for a whole table — the endpoint
+ * Every open plan, keyed by target. ONE request for a whole table - the endpoint
  * pre-groups server-side precisely so a per-row badge doesn't become an N+1.
  */
 export function usePlannedChangeMap(): Map<string, PlannedTargetRow> {
@@ -56,7 +56,7 @@ export function usePlannedChangeMap(): Map<string, PlannedTargetRow> {
   return useMemo(() => new Map(Object.entries(q.data?.targets ?? {})), [q.data])
 }
 
-/** The open change sets for one object — what the edit form's notice lists. */
+/** The open change sets for one object - what the edit form's notice lists. */
 export function usePlannedChanges(
   objectType: string,
   objectId: string | undefined
@@ -95,7 +95,7 @@ function Body({ row }: { row: PlannedTargetRow }) {
       </p>
       {row.samples.map((s, i) => (
         <p key={i} className="text-muted-foreground">
-          {s.field}: {s.from || "—"} → {s.to || "—"}
+          {s.field}: {s.from || "-"} → {s.to || "-"}
         </p>
       ))}
       <p className="text-muted-foreground italic">
@@ -144,7 +144,7 @@ export function PlannedChangeMarker({
   )
 }
 
-/** Hero pill — labelled, so a device page states it outright. */
+/** Hero pill - labelled, so a device page states it outright. */
 export function PlannedChangeBadge({
   objectType,
   objectId,

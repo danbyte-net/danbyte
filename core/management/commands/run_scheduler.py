@@ -2,7 +2,7 @@
 
 Bare metal runs each entry in ``core.schedule.SCHEDULE`` as its own systemd
 timer. A container install has no init to do that, so it runs one long-lived
-process — the ``scheduler`` service in docker-compose — which reads the same
+process - the ``scheduler`` service in docker-compose - which reads the same
 table and calls the same management commands::
 
     manage.py run_scheduler            # the beat
@@ -13,7 +13,7 @@ Due-ness is a *slot* comparison, not a timer: each task's slot changes exactly
 when it next becomes due, so a scheduler that restarted, or was a few seconds
 late, still runs each occurrence once and never twice. Slots live in Redis, so
 restarting the container does not re-send this morning's digest, and running two
-replicas does not send it twice — the claim is a single atomic GETSET.
+replicas does not send it twice - the claim is a single atomic GETSET.
 """
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ class Command(BaseCommand):
         self._redis = _redis_or_none()
         if self._redis is None:
             log.warning(
-                "scheduler: no Redis — slots kept in memory, so a restart may "
+                "scheduler: no Redis - slots kept in memory, so a restart may "
                 "repeat a daily task"
             )
 

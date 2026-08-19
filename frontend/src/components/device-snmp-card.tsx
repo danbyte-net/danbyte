@@ -47,7 +47,7 @@ interface ListResp<T> {
 
 /**
  * The device's last observed SNMP state. One query key for the whole tab, so
- * every card that reads it — facts/interfaces here, LLDP and ARP below —
+ * every card that reads it - facts/interfaces here, LLDP and ARP below -
  * shares a single fetch and sees the result of a poll immediately.
  */
 function useDeviceSnmp(deviceId: string) {
@@ -58,8 +58,8 @@ function useDeviceSnmp(deviceId: string) {
 }
 
 /**
- * Danbyte's own view of this device — shared cache with the IPs/Interfaces
- * tabs — indexed by the strings SNMP reports, so an observed value can link to
+ * Danbyte's own view of this device - shared cache with the IPs/Interfaces
+ * tabs - indexed by the strings SNMP reports, so an observed value can link to
  * the real object. Things SNMP sees but Danbyte lacks stay plain text.
  */
 function useObservedLinks(deviceId: string) {
@@ -93,11 +93,11 @@ function useObservedLinks(deviceId: string) {
 
 /**
  * Read-only **observed** SNMP facts for a device (issue #84, Phase 1). Polling
- * never touches the device's source-of-truth fields — it only refreshes this
+ * never touches the device's source-of-truth fields - it only refreshes this
  * card. Gated to users who can change the device.
  *
  * Every observed value that corresponds to an object Danbyte already records
- * (interface, VLAN, IP, MAC) links to that object's detail page — so the tab
+ * (interface, VLAN, IP, MAC) links to that object's detail page - so the tab
  * is a jumping-off point, not a dead end. The lookups resolve
  * client-side from the device's own interfaces/IPs (shared query cache), so
  * there's no extra backend work: things SNMP sees but Danbyte lacks stay plain
@@ -123,7 +123,7 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
   const { ipIdByAddr, ifaceIdByName, vlanIdByVid } = useObservedLinks(deviceId)
 
   const poll = useMutation({
-    // No profile_id — the backend resolves it along the hierarchy
+    // No profile_id - the backend resolves it along the hierarchy
     // (device → role → type → tenant default).
     mutationFn: () =>
       api<DeviceSnmp>(`/api/monitoring/devices/${deviceId}/snmp-poll/`, {
@@ -192,7 +192,7 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
       header: "Util (in)",
       cell: (i) => {
         // The Record index is undefined at runtime for an interface with no
-        // counter samples yet — the `?? []` keeps UtilCell from mapping over it.
+        // counter samples yet - the `?? []` keeps UtilCell from mapping over it.
         const series = util.data?.interfaces[i.if_index] ?? []
         return <UtilCell series={series} />
       },
@@ -212,7 +212,7 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
           className="text-muted-foreground"
           title={i.alias || i.descr || i.type_name}
         >
-          {i.alias || i.descr || i.type_name || "—"}
+          {i.alias || i.descr || i.type_name || "-"}
         </span>
       ),
     },
@@ -299,7 +299,7 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
 
 /**
  * LLDP neighbours the device reports. Three narrow columns, so it's its own
- * card rather than a full-width section under the interface table — the
+ * card rather than a full-width section under the interface table - the
  * Monitoring tab pairs it with the ARP table. Reads the same observed-state
  * query as {@link DeviceSnmpCard} (one fetch), and renders nothing when the
  * device reports no neighbours.
@@ -335,7 +335,7 @@ export function DeviceLldpCard({ deviceId }: { deviceId: string }) {
       flex: true,
       cell: (n) => (
         <span className="font-mono text-muted-foreground">
-          {n.remote_port || "—"}
+          {n.remote_port || "-"}
         </span>
       ),
     },
@@ -353,7 +353,7 @@ export function DeviceLldpCard({ deviceId }: { deviceId: string }) {
 }
 
 /**
- * The device's ARP table — IP ↔ MAC ↔ ifIndex. Same deal as
+ * The device's ARP table - IP ↔ MAC ↔ ifIndex. Same deal as
  * {@link DeviceLldpCard}: three narrow columns off the shared observed-state
  * query, so it sits beside another card instead of spanning the page.
  */
@@ -377,7 +377,7 @@ export function DeviceArpCard({ deviceId }: { deviceId: string }) {
       flex: true,
       cell: (a) => (
         <span className="font-mono text-muted-foreground">
-          {a.if_index || "—"}
+          {a.if_index || "-"}
         </span>
       ),
     },
@@ -395,12 +395,12 @@ export function DeviceArpCard({ deviceId }: { deviceId: string }) {
 }
 
 function Muted() {
-  return <span className="text-muted-foreground">—</span>
+  return <span className="text-muted-foreground">-</span>
 }
 
 function fmtSpeed(mbps: string): string {
   const n = Number(mbps)
-  if (!n) return "—"
+  if (!n) return "-"
   return n >= 1000 ? `${n / 1000} Gbps` : `${n} Mbps`
 }
 
@@ -435,7 +435,7 @@ function VlanLink({
   )
 }
 
-/** Observed IPs — each links to its IP detail page when Danbyte records it. */
+/** Observed IPs - each links to its IP detail page when Danbyte records it. */
 function IpLinks({
   ips,
   idByAddr,
@@ -467,7 +467,7 @@ function IpLinks({
   )
 }
 
-/** A MAC that links to its `/macs/<mac>` object page, or "—" when absent. */
+/** A MAC that links to its `/macs/<mac>` object page, or "-" when absent. */
 function MacLink({ mac }: { mac: string }) {
   if (!mac) return <Muted />
   return (
@@ -524,5 +524,5 @@ function IfStatus({ admin, oper }: { admin: string; oper: string }) {
       : oper === "down" || oper === "lowerLayerDown"
         ? "destructive"
         : "warning"
-  return <Badge variant={variant}>{oper || "—"}</Badge>
+  return <Badge variant={variant}>{oper || "-"}</Badge>
 }

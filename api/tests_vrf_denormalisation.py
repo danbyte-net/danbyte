@@ -5,7 +5,7 @@ row follows it. Two ways that used to leak:
 
 * a scoped ``save(update_fields=[...])`` wrote only the listed columns, so the
   derived VRF was computed and then thrown away;
-* ``IPRange`` had no ``save()`` at all — only the serializer applied the rule,
+* ``IPRange`` had no ``save()`` at all - only the serializer applied the rule,
   so anything created straight through the ORM kept the wrong VRF.
 """
 from __future__ import annotations
@@ -38,7 +38,7 @@ class VrfDenormalisationTests(TestCase):
     def test_scoped_save_still_persists_the_derived_vrf(self):
         """A save(update_fields=…) that omits "vrf" must not drop it.
 
-        Re-fetch rather than trusting the in-memory object — the value was
+        Re-fetch rather than trusting the in-memory object - the value was
         always right in memory, which is exactly what hid this.
         """
         ip = IPAddress.objects.create(
@@ -85,7 +85,7 @@ class VrfDenormalisationTests(TestCase):
         self.assertEqual(IPRange.objects.get(pk=rng.pk).vrf_id, self.vrf.id)
 
     def test_range_without_a_prefix_keeps_the_vrf_it_was_given(self):
-        """No prefix means nothing to derive from — the operator's choice holds."""
+        """No prefix means nothing to derive from - the operator's choice holds."""
         rng = IPRange.objects.create(
             tenant=self.tenant, vrf=self.vrf,
             start_address="10.99.0.10", end_address="10.99.0.20",
@@ -97,7 +97,7 @@ class VrfDenormalisationTests(TestCase):
         """Children denormalise the prefix's VRF, so the move must reach them.
 
         They only ever re-derived it on their own save, so a prefix moved into a
-        VRF used to leave every address and range behind in the old one —
+        VRF used to leave every address and range behind in the old one -
         silently, and wrong for every VRF-filtered query.
         """
         ip = IPAddress.objects.create(

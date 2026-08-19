@@ -45,7 +45,7 @@ export interface WirelessLANColumnOpts<T extends WirelessLAN = WirelessLAN> {
   include?: WirelessLANColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
   tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }
@@ -147,7 +147,7 @@ export function buildWirelessLANColumns<T extends WirelessLAN = WirelessLAN>(
           kind: "enum",
           label: "VLAN",
           get: (r: T) => r.vlan?.id ?? "__none__",
-          formatValue: (_v, sample) => ({ label: sample.vlan?.name ?? "—" }),
+          formatValue: (_v, sample) => ({ label: sample.vlan?.name ?? "-" }),
         },
       },
     }),
@@ -174,7 +174,7 @@ export function buildWirelessLANColumns<T extends WirelessLAN = WirelessLAN>(
           kind: "enum",
           label: "Auth",
           get: (r: T) => r.auth_type,
-          formatValue: (v) => ({ label: v || "—" }),
+          formatValue: (v) => ({ label: v || "-" }),
         },
       },
     }),
@@ -184,7 +184,7 @@ export function buildWirelessLANColumns<T extends WirelessLAN = WirelessLAN>(
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     }),

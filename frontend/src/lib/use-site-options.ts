@@ -12,7 +12,7 @@ import { useMe } from "@/lib/use-me"
  * gets the sites they may edit (`me.editable_sites`), and when that leaves
  * exactly one, `lockedId` names it so the form can prefill and disable the
  * site field. The server enforces independently (serializer field filter +
- * post-save guard) — this is UX, not the boundary.
+ * post-save guard) - this is UX, not the boundary.
  *
  * Read-side filters (list-page facets, search pickers) should NOT use this:
  * separation never narrows what a user can see, only where they can write.

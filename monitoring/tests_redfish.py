@@ -191,7 +191,7 @@ class RedfishReconcileTests(_Base):
     def test_loopback_host_refused(self):
         self.ep.host = "127.0.0.1"
         self.ep.save(update_fields=["host"])
-        poll_endpoint(self.ep)  # no client patch — must fail before any I/O
+        poll_endpoint(self.ep)  # no client patch - must fail before any I/O
         self.ep.refresh_from_db()
         self.assertFalse(self.ep.reachable)
         self.assertIn("loopback", self.ep.error)

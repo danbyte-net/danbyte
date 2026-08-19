@@ -18,8 +18,8 @@ import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
 // The one source of truth for "a table of clusters". Every surface that lists
-// clusters — /clusters and the embedded cluster pane on a cluster-type /
-// cluster-group / site detail page — builds its columns here so a cluster row
+// clusters - /clusters and the embedded cluster pane on a cluster-type /
+// cluster-group / site detail page - builds its columns here so a cluster row
 // reads identically everywhere. Page-specific columns are spliced around this
 // factory's output; the shared cells are never re-authored inline.
 //
@@ -58,14 +58,14 @@ export interface ClusterColumnOpts<T extends Cluster = Cluster> {
   include?: ClusterColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
   /** Cluster-type rendering. "text" (default) is small plain text under a
    * sortable header; "badge" is the neutral chip the embedded pane uses. */
   typeVariant?: "text" | "badge"
-  /** Site rendering — see {@link SiteVariant}. Defaults to "link". */
+  /** Site rendering - see {@link SiteVariant}. Defaults to "link". */
   siteVariant?: SiteVariant
-  /** How a zero VM count renders — see {@link ZeroCounts}. The embedded pane
+  /** How a zero VM count renders - see {@link ZeroCounts}. The embedded pane
    * counts members, so there "0" is the answer rather than "unknown". */
   zeroCounts?: ZeroCounts
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
@@ -156,7 +156,7 @@ export function buildClusterColumns<T extends Cluster = Cluster>(
         facet: {
           kind: "enum",
           label: "Group",
-          get: (r: T) => r.group?.name ?? "—",
+          get: (r: T) => r.group?.name ?? "-",
         },
       },
     }),
@@ -210,7 +210,7 @@ export function buildClusterColumns<T extends Cluster = Cluster>(
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     }),

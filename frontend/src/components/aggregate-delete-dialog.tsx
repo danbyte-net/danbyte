@@ -47,7 +47,7 @@ export function AggregateDeleteDialog({
             Delete aggregate {aggregate?.prefix}?
           </AlertDialogTitle>
           <AlertDialogDescription>
-            This removes the aggregate record only — prefixes inside it are not
+            This removes the aggregate record only - prefixes inside it are not
             touched. This action can't be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>

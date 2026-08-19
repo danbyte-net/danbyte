@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { apiErrorToast } from "@/lib/api-toast"
 
-// Single-prefix delete confirm — used by the row's "..." menu. Bulk
+// Single-prefix delete confirm - used by the row's "..." menu. Bulk
 // delete lives in prefix-bulk-bar.tsx (different shape, different action).
 
 export interface PrefixDeleteDialogProps {

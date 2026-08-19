@@ -1,4 +1,4 @@
-"""Label templates (#9) — render engine + API.
+"""Label templates (#9) - render engine + API.
 
 Load-bearing guarantees: rendering is sandboxed and autoescaped (a field value
 containing markup is escaped, not injected); `fields` introspection reflects the
@@ -25,7 +25,7 @@ class LabelRenderTests(TestCase):
         mfr = Manufacturer.objects.create(tenant=self.tenant, name="M", slug="m")
         dt = DeviceType.objects.create(tenant=self.tenant, manufacturer=mfr, model="MX")
         role = DeviceRole.objects.create(tenant=self.tenant, name="R", slug="r")
-        # A device name carrying markup — must be escaped in the label.
+        # A device name carrying markup - must be escaped in the label.
         self.device = Device.objects.create(
             tenant=self.tenant, name="<b>rtr1</b>", device_type=dt, role=role,
             site=self.site,
@@ -139,7 +139,7 @@ class LabelApiTests(TestCase):
 
     def test_pdf_is_label_sized(self):
         # The PDF endpoint returns a real PDF whose page is exactly the label's
-        # mm dimensions — that's what makes it print at true physical size.
+        # mm dimensions - that's what makes it print at true physical size.
         r = self.client.post(
             "/api/label-templates/",
             {
@@ -158,7 +158,7 @@ class LabelApiTests(TestCase):
         self.assertEqual(p["Content-Type"], "application/pdf")
         pdf = p.getvalue() if hasattr(p, "getvalue") else b"".join(p.streaming_content)
         self.assertTrue(pdf.startswith(b"%PDF"))
-        # 62mm = 175.7pt, 29mm = 82.2pt — confirm the page box, not A4.
+        # 62mm = 175.7pt, 29mm = 82.2pt - confirm the page box, not A4.
         import weasyprint
 
         page = weasyprint.HTML(
@@ -262,7 +262,7 @@ class LabelApiTests(TestCase):
 
     def test_resolver_no_access_does_not_switch_tenant(self):
         # A user with no grants in another tenant must NOT be switched into it by
-        # scanning that tenant's label — the resolver 404s and leaves the active
+        # scanning that tenant's label - the resolver 404s and leaves the active
         # tenant untouched.
         other_org = Organization.objects.create(name="Other", slug="other")
         other = Tenant.objects.create(org=other_org, name="Other", slug="other")

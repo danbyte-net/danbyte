@@ -3,13 +3,13 @@
 Registries for the swappable backends behind Danbyte's integration flows so a
 plugin can add its own from its ``danbyte_plugin`` module:
 
-- **automation runners** (deploy dispatch) — built-in ``awx`` + ``webhook``.
-- **import sources** — built-in ``netbox``.
-- **notification channels** — plugin-supplied transports.
+- **automation runners** (deploy dispatch) - built-in ``awx`` + ``webhook``.
+- **import sources** - built-in ``netbox``.
+- **notification channels** - plugin-supplied transports.
 
 Selection is by ``kind`` string. Registration is idempotent (last wins). The
 automation selector degrades to the ``webhook`` provider for an unknown kind
-rather than crashing — mirroring the check engine's "unknown degrades" rule.
+rather than crashing - mirroring the check engine's "unknown degrades" rule.
 
 An automation runner is ``run(target, payload, event) -> (status, detail)``
 where ``status`` is ``"launched"`` or ``"failed"``.

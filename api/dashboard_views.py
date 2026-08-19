@@ -1,4 +1,4 @@
-"""Dashboard aggregation — one batched, tenant-scoped payload for the home page.
+"""Dashboard aggregation - one batched, tenant-scoped payload for the home page.
 
 Every dashboard widget reads from this single endpoint so the page is one fetch.
 Aggregations are deliberately cheap (``.count()`` + ``values().annotate()``); the
@@ -47,17 +47,17 @@ _PALETTE = [
 
 
 def _titilise(v: str) -> str:
-    return v.replace("_", " ").title() if v else "—"
+    return v.replace("_", " ").title() if v else "-"
 
 
-# Carrier-grade NAT shared space (RFC 6598) — routable-looking but not public.
+# Carrier-grade NAT shared space (RFC 6598) - routable-looking but not public.
 # Checked before is_private so it lands in its own bucket regardless of how the
 # stdlib classifies it across Python versions.
 _CGNAT4 = ipaddress.ip_network("100.64.0.0/10")
 
 
 def _classify_ip_scope(value: str) -> str | None:
-    """Bucket an address by reachability, from the address alone — no config,
+    """Bucket an address by reachability, from the address alone - no config,
     no seed data. Returns ``Public`` / ``Private`` / ``CGNAT`` / ``Special``,
     or ``None`` when unparseable.
 
@@ -120,7 +120,7 @@ def _by(qs, field, label_field=None, color_field=None, limit=None):
     """Group ``qs`` by ``field`` → [{key, name, count, color?}], biggest first.
 
     ``key`` is the raw grouping value (an id when ``field`` is a ``*_id``), so a
-    dashboard chart segment can deep-link to the matching filtered list —
+    dashboard chart segment can deep-link to the matching filtered list -
     ``name`` alone can't drive a facet, which buckets by id."""
     cols = [field]
     if label_field:
@@ -135,7 +135,7 @@ def _by(qs, field, label_field=None, color_field=None, limit=None):
         out.append(
             {
                 "key": None if raw is None else str(raw),
-                "name": name or "—",
+                "name": name or "-",
                 "count": r["n"],
                 "color": (color_field and r.get(color_field))
                 or _PALETTE[i % len(_PALETTE)],
@@ -167,7 +167,7 @@ def _empty_dashboard() -> dict:
         description=(
             "Single dashboard payload: object counts, IPAM/DCIM distributions, "
             "recent activity feeds, top prefixes by utilisation, and monitoring "
-            "roll-ups — all scoped to the active tenant and the caller's RBAC "
+            "roll-ups - all scoped to the active tenant and the caller's RBAC "
             "view grants. Empty-shaped payload when the user has no active tenant."
         ),
     ),
@@ -248,7 +248,7 @@ def dashboard_view(request):
 
     # ── Monitoring ──────────────────────────────────────────────────────
     # The check/alert roll-ups and the status-change feed describe the
-    # monitored OBJECTS (devices/prefixes/IPs — recent activity even carries
+    # monitored OBJECTS (devices/prefixes/IPs - recent activity even carries
     # IP addresses), so they follow the same view grants: a member walled off
     # from all three sees empty monitoring widgets, not a tenant-wide rollup.
     can_see_monitoring = any(
@@ -343,7 +343,7 @@ def _recent_ips(ips, limit: int = 8) -> list:
 
 
 def _recent_activity(tenant, limit: int = 10) -> list:
-    """Latest monitoring status changes — a changelog-style feed."""
+    """Latest monitoring status changes - a changelog-style feed."""
     try:
         from monitoring.models import StateTransition
     except Exception:  # noqa: BLE001
@@ -356,7 +356,7 @@ def _recent_activity(tenant, limit: int = 10) -> list:
     return [
         {
             "ip_id": str(t.target_ip_id) if t.target_ip_id else None,
-            "ip": t.target_ip.ip_address if t.target_ip_id else "—",
+            "ip": t.target_ip.ip_address if t.target_ip_id else "-",
             "kind": t.kind,
             "from_status": t.from_status,
             "to_status": t.to_status,

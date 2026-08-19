@@ -175,7 +175,7 @@ export function ColorPicker({
           </button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-auto gap-3 p-3">
-          {/* Preset grid — rows are hues, columns are shades (light→dark). */}
+          {/* Preset grid - rows are hues, columns are shades (light→dark). */}
           <div
             className="grid gap-1"
             style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}
@@ -209,7 +209,7 @@ export function ColorPicker({
 
           <div className="my-2 h-px w-full bg-border" />
 
-          {/* Native color input — covers anything not in the palette */}
+          {/* Native color input - covers anything not in the palette */}
           <div className="flex items-center gap-2">
             <input
               ref={nativeRef}

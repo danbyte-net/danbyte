@@ -8,7 +8,7 @@ interface Props {
   children: ReactNode
   /** When this value changes, the boundary clears its error and re-renders the
    * children. Pass the current pathname so navigating anywhere recovers a
-   * crashed view automatically — no full-page refresh. */
+   * crashed view automatically - no full-page refresh. */
   resetKey?: unknown
 }
 
@@ -19,8 +19,8 @@ interface State {
 
 // A crash in React's render OR commit phase (including unmounting a subtree)
 // otherwise takes down the whole SPA until a manual refresh. The most common
-// cause in practice isn't our code: browser extensions — password managers
-// (1Password, LastPass), Grammarly, Google Translate — inject nodes INTO
+// cause in practice isn't our code: browser extensions - password managers
+// (1Password, LastPass), Grammarly, Google Translate - inject nodes INTO
 // React-owned DOM, so when React later removes that DOM it hits a node whose
 // parent the extension already moved and throws `removeChild`/`insertBefore` on
 // null during commit. That corrupts React's tree and freezes the page.
@@ -72,7 +72,7 @@ export class ErrorBoundary extends Component<Props, State> {
               Reload page
             </Button>
           </div>
-          {/* The actual cause — without it a bug report can only say "it
+          {/* The actual cause - without it a bug report can only say "it
               crashed", which is what happened with the tenants page. */}
           <details className="pt-2 text-left">
             <summary className="cursor-pointer text-center text-xs text-muted-foreground">

@@ -1,4 +1,4 @@
-"""Global search endpoint — one query, results grouped by entity.
+"""Global search endpoint - one query, results grouped by entity.
 
 Tenant-scoped: each row is filtered by the user's active tenant (tags are
 global since the Tag model itself is global). Returns up to `limit` rows
@@ -7,7 +7,7 @@ page can render a grouped table.
 
 Matching is currently substring (``__icontains``) across every plausible
 field per entity. Postgres trigram (``pg_trgm``) is the obvious upgrade
-once the schema migrations are unblocked — drop in
+once the schema migrations are unblocked - drop in
 ``TrigramSimilarity`` + a similarity threshold and reorder by score.
 """
 from __future__ import annotations
@@ -73,7 +73,7 @@ def search(request):
 
     Returns ``{ q, total, groups: { prefixes, ips, vlans, vrfs,
     route_targets, sites, tenants, devices, tags } }``. Each group is
-    pre-shaped for the React results table — id, label, sublabel, url —
+    pre-shaped for the React results table - id, label, sublabel, url -
     so the page can render every section the same way without per-entity
     branches.
     """
@@ -162,7 +162,7 @@ def _search_ips(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
 def _search_vlans(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
     cond = Q(name__icontains=q) | Q(description__icontains=q)
     if q.isdigit():
-        # Exact match on VLAN ID — IntegerField doesn't support icontains
+        # Exact match on VLAN ID - IntegerField doesn't support icontains
         # cleanly across all backends.
         cond |= Q(vlan_id=int(q))
     qs = (
@@ -243,7 +243,7 @@ def _search_sites(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
 
 def _search_tenants(q: str, user, limit: int) -> list[dict]:
     # Tenants aren't tenant-scoped (they ARE the scope). Limit to ones
-    # the user has membership on — but for the moment the user model
+    # the user has membership on - but for the moment the user model
     # doesn't surface that cleanly, so superusers see all and others see
     # only their currently active tenant. Refine if/when membership is
     # exposed via the API.

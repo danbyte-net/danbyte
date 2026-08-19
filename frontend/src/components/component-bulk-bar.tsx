@@ -377,7 +377,7 @@ function BulkEditDialog({
 }
 
 // Bulk rename (find/replace, optional regex) or bulk clone (duplicate with a
-// renamed copy) — one dialog for both. Shows a live
+// renamed copy) - one dialog for both. Shows a live
 // before→after preview; the backend re-validates name collisions.
 function RenameCloneDialog({
   mode,
@@ -401,7 +401,7 @@ function RenameCloneDialog({
   const [replace, setReplace] = useState("")
   const [useRegex, setUseRegex] = useState(false)
 
-  // Live preview — same literal/regex substitution the backend applies.
+  // Live preview - same literal/regex substitution the backend applies.
   let regexError: string | null = null
   const preview = selected.map((r) => {
     let next = r.name
@@ -501,7 +501,7 @@ function RenameCloneDialog({
           )}
           {dupClone && (
             <p className="text-[12px] text-destructive">
-              Clones would share a name — add a find/replace so they differ.
+              Clones would share a name - add a find/replace so they differ.
             </p>
           )}
         </div>

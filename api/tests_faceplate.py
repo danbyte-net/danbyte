@@ -103,7 +103,7 @@ class FaceplateFieldTests(APITestCase):
         self.assertEqual(self._patch(doc).status_code, 400)
 
     def test_accepts_module_bay_placeholder(self):
-        # A group may carry a `bay` marker (placed in the builder) — the device
+        # A group may carry a `bay` marker (placed in the builder) - the device
         # render composes an installed module's faceplate there.
         doc = {
             "v": 1, "rear": [],
@@ -164,7 +164,7 @@ class FaceplateFieldTests(APITestCase):
             self.assertEqual(self._patch_ports(bad).status_code, 400, bad)
 
     def test_image_ports_accept_photo_only_kinds(self):
-        """Hardware parts and MODULE BAYS are placeable on a photo — you mark
+        """Hardware parts and MODULE BAYS are placeable on a photo - you mark
         where a chassis's line-card slots physically are."""
         ports = {
             "front": [
@@ -367,7 +367,7 @@ class FacePortsResolveTests(APITestCase):
         self.assertIsNotNone(front[0]["id"])
         self.assertIsNone(front[0]["kind"])  # not cable-able
         self.assertEqual(front[0]["status"]["name"], "Failed")
-        # The id joins the marker to the tenant's Status catalog — the legend
+        # The id joins the marker to the tenant's Status catalog - the legend
         # keys hardware by it, since StatusMini carries no slug.
         self.assertEqual(front[0]["status"]["id"], str(failed.id))
 
@@ -396,7 +396,7 @@ class FacePortsResolveTests(APITestCase):
         )
         front = self._get().json()["front"]
         self.assertEqual(front[0]["id"], str(part.id))
-        # Intent is untouched — the status still reads Active, drift sits beside.
+        # Intent is untouched - the status still reads Active, drift sits beside.
         self.assertEqual(front[0]["status"]["name"], "Active")
         self.assertEqual(front[0]["drift"], "SNMP says failed")
 
@@ -438,7 +438,7 @@ class FacePortsResolveTests(APITestCase):
         self.assertEqual(front[0]["id"], str(bay.id))
         self.assertIsNone(front[0]["kind"])  # not cable-able
         self.assertIsNone(front[0]["module"])
-        # A bay is not a hardware part — it has no lifecycle status of its own.
+        # A bay is not a hardware part - it has no lifecycle status of its own.
         self.assertIsNone(front[0]["status"])
 
         mfr = Manufacturer.objects.create(tenant=self.tenant, name="Cisco")
@@ -488,7 +488,7 @@ class FacePortsResolveTests(APITestCase):
 
     def test_unmarked_power_components_resolve_synthetically(self):
         """Power ports/outlets no marker covers come back as synthetic REAR
-        entries (marker == the component's own name) — the 3D room draws
+        entries (marker == the component's own name) - the 3D room draws
         deterministic quads for them, and a quad that face-ports can't
         resolve could never start a connection."""
         from api.models import PowerOutlet, PowerPort
@@ -507,7 +507,7 @@ class FacePortsResolveTests(APITestCase):
         self.assertFalse(rear["PSU 2"]["connected"])
         self.assertEqual(rear["C13-01"]["kind"], "power_outlet")
         self.assertEqual(rear["C13-01"]["id"], str(out.id))
-        # Interfaces are NOT synthesized — the front markers still carry them.
+        # Interfaces are NOT synthesized - the front markers still carry them.
         self.assertNotIn("Gi1/0/1", rear)
 
     def test_marked_power_ports_are_not_duplicated_synthetically(self):

@@ -10,7 +10,7 @@ export function BookmarksWidget() {
   if (bookmarks.length === 0) {
     return (
       <p className="px-1 py-6 text-center text-xs text-muted-foreground">
-        No bookmarks yet — click the <BookmarkIcon className="inline h-3 w-3" />{" "}
+        No bookmarks yet - click the <BookmarkIcon className="inline h-3 w-3" />{" "}
         star in the top bar to save the page you're on.
       </p>
     )

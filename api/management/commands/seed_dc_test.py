@@ -1,4 +1,4 @@
-"""seed_dc_test — opt-in test hall for the 3D room view.
+"""seed_dc_test - opt-in test hall for the 3D room view.
 
 Builds "DC-TEST": ten rows of ten cabinets in hot/cold aisle pairs, every
 rack built from one rack type, stamped with A/B vertical PDUs, filled with
@@ -65,9 +65,9 @@ FRONT_UP = 0
 # tile overhangs 300 mm each side, so two rows a single cell apart TOUCH and
 # the hall had no aisles at all. A rack tile is therefore two cells deep, and
 # aisles get the widths they need to be walked:
-RACK_CELLS = 2   # 1200 mm — the cabinet's actual depth
-COLD_CELLS = 3   # 1800 mm — people install gear from the front here
-HOT_CELLS = 2    # 1200 mm — access only, so the tighter standard minimum
+RACK_CELLS = 2   # 1200 mm - the cabinet's actual depth
+COLD_CELLS = 3   # 1800 mm - people install gear from the front here
+HOT_CELLS = 2    # 1200 mm - access only, so the tighter standard minimum
 
 
 def _layout():
@@ -101,7 +101,7 @@ PDU_NAME = "DC-TEST Vertical PDU 24×C13"
 PDU_OUTLETS = 24
 RACK_TYPE_NAME = "DC-TEST 42U"
 # Cabinet width = EXACTLY one grid cell (cell_mm below matches), so cabinets
-# still bay flush the way they do in a real row — no overhang, no collision.
+# still bay flush the way they do in a real row - no overhang, no collision.
 # 750 mm holds the 450 mm 19" rail opening plus a 150 mm zero-U bay each side:
 # the visible white space a vertical PDU stands in (devices render at the
 # opening, not the cabinet width, so the bays don't get swallowed).
@@ -115,7 +115,7 @@ SRV_TYPE = "System x3650 M5"  # 2U, photo faceplate
 # a redundant pair of 1U firewalls on top, then 2U servers all the way down.
 # 42U = 2×1U + 20×2U with nothing left over.
 FW_US = (42, 41)
-SRV_US = tuple(range(39, 0, -2))  # 39, 37 … 1 — twenty 2U servers
+SRV_US = tuple(range(39, 0, -2))  # 39, 37 … 1 - twenty 2U servers
 
 
 class Command(BaseCommand):
@@ -132,7 +132,7 @@ class Command(BaseCommand):
             "--full-cabling",
             action="store_true",
             help="Cable EVERY device (~4500 cables) instead of a "
-                 "representative set — for stressing the cables layer.",
+                 "representative set - for stressing the cables layer.",
         )
         parser.add_argument("--tenant", default=TENANT_SLUG)
 
@@ -160,7 +160,7 @@ class Command(BaseCommand):
         self._cable(plan, racks, devices, full=opts['full_cabling'])
 
         self.stdout.write(self.style.SUCCESS(
-            f"DC-TEST ready — {len(racks)} racks, "
+            f"DC-TEST ready - {len(racks)} racks, "
             f"{Device.objects.filter(site=site).count()} devices, "
             f"{Cable.objects.filter(tenant=tenant, label__startswith='DCT').count()} cables. "
             f"Open /floorplans/{plan.id}?viz=3d"
@@ -175,7 +175,7 @@ class Command(BaseCommand):
             tenant=self.t, label__startswith="DCT"
         ).delete()
         # Keep the FloorPlan, Location and Site ROWS so the plan's URL is
-        # stable across re-seeds — deleting and recreating them minted a fresh
+        # stable across re-seeds - deleting and recreating them minted a fresh
         # id every time and 404'd whatever tab was open on the old one. Clear
         # only the contents; `_plan`'s update_or_create then reuses the row.
         for plan in FloorPlan.objects.filter(tenant=self.t, name=PLAN_NAME):
@@ -227,7 +227,7 @@ class Command(BaseCommand):
     def _fix_psu_names(self, dt):
         """Rename 0-based PSU templates to the 1-based pair operators use.
 
-        The imported library types came in with `Psu 0 / Psu 1 / Psu 2` — a
+        The imported library types came in with `Psu 0 / Psu 1 / Psu 2` - a
         name range expanded from zero, so a dual-PSU server claimed three
         inlets and the first one was called PSU zero. Targeted on purpose: it
         only rewrites a type whose names actually show the 0-based pattern, so
@@ -288,7 +288,7 @@ class Command(BaseCommand):
             defaults={
                 "grid_width": GRID_W,
                 "grid_height": height,
-                "cell_mm": 750,  # cabinets are 750 mm now — one wide cell bays flush
+                "cell_mm": 750,  # cabinets are 750 mm now - one wide cell bays flush
                 "ceiling_mm": 3200,
             },
         )
@@ -470,7 +470,7 @@ class Command(BaseCommand):
         """Wire the hall.
 
         A full cabinet holds 22 devices, so cabling every port would mint
-        ~4500 cables — past the point where the room draws tubes at all and
+        ~4500 cables - past the point where the room draws tubes at all and
         slow to resolve. The default is a REPRESENTATIVE set: both firewalls
         and two servers powered A+B, four data drops, both feeds, plus the
         row chains. `--full-cabling` wires every device for stress testing.

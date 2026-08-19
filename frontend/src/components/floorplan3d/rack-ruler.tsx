@@ -7,7 +7,7 @@ import { RACK_BASE_M, mm, type SceneRack } from "./world"
 
 /**
  * The rack's U-number ruler: one canvas texture on a strip standing on the
- * cabinet's FRONT face, at the left rail, facing the aisle (−Z) — exactly
+ * cabinet's FRONT face, at the left rail, facing the aisle (−Z) - exactly
  * where a real rack prints its unit numbers, so it's readable head-on instead
  * of edge-on. One texture per rack (not 42 sprites), cached by the fields that
  * determine the numbering. Near racks only.

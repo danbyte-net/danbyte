@@ -8,7 +8,7 @@ export interface FormFooterProps {
   submitLabel?: string
   /** What the button says while the request is in flight. Defaults to the
    * submit label's verb in continuous form ("Create" → "Creating…"), because
-   * this used to hard-code "Saving…" for all 64 call sites — so a "Create"
+   * this used to hard-code "Saving…" for all 64 call sites - so a "Create"
    * button announced "Saving…". CLAUDE.md requires the verb track the action. */
   submittingLabel?: string
   cancelLabel?: string

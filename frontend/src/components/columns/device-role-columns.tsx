@@ -11,7 +11,7 @@ import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
 // The one source of truth for "a table of device roles". Every surface that
-// lists device roles — /device-roles, the monitoring configuration tab — builds
+// lists device roles - /device-roles, the monitoring configuration tab - builds
 // its columns here so a role row reads identically everywhere. Page-specific
 // columns (the monitoring binding control) are spliced around this factory's
 // output; the shared cells are never re-authored inline.
@@ -43,7 +43,7 @@ export interface DeviceRoleColumnOpts<T extends DeviceRole = DeviceRole> {
   include?: DeviceRoleColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
   /** Facet treatment for the Devices / VMs counts. The list page filters on
    * "in use vs unused" across both counts; the monitoring configuration tab
@@ -94,7 +94,7 @@ export function buildDeviceRoleColumns<T extends DeviceRole = DeviceRole>(
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     }),

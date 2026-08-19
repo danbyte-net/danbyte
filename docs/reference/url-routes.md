@@ -10,7 +10,7 @@ Defined in `api/urls.py`. Mounted at the project root by `danbyte/urls.py`.
 
 | Method | Pattern | View | Name |
 |---|---|---|---|
-| GET | `/` | redirect → `/prefixes/` | — |
+| GET | `/` | redirect → `/prefixes/` | - |
 | GET | `/prefixes/` | `prefixes_list` | `api:prefixes` |
 | GET, POST | `/prefixes/new/` | `prefix_create` | `api:prefix-create` |
 | GET, POST | `/prefixes/import/` | `prefixes_import` | `api:prefixes-import` |

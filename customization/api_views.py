@@ -1,11 +1,11 @@
 """Registry endpoints for the custom-fields UI.
 
-``GET /api/customization/meta/`` — what a field can attach to (auto-derived
+``GET /api/customization/meta/`` - what a field can attach to (auto-derived
 from CustomFieldsMixin + plugin registrations) and what an object-reference
 field can point at (endpoint + labelling info per model, so the SPA needs no
 hardcoded lists and picks up plugin models automatically).
 
-``GET /api/customization/object-labels/?model=device&ids=a,b`` — bulk
+``GET /api/customization/object-labels/?model=device&ids=a,b`` - bulk
 id → {label, route} resolution for displaying stored object-field values.
 """
 from __future__ import annotations

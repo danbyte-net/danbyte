@@ -1,4 +1,4 @@
-"""Plugin discovery + version gating — runs at settings-import time.
+"""Plugin discovery + version gating - runs at settings-import time.
 
 Deliberately **Django-app-registry-free**: this module is imported from
 ``danbyte/settings.py`` *before* Django builds the application registry, so it
@@ -11,12 +11,12 @@ Contract for a plugin package (documented in ``docs/architecture/plugins.md``):
 * It is an importable Python package listed in the ``PLUGINS`` setting.
 * Its ``apps.py`` defines exactly one ``plugins.base.DanbytePluginConfig``
   subclass (or the package ``__init__`` exposes it as ``config``).
-* The package and its ``apps.py`` are **import-safe** — no model imports at
+* The package and its ``apps.py`` are **import-safe** - no model imports at
   module top level (the same rule Django already imposes on ``apps.py``).
 
 One broken or incompatible plugin never aborts boot: it is recorded in the load
 report with a ``state`` of ``error`` / ``incompatible`` and simply left out of
-``INSTALLED_APPS`` — mirroring the "unknown kind degrades, never crashes"
+``INSTALLED_APPS`` - mirroring the "unknown kind degrades, never crashes"
 philosophy used by the monitoring check engine.
 """
 from __future__ import annotations
@@ -30,7 +30,7 @@ from packaging.version import InvalidVersion, Version
 
 @dataclass
 class PluginStatus:
-    """One plugin's discovery outcome — surfaced verbatim by ``/api/plugins/``."""
+    """One plugin's discovery outcome - surfaced verbatim by ``/api/plugins/``."""
 
     module: str
     slug: str = ""
@@ -57,7 +57,7 @@ def _find_config_class(module_name: str):
 
     Prefers ``<pkg>.config``, else scans ``<pkg>.apps`` for the
     single ``DanbytePluginConfig`` subclass. Importing ``plugins.base`` here is
-    safe — it only defines a class deriving from ``django.apps.AppConfig``.
+    safe - it only defines a class deriving from ``django.apps.AppConfig``.
     """
     from plugins.base import DanbytePluginConfig
 
@@ -81,7 +81,7 @@ def _find_config_class(module_name: str):
     if len(candidates) > 1:
         raise LookupError(
             f"{module_name}: multiple DanbytePluginConfig subclasses "
-            f"({', '.join(c.__name__ for c in candidates)}) — expected one"
+            f"({', '.join(c.__name__ for c in candidates)}) - expected one"
         )
     return candidates[0]
 
@@ -103,7 +103,7 @@ def _compatible(current: str, minimum: str | None, maximum: str | None) -> tuple
     """Is ``current`` within the plugin's [min, max] Danbyte version window?"""
     cur = _coerce_version(current)
     # An unparseable *running* version is a dev/build string (our own), not a
-    # plugin fault — don't lock every plugin out of a dev build; treat as newest.
+    # plugin fault - don't lock every plugin out of a dev build; treat as newest.
     if cur is None:
         return True, ""
     try:
@@ -120,7 +120,7 @@ def discover(plugin_modules: list[str], danbyte_version: str) -> LoadResult:
     """Resolve the ``PLUGINS`` list into loadable apps + a status report.
 
     Called once from ``danbyte/settings.py``. Never raises for a single bad
-    plugin — failures land in the report and are excluded from ``enabled``.
+    plugin - failures land in the report and are excluded from ``enabled``.
     """
     result = LoadResult()
     seen: set[str] = set()
@@ -133,7 +133,7 @@ def discover(plugin_modules: list[str], danbyte_version: str) -> LoadResult:
 
         try:
             config = _find_config_class(module)
-        except Exception as exc:  # noqa: BLE001 — one bad plugin must not kill boot
+        except Exception as exc:  # noqa: BLE001 - one bad plugin must not kill boot
             result.report.append(
                 PluginStatus(module=module, state="error", error=str(exc))
             )

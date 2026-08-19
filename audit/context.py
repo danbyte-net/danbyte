@@ -23,7 +23,7 @@ def suspended():
 
     For tearing down a tenant. Its change log is owned by the tenant and goes
     with it, so logging each cascaded delete writes rows pointing at a tenant
-    row the same transaction is removing — the deferred foreign key then fails
+    row the same transaction is removing - the deferred foreign key then fails
     at COMMIT and rolls the whole deletion back. There is also nothing to
     record: the log those entries would land in no longer exists.
 

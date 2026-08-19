@@ -6,7 +6,7 @@ icon: lucide/file-cog
 
 Config contexts let you keep environment-, role-, or region-specific data (DNS
 servers, NTP, SNMP communities, VLANs, and so on) in **one place** and have it
-apply automatically to the devices and virtual machines it should — instead of
+apply automatically to the devices and virtual machines it should - instead of
 copying the same values onto every object by hand.
 
 Each context holds a block of JSON and a set of match rules. Danbyte merges
@@ -27,7 +27,7 @@ You'll find config contexts under **Customize → Config contexts** in the sideb
    | **Weight** | A number that decides who wins on conflicts. When two contexts set the same key, the higher weight wins. |
    | **Active** | Inactive contexts are ignored during the merge. |
    | **Data** | The JSON object this context contributes. Edit it in the built-in JSON editor. |
-   | **Assignment criteria** | Which objects this context applies to — choose any number of regions, sites, device roles, and platforms. |
+   | **Assignment criteria** | Which objects this context applies to - choose any number of regions, sites, device roles, and platforms. |
 
 3. Save.
 
@@ -57,7 +57,7 @@ The result is a single rendered config context for that object.
 
 !!! tip "Higher weight = last word"
     If a base context sets `ntp: ["10.0.0.1"]` (weight 10) and a more specific one
-    sets `ntp: ["10.1.0.1"]` (weight 100), the object gets `["10.1.0.1"]` — the
+    sets `ntp: ["10.1.0.1"]` (weight 100), the object gets `["10.1.0.1"]` - the
     list is replaced by the higher-weight layer, not merged.
 
 ## The config-context page
@@ -66,7 +66,7 @@ Click a context's name in the list to open it. It has three tabs:
 
 | Tab | What's on it |
 |---|---|
-| **Overview** | Weight, active flag, description, the assignment criteria — regions, sites, device roles, and platforms, each linking to the object it names — and the context's **Data** block, rendered as formatted JSON. A dimension with no entries reads **Any**, which is exactly how the merge treats it. |
+| **Overview** | Weight, active flag, description, the assignment criteria - regions, sites, device roles, and platforms, each linking to the object it names - and the context's **Data** block, rendered as formatted JSON. A dimension with no entries reads **Any**, which is exactly how the merge treats it. |
 | **Journal** | Your notes on this context. |
 | **History** | Every create, edit, and delete of the context, from the [change log](change-log.md). |
 
@@ -78,7 +78,7 @@ box, so a large context doesn't stretch the page.
 
 Every device and virtual machine detail page has a **Config** tab. It shows the
 final merged JSON for that object and lists, as chips, which contexts contributed
-to it — so you can always see where a value came from.
+to it - so you can always see where a value came from.
 
 ## Permissions and audit
 

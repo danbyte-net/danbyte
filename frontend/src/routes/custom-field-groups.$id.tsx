@@ -169,7 +169,7 @@ function GroupOverview({ group: g }: { group: CustomFieldGroup }) {
       ),
     },
     // Weight orders the section against other sections on a form; collapsed is
-    // how it opens on a detail page. Both are presentation only — grouping
+    // how it opens on a detail page. Both are presentation only - grouping
     // never changes the stored value shape.
     { label: "Weight", value: <span className="num">{g.weight}</span> },
     { label: "Starts collapsed", value: g.collapsed ? "Yes" : "No" },
@@ -190,7 +190,7 @@ function GroupOverview({ group: g }: { group: CustomFieldGroup }) {
   )
 }
 
-/** The custom-field definitions filed under this section — what the heading
+/** The custom-field definitions filed under this section - what the heading
  * will actually contain on every form and detail page that renders it. */
 function GroupFieldsTable({ groupId }: { groupId: string }) {
   const q = useQuery({
@@ -213,7 +213,7 @@ function GroupFieldsTable({ groupId }: { groupId: string }) {
   if (rows.length === 0)
     return (
       <EmptyState title="No fields in this group yet.">
-        Open a custom field and pick this group on its form — the section only
+        Open a custom field and pick this group on its form - the section only
         appears once something is filed under it.
       </EmptyState>
     )

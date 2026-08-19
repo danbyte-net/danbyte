@@ -25,8 +25,8 @@ export interface SimpleColumn<T> {
 
 /**
  * A read-only table that reproduces the exact chrome of the shared
- * {@link DataTable} — rounded bordered container, canonical header/row/cell
- * styling, central hover — but *without* the toolbar (sort, Columns menu,
+ * {@link DataTable} - rounded bordered container, canonical header/row/cell
+ * styling, central hover - but *without* the toolbar (sort, Columns menu,
  * Export). Use it for embedded tables (device SNMP tab, reconcile inbox) so
  * they look identical to the list-page tables without dragging a per-card
  * toolbar into every section.

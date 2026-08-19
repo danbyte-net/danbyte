@@ -8,12 +8,12 @@ Danbyte has a first-class plugin system: a **trusted, in-process** extension
 model. A plugin is an ordinary Python package that an
 operator installs and lists in the `PLUGINS` setting; on the next restart it is
 discovered, version-checked, and wired into RBAC, custom fields, tags,
-import/export, audit, monitoring, automation, and the UI — with **no core
+import/export, audit, monitoring, automation, and the UI - with **no core
 changes and no frontend rebuild**.
 
 !!! info "Trust model"
     Plugins run in-process with full Django access, deployment-wide. Only
-    install plugins you trust — treat them like any dependency you add to the
+    install plugins you trust - treat them like any dependency you add to the
     environment. Each tenant can then **enable/disable** an installed plugin
     independently.
 
@@ -25,9 +25,9 @@ changes and no frontend rebuild**.
 echo 'PLUGINS=danbyte_acme_plugin' >> .env     # comma-separate multiple
 ```
 
-Then apply it. Either from the UI — **Settings → Deployment → Plugins &
+Then apply it. Either from the UI - **Settings → Deployment → Plugins &
 services → Apply changes** (runs migrations and restarts Danbyte; superuser
-only) — or by hand:
+only) - or by hand:
 
 ```bash
 .venv/bin/python manage.py migrate
@@ -37,7 +37,7 @@ systemctl --user restart danbyte-web danbyte-workers danbyte-ws
 The **Plugins & services** page lists every plugin with its load state
 (`loaded` / `incompatible` / `error`), flags unapplied migrations, and offers
 per-tenant enable toggles. A broken or version-incompatible plugin is reported
-there and skipped — it never blocks boot.
+there and skipped - it never blocks boot.
 
 !!! note "Disable ≠ uninstall"
     Disabling a plugin (per tenant or deployment-wide) hides its API/UI but
@@ -58,11 +58,11 @@ exactly like a `PLUGINS` entry. Uploaded plugins show an **uploaded** tag and an
 
 !!! danger "Uploading a plugin runs its code"
     An uploaded plugin executes in-process with full access on the next restart
-    — it is remote code execution by design, so upload/uninstall are
+    - it is remote code execution by design, so upload/uninstall are
     **superuser-only**. Extraction is hardened (path-traversal blocked, size and
     member caps), but only upload plugins you trust. Keep `DANBYTE_PLUGIN_DIR`
     outside the app tree in production so upgrades don't wipe uploaded plugins.
-    This path installs the plugin's *source* (no dependency resolution) — a
+    This path installs the plugin's *source* (no dependency resolution) - a
     plugin needing extra PyPI packages still needs those installed separately.
     `POST /api/plugins/upload/` (multipart `archive`) /
     `DELETE /api/plugins/<module>/uploaded/` back the UI.
@@ -70,7 +70,7 @@ exactly like a `PLUGINS` entry. Uploaded plugins show an **uploaded** tag and an
 ## Anatomy of a plugin
 
 !!! tip "Start from the template"
-    Don't build this layout by hand — clone
+    Don't build this layout by hand - clone
     [danbyte-net/danbyte-plugin-template](https://github.com/danbyte-net/danbyte-plugin-template),
     a working starter with a model, API, monitoring check, automation hook,
     and server-driven UI already wired. Rename the package and go.
@@ -90,11 +90,11 @@ danbyte_acme_plugin/
 └── checks.py          # monitoring check kinds (optional)
 ```
 
-### `apps.py` — metadata
+### `apps.py` - metadata
 
 Subclass `plugins.base.DanbytePluginConfig` instead of `AppConfig`. The extra
 attributes are read by the loader **at settings-import time**, so `apps.py` and
-the package `__init__` must be *import-safe* — no model imports at module top
+the package `__init__` must be *import-safe* - no model imports at module top
 level (the same rule Django already imposes on `apps.py`).
 
 ```python
@@ -112,7 +112,7 @@ class AcmePluginConfig(DanbytePluginConfig):
     default_enabled = True             # active unless a tenant/deployment turns it off
 ```
 
-### `danbyte_plugin.py` — the registration entry point
+### `danbyte_plugin.py` - the registration entry point
 
 `plugins.apps.PluginsConfig.ready()` autodiscovers this module in every
 installed plugin (the same idiom as `api/apps.py`'s `autodiscover_modules`). It
@@ -139,7 +139,7 @@ safe. Do **all** your registrations here (or in modules it imports).
 
 ### Models, API, RBAC
 
-Registering the object type is what makes your model **default-closed** — every
+Registering the object type is what makes your model **default-closed** - every
 action then demands a `<model_name>.*` grant. Reuse
 `api.viewsets.TenantScopedViewSet` for a tenant-scoped, RBAC-enforced CRUD
 viewset, and `plugins.viewsets.PluginEnabledMixin` (set `plugin_slug`) so the
@@ -165,30 +165,30 @@ class WidgetViewSet(PluginEnabledMixin, TenantScopedViewSet):
 
 ### Server-driven UI (no plugin JavaScript)
 
-The frontend renders plugin UI from metadata — you ship **no** React. Register
+The frontend renders plugin UI from metadata - you ship **no** React. Register
 a `NavItemSpec`, `PageSpec` (list or detail, with `columns`/`fields`/`tabs`),
 and optional `PanelSpec`; the generic renderer builds the standard
 `DataTable` / `DetailShell` from them, served under the reserved `/p/<slug>/…`
 route. Nav items carry an `object_type`/`perm` so they're hidden from users who
 can't view the target, exactly like core nav.
 
-See the bundled reference plugin `danbyte_example_plugin/` — it exercises every
+See the bundled reference plugin `danbyte_example_plugin/` - it exercises every
 capability above and is the recommended starting point.
 
 ## How it fits together
 
-- **Discovery** — `danbyte/plugin_loader.py` runs at settings-import time,
+- **Discovery** - `danbyte/plugin_loader.py` runs at settings-import time,
   reads each plugin's metadata, version-gates against `danbyte.__version__`
   (`packaging`), and appends the compatible ones to `INSTALLED_APPS`. The
   framework app (`plugins`) is appended last so its `ready()` autodiscovers
   every plugin's `danbyte_plugin` module after all apps have loaded.
-- **Inventory** — `GET /api/plugins/` lists installed plugins, their state, and
+- **Inventory** - `GET /api/plugins/` lists installed plugins, their state, and
   unapplied migrations. `GET /api/plugins/ui/` returns the nav/pages/panels for
   the plugins enabled in the caller's tenant.
-- **Enablement** — `plugins.PluginConfig` stores per-tenant/deployment
+- **Enablement** - `plugins.PluginConfig` stores per-tenant/deployment
   enable state; `plugins.resolve.plugin_enabled()` resolves the cascade
   (tenant → deployment default → `default_enabled`). See
   [Tenant settings](tenant-settings.md).
-- **Service control** — applying a plugin (migrate + restart) and restarting
+- **Service control** - applying a plugin (migrate + restart) and restarting
   services reuse the upgrade flow's detached `systemd-run --user` mechanism;
   these actions are **superuser only**.

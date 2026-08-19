@@ -24,7 +24,7 @@ export function FilteredTable({
     )
   }
   // While the rows are in flight the facet rail would render half-empty
-  // (only its static groups) and then "spawn" the rest — hold it back so
+  // (only its static groups) and then "spawn" the rest - hold it back so
   // rail + table appear together.
   return (
     <div className="flex min-h-0 flex-1">

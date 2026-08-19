@@ -1,4 +1,4 @@
-"""poll_snmp — poll observed SNMP state for every device that resolves a profile.
+"""poll_snmp - poll observed SNMP state for every device that resolves a profile.
 
 Schedulable (cron / systemd timer, like the other monitoring beat jobs). Each
 run stores facts + interfaces and appends interface counter samples, so repeated
@@ -48,6 +48,6 @@ class Command(BaseCommand):
                     unreachable += 1
 
         self.stdout.write(self.style.SUCCESS(
-            f"Polled {polled} device(s) — {unreachable} unreachable, "
+            f"Polled {polled} device(s) - {unreachable} unreachable, "
             f"{skipped} skipped (no profile/target)."
         ))

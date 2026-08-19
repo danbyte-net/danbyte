@@ -17,7 +17,7 @@ import { ExpiredCertsWidget, ExpiringCertsWidget } from "./widget-certificates"
 import { CertHealthWidget } from "./widget-cert-health"
 import { MyTasksWidget } from "./widget-tasks"
 
-// Lazy — pulls in the floor-plan canvas only when the widget is actually shown.
+// Lazy - pulls in the floor-plan canvas only when the widget is actually shown.
 const FloorplanWidget = lazy(() =>
   import("./widget-floorplan").then((m) => ({ default: m.FloorplanWidget }))
 )
@@ -84,7 +84,7 @@ export const CATALOG: WidgetDef[] = [
   {
     id: "changelog",
     title: "Changelog",
-    description: "Recent changes across the tenant — who changed what",
+    description: "Recent changes across the tenant - who changed what",
     size: "wide",
     render: () => <ChangelogWidget />,
   },

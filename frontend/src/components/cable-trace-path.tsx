@@ -11,7 +11,7 @@ import { useFiberPalette } from "@/components/fiber/use-fiber-palette"
 
 /** The fibre cable's strands as a compact row of coloured dots (the same
  * swatch used on the cable page, tracer stripes and all), capped at 12 with a
- * ×N count — so a trunk reads as "12 fibres" right in the trace. */
+ * ×N count - so a trunk reads as "12 fibres" right in the trace. */
 function StrandStrip({
   count,
   palette,
@@ -64,7 +64,7 @@ function FiberGlyph({ color }: { color?: string }) {
 
 /** Estimate how wide a segment must be so its floating label/tag don't collide
  * with neighbours. Labels are absolutely positioned (to sit the wire on the row
- * midline), so they don't grow the box on their own — hence this heuristic from
+ * midline), so they don't grow the box on their own - hence this heuristic from
  * the text length at the label (9px) and tag (8px) sizes. */
 function estSegWidth(seg: PathSegment): number {
   const glyph = seg.fiber && !seg.fiberCount ? 15 : 0
@@ -81,15 +81,15 @@ function estSegWidth(seg: PathSegment): number {
 }
 
 /** One device the path passes through, with the port(s) it used. Interface
- * ports carry their id — the rendered name becomes a quiet click target. */
+ * ports carry their id - the rendered name becomes a quiet click target. */
 export type PathChip = {
   deviceId?: string
   device: string
   ports: { name: string; interfaceId?: string; powerFeedId?: string }[]
-  /** The container is a power panel, not a device — `deviceId` is the panel's,
+  /** The container is a power panel, not a device - `deviceId` is the panel's,
    * so the chip links to /power-panels/$id and its ports to /power-feeds/$id. */
   powerPanel?: boolean
-  /** The device whose page this trace is on — bordered as "you are here". */
+  /** The device whose page this trace is on - bordered as "you are here". */
   origin?: boolean
 }
 export type PathSegment = {
@@ -112,7 +112,7 @@ export type PathStep =
   | { t: "chip"; chip: PathChip }
   | { t: "seg"; seg: PathSegment }
 
-/** The flat run itself — linked device/panel chips joined by cable segments
+/** The flat run itself - linked device/panel chips joined by cable segments
  * drawn in their physical color. Shared by the cable page hero and the
  * device page's Paths view. */
 export function PathStrip({
@@ -124,7 +124,7 @@ export function PathStrip({
   steps: PathStep[]
   /** Port name to emphasise (e.g. the traced origin on a mid-chain device). */
   highlightPort?: string
-  /** Rendered as the first flex item INSIDE the scroll container — an origin
+  /** Rendered as the first flex item INSIDE the scroll container - an origin
    * label + leader line scrolls (and centers) with the strip, never apart
    * from it. */
   leading?: React.ReactNode
@@ -137,13 +137,13 @@ export function PathStrip({
   return (
     // Symmetric padding: the floating labels need headroom (the scroll
     // container clips vertical overflow), and equal top/bottom keeps the
-    // content midline on the box midline — level with the leader line.
+    // content midline on the box midline - level with the leader line.
     <div className="flex items-center overflow-x-auto py-4">
       {leading}
       {steps.map((s, i) =>
         s.t === "chip" ? (
           // Termination boxes, rotated horizontal: device name on
-          // top, then one divided cell per port the run touches — entry on
+          // top, then one divided cell per port the run touches - entry on
           // the left (where the line comes in), exit on the right.
           <div
             key={i}
@@ -316,7 +316,7 @@ export function PathStrip({
 }
 
 /** Flatten a cable's trace graph into chip ─cable─ chip …, when the trace is
- * a simple path. Returns null for breakouts/loops — the Trace tab handles
+ * a simple path. Returns null for breakouts/loops - the Trace tab handles
  * those. */
 export function portOf(n: { id: string; data: { name: string } }): {
   name: string
@@ -325,7 +325,7 @@ export function portOf(n: { id: string; data: { name: string } }): {
 } {
   if (n.id.startsWith("if:"))
     return { name: n.data.name, interfaceId: n.id.slice(3) }
-  // "pfd:" — a site power feed (trace's NODE_PREFIX), which has its own page.
+  // "pfd:" - a site power feed (trace's NODE_PREFIX), which has its own page.
   if (n.id.startsWith("pfd:"))
     return { name: n.data.name, powerFeedId: n.id.slice(4) }
   return { name: n.data.name }
@@ -495,7 +495,7 @@ export function treeizeTrace(
  */
 /** The flat end-to-end strip for any trace endpoint (interface / cable),
  * fetched from its trace URL. Falls back to `null` when the run can't be
- * drawn flat (breakout / loop / single node) — the graph map covers those. */
+ * drawn flat (breakout / loop / single node) - the graph map covers those. */
 export function TracePathStrip({
   url,
   queryKey,
@@ -529,7 +529,7 @@ export function TracePathStrip({
 
 /** Overview-card trace preview: the flat strip when the run is linear, else a
  * compact fan-out summary (reached devices as links) for splitter/breakout
- * trees — which `linearizeTrace` can't draw flat. Renders nothing when there's
+ * trees - which `linearizeTrace` can't draw flat. Renders nothing when there's
  * nothing traced. */
 export function TracePreview({
   url,
@@ -541,9 +541,9 @@ export function TracePreview({
   url: string
   queryKey: unknown[]
   highlightPort?: string
-  /** The interface the trace started from — its node roots the fan-out tree. */
+  /** The interface the trace started from - its node roots the fan-out tree. */
   originInterfaceId?: string
-  /** The device the trace started from — excluded from the reached list. */
+  /** The device the trace started from - excluded from the reached list. */
   originDeviceId?: string
 }) {
   const q = useQuery({ queryKey, queryFn: () => api<TraceGraph>(url) })
@@ -653,7 +653,7 @@ export function CableTracePath({
   fallback,
 }: {
   cableId: string
-  /** Rendered instead when the run can't be drawn flat — breakout fan-outs,
+  /** Rendered instead when the run can't be drawn flat - breakout fan-outs,
    * loops, uncabled ends, or while the trace is still loading. */
   fallback: React.ReactNode
 }) {

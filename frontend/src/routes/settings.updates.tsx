@@ -123,7 +123,7 @@ function UpdatesSettingsPage() {
     setConfirmChecked(false)
     setConfirmVersion(version)
   }
-  // Upload-a-bundle upgrade — for offline/tarball installs that can't git-pull.
+  // Upload-a-bundle upgrade - for offline/tarball installs that can't git-pull.
   const uploadUpgrade = useMutation({
     mutationFn: (file: File) => {
       const fd = new FormData()
@@ -136,7 +136,7 @@ function UpdatesSettingsPage() {
     onSuccess: () => setUpgrading(true),
     onError: (e: unknown) => apiErrorToast(e, "Bundle upload failed"),
   })
-  // Clear a STUCK upgrade lock — for when a previous upgrade was interrupted
+  // Clear a STUCK upgrade lock - for when a previous upgrade was interrupted
   // and "An upgrade is already running" blocks new ones. The backend refuses
   // (409) if an upgrade is genuinely still alive, so this is safe to offer.
   const cancelStuck = useMutation({
@@ -150,7 +150,7 @@ function UpdatesSettingsPage() {
       void qc.invalidateQueries({ queryKey: ["upgrade-status"] })
       toast.success(
         r.had_lock
-          ? "Cleared the stuck upgrade — you can start a new one now."
+          ? "Cleared the stuck upgrade - you can start a new one now."
           : "No upgrade lock was set; nothing to clear."
       )
     },
@@ -173,7 +173,7 @@ function UpdatesSettingsPage() {
 
   return (
     <div className="max-w-5xl space-y-8">
-      {/* Current version — driven by the instant, network-free info endpoint. */}
+      {/* Current version - driven by the instant, network-free info endpoint. */}
       <section>
         <div className="flex items-center gap-3">
           <h2 className="text-lg font-semibold tracking-tight">Updates</h2>
@@ -203,7 +203,7 @@ function UpdatesSettingsPage() {
         </p>
         {settings.data?.disable_update_check ? (
           <p className="mt-1 text-[13px] text-muted-foreground">
-            Airgapped mode is on — the release repo is never contacted. Upgrade
+            Airgapped mode is on - the release repo is never contacted. Upgrade
             by uploading a bundle below.
           </p>
         ) : (
@@ -214,7 +214,7 @@ function UpdatesSettingsPage() {
           )
         )}
 
-        {/* System info — Postgres/Django/etc, loads instantly. */}
+        {/* System info - Postgres/Django/etc, loads instantly. */}
         <dl className="mt-4 grid max-w-2xl grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 rounded-lg border border-border bg-card p-4 text-[13px]">
           {(
             [
@@ -222,8 +222,8 @@ function UpdatesSettingsPage() {
               ["Commit", sys?.commit || (sys ? "not a git install" : "…")],
               ["Python", sys?.python || "…"],
               ["Django", sys?.django || "…"],
-              ["PostgreSQL", sys?.postgres || "—"],
-              ["Redis", sys?.redis || "—"],
+              ["PostgreSQL", sys?.postgres || "-"],
+              ["Redis", sys?.redis || "-"],
               ["Platform", sys?.platform || "…"],
             ] as const
           ).map(([label, value]) => (
@@ -253,7 +253,7 @@ function UpdatesSettingsPage() {
         <Field
           label={
             settings.data?.release_repo_token_set
-              ? "GitHub token (set — leave blank to keep)"
+              ? "GitHub token (set - leave blank to keep)"
               : "GitHub token (private repos)"
           }
         >
@@ -274,7 +274,7 @@ function UpdatesSettingsPage() {
             onChange={setAirgapped}
           />
           <p className="text-[12px] text-muted-foreground">
-            When on, Danbyte never contacts the release repo — no version check,
+            When on, Danbyte never contacts the release repo - no version check,
             no automatic updates. Upgrade only by uploading a bundle below. Turn
             this on for installs with no outbound internet access.
           </p>
@@ -301,7 +301,7 @@ function UpdatesSettingsPage() {
           />
           <p className="text-[12px] text-muted-foreground">
             When on, Danbyte upgrades itself (and auto-updating Outposts) to the
-            newest release. Leave the window blank for real-time — upgrade as
+            newest release. Leave the window blank for real-time - upgrade as
             soon as a release appears.
             {airgapped && " Unavailable while airgapped mode is on."}
           </p>
@@ -369,7 +369,7 @@ function UpdatesSettingsPage() {
           </code>{" "}
           and Danbyte checks its structure, backs up the DB, migrates, and
           restarts onto it. (One-click and automatic updates additionally verify
-          the download&apos;s published SHA-256 — an uploaded file is trusted as
+          the download&apos;s published SHA-256 - an uploaded file is trusted as
           you provided it, so only upload bundles you built or trust.)
         </p>
         <input
@@ -454,7 +454,7 @@ function UpdatesSettingsPage() {
         )}
         <p className="text-[11px] text-muted-foreground">
           Upgrading takes a DB backup, applies the release, and restarts
-          Danbyte. Post-migration rollback isn’t automatic — the backup is the
+          Danbyte. Post-migration rollback isn’t automatic - the backup is the
           net.
         </p>
         <div className="flex items-center gap-3 border-t border-border pt-3">
@@ -490,7 +490,7 @@ function UpdatesSettingsPage() {
               and restarts (brief downtime).
             </p>
             <p className="text-muted-foreground">
-              Post-migration rollback isn’t automatic — the backup is the net.
+              Post-migration rollback isn’t automatic - the backup is the net.
             </p>
             <FormCheckbox
               className="rounded-md border border-border bg-muted/20 p-2.5 text-[13px]"
@@ -524,7 +524,7 @@ function UpdatesSettingsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Progress — polls through the restart (failed polls just retry). */}
+      {/* Progress - polls through the restart (failed polls just retry). */}
       <Dialog
         open={upgrading}
         onOpenChange={(o) => {

@@ -29,10 +29,10 @@ import {
 import { useRegisterAddActions } from "@/components/device-add-actions"
 import { useMe } from "@/lib/use-me"
 
-// CableMini chip — the one place a cable color is allowed to show (it's the
-// physical cable). Plain "—" when the port isn't cabled.
+// CableMini chip - the one place a cable color is allowed to show (it's the
+// physical cable). Plain "-" when the port isn't cabled.
 function CableCell({ cable }: { cable: RearPort["cable"] }) {
-  if (!cable) return <span className="text-muted-foreground">—</span>
+  if (!cable) return <span className="text-muted-foreground">-</span>
   return (
     <Link
       to="/cables/$id"
@@ -103,7 +103,7 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
           row.original.type ? (
             <span className="font-mono text-xs">{row.original.type}</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -125,7 +125,7 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
           row.original.tags.length ? (
             <TagList tags={row.original.tags} />
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -135,7 +135,7 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
           row.original.description ? (
             <span className="text-xs">{row.original.description}</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -224,7 +224,7 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
           row.original.type ? (
             <span className="font-mono text-xs">{row.original.type}</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -239,7 +239,7 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
           row.original.tags.length ? (
             <TagList tags={row.original.tags} />
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -249,7 +249,7 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
           row.original.description ? (
             <span className="text-xs">{row.original.description}</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -332,7 +332,7 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : rearRows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No rear ports. Rear ports are the back of a patch panel — add one,
+            No rear ports. Rear ports are the back of a patch panel - add one,
             then map front ports to its strands.
           </p>
         ) : (
@@ -360,7 +360,7 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
         ) : frontRows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No front ports. A front port is a panel's front jack mapped to a
-            rear-port strand — a cable trace passes through it.
+            rear-port strand - a cable trace passes through it.
           </p>
         ) : (
           <DataTable
@@ -445,7 +445,7 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
         onCleared={() => setSelRear([])}
         invalidate={[["device-rear-ports", deviceId]]}
         fields={[
-          // Free text, matching RearPortForm — RearPort.type carries no model
+          // Free text, matching RearPortForm - RearPort.type carries no model
           // choices, so a closed list would block values the single-port form
           // accepts.
           { key: "type", label: "Type", kind: "text", hint: "e.g. lc" },

@@ -8,10 +8,10 @@ shared "select rows + act on them" UX by:
   2. Adding ``{% bulk_th %}`` as the first ``<th>`` and ``{% bulk_td obj.id %}``
      as the first ``<td>`` (the template tags live in ``api_extras``).
   3. Routing ``bulk_action_url`` to ``bulk_action_view(model, ...)`` from
-     this module — it handles the POST in a single transaction.
+     this module - it handles the POST in a single transaction.
 
 Why a single factory rather than a CBV mixin? List views in Danbyte are
-plain function-views, and the bulk handler is genuinely tiny — model + perm
+plain function-views, and the bulk handler is genuinely tiny - model + perm
 + a couple of optional hooks is all it needs. Anything bigger gets pulled
 out into per-model views.
 """
@@ -40,7 +40,7 @@ ACTION_EDIT_APPLY = "edit_apply"
 #
 # A "set this field?" toggle pattern: every editable field has a
 # sibling ``_set_<name>`` BooleanField. Only fields whose toggle is ticked
-# are written to the queryset — that lets a user clear a value (blank +
+# are written to the queryset - that lets a user clear a value (blank +
 # tick = clear) without accidentally blanking every field they didn't
 # touch.
 #
@@ -52,7 +52,7 @@ class BulkEditFormBase(forms.Form):
 
     Subclasses declare editable fields like a normal Form. After binding +
     cleaning, call ``apply(queryset)`` to write the chosen changes in one
-    transaction. M2M fields are supported via ``M2M_FIELDS`` — they're
+    transaction. M2M fields are supported via ``M2M_FIELDS`` - they're
     handled separately because ``.update()`` can't touch them.
     """
 
@@ -62,7 +62,7 @@ class BulkEditFormBase(forms.Form):
 
     #: Names of M2M fields the subclass exposes as ``<name>_add`` +
     #: ``<name>_remove`` pairs. The base routes each picked value via
-    #: ``manager.add(*qs)`` / ``manager.remove(*qs)`` — keeps the rest of
+    #: ``manager.add(*qs)`` / ``manager.remove(*qs)`` - keeps the rest of
     #: each row's M2M set untouched.
     M2M_ADD_REMOVE_FIELDS: tuple[str, ...] = ()
 
@@ -184,7 +184,7 @@ def bulk_action_view(
     edit_title:
         Page title shown on the bulk-edit page.
     pre_delete:
-        Optional hook invoked once per object before ``.delete()`` — use
+        Optional hook invoked once per object before ``.delete()`` - use
         it for audit logging or to skip protected rows.
     label_plural:
         Used in the success message: ``"Deleted 4 prefixes."``.

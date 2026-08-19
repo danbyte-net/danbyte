@@ -4,13 +4,13 @@ icon: lucide/list-checks
 
 # Statuses & roles
 
-Danbyte ships **no** statuses or roles — following the zero pre-filled data rule,
+Danbyte ships **no** statuses or roles - following the zero pre-filled data rule,
 you define exactly the ones your network uses. Both live as small catalogs you
 manage yourself, and both drive defaults and behaviour elsewhere in the app.
 
 ## Statuses
 
-A **status** describes the operational state of an object — for example
+A **status** describes the operational state of an object - for example
 *Active*, *Reserved*, or *Deprecated*. Each status has a name, a color (shown as
 a badge wherever the status appears), and an optional description.
 
@@ -21,7 +21,7 @@ available to devices, prefixes, IP addresses, racks, … so it reads identically
 | Field | Effect |
 |---|---|
 | **Available to** | The object types this status can be used on (IP addresses, Devices, Prefixes, Racks, Clusters, VMs, Cables, Circuits, Power feeds, Wireless LANs, Tunnels, Locations, IP ranges, Inventory items, Maintenance & outage events). Only statuses available to an object show in its form. |
-| **Default for** | Object types for which this status is applied on create. At most one default per (tenant, object type) — a subset of *Available to*. |
+| **Default for** | Object types for which this status is applied on create. At most one default per (tenant, object type) - a subset of *Available to*. |
 
 IP-specific flags still apply when a status is available to IP addresses:
 
@@ -31,7 +31,7 @@ IP-specific flags still apply when a status is available to IP addresses:
 | **Requires note** | Prompts for a note when an IP is set to this status. |
 
 [Maintenance & outage events](maintenance.md) carry their workflow semantics
-the same way — as flags on the row, so renaming a status never changes what it
+the same way - as flags on the row, so renaming a status never changes what it
 does:
 
 | Flag | Effect |
@@ -40,16 +40,16 @@ does:
 | **Closes the event** | An event in this status counts as finished and releases its silence. |
 
 The built-in statuses your tenant had in use (Active, Reserved, …) are seeded
-on upgrade and merged — so the *Active* you used on IPs becomes the *Active*
+on upgrade and merged - so the *Active* you used on IPs becomes the *Active*
 your devices and prefixes use too. Manage them all under **Statuses**.
 
 !!! tip "Statuses can opt out of monitoring"
     The monitoring **skip** policy can name statuses whose addresses aren't
-    checked — point it at *Reserved*, say, and reserved IPs won't be polled.
+    checked - point it at *Reserved*, say, and reserved IPs won't be polled.
 
 ## IP roles
 
-An **IP role** describes the functional purpose of an address — for example
+An **IP role** describes the functional purpose of an address - for example
 *Gateway*, *Loopback*, or *VIP*. Like statuses, each role has a name, a color, an
 optional icon, and a description.
 
@@ -74,10 +74,10 @@ and behaves for you:
 
 | Setting | What it does |
 |---|---|
-| **Theme** | Light or dark — applied immediately. |
+| **Theme** | Light or dark - applied immediately. |
 | **Table density** | Comfortable or compact rows. |
 | **Page size** | How many rows per page in tables. |
-| **Timestamps** | Relative ("3h ago") or absolute in tables — the exact form is always on hover. |
+| **Timestamps** | Relative ("3h ago") or absolute in tables - the exact form is always on hover. |
 | **Date format** | How calendar dates render: ISO (`2026-01-31`), `31.01.2026`, `01/31/2026`, `31 Jan 2026`, … |
 | **Clock** | 24-hour (`14:30`) or 12-hour (`2:30 PM`). |
 | **Timezone** | The IANA timezone times render in (e.g. `Europe/Copenhagen`). The list comes from the server's own timezone database, so every offered zone is one it accepts; renamed zones (`Europe/Kiev` → `Europe/Kyiv`) are converted on save. |
@@ -97,6 +97,6 @@ stored is always ISO).
 
 ## See also
 
-- [Gateway autospawn](gateway-autospawn.md) — how the gateway role is used.
-- [VLANs, VRFs & route targets](ipam-objects.md) — the other IPAM catalogs.
-- [Tags & custom fields](tags-and-custom-fields.md) — attach your own attributes.
+- [Gateway autospawn](gateway-autospawn.md) - how the gateway role is used.
+- [VLANs, VRFs & route targets](ipam-objects.md) - the other IPAM catalogs.
+- [Tags & custom fields](tags-and-custom-fields.md) - attach your own attributes.

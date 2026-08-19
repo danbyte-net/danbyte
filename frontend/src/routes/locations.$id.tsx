@@ -245,7 +245,7 @@ function buildColumns(): ColumnDef<Prefix>[] {
           auto-site
         </Badge>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
   }
   const ips: ColumnDef<Prefix> = {
@@ -263,7 +263,7 @@ function buildColumns(): ColumnDef<Prefix>[] {
   return cols
 }
 
-/** The location's attributes, grouped into a labelled table — the detail that
+/** The location's attributes, grouped into a labelled table - the detail that
  * used to crowd the page header. Only the name and status stay up top. */
 function LocationOverview({
   location: l,

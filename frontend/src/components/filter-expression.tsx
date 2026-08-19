@@ -38,7 +38,7 @@ import {
 
 /**
  * The advanced filter: one expression per list, written either through the
- * row-based builder or as text in the same grammar — both edit the same AST,
+ * row-based builder or as text in the same grammar - both edit the same AST,
  * so switching between them is lossless (until the text uses nesting the
  * builder can't show, in which case the text editor stays authoritative).
  *
@@ -136,7 +136,7 @@ function ExpressionDialog({
             <OperatorsHint />
           </DialogTitle>
           <DialogDescription>
-            Build conditions, or type them —{" "}
+            Build conditions, or type them -{" "}
             <code className="text-[11px]">
               status = active and (site.name ~ cph or tags ~ core)
             </code>
@@ -161,7 +161,7 @@ function ExpressionDialog({
             onClick={() => {
               onApply(state.text.trim())
               // Hand off to the SavedViews naming flow (same page, different
-              // subtree) — the snapshot it saves includes this expression.
+              // subtree) - the snapshot it saves includes this expression.
               window.dispatchEvent(new CustomEvent("danbyte:save-view"))
             }}
           >
@@ -243,7 +243,7 @@ export function ExpressionEditor({
       ) : (
         !error && (
           <p className="text-[12px] text-muted-foreground">
-            This expression uses grouping the builder can't show — edit it as
+            This expression uses grouping the builder can't show - edit it as
             text below.
           </p>
         )
@@ -264,7 +264,7 @@ export function ExpressionEditor({
 
 const BLANK = (): BuilderRule => ({ field: "", cmp: "=", value: "" })
 
-/** OR-separated groups of AND-ed rows — matching a group means matching every
+/** OR-separated groups of AND-ed rows - matching a group means matching every
  * row in it; matching any group matches the filter. Covers everything up to
  * "a or (b and c)" without asking anyone to think about precedence. */
 function GroupRows({
@@ -399,7 +399,7 @@ function GroupRows({
         size="sm"
         onClick={() => onChange([...groups, [BLANK()]])}
       >
-        <Plus className="h-3.5 w-3.5" /> Or — add another group
+        <Plus className="h-3.5 w-3.5" /> Or - add another group
       </Button>
     </div>
   )
@@ -426,7 +426,7 @@ function ValueField({
     ? samples.filter((s) => s.toLowerCase().includes(q))
     : samples
   // Typed text that matches nothing (or exactly one pick) keeps the full list
-  // visible — the point of the picker is seeing what exists.
+  // visible - the point of the picker is seeing what exists.
   const exhausted =
     narrowed.length === 0 || (narrowed.length === 1 && narrowed[0] === value)
   const shown = exhausted ? samples : narrowed
@@ -452,7 +452,7 @@ function ValueField({
               setOpen(true)
             }}
             onFocus={() => setOpen(true)}
-            // A second click on an already-focused input fires no focus event —
+            // A second click on an already-focused input fires no focus event -
             // pointerdown covers reopening.
             onPointerDown={() => setOpen(true)}
             onKeyDown={(e) => {
@@ -476,7 +476,7 @@ function ValueField({
         align="start"
         className="max-h-56 w-60 overflow-y-auto p-1"
         onOpenAutoFocus={(e) => e.preventDefault()}
-        // The click that focuses the input is "outside" the content — without
+        // The click that focuses the input is "outside" the content - without
         // this guard the popover opens on focus and closes on the same click.
         onInteractOutside={(e) => {
           if (anchorRef.current?.contains(e.target as Node)) e.preventDefault()
@@ -484,7 +484,7 @@ function ValueField({
       >
         {q && narrowed.length === 0 && (
           <p className="px-2 py-1.5 text-[11px] text-muted-foreground">
-            No value contains "{value.trim()}" — free text still applies.
+            No value contains "{value.trim()}" - free text still applies.
           </p>
         )}
         {shown.map((s) => (
@@ -519,7 +519,7 @@ function OperatorsHint() {
     <HoverCard openDelay={100}>
       <HoverCardTrigger asChild>
         {/* tabIndex -1: the dialog focuses its first tabbable element on open,
-            and a focused trigger opens the card — which made the reference
+            and a focused trigger opens the card - which made the reference
             cover the dialog before the pointer ever moved. */}
         <button
           type="button"

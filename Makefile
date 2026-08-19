@@ -11,7 +11,7 @@ SERVICE_HOME   ?= /opt/danbyte
 LOG_DIR        ?= /var/log/danbyte
 # Dev-only units. `danbyte-infra` runs Postgres + Redis in docker compose for a
 # workstation; a production install provisions them natively (scripts/install.sh
-# creates the role/database with psql), so these must NEVER be linked there —
+# creates the role/database with psql), so these must NEVER be linked there -
 # doing so left an idle, empty Postgres container on hosts that already had one.
 DEV_SERVICES   := danbyte-mockups danbyte-infra danbyte-backend
 # Units both dev and production run.
@@ -142,7 +142,7 @@ docs-logs:        ; journalctl --user -fu danbyte-docs
 docs-build:       ; .venv/bin/zensical build
 
 # ---- OpenAPI schema ----------------------------------------------------------
-# Generate the OpenAPI 3 schema to repo-root openapi.yaml — the committed source
+# Generate the OpenAPI 3 schema to repo-root openapi.yaml - the committed source
 # of truth the API reference site (api.danbyte.net) tracks, the same "repo is
 # the source of truth" pattern as the docs. Regenerated + committed on each
 # release (see .github/workflows/release.yml). Works airgapped; no live endpoint.
@@ -315,7 +315,7 @@ collectstatic:
 #   make install-prod-services
 #   systemctl --user stop danbyte-backend danbyte-frontend   # the dev units
 #   systemctl --user enable --now danbyte-web danbyte-ws danbyte-frontend-prod
-# Everything a production host runs — web/ws/frontend plus the shared units.
+# Everything a production host runs - web/ws/frontend plus the shared units.
 # scripts/install.sh links ONLY these; it must not pull in DEV_SERVICES.
 PROD_SERVICES := danbyte-web danbyte-ws danbyte-frontend-prod $(SHARED_SERVICES)
 

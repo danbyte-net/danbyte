@@ -1,4 +1,4 @@
-"""Danbyte example plugin — the reference implementation + test bed.
+"""Danbyte example plugin - the reference implementation + test bed.
 
 A standalone, importable package that demonstrates every plugin surface. It is
 NOT loaded in production unless an operator adds ``danbyte_example_plugin`` to

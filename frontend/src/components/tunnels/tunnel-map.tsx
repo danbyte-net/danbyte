@@ -16,7 +16,7 @@ import type { Tunnel, TunnelTermination } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { useTheme } from "@/components/theme-provider"
 
-// Card geometry — the layout math needs the DOM size, like the stencil nodes.
+// Card geometry - the layout math needs the DOM size, like the stencil nodes.
 const CARD_W = 190
 const CARD_H = 58
 
@@ -31,7 +31,7 @@ type EndData = {
 }
 
 /** Both handles sit at the card's centre (hidden), so the straight tunnel
- * edges radiate from centre to centre and stay tucked behind the cards —
+ * edges radiate from centre to centre and stay tucked behind the cards -
  * a spoke connects cleanly whichever side of the hub it lands on. */
 const CENTER_HANDLE: React.CSSProperties = {
   top: "50%",
@@ -41,7 +41,7 @@ const CENTER_HANDLE: React.CSSProperties = {
   pointerEvents: "none",
 }
 
-/** One tunnel end — endpoint (device/VM), interface, outside IP, role. */
+/** One tunnel end - endpoint (device/VM), interface, outside IP, role. */
 function TunnelEndNode({ data, selected }: NodeProps) {
   const d = data as EndData
   return (
@@ -68,7 +68,7 @@ function TunnelEndNode({ data, selected }: NodeProps) {
         {d.interfaceName}
       </div>
       <div className="truncate font-mono text-[10px] text-muted-foreground">
-        {d.outsideIp ?? "—"}
+        {d.outsideIp ?? "-"}
       </div>
       <Handle type="target" position={Position.Top} style={CENTER_HANDLE} />
       <Handle type="source" position={Position.Top} style={CENTER_HANDLE} />
@@ -76,12 +76,12 @@ function TunnelEndNode({ data, selected }: NodeProps) {
   )
 }
 
-// Defined once — re-creating nodeTypes each render re-mounts every node.
+// Defined once - re-creating nodeTypes each render re-mounts every node.
 const nodeTypes = { tunnelEnd: TunnelEndNode }
 
 function toNode(t: TunnelTermination, cx: number, cy: number): Node {
-  const endpoint = t.interface?.device.name ?? t.vm_interface?.vm.name ?? "—"
-  const interfaceName = t.interface?.name ?? t.vm_interface?.name ?? "—"
+  const endpoint = t.interface?.device.name ?? t.vm_interface?.vm.name ?? "-"
+  const interfaceName = t.interface?.name ?? t.vm_interface?.name ?? "-"
   return {
     id: t.id,
     type: "tunnelEnd",
@@ -155,7 +155,7 @@ function buildGraph(terminations: TunnelTermination[]): {
     return { nodes, edges }
   }
 
-  // No hub/spoke split — peers (or hubs-only / spokes-only, drawn the same).
+  // No hub/spoke split - peers (or hubs-only / spokes-only, drawn the same).
   if (terminations.length <= 2) {
     const n = terminations.length
     terminations.forEach((t, i) =>
@@ -176,7 +176,7 @@ function buildGraph(terminations: TunnelTermination[]): {
 
 /**
  * Read-only topology map of one tunnel: its terminations as cards, laid out
- * by role — hub(s) central with the spokes on a ring, or peers side by side.
+ * by role - hub(s) central with the spokes on a ring, or peers side by side.
  * Clicking a card jumps to the terminating interface (or the VM). Lazy-load
  * this (like the topology canvas) so React Flow stays out of the main bundle.
  */
@@ -191,7 +191,7 @@ export function TunnelMap({ tunnel }: { tunnel: Tunnel }) {
   if (tunnel.terminations.length === 0)
     return (
       <p className="text-sm text-muted-foreground">
-        No terminations on this tunnel yet — add its ends on the Terminations
+        No terminations on this tunnel yet - add its ends on the Terminations
         tab to draw the map.
       </p>
     )

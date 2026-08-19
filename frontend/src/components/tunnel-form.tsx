@@ -27,8 +27,8 @@ import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useSaveObject } from "@/lib/save-object"
 
 const ENCAPS: { value: TunnelEncapsulation; label: string }[] = [
-  { value: "ipsec-tunnel", label: "IPSec — Tunnel" },
-  { value: "ipsec-transport", label: "IPSec — Transport" },
+  { value: "ipsec-tunnel", label: "IPSec - Tunnel" },
+  { value: "ipsec-transport", label: "IPSec - Transport" },
   { value: "gre", label: "GRE" },
   { value: "ip-ip", label: "IP-in-IP" },
   { value: "wireguard", label: "WireGuard" },

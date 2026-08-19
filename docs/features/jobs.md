@@ -4,7 +4,7 @@ icon: lucide/list-checks
 
 # Jobs (background queue)
 
-Some work in Danbyte doesn't finish in the moment you ask for it — discovering
+Some work in Danbyte doesn't finish in the moment you ask for it - discovering
 every host in a large prefix, running scheduled health checks, sending
 notifications. That work runs in the background on a **worker** pulling jobs off
 a **queue**. The **Jobs** page (under **Governance** in the sidebar) is where you
@@ -12,7 +12,7 @@ watch it happen and step in when something is stuck.
 
 !!! info "Where this lives"
     **Sidebar → Governance → Jobs.** It's only visible to people who hold the
-    **Manage background jobs** permission (`jobs.manage`) — see
+    **Manage background jobs** permission (`jobs.manage`) - see
     [Who can see it](#who-can-see-it).
 
 ## What you'll see
@@ -20,7 +20,7 @@ watch it happen and step in when something is stuck.
 The page polls live (every couple of seconds) so counts move on their own.
 
 **Worker status** sits in the top-right: how many workers are connected and how
-many are currently busy. This is the single most useful number on the page —
+many are currently busy. This is the single most useful number on the page -
 **if it reads `0 workers`, nothing in the queue will run**, no matter how many
 jobs are waiting. When that's the case and jobs are queued, a red banner spells
 it out and tells you how to start a worker:
@@ -46,7 +46,7 @@ it ran. Click any row to open its detail.
 ## Scheduled tasks (the periodic beat)
 
 Not all background work goes through the queue. Much of Danbyte's routine
-activity runs on a **timer** as a self-contained oneshot — the check engine
+activity runs on a **timer** as a self-contained oneshot - the check engine
 dispatch, config-drift dispatch, the Outpost driver, subnet discovery, interface
 utilisation, alert maintenance, certificate expiry, the daily **email
 digest**, and the various
@@ -57,7 +57,7 @@ Each task shows its **cadence** (e.g. *every minute*, *daily 07:00*), the
 outcome of its **last run** (OK / failed / skipped, or *never run*), a one-line
 **summary** of what that run did (e.g. "sent 2 digest(s)", "created 5 IP(s)
 across 2 prefix(es)"), and **when** it ran plus how long it took. Failed tasks
-sort to the top. This is where you confirm a scheduled job actually fired —
+sort to the top. This is where you confirm a scheduled job actually fired -
 "did last night's digest go out?" is now a glance, not a log dig.
 
 Every task writes a line whether or not it did anything, so a task that runs but
@@ -65,19 +65,19 @@ has nothing to do reads as **skipped** rather than silently leaving no trace.
 
 ## Engines & Outposts
 
-The **Engines & Outposts** section lists where checks actually run — the
-built-in **local** engine plus any **Outposts** — with each one's last
+The **Engines & Outposts** section lists where checks actually run - the
+built-in **local** engine plus any **Outposts** - with each one's last
 **heartbeat**. An Outpost that has gone quiet shows **stale**; one checking in
 normally shows **online**. It's the fastest way to confirm a remote site's agent
 is alive and reporting.
 
 ## Worker pool size
 
-The number of RQ worker processes decides how many jobs run in parallel — more
+The number of RQ worker processes decides how many jobs run in parallel - more
 workers clear a backlog of queued scans/imports faster, at the cost of more
 RAM/CPU. Superusers can change it under **Settings → Deployment → Services →
 Background workers**: set a value (1–64) and **Apply**. That writes a systemd
-drop-in (`RQ_WORKERS`) and restarts *only* the worker pool — the web, database,
+drop-in (`RQ_WORKERS`) and restarts *only* the worker pool - the web, database,
 and other services are untouched. The default is **8**. On installs where the
 worker unit isn't managed by systemd, the value is saved but must be applied by
 hand.
@@ -88,22 +88,22 @@ The detail page shows everything recorded for one job: its ID, function,
 queue, the worker that ran it, timestamps, duration, and its arguments. Then,
 depending on outcome:
 
-- **Result** — the value a finished job returned.
-- **Traceback** — the full error for a failed job, so you can see *why* it
+- **Result** - the value a finished job returned.
+- **Traceback** - the full error for a failed job, so you can see *why* it
   failed without digging through worker logs.
 
 ### Acting on a job
 
 Two actions are available to anyone with `jobs.manage`:
 
-- **Requeue** — put a **failed** job back on its queue to try again (for example
+- **Requeue** - put a **failed** job back on its queue to try again (for example
   after fixing whatever it depended on).
-- **Cancel** — remove a **queued**, deferred, scheduled, or running job from the
+- **Cancel** - remove a **queued**, deferred, scheduled, or running job from the
   queue and delete it.
 
 !!! tip "Clearing orphaned jobs"
     A job enqueued by code or an integration that no longer exists can't be read
-    back — it shows as **unreadable** with its arguments unavailable (its
+    back - it shows as **unreadable** with its arguments unavailable (its
     timestamps are still accurate). These are harmless but clutter the queue;
     **Cancel** clears them out.
 
@@ -112,12 +112,12 @@ Two actions are available to anyone with `jobs.manage`:
 Access is a single grantable permission, **`jobs.manage`** ("Manage background
 jobs"):
 
-- **Administrators hold it automatically** — no setup needed.
+- **Administrators hold it automatically** - no setup needed.
 - To give it to anyone else, edit their account and grant **Manage background
   jobs** (it appears under the **Admin** group of permissions on the user form).
 
 The same permission gates the API and the Requeue/Cancel actions, so it's
-enforced on the server — not just hidden in the sidebar.
+enforced on the server - not just hidden in the sidebar.
 
 ## When to reach for this
 

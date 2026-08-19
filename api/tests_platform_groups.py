@@ -2,7 +2,7 @@
 
 Covers the PlatformGroup catalog (create, nest, cycle guard, assign a
 platform), the optional ``platform`` FK on DeviceType, and the derived
-``effective_platform`` on Device — its own platform when set, else its
+``effective_platform`` on Device - its own platform when set, else its
 type's default.
 """
 from __future__ import annotations

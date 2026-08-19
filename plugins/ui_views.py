@@ -1,4 +1,4 @@
-"""Server-driven plugin UI metadata — consumed by the generic React renderer."""
+"""Server-driven plugin UI metadata - consumed by the generic React renderer."""
 from __future__ import annotations
 
 from drf_spectacular.types import OpenApiTypes
@@ -26,7 +26,7 @@ def plugin_ui(request):
     """Nav items / pages / dashboard panels contributed by the plugins enabled
     for the caller's active tenant.
 
-    Enablement is filtered here; per-object RBAC stays authoritative downstream —
+    Enablement is filtered here; per-object RBAC stays authoritative downstream -
     nav items carry ``object_type``/``perm`` for the frontend's existing
     visibility gate, and each page's data endpoint enforces its own RBAC.
     """

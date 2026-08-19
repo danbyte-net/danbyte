@@ -108,7 +108,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
     ip?.switch_interface?.id ?? null
   )
   // Every IP must live in a prefix (non-null FK), and the prefix is what carries
-  // VRF + site — so on create the user picks a subnet, optionally narrowed by
+  // VRF + site - so on create the user picks a subnet, optionally narrowed by
   // site/VRF. Seeded from a prefix-page launch (`initial.prefixId`) or a clone.
   const [prefixId, setPrefixId] = useState<string | null>(
     seed?.prefix?.id ?? initial?.prefixId ?? null
@@ -116,7 +116,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   const [siteFilter, setSiteFilter] = useState<string | null>(null)
   const [vrfFilter, setVrfFilter] = useState<string | null>(null)
 
-  // Staff at a single site get that site's default prefix pre-selected — the
+  // Staff at a single site get that site's default prefix pre-selected - the
   // whole point of the Site → Default prefix setting. Never overrides an
   // explicit choice: an edit, a clone, or a launch from a prefix page all
   // already carry a prefix, and the effect only seeds an EMPTY picker once.
@@ -264,7 +264,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   // When the address sits inside a DHCP scope's pool, the form offers to
   // reserve it: saving pushes Add/Remove-DhcpServerv4Reservation to the
   // Windows server after the IP write, using the MAC field above. Queries
-  // 404 harmlessly when the DHCP integration is off — the section just hides.
+  // 404 harmlessly when the DHCP integration is off - the section just hides.
   const dhcpScopes = useQuery({
     queryKey: ["dhcp-scopes", "ip-form"],
     queryFn: () => api<Paginated<DhcpScope>>("/api/dhcp-scopes/?page_size=500"),
@@ -300,7 +300,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   const canDhcp = !!poolScope || !!existingRes
 
   /** Post-save reconciliation: create or remove the reservation to match the
-   * toggle. The IP itself is already saved — a DHCP push failure must not
+   * toggle. The IP itself is already saved - a DHCP push failure must not
    * look like a failed save, so it reports separately. */
   const syncDhcpReservation = async (savedIp: string) => {
     try {
@@ -364,7 +364,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
           body: JSON.stringify({ primary_ip_id: saved.id }),
         }).catch(() => {})
       }
-      // DHCP reservation rides along after the IP write (real writes only —
+      // DHCP reservation rides along after the IP write (real writes only -
       // a plan can't push to an external server).
       if (!planning && canDhcp) await syncDhcpReservation(saved.ip_address)
       return saved
@@ -415,7 +415,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
       {!isEdit && (
         <div className="grid gap-3 rounded-md border border-border p-3">
           <p className="text-[11px] text-muted-foreground">
-            Pick the subnet this IP belongs to — it sets the VRF and site.
+            Pick the subnet this IP belongs to - it sets the VRF and site.
             Narrow the list by site or VRF.
           </p>
           <div className="grid grid-cols-2 gap-3">
@@ -455,7 +455,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
               options={prefixOpts}
               placeholder="Pick a subnet…"
               searchPlaceholder="Search subnets…"
-              emptyText="No subnets — adjust the filters."
+              emptyText="No subnets - adjust the filters."
             />
           </Field>
         </div>
@@ -476,7 +476,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
             <span className="font-mono text-foreground">
               {selectedPrefix.cidr}
             </span>{" "}
-            — the network part is filled in, just add the host.
+            - the network part is filled in, just add the host.
           </p>
         )}
       </Field>
@@ -491,7 +491,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
               <SelectValue placeholder="Pick status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={NONE}>— none —</SelectItem>
+              <SelectItem value={NONE}>- none -</SelectItem>
               {statuses.data?.results.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
                   {s.name}
@@ -525,7 +525,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
           rows={3}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="e.g. db-01 — production replica"
+          placeholder="e.g. db-01 - production replica"
         />
       </Field>
 
@@ -567,7 +567,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
               />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={NONE}>— none —</SelectItem>
+              <SelectItem value={NONE}>- none -</SelectItem>
               {interfaces.data?.results.map((i) => (
                 <SelectItem key={i.id} value={i.id}>
                   {i.name}
@@ -609,7 +609,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
               />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={NONE}>— none —</SelectItem>
+              <SelectItem value={NONE}>- none -</SelectItem>
               {vmInterfaces.data?.results.map((i) => (
                 <SelectItem key={i.id} value={i.id}>
                   {i.name}
@@ -643,7 +643,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
               />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={NONE}>— none —</SelectItem>
+              <SelectItem value={NONE}>- none -</SelectItem>
               {switchInterfaces.data?.results.map((i) => (
                 <SelectItem key={i.id} value={i.id}>
                   {i.name}
@@ -702,7 +702,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
           </label>
           <p className="mt-1 pl-6 text-[11px] text-muted-foreground">
             {planning
-              ? "Unavailable in plan mode — reservations push to the DHCP server immediately."
+              ? "Unavailable in plan mode - reservations push to the DHCP server immediately."
               : !existingRes && !mac.trim()
                 ? "Enter the MAC address above to reserve this address."
                 : existingRes
@@ -794,7 +794,7 @@ function Field({
 
 // Prefill the network portion of an address from a prefix CIDR, so the user
 // only types the host part. IPv4: keep the fully-fixed leading octets
-// (floor(prefixlen / 8)) + a trailing dot — e.g. 10.0.10.0/24 → "10.0.10.".
+// (floor(prefixlen / 8)) + a trailing dot - e.g. 10.0.10.0/24 → "10.0.10.".
 // IPv6: the network address (the part before "/") is a good starting base.
 export function networkPrefill(cidr: string): string {
   const [addr, lenStr] = cidr.split("/")

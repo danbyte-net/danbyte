@@ -186,7 +186,7 @@ function EmailDigestCard() {
         label="Send an email digest"
         checked={enabled}
         onChange={setEnabled}
-        hint="A scheduled summary email — daily, or weekly on a chosen day."
+        hint="A scheduled summary email - daily, or weekly on a chosen day."
       />
       {enabled && (
         <>

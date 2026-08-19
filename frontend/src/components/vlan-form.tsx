@@ -92,7 +92,7 @@ export function VlanForm({
 
   const sites = useSiteOptions()
   // Enhanced site separation: a single-site user's creates land in their own
-  // site — prefill and lock the picker (useSiteOptions already filtered it).
+  // site - prefill and lock the picker (useSiteOptions already filtered it).
   const siteLocked = !!sites.lockedId
   useEffect(() => {
     if (!isEdit && sites.lockedId && !siteId) setSiteId(sites.lockedId)
@@ -255,7 +255,7 @@ export function VlanForm({
 
       <FormColor
         label="Color"
-        hint="Optional — colours the VLAN's badge and topology rail"
+        hint="Optional - colours the VLAN's badge and topology rail"
         value={color}
         onChange={setColor}
         error={fieldErrors.color}

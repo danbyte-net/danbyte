@@ -47,7 +47,7 @@ interface EnumFacet<TRow> {
   label?: string
   /** Extracts the bucket key from a row. Null = excluded from the facet. */
   get: (row: TRow) => string | null | undefined
-  /** Optional renderer for a bucket — sample row helps pull display info
+  /** Optional renderer for a bucket - sample row helps pull display info
    * (a name + color) from a nested object whose key is the bucket id. */
   formatValue?: (
     value: string,
@@ -55,7 +55,7 @@ interface EnumFacet<TRow> {
   ) => { label: string; color?: string; textColor?: string }
   /** Hide the group when every row lands in the same bucket. A derived facet
    * ("is this catalog entry site-local?", "has this type been laid out?") is
-   * only worth rail space where the data actually splits — ticking its one
+   * only worth rail space where the data actually splits - ticking its one
    * option would select every row. Off by default: a facet over real catalog
    * objects still reads as a list of what exists. */
   hideWhenSingle?: boolean
@@ -120,10 +120,10 @@ export interface UseTableFiltersResult<TRow> {
   filteredRows: TRow[]
   /** Number of active facet filters (for header badges). */
   activeCount: number
-  /** Toggle one value in an enum/tags facet from OUTSIDE the rail — e.g. a
+  /** Toggle one value in an enum/tags facet from OUTSIDE the rail - e.g. a
    * clickable tag chip inside a table cell. Referentially stable. */
   toggleValue: (id: string, value: string) => void
-  /** Current selection of an enum/tags facet (empty set when untouched) —
+  /** Current selection of an enum/tags facet (empty set when untouched) -
    * lets cells highlight their active chips. */
   selectedValues: (id: string) => Set<string>
   /** The whole selection as plain JSON, and the way back. This is what makes a
@@ -134,7 +134,7 @@ export interface UseTableFiltersResult<TRow> {
   restore: (snapshot: FilterSnapshot | null | undefined) => void
 }
 
-/** Facet selections in a form that survives JSON — sets become arrays. The
+/** Facet selections in a form that survives JSON - sets become arrays. The
  * reserved `__expr` key carries the advanced filter expression (a string in
  * the lib/filter-expr grammar), so saved views capture it too. */
 export type FilterSnapshot = Record<string, string[] | RangeState | string>
@@ -164,7 +164,7 @@ export function useTableFilters<TRow>(
   }, [columns])
 
   // Single state object keyed by column.id. Stable across renders.
-  // Lazy initializer so the seed only applies on mount — later user toggles
+  // Lazy initializer so the seed only applies on mount - later user toggles
   // own the state and aren't clobbered on re-render.
   const [state, setState] = useState<
     Record<string, EnumState | TagsState | RangeState>
@@ -183,7 +183,7 @@ export function useTableFilters<TRow>(
     setState((s) => ({ ...s, [id]: next }))
 
   // The advanced filter: one expression (lib/filter-expr grammar) applied on
-  // top of the facets. Kept as text — the single format the builder, the text
+  // top of the facets. Kept as text - the single format the builder, the text
   // editor and the saved-view snapshot all share.
   const [exprText, setExprText] = useState("")
   const exprAst = useMemo<Expr | null>(() => {
@@ -249,7 +249,7 @@ export function useTableFilters<TRow>(
         }
         map[id] = Object.values(tags).sort((a, b) => b.count - a.count)
       } else {
-        // range: no options list — rendered as min/max inputs.
+        // range: no options list - rendered as min/max inputs.
         map[id] = []
       }
     }
@@ -325,7 +325,7 @@ export function useTableFilters<TRow>(
             )
           }
           const opts = options[id] ?? []
-          // A single-bucket enum filters nothing — drop it rather than spend a
+          // A single-bucket enum filters nothing - drop it rather than spend a
           // rail row on it. (FacetGroup already hides an empty one.)
           if (def.kind === "enum" && def.hideWhenSingle && opts.length < 2)
             return null

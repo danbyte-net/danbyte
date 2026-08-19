@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useState } from "react"
 
 // Link appearance preferences (per browser, an accessibility aid):
-//   • linkIcons — show a trailing chain glyph after every link.
-//   • linkColor — an optional colour for links ("" = neutral / inherit). Helps
+//   • linkIcons - show a trailing chain glyph after every link.
+//   • linkColor - an optional colour for links ("" = neutral / inherit). Helps
 //     users who need links to stand out (e.g. colour-blindness).
 // Source of truth for both is <html> (the `link-icons` class + the
 // `--link-color` inline style), seeded before paint by the boot script in

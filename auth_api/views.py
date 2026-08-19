@@ -136,7 +136,7 @@ def timezones_json(request):
 
     The settings pickers used to build their list from the *browser's* tz
     database, which offers names a canonical-only server build rejects
-    (Europe/Kiev, Asia/Calcutta, US/*) — the app listed values it then refused
+    (Europe/Kiev, Asia/Calcutta, US/*) - the app listed values it then refused
     to save. Serving the list keeps the two in step.
     """
     if not request.user.is_authenticated:
@@ -151,14 +151,14 @@ def timezones_json(request):
 def me_json(request):
     """Identity + effective permissions for the React frontend.
 
-    Deliberately *not* ``@login_required`` — an anonymous caller gets a clean
+    Deliberately *not* ``@login_required`` - an anonymous caller gets a clean
     ``{"is_authenticated": false, "perms": []}`` (HTTP 200) instead of a 302
     redirect to the login page, which ``fetch`` would otherwise follow and
     hand the SPA a chunk of login HTML. The client decides what to do with an
     unauthenticated answer.
 
     ``@ensure_csrf_cookie`` guarantees the ``csrftoken`` cookie is set even for
-    an anonymous visitor — the React login page calls this on mount, so the
+    an anonymous visitor - the React login page calls this on mount, so the
     follow-up ``POST /api/auth/login/`` has a token to send.
     """
     user = request.user
@@ -182,20 +182,20 @@ def me_json(request):
     permissions = {
         slug: sorted(acts) for slug, acts in effective_actions(user, tenant).items()
     }
-    # Single source of truth for "can reach admin surfaces" — same helper the
+    # Single source of truth for "can reach admin surfaces" - same helper the
     # tenant-settings / monitoring settings endpoints gate on. Deployment-wide
     # surfaces (global email/LDAP/updates) additionally need the stricter flag.
     can_manage_users = can_manage_admin(user, tenant)
     profile = getattr(user, "profile", None)
 
-    # Sharing & delegation / UI policy — per-tenant override or deployment
+    # Sharing & delegation / UI policy - per-tenant override or deployment
     # default (core.effective_settings). deployment_name stays global.
     ds = DeploymentSettings.load()
     sharing = effective_sharing(tenant)
     ui = effective_ui(tenant)
     delegation_on = sharing.allow_site_editor_delegation
     # The sites this user may WRITE in: None = all (admins, unscoped editors),
-    # a set = site-scoped local IT. Computed once — the delegation flags and
+    # a set = site-scoped local IT. Computed once - the delegation flags and
     # the separation payload both read it.
     own_sites = None if can_manage_users else editable_sites(user, tenant)
     can_delegate_sites = []  # "all" | [site_id]; only meaningful when on
@@ -234,7 +234,7 @@ def me_json(request):
         # (and the connect verb) server-side regardless.
         "ssh_terminal_enabled": ds.ssh_terminal_enabled,
         # First-run wizard: dismissed once per tenant (read-only here, no row
-        # created — the /api/onboarding/ endpoint owns the write).
+        # created - the /api/onboarding/ endpoint owns the write).
         "onboarding_dismissed": bool(
             tenant is not None
             and TenantSettings.objects.filter(tenant=tenant)
@@ -256,7 +256,7 @@ def me_json(request):
         "site_settings_enabled": bool(separation.allow_site_settings),
         "settings_sites": _settings_sites_payload(request.user, tenant),
         # Resolved date/time display settings (user override → tenant default
-        # → deployment default) — the SPA's single read point for formatting.
+        # → deployment default) - the SPA's single read point for formatting.
         "datetime": datetime_prefs(user, tenant),
         "active_tenant": (
             {"id": str(tenant.id), "name": tenant.name, "slug": tenant.slug}
@@ -357,7 +357,7 @@ def user_settings(request):
 @require_perm("tenants.edit")
 @require_http_methods(["GET", "POST"])
 def admin_tenant_settings(request):
-    """Admin-only — tenant-wide defaults that apply to every user."""
+    """Admin-only - tenant-wide defaults that apply to every user."""
     from api.views import _get_active_tenant
     from .settings_forms import AdminTenantSettingsForm
     tenant = _get_active_tenant(request)

@@ -9,8 +9,8 @@ import { DataTable, selectionColumn } from "@/components/data-table"
 
 /**
  * The tenants page crashed with React #185 (maximum update depth). The chain:
- * a `useMutation` object in a `useMemo` dep made `columns` — and the filtered
- * rows derived from them — a new identity every render; DataTable then emitted
+ * a `useMutation` object in a `useMemo` dep made `columns` - and the filtered
+ * rows derived from them - a new identity every render; DataTable then emitted
  * a fresh selection array on every render; the parent stored it in state; that
  * re-rendered the page. Forever.
  *
@@ -54,7 +54,7 @@ describe("DataTable selection", () => {
           columns={columns}
           onSelectedRowsChange={(rows) => {
             onSelected(rows)
-            setSelected(rows) // parent stores it — the loop's fuel
+            setSelected(rows) // parent stores it - the loop's fuel
           }}
         />
       )

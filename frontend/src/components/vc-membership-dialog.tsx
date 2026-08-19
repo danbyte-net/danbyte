@@ -21,7 +21,7 @@ export interface VcMembershipDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-// Edits a member device's vc_position / vc_priority in place — membership is
+// Edits a member device's vc_position / vc_priority in place - membership is
 // owned by the Device (PATCH /api/devices/:id/), so this is a device write.
 export function VcMembershipDialog({
   chassisId,
@@ -68,7 +68,7 @@ export function VcMembershipDialog({
         .vc_renamed_interfaces
       toast.success(
         `Updated ${saved.name}` +
-          (renamed ? ` — ${renamed} interfaces renamed to match` : "")
+          (renamed ? ` - ${renamed} interfaces renamed to match` : "")
       )
       onOpenChange(false)
     },
@@ -82,7 +82,7 @@ export function VcMembershipDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Edit membership — {member?.name}</DialogTitle>
+          <DialogTitle>Edit membership - {member?.name}</DialogTitle>
         </DialogHeader>
         <form
           onSubmit={(e) => {

@@ -23,7 +23,7 @@ export interface TenantDeleteDialogProps {
   onDeleted?: () => void
 }
 
-// Tenant deletes are catastrophic — every prefix/IP/VLAN under them
+// Tenant deletes are catastrophic - every prefix/IP/VLAN under them
 // cascades. Require the user to type the tenant name to confirm, like
 // GitHub does for repo deletion.
 export function TenantDeleteDialog({

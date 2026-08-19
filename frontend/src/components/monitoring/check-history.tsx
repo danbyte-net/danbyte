@@ -31,7 +31,7 @@ export function CheckHistory({
   if (rows.length === 0)
     return (
       <p className="text-xs text-muted-foreground">
-        No results recorded yet — run the check or wait for the scheduler.
+        No results recorded yet - run the check or wait for the scheduler.
       </p>
     )
 
@@ -55,7 +55,7 @@ export function CheckHistory({
               <CheckStatusBadge status={r.status} />
             </td>
             <td className="num py-1 pr-3 text-muted-foreground">
-              {r.latency_ms != null ? `${r.latency_ms.toFixed(1)} ms` : "—"}
+              {r.latency_ms != null ? `${r.latency_ms.toFixed(1)} ms` : "-"}
             </td>
             <td className="py-1 font-mono text-[11px] text-muted-foreground">
               {detailSummary(r.detail)}
@@ -68,7 +68,7 @@ export function CheckHistory({
 }
 
 function detailSummary(detail: Record<string, unknown>): string {
-  if (!detail || Object.keys(detail).length === 0) return "—"
+  if (!detail || Object.keys(detail).length === 0) return "-"
   if (typeof detail.error === "string") return detail.error
   const parts: string[] = []
   if (detail.port != null) parts.push(`port ${detail.port}`)

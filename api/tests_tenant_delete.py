@@ -38,7 +38,7 @@ class TenantForceDeleteTests(APITestCase):
         """A tenant owning an audited object could not be deleted at all (#37).
 
         Its change log is deleted with it, but each cascaded delete still wrote
-        a new entry pointing at the tenant — so the deferred foreign key failed
+        a new entry pointing at the tenant - so the deferred foreign key failed
         at COMMIT and the whole deletion rolled back. Any audited model reached
         only through the tenant's own cascade hit this; a VirtualizationSource
         is one, which is how it was reported.
@@ -57,7 +57,7 @@ class TenantForceDeleteTests(APITestCase):
         )
 
     def test_audit_logging_resumes_after_a_tenant_delete(self):
-        """The suspension is scoped — an ordinary edit is still recorded."""
+        """The suspension is scoped - an ordinary edit is still recorded."""
         from audit.models import ChangeLogEntry
 
         other = Tenant.objects.create(org=self.org, name="Keep", slug="keep")

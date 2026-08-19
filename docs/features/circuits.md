@@ -4,8 +4,8 @@ icon: lucide/spline
 
 # Circuits
 
-Circuits are the **WAN and data links you lease from providers** — internet
-transit, MPLS, dark fibre, point-to-point — recorded with their provider,
+Circuits are the **WAN and data links you lease from providers** - internet
+transit, MPLS, dark fibre, point-to-point - recorded with their provider,
 circuit ID, and the sites at each end.
 
 You build them in three layers: **providers** (who you buy from), **circuit
@@ -23,7 +23,7 @@ A provider is the company you lease a circuit from.
 
 ## Add a circuit type
 
-A circuit type classifies your links — *Internet*, *Transit*, *MPLS*, *Dark
+A circuit type classifies your links - *Internet*, *Transit*, *MPLS*, *Dark
 Fibre*, anything that fits your network.
 
 1. Open **Circuits → Circuit types** and click **Add circuit type**.
@@ -31,13 +31,13 @@ Fibre*, anything that fits your network.
 3. Save.
 
 !!! note "Nothing is pre-filled"
-    Danbyte ships no sample providers or circuit types — you create exactly the
+    Danbyte ships no sample providers or circuit types - you create exactly the
     ones your network uses.
 
 ## Add a provider network
 
 A provider network is the **far side of a circuit that isn't one of your own
-sites** — the provider's IP-transit cloud, an internet-exchange fabric, another
+sites** - the provider's IP-transit cloud, an internet-exchange fabric, another
 carrier's network. It exists so a circuit's Z end has something real to land on
 when it doesn't terminate at your own facility.
 
@@ -58,7 +58,7 @@ when it doesn't terminate at your own facility.
 
 ## Terminate a circuit
 
-Each end of a circuit is a **termination** — side **A** and side **Z**. A
+Each end of a circuit is a **termination** - side **A** and side **Z**. A
 termination lands on exactly one of:
 
 - one of your **sites**, or
@@ -67,7 +67,7 @@ termination lands on exactly one of:
 
 Each side carries its own physical details: **port speed** and **upstream
 speed** (kbps, for asymmetric links), the **cross-connect ID** at the facility,
-and **patch-panel info** — so the data an operator needs at the meet-me room
+and **patch-panel info** - so the data an operator needs at the meet-me room
 lives on the side it belongs to.
 
 1. Open the circuit's detail page → **Terminations** tab.
@@ -93,7 +93,7 @@ lives on the side it belongs to.
 ## Provider, provider-network & circuit-type pages
 
 Click a **provider**, **provider network**, or **circuit type** name in its
-list to open its detail page — the pencil in the header edits it.
+list to open its detail page - the pencil in the header edits it.
 
 - A **provider** page carries its account and NOC contact details up top, a
   **Circuits** tab listing every circuit you lease from that provider, and a
@@ -101,7 +101,7 @@ list to open its detail page — the pencil in the header edits it.
 - A **provider network** page shows its provider and service ID, with a
   **Circuits** tab listing the circuits that terminate on it.
 - A **circuit type** page shows the type's colored badge, slug, color and
-  description, with a **Circuits** tab answering "what uses this type" — the
+  description, with a **Circuits** tab answering "what uses this type" - the
   check to run before you edit or delete a type. It also carries **Journal**
   and **History** tabs, so every change ever recorded against the type is
   readable there.
@@ -112,6 +112,6 @@ and `?type=<id>`.
 
 ## Tags & custom fields
 
-Need to track something extra — a contract end date, an SLA tier, an order
+Need to track something extra - a contract end date, an SLA tier, an order
 number? Add a **custom field** for circuits and it appears on every circuit's
 form. See [Tags & custom fields](tags-and-custom-fields.md).

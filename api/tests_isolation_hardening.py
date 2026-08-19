@@ -146,7 +146,7 @@ class StandaloneReadRbacTests(_TenantClientMixin, APITestCase):
         self.assertEqual(self.client.get("/api/compliance/evaluate/").status_code, 403)
         # Row-scoped: the VM render fetches through restrict_queryset, so a
         # walled member (no virtualmachine.view) gets 404 (non-leaking) rather
-        # than 403 — it must not confirm the VM exists.
+        # than 403 - it must not confirm the VM exists.
         self.assertEqual(
             self.client.get(
                 f"/api/virtual-machines/{self.vm.id}/render/?template={self.et.id}"
@@ -191,7 +191,7 @@ class StandaloneReadRbacTests(_TenantClientMixin, APITestCase):
 
 class TagWriteRBACTests(_TenantClientMixin, APITestCase):
     """/api/tags/ writes are RBAC-gated server-side (they used to be checked
-    in the SPA only — any authenticated user could create/edit/delete tags)."""
+    in the SPA only - any authenticated user could create/edit/delete tags)."""
 
     def setUp(self):
         org = Organization.objects.create(name="OT", slug="ot")
@@ -221,7 +221,7 @@ class TagWriteRBACTests(_TenantClientMixin, APITestCase):
 
 
 class TenantWriteRBACTests(_TenantClientMixin, APITestCase):
-    """Tenant writes require a `tenant` grant — a plain member must not be
+    """Tenant writes require a `tenant` grant - a plain member must not be
     able to DELETE their tenant (single or bulk) or create new ones. Reads and
     the switch/active actions stay open to every member."""
 
@@ -274,7 +274,7 @@ class TenantWriteRBACTests(_TenantClientMixin, APITestCase):
 
 class DashboardMonitoringRbacTests(_TenantClientMixin, APITestCase):
     """The dashboard's monitoring roll-ups (checks, alerts, recent activity)
-    follow the member's view grants — a walled-off member must not see the
+    follow the member's view grants - a walled-off member must not see the
     tenant's check counts or a status-change feed carrying IP addresses."""
 
     def setUp(self):
@@ -301,7 +301,7 @@ class DashboardMonitoringRbacTests(_TenantClientMixin, APITestCase):
 
 
 class VlanBulkZoneTests(_TenantClientMixin, APITestCase):
-    """VLAN bulk-update accepts zone_id — tenant-checked like site_id."""
+    """VLAN bulk-update accepts zone_id - tenant-checked like site_id."""
 
     def setUp(self):
         from api.models import VLAN, Zone

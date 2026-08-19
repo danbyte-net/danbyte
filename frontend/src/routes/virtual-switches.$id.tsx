@@ -41,7 +41,7 @@ import { JournalPanel } from "@/components/audit/journal-panel"
 import { VlanBadge } from "@/components/cells/vlan-badge"
 import { useUrlTab } from "@/lib/use-url-tab"
 
-/** Sentinel for "no VRF of its own — inherit the switch, then the source".
+/** Sentinel for "no VRF of its own - inherit the switch, then the source".
  * The Select primitive disallows an empty string as an item value. */
 const INHERIT = "__inherit__"
 
@@ -133,7 +133,7 @@ function Body({ sw }: { sw: VirtualSwitch }) {
           stats={
             <DetailStat
               label="Kind"
-              value={<span className="text-xs">{sw.kind_display || "—"}</span>}
+              value={<span className="text-xs">{sw.kind_display || "-"}</span>}
             />
           }
         />
@@ -169,7 +169,7 @@ function Body({ sw }: { sw: VirtualSwitch }) {
   )
 }
 
-/** Physical uplinks — the real host NICs (device interfaces) that carry this
+/** Physical uplinks - the real host NICs (device interfaces) that carry this
  * switch, the "Physical Adapters" of the vCenter picture. Links switch → real
  * device I/O; each uplink traces on to its cabled port. Editable inline. */
 function SwitchUplinks({ sw }: { sw: VirtualSwitch }) {
@@ -295,7 +295,7 @@ function SwitchUplinks({ sw }: { sw: VirtualSwitch }) {
 }
 
 /** The switch-wide routing context. A vSwitch trunks many VLANs, so this is a
- * default the networks on it can override — it decides which VRF's prefixes a
+ * default the networks on it can override - it decides which VRF's prefixes a
  * discovered address may land in, and is read live at sync time. */
 function SwitchVrf({ sw }: { sw: VirtualSwitch }) {
   const qc = useQueryClient()
@@ -348,7 +348,7 @@ function SwitchVrf({ sw }: { sw: VirtualSwitch }) {
   )
 }
 
-/** The networks (port-groups / bridges) on this switch as a table — each with
+/** The networks (port-groups / bridges) on this switch as a table - each with
  * its VLAN and the VMs attached (the switch→network→VM chain). */
 function SwitchNetworks({
   nets,
@@ -400,7 +400,7 @@ function SwitchNetworks({
           row.original.vlan ? (
             <VlanBadge vlan={row.original.vlan} />
           ) : (
-            <span className="text-xs text-muted-foreground">—</span>
+            <span className="text-xs text-muted-foreground">-</span>
           ),
       },
       {
@@ -420,9 +420,9 @@ function SwitchNetworks({
                 )}
               </span>
             ) : (
-              <span className="text-xs text-muted-foreground">—</span>
+              <span className="text-xs text-muted-foreground">-</span>
             )
-          // Inline control, so the bare Select rather than FormSelect — a
+          // Inline control, so the bare Select rather than FormSelect - a
           // labelled Field belongs in a form, not a table cell. An empty value
           // inherits, so the sentinel says what it inherits *to*.
           const inheritLabel = sw.vrf
@@ -460,7 +460,7 @@ function SwitchNetworks({
         enableSorting: false,
         cell: ({ row }) =>
           row.original.vms.length === 0 ? (
-            <span className="text-xs text-muted-foreground">—</span>
+            <span className="text-xs text-muted-foreground">-</span>
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {row.original.vms.map((vm) => (
@@ -486,7 +486,7 @@ function SwitchNetworks({
       <EmptyState title="No networks on this switch yet.">
         Networks appear once a sync with{" "}
         <span className="font-medium">virtual switches &amp; networks</span>{" "}
-        enabled has run — each port-group/bridge is mapped to a VLAN and the VMs
+        enabled has run - each port-group/bridge is mapped to a VLAN and the VMs
         on it are linked here.
       </EmptyState>
     )

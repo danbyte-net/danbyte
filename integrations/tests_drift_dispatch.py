@@ -1,4 +1,4 @@
-"""Scheduled config-drift dispatch tests — Settings toggle, throttle, fan-out."""
+"""Scheduled config-drift dispatch tests - Settings toggle, throttle, fan-out."""
 from __future__ import annotations
 
 from datetime import timedelta

@@ -1,4 +1,4 @@
-"""Site map endpoint — RBAC scoping, coordinates, tile config defaults."""
+"""Site map endpoint - RBAC scoping, coordinates, tile config defaults."""
 from __future__ import annotations
 
 from django.contrib.auth.models import User
@@ -202,7 +202,7 @@ class SiteMarkerTests(SiteMapHealthTests.__bases__[0]):
 
     def test_marker_list_filters_by_tile_type(self):
         """?tile_type= backs the tile-type detail page's marker read, and it
-        narrows the tenant-scoped queryset — a foreign type id returns
+        narrows the tenant-scoped queryset - a foreign type id returns
         nothing rather than the other tenant's markers."""
         from api.models import FloorTileType, SiteMarker
 

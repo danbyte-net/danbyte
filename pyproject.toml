@@ -11,7 +11,7 @@ extend-exclude = ["**/migrations/**", ".venv", "reference"]
 # CI step is advisory (continue-on-error) until the tree is clean, then promote.
 select = ["E", "F", "I", "B", "UP"]
 ignore = [
-  "E501",  # line length — long lines are pervasive; the formatter owns this
+  "E501",  # line length - long lines are pervasive; the formatter owns this
   "B008",  # function call in default arg (DRF/Django pattern)
 ]
 

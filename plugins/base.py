@@ -3,12 +3,12 @@
 A plugin ships an ``apps.py`` with a ``DanbytePluginConfig`` subclass instead of
 a plain ``AppConfig``. The extra class attributes are pure metadata read by the
 Django-free loader (``danbyte/plugin_loader.py``) at settings-import time, so
-they must stay declarative — do NOT import models or touch the app registry at
+they must stay declarative - do NOT import models or touch the app registry at
 class-definition time.
 
 Registration of a plugin's contributions (object types, providers, checkers,
 nav/pages) happens from a ``danbyte_plugin.py`` module the plugin ships, which
-``plugins.apps.PluginsConfig.ready()`` autodiscovers — the same idiom as
+``plugins.apps.PluginsConfig.ready()`` autodiscovers - the same idiom as
 ``api/apps.py``'s ``autodiscover_modules("io")``.
 """
 from __future__ import annotations

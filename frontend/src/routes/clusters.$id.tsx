@@ -125,7 +125,7 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
                         {c.site.name}
                       </Link>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-muted-foreground">-</span>
                     )
                   }
                 />
@@ -195,7 +195,7 @@ function ClusterVmsPane({ clusterId }: { clusterId: string }) {
   )
 }
 
-/** The cluster's attributes, grouped into labelled tables — the detail that
+/** The cluster's attributes, grouped into labelled tables - the detail that
  * used to crowd the page header. Only name, status, and type stay up top. */
 function ClusterOverview({ cluster: c }: { cluster: Cluster }) {
   const { humanIds } = useMe()

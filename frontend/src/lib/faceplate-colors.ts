@@ -1,11 +1,11 @@
 /**
- * Port status colouring — the ONE source of truth shared by the 2D faceplate
+ * Port status colouring - the ONE source of truth shared by the 2D faceplate
  * (`device-faceplate.tsx`), the 3D room view (`floorplan3d/device-mesh.tsx`)
  * and the speed-scale legend, so a port lights the same way everywhere.
  *
  * Cabled ports wear a SPEED TIER from a cold→hot perceptual ramp (amber for
  * legacy FE up through fuchsia for 400G+), instead of a flat "connected"
- * green — at a glance the colour answers "how fast", not just "is it plugged
+ * green - at a glance the colour answers "how fast", not just "is it plugged
  * in". Free / disabled / unknown stay neutral. Live SNMP overrides with the
  * OBSERVED speed's tier when the link is up, red when it's down.
  *
@@ -21,7 +21,7 @@ export type PortState = "fast" | "gig" | "slow" | "cabled" | "free" | "disabled"
 // ─── Speed tiers ─────────────────────────────────────────────────────────────
 
 export interface SpeedTier {
-  /** Lower bound (Mbps) — a speed belongs to the highest tier it reaches. */
+  /** Lower bound (Mbps) - a speed belongs to the highest tier it reaches. */
   minMbps: number
   label: string
   hex: string
@@ -44,7 +44,7 @@ export const SPEED_TIERS: SpeedTier[] = [
 
 /** Neutral tints for the non-speed states. */
 export const PORT_NEUTRAL = {
-  /** Cabled but speed unknown — visible, but doesn't claim a tier. */
+  /** Cabled but speed unknown - visible, but doesn't claim a tier. */
   cabled: "#64748b", // slate-500
   free: "#9ca3af", // gray-400
   disabled: "#6b7280", // gray-500
@@ -63,7 +63,7 @@ export function speedMbps(speed: string): number | null {
   return unit === "T" ? n * 1_000_000 : unit === "G" ? n * 1_000 : n
 }
 
-/** The tier a speed (Mbps) falls in — the highest bound it reaches. */
+/** The tier a speed (Mbps) falls in - the highest bound it reaches. */
 export function speedTier(mbps: number): SpeedTier {
   let tier = SPEED_TIERS[0]
   for (const t of SPEED_TIERS) if (mbps >= t.minMbps) tier = t
@@ -71,7 +71,7 @@ export function speedTier(mbps: number): SpeedTier {
 }
 
 /**
- * Max speed (Mbps) an interface TYPE can do, parsed from its name — display
+ * Max speed (Mbps) an interface TYPE can do, parsed from its name - display
  * form ("QSFP28 (100GE)", "100BASE-TX (10/100ME)") or slug ("25gbase-x-sfp28",
  * "1000base-t"). Used when no explicit speed is recorded: the type still
  * tells you what the cage is capable of. Null when nothing parses.
@@ -114,7 +114,7 @@ export function portState(p: {
 
 /**
  * A port's display hex from intent: disabled/free neutral; cabled → its speed
- * tier — the explicit speed when recorded, else the TYPE's max speed
+ * tier - the explicit speed when recorded, else the TYPE's max speed
  * ("QSFP28 (100GE)" knows it's 100G), else neutral slate. One function,
  * 2D + 3D.
  */
@@ -131,7 +131,7 @@ export function portHex(p: {
 }
 
 /** A FREE port's capability tint (its type's max-speed tier), or null. Drawn
- * as a muted outline — "this cage can do 100G" — never as a lit port. */
+ * as a muted outline - "this cage can do 100G" - never as a lit port. */
 export function portCapabilityHex(p: {
   enabled: boolean
   cable: unknown
@@ -144,12 +144,12 @@ export function portCapabilityHex(p: {
 }
 
 /**
- * A module bay's colour. A bay answers ONE question — "is this slot free?" —
+ * A module bay's colour. A bay answers ONE question - "is this slot free?" -
  * so it borrows the neutral pair the panel already uses for exactly that
  * distinction on ports: occupied wears the "present, claims no speed tier"
  * slate; empty wears the free-port grey, drawn as an outline. No speed ramp (a
  * line card is not fast), and no status palette (a bay has no lifecycle of its
- * own — the module in it does).
+ * own - the module in it does).
  */
 export function bayHex(occupied: boolean): string {
   return occupied ? PORT_NEUTRAL.cabled : PORT_NEUTRAL.free
@@ -168,7 +168,7 @@ export function liveHex(o: {
   return mbps > 0 ? speedTier(mbps).hex : PORT_NEUTRAL.cabled
 }
 
-/** Inline style for 2D port cages tinted by a hex — FULL-opacity border (a
+/** Inline style for 2D port cages tinted by a hex - FULL-opacity border (a
  * washed border on a photo was unreadable) + a light fill + tinted text. The
  * CSS-class analog of the tier colours, generated so 2D can't drift. */
 export function portTintStyle(hex: string): CSSProperties {
@@ -179,7 +179,7 @@ export function portTintStyle(hex: string): CSSProperties {
   }
 }
 
-/** Stronger variant for markers drawn ON a photo — opaque border + a fill
+/** Stronger variant for markers drawn ON a photo - opaque border + a fill
  * solid enough to survive any faceplate artwork behind it. */
 export function portOverlayStyle(hex: string): CSSProperties {
   return {
@@ -191,7 +191,7 @@ export function portOverlayStyle(hex: string): CSSProperties {
 /** What a rendered panel actually contains, so its legend can show only that.
  *
  * A legend is a key to the picture, not a catalogue of everything Danbyte can
- * draw — a shelf of disk bays listing FE…400G+ teaches nothing and buries the
+ * draw - a shelf of disk bays listing FE…400G+ teaches nothing and buries the
  * two colours that are on screen. Derived from the same inputs the renderers
  * use, so the key and the pixels can't disagree. */
 export interface LegendContent {
@@ -207,14 +207,14 @@ export interface LegendContent {
    * the tenant's Status catalog the key is drawn from. */
   partStatusIds: Set<string>
   /** Module-bay occupancies drawn: "installed" and/or "empty". A device TYPE
-   * has no modules, so its panel keys "empty" alone — which is the honest key
+   * has no modules, so its panel keys "empty" alone - which is the honest key
    * for what it draws. */
   bays: Set<string>
   /** Airflow glyphs drawn (3D room only): "intake" and/or "exhaust". */
   airflow: Set<string>
 }
 
-/** Airflow glyph + legend-chip colours — one source so the key can never
+/** Airflow glyph + legend-chip colours - one source so the key can never
  * disagree with the cones. The same blue/red these modules already use for
  * meaning (speed tiers / observed-down). */
 export const AIRFLOW_HEX: Record<"intake" | "exhaust", string> = {
@@ -222,7 +222,7 @@ export const AIRFLOW_HEX: Record<"intake" | "exhaust", string> = {
   exhaust: "#ef4444",
 }
 
-/** Nothing drawn — a panel that resolved no markers at all. */
+/** Nothing drawn - a panel that resolved no markers at all. */
 export const EMPTY_LEGEND: LegendContent = {
   tiers: new Set(),
   states: new Set(),
@@ -247,7 +247,7 @@ export function legendSignature(c: LegendContent): string {
   ].join("|")
 }
 
-/** True when nothing on screen needs a key — hide the legend entirely. */
+/** True when nothing on screen needs a key - hide the legend entirely. */
 export function legendIsEmpty(c: LegendContent): boolean {
   return (
     c.tiers.size === 0 &&
@@ -283,7 +283,7 @@ export function mergeLegend(parts: LegendContent[]): LegendContent {
 
 /** Derive a panel's legend from the components it DREW.
  *
- * `observed` must hold only the rows for those same components — passing a
+ * `observed` must hold only the rows for those same components - passing a
  * whole device's SNMP map would claim a "down" swatch for a port that isn't on
  * this panel. */
 export function legendContent(input: {
@@ -296,7 +296,7 @@ export function legendContent(input: {
   }[]
   observed?: Map<string, { oper_status: string; admin_status: string }> | null
   parts?: { status?: { id: string } | null }[]
-  /** Module bays drawn — one entry per bay marker that resolved. */
+  /** Module bays drawn - one entry per bay marker that resolved. */
   bays?: { occupied: boolean }[]
 }): LegendContent {
   const tiers = new Set<string>()
@@ -327,7 +327,7 @@ export function legendContent(input: {
 }
 
 /**
- * Colour for a power feed leg / redundancy side — the vertical PDU strip's
+ * Colour for a power feed leg / redundancy side - the vertical PDU strip's
  * outlet cells and body. Derived from data (the outlet's `feed_leg` or the
  * PDU's upstream feed `type`), never from a name, per the house rule.
  *

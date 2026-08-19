@@ -48,7 +48,7 @@ export type NestedInterface = Interface & { _depth: number }
  * the name column can indent sub-interfaces under their parent.
  *
  * Lives here next to the columns that consume `_depth`, so every interface table
- * nests the same way — the whole-stack table used to flatten everything to depth
+ * nests the same way - the whole-stack table used to flatten everything to depth
  * 0 and lost the hierarchy the per-device table showed.
  *
  * A parent outside `rows` (e.g. when nesting one stack member's interfaces at a
@@ -109,7 +109,7 @@ const CANONICAL_ORDER: InterfaceColumnId[] = [
 
 /** The per-device / whole-stack interface table. No Device column (the whole
  * page is one device, or the Member column already names it), and no MTU / Tags
- * — those read on the interface detail page. Named so the per-device table and
+ * - those read on the interface detail page. Named so the per-device table and
  * the virtual-chassis table cannot drift apart. */
 export const DEVICE_INTERFACE_COLUMNS: InterfaceColumnId[] = [
   "name",
@@ -132,11 +132,11 @@ export interface InterfaceColumnOpts<T extends Interface> {
   include?: InterfaceColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** SNMP drift items grouped by interface id — each drifted row gets a badge
+  /** SNMP drift items grouped by interface id - each drifted row gets a badge
    * whose popover lists exactly what differs (review/accept stays in the Drift
    * panel; source of truth is untouched). */
   driftByIface?: Map<string, SnmpDriftItem[]>
-  /** Fleet-wide interface drift from `useInterfaceDriftMap()` — one request for
+  /** Fleet-wide interface drift from `useInterfaceDriftMap()` - one request for
    * the whole table, for tables that span devices (/interfaces, the whole-stack
    * table) where a per-device drift query would be one request per row's device.
    * Ignored when `driftByIface` is given: that map comes from the device's own
@@ -156,7 +156,7 @@ export interface InterfaceColumnOpts<T extends Interface> {
 }
 
 /**
- * The one source of truth for "a table of interfaces" — /interfaces, the
+ * The one source of truth for "a table of interfaces" - /interfaces, the
  * per-device "This member" table, the "Whole stack" (virtual chassis) table.
  * Sub-interfaces indent under their parent via `_depth` (see `nestInterfaces`);
  * flat rows simply render at depth 0. Callers pick columns with
@@ -228,7 +228,7 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
               <Badge
                 variant="outline"
                 className="h-4 px-1.5 text-[10px]"
-                title={`Combo port — shares group "${row.original.combo_group}" with its alternate connector`}
+                title={`Combo port - shares group "${row.original.combo_group}" with its alternate connector`}
               >
                 combo
               </Badge>
@@ -366,7 +366,7 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
         const tagged = r.tagged_vlans?.length ?? 0
         return r.vlan || tagged ? (
           <span className="flex items-center gap-1.5 font-mono text-xs">
-            {r.vlan ? <VlanBadge vlan={r.vlan} /> : "—"}
+            {r.vlan ? <VlanBadge vlan={r.vlan} /> : "-"}
             {r.mode === "tagged" && tagged > 0 && (
               // Hover reveals the truncated trunk members as VLAN badges.
               <HoverCard openDelay={100} closeDelay={80}>
@@ -440,7 +440,7 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
           )
         return (
           <span className="num text-xs text-muted-foreground">
-            {row.original.cable_count || "—"}
+            {row.original.cable_count || "-"}
           </span>
         )
       },
@@ -489,7 +489,7 @@ export interface InterfaceActionsOpts<T extends Interface> {
 }
 
 /**
- * The canonical interface row-actions column — cable status, trace / connect,
+ * The canonical interface row-actions column - cable status, trace / connect,
  * add + assign IP, edit. Shared so the per-device "This member" table and the
  * "Whole stack" table offer the same actions (the stack table resolves the
  * owning device per row via `deviceIdFor`).
@@ -545,7 +545,7 @@ export function buildInterfaceActionsColumn<T extends Interface>(
                 variant="ghost"
                 asChild
                 className="h-7 text-muted-foreground/60 hover:text-foreground"
-                title="Not cabled — connect a cable"
+                title="Not cabled - connect a cable"
               >
                 <Link
                   to="/cables/new"

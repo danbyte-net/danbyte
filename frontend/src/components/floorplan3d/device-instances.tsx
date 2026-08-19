@@ -6,7 +6,7 @@ import { DEVICE_FALLBACK } from "./device-mesh"
 import { deviceBoxM } from "./world"
 import type { SceneRack } from "./world"
 
-/** One unit cube scaled per instance — this layer exists to stop allocating
+/** One unit cube scaled per instance - this layer exists to stop allocating
  * geometry per device, so it must not allocate any of its own either. */
 const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1)
 
@@ -17,15 +17,15 @@ const _c = new THREE.Color()
 /**
  * Every racked device in one cabinet as a SINGLE draw call.
  *
- * The detail tier gives each device its own meshes — body, edge outline, photo
- * plane, port quads — which is right nose-on and ruinous across a hall: a
+ * The detail tier gives each device its own meshes - body, edge outline, photo
+ * plane, port quads - which is right nose-on and ruinous across a hall: a
  * hundred full cabinets is ~2400 devices, and at five-ish meshes each that is
  * five figures of draw calls per frame. Sharing the geometry (which the detail
  * tier now does) cut the memory, not the draw calls; only instancing does.
  *
  * So the middle distance keeps the room looking full and gives up exactly what
  * you cannot resolve from across the room anyway: no photo face, no outline,
- * no port markers, and no picking — a click falls through to the cabinet,
+ * no port markers, and no picking - a click falls through to the cabinet,
  * which is what you meant at that range.
  */
 export function DeviceInstances({
@@ -76,7 +76,7 @@ export function DeviceInstances({
       raycast={() => null}
     >
       {/* White base colour so the per-instance role colour comes through
-          unmultiplied. Unlit-ish and shadowless on purpose — this tier is the
+          unmultiplied. Unlit-ish and shadowless on purpose - this tier is the
           cheap one. */}
       <meshStandardMaterial color="#ffffff" roughness={0.6} metalness={0.15} />
     </instancedMesh>

@@ -99,7 +99,7 @@ export function PowerOutletDialog({
           id: outlet!.id,
           payload,
         }).then((saved) => ({ saved, count: 1 }))
-      // A [a-b] range in the name fans out — "Outlet[1-24]" wires a whole PDU
+      // A [a-b] range in the name fans out - "Outlet[1-24]" wires a whole PDU
       // bank to the same inlet and feed leg. In plan mode saveObject stages one
       // create per expanded name, so a planned range records the whole bank.
       const names = expandNameRange(payload.name)
@@ -120,7 +120,7 @@ export function PowerOutletDialog({
     },
     onSuccess: ({ saved, count }) => {
       qc.invalidateQueries({ queryKey: ["device-power-outlets", deviceId] })
-      // Power ports carry an outlet_count — keep it fresh.
+      // Power ports carry an outlet_count - keep it fresh.
       qc.invalidateQueries({ queryKey: ["device-power-ports", deviceId] })
       toast.success(
         isEdit

@@ -1,4 +1,4 @@
-"""UDP checker — best-effort.
+"""UDP checker - best-effort.
 
 Generic UDP "open" detection is unreliable: a silent port and an open one both
 just don't answer. So:
@@ -9,7 +9,7 @@ just don't answer. So:
 * **no probe**: send an empty datagram; ICMP unreachable → ``down``; anything
   else → ``unknown``.
 
-We never call a silent UDP port ``down`` without a probe — no-reply ≠ down.
+We never call a silent UDP port ``down`` without a probe - no-reply ≠ down.
 On Linux a connected UDP socket surfaces the ICMP unreachable as
 ``ConnectionRefusedError`` on the next recv, which is how ``down`` is detected.
 """
@@ -56,7 +56,7 @@ class UdpChecker:
             try:
                 raw = await asyncio.wait_for(loop.sock_recv(sock, 1024), timeout=timeout_s)
             except asyncio.TimeoutError:
-                # No reply — open-and-silent or filtered. Not an outage.
+                # No reply - open-and-silent or filtered. Not an outage.
                 return CheckOutcome.unknown(
                     "no reply (udp open|filtered)",
                     port=port,

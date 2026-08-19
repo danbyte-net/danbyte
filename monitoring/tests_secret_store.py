@@ -85,7 +85,7 @@ class LocalSecretStoreTests(TestCase):
         from django.db import connection
 
         self.store.put(self.tenant.id, "k", {"private_key": "TOPSECRET"})
-        # Read the raw column (bypassing the field's transparent decrypt) — it
+        # Read the raw column (bypassing the field's transparent decrypt) - it
         # must be non-empty ciphertext with no trace of the plaintext.
         with connection.cursor() as cur:
             cur.execute(

@@ -15,7 +15,7 @@ const WINDOWS: { days: number; label: string }[] = [
 ]
 
 function fmtPct(p: number | null): string {
-  return p == null ? "—" : `${p.toFixed(p >= 99.95 ? 2 : 1)}%`
+  return p == null ? "-" : `${p.toFixed(p >= 99.95 ? 2 : 1)}%`
 }
 
 // Color tiers mirror the utilization bar: ≥99.9 emerald, ≥99 amber, else red.
@@ -27,7 +27,7 @@ function tier(p: number | null): string {
 }
 
 function fmtDuration(s: number | null): string {
-  if (s == null) return "—"
+  if (s == null) return "-"
   if (s < 90) return `${Math.round(s)}s`
   const m = s / 60
   if (m < 90) return `${Math.round(m)}m`

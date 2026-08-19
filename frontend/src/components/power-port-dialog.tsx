@@ -79,7 +79,7 @@ export function PowerPortDialog({
           id: port!.id,
           payload,
         }).then((saved) => ({ saved, count: 1 }))
-      // A [a-b] range in the name fans out — "PSU[1-2]" adds both inlets. In
+      // A [a-b] range in the name fans out - "PSU[1-2]" adds both inlets. In
       // plan mode saveObject stages one create per expanded name, so a planned
       // range records both inlets rather than one.
       const names = expandNameRange(payload.name)
@@ -100,7 +100,7 @@ export function PowerPortDialog({
     },
     onSuccess: ({ saved, count }) => {
       qc.invalidateQueries({ queryKey: ["device-power-ports", deviceId] })
-      // Outlets label their feed with the port name — keep them fresh.
+      // Outlets label their feed with the port name - keep them fresh.
       qc.invalidateQueries({ queryKey: ["device-power-outlets", deviceId] })
       toast.success(
         isEdit

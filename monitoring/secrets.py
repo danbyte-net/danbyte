@@ -1,16 +1,16 @@
 """Secrets-at-rest for the monitoring app.
 
 Check credentials (SNMP communities / v3 auth, SSH passwords / keys, Telnet
-passwords) must never be stored as plaintext — not in a JSONB column, not in a
+passwords) must never be stored as plaintext - not in a JSONB column, not in a
 log line, not in an API response. This module provides:
 
 * a small ``SecretsBackend`` protocol so the encryption can later be delegated
   to an external store (OpenBao / Vault) without touching the models, and
-* ``EncryptedJSONField`` — a ``TextField`` that JSON-serialises its Python value
+* ``EncryptedJSONField`` - a ``TextField`` that JSON-serialises its Python value
   and stores the Fernet-encrypted ciphertext, transparently decrypting on read.
 
 The default backend is Fernet (symmetric AES-128-CBC + HMAC) from the
-``cryptography`` package — a pure-Python wheel, so an airgapped wheel-house
+``cryptography`` package - a pure-Python wheel, so an airgapped wheel-house
 install works. The key comes from ``settings.MONITORING_SECRET_KEY`` when set;
 otherwise it is *derived* from ``settings.SECRET_KEY`` so development works out
 of the box. Production should set a dedicated key (rotating the Django secret
@@ -37,7 +37,7 @@ class SecretsBackend(Protocol):
     """Pluggable encrypt/decrypt boundary.
 
     Implementations must be symmetric: ``decrypt(encrypt(x)) == x``. They never
-    see model instances — only opaque byte strings — so an external secrets
+    see model instances - only opaque byte strings - so an external secrets
     store (OpenBao) can be wired in by satisfying this Protocol.
     """
 
@@ -62,7 +62,7 @@ def _derive_fernet_key() -> bytes:
         from django.core.exceptions import ImproperlyConfigured
 
         raise ImproperlyConfigured(
-            "MONITORING_SECRET_KEY must be set when DEBUG is off — it encrypts "
+            "MONITORING_SECRET_KEY must be set when DEBUG is off - it encrypts "
             "SNMP/SSH/SMTP/LDAP credentials at rest independently of SECRET_KEY."
         )
     raw = explicit or settings.SECRET_KEY
@@ -71,7 +71,7 @@ def _derive_fernet_key() -> bytes:
 
 
 class FernetSecretsBackend:
-    """Default backend — Fernet with a key derived from Django settings."""
+    """Default backend - Fernet with a key derived from Django settings."""
 
     def __init__(self, key: bytes | None = None) -> None:
         self._fernet = Fernet(key or _derive_fernet_key())
@@ -99,7 +99,7 @@ class EncryptedJSONField(models.TextField):
     Stores ``fernet(json.dumps(value))`` as text. Reads decrypt + parse back to
     the Python value. An empty / null value stays empty (nothing to protect).
     Decryption failure (wrong key, corrupted row) returns ``{}`` rather than
-    raising mid-query — misconfiguration must not 500 a list view — and is the
+    raising mid-query - misconfiguration must not 500 a list view - and is the
     caller's cue that the key changed.
     """
 
@@ -130,7 +130,7 @@ class EncryptedJSONField(models.TextField):
             return {}
         if isinstance(value, (dict, list)):
             return value
-        # A plaintext string that slipped through (e.g. a fixture) — parse it.
+        # A plaintext string that slipped through (e.g. a fixture) - parse it.
         try:
             return json.loads(value)
         except (ValueError, TypeError):

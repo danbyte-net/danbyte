@@ -46,7 +46,7 @@ export function IpRoleDeleteDialog({
           <AlertDialogTitle>Delete role {role?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {usage > 0
-              ? `${usage} IP${usage === 1 ? "" : "s"} currently use this role — they'll be left without one.`
+              ? `${usage} IP${usage === 1 ? "" : "s"} currently use this role - they'll be left without one.`
               : "This action can't be undone."}
           </AlertDialogDescription>
         </AlertDialogHeader>

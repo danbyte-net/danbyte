@@ -1,4 +1,4 @@
-"""M12 discovery + M13 stale cleanup — opt-in subnet lifecycle."""
+"""M12 discovery + M13 stale cleanup - opt-in subnet lifecycle."""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -105,7 +105,7 @@ class DiscoveryTests(TestCase):
         m.assert_not_called()
 
     def test_skips_huge_ipv6(self):
-        # A /64 is too large to enumerate — skipped (no longer a blanket
+        # A /64 is too large to enumerate - skipped (no longer a blanket
         # "ipv6" skip; small v6 prefixes are swept).
         v6 = Prefix.objects.create(
             tenant=self.tenant, cidr="2001:db8::/64", status=status_for(self.tenant),
@@ -254,7 +254,7 @@ class CleanupTests(TestCase):
 
 
 class DiscoverNowEndpointTests(TestCase):
-    """M19 — synchronous 'Scan now' endpoint returns a scan summary."""
+    """M19 - synchronous 'Scan now' endpoint returns a scan summary."""
 
     def setUp(self):
         from django.contrib.auth import get_user_model
@@ -303,7 +303,7 @@ class DiscoverNowEndpointTests(TestCase):
 
 
 class SweepConcurrencyFdCapTests(SimpleTestCase):
-    """The ICMP sweep concurrency must never exceed the process fd limit — else
+    """The ICMP sweep concurrency must never exceed the process fd limit - else
     icmplib raises EMFILE per probe and floods syslog (the 400 GB disk incident)."""
 
     def test_full_concurrency_when_fds_plentiful(self):

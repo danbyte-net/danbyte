@@ -1,12 +1,12 @@
 """Fibre-strand colour reference (TIA-598-C) + derivation helpers.
 
 The 12-colour sequence is an industry standard (same category as
-``CABLE_TYPE_CHOICES`` / ``LENGTH_UNITS`` — a spec, not tenant data), so it ships
+``CABLE_TYPE_CHOICES`` / ``LENGTH_UNITS`` - a spec, not tenant data), so it ships
 as the default palette. A tenant may reorder / recolour it on the Fibre settings
 page; that per-tenant palette lives in :class:`api.models.FiberSettings`.
 
 Beyond 12 fibres the sequence repeats; the *group* it repeats in
-(``(position-1)//12``) is shown as a black tracer — a stripe on the 2nd dozen and
+(``(position-1)//12``) is shown as a black tracer - a stripe on the 2nd dozen and
 an added ring on each further dozen. See ``docs/architecture/fiber-strands.md``.
 """
 from __future__ import annotations

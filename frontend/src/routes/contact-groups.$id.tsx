@@ -210,7 +210,7 @@ function GroupOverview({ group: g }: { group: ContactGroup }) {
     },
   ]
 
-  // Both counts are one hop, not the whole subtree — the same thing the tabs
+  // Both counts are one hop, not the whole subtree - the same thing the tabs
   // list, so the numbers and the tables can't disagree.
   const membership: KvRow[] = [
     {

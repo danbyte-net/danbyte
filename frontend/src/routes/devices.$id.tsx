@@ -222,7 +222,7 @@ function Body({ device: d }: { device: Device }) {
   // The hook reads `?tab=` itself; seeding the *default* from the URL made
   // re-clicking the active tab clear the param and bounce you to Overview.
   const [tab, setTab] = useUrlTab<DeviceTab>("overview", "tab", DEVICE_TABS)
-  // Shared with the header badge and the drift inbox — one request, and the
+  // Shared with the header badge and the drift inbox - one request, and the
   // tab markers can never disagree with what the inbox lists.
   const deviceDrift = useDeviceDrift(d.id)
   const goBack = useCallback(() => nav({ to: "/devices" }), [nav])
@@ -292,7 +292,7 @@ function Body({ device: d }: { device: Device }) {
               <ViolationBadge objectId={d.id} objectType="device" prominent />
               <DeviceDriftBadge deviceId={d.id} prominent />
               {/* The planned-change pill renders in the DetailShell header,
-                  route-derived — same as every other detail page. */}
+                  route-derived - same as every other detail page. */}
             </>
           }
           subtitle={
@@ -377,7 +377,7 @@ function Body({ device: d }: { device: Device }) {
               own per-row actions. */}
           <DeviceSnmpCard deviceId={d.id} />
           <DeviceDriftCard deviceId={d.id} />
-          {/* Everything narrow pairs up two-across from lg — the two
+          {/* Everything narrow pairs up two-across from lg - the two
               three-column observed tables, then the hardware-health
               collectors. Auto-placement closes the row when a device reports
               no LLDP/ARP (those cards render nothing), so sensors and the BMC
@@ -472,7 +472,7 @@ function Body({ device: d }: { device: Device }) {
   )
 }
 
-// The default "Overview" tab — the device's facts laid out in labelled
+// The default "Overview" tab - the device's facts laid out in labelled
 // cards, then custom fields, then the monitoring summary.
 // Consolidated "Components" tab: interfaces, console, power and hardware
 // (bays/modules/inventory/ports) grouped under one compact sub-tab strip,
@@ -515,13 +515,13 @@ function DeviceComponents({
     []
   )
   const barAdds = useMemo(() => Object.values(addMap).flat(), [addMap])
-  // The bar's right-aligned action area — panes with a richer toolbar
+  // The bar's right-aligned action area - panes with a richer toolbar
   // (Interfaces) portal their buttons here so everything sits in one strip.
   const [barSlot, setBarSlot] = useState<HTMLDivElement | null>(null)
   return (
     <AddActionsContext.Provider value={registerAdd}>
       {/* Sub-tab bar as a flush full-width strip (matches the main tab strip),
-          then the pane content padded below — the parent DetailTab is `bare` so
+          then the pane content padded below - the parent DetailTab is `bare` so
           there's no headroom above the bar. */}
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex h-10 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--border)] lg:px-6">
@@ -621,7 +621,7 @@ function DeviceOverview({
   onTab: (tab: "ips" | "components") => void
 }) {
   const { humanIds } = useMe()
-  // Admin-controlled field visibility — falls back to documented defaults if
+  // Admin-controlled field visibility - falls back to documented defaults if
   // the endpoint isn't up yet (404) or the request fails.
   const visibilityQuery = useQuery({
     queryKey: ["device-field-visibility"],
@@ -655,7 +655,7 @@ function DeviceOverview({
           <LifecycleFlag state={d.platform.lifecycle_state} />
         </span>
       ) : d.effective_platform ? (
-        // No platform of its own — inherited from the device type.
+        // No platform of its own - inherited from the device type.
         <span className="inline-flex items-center gap-2">
           {d.effective_platform.name}
           <span className="text-[11px] text-muted-foreground">(from type)</span>
@@ -687,7 +687,7 @@ function DeviceOverview({
       : []),
   ]
   const hardwareRows: KvRow[] = [
-    // Health of the serial-tracked parts, up front — a failed disk used to be
+    // Health of the serial-tracked parts, up front - a failed disk used to be
     // invisible until you drilled into Components → Hardware.
     {
       label: "Parts",
@@ -810,8 +810,8 @@ function DeviceOverview({
               (visibility.latitude && d.latitude) ||
               (visibility.longitude && d.longitude) ? (
                 <span className="font-mono text-[13px]">
-                  {visibility.latitude ? (d.latitude ?? "—") : "—"},{" "}
-                  {visibility.longitude ? (d.longitude ?? "—") : "—"}
+                  {visibility.latitude ? (d.latitude ?? "-") : "-"},{" "}
+                  {visibility.longitude ? (d.longitude ?? "-") : "-"}
                 </span>
               ) : (
                 dash
@@ -896,7 +896,7 @@ function DeviceOverview({
   // The Panel (photo / rendered / bare) is pinned top-right and kept in view
   // The Panel shows when the device has ports or its type carries a rack-face
   // photo. When it does, the overview is two explicit columns so the Panel can
-  // sit at the top of the second column (half-width — readable) rather than
+  // sit at the top of the second column (half-width - readable) rather than
   // wherever a balanced masonry would drop it.
   const showPanel =
     d.interface_count > 0 ||
@@ -950,7 +950,7 @@ function DeviceOverview({
           </div>
         </div>
       ) : (
-        // No panel — the original auto-balanced masonry.
+        // No panel - the original auto-balanced masonry.
         <div className="columns-1 gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
           {attributeCards}
           {locationMap}
@@ -963,7 +963,7 @@ function DeviceOverview({
   )
 }
 
-/** Where the device physically sits — its rack drawn with this device
+/** Where the device physically sits - its rack drawn with this device
  * highlighted, front and rear side by side (compact). Hidden for unracked
  * devices. */
 function DeviceRackCard({ device }: { device: Device }) {
@@ -1008,7 +1008,7 @@ function DeviceRackCard({ device }: { device: Device }) {
   )
 }
 
-/** The device drawn as hardware — its ports laid out at mm-true scale,
+/** The device drawn as hardware - its ports laid out at mm-true scale,
  * colored by state/speed. Uses the device type's saved faceplate layout when
  * one exists (with a Front/Rear toggle when the layout has a rear side);
  * hidden when the device has no physical interfaces. */
@@ -1027,12 +1027,12 @@ function DeviceFrontPanel({ device }: { device: Device }) {
     queryFn: () =>
       api<ListResp<Interface>>(`/api/devices/${deviceId}/interfaces/`),
   })
-  // Live SNMP overlay — read-only observed facts on top of the intent.
+  // Live SNMP overlay - read-only observed facts on top of the intent.
   const observed = useObservedPorts(deviceId)
   const savedDoc = useSavedFaceplate(dt?.id)
   // Photo faceplate wins when the type has an image + placed port markers.
   const usePhoto = useHasImagePorts(dt?.id)
-  // The panel tells the legend which colours it drew — a disk-bay photo panel
+  // The panel tells the legend which colours it drew - a disk-bay photo panel
   // keys Active/Empty, not the whole FE→400G ramp.
   const { content: legend, report: onLegend } = useLegendCollector()
   // Memoized: this is the faceplate's `interfaces` prop, and a fresh array each
@@ -1041,7 +1041,7 @@ function DeviceFrontPanel({ device }: { device: Device }) {
     () => (q.data?.results ?? []).filter((i) => !i.virtual),
     [q.data]
   )
-  // Nothing to draw at all — no ports and no type photo.
+  // Nothing to draw at all - no ports and no type photo.
   if (physical.length === 0 && !hasTypeImage) return null
 
   // The views this device actually offers: Photo (image + live port markers),
@@ -1156,7 +1156,7 @@ function DeviceIpsPane({
   })
   const rows = q.data?.results ?? []
 
-  // Per-IP monitoring status — shares the device-checks fetch with the header
+  // Per-IP monitoring status - shares the device-checks fetch with the header
   // badge and Overview summary (same query key). Keyed by IP id for the column.
   const checksQ = useQuery({
     queryKey: ["device-checks", deviceId],
@@ -1212,7 +1212,7 @@ function DeviceIpsPane({
         if (ip.is_oob_for_device) return <Badge variant="secondary">Mgmt</Badge>
         if (ip.is_secondary_for_device)
           return <Badge variant="secondary">2nd</Badge>
-        return <span className="text-muted-foreground">—</span>
+        return <span className="text-muted-foreground">-</span>
       },
     })
     insertAfter("status", {
@@ -1221,7 +1221,7 @@ function DeviceIpsPane({
       cell: ({ row }) => {
         const e = monByIp[row.original.id]
         if (!e || !e.status)
-          return <span className="text-muted-foreground">—</span>
+          return <span className="text-muted-foreground">-</span>
         return (
           <span title={`${e.checks} check${e.checks === 1 ? "" : "s"}`}>
             <MixedStatusBadge counts={e.counts} status={e.status} />
@@ -1293,7 +1293,7 @@ function DeviceIpsPane({
   )
 }
 
-// Per-IP "…" menu for the device IPs pane — sets/clears the device's
+// Per-IP "…" menu for the device IPs pane - sets/clears the device's
 // primary/secondary/management designation slots. Rendered in the
 // RowActions extra slot.
 function DesignationMenu({
@@ -1394,7 +1394,7 @@ function DeviceInterfacesPane({
   const barSlot = useContext(BarSlotContext)
   const [assignTarget, setAssignTarget] = useState<AssignIpTarget | null>(null)
   const [traceTarget, setTraceTarget] = useState<TraceTarget | null>(null)
-  // Every device — master included — defaults to its OWN interface table (the
+  // Every device - master included - defaults to its OWN interface table (the
   // normal per-device table with add/edit/sync actions). The combined
   // whole-stack view stays one click away via the toggle.
   const [scope, setScope] = useState<"member" | "stack">("member")
@@ -1442,12 +1442,12 @@ function DeviceInterfacesPane({
       ].filter(Boolean)
       toast.success(
         bits.length
-          ? `Synced — ${bits.join(", ")}`
+          ? `Synced - ${bits.join(", ")}`
           : "Already in sync with SNMP"
       )
       if (r.ips_skipped)
         toast.info(
-          `${r.ips_skipped} IP(s) skipped — no containing prefix (add the prefix, then sync again).`
+          `${r.ips_skipped} IP(s) skipped - no containing prefix (add the prefix, then sync again).`
         )
       qc.invalidateQueries({ queryKey: ["device-interfaces", deviceId] })
       qc.invalidateQueries({ queryKey: ["device-ips", deviceId] })
@@ -1459,7 +1459,7 @@ function DeviceInterfacesPane({
   const rows = useMemo(() => nestInterfaces(q.data?.results ?? []), [q.data])
   const [selIfaces, setSelIfaces] = useState<NestedInterface[]>([])
   // SNMP drift → badge the affected interface rows so drift is easy to spot
-  // (review/accept stays manual in the Drift panel — source of truth wins).
+  // (review/accept stays manual in the Drift panel - source of truth wins).
   const driftQ = useQuery({
     queryKey: ["device-snmp-drift", deviceId],
     queryFn: () =>
@@ -1478,7 +1478,7 @@ function DeviceInterfacesPane({
   }, [driftQ.data])
   const columns = useMemo<ColumnDef<NestedInterface>[]>(() => {
     // Same columns + same row actions as the whole-stack table (shared builders)
-    // — the two views must never drift apart.
+    // - the two views must never drift apart.
     const actions = buildInterfaceActionsColumn<NestedInterface>({
       deviceIdFor: () => deviceId,
       canAddIp,
@@ -1583,7 +1583,7 @@ function DeviceInterfacesPane({
           loading={stackIfaces.loading || vcQuery.isLoading}
           error={stackIfaces.error ?? (vcQuery.error as Error | null)}
           highlightMemberId={deviceId}
-          // Same row actions as "This member" — the dialogs below serve both
+          // Same row actions as "This member" - the dialogs below serve both
           // (Assign IP carries the row's own member id).
           actions={{
             canAddIp,

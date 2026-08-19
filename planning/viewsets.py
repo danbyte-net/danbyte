@@ -1,4 +1,4 @@
-"""Planning API — boards, statuses, labels, tasks, links.
+"""Planning API - boards, statuses, labels, tasks, links.
 
 Everything is tenant-scoped + RBAC-gated through :class:`TenantScopedViewSet`.
 TaskLink writes are additionally gated on *view access to the target object*
@@ -109,7 +109,7 @@ class TaskStatusViewSet(TenantScopedViewSet):
             instance.delete()
         except ProtectedError:
             raise ValidationError(
-                {"detail": "This status still has tasks — move them first."}
+                {"detail": "This status still has tasks - move them first."}
             ) from None
 
 
@@ -155,7 +155,7 @@ class TaskViewSet(TenantScopedViewSet):
         if p.get("status"):
             qs = qs.filter(status_id=p["status"])
         if p.get("assignee"):
-            # "me" so a dashboard widget needs no user id — and no user.view.
+            # "me" so a dashboard widget needs no user id - and no user.view.
             # "My work" includes the team queue: tasks assigned to one of my
             # groups that nobody has picked up yet.
             if p["assignee"] == "me":
@@ -227,7 +227,7 @@ class TaskLinkViewSet(TenantScopedViewSet):
         p = self.request.query_params
         if p.get("task"):
             qs = qs.filter(task_id=p["task"])
-        # Reverse lookup: "which tasks reference this object?" — powers
+        # Reverse lookup: "which tasks reference this object?" - powers
         # related-tasks panels on inventory detail pages.
         if p.get("object_type") and p.get("object_id"):
             from auth_api.object_types import label_for
@@ -261,8 +261,8 @@ class PlannedChangeViewSet(TenantScopedViewSet):
     """Planned field changes on inventory objects.
 
     Planning requires **view** on the target; applying requires **change** on
-    it. An engineer describing a desired change is the workflow — they could
-    already write it in the task description — so the gate that matters is the
+    it. An engineer describing a desired change is the workflow - they could
+    already write it in the task description - so the gate that matters is the
     one on the write. Nothing here schedules or auto-applies.
     """
 
@@ -293,8 +293,8 @@ class PlannedChangeViewSet(TenantScopedViewSet):
         """Stage a change set from a submitted form payload.
 
         The payload is the form's *complete* write body. We validate it through
-        the target's own serializer — so a plan is held to the same rules a real
-        write would be — then keep only the keys that actually differ.
+        the target's own serializer - so a plan is held to the same rules a real
+        write would be - then keep only the keys that actually differ.
         """
         from audit.api import _can_view_object, _object_site_id
 
@@ -323,7 +323,7 @@ class PlannedChangeViewSet(TenantScopedViewSet):
         kind = data.get("kind") or PlannedChangeKind.UPDATE
         if kind == PlannedChangeKind.CREATE:
             validate_payload(model, payload, request=self.request)
-            # Validated in full, stored without secrets — a plan is readable by
+            # Validated in full, stored without secrets - a plan is readable by
             # everyone who can see the task.
             payload = strip_secrets(model, payload)
             if not payload:
@@ -339,7 +339,7 @@ class PlannedChangeViewSet(TenantScopedViewSet):
                 raise ValidationError(
                     {"object_id": "An edit needs the object it edits."}
                 )
-            # Planning requires only *view* — describing desired work is the
+            # Planning requires only *view* - describing desired work is the
             # workflow; the gate that matters is on the apply.
             if not _can_view_object(self.request, otype, str(oid)):
                 raise PermissionDenied(
@@ -356,7 +356,7 @@ class PlannedChangeViewSet(TenantScopedViewSet):
             changed, before, display = diff_update(obj, payload)
             if not changed:
                 raise ValidationError(
-                    {"payload": "Nothing changed — no plan was recorded."}
+                    {"payload": "Nothing changed - no plan was recorded."}
                 )
             site_id = _object_site_id(otype, str(oid))
 
@@ -381,7 +381,7 @@ class PlannedChangeViewSet(TenantScopedViewSet):
     def perform_destroy(self, instance):
         if instance.state != PlannedChangeState.PLANNED:
             raise ValidationError(
-                "Applied and cancelled changes are history — they can't be "
+                "Applied and cancelled changes are history - they can't be "
                 "deleted."
             )
         instance.delete()
@@ -424,7 +424,7 @@ class PlannedChangeViewSet(TenantScopedViewSet):
     def map(self, request):
         """Every open plan grouped by target, for per-row badges.
 
-        ONE request for a whole table — the indicator is affordable only because
+        ONE request for a whole table - the indicator is affordable only because
         this never becomes an N+1. ``stale`` is deliberately absent: computing it
         means a live read per distinct model, which is the very thing this
         endpoint exists to avoid.
@@ -473,7 +473,7 @@ def assignable_users(request):
 
     Deliberately NOT ``/api/users/``: that endpoint is gated on ``user.view``,
     so a NOC engineer with full task rights but no user-administration grant got
-    a 403 and an empty assignee picker — assignment was effectively
+    a 403 and an empty assignee picker - assignment was effectively
     admin-only. Being able to *change tasks* is the right gate for "show me who
     to assign", and the payload is narrowed to match: id, username and display
     name for members of this tenant only.
@@ -519,7 +519,7 @@ def assignable_users(request):
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def assignable_groups(request):
-    """Teams a task can be queued on — every access group with members.
+    """Teams a task can be queued on - every access group with members.
 
     Same gate as ``assignable_users``: having task rights is what earns the
     picker, not user administration. The payload is name + member count only.

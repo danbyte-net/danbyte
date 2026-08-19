@@ -63,7 +63,7 @@ function ProvidersPage() {
           row.original.account ? (
             <span className="font-mono text-xs">{row.original.account}</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -79,7 +79,7 @@ function ProvidersPage() {
               {row.original.noc_email}
             </a>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {

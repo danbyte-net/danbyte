@@ -1,6 +1,6 @@
 """Per-tenant LDAP directories: chain routing, ownership/collision guards,
 per-tenant group-mapping isolation, and the escalation guard. No live
-directory — `_configured_backend` is mocked."""
+directory - `_configured_backend` is mocked."""
 from __future__ import annotations
 
 from unittest import mock
@@ -144,7 +144,7 @@ class AuthenticateFlowTests(TestCase):
         cb.assert_not_called()
 
     def test_successful_tenant_login_stamps_and_grants(self):
-        # django-auth-ldap creates the user DURING the bind — mirror that: the
+        # django-auth-ldap creates the user DURING the bind - mirror that: the
         # user must not exist before authenticate (else the guard refuses).
         def bind(request, username=None, password=None):
             return User.objects.create_user(username)
@@ -157,7 +157,7 @@ class AuthenticateFlowTests(TestCase):
             )
         self.assertIsNotNone(out)
         self.assertEqual(out.get_username(), "alice")
-        # Fetch fresh — out.profile may be a stale instance cached during the
+        # Fetch fresh - out.profile may be a stale instance cached during the
         # flow (Django populates the reverse O2O cache on FK assignment).
         prof = UserProfile.objects.get(user=out)
         self.assertEqual(prof.auth_source, "ldap")
@@ -265,7 +265,7 @@ class LoginDomainUniquenessTests(TestCase):
 
 
 class MappingRetrieveGuardTests(TestCase):
-    """`retrieve` (GET /<pk>/) on both mapping viewsets must be admin-gated —
+    """`retrieve` (GET /<pk>/) on both mapping viewsets must be admin-gated -
     a plain member could otherwise read individual LDAP group DNs by id."""
 
     def setUp(self):

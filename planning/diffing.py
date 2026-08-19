@@ -39,7 +39,7 @@ def _is_m2m(field) -> bool:
 def _plain(value) -> str:
     """Last-resort rendering for a value with no field-specific treatment.
 
-    Lists and dicts get a readable summary rather than a repr — and, crucially,
+    Lists and dicts get a readable summary rather than a repr - and, crucially,
     never reach a dict lookup, which would raise on an unhashable value.
     """
     if isinstance(value, (list, tuple)):
@@ -187,7 +187,7 @@ def strip_secrets(model, payload: dict) -> dict:
 
     A plan is *stored* and readable by everyone who can see the task, so a payload
     may never carry a secret: ``password`` on a user, a webhook signing key. Both
-    conditions must hold — the name looks like a credential **and** the serializer
+    conditions must hold - the name looks like a credential **and** the serializer
     is write-only for it, i.e. the API itself refuses to read it back. A readable
     field can be diffed and shown, so it is not one of these.
 
@@ -213,7 +213,7 @@ def diff_update(obj, payload: dict) -> tuple[dict, dict, list[dict]]:
     """``(changed, before, display)`` for an edit of ``obj``.
 
     ``changed`` holds only the keys whose submitted value differs from the live
-    one. Keys the instance can't answer for are skipped rather than guessed at —
+    one. Keys the instance can't answer for are skipped rather than guessed at -
     a write key with no readable counterpart would otherwise always look changed.
     """
     model = type(obj)
@@ -254,7 +254,7 @@ def describe_create(model, payload: dict) -> list[dict]:
 
 
 def stale_keys(obj, before: dict) -> list[str]:
-    """Which snapshotted keys no longer match the live object — the premise of
+    """Which snapshotted keys no longer match the live object - the premise of
     the plan, re-checked at apply time."""
     out = []
     for key, was in (before or {}).items():

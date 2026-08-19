@@ -29,15 +29,15 @@ const PAPERS = [
 
 /**
  * "Print label" action. Shows only when at least one label template exists for
- * ``objectType`` (automatic placement — no per-page config). Opens a
- * label-sized PDF for the given object ids in a new tab — the browser's PDF
+ * ``objectType`` (automatic placement - no per-page config). Opens a
+ * label-sized PDF for the given object ids in a new tab - the browser's PDF
  * viewer previews it and prints it at exact physical size (a browser can't
- * print an HTML page at an exact size — the paper size is dialog-controlled).
+ * print an HTML page at an exact size - the paper size is dialog-controlled).
  * The paper submenu tiles onto A4/Letter for people without a label printer,
  * and "Copy text" yields the label's plain text for an external label program.
  *
  * When ``deviceTypeId``/``roleId`` are given (a device detail page), only
- * templates that target that device type/role — or carry no restriction — are
+ * templates that target that device type/role - or carry no restriction - are
  * offered. Several may match, so a device can print more than one label.
  * Used on detail pages (single id) and list bulk bars (many ids).
  */
@@ -95,7 +95,7 @@ export function PrintLabelButton({
       const r = await api<{ labels: { text: string }[] }>(
         `/api/label-templates/${templateId}/text/?${params.toString()}`
       )
-      // One label per block, blank line between — easy to paste row-by-row into
+      // One label per block, blank line between - easy to paste row-by-row into
       // an external label program.
       const text = r.labels.map((l) => l.text).join("\n\n")
       await navigator.clipboard.writeText(text)
@@ -150,11 +150,11 @@ export function PrintLabelButton({
     <InfoTip>
       <p className="mb-1 font-medium text-foreground">Layouts</p>
       <p>
-        <b>Label roll</b> — one label per page, sized to the label, for a
+        <b>Label roll</b> - one label per page, sized to the label, for a
         dedicated label printer.
       </p>
       <p className="mt-1">
-        <b>A4 / Letter sheet</b> — labels tiled at true size on an office sheet,
+        <b>A4 / Letter sheet</b> - labels tiled at true size on an office sheet,
         with cut guides.
       </p>
       <p className="mt-2">

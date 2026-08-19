@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils"
  * A month, with work drawn across it.
  *
  * Tasks are *spans*, so they render as bars that run through the days they
- * cover and carry an arrow where they continue past the edge of a week — the
+ * cover and carry an arrow where they continue past the edge of a week - the
  * thing a list of due dates cannot show. Milestones and planned changes happen
  * on one day, so they sit inside that day's cell.
  *
@@ -53,7 +53,7 @@ function nextDay(dayIso: string): string {
   return iso(new Date(y, m - 1, d + 1))
 }
 
-/** ISO-8601 week number — the week containing that date's Thursday. */
+/** ISO-8601 week number - the week containing that date's Thursday. */
 export function isoWeek(d: Date): number {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
   const day = date.getUTCDay() || 7
@@ -134,14 +134,14 @@ export function CalendarMonth({
   /** `YYYY-MM-DD` in the viewer's effective timezone. */
   today: string
   onPickDay?: (day: string) => void
-  /** Override the drawn days (a multiple of 7) — the week view passes 7. */
+  /** Override the drawn days (a multiple of 7) - the week view passes 7. */
   days?: Date[]
   /** Taller cells, for the week view where one row carries a whole week. */
   tall?: boolean
   /** When set, a task bar can be dragged onto another day: the span shifts,
    *  keeping its length. */
   onMoveTask?: (task: PlanningCalendarTask, day: string) => void
-  /** Milestones are a single day — dropping one re-dates it. */
+  /** Milestones are a single day - dropping one re-dates it. */
   onMoveMilestone?: (m: PlanningCalendarMilestone, day: string) => void
 }) {
   const cells = useMemo(
@@ -155,7 +155,7 @@ export function CalendarMonth({
       ),
     [cells]
   )
-  // An 8px activation threshold keeps plain clicks (open the task) working —
+  // An 8px activation threshold keeps plain clicks (open the task) working -
   // the same trick the kanban board uses.
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -252,7 +252,7 @@ export function CalendarMonth({
                       >
                         {day.getDate()}
                       </span>
-                      {/* The ISO week number, marked on the week's first day —
+                      {/* The ISO week number, marked on the week's first day -
                           keyed off the row's Thursday so year boundaries
                           (W52/W1) resolve correctly. */}
                       {di === 0 && (
@@ -315,7 +315,7 @@ export function CalendarMonth({
                             >
                               <p className="font-medium">Milestone: {m.name}</p>
                               <p className="text-muted-foreground">
-                                {m.board_name} — tasks roll up to this target.
+                                {m.board_name} - tasks roll up to this target.
                               </p>
                             </TooltipContent>
                           </Tooltip>
@@ -336,12 +336,12 @@ export function CalendarMonth({
                               className="max-w-xs flex-col items-start gap-0.5 text-[11px]"
                             >
                               <p className="font-medium">
-                                Planned change —{" "}
+                                Planned change -{" "}
                                 {c.fields.join(", ") || "fields"}
                               </p>
                               <p className="text-muted-foreground">
                                 On task “{c.task_title}”. Applied by hand when
-                                the work is done — nothing changes by itself.
+                                the work is done - nothing changes by itself.
                               </p>
                             </TooltipContent>
                           </Tooltip>
@@ -377,8 +377,8 @@ export function CalendarMonth({
                           : ""}
                       </p>
                       <p className="text-muted-foreground">
-                        {bar.task.start_date ?? "—"} →{" "}
-                        {bar.task.due_date ?? "—"}
+                        {bar.task.start_date ?? "-"} →{" "}
+                        {bar.task.due_date ?? "-"}
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -483,7 +483,7 @@ function DraggableChip({
   )
 }
 
-/** One task bar in the overlay grid — a link, and (with change rights) a
+/** One task bar in the overlay grid - a link, and (with change rights) a
  *  draggable: drop it on a day and the whole span shifts there. */
 function TaskBar({
   bar,

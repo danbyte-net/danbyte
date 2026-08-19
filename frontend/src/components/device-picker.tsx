@@ -13,21 +13,21 @@ export interface DevicePickerProps extends Omit<ObjectPickerProps, "label"> {
   /** Field label (defaults to "Device"). */
   label?: string
   /** Ghost (show disabled, with an "in <stack>" hint) any device that already
-   * belongs to a virtual chassis — a switch can only be in one stack. */
+   * belongs to a virtual chassis - a switch can only be in one stack. */
   ghostAssignedVc?: boolean
 }
 
-/** ?picker=1&with_vc=1 shape — the compact option plus its current stack. */
+/** ?picker=1&with_vc=1 shape - the compact option plus its current stack. */
 interface DeviceVcOption {
   id: string
   name: string
   virtual_chassis?: { id: string; name: string } | null
 }
 
-const DASH = <span className="text-muted-foreground">—</span>
+const DASH = <span className="text-muted-foreground">-</span>
 
 /**
- * The device preset of ObjectPicker — searchable combobox + advanced-search
+ * The device preset of ObjectPicker - searchable combobox + advanced-search
  * modal (tag / manufacturer / type / role / status / site / location /
  * region, all server-side). Drop-in for the old FormCombobox pattern.
  */
@@ -115,7 +115,7 @@ export function DevicePicker({
           header: "Type",
           cell: (d) => (
             <span className="text-muted-foreground">
-              {d.device_type?.name ?? "—"}
+              {d.device_type?.name ?? "-"}
             </span>
           ),
         },
@@ -134,7 +134,7 @@ export function DevicePicker({
         {
           header: "Site",
           cell: (d) => (
-            <span className="text-muted-foreground">{d.site?.name ?? "—"}</span>
+            <span className="text-muted-foreground">{d.site?.name ?? "-"}</span>
           ),
         },
         { header: "Status", cell: (d) => <StatusBadge status={d.status} /> },

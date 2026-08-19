@@ -1,4 +1,4 @@
-"""Maintenance & outage events (issue #20) — serializers and viewsets.
+"""Maintenance & outage events (issue #20) - serializers and viewsets.
 
 Both are tenant-scoped and RBAC-gated like everything else. Impacts follow the
 TaskLink rule: an ``object_type`` + ``object_id`` pair is attacker-set until the
@@ -43,18 +43,18 @@ class EventImpactSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         # Retargeting an impact would move it onto an object the caller was
-        # never checked against — same rule as task links: delete and re-add.
+        # never checked against - same rule as task links: delete and re-add.
         if self.instance is not None:
             for field in ("event", "object_type", "object_id"):
                 if field in attrs and attrs[field] != getattr(self.instance, field):
                     raise serializers.ValidationError(
-                        {field: "An impact can't be retargeted — remove and re-add."}
+                        {field: "An impact can't be retargeted - remove and re-add."}
                     )
         return attrs
 
 
 class MaintenanceEventSerializer(StatusSerializerMixin, serializers.ModelSerializer):
-    """Status is a row from the tenant's /statuses catalog — nested on read,
+    """Status is a row from the tenant's /statuses catalog - nested on read,
     ``status_id`` on write, exactly like every other statusable model."""
 
     provider_name = serializers.CharField(
@@ -89,7 +89,7 @@ class MaintenanceEventSerializer(StatusSerializerMixin, serializers.ModelSeriali
         if "maintenanceevent" not in (status.available_to or []):
             raise serializers.ValidationError(
                 {"status_id": f"'{status.name}' is not available to maintenance "
-                              "events — add the type on the status, or pick "
+                              "events - add the type on the status, or pick "
                               "another (Settings → Statuses)."}
             )
         if kind == MaintenanceEventKind.MAINTENANCE:
@@ -130,7 +130,7 @@ class MaintenanceEventViewSet(TenantScopedViewSet):
             qs = qs.filter(provider_id=p["provider"])
         if p.get("open") == "1":
             qs = qs.filter(status__is_closed=False)
-        # Reverse lookup — "what maintenance touches this device/circuit?"
+        # Reverse lookup - "what maintenance touches this device/circuit?"
         # Powers the detail pages' upcoming-maintenance panel in one request.
         if p.get("object_type") and p.get("object_id"):
             from auth_api.object_types import label_for
@@ -141,7 +141,7 @@ class MaintenanceEventViewSet(TenantScopedViewSet):
             qs = qs.filter(
                 impacts__object_type=label, impacts__object_id=p["object_id"]
             ).distinct()
-        # Everything touching a window — how the calendar and an object's
+        # Everything touching a window - how the calendar and an object's
         # "upcoming maintenance" panel ask.
         if p.get("active_at"):
             # Window open at that moment: started, and either ends later or has
@@ -174,7 +174,7 @@ class MaintenanceEventViewSet(TenantScopedViewSet):
 
         The netbox-notices pattern: parsing stays outside Danbyte; a parser
         POSTs the normalised event here with a scoped API token. The provider's
-        ``external_ref`` is the identity — re-ingesting a revised notification
+        ``external_ref`` is the identity - re-ingesting a revised notification
         updates the event instead of duplicating it. ``impacts``, when present,
         *replaces* the impact set: the parser owns its event's impacts.
 
@@ -189,14 +189,14 @@ class MaintenanceEventViewSet(TenantScopedViewSet):
                 raise PermissionDenied(f"maintenanceevent:{verb} required.")
 
         data = dict(request.data)
-        # Parsers speak workflow words ("confirmed"), not catalog UUIDs —
+        # Parsers speak workflow words ("confirmed"), not catalog UUIDs -
         # resolve against the tenant's own rows, refusing to invent any.
         raw_status = data.pop("status", None)
         if raw_status is not None:
             status_row = _resolve_event_status(tenant, raw_status)
             if status_row is None:
                 raise ValidationError(
-                    {"status": "Unknown status — ingestion does not invent "
+                    {"status": "Unknown status - ingestion does not invent "
                                "catalog rows. Add it under Settings → Statuses "
                                "(available to maintenance events) first."}
                 )
@@ -214,12 +214,12 @@ class MaintenanceEventViewSet(TenantScopedViewSet):
                 ).first()
             if provider is None:
                 raise ValidationError(
-                    {"provider": "Unknown provider — ingestion does not invent catalog rows."}
+                    {"provider": "Unknown provider - ingestion does not invent catalog rows."}
                 )
         external_ref = (data.get("external_ref") or "").strip()
         if not external_ref:
             raise ValidationError(
-                {"external_ref": "Ingestion needs the provider's reference — "
+                {"external_ref": "Ingestion needs the provider's reference - "
                                  "it is what makes re-delivery an update."}
             )
 
@@ -278,7 +278,7 @@ class EventImpactViewSet(TenantScopedViewSet):
         p = self.request.query_params
         if p.get("event"):
             qs = qs.filter(event_id=p["event"])
-        # Reverse lookup — "what maintenance touches this circuit?"
+        # Reverse lookup - "what maintenance touches this circuit?"
         if p.get("object_type") and p.get("object_id"):
             from auth_api.object_types import label_for
 

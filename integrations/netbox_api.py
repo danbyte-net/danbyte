@@ -1,4 +1,4 @@
-"""NetBox import — SPA JSON endpoints (tenant-admin gated).
+"""NetBox import - SPA JSON endpoints (tenant-admin gated).
 
 Test a connection, launch an import (queued on the RQ ``low`` queue), and poll
 its progress. The NetBox URL is SSRF-guarded on every fetch (a tenant admin
@@ -21,7 +21,7 @@ from auth_api.permissions import can_manage_admin
 
 from .models import NetBoxImportRun
 
-# Object counts shown in the connection-test preview — the biggest, most
+# Object counts shown in the connection-test preview - the biggest, most
 # telling types. Each is a NetBox list path.
 PREVIEW_COUNTS = [
     ("sites", "dcim/sites"),
@@ -32,7 +32,7 @@ PREVIEW_COUNTS = [
     ("vlans", "ipam/vlans"),
     ("cables", "dcim/cables"),
     ("virtual_machines", "virtualization/virtual-machines"),
-    # netbox-map plugin — optional; a missing plugin just omits the count.
+    # netbox-map plugin - optional; a missing plugin just omits the count.
     ("floor_plans", "plugins/map/floorplans"),
 ]
 
@@ -111,11 +111,11 @@ def netbox_test(request):
         for key, path in PREVIEW_COUNTS:
             try:
                 counts[key] = client.count(path)
-            except Exception:  # noqa: BLE001 — a missing type just omits its count
+            except Exception:  # noqa: BLE001 - a missing type just omits its count
                 pass
     except SSRFError as exc:
         return Response({"ok": False, "error": f"Refused: {exc}"}, status=400)
-    except Exception as exc:  # noqa: BLE001 — surface the connection error
+    except Exception as exc:  # noqa: BLE001 - surface the connection error
         return Response({"ok": False, "error": str(exc)}, status=502)
     return Response({
         "ok": True,

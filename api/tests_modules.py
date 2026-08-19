@@ -505,7 +505,7 @@ class InventoryHardwareTests(_Base):
 
 class DefaultModuleTests(_Base):
     """A bay template can name a default module type, pre-seated when a device
-    is created and into an *empty* matching bay on sync-from-type — never
+    is created and into an *empty* matching bay on sync-from-type - never
     overwriting a module the operator installed by hand."""
 
     def setUp(self):
@@ -532,7 +532,7 @@ class DefaultModuleTests(_Base):
         bay = device.module_bays.get()
         self.assertTrue(hasattr(bay, "module"))
         self.assertEqual(bay.module.module_type_id, self.mt.id)
-        # {module} → bay position "1" — the module's interfaces materialise.
+        # {module} → bay position "1" - the module's interfaces materialise.
         names = set(device.interfaces.values_list("name", flat=True))
         self.assertIn("TenGigabitEthernet1/1/1", names)
         self.assertIn("TenGigabitEthernet1/1/2", names)
@@ -567,7 +567,7 @@ class DefaultModuleTests(_Base):
             format="json",
         )
         self.assertEqual(resp.status_code, 201, resp.content)
-        # Set a *different* default and sync — the hand-installed module stays.
+        # Set a *different* default and sync - the hand-installed module stays.
         self.bay_tmpl.default_module_type = self.mt
         self.bay_tmpl.save()
         sync_device_components(device)

@@ -47,7 +47,7 @@ export function ContactGroupDeleteDialog({
           <AlertDialogTitle>Delete {item?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {blocked
-              ? `This is referenced by ${item?.contact_count} object${item?.contact_count === 1 ? "" : "s"} — reassign them first; the API will protect them anyway.`
+              ? `This is referenced by ${item?.contact_count} object${item?.contact_count === 1 ? "" : "s"} - reassign them first; the API will protect them anyway.`
               : "This action can't be undone."}
           </AlertDialogDescription>
         </AlertDialogHeader>

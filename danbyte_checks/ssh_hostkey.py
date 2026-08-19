@@ -1,11 +1,11 @@
-"""SSH host-key parsing + fingerprinting — Django-free, shared by the collector
+"""SSH host-key parsing + fingerprinting - Django-free, shared by the collector
 (``danbyte_checks.ssh``) and the Django upload serializer, so an uploaded key
 and an observed one fingerprint **identically**.
 
 The fingerprint is the OpenSSH ``SHA256:<base64-no-pad>`` form: base64 of the
 SHA-256 of the raw public-key blob (the same bytes asyncssh hashes in
 ``SSHKey.get_fingerprint()``). Computing it here from the base64 middle field of
-an OpenSSH line yields the exact string asyncssh reports for the same key — the
+an OpenSSH line yields the exact string asyncssh reports for the same key - the
 equivalence the drift comparison depends on.
 """
 from __future__ import annotations
@@ -68,7 +68,7 @@ def _rsa_bits(blob_b64: str) -> int | None:
         n = _field()      # modulus
         n = n.lstrip(b"\x00")
         return len(n) * 8 or None
-    except Exception:  # noqa: BLE001 — bits are cosmetic
+    except Exception:  # noqa: BLE001 - bits are cosmetic
         return None
 
 
@@ -89,7 +89,7 @@ def parse_public_key_line(text: str) -> dict:
         )
     if "BEGIN CERTIFICATE" in body.upper():
         raise SSHKeyParseError(
-            "That's a TLS certificate — add it under Certificates, not SSH host keys."
+            "That's a TLS certificate - add it under Certificates, not SSH host keys."
         )
 
     parts = body.split(None, 2)
@@ -110,7 +110,7 @@ def parse_public_key_line(text: str) -> dict:
         raw = base64.b64decode(blob, validate=True)
     except Exception as e:  # noqa: BLE001
         raise SSHKeyParseError("The key data isn't valid base64.") from e
-    # The blob's first field must name the same algorithm — catches a mangled
+    # The blob's first field must name the same algorithm - catches a mangled
     # paste where the type and body disagree.
     try:
         named_len = int.from_bytes(raw[:4], "big")

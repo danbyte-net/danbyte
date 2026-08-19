@@ -12,9 +12,9 @@ an interactive, self-describing OpenAPI 3 reference built in.
 | URL | What it is |
 |---|---|
 | `/api/` | Redirects to the docs below. |
-| `/api/docs/` | **Swagger UI** — interactive reference with "try it out" against your live tenant. |
-| `/api/docs/redoc/` | **ReDoc** — a clean, readable reference view. |
-| `/api/schema/` | The raw **OpenAPI 3** schema (YAML) — the machine-readable source of truth. |
+| `/api/docs/` | **Swagger UI** - interactive reference with "try it out" against your live tenant. |
+| `/api/docs/redoc/` | **ReDoc** - a clean, readable reference view. |
+| `/api/schema/` | The raw **OpenAPI 3** schema (YAML) - the machine-readable source of truth. |
 
 All four require authentication (session cookie or an API token), consistent
 with the rest of the API's default-closed posture.
@@ -26,13 +26,13 @@ so the interactive docs work on **airgapped** installs with no CDN access.
 
 ## Authenticating
 
-- **API token** — create one under **Settings → Preferences → API tokens**, then
+- **API token** - create one under **Settings → Preferences → API tokens**, then
   send it as a header: `Authorization: Token <key>`. In Swagger UI, click
   **Authorize** and paste the token. Tokens are scoped to a tenant.
-- **Session** — when you are logged into the SPA, the same session cookie
+- **Session** - when you are logged into the SPA, the same session cookie
   authorizes API calls from the browser.
 
-Every request is scoped to your active tenant and enforced by RBAC — the schema
+Every request is scoped to your active tenant and enforced by RBAC - the schema
 describes the shape of each endpoint, but access is always checked server-side.
 
 ## Grouping
@@ -49,11 +49,11 @@ summaries, request bodies, and responses.
 Two endpoints describe the API's own vocabulary so a client never has to
 hard-code a list that can go stale:
 
-- **`GET /api/dcim/choices/`** — the option lists behind the long taxonomy
+- **`GET /api/dcim/choices/`** - the option lists behind the long taxonomy
   dropdowns (interface and cable types, duplex, 802.1Q modes, PoE, connector
   fibre counts, common speeds). Each option carries `value`, `label` and a
   `group` so a UI can render sub-categorised dropdowns.
-- **`GET /api/editable-fields/`** — which fields of a model a *field-level*
+- **`GET /api/editable-fields/`** - which fields of a model a *field-level*
   write path may set, and what editor each needs. `?model=interface` (registry
   slug or `api.interface`) returns descriptors:
 
@@ -67,12 +67,12 @@ hard-code a list that can go stale:
 
   `kind` names the editor to render; `choices`/`suggestions` name a list in
   `/api/dcim/choices/`. Omitting `?model=` lists the covered models. The
-  response is **filtered by the caller's `change` permission** — it describes
+  response is **filtered by the caller's `change` permission** - it describes
   writes, so a caller who cannot change devices does not see `device` at all.
 
   The field names come from each viewset's own write allow-list (the same
-  declaration `bulk-update` enforces); everything else — label, editor kind,
-  option list, nullability — is derived from the model definition, so this
+  declaration `bulk-update` enforces); everything else - label, editor kind,
+  option list, nullability - is derived from the model definition, so this
   endpoint cannot drift from what a write will actually accept.
 
 ## Generating the schema offline

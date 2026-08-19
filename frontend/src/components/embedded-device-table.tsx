@@ -12,7 +12,7 @@ import { QueryError } from "@/components/query-error"
 /**
  * The Devices table, embedded on a related object's detail page (device type,
  * role, platform, manufacturer, site, location…). `filter` is the
- * /api/devices/ query params that scope it — e.g. {device_type: id}. Replaces
+ * /api/devices/ query params that scope it - e.g. {device_type: id}. Replaces
  * the old "N devices · View devices →" links: the data loads in place.
  *
  * Columns come from the shared device factory, so a device row here reads

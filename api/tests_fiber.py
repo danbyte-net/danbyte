@@ -384,7 +384,7 @@ class SplitterTests(_Base):
         )
 
     def test_trace_from_ont_reaches_olt_and_siblings(self):
-        # The PON tree is one shared medium — tracing any leaf shows it all.
+        # The PON tree is one shared medium - tracing any leaf shows it all.
         self._pon(outputs=3)
         graph, names = self._trace_names(("interface", self.onts[0]))
         self.assertTrue(graph["complete"])
@@ -492,7 +492,7 @@ class SplitterTests(_Base):
 
     def test_trunk_strand_beyond_splitter_input_dead_ends(self):
         # A 2-strand trunk wired straight into a 1-position splitter input:
-        # strand 2 has nowhere to go — unmapped, never broadcast.
+        # strand 2 has nowhere to go - unmapped, never broadcast.
         olt = Device.objects.create(tenant=self.tenant, name="olt")
         olt_if = Interface.objects.create(device=olt, name="pon1")
         panel = Device.objects.create(tenant=self.tenant, name="panel")

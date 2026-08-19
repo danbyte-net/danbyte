@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { apiErrorToast } from "@/lib/api-toast"
 
 /** A one-click "email me about this prefix/IP/device" toggle. Backed by an
- * auto-created scoped channel + a self subscription — the user never has to
+ * auto-created scoped channel + a self subscription - the user never has to
  * think about channels. Pass exactly one of `prefix` / `ip` / `device`. */
 export function NotifyMeButton({
   prefix,

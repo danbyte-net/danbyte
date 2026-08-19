@@ -54,14 +54,14 @@ function DialogContent({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
-  /** Extra classes for the backdrop overlay — e.g. inset it past the sidebar. */
+  /** Extra classes for the backdrop overlay - e.g. inset it past the sidebar. */
   overlayClassName?: string
   /**
    * How wide the dialog gets. **Set this instead of passing a width class.**
    *
    * A `className` width override is unreliable here by construction: `cn()` is
    * tailwind-merge, which only dedupes classes carrying the *same* modifier, so
-   * an unprefixed `max-w-lg` does NOT cancel a `sm:max-w-*` default — both land,
+   * an unprefixed `max-w-lg` does NOT cancel a `sm:max-w-*` default - both land,
    * equal specificity, and Tailwind emits the variant later, so the default
    * wins on every desktop. Six dialogs shipped believing they were wide and
    * weren't. Keying off `data-size` can't be clobbered that way.

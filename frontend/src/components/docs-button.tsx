@@ -12,7 +12,7 @@ import {
 /**
  * The topbar's book: opens the documentation page for the screen the user is
  * on (route → docs mapping in lib/docs-links), falling back to the docs home.
- * A plain anchor in a new tab — the docs are a separate static site, not an
+ * A plain anchor in a new tab - the docs are a separate static site, not an
  * SPA route.
  */
 export function DocsButton() {

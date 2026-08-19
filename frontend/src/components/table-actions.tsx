@@ -1,7 +1,7 @@
 import { TableIO } from "@/components/table-io"
 
 /**
- * Header action cluster for list pages — sits next to the "Add …" button.
+ * Header action cluster for list pages - sits next to the "Add …" button.
  * Renders a prominent **Import / Export** control (round-trip data) when the
  * given object type is IO-capable for the user; renders nothing otherwise.
  */

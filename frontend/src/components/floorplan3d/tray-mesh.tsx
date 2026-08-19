@@ -18,11 +18,11 @@ const TRAY_SELECTED = "#0ea5e9"
 
 /**
  * One tray as a real basket: a floor of rungs between two side rails, open on
- * top, so the runs riding through it are VISIBLE — which is the whole point of
+ * top, so the runs riding through it are VISIBLE - which is the whole point of
  * drawing trays at all. (v1 was a solid box per segment: it looked like a
  * painted girder and swallowed every cable inside it.)
  *
- * Clicking selects the tray; a SELECTED tray is "opened" — the near rail drops
+ * Clicking selects the tray; a SELECTED tray is "opened" - the near rail drops
  * away and the basket tints, so you can look straight into the run.
  */
 export function TrayMesh({
@@ -35,7 +35,7 @@ export function TrayMesh({
 }: {
   plan: ScenePayload["plan"]
   tray: SceneTray
-  /** Raised-floor areas — underfloor runs derive their depth from the void
+  /** Raised-floor areas - underfloor runs derive their depth from the void
    * they sit in rather than a constant. */
   areas?: SceneRaisedFloor[]
   /** Every corner/tee/crossing in the room (world.trayJunctions). Rails stop
@@ -64,7 +64,7 @@ export function TrayMesh({
       rungs: number
     }[] = []
     // How close a segment end must be to a junction to count as landing on
-    // it — half a basket, the same distance the rails are trimmed back.
+    // it - half a basket, the same distance the rails are trimmed back.
     const half = TRAY_W_M / 2
     const atJunction = (x: number, z: number) =>
       junctions.some((j) => Math.hypot(j[0] - x, j[1] - z) < 1e-3)
@@ -83,7 +83,7 @@ export function TrayMesh({
       const ux = dx / raw
       const uz = dz / raw
       // Stop short of a joint at either end; the junction plate covers the
-      // gap. Never trim a run down to nothing — a stub shorter than the
+      // gap. Never trim a run down to nothing - a stub shorter than the
       // basket is all joint anyway.
       const trimA = atJunction(ax, az) ? half : 0
       const trimB = atJunction(bx, bz) ? half : 0
@@ -153,7 +153,7 @@ export function TrayMesh({
               metalness={0.55}
             />
           </mesh>
-          {/* Rungs across the floor — the ladder read, and what the cables
+          {/* Rungs across the floor - the ladder read, and what the cables
               visibly rest on. */}
           {Array.from({ length: s.rungs }, (_, i) => (
             <mesh
@@ -174,7 +174,7 @@ export function TrayMesh({
             </mesh>
           ))}
           {/* A thin invisible slab spanning the basket keeps the whole run
-              easy to click — picking individual 10 mm rungs is hopeless. */}
+              easy to click - picking individual 10 mm rungs is hopeless. */}
           <mesh position={[0, railY, 0]}>
             <boxGeometry args={[s.len, TRAY_H_M, TRAY_W_M]} />
             <meshBasicMaterial colorWrite={false} depthWrite={false} />
@@ -188,7 +188,7 @@ export function TrayMesh({
 /**
  * The plate that bridges a corner, tee or crossing. Rails stop half a basket
  * short of the joint (see TrayMesh); this square of floor fills the gap and
- * gives whatever turns the corner something to rest on — an open joint, the
+ * gives whatever turns the corner something to rest on - an open joint, the
  * way a real basket corner looks once the rails are cut.
  *
  * Drawn once per joint at scene level rather than per tray, so a crossing

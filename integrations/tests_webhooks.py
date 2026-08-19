@@ -1,4 +1,4 @@
-"""Webhook matching + delivery (signing) tests — no real network."""
+"""Webhook matching + delivery (signing) tests - no real network."""
 from __future__ import annotations
 
 import hashlib

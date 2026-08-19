@@ -168,7 +168,7 @@ export function DeviceRoleForm({
       </FormRow>
       <FormCheckbox
         label="Patch-panel role"
-        hint="Devices with this role are passive patch panels — hidden in the topology map by default and kept out of the level tiers."
+        hint="Devices with this role are passive patch panels - hidden in the topology map by default and kept out of the level tiers."
         checked={isPatchPanel}
         onChange={setIsPatchPanel}
       />

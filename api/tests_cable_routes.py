@@ -143,7 +143,7 @@ class CableRouteRbacTests(APITestCase):
         self.user = User.objects.create_user("limited", password="x")
         prof = UserProfile.objects.create(user=self.user, role="custom")
         prof.tenants.add(self.tenant)
-        # A grant on prefixes only — nothing on cable routes.
+        # A grant on prefixes only - nothing on cable routes.
         perm = ObjectPermission.objects.create(
             name="prefix view", object_types=["prefix"], actions=["view"]
         )
@@ -169,7 +169,7 @@ class CableRouteRbacTests(APITestCase):
 
 
 class SiteMapCablesEndpointTests(_Base):
-    """/api/site-map/cables/ — every cable with two placeable ends draws."""
+    """/api/site-map/cables/ - every cable with two placeable ends draws."""
 
     def _wire(self, name, dev_a, dev_b):
         ia = Interface.objects.create(device=dev_a, name=f"{name}-a")

@@ -1,4 +1,4 @@
-"""Milestone 3 tests — hysteresis state machine, materialisation, dispatch."""
+"""Milestone 3 tests - hysteresis state machine, materialisation, dispatch."""
 from __future__ import annotations
 
 import socket
@@ -185,7 +185,7 @@ class DispatchTests(Base):
         t = self._tmpl(slug="busy", kind=CheckKind.TCP, params={"port": 9})
         CheckAssignment.objects.create(tenant=self.tenant, template=t, ip_address=self.ip)
         materialise_states(tenant=self.tenant)
-        # Freshly claimed (recent in_flight_since) — not stale, so not reaped.
+        # Freshly claimed (recent in_flight_since) - not stale, so not reaped.
         CheckState.objects.update(in_flight=True, in_flight_since=timezone.now())
         self.assertEqual(dispatch(sync=True)["due"], 0)
 
@@ -210,7 +210,7 @@ class DispatchTests(Base):
         self.assertEqual(dispatch(sync=True)["due"], 1)
 
     def test_reaper_reclaims_null_in_flight_since(self):
-        # Rows claimed before the field existed have a NULL timestamp — always
+        # Rows claimed before the field existed have a NULL timestamp - always
         # treated as stale so legacy stuck states self-heal.
         from .scheduler import reap_stale_in_flight
 

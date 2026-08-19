@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils"
 export type AssigneeFilter = number | "unassigned" | null
 
 /** Usernames are often email addresses. A header is no place for
- *  "hello@minecraft-vote.com" — the local part identifies the person, and the
+ *  "hello@minecraft-vote.com" - the local part identifies the person, and the
  *  full value is one hover away. */
 function shortName(username: string): string {
   const at = username.indexOf("@")
@@ -30,7 +30,7 @@ function initials(name: string): string {
 }
 
 /** Who is working on this board, as faces in the header. Clicking one filters
- * the board to their tasks — the board-level answer to "who has what", which
+ * the board to their tasks - the board-level answer to "who has what", which
  * per-card avatars alone can't give you. Derived from the tasks already loaded,
  * so it costs no extra request and never lists someone with nothing to do. */
 export function AssigneeFilterStrip({
@@ -55,7 +55,7 @@ export function AssigneeFilterStrip({
   }
   if (byId.size === 0 && unassigned === 0) return null
 
-  // The signed-in user first — "my work" is the most common question. /api/me/
+  // The signed-in user first - "my work" is the most common question. /api/me/
   // identifies the user by username, so that is what we match on.
   const isMe = (username: string) => !!me.username && username === me.username
   const people = [...byId.entries()].sort((a, b) => {
@@ -65,7 +65,7 @@ export function AssigneeFilterStrip({
   })
 
   // Faces, not labelled chips. Six people used to mean six pills of differing
-  // width — one of them a full email address — fighting the board title for the
+  // width - one of them a full email address - fighting the board title for the
   // header. The avatar is the control; the name and count live in the tooltip.
   const face = (active: boolean) =>
     cn(

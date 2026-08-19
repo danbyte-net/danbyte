@@ -1,4 +1,4 @@
-"""Template context processors — populate variables every page needs.
+"""Template context processors - populate variables every page needs.
 
 ``sidebar_tenants`` feeds the tenant switcher in ``_shell.html`` with the list
 of switchable tenants the *current user* is allowed to operate within.

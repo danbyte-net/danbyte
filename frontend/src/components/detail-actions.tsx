@@ -56,7 +56,7 @@ const SEGMENT_SLUG: Record<string, string> = {
 /**
  * Import/Export for an object **detail** page, derived from the route so it can
  * drop into any `/<thing>/<uuid>` header with no props. Mounts in the page's own
- * action bar (next to Edit/Delete) — not the global top bar.
+ * action bar (next to Edit/Delete) - not the global top bar.
  *
  * Special case: on a **prefix** page the Import/Export acts on the *IPs inside
  * that prefix* (the workflow that replaced the old "IPs" dropdown).

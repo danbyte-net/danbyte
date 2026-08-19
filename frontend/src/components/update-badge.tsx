@@ -24,7 +24,7 @@ export function UpdateBadge() {
   return (
     <Link
       to="/settings/updates"
-      title={`Update available — you're on ${d.current.version}`}
+      title={`Update available - you're on ${d.current.version}`}
     >
       <Badge className="bg-primary text-primary-foreground hover:bg-primary/90">
         Update available

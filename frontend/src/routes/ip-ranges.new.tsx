@@ -13,7 +13,7 @@ function NewIpRangePage() {
     <EditPageShell
       crumbs={[{ label: "IP ranges", to: "/ip-ranges" }, { label: "Add" }]}
       title="Add IP range"
-      subtitle="A contiguous span of addresses — e.g. a DHCP pool."
+      subtitle="A contiguous span of addresses - e.g. a DHCP pool."
     >
       <IpRangeForm
         onSaved={(r) => nav({ to: "/ip-ranges/$id", params: { id: r.id } })}

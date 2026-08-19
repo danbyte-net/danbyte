@@ -5,7 +5,7 @@ import { api, type InventoryItemRow, type Paginated } from "@/lib/api"
 import { ColorBadge } from "@/components/cells/color-badge"
 
 /**
- * Roll-up of a device's serial-tracked parts by lifecycle status — "8 Active ·
+ * Roll-up of a device's serial-tracked parts by lifecycle status - "8 Active ·
  * 1 Failed". Surfaces hardware health on the Overview, where a failing disk
  * used to be invisible until you drilled into Components → Hardware.
  *
@@ -37,7 +37,7 @@ export function DeviceHardwareHealth({ deviceId }: { deviceId: string }) {
   }, [q.data])
 
   const total = q.data?.results.length ?? 0
-  if (total === 0) return <span className="text-muted-foreground">—</span>
+  if (total === 0) return <span className="text-muted-foreground">-</span>
 
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">

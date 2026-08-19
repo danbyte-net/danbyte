@@ -129,7 +129,7 @@ class DnsSyncTests(TestCase):
         self.assertEqual(d.server_name, "theirs.danbyte.lan")
 
     def test_ip_with_multiple_names_matches_any(self):
-        """AD apex + ForestDnsZones both point at the DC — matching the apex
+        """AD apex + ForestDnsZones both point at the DC - matching the apex
         is in sync, not drift."""
         row = self.ip("10.0.0.45", dns_name="danbyte.lan")
         self.sync()

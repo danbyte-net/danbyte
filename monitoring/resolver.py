@@ -14,7 +14,7 @@ Rules (see acceptance criteria in the build brief):
   the longest-prefix-length scope wins; a *direct* IP assignment is more
   specific than any prefix.
 * The winning assignment decides whether the check runs: ``enabled=False`` on
-  it (or the IP being excluded by it) disables the check — i.e. a per-IP
+  it (or the IP being excluded by it) disables the check - i.e. a per-IP
   disable removes an inherited check.
 * Routing context matters: a prefix only encloses an IP when their VRFs match
   (both NULL = the Global VRF).
@@ -50,7 +50,7 @@ def default_ping_template(tenant_id):
     """The tenant's fallback ICMP reachability template, created on demand.
 
     An enabled MonitoringPolicy with no profiles/templates resolves to this so
-    that "Monitor on" always produces at least a ping — instead of silently
+    that "Monitor on" always produces at least a ping - instead of silently
     doing nothing. Idempotent (unique per tenant+slug)."""
     from .models import CheckKind, CheckTemplate
 
@@ -64,7 +64,7 @@ def default_ping_template(tenant_id):
 
 @dataclass
 class ResolvedCheck:
-    """One effective check for an IP — a template plus the assignment that won,
+    """One effective check for an IP - a template plus the assignment that won,
     with template values overlaid by that assignment's overrides."""
 
     template: "CheckTemplate"
@@ -176,7 +176,7 @@ def _policy_templates(ip: "IPAddress", enclosing: list["Prefix"]) -> list[_Candi
     # Frequency override for this IP = the interval_seconds of the most-specific
     # applicable policy that sets one (a prefix beats VRF beats global). Applied
     # to every policy-sourced check, regardless of which policy the template
-    # itself came from — "this prefix polls every N".
+    # itself came from - "this prefix polls every N".
     interval_by_spec: list[tuple[int, int]] = []
 
     def add(policy: MonitoringPolicy, specificity: int, prefix=None) -> None:
@@ -187,9 +187,9 @@ def _policy_templates(ip: "IPAddress", enclosing: list["Prefix"]) -> list[_Candi
             templates.extend(list(profile.templates.filter(enabled=True)))
         if not templates:
             # A "Follow global" policy (inherit) contributes nothing of its own
-            # — it just rides the broader-scope policies (and may still carry a
+            # - it just rides the broader-scope policies (and may still carry a
             # frequency override, recorded above). An explicit "Monitor on"
-            # policy with nothing selected means "just monitor reachability" —
+            # policy with nothing selected means "just monitor reachability" -
             # fall back to the tenant's default ICMP ping so the toggle always
             # produces a check.
             if policy.inherit:
@@ -266,12 +266,12 @@ def _policy_templates(ip: "IPAddress", enclosing: list["Prefix"]) -> list[_Candi
 def resolve_effective_checks(ip: "IPAddress") -> list[ResolvedCheck]:
     """The checks that should actually run against ``ip`` right now.
 
-    Returns only *enabled* effective checks — disabled / excluded ones are
+    Returns only *enabled* effective checks - disabled / excluded ones are
     resolved away, not returned. Deterministic order: by template name.
     """
     candidates: list[_Candidate] = []
 
-    # Direct IP assignments — highest specificity.
+    # Direct IP assignments - highest specificity.
     direct = CheckAssignment.objects.filter(ip_address=ip).select_related("template")
     for a in direct:
         if not a.template.enabled:

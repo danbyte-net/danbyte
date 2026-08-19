@@ -1,4 +1,4 @@
-"""Bulk-import tests — coercion, FK resolution, errors, dry-run."""
+"""Bulk-import tests - coercion, FK resolution, errors, dry-run."""
 from __future__ import annotations
 
 from django.test import TestCase

@@ -206,7 +206,7 @@ class DnsApiTests(APITestCase):
         # All records
         res = self.client.get("/api/dns-records/")
         self.assertEqual(res.json()["count"], 2)
-        # By prefix — only the record whose IP is in that prefix
+        # By prefix - only the record whose IP is in that prefix
         res = self.client.get(f"/api/dns-records/?prefix={self.ip.prefix_id}")
         self.assertEqual(res.json()["count"], 1)
         self.assertEqual(res.json()["results"][0]["name"], "a.danbyte.lan")

@@ -8,7 +8,7 @@ longer. Both windows are settings (``MONITORING_RESULT_RETENTION_DAYS`` /
 Deletes run in bounded batches so pruning a huge backlog never holds one giant
 transaction or blocks writers. A native monthly RANGE partition on
 ``CheckResult.timestamp`` is the next scaling step (then pruning becomes a cheap
-``DROP PARTITION`` instead of a bulk delete) — see the model docstring.
+``DROP PARTITION`` instead of a bulk delete) - see the model docstring.
 """
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 // Small geographic helpers for the site map's vector layers.
 //
-// Equirectangular approximation — plenty accurate at camera-coverage scale
+// Equirectangular approximation - plenty accurate at camera-coverage scale
 // (≤ ~1 km): one degree of latitude ≈ 111,320 m everywhere; a degree of
 // longitude shrinks with cos(latitude).
 
@@ -42,7 +42,7 @@ export function fovWedge(
 }
 
 /** Project lat/lng points into a local meter plane (equirectangular around
- *  `refLat`). Euclidean math — distances, projections, Dijkstra — is only
+ *  `refLat`). Euclidean math - distances, projections, Dijkstra - is only
  *  correct in this plane, never in raw degrees (1° of longitude shrinks with
  *  latitude, and typical snap tolerances would span tens of km). */
 export function projectToMeters(

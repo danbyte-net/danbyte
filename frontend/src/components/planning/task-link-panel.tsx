@@ -16,8 +16,8 @@ import { ObjectRow, objectIcon, slugFromObjectType } from "./object-chip"
 /** Attach any registered Danbyte object to a task: pick a type, pick the
  * object, link it.
  *
- * Links render grouped by object type — one card per type with its own icon and
- * count — rather than as a flat chip soup, because a task about four devices
+ * Links render grouped by object type - one card per type with its own icon and
+ * count - rather than as a flat chip soup, because a task about four devices
  * and a prefix reads as exactly that. Linked devices additionally show their
  * faceplate, turning the sheet into a picture of the work. */
 export function TaskLinkPanel({

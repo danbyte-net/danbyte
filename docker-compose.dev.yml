@@ -64,7 +64,7 @@ services:
     volumes:
       - .:/app
 
-  # The beat — see the note in docker-compose.prod.yml. Without it a dev stack
+  # The beat - see the note in docker-compose.prod.yml. Without it a dev stack
   # materialises and dispatches nothing.
   scheduler:
     build: .

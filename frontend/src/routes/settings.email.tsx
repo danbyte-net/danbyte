@@ -103,7 +103,7 @@ function EmailSettingsPage() {
   if (!canManageDeployment) {
     return (
       <p className="text-sm text-muted-foreground">
-        Deployment admin required — these settings apply to every tenant. Tenant
+        Deployment admin required - these settings apply to every tenant. Tenant
         email overrides live under{" "}
         <span className="font-mono">Settings → This tenant → Email</span>.
       </p>
@@ -138,7 +138,7 @@ function EmailSettingsPage() {
 
         <SettingsCard
           title="Outbound delivery"
-          description="Applies to all transports (Slack, Teams, Discord, PagerDuty, webhook, email). Deployment-wide — never per-tenant."
+          description="Applies to all transports (Slack, Teams, Discord, PagerDuty, webhook, email). Deployment-wide - never per-tenant."
         >
           <Field
             label="Public base URL"
@@ -205,7 +205,7 @@ function EmailSettingsPage() {
 
         <SettingsCard
           title="Preview email templates"
-          description="Send a sample of any email — digest, certificate digest, alerts, sign-in code, invite — filled with example data, so you can see how they look before they go out for real."
+          description="Send a sample of any email - digest, certificate digest, alerts, sign-in code, invite - filled with example data, so you can see how they look before they go out for real."
         >
           <FormSelect
             label="Template"
@@ -246,7 +246,7 @@ function EmailSettingsPage() {
         </SettingsCard>
       </SettingsGrid>
 
-      {/* SMTP and delivery are ONE settings object, so one save is honest —
+      {/* SMTP and delivery are ONE settings object, so one save is honest -
           per-card buttons that each quietly wrote both would be worse than the
           single button they replaced. It just has to say what it covers. */}
       <div className="sticky bottom-0 -mx-4 mt-4 flex items-center gap-2 border-t border-border bg-background/95 px-4 py-3 backdrop-blur lg:-mx-6 lg:px-6">

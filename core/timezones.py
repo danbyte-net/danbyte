@@ -5,7 +5,7 @@ The picker used to be built from the *browser's* tz database
 the *server's*. Those two disagree: many builds of the tz database ship only
 canonical zone names, so a browser offering ``Europe/Kiev`` (renamed to
 ``Europe/Kyiv`` in tzdata 2022b) produced "not a valid IANA timezone" for a
-value the app itself had listed — issue #31.
+value the app itself had listed - issue #31.
 
 So: the API serves the list, and writes canonicalise the legacy names that
 browsers and older stored settings still carry.
@@ -83,7 +83,7 @@ LEGACY_ALIASES: dict[str, str] = {
 
 @lru_cache(maxsize=1)
 def supported_timezones() -> list[str]:
-    """Sorted zone names to offer — the picker's source.
+    """Sorted zone names to offer - the picker's source.
 
     Legacy spellings are dropped even where the local tz database still
     carries them, so the list is the same on every host and nobody picks a
@@ -98,7 +98,7 @@ def resolve_timezone(value: str) -> str | None:
     Legacy names map to their modern spelling **first**, before asking the tz
     database. Some builds ship the "backward" links and resolve
     ``Europe/Kiev`` happily while others don't, so trusting the local database
-    would store a different string depending on the host — and a value written
+    would store a different string depending on the host - and a value written
     on one would fail to load on the other. Canonicalising first makes the
     stored value the same everywhere.
     """

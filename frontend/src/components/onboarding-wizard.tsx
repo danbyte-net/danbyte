@@ -46,7 +46,7 @@ export function OnboardingWizard({ me }: { me: Me }) {
   const qc = useQueryClient()
 
   // Auto-trigger only for a genuinely fresh tenant. Skip the fetch entirely once
-  // the flag is dismissed — a re-run comes through the window event instead.
+  // the flag is dismissed - a re-run comes through the window event instead.
   const enabled = me.is_authenticated && me.onboarding_dismissed === false
   // …and only for a user who can actually create the objects the wizard makes;
   // otherwise every step's Create button 403s. Site is the anchor, so gate on
@@ -237,7 +237,7 @@ function WizardDialog({ onClose }: { onClose: () => void }) {
           </DialogTitle>
           {step !== "Welcome" && step !== "Done" && (
             <DialogDescription>
-              Step {stepIdx} of {STEPS.length - 2} — create your first{" "}
+              Step {stepIdx} of {STEPS.length - 2} - create your first{" "}
               {step.toLowerCase()}. You can skip any of these and add them
               later.
             </DialogDescription>
@@ -274,7 +274,7 @@ function WizardDialog({ onClose }: { onClose: () => void }) {
         <div className="min-h-[7rem] py-1">
           {step === "Welcome" && (
             <p className="text-sm text-muted-foreground">
-              Let's get your instance going with the essentials — a{" "}
+              Let's get your instance going with the essentials - a{" "}
               <span className="font-medium text-foreground">site</span>, an
               optional location, a VLAN, an IP prefix, and a first device. It
               takes under a minute, and you can skip anything.
@@ -329,7 +329,7 @@ function WizardDialog({ onClose }: { onClose: () => void }) {
           {step === "Prefix" && (
             <FormText
               label="Prefix (CIDR)"
-              hint="An IP range — links to the VLAN above when set"
+              hint="An IP range - links to the VLAN above when set"
               value={cidr}
               onChange={setCidr}
               placeholder="10.0.0.0/24"
@@ -356,7 +356,7 @@ function WizardDialog({ onClose }: { onClose: () => void }) {
                   onChange={setRoleId}
                   options={roleOptions}
                   noneLabel="No role"
-                  placeholder="Optional — pick a role"
+                  placeholder="Optional - pick a role"
                 />
               )}
             </div>
@@ -381,7 +381,7 @@ function WizardDialog({ onClose }: { onClose: () => void }) {
                 </>
               ) : (
                 <p className="text-muted-foreground">
-                  No problem — you can add sites, prefixes and devices any time
+                  No problem - you can add sites, prefixes and devices any time
                   from the sidebar.
                 </p>
               )}

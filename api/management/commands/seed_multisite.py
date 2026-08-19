@@ -1,4 +1,4 @@
-"""seed_multisite — a 10-site tenant with per-site staff and site-scoped RBAC.
+"""seed_multisite - a 10-site tenant with per-site staff and site-scoped RBAC.
 
 Models the shape most multi-site operators actually run:
 
@@ -40,7 +40,7 @@ TENANT_NAME = "Globex"
 TENANT_SLUG = "globex"
 
 SITE_COUNT = 10
-#: The shared supernet. Held as a container with NO site — it belongs to the
+#: The shared supernet. Held as a container with NO site - it belongs to the
 #: tenant, and each site's /18 nests inside it.
 SUPERNET = "10.0.0.0/8"
 #: Site N gets 10.N.0.0/18 out of the supernet.
@@ -49,11 +49,11 @@ def site_prefix(n: int) -> str:
 
 
 #: Which site's prefix becomes its default. (The setting is per-site, so the
-#: others are deliberately left unset — that's what "inherits nothing" looks
+#: others are deliberately left unset - that's what "inherits nothing" looks
 #: like next to a site that has one.)
 DEFAULT_PREFIX_SITE = 1
 
-#: (name suffix, device role, device type) — repeated at every site.
+#: (name suffix, device role, device type) - repeated at every site.
 DEVICES = [
     ("rtr-01", "router", "ISR4331"),
     ("sw-core-01", "core-switch", "C9300-48P"),
@@ -123,14 +123,14 @@ class Command(BaseCommand):
         return out
 
     def _supernet(self, tenant) -> Prefix:
-        """The shared /8 — a container, held tenant-wide with no site, so every
+        """The shared /8 - a container, held tenant-wide with no site, so every
         site's /18 nests under one supernet rather than ten islands."""
         obj, _ = Prefix.objects.get_or_create(
             tenant=tenant,
             cidr=SUPERNET,
             defaults={
                 "status": resolve_status(tenant, "container", "prefix"),
-                "description": "Shared RFC1918 supernet — every site carves from this",
+                "description": "Shared RFC1918 supernet - every site carves from this",
                 "site": None,
             },
         )
@@ -152,7 +152,7 @@ class Command(BaseCommand):
         return out
 
     def _default_prefix(self, sites, prefixes) -> None:
-        """Point one site at its own /18. Deliberately one site, not all — the
+        """Point one site at its own /18. Deliberately one site, not all - the
         contrast is the point: staff at site-01 get it pre-selected, everyone
         else still picks."""
         site = sites[DEFAULT_PREFIX_SITE - 1]
@@ -196,7 +196,7 @@ class Command(BaseCommand):
         # Read the whole tenant: one grant, every type, no site narrowing
         # (empty `sites` = all sites).
         read_all, _ = ObjectPermission.objects.get_or_create(
-            name=f"{TENANT_NAME} — read all sites",
+            name=f"{TENANT_NAME} - read all sites",
             defaults={"object_types": ["*"], "actions": ["view"]},
         )
         read_all.object_types = ["*"]
@@ -228,16 +228,16 @@ class Command(BaseCommand):
             read_all.users.add(user)
 
             # Write ONLY their own site. Scoped to the site-aware object
-            # types on purpose — granting "*" would quietly hand out
+            # types on purpose - granting "*" would quietly hand out
             # tenant-wide write on types with no site path. The CATALOG
             # types (tags, device types, zones, …) are included because this
             # tenant demos ENHANCED SITE SEPARATION: with the flag ON their
             # writes are fenced to site-local entries. (With the flag off a
-            # site-scoped catalog grant applies tenant-wide — that's the
+            # site-scoped catalog grant applies tenant-wide - that's the
             # documented trade of the flag.)
             write_types = sorted({*SITE_PATHS, *CATALOG_SITE_PATHS})
             perm, _ = ObjectPermission.objects.get_or_create(
-                name=f"{TENANT_NAME} — {site.name} read/write",
+                name=f"{TENANT_NAME} - {site.name} read/write",
                 defaults={
                     "object_types": write_types,
                     "actions": ["view", "add", "change", "delete"],
@@ -256,6 +256,6 @@ class Command(BaseCommand):
         User.objects.filter(
             username__in=[f"site{i}" for i in range(1, SITE_COUNT + 1)]
         ).delete()
-        ObjectPermission.objects.filter(name__startswith=f"{TENANT_NAME} — ").delete()
+        ObjectPermission.objects.filter(name__startswith=f"{TENANT_NAME} - ").delete()
         Tenant.objects.filter(slug=TENANT_SLUG).delete()
         Organization.objects.filter(name=ORG_NAME).delete()

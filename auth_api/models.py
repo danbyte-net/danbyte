@@ -3,9 +3,9 @@
 Django's built-in ``User`` carries identity (username, password, email);
 ``UserProfile`` extends it with the things Danbyte needs:
 
-  * ``role`` — one of ``reader`` / ``admin`` / ``custom``.
-  * ``permissions`` — explicit perm slug list, used when role == "custom".
-  * ``current_tenant`` — last-used tenant in the sidebar switcher, persisted
+  * ``role`` - one of ``reader`` / ``admin`` / ``custom``.
+  * ``permissions`` - explicit perm slug list, used when role == "custom".
+  * ``current_tenant`` - last-used tenant in the sidebar switcher, persisted
     so the user lands on the same tenant after re-login.
 
 The permission registry lives in :mod:`auth_api.permissions`. Reader gets
@@ -25,9 +25,9 @@ from monitoring.secrets import EncryptedJSONField
 
 class UserProfile(TimestampedModel):
     ROLE_CHOICES = [
-        ("reader", "Reader — view only"),
-        ("admin", "Admin — full access"),
-        ("custom", "Custom — pick permissions"),
+        ("reader", "Reader - view only"),
+        ("admin", "Admin - full access"),
+        ("custom", "Custom - pick permissions"),
     ]
 
     user = models.OneToOneField(
@@ -55,7 +55,7 @@ class UserProfile(TimestampedModel):
         blank=True,
         related_name="users",
         help_text=("Tenants this user can switch to and operate within. "
-                   "Admins and superusers ignore this list — they see every "
+                   "Admins and superusers ignore this list - they see every "
                    "tenant. Empty list on a reader/custom user means no "
                    "tenant access at all."),
     )
@@ -76,8 +76,8 @@ class UserProfile(TimestampedModel):
                   "auto-provisioned on first login.",
     )
     # Stable SSO identity binding. A login is matched to this account by
-    # (sso_provider, sso_subject) — the IdP's immutable subject (SAML NameID /
-    # OIDC sub) — never by a mutable email an IdP could assert to hijack another
+    # (sso_provider, sso_subject) - the IdP's immutable subject (SAML NameID /
+    # OIDC sub) - never by a mutable email an IdP could assert to hijack another
     # account. See auth_api/sso.py resolve_user.
     sso_provider = models.ForeignKey(
         "auth_api.IdentityProvider", on_delete=models.SET_NULL,
@@ -86,7 +86,7 @@ class UserProfile(TimestampedModel):
     sso_subject = models.CharField(max_length=255, blank=True, default="")
     # Ownership anchor for per-tenant directories: the tenant whose directory
     # this LDAP account belongs to. NULL = deployment directory (or a local
-    # account). A tenant directory may only ever bind accounts it owns — the
+    # account). A tenant directory may only ever bind accounts it owns - the
     # guard that stops a tenant-configured directory impersonating local,
     # deployment-LDAP, or other-tenant users (see auth_api/ldap.py).
     ldap_source_tenant = models.ForeignKey(
@@ -108,7 +108,7 @@ class UserProfile(TimestampedModel):
     # TOTP secret lives in a separate encrypted column.
     secrets = EncryptedJSONField(
         default=dict, blank=True,
-        help_text="Encrypted-at-rest blob — currently the TOTP secret.",
+        help_text="Encrypted-at-rest blob - currently the TOTP secret.",
     )
 
     class Meta:
@@ -128,7 +128,7 @@ class UserProfile(TimestampedModel):
 
 
 class GroupProfile(TimestampedModel):
-    """Sidecar for Django ``auth.Group`` — a description + a built-in flag so the
+    """Sidecar for Django ``auth.Group`` - a description + a built-in flag so the
     seeded Administrator / Operator / Read-only groups can't be deleted."""
 
     group = models.OneToOneField(
@@ -149,10 +149,10 @@ class ObjectPermission(TimestampedModel):
     optionally narrowed by *constraints* (a queryset filter) and scoped to
     specific *tenants*, assigned to *groups* and/or *users*.
 
-    Semantics (grants only — there are no deny rules): a user's effective
+    Semantics (grants only - there are no deny rules): a user's effective
     actions for an object type are the union across every enabled permission
     that applies to them (directly or via a group) in the active tenant. The
-    ``constraints`` then limit *which rows* — multiple permissions OR together.
+    ``constraints`` then limit *which rows* - multiple permissions OR together.
     """
 
     id = models.UUIDField(primary_key=True, editable=False, default=__import__("uuid").uuid4)
@@ -200,7 +200,7 @@ class ObjectPermission(TimestampedModel):
 
 
 class UserPreference(TimestampedModel):
-    """Per-user, per-table UI state — column order, hidden columns, ...
+    """Per-user, per-table UI state - column order, hidden columns, ...
 
     A row with ``user=NULL`` is the *tenant default* that admins can publish
     for everyone. The lookup order in :func:`auth_api.column_prefs.get_pref`
@@ -210,8 +210,8 @@ class UserPreference(TimestampedModel):
       2. The tenant's default row for ``(NULL, tenant, table_id)``.
       3. Fall back to the JS's column-discovery (no overrides applied).
 
-    ``data`` is a JSON blob — for the column manager it carries
-    ``{"order": ["status", "tags", …], "hidden": ["created", …]}`` — but the
+    ``data`` is a JSON blob - for the column manager it carries
+    ``{"order": ["status", "tags", …], "hidden": ["created", …]}`` - but the
     same model can hold any other small per-table UI preference (sort, page
     size) later without a schema change.
     """
@@ -245,7 +245,7 @@ class UserPreference(TimestampedModel):
         ordering = ["table_id", "user_id"]
         constraints = [
             # nulls_distinct=False so the unique applies to the tenant default
-            # too — at most one default per (tenant, table_id).
+            # too - at most one default per (tenant, table_id).
             models.UniqueConstraint(
                 fields=["user", "tenant", "table_id"],
                 nulls_distinct=False,
@@ -261,7 +261,7 @@ class UserPreference(TimestampedModel):
 class LDAPGroupMapping(TimestampedModel):
     """Links a directory group (by DN) to a Danbyte ``auth.Group``. On each LDAP
     login a user's Danbyte group membership is re-synced from the directory
-    groups they belong to, via these mappings — so all the existing
+    groups they belong to, via these mappings - so all the existing
     ``ObjectPermission`` machinery (tenant scope, constraints, built-in roles)
     applies unchanged. Only *mapped* directory groups grant anything; unmapped
     ones are ignored, so the directory can't accidentally widen access."""
@@ -302,12 +302,12 @@ class LDAPGroupMapping(TimestampedModel):
 
 
 class IdentityProvider(TimestampedModel):
-    """A configured single-sign-on identity provider — OIDC or SAML.
+    """A configured single-sign-on identity provider - OIDC or SAML.
 
     Mirrors the LDAP config pattern: deployment-wide when ``tenant`` is NULL, or
     scoped to one tenant. On login Danbyte matches (or, when ``jit_provisioning``
     is on, creates) the user and re-syncs their Danbyte group membership from the
-    IdP's asserted groups via :class:`SsoGroupMapping` — so all existing
+    IdP's asserted groups via :class:`SsoGroupMapping` - so all existing
     ``ObjectPermission`` machinery applies unchanged. Only *mapped* IdP groups
     grant anything; unmapped ones are ignored.
     """
@@ -346,7 +346,7 @@ class IdentityProvider(TimestampedModel):
     saml_idp_sso_url = models.CharField(max_length=255, blank=True, default="")
     saml_idp_x509 = models.TextField(blank=True, default="")
     # Optional IdP metadata (federation) URL. When set, Danbyte fetches the
-    # entity id, SSO URL, and signing cert(s) from it — rotation-proof, no manual
+    # entity id, SSO URL, and signing cert(s) from it - rotation-proof, no manual
     # cert picking. Reaches the IdP directly (cloud → internet, on-prem → LAN);
     # leave blank on fully offline installs and paste the cert instead.
     saml_idp_metadata_url = models.CharField(max_length=500, blank=True, default="")
@@ -402,7 +402,7 @@ class IdentityProvider(TimestampedModel):
 
 
 class SsoGroupMapping(TimestampedModel):
-    """Maps an IdP group/role value to a Danbyte ``auth.Group`` — the SSO analog
+    """Maps an IdP group/role value to a Danbyte ``auth.Group`` - the SSO analog
     of :class:`LDAPGroupMapping`. On each login the user's Danbyte groups are
     re-synced from the mapped set; unmapped IdP groups grant nothing."""
 
@@ -433,7 +433,7 @@ class SsoGroupMapping(TimestampedModel):
 
 class SamlLoginState(models.Model):
     """One row per outstanding SP-initiated SAML AuthnRequest. The ACS looks the
-    row up by the response's ``InResponseTo`` and consumes it — enforcing that a
+    row up by the response's ``InResponseTo`` and consumes it - enforcing that a
     response is *solicited* (we issued the request) and *single-use* (replay
     protection). Lives in the DB, not the session, because the IdP's ACS POST is
     cross-site and the ``SameSite=Lax`` session cookie doesn't ride along."""
@@ -456,7 +456,7 @@ class ApiToken(TimestampedModel):
     """A long-lived, revocable API key for non-interactive callers (Ansible/AWX,
     scripts). Authenticates as ``user`` and is scoped to one ``tenant``, so the
     runner reaches the inventory/render endpoints without a session cookie. Only
-    the SHA-256 hash is stored — the full key is shown once at creation."""
+    the SHA-256 hash is stored - the full key is shown once at creation."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(

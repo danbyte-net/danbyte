@@ -31,7 +31,7 @@ export type SavePolicy<T extends { id: string }> = (args: {
   patch: Partial<MonitoringPolicy>
 }) => void
 
-// Stateless — the toggle states derive purely from the policy/prefix caches,
+// Stateless - the toggle states derive purely from the policy/prefix caches,
 // which usePolicySave/usePrefixDiscoverToggle patch optimistically (and roll
 // back on error). Local-state + sync-useEffect pairs here cost an extra
 // render pass per row on every parent update, ×500 on the prefix tab.
@@ -50,14 +50,14 @@ export function PolicyControls<T extends { id: string }>({
   templates: CheckTemplate[]
   profiles: MonitoringProfile[]
   save: SavePolicy<T>
-  /** This row's policy save is in flight — spinner on the Monitor button. */
+  /** This row's policy save is in flight - spinner on the Monitor button. */
   pending?: boolean
   /** Device/type/role scopes: show the "which IPs" target picker. */
   showTarget?: boolean
   discover?: {
     active: boolean
     disabled?: boolean
-    /** This row's discover toggle is in flight — spinner on the button. */
+    /** This row's discover toggle is in flight - spinner on the button. */
     pending?: boolean
     onClick: () => void
   }
@@ -362,7 +362,7 @@ function policySummary(policy: MonitoringPolicy | undefined) {
   if (!policy.enabled) return "Disabled"
   const count = policy.profiles.length + policy.templates.length
   // An enabled custom policy with nothing selected falls back to a default
-  // reachability ping (see resolver.default_ping_template) — say so plainly
+  // reachability ping (see resolver.default_ping_template) - say so plainly
   // instead of the opaque "Custom".
   return count ? `${count} item${count === 1 ? "" : "s"}` : "Ping"
 }

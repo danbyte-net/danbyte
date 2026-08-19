@@ -36,7 +36,7 @@ function ConfigDriftPage() {
   const [tab, setTab] = useState<Tab>("config")
 
   return (
-    // Page-level tab strip over one ListPageShell per tab — the shell owns the
+    // Page-level tab strip over one ListPageShell per tab - the shell owns the
     // title/count/actions row and the loading/error triad for both tabs.
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex h-10 shrink-0 items-center border-b border-border px-4 lg:px-6">
@@ -116,7 +116,7 @@ function ConfigTab() {
         header: "Source",
         cell: ({ row }) => (
           <span className="text-xs text-muted-foreground">
-            {row.original.source || "—"}
+            {row.original.source || "-"}
           </span>
         ),
       },
@@ -126,7 +126,7 @@ function ConfigTab() {
         header: "Template",
         cell: ({ row }) => (
           <span className="text-xs text-muted-foreground">
-            {row.original.template_name || "—"}
+            {row.original.template_name || "-"}
           </span>
         ),
       },
@@ -138,7 +138,7 @@ function ConfigTab() {
             <TimeCell iso={row.original.reported_at} align="right" />
           ) : (
             <span className="block text-right text-xs text-muted-foreground">
-              —
+              -
             </span>
           ),
       },
@@ -189,7 +189,7 @@ const SNMP_STATUSES = ["drift", "in_sync", "unreachable"] as const
 
 function snmpDriftSummary(r: SnmpDriftRow): string {
   if (r.status === "unreachable") return "device unreachable"
-  if (r.drift_count === 0) return "—"
+  if (r.drift_count === 0) return "-"
   const parts: string[] = []
   if (r.by_kind.device_field) parts.push("name")
   const ifaces = r.interfaces_drifted
@@ -247,7 +247,7 @@ function SnmpTab() {
         header: "Profile",
         cell: ({ row }) => (
           <span className="text-xs text-muted-foreground">
-            {row.original.profile_name || "—"}
+            {row.original.profile_name || "-"}
           </span>
         ),
       },
@@ -259,7 +259,7 @@ function SnmpTab() {
             <TimeCell iso={row.original.polled_at} align="right" />
           ) : (
             <span className="block text-right text-xs text-muted-foreground">
-              —
+              -
             </span>
           ),
       },
@@ -289,7 +289,7 @@ function SnmpTab() {
         <EmptyState title="No SNMP-polled devices yet.">
           Add an <span className="font-mono text-[12px]">SNMP profile</span>,
           bind it to a device, and poll it from the device's{" "}
-          <span className="font-medium">Observed (SNMP)</span> card — drift
+          <span className="font-medium">Observed (SNMP)</span> card - drift
           between the observed state and Danbyte's intent shows up here.
         </EmptyState>
       ) : (

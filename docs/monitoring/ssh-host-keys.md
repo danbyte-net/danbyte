@@ -2,7 +2,7 @@
 
 Danbyte records a device's expected SSH **host key** and compares it to the key
 actually presented on port 22. A device serving a key you didn't record is
-drift — key rotation, a reinstall, or a man-in-the-middle. This is the same
+drift - key rotation, a reinstall, or a man-in-the-middle. This is the same
 observe → source-of-truth → drift model as the [certificate inventory](certificates.md),
 scoped to a device.
 
@@ -20,7 +20,7 @@ public-key line:
 {"device": "<device-id>", "public_key_line": "ssh-ed25519 AAAAC3Nza… host"}
 ```
 
-The type, blob, comment and `SHA256:…` fingerprint are parsed from the line —
+The type, blob, comment and `SHA256:…` fingerprint are parsed from the line -
 never trusted from the payload. Returns **201** for a new key, or **200** if the
 fingerprint already exists (e.g. it was already observed): the same key seen on
 the wire and declared by hand is one row, marked both `observed` and `uploaded`.
@@ -34,7 +34,7 @@ page instead).
 The SSH check captures the host key the device presents and records it as an
 `observed` key. When a device presents a key that no **uploaded** (expected) key
 of the same type matches, `ssh_host_key_mismatch` fires through the normal alert
-engine — ack, silence, renotify and every channel apply. It resolves when the
+engine - ack, silence, renotify and every channel apply. It resolves when the
 presented key matches an expected one, or once you **accept** the served key
 (`POST /api/monitoring/ssh-host-keys/{id}/accept-observed/`), which declares that
 observed key as expected. Observation never changes intent on its own.

@@ -19,23 +19,23 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 interface SpaceMapProps {
-  /** Parent prefix UUID — the map is fetched + IP/child create attach to it. */
+  /** Parent prefix UUID - the map is fetched + IP/child create attach to it. */
   prefixId: string
-  /** VRF UUID for the parent prefix — pre-fills the create page when the
+  /** VRF UUID for the parent prefix - pre-fills the create page when the
    * user clicks a free cell. NULL = Global VRF. */
   vrfId?: string | null
-  /** The prefix's own CIDR — the breadcrumb root. */
+  /** The prefix's own CIDR - the breadcrumb root. */
   rootCidr: string
 }
 
 // Visual subnet map for a prefix (IPv4 or IPv6). Each aligned subnet inside the
 // prefix gets a cell:
 //
-//   used  → rose — already covered by a child prefix; click opens that
+//   used  → rose - already covered by a child prefix; click opens that
 //                  prefix's detail page.
-//   free  → emerald — allocatable; click navigates to /prefixes/new with
+//   free  → emerald - allocatable; click navigates to /prefixes/new with
 //                     this CIDR pre-filled, or "zoom in" to map deeper.
-//   dirty → emerald with an amber pill — free, but stray IPs already
+//   dirty → emerald with an amber pill - free, but stray IPs already
 //                                        live inside the range.
 //
 // `within` is a descend stack: clicking "zoom in" on a free cell re-roots the
@@ -88,7 +88,7 @@ export function SpaceMap({ prefixId, vrfId = null, rootCidr }: SpaceMapProps) {
         {within.length > 0 && crumbs}
         <Card className="border-dashed">
           <div className="p-10 text-center text-sm text-muted-foreground">
-            Nothing to subdivide here — a map needs a prefix with room (IPv4 /30
+            Nothing to subdivide here - a map needs a prefix with room (IPv4 /30
             or shorter, IPv6 /127 or shorter).
           </div>
         </Card>
@@ -176,7 +176,7 @@ export function SpaceMap({ prefixId, vrfId = null, rootCidr }: SpaceMapProps) {
 }
 
 // A cell can be descended into (mapped deeper) only if it has room to
-// subdivide — v4 above /31, v6 above /127.
+// subdivide - v4 above /31, v6 above /127.
 function isDescendable(cidr: string): boolean {
   const c = parseCidr(cidr)
   if (!c) return false
@@ -218,7 +218,7 @@ function Breadcrumbs({
 }
 
 // Best-effort first-host extraction for a CIDR string. Splits on "/" and
-// returns the network address — the IP form will validate.
+// returns the network address - the IP form will validate.
 function firstHost(cidr: string): string {
   const slash = cidr.indexOf("/")
   return slash > 0 ? cidr.slice(0, slash) : cidr
@@ -240,7 +240,7 @@ function Cell({
   onDescend: () => void
 }) {
   if (cell.used) {
-    const title = `${cell.cidr} — used by ${cell.overlap_with.join(", ")}`
+    const title = `${cell.cidr} - used by ${cell.overlap_with.join(", ")}`
     const cls =
       "block rounded-md bg-rose-100 px-2 py-1.5 text-center font-mono text-[11px] font-medium text-rose-700 ring-1 ring-inset ring-rose-200 transition hover:bg-rose-200 hover:ring-rose-400 dark:bg-rose-950/40 dark:text-rose-300 dark:ring-rose-900 dark:hover:bg-rose-900/50 dark:hover:ring-rose-700"
     if (cell.prefix_id) {
@@ -265,8 +265,8 @@ function Cell({
   const baseCls =
     "relative cursor-pointer rounded-md bg-emerald-100 px-2 py-1.5 text-center font-mono text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200 transition hover:bg-emerald-200 hover:ring-emerald-400 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900 dark:hover:bg-emerald-900/50 dark:hover:ring-emerald-700"
   const title = cell.dirty
-    ? `${cell.cidr} — free, but ${cell.ip_count} IP${cell.ip_count === 1 ? "" : "s"} inside will be re-parented on save.`
-    : `${cell.cidr} — free`
+    ? `${cell.cidr} - free, but ${cell.ip_count} IP${cell.ip_count === 1 ? "" : "s"} inside will be re-parented on save.`
+    : `${cell.cidr} - free`
 
   const body = (
     <>

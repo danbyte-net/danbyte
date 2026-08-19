@@ -4,21 +4,21 @@ icon: lucide/rocket
 
 # Installation
 
-The quick install is a **single command** — that's the path most people want.
+The quick install is a **single command** - that's the path most people want.
 The other tabs cover building from source and a local dev checkout.
 
 ??? info "Requirements"
-    - **Linux** — for the user-level systemd services (the app itself runs
+    - **Linux** - for the user-level systemd services (the app itself runs
       anywhere Django does).
     - **PostgreSQL 15+** (17 or 18 recommended) and **Redis**.
-    - Everything else — Python 3.13, Node, all dependencies — is **bundled** with
+    - Everything else - Python 3.13, Node, all dependencies - is **bundled** with
       the quick installer, so a fresh box needs nothing else.
 
 ## Install
 
 === "Quick (recommended)"
 
-    Every release ships a **self-contained bundle** — Python, Node, all
+    Every release ships a **self-contained bundle** - Python, Node, all
     dependencies and the prebuilt frontend baked in. On a fresh Ubuntu/Debian
     box, **one line** does everything:
 
@@ -28,7 +28,7 @@ The other tabs cover building from source and a local dev checkout.
 
     The bootstrap script resolves the **latest** release automatically (so
     there's no version to fill in), downloads the offline bundle, **verifies its
-    published SHA-256**, unpacks it, and runs the bundled installer — everything
+    published SHA-256**, unpacks it, and runs the bundled installer - everything
     after `--` is passed straight through to it. Pin a specific version with
     `DANBYTE_VERSION`:
 
@@ -40,12 +40,12 @@ The other tabs cover building from source and a local dev checkout.
     all secrets, sets up the database, starts the services, writes logs to
     `/var/log/danbyte`, and puts nginx + TLS in front.
 
-    When it finishes it prints the **admin password** — open
+    When it finishes it prints the **admin password** - open
     `https://danbyte.example.com/`, sign in as `admin`, and change it under
     **User → Preferences**.
 
     ??? note "Manual bundle download (airgapped / offline)"
-        Prefer to fetch the bundle yourself — e.g. to carry it onto an airgapped
+        Prefer to fetch the bundle yourself - e.g. to carry it onto an airgapped
         host? Download the release asset, verify it, and run its bundled
         installer. Replace `<version>` with the latest release number:
 
@@ -60,11 +60,11 @@ The other tabs cover building from source and a local dev checkout.
         ```
 
         The bundle needs **no** PyPI / npm / python.org access. Only the OS
-        packages it builds on — `postgresql`, `redis-server`, `nginx` — come from
+        packages it builds on - `postgresql`, `redis-server`, `nginx` - come from
         your distro; on an airgapped host, point `apt` at a local mirror or
         pre-install them.
 
-    ??? info "All installer options — flags, environment variables & what it does"
+    ??? info "All installer options - flags, environment variables & what it does"
 
         The one-liner and the manual bundle run the **same** installer
         (`install.sh` inside the bundle). Everything after `--` in the one-liner
@@ -81,30 +81,30 @@ The other tabs cover building from source and a local dev checkout.
 
         | Flag | What it does | Default |
         |---|---|---|
-        | `--host <name>` | Hostname/IP the server answers on. Sets `ALLOWED_HOSTS` (`<host>,127.0.0.1,localhost`), the nginx `server_name`, the TLS cert name, and the admin email (`admin@<host>`). | — (set it) |
-        | `--host=<name>` | Same, `=` form. | — |
+        | `--host <name>` | Hostname/IP the server answers on. Sets `ALLOWED_HOSTS` (`<host>,127.0.0.1,localhost`), the nginx `server_name`, the TLS cert name, and the admin email (`admin@<host>`). | - (set it) |
+        | `--host=<name>` | Same, `=` form. | - |
         | `--service-home <path>` | Install location (app lands in `<path>/danbyte`). On a re-run it **auto-detects** the existing install, so you rarely set this. | `/opt/danbyte` |
-        | `--no-nginx` | Don't install/configure nginx or TLS — for running your own reverse proxy. Also sets `DANBYTE_HTTPS=False` so Secure cookies/HSTS don't break login without a TLS terminator. | nginx **on** |
+        | `--no-nginx` | Don't install/configure nginx or TLS - for running your own reverse proxy. Also sets `DANBYTE_HTTPS=False` so Secure cookies/HSTS don't break login without a TLS terminator. | nginx **on** |
         | `--unattended`, `-y` | Skip interactive confirmation prompts (scripted / CI installs). | prompts on |
 
         **Environment variables** (set before the command; alternative to flags)
 
         | Variable | Same as / purpose | Default |
         |---|---|---|
-        | `DANBYTE_HOST` | `--host` | — |
+        | `DANBYTE_HOST` | `--host` | - |
         | `SERVICE_USER` | OS account the app runs as | `danbyte` |
         | `SERVICE_HOME` | `--service-home` | `/opt/danbyte` |
         | `DANBYTE_LOG_DIR` | log directory | `/var/log/danbyte` |
-        | `DANBYTE_VERSION` | **bootstrap only** — pin a specific release instead of the latest (put `DANBYTE_VERSION=0.9.10` right before `bash` in the one-liner) | latest |
+        | `DANBYTE_VERSION` | **bootstrap only** - pin a specific release instead of the latest (put `DANBYTE_VERSION=0.9.10` right before `bash` in the one-liner) | latest |
 
         **What the installer does**, in order:
 
-        1. Installs OS services from your distro — `postgresql`, `redis-server`, and (unless `--no-nginx`) `nginx`.
+        1. Installs OS services from your distro - `postgresql`, `redis-server`, and (unless `--no-nginx`) `nginx`.
         2. Creates the dedicated **`danbyte`** service user (rootless), home = the install path.
         3. Deploys the app to `<service-home>/danbyte` and builds the venv from the bundle's vendored CPython 3.13 + wheelhouse (no internet needed).
-        4. **Generates secrets** with Python's CSPRNG and writes a `chmod 600`, service-user-owned `.env` — `DJANGO_SECRET_KEY` + `MONITORING_SECRET_KEY` (~400-bit), a 24-char DB password, and a 20-char admin password.
+        4. **Generates secrets** with Python's CSPRNG and writes a `chmod 600`, service-user-owned `.env` - `DJANGO_SECRET_KEY` + `MONITORING_SECRET_KEY` (~400-bit), a 24-char DB password, and a 20-char admin password.
         5. Creates the PostgreSQL role + database, runs migrations, and bootstraps the `admin` superuser.
-        6. Installs the systemd units (web, workers, websocket, docs, timers), writes logs to `/var/log/danbyte`, and — unless `--no-nginx` — puts nginx + TLS in front.
+        6. Installs the systemd units (web, workers, websocket, docs, timers), writes logs to `/var/log/danbyte`, and - unless `--no-nginx` - puts nginx + TLS in front.
         7. Prints the generated **admin password** at the end.
 
         !!! note "PostgreSQL and Redis are native, not containers"
@@ -112,7 +112,7 @@ The other tabs cover building from source and a local dev checkout.
             A production install uses the distro's `postgresql` and
             `redis-server` and creates the role and database with `psql`. The
             `docker-compose.yml` in the repo and the `danbyte-infra` unit that
-            runs it are **development only** — they are never installed on a
+            runs it are **development only** - they are never installed on a
             production host. If you already run PostgreSQL, the installer uses
             it: point `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` /
             `DB_PASSWORD` in `.env` at your server and re-run
@@ -147,7 +147,7 @@ The other tabs cover building from source and a local dev checkout.
         **After first login:** change the admin password (User → Preferences) and
         remove `DJANGO_SUPERUSER_PASSWORD` from `.env`. The long machine keys
         (`DJANGO_SECRET_KEY`, `MONITORING_SECRET_KEY`, `DB_PASSWORD`) stay in
-        `.env` permanently — don't change `MONITORING_SECRET_KEY` once credentials
+        `.env` permanently - don't change `MONITORING_SECRET_KEY` once credentials
         are stored or existing ciphertext becomes unreadable.
 
 === "From source"
@@ -166,19 +166,19 @@ The other tabs cover building from source and a local dev checkout.
     sudo install -d -o danbyte -g danbyte -m 755 /var/log/danbyte
     ```
 
-    **2 · Secrets — generated in your browser.**
+    **2 · Secrets - generated in your browser.**
 
     !!! tip "The blocks below are pre-filled with secrets generated on this page"
         Every secret in the steps below (`DJANGO_SECRET_KEY`,
         `MONITORING_SECRET_KEY`, the database password, the admin password) is
-        **randomly generated in your browser** when this page loads — so no two
+        **randomly generated in your browser** when this page loads - so no two
         installs share a "default". The same value is reused consistently across
         steps (the DB password in the SQL matches the one in your `.env`), so you
         can copy each block as-is. Hit **↻ Regenerate** for a fresh set, and
-        **store them somewhere safe** — you can rotate any of them later (see
+        **store them somewhere safe** - you can rotate any of them later (see
         [Rotating secrets](#rotating-secrets)).
 
-    **3 · Database** — create the role + database (the password is your
+    **3 · Database** - create the role + database (the password is your
     generated one):
 
     ```bash
@@ -197,7 +197,7 @@ The other tabs cover building from source and a local dev checkout.
     VIRTUAL_ENV=$PWD/.venv uv pip install -r requirements.txt
     ```
 
-    **5 · `.env`.** Write `~/danbyte/.env` — the secret key, monitoring key, DB
+    **5 · `.env`.** Write `~/danbyte/.env` - the secret key, monitoring key, DB
     password, and admin password below are pre-filled with your generated
     values. Set `ALLOWED_HOSTS` to your server's hostname or IP. `DEBUG=False` in
     production; `MONITORING_SECRET_KEY` encrypts stored SNMP/SSH/SMTP/LDAP
@@ -244,21 +244,21 @@ The other tabs cover building from source and a local dev checkout.
     ```
 
     Open `https://danbyte.example.com/` and sign in as `admin`. (Self-signed
-    cert by default — swap in a real one, e.g. Let's Encrypt, for a public host.)
+    cert by default - swap in a real one, e.g. Let's Encrypt, for a public host.)
 
     ??? note "The services (and why there are a few)"
         Danbyte runs as a handful of small user-level systemd units:
 
         | Unit | Serves |
         |---|---|
-        | `danbyte-web` | HTTP — the Django app (gunicorn) on `127.0.0.1:8000` |
+        | `danbyte-web` | HTTP - the Django app (gunicorn) on `127.0.0.1:8000` |
         | `danbyte-ws` | WebSockets / presence (daphne) on `127.0.0.1:8002` |
         | `danbyte-frontend-prod` | the built SSR frontend (node) on `127.0.0.1:3000` |
-        | `danbyte-workers` | background jobs — scans, deploys (RQ) |
+        | `danbyte-workers` | background jobs - scans, deploys (RQ) |
         | `danbyte-*` timers | drift dispatch, cleanup, materialise, … |
 
         gunicorn serves all plain HTTP; daphne serves **only** `/ws/`. Keeping the
-        ASGI server off the HTTP path is deliberate — putting it in front of
+        ASGI server off the HTTP path is deliberate - putting it in front of
         everything wedges ordinary requests.
 
     ??? tip "Shortcut: `make service-user`"
@@ -300,7 +300,7 @@ The other tabs cover building from source and a local dev checkout.
 
 ## Advanced
 
-Reference material — you don't need any of this for a first install.
+Reference material - you don't need any of this for a first install.
 
 ### Logs
 
@@ -309,7 +309,7 @@ the app writes log files there **in addition to** the systemd journal:
 
 | Where | What |
 |---|---|
-| `/var/log/danbyte/danbyte.log` | Application log — Django, workers, monitoring/LDAP (rotated 10 MB × 5) |
+| `/var/log/danbyte/danbyte.log` | Application log - Django, workers, monitoring/LDAP (rotated 10 MB × 5) |
 | `/var/log/danbyte/gunicorn-{access,error}.log` | The web server's request + error logs |
 | `journalctl --user -fu danbyte-web` | Per-service process output, still in the journal |
 
@@ -320,9 +320,9 @@ the app writes log files there **in addition to** the systemd journal:
 
 Any of these can change later without a reinstall:
 
-- **Admin password** — **User → Preferences** (or `manage.py changepassword`).
-- **`DJANGO_SECRET_KEY`** — edit `.env`, `make restart` (signs everyone out).
-- **DB password** — `ALTER ROLE danbyte PASSWORD '…';`, update `.env`, `make restart`.
+- **Admin password** - **User → Preferences** (or `manage.py changepassword`).
+- **`DJANGO_SECRET_KEY`** - edit `.env`, `make restart` (signs everyone out).
+- **DB password** - `ALTER ROLE danbyte PASSWORD '…';`, update `.env`, `make restart`.
 
 ### Security checklist
 
@@ -343,8 +343,8 @@ Any of these can change later without a reinstall:
 | `DJANGO_SECRET_KEY` | `dev-key-change-in-prod` | **Required when `DEBUG=False`** |
 | `DEBUG` | `True` | Disable in prod |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Frontend origin(s) |
-| `DANBYTE_LOG_DIR` | — (console only) | Writable dir for file logs, e.g. `/var/log/danbyte` |
-| `DJANGO_SUPERUSER_USERNAME` / `_EMAIL` / `_PASSWORD` | — | `bootstrap` creates this admin when set |
+| `DANBYTE_LOG_DIR` | - (console only) | Writable dir for file logs, e.g. `/var/log/danbyte` |
+| `DJANGO_SUPERUSER_USERNAME` / `_EMAIL` / `_PASSWORD` | - | `bootstrap` creates this admin when set |
 
 See `danbyte/settings.py` for the full list.
 

@@ -14,7 +14,7 @@ import { useRegisterAddActions } from "@/components/device-add-actions"
 import { ComponentDeleteDialog } from "@/components/component-delete-dialog"
 import { useMe } from "@/lib/use-me"
 
-// Both console tables share a row shape — only the header noun differs.
+// Both console tables share a row shape - only the header noun differs.
 function consoleCols({
   header,
   canEdit,
@@ -43,7 +43,7 @@ function consoleCols({
         row.original.type ? (
           <span className="text-xs">{row.original.type_display}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -53,7 +53,7 @@ function consoleCols({
         row.original.speed != null ? (
           <span className="num text-xs">{row.original.speed} baud</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -68,7 +68,7 @@ function consoleCols({
         row.original.description ? (
           <span className="text-xs">{row.original.description}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -191,7 +191,7 @@ export function DeviceConsolePane({ deviceId }: { deviceId: string }) {
         ) : portRows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No console ports. A console port is the device's out-of-band
-            management jack — cable it to a console server port.
+            management jack - cable it to a console server port.
           </p>
         ) : (
           <DataTable
@@ -235,7 +235,7 @@ export function DeviceConsolePane({ deviceId }: { deviceId: string }) {
         ) : serverRows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No console server ports. Console server ports are the terminal
-            server side — each one cables out to a device's console port.
+            server side - each one cables out to a device's console port.
           </p>
         ) : (
           <DataTable

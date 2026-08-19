@@ -166,7 +166,7 @@ function Body({ l2vpn: v }: { l2vpn: L2VPN }) {
   )
 }
 
-/** Route-target names, one per line, monospace — or a dash when empty. */
+/** Route-target names, one per line, monospace - or a dash when empty. */
 function RtList({ rts }: { rts: { id: string; name: string }[] }) {
   if (rts.length === 0) return dash
   return (
@@ -234,7 +234,7 @@ function L2vpnOverview({ l2vpn: v }: { l2vpn: L2VPN }) {
   )
 }
 
-/** Endpoint cell — a VLAN badge ("vid · name", linked to the VLAN),
+/** Endpoint cell - a VLAN badge ("vid · name", linked to the VLAN),
  * device:interface (linked to the interface), or VM:vm-interface (linked to
  * the VM). */
 function EndpointCell({ termination: t }: { termination: L2VPNTermination }) {
@@ -270,7 +270,7 @@ function terminationKind(t: L2VPNTermination): string {
   if (t.vlan) return "VLAN"
   if (t.interface) return "Interface"
   if (t.vm_interface) return "VM interface"
-  return "—"
+  return "-"
 }
 
 function TerminationsTab({

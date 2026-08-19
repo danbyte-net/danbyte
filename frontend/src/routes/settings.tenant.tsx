@@ -196,7 +196,7 @@ function TenantGeneralPage() {
 
       <OverrideCard
         title="Date & time"
-        description="How dates and times render for this tenant's users — each user can still pick their own under Preferences."
+        description="How dates and times render for this tenant's users - each user can still pick their own under Preferences."
         overridden={form.override_datetime}
         onOverriddenChange={(v) => set("override_datetime", v)}
         summary={

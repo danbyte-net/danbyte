@@ -178,7 +178,7 @@ function WindowsServersPage() {
       {rows.length === 0 && query.data && !q ? (
         <EmptyState title="No Windows servers connected.">
           Connect a Windows Server over WinRM to sync its DHCP scopes and
-          reservations — and DNS zones — into Danbyte. The server needs nothing
+          reservations - and DNS zones - into Danbyte. The server needs nothing
           installed; Danbyte talks to the built-in PowerShell modules.
         </EmptyState>
       ) : (
@@ -205,7 +205,7 @@ function WindowsServersPage() {
             <AlertDialogTitle>Delete {deleting?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
               Removes the connection and its DHCP/DNS links. Prefixes, IP addresses and
-              records it created stay in IPAM — they simply stop syncing.
+              records it created stay in IPAM - they simply stop syncing.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

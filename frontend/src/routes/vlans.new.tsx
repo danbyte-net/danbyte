@@ -29,7 +29,7 @@ function NewVlanPage() {
       title={cloning ? "Clone VLAN" : "Add VLAN"}
       subtitle={
         cloning
-          ? "Site, group and description carried over — pick a new VID and name."
+          ? "Site, group and description carried over - pick a new VID and name."
           : "Register a new VLAN in the active tenant."
       }
     >

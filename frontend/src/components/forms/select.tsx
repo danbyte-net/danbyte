@@ -20,7 +20,7 @@ export interface FormSelectProps extends Base {
   value: string | null
   onChange: (v: string | null) => void
   options: SelectOption[]
-  /** When true, prepends a "(keep)" sentinel — used in bulk-edit dialogs. */
+  /** When true, prepends a "(keep)" sentinel - used in bulk-edit dialogs. */
   allowKeep?: boolean
   /** When set, prepends a NULL sentinel with this label (e.g. "Global"). */
   noneLabel?: string
@@ -28,13 +28,13 @@ export interface FormSelectProps extends Base {
   disabled?: boolean
 }
 
-// Internal sentinel — the Select primitive disallows the empty string as a
+// Internal sentinel - the Select primitive disallows the empty string as a
 // SelectItem value; it maps back to null on change.
 const NONE = "__none__"
 
 /** The "(keep)" row's value. With `allowKeep`, initialise your state to this
  * and treat it as "don't change the field" when building the payload. `null`
- * then unambiguously means "clear to none" — previously both rows collapsed
+ * then unambiguously means "clear to none" - previously both rows collapsed
  * to null, which made clearing a field in a bulk edit impossible (#218). */
 export const KEEP_VALUE = "__keep__"
 

@@ -20,7 +20,7 @@ describe("legendContent", () => {
   it("keys only the tiers the drawn ports actually wear", () => {
     const c = legendContent({ ports: [cabled("1G"), cabled("10G")] })
     expect([...c.tiers].sort()).toEqual(["10G", "1G"])
-    // Not "the whole ramp minus what's missing" — a panel of two speeds keys
+    // Not "the whole ramp minus what's missing" - a panel of two speeds keys
     // two swatches.
     expect(c.tiers.size).toBe(2)
   })
@@ -55,7 +55,7 @@ describe("legendContent", () => {
   })
 
   it("does not call an admin-down port 'down'", () => {
-    // Admin-down is intent, not a fault — it gets the neutral zinc, and the
+    // Admin-down is intent, not a fault - it gets the neutral zinc, and the
     // red "down" swatch would be a lie.
     const c = legendContent({
       observed: new Map([
@@ -111,7 +111,7 @@ describe("legendContent", () => {
     expect(c.trunk).toBe(false)
   })
 
-  it("keys only the occupancies present — a device type is all empty", () => {
+  it("keys only the occupancies present - a device type is all empty", () => {
     // On a TYPE there is no device, so every bay is definitionally unoccupied.
     const t = legendContent({
       bays: [{ occupied: false }, { occupied: false }],
@@ -184,7 +184,7 @@ describe("legendSignature", () => {
 })
 
 describe("mergeLegend", () => {
-  it("unions several panels — one legend under a whole stack", () => {
+  it("unions several panels - one legend under a whole stack", () => {
     const merged = mergeLegend([
       legendContent({ ports: [cabled("1G")] }),
       legendContent({ ports: [{ ...cabled("10G"), mode: "tagged" }] }),

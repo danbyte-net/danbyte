@@ -1,6 +1,6 @@
 """Smoke tests for the install/seed flow (issue #148).
 
-Runs the documented commands on a clean (test) DB and asserts they complete —
+Runs the documented commands on a clean (test) DB and asserts they complete -
 so the seeders never silently drift from the models again. Covers: bootstrap
 creating a default tenant + the built-in Status catalog, and both demo seeders
 resolving status **names** to the Status FK (Prefix.status is no longer a
@@ -24,7 +24,7 @@ class BootstrapTests(TestCase):
         _run("bootstrap")
         tenant = Tenant.objects.first()
         self.assertIsNotNone(tenant)  # a default tenant now exists
-        # The catalog features rely on — resolved from STATUS_MODEL_VALUES.
+        # The catalog features rely on - resolved from STATUS_MODEL_VALUES.
         for slug in ("active", "connected", "container", "reserved", "offline"):
             self.assertTrue(
                 Status.objects.filter(tenant=tenant, slug=slug).exists(),
@@ -51,7 +51,7 @@ class SeedDemoTests(TestCase):
 
 class SeedDemo172Tests(TestCase):
     def test_bootstraps_its_own_tenant_and_resolves_statuses(self):
-        # No tenant exists yet — the seeder must create one (issue: it aborted).
+        # No tenant exists yet - the seeder must create one (issue: it aborted).
         _run("seed_demo_172")
         root = Prefix.objects.filter(cidr="172.16.0.0/16").first()
         self.assertIsNotNone(root)

@@ -48,7 +48,7 @@ export type QuickAddField =
 
 /**
  * "+" button beside an FK picker that opens a small dialog to create the
- * related object inline — no navigating away to the real create page
+ * related object inline - no navigating away to the real create page
  * (inline quick-add). On success it calls `onCreated(newObject)` so the
  * caller can select the new row and refresh its options.
  */

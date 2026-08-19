@@ -32,7 +32,7 @@ function PluginRoute() {
     return (
       <div className="p-6">
         <EmptyState title="Page not found">
-          This plugin page isn't available — the plugin may be disabled for this
+          This plugin page isn't available - the plugin may be disabled for this
           tenant.
         </EmptyState>
       </div>

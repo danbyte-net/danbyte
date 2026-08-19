@@ -1,13 +1,13 @@
 """LLDP-derived "ghost" topology edges (#84).
 
 The cabling graph (``/api/topology/``) shows physical cables. SNMP/LLDP also
-tells us which devices are *actually* adjacent — so where two devices are LLDP
+tells us which devices are *actually* adjacent - so where two devices are LLDP
 neighbours but have **no cable** between them, we surface a dashed **ghost** edge.
 An operator can then materialise a ghost into a real ``Cable`` (picking the cable
 type, since SNMP can't report the physical connector).
 
 Matching an LLDP neighbour (a remote ``sysName``) to a Danbyte device is by name
-*or* the device's observed ``sys_name`` — so it still lines up before you accept
+*or* the device's observed ``sys_name`` - so it still lines up before you accept
 any name drift.
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ def _norm(s) -> str:
 
 
 def _cabled_pairs(tenant, device_ids) -> set:
-    """Set of ``frozenset({device_id, device_id})`` that already share a cable —
+    """Set of ``frozenset({device_id, device_id})`` that already share a cable -
     so we never draw a ghost over a real one."""
     pairs: set = set()
     cables = Cable.objects.filter(tenant=tenant).prefetch_related(
@@ -63,7 +63,7 @@ def ghost_graph_for_device(tenant, device, candidates_qs=None) -> dict:
     LLDP-neighbour devices, with dashed ghost edges between them (no cable). Used
     by the device-detail mini-map so it isn't empty when nothing is cabled yet.
 
-    ``candidates_qs`` bounds which devices a neighbour can resolve to — pass the
+    ``candidates_qs`` bounds which devices a neighbour can resolve to - pass the
     caller's RBAC-viewable Device queryset so a Site-A user's ghost graph never
     surfaces a Site-B neighbour node. Defaults to every device in the tenant."""
     snmp = DeviceSnmp.objects.filter(tenant=tenant, device=device).first()

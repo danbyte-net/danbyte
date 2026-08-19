@@ -1,4 +1,4 @@
-"""Standalone monitoring endpoints respect RBAC, not just authentication —
+"""Standalone monitoring endpoints respect RBAC, not just authentication -
 a tenant member without ipaddress-view can't run/read checks. (Secops #4.)"""
 from django.contrib.auth.models import User
 from rest_framework.test import APITestCase
@@ -36,7 +36,7 @@ class MonitoringViewRbacTests(APITestCase):
 
     def test_check_now_denied_without_ip_view(self):
         # Row-scoped fetch: an IP the caller can't view 404s (non-leaking) rather
-        # than 403 — the same contract restrict_for_view uses across the app, so
+        # than 403 - the same contract restrict_for_view uses across the app, so
         # existence isn't confirmed to someone without access.
         self.assertEqual(
             self.client.post(f"/api/monitoring/ips/{self.ip.id}/check-now/").status_code,

@@ -1,6 +1,6 @@
 """OutpostRelease is a deployment-global resource: a tenant-scoped admin must
 not be able to list/upload/select the software pushed to every outpost.
-(Secops audit finding #2 — supply-chain escalation.)"""
+(Secops audit finding #2 - supply-chain escalation.)"""
 from django.contrib.auth.models import User
 from rest_framework.test import APITestCase
 
@@ -24,7 +24,7 @@ class OutpostReleaseRbacTests(APITestCase):
     def test_tenant_scoped_admin_denied(self):
         u = User.objects.create_user("ta", password="x")
         UserProfile.objects.create(user=u).tenants.add(self.tenant)
-        # A tenant-scoped change-user grant — passes can_manage_admin(tenant)
+        # A tenant-scoped change-user grant - passes can_manage_admin(tenant)
         # but must NOT pass the deployment gate on a global resource.
         perm = ObjectPermission.objects.create(
             name="tenant admin", object_types=["user"], actions=["change"]

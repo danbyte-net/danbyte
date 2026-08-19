@@ -1,4 +1,4 @@
-"""A6 — time-weighted uptime / SLA computation."""
+"""A6 - time-weighted uptime / SLA computation."""
 from __future__ import annotations
 
 from datetime import timedelta

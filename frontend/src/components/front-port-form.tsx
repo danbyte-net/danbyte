@@ -26,7 +26,7 @@ import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 
 export interface FrontPortFormProps {
   port?: FrontPort
-  /** Device this port belongs to (locked — ports are added from a device). */
+  /** Device this port belongs to (locked - ports are added from a device). */
   deviceId: string
   onSaved: (p: FrontPort) => void
   onCancel: () => void
@@ -135,7 +135,7 @@ export function FrontPortForm({
           id: port!.id,
           payload,
         }).then((saved) => ({ saved, count: 1 }))
-      // A range fans out, and each port takes the NEXT rear strand — front
+      // A range fans out, and each port takes the NEXT rear strand - front
       // ports are the one component where the range has to advance a second
       // field, because two of them may not share a strand. "Front[1-24]" from
       // strand 1 wires a 24-strand trunk straight through, which is how a
@@ -168,7 +168,7 @@ export function FrontPortForm({
     },
     onSuccess: ({ saved, count }) => {
       qc.invalidateQueries({ queryKey: ["device-front-ports", deviceId] })
-      // A front port consumes a rear strand — refresh rear views too.
+      // A front port consumes a rear strand - refresh rear views too.
       qc.invalidateQueries({ queryKey: ["device-rear-ports", deviceId] })
       toast.success(
         isEdit
@@ -197,7 +197,7 @@ export function FrontPortForm({
     >
       {noRearPorts && (
         <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-[13px] text-muted-foreground">
-          Add a rear port first — a front port maps to a rear-port strand.
+          Add a rear port first - a front port maps to a rear-port strand.
         </p>
       )}
       <FormText

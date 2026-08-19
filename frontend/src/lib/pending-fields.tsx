@@ -15,7 +15,7 @@ import {
  * "This value might change soon", marked on the individual field.
  *
  * A planned change names the fields it touches, so the field itself is where the
- * warning belongs — a block of text above the form makes the reader hunt for
+ * warning belongs - a block of text above the form makes the reader hunt for
  * which input it means. `Field` and `KvCard` consult this context and render a
  * small calendar-clock beside the affected label; everything else is unaffected
  * and pays nothing.
@@ -23,7 +23,7 @@ import {
  * Matching is by **label**, because that is the only identifier a shared `Field`
  * has. The server's diff labels come from the model's verbose_name (or the
  * curated editable-field registry), which is what form labels are written from,
- * so they line up. A miss simply means no marker — never a wrong one.
+ * so they line up. A miss simply means no marker - never a wrong one.
  */
 
 export interface PendingMark {
@@ -38,14 +38,14 @@ export interface PendingMark {
 const PendingFieldsContext = createContext<Map<string, PendingMark>>(new Map())
 
 // "Position (U)" and "Position" are the same field: the registry label is the
-// bare noun, form labels may carry a parenthetical unit — strip it to match.
+// bare noun, form labels may carry a parenthetical unit - strip it to match.
 const norm = (label: string) =>
   label
     .replace(/\s*\([^)]*\)\s*$/, "")
     .trim()
     .toLowerCase()
 
-/** Mount on any page that renders an object's fields — an edit form, a detail
+/** Mount on any page that renders an object's fields - an edit form, a detail
  *  Overview. Renders nothing itself. */
 export function PendingFieldsProvider({
   objectType,
@@ -106,7 +106,7 @@ export function PendingFieldMark({
   label: string
   className?: string
 }) {
-  // Context only — no query hook here. `Field` renders this for every field in
+  // Context only - no query hook here. `Field` renders this for every field in
   // the app, so an unmarked field must cost one useContext and nothing else
   // (and must not drag a QueryClient requirement into the shared form kit).
   const mark = usePendingField(label)

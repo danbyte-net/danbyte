@@ -28,7 +28,7 @@ function slugify(name: string): string {
     .slice(0, 120)
 }
 
-/** Create or edit a board — name, description, tags. The slug is derived from
+/** Create or edit a board - name, description, tags. The slug is derived from
  * the name on create and left alone on edit (it's in nobody's URLs, but stable
  * identifiers shouldn't churn on a rename). */
 export function BoardDialog({
@@ -109,7 +109,7 @@ export function BoardDialog({
           </div>
           {!isEdit && (
             <p className="text-[11px] text-muted-foreground">
-              New boards start with Backlog, To do, In progress and Done —
+              New boards start with Backlog, To do, In progress and Done -
               rename, recolor or replace them under Statuses.
             </p>
           )}

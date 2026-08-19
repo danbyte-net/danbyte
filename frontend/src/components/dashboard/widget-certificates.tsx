@@ -10,7 +10,7 @@ import { ExpiryBadge } from "@/components/columns/certificate-columns"
 // Dashboard widget: certificates expiring within 30 days, already-expired
 // included, most urgent first. `expiring_in_days=30` filters not_after within
 // the window (past dates included), and the API orders by not_after ascending,
-// so the list arrives exactly in urgency order — no client-side sort needed.
+// so the list arrives exactly in urgency order - no client-side sort needed.
 const COLUMNS: SimpleColumn<Certificate>[] = [
   {
     id: "subject",
@@ -82,7 +82,7 @@ export function ExpiringCertsWidget() {
   )
 }
 
-// Already-past-expiry only — the failures, not the warnings. `expired=1` filters
+// Already-past-expiry only - the failures, not the warnings. `expired=1` filters
 // to not_after ≤ now; the list still arrives soonest-first (most-overdue).
 export function ExpiredCertsWidget() {
   return (

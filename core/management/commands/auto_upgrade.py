@@ -1,4 +1,4 @@
-"""auto_upgrade — scheduled check + (windowed) self-upgrade to the latest release.
+"""auto_upgrade - scheduled check + (windowed) self-upgrade to the latest release.
 
 Run on a timer (see services/danbyte-auto-upgrade.*). No-op unless auto-update is
 enabled in Deployment settings; respects the maintenance window (blank = anytime).

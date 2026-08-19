@@ -4,7 +4,7 @@ icon: lucide/notebook-pen
 
 # Journals
 
-A journal is where you write your own timestamped notes about an object — context,
+A journal is where you write your own timestamped notes about an object - context,
 decisions, who-did-what-and-why. It's the human counterpart to the automatic
 [change log](change-log.md): the change log records *what changed*; the journal
 records *what people want to say* about it.
@@ -13,7 +13,7 @@ records *what people want to say* about it.
 
 1. Open the object (a prefix, IP, device, …) and go to its **Journal** tab.
 2. Type your note in the box at the top.
-3. Pick a **kind** to colour the note — **info**, **success**, **warning**, or
+3. Pick a **kind** to colour the note - **info**, **success**, **warning**, or
    **danger**.
 4. Click **Add note**.
 
@@ -30,10 +30,10 @@ any. The edit and delete controls only show on notes you're allowed to change.
 
 ## Which objects have a journal
 
-The operational objects that have a detail page with history — **prefixes, IP
-addresses, devices, sites, VLANs, VRFs, cables, and interfaces** — each have a
+The operational objects that have a detail page with history - **prefixes, IP
+addresses, devices, sites, VLANs, VRFs, cables, and interfaces** - each have a
 Journal tab next to their History.
 
 ## Related
 
-- [Change log](change-log.md) — the automatic record of changes.
+- [Change log](change-log.md) - the automatic record of changes.

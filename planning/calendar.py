@@ -1,14 +1,14 @@
 """One window onto everything that is scheduled.
 
 A board answers "what is the team working on". The calendar answers a different
-question — *when is work happening across the organisation* — so it reads across
+question - *when is work happening across the organisation* - so it reads across
 boards by default and returns the three dated things planning knows about:
 
 - **tasks**, which occupy a span (``start_date`` → ``due_date``) or a single day,
 - **milestones**, which are a single dated target a board rolls up to,
 - **planned changes**, whose ``effective_date`` is the day an object is meant to
-  change — the entries an operator most wants to see before agreeing to work,
-- **maintenance & outage events** (issue #20) — provider windows and live
+  change - the entries an operator most wants to see before agreeing to work,
+- **maintenance & outage events** (issue #20) - provider windows and live
   outages. These are *not* board-scoped: a carrier's window matters to whoever
   is scheduling work no matter which board they look at, so the board filter
   deliberately leaves them in place.
@@ -66,7 +66,7 @@ def _window(params) -> tuple[date, date]:
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def calendar(request):
-    """``?start=&end=[&board=]`` — everything scheduled inside a date window."""
+    """``?start=&end=[&board=]`` - everything scheduled inside a date window."""
     tenant = _get_active_tenant(request)
     if tenant is None:
         raise PermissionDenied("No active tenant selected.")
@@ -79,7 +79,7 @@ def calendar(request):
 
 
 def calendar_payload(request, start: date, end: date, board=None) -> dict:
-    """The calendar's data for one window — shared by the JSON view and the
+    """The calendar's data for one window - shared by the JSON view and the
     iCal feed, so both see exactly the same scoped rows."""
     # Reuse the list viewsets' own querysets so row constraints, site scoping
     # and tenant filtering are applied exactly once, in one place.
@@ -152,7 +152,7 @@ def _milestone_entry(milestone: Milestone) -> dict:
 
 def _change_entries(queryset, start: date, end: date) -> list[dict]:
     """Planned changes land on their effective date, which is the change's own
-    ``planned_for`` or — when it has none — the task's due date. That fallback
+    ``planned_for`` or - when it has none - the task's due date. That fallback
     is a Python property rather than a column, so the window is applied here on
     a deliberately narrow pre-filter."""
     horizon = (start - timedelta(days=1), end + timedelta(days=1))
@@ -181,7 +181,7 @@ def _change_entries(queryset, start: date, end: date) -> list[dict]:
 
 
 def _event_entries(request, start: date, end: date) -> list[dict]:
-    """Maintenance/outage windows overlapping the window — read through the
+    """Maintenance/outage windows overlapping the window - read through the
     maintenance viewset's queryset so its tenant scoping applies unchanged."""
     from monitoring.maintenance_api import MaintenanceEventViewSet
 

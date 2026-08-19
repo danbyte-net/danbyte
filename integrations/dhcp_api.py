@@ -1,5 +1,5 @@
 """Windows DHCP sync API: scopes (read + per-scope lease opt-in),
-reservations (bidirectional — writes push to the server), leases (read-only).
+reservations (bidirectional - writes push to the server), leases (read-only).
 
 Tenanting rides the connection: every queryset filters through
 ``connection__tenant``, and reservation writes re-validate that the target
@@ -61,9 +61,9 @@ class DhcpScopeSerializer(serializers.ModelSerializer):
 class DhcpScopeWriteSerializer(serializers.ModelSerializer):
     """Author a scope. Two flavours:
 
-    * ``connection`` set — created on that Windows server first
+    * ``connection`` set - created on that Windows server first
       (``Add-DhcpServerv4Scope``); the row only saves once accepted.
-    * ``connection`` null — a **local** scope owned by Danbyte, for
+    * ``connection`` null - a **local** scope owned by Danbyte, for
       deployments without a synced DHCP server. No push; pure documentation.
 
     The subnet comes from an **existing prefix** (``prefix``) or a typed CIDR
@@ -99,7 +99,7 @@ class DhcpScopeWriteSerializer(serializers.ModelSerializer):
         subnet = (attrs.get("subnet") or "").strip()
         if bool(subnet) == bool(attrs.get("prefix")):
             raise serializers.ValidationError(
-                {"subnet": "Pick an existing prefix or enter a subnet — one of "
+                {"subnet": "Pick an existing prefix or enter a subnet - one of "
                            "the two."}
             )
         if subnet:
@@ -142,7 +142,7 @@ class DhcpScopeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     DELETE removes a pushed scope on its server too."""
 
     integration_keys = ("dhcp",)
-    # Tenant scoping is bimodal (see get_queryset) — synced scopes ride their
+    # Tenant scoping is bimodal (see get_queryset) - synced scopes ride their
     # connection's tenant, local scopes carry tenant directly.
     tenant_field = "connection__tenant"
     http_method_names = ["get", "post", "patch", "delete"]
@@ -266,7 +266,7 @@ class DhcpScopeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         from api.views import _get_active_tenant
         from auth_api.drf import restrict_for_view
 
-        # Bimodal tenant scope — the base class can only follow one traversal.
+        # Bimodal tenant scope - the base class can only follow one traversal.
         tenant = _get_active_tenant(self.request)
         if tenant is None:
             return self.queryset.none()
@@ -339,7 +339,7 @@ class DhcpReservationSerializer(serializers.ModelSerializer):
             ) or ("ip" in attrs and attrs["ip"] != self.instance.ip)
             if moved:
                 raise serializers.ValidationError({
-                    "ip": "A reservation's scope and IP are fixed — delete it "
+                    "ip": "A reservation's scope and IP are fixed - delete it "
                           "and create a new one to move it."
                 })
         return attrs
@@ -456,7 +456,7 @@ class DhcpReservationViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 
     @action(detail=True, methods=["post"])
     def resolve(self, request, pk=None):
-        """Settle a drift flag. Body: ``{"strategy": "accept" | "push"}`` —
+        """Settle a drift flag. Body: ``{"strategy": "accept" | "push"}`` -
         accept the server's version into Danbyte, or re-push Danbyte's."""
         res = self.get_object()
         strategy = (request.data or {}).get("strategy")

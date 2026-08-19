@@ -2,7 +2,7 @@
 
 Run daily by ``danbyte-certificate-expiry.timer``. The reactive path (every
 ``tls_cert`` observation) already opens and resolves alerts for the endpoints it
-just saw; this sweep is what makes *time passing* enough — a certificate crosses
+just saw; this sweep is what makes *time passing* enough - a certificate crosses
 the 30-day line whether or not anything scanned it today.
 
     manage.py certificate_expiry

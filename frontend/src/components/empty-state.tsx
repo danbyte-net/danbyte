@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils"
 
 // Canonical empty-state card. Copy convention: title is "No {plural} yet."
-// — children carry the optional call-to-action or explanation.
+// - children carry the optional call-to-action or explanation.
 export function EmptyState({
   title,
   children,

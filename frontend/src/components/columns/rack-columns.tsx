@@ -16,8 +16,8 @@ import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
 // The one source of truth for "a table of racks". Every surface that lists
-// racks — /racks and the embedded rack pane on a location / rack-role / site
-// detail page — builds its columns here so a rack row reads identically
+// racks - /racks and the embedded rack pane on a location / rack-role / site
+// detail page - builds its columns here so a rack row reads identically
 // everywhere. Page-specific columns are spliced around this factory's output;
 // the shared cells are never re-authored inline.
 //
@@ -66,9 +66,9 @@ export interface RackColumnOpts<T extends Rack = Rack> {
   include?: RackColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
-  /** Site rendering — see {@link SiteVariant}. Defaults to "link". */
+  /** Site rendering - see {@link SiteVariant}. Defaults to "link". */
   siteVariant?: SiteVariant
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
   tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }
@@ -77,7 +77,7 @@ export interface RackColumnOpts<T extends Rack = Rack> {
 }
 
 /** Rack occupancy: a thin bar plus the raw "used/height" U counts. Rack's own
- * cell — the shared `UtilCell` prints a percentage instead. */
+ * cell - the shared `UtilCell` prints a percentage instead. */
 function RackUtilCell({ rack }: { rack: Rack }) {
   const pct = rack.u_height
     ? Math.round((rack.used_units / rack.u_height) * 100)
@@ -241,7 +241,7 @@ export function buildRackColumns<T extends Rack = Rack>(
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     }),

@@ -149,7 +149,7 @@ import { apiErrorToast } from "@/lib/api-toast"
 import { storedQualitySetting, storeQualitySetting } from "@/lib/render-quality"
 import type { RenderQualitySetting } from "@/lib/render-quality"
 
-/** Arms the canvas's drag-rect painter while drawing a raised-floor area —
+/** Arms the canvas's drag-rect painter while drawing a raised-floor area -
  * the ghost rect reuses the palette machinery, nothing else reads this. */
 const AREA_PSEUDO_ENTRY = {
   key: "structure:raised-floor",
@@ -164,16 +164,16 @@ const AREA_PSEUDO_ENTRY = {
   hasFov: false,
 } as const satisfies import("@/components/floorplan/floor-canvas").PaletteEntry
 
-/** 3D cabinet-shell modes — persisted in plan.state.shell_3d; anything else
+/** 3D cabinet-shell modes - persisted in plan.state.shell_3d; anything else
  * stored there falls back to cutaway. */
 const SHELL_MODES_3D = ["solid", "cutaway", "xray"] as const
 type ShellMode3D = (typeof SHELL_MODES_3D)[number]
 
 export const Route = createFileRoute("/floorplans/$id")({
   component: FloorPlanPage,
-  // ?trace=<cableId> — arrive with a cable's route highlighted + fitted,
-  // without entering Cables mode. ?viz=3d — open straight into the 3D room.
-  // (Named `viz`, not `view` — the monitoring route owns `view` in the
+  // ?trace=<cableId> - arrive with a cable's route highlighted + fitted,
+  // without entering Cables mode. ?viz=3d - open straight into the 3D room.
+  // (Named `viz`, not `view` - the monitoring route owns `view` in the
   // router-wide search union and a second meaning breaks its reducer types.)
   validateSearch: (
     s: Record<string, unknown>
@@ -183,11 +183,11 @@ export const Route = createFileRoute("/floorplans/$id")({
   }),
 })
 
-// The 3D room view — the only consumer of the three.js stack, lazy-loaded so
+// The 3D room view - the only consumer of the three.js stack, lazy-loaded so
 // it lives in its own chunk and costs nothing until someone opens it.
 const FloorScene3D = lazy(() => import("@/components/floorplan3d/scene"))
 
-/** Local editing shape — server tiles plus unsaved ones (temp ids). */
+/** Local editing shape - server tiles plus unsaved ones (temp ids). */
 type EditTile = FloorPlanTile
 
 let tempCounter = 0
@@ -241,7 +241,7 @@ function FloorPlanPage() {
     queryKey: ["device-roles"],
     queryFn: () => api<Paginated<DeviceRole>>("/api/device-roles/"),
   })
-  // Live per-tile metrics (rack utilization, monitoring rollup) — cheap to
+  // Live per-tile metrics (rack utilization, monitoring rollup) - cheap to
   // poll; monitoring pushes state server-side so 30s keeps tiles honest.
   const liveState = useQuery({
     queryKey: ["floor-plan-state", id],
@@ -257,7 +257,7 @@ function FloorPlanPage() {
     staleTime: 5 * 60_000,
   })
 
-  // Sibling plans of the same location — the "floors" of this building
+  // Sibling plans of the same location - the "floors" of this building
   // (Floor 1 / Floor 2 / Basement…). Powers the header switcher.
   const locationId = planQuery.data?.location.id
   const floors = useQuery({
@@ -277,7 +277,7 @@ function FloorPlanPage() {
       ),
   })
   const trays = traysQuery.data?.results ?? []
-  // Raised-floor areas (Structure mode) — rectangles with a plenum depth.
+  // Raised-floor areas (Structure mode) - rectangles with a plenum depth.
   const areasQuery = useQuery({
     queryKey: ["floor-plan-raised-floors", id],
     queryFn: () =>
@@ -286,7 +286,7 @@ function FloorPlanPage() {
       ),
   })
   const areas = areasQuery.data?.results ?? []
-  // Walls (Structure mode) — polylines with door openings.
+  // Walls (Structure mode) - polylines with door openings.
   const wallsQuery = useQuery({
     queryKey: ["floor-plan-walls", id],
     queryFn: () =>
@@ -320,14 +320,14 @@ function FloorPlanPage() {
   const [selectedWallId, setSelectedWallId] = useState<string | null>(null)
   const [doorArmed, setDoorArmed] = useState(false)
   // Layout QoL: Ctrl/⌘-click and Shift-drag build a multi-selection the bulk
-  // bar (orientation, delete) acts on. Draft-level edits — Save persists.
+  // bar (orientation, delete) acts on. Draft-level edits - Save persists.
   const [multiSel, setMultiSel] = useState<Set<string>>(new Set())
   const [paletteTab, setPaletteTab] = useState<"tiles" | "zones">("tiles")
   const [showGrid, setShowGrid] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
   // Deep view: the rack/device contents + end-to-end trace side sheet.
   const [deepTile, setDeepTile] = useState<FloorPlanTile | null>(null)
-  // View prefs — seeded from plan.state, persisted back for editors.
+  // View prefs - seeded from plan.state, persisted back for editors.
   const [labelFitLocal, setLabelFitLocal] = useState<boolean | null>(null)
   const [showFovLocal, setShowFovLocal] = useState<boolean | null>(null)
   const [showZoneLabelsLocal, setShowZoneLabelsLocal] = useState<
@@ -336,7 +336,7 @@ function FloorPlanPage() {
   const [showTraysLocal, setShowTraysLocal] = useState<boolean | null>(null)
   const [showLinksLocal, setShowLinksLocal] = useState<boolean | null>(null)
   const [showObjectsLocal, setShowObjectsLocal] = useState<boolean | null>(null)
-  // 3D overlay prefs — same persistence pattern as the 2D ones.
+  // 3D overlay prefs - same persistence pattern as the 2D ones.
   const [show3dULocal, setShow3dULocal] = useState<boolean | null>(null)
   const [show3dNamesLocal, setShow3dNamesLocal] = useState<boolean | null>(null)
   const [show3dCablesLocal, setShow3dCablesLocal] = useState<boolean | null>(
@@ -350,9 +350,9 @@ function FloorPlanPage() {
   const [show3dCeilingLocal, setShow3dCeilingLocal] = useState<boolean | null>(
     null
   )
-  // Cabinet shell (3D): solid / cutaway / x-ray — a mode, not a checkbox.
+  // Cabinet shell (3D): solid / cutaway / x-ray - a mode, not a checkbox.
   const [shell3dLocal, setShell3dLocal] = useState<ShellMode3D | null>(null)
-  // 3D effects budget — PER-DEVICE (localStorage), not a plan pref: the
+  // 3D effects budget - PER-DEVICE (localStorage), not a plan pref: the
   // workstation's High must not follow the plan onto a weak laptop.
   const [quality3d, setQuality3dState] = useState<RenderQualitySetting>(() =>
     storedQualitySetting()
@@ -397,7 +397,7 @@ function FloorPlanPage() {
   // One dialog for every in-app way out of a dirty editor: sidebar links,
   // breadcrumbs, browser back/forward, the "leave plan" links on tiles, and the
   // floor switcher (which just navigates, like everything else). The router's
-  // blocker is the single decision point — the switcher deliberately has no
+  // blocker is the single decision point - the switcher deliberately has no
   // confirm of its own, because two guards on one action means two dialogs.
   //
   // Same-pathname navigations are let through on purpose: this page drives
@@ -405,7 +405,7 @@ function FloorPlanPage() {
   // exit. Only a different pathname means the edits are about to be dropped.
   //
   // shouldBlockFn is a dependency of the hook's own effect, so it reads the ref
-  // and stays referentially stable — an inline closure would tear down and
+  // and stays referentially stable - an inline closure would tear down and
   // re-register the history blocker on every render.
   const shouldBlockLeave = useCallback<ShouldBlockFn>(
     ({ current, next }) =>
@@ -413,7 +413,7 @@ function FloorPlanPage() {
     []
   )
   // withResolver hands back proceed/reset, which the themed AlertDialog at the
-  // end of this component drives — a native window.confirm can't be styled and
+  // end of this component drives - a native window.confirm can't be styled and
   // reads as a browser error. enableBeforeUnload stays off because the blocker
   // is registered whether or not the plan is dirty; the ref-gated listener
   // below owns the browser-level case, which no router blocker can reach.
@@ -423,7 +423,7 @@ function FloorPlanPage() {
     withResolver: true,
   })
 
-  // Switching floors re-uses this mounted component — reset every bit of
+  // Switching floors re-uses this mounted component - reset every bit of
   // editor state so one floor's unsaved edits can never bleed into another.
   useEffect(() => {
     setTiles([])
@@ -458,7 +458,7 @@ function FloorPlanPage() {
   }, [tilesQuery.data])
 
   // Closing the tab, reloading, or leaving for another origin would drop
-  // unsaved tile edits without a word, and those never reach the router — so
+  // unsaved tile edits without a word, and those never reach the router - so
   // the browser's own leave-site prompt is the only guard that covers them.
   // In-app navigation is the blocker's job, above. Registered only while dirty,
   // and it reads the ref so a stale closure can never make the guard lie.
@@ -524,7 +524,7 @@ function FloorPlanPage() {
     []
   )
 
-  // Geometry edits (canvas drags, nudges, resizes) refuse to stack tiles —
+  // Geometry edits (canvas drags, nudges, resizes) refuse to stack tiles -
   // the candidate rect must be free of other non-zone tiles. Zones are
   // background and may overlap anything.
   const changeTileGuarded = useCallback(
@@ -587,7 +587,7 @@ function FloorPlanPage() {
     (plan?.state.show_3d_floor_peek as boolean | undefined) ??
     false
   // Walls default ON: a wall someone drew must show up without a hunt
-  // through the View popover — hiding the shell is the deliberate act.
+  // through the View popover - hiding the shell is the deliberate act.
   const show3dWalls =
     show3dWallsLocal ??
     (plan?.state.show_3d_walls as boolean | undefined) ??
@@ -615,7 +615,7 @@ function FloorPlanPage() {
   useEffect(() => {
     if (!traceParam || tracedRef.current === traceParam) return
     const cp = cablePaths.find((c) => c.id === traceParam)
-    if (!cp) return // paths not loaded yet — the effect re-runs when they land
+    if (!cp) return // paths not loaded yet - the effect re-runs when they land
     tracedRef.current = traceParam
     setShowLinksLocal(true)
     setHighlightCableIds([traceParam])
@@ -695,7 +695,7 @@ function FloorPlanPage() {
       }),
     onSuccess: () => {
       invalidateAreas()
-      // Structure edits persist immediately (tray-style) — without a word,
+      // Structure edits persist immediately (tray-style) - without a word,
       // the page's Save-button mental model reads that as "not saved".
       toast.success("Raised floor saved")
     },
@@ -803,7 +803,7 @@ function FloorPlanPage() {
   const createAt = useCallback(
     (rect: { x: number; y: number; w: number; h: number }) => {
       if (!armed || !plan) return
-      // A plain click paints a 1×1 rect — use the palette entry's default
+      // A plain click paints a 1×1 rect - use the palette entry's default
       // footprint there; an actual drag wins.
       const w =
         rect.w === 1 && rect.h === 1
@@ -821,7 +821,7 @@ function FloorPlanPage() {
       }
       // Zones may cover anything; normal tiles never stack.
       if (!armed.isZone && findCollision(tiles, candidate)) {
-        toast.error("Tiles can't stack — that spot is taken.")
+        toast.error("Tiles can't stack - that spot is taken.")
         return
       }
       const now = new Date().toISOString()
@@ -887,7 +887,7 @@ function FloorPlanPage() {
   }, [])
 
   // Set an absolute facing (orientation). A quarter-turn (90/270 delta) swaps
-  // the grid footprint — same invariant the relative rotate keeps.
+  // the grid footprint - same invariant the relative rotate keeps.
   const setTileFacing = useCallback(
     (tile: EditTile, orientation: EditTile["orientation"]) => {
       if (!plan || orientation === tile.orientation) return
@@ -901,7 +901,7 @@ function FloorPlanPage() {
         y: Math.min(tile.y, Math.max(0, plan.grid_height - height)),
       }
       if (quarter && !tileIsZone(tile) && findCollision(tiles, rect, tile.id)) {
-        toast.error("No room to rotate — a neighbour is in the way.")
+        toast.error("No room to rotate - a neighbour is in the way.")
         return
       }
       changeTile(tile.id, { orientation, ...rect })
@@ -930,7 +930,7 @@ function FloorPlanPage() {
   }, [])
   // One polyline rig, two products: Cables mode finishes into the tray
   // naming dialog; Structure mode creates the wall at once (label is
-  // optional — the inspector opens on it for the rest).
+  // optional - the inspector opens on it for the rest).
   const finishDraw = useCallback(() => {
     setDrawPoints((prev) => {
       if (prev && prev.length >= 2) {
@@ -997,7 +997,7 @@ function FloorPlanPage() {
         return
       }
       // In the 3D view the camera rig owns arrows (and a 2D tile selection
-      // is invisible) — don't nudge/delete a tile nobody can see.
+      // is invisible) - don't nudge/delete a tile nobody can see.
       if (!canEdit || !selectedId || view3d) return
       const tile = tiles.find((t) => t.id === selectedId)
       if (!tile || !plan) return
@@ -1077,7 +1077,7 @@ function FloorPlanPage() {
       qc.invalidateQueries({ queryKey: ["floor-plan-tiles", id] })
       qc.invalidateQueries({ queryKey: ["floor-plan", id] })
       qc.invalidateQueries({ queryKey: ["floor-plans"] })
-      // Tile moves change cable endpoints — refresh the routed paths too.
+      // Tile moves change cable endpoints - refresh the routed paths too.
       qc.invalidateQueries({ queryKey: ["floor-plan-cable-paths", id] })
       toast.success("Floor plan saved")
     },
@@ -1109,10 +1109,10 @@ function FloorPlanPage() {
     onError: (err) => apiErrorToast(err),
   })
 
-  // ── Trays (save immediately per op — no bulk/dirty model like tiles) ────
+  // ── Trays (save immediately per op - no bulk/dirty model like tiles) ────
   const invalidateTrays = () => {
     qc.invalidateQueries({ queryKey: ["floor-plan-trays", id] })
-    // A cable's route depends on its trays — refresh the routed paths so
+    // A cable's route depends on its trays - refresh the routed paths so
     // links don't fall back to point-to-point until a reload.
     qc.invalidateQueries({ queryKey: ["floor-plan-cable-paths", id] })
   }
@@ -1180,7 +1180,7 @@ function FloorPlanPage() {
   }
 
   // From a device's paths in the deep-view: close the sheet and highlight one
-  // cable, or a whole run (all its cables), on the plan — no Cables mode.
+  // cable, or a whole run (all its cables), on the plan - no Cables mode.
   const traceCablesOnMap = useCallback(
     (cableIds: string[]) => {
       setDeepTile(null)
@@ -1230,7 +1230,7 @@ function FloorPlanPage() {
               onValueChange={(pid) => {
                 if (pid === plan.id) return
                 // Just navigate. Switching floors re-mounts the editor and drops
-                // unsaved edits, but that is the leave guard's call to make —
+                // unsaved edits, but that is the leave guard's call to make -
                 // confirming here too would stack a second dialog on the same
                 // click.
                 nav({ to: "/floorplans/$id", params: { id: pid } })
@@ -1289,7 +1289,7 @@ function FloorPlanPage() {
                 setSelectedAreaId(null)
                 setAreaArmed(false)
                 setMultiSel(new Set())
-                // Leaving Cables mode must exit tray-edit — otherwise Layout
+                // Leaving Cables mode must exit tray-edit - otherwise Layout
                 // mode stays frozen (tiles unselectable, cables hidden).
                 setTrayEditMode(false)
               }}
@@ -1449,7 +1449,7 @@ function FloorPlanPage() {
                   </div>
                   <div className="px-2 pt-1.5 pb-1">
                     <span className="mb-1 block text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
-                      Quality — this device
+                      Quality - this device
                     </span>
                     <SegmentedTabs<RenderQualitySetting>
                       wrap
@@ -1465,7 +1465,7 @@ function FloorPlanPage() {
                     />
                     <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
                       Shadows and ambient occlusion. Flat turns the light rig
-                      off entirely. Saved per device, not on the plan — Auto
+                      off entirely. Saved per device, not on the plan - Auto
                       probes the GPU.
                     </p>
                   </div>
@@ -1515,7 +1515,7 @@ function FloorPlanPage() {
                 {plan.background_image && (
                   <label className="grid gap-1 text-xs">
                     <span className="text-muted-foreground">
-                      Opacity —{" "}
+                      Opacity -{" "}
                       <span className="num">{plan.background_opacity}%</span>
                     </span>
                     <input
@@ -1666,8 +1666,8 @@ function FloorPlanPage() {
               {paletteTab === "zones" && shownPalette.length === 0 && (
                 <p className="px-1 py-2 text-xs text-muted-foreground">
                   No background tiles yet. Create a tile type with the
-                  “Background zone” tick — a red “Hot aisle”, a blue “Cold
-                  aisle”, a security area — and paint it under your tiles.
+                  “Background zone” tick - a red “Hot aisle”, a blue “Cold
+                  aisle”, a security area - and paint it under your tiles.
                 </p>
               )}
               {shownPalette.map((entry) => (
@@ -1766,7 +1766,7 @@ function FloorPlanPage() {
                 }
                 onSelect={(id) => {
                   setSelectedId(id)
-                  // A plain click always collapses the multi-selection — it
+                  // A plain click always collapses the multi-selection - it
                   // means "work with THIS one now".
                   setMultiSel((prev) => (prev.size ? new Set() : prev))
                   // Clicking a tile pins its popover (the pointer is already over
@@ -1874,7 +1874,7 @@ function FloorPlanPage() {
                         title={`Front faces ${label}`}
                         aria-label={`Front faces ${label}`}
                         onClick={() => {
-                          // Per-tile absolute facing — setTileFacing keeps the
+                          // Per-tile absolute facing - setTileFacing keeps the
                           // footprint-swap + collision rules a hand rotate has.
                           for (const tid of multiSel) {
                             const t = tiles.find((x) => x.id === tid)
@@ -1889,7 +1889,7 @@ function FloorPlanPage() {
                     <Select
                       value=""
                       onValueChange={(key) => {
-                        // "tt:<id>" | "role:<id>" — the palette's own keys.
+                        // "tt:<id>" | "role:<id>" - the palette's own keys.
                         const [kind, tid] = key.split(":")
                         if (kind === "tt") {
                           const row = tileTypes.data?.results.find(
@@ -1976,7 +1976,7 @@ function FloorPlanPage() {
               {trayEditMode && (
                 <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-full border border-border bg-background px-4 py-1.5 text-xs shadow-sm">
                   <span>
-                    <span className="font-medium">Editing trays</span> — cables
+                    <span className="font-medium">Editing trays</span> - cables
                     hidden. Click a tray, drag its points, click{" "}
                     <span className="font-medium">＋</span> to add a bend,
                     right-click a point to remove.
@@ -2140,7 +2140,7 @@ function FloorPlanPage() {
         </DialogContent>
       </Dialog>
 
-      {/* The leave guard's one dialog — for a floor switch, a sidebar link, and
+      {/* The leave guard's one dialog - for a floor switch, a sidebar link, and
           browser back alike. The router holds the navigation open until this
           resolves, so every close path must settle it: leave the blocker
           hanging and the next navigation is stuck behind it forever. */}
@@ -2155,8 +2155,8 @@ function FloorPlanPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
             <AlertDialogDescription>
-              This plan has unsaved changes. Leaving this page — including
-              switching to another floor — drops them. Save first to keep them.
+              This plan has unsaved changes. Leaving this page - including
+              switching to another floor - drops them. Save first to keep them.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -2177,7 +2177,7 @@ function FloorPlanPage() {
   )
 }
 
-/** Client-side Link per link kind — plain <a href> would full-reload the SPA. */
+/** Client-side Link per link kind - plain <a href> would full-reload the SPA. */
 function LinkedObjectLink({
   linked,
 }: {
@@ -2269,7 +2269,7 @@ function FovSlider({
   )
 }
 
-/** Editor inspector — label / color / status / rotate / link / delete. */
+/** Editor inspector - label / color / status / rotate / link / delete. */
 function TileInspector({
   tile,
   planId,
@@ -2346,7 +2346,7 @@ function TileInspector({
         </Button>
       </div>
 
-      {/* Facing is the TILE's own property — build-in-advance tiles need it
+      {/* Facing is the TILE's own property - build-in-advance tiles need it
           set before any rack is linked, so only zones (no front) skip it. */}
       {!tileIsZone(tile) && (
         <Field label="Front faces" hint="Marked on the tile's front edge">
@@ -2399,8 +2399,8 @@ function TileInspector({
         value={tile.status || null}
         onChange={(v) => onChange({ status: (v ?? "") as FloorTileStatus })}
         options={STATUS_OPTIONS}
-        noneLabel="—"
-        placeholder="—"
+        noneLabel="-"
+        placeholder="-"
       />
 
       {tileHasFov(tile) && (
@@ -2411,7 +2411,7 @@ function TileInspector({
           <FormCheckbox
             label={
               <>
-                PTZ <span className="text-muted-foreground">— 360° ring</span>
+                PTZ <span className="text-muted-foreground">- 360° ring</span>
               </>
             }
             checked={tile.fov_ptz}
@@ -2526,7 +2526,7 @@ function LinkTargetPicker({
   kind: FloorPlanLinkKind | null
   value: string | null
   planId: string
-  /** The tile's device role (role tiles) — devices with it sort first in the
+  /** The tile's device role (role tiles) - devices with it sort first in the
    * picker, and the advanced dialog opens pre-filtered to it. */
   roleId?: string | null
   onPick: (id: string | null) => void
@@ -2779,7 +2779,7 @@ function RackDeepView({
             {devices.map((d) => (
               <li key={d.id} className="flex items-center gap-2 py-1.5">
                 <span className="num w-10 shrink-0 text-[11px] text-muted-foreground">
-                  {d.position !== null ? `U${d.position}` : "—"}
+                  {d.position !== null ? `U${d.position}` : "-"}
                 </span>
                 <Link
                   to="/devices/$id"
@@ -2836,7 +2836,7 @@ function DeviceDeepView({
           <Waypoints className="inline h-3 w-3" /> on one cable, on the plan.
         </SheetDescription>
       </SheetHeader>
-      {/* Natural top-aligned stack — no flex-1 stretch, so the button sits
+      {/* Natural top-aligned stack - no flex-1 stretch, so the button sits
           right above the topology instead of leaving a tall gap. */}
       <div className="flex flex-col gap-3 px-4 pb-4">
         <Button variant="outline" size="sm" asChild className="w-fit">
@@ -2850,7 +2850,7 @@ function DeviceDeepView({
   )
 }
 
-/** Dice-5 anchor picker: five dots (corners + center) — click where the
+/** Dice-5 anchor picker: five dots (corners + center) - click where the
  * FOV cone should emit from on the tile. */
 function FovAnchorDice({
   value,
@@ -2898,7 +2898,7 @@ function FovAnchorDice({
   )
 }
 
-/** Header search — jump to a tile by label / linked object / type name. */
+/** Header search - jump to a tile by label / linked object / type name. */
 function TileSearch({
   tiles,
   value,
@@ -2980,7 +2980,7 @@ function TileSearch({
   )
 }
 
-/** Structure-mode left rail — raised-floor areas + walls, each with its own
+/** Structure-mode left rail - raised-floor areas + walls, each with its own
  * draw control. One rail, two catalogs: both are room construction. */
 function StructureRail({
   areas,
@@ -3040,13 +3040,13 @@ function StructureRail({
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
         {areas.length === 0 && !drawing && (
           <p className="px-1.5 py-2 text-xs text-muted-foreground">
-            No raised floors yet. Draw one — underfloor trays and cables will
+            No raised floors yet. Draw one - underfloor trays and cables will
             dive as deep as its plenum, and the 3D room shows the void.
           </p>
         )}
         {(areas.length > 0 || walls.length > 0) && (
           <p className="px-1.5 pb-1 text-[10px] leading-snug text-muted-foreground/80">
-            Structure edits save immediately — the Save button governs tiles.
+            Structure edits save immediately - the Save button governs tiles.
           </p>
         )}
         {areas.map((a) => (
@@ -3106,7 +3106,7 @@ function StructureRail({
         </div>
         {walls.length === 0 && !wallDrawing && (
           <p className="px-1.5 py-1 text-xs text-muted-foreground">
-            No walls yet. Draw the room shell — the 3D view raises it; doors are
+            No walls yet. Draw the room shell - the 3D view raises it; doors are
             added on a selected wall.
           </p>
         )}
@@ -3138,7 +3138,7 @@ function StructureRail({
   )
 }
 
-/** Structure-mode right panel: edit the selected wall — label, height, color,
+/** Structure-mode right panel: edit the selected wall - label, height, color,
  * and its doors (place by arm-and-click, tune or remove here). */
 function WallInspector({
   wall,
@@ -3162,7 +3162,7 @@ function WallInspector({
     wall.height_mm == null ? "" : String(wall.height_mm)
   )
   const openings = wall.openings
-  // Total run length (m) — the number a builder actually wants at a glance.
+  // Total run length (m) - the number a builder actually wants at a glance.
   const runM =
     wall.points.reduce((acc, p, i) => {
       if (i === 0) return 0
@@ -3418,7 +3418,7 @@ function AreaInspector({
   )
 }
 
-/** Cables-mode left rail — draw control, edit toggle + the tray list. */
+/** Cables-mode left rail - draw control, edit toggle + the tray list. */
 function TrayRail({
   trays,
   selectedTrayId,
@@ -3477,7 +3477,7 @@ function TrayRail({
           </Button>
           {editMode && (
             <p className="px-1 pt-1.5 text-[11px] text-muted-foreground">
-              Cables hidden. Click a tray to reshape — drag points, ＋ to add a
+              Cables hidden. Click a tray to reshape - drag points, ＋ to add a
               bend, right-click a point to remove.
             </p>
           )}
@@ -3516,7 +3516,7 @@ function TrayRail({
   )
 }
 
-/** Cables-mode right inspector — tray details + cable assignment. */
+/** Cables-mode right inspector - tray details + cable assignment. */
 function TrayInspector({
   tray,
   highlightCableId,
@@ -3601,7 +3601,7 @@ function TrayInspector({
       </Field>
       <Field
         label="Elevation (mm)"
-        hint="Height above floor — blank derives from the level"
+        hint="Height above floor - blank derives from the level"
       >
         <Input
           type="number"

@@ -1,4 +1,4 @@
-"""In-app upgrade — launch the detached upgrader and report its progress.
+"""In-app upgrade - launch the detached upgrader and report its progress.
 
 The web process can't update itself and restart itself, so the button launches
 ``scripts/danbyte-upgrade.sh`` as a **transient systemd user unit**
@@ -339,7 +339,7 @@ def _read_status() -> dict:
 
 
 def _systemd_env() -> dict:
-    """Env the web process needs to reach the *user* systemd — a service context
+    """Env the web process needs to reach the *user* systemd - a service context
     often lacks these, which is why `systemd-run --user` silently no-ops."""
     uid = os.getuid()
     env = {**os.environ}
@@ -362,7 +362,7 @@ def _upgrade_running() -> bool:
 def _next_auto_check() -> float:
     """Unix timestamp of the next scheduled auto-update check. The timer fires
     every 20 min on the :00/:20/:40 boundary (OnCalendar=*:0/20), so compute that
-    directly — reliable, and no per-request subprocess."""
+    directly - reliable, and no per-request subprocess."""
     import datetime
 
     from django.utils import timezone
@@ -407,7 +407,7 @@ def _is_git_install() -> bool:
 
 def _valid_target(version: str) -> bool:
     """The version must be a real release in the configured repo (no arbitrary
-    refs — an upgrade is remote code execution). Airgapped installs never reach
+    refs - an upgrade is remote code execution). Airgapped installs never reach
     the repo, so the repo-version path is refused there (upload a bundle
     instead)."""
     from .deployment import DeploymentSettings
@@ -428,7 +428,7 @@ def _valid_target(version: str) -> bool:
 
 def _download_release_bundle(version: str):
     """Download the offline bundle for ``version`` from the release repo and
-    verify its published SHA-256 before use — for a bundle install (no git) that
+    verify its published SHA-256 before use - for a bundle install (no git) that
     still wants one-click / automatic upgrades. Returns the local path, or
     raises RuntimeError with a user-facing reason (missing asset, checksum
     mismatch, network error)."""
@@ -451,13 +451,13 @@ def _download_release_bundle(version: str):
     )
     if not bundle_name:
         raise RuntimeError(
-            f"release {version} has no offline bundle to download — "
+            f"release {version} has no offline bundle to download - "
             "upgrade by uploading a bundle instead."
         )
     sha_name = f"{bundle_name}.sha256"
     if sha_name not in assets:
         raise RuntimeError(
-            f"release {version} bundle has no published checksum — refusing to "
+            f"release {version} bundle has no published checksum - refusing to "
             "install an unverifiable download."
         )
     headers = {"Authorization": f"Bearer {token}"} if token else {}
@@ -479,7 +479,7 @@ def _download_release_bundle(version: str):
         except OSError:
             pass
         raise RuntimeError(
-            "downloaded bundle failed checksum verification — aborting "
+            "downloaded bundle failed checksum verification - aborting "
             f"(expected {expected[:12]}…, got {got[:12]}…)."
         )
     return BUNDLE_UPLOAD
@@ -693,14 +693,14 @@ def start_upgrade(version: str, lock_owner: str) -> str:
 
     A git checkout upgrades in place (``git pull``). A bundle install has no
     ``.git``, so we download the release's verified offline bundle and run the
-    bundle upgrader — otherwise the git script would just fail on it."""
+    bundle upgrader - otherwise the git script would just fail on it."""
     _write_start_status(version, lock_owner)
     if _is_git_install():
         return _launch(version, lock_owner)
     # Bundle install: fetch + verify the bundle for this version, then apply it.
     try:
         path = _download_release_bundle(version)
-    except Exception as exc:  # noqa: BLE001 — surface a readable reason
+    except Exception as exc:  # noqa: BLE001 - surface a readable reason
         STATUS_FILE.write_text(json.dumps({
             "state": "failed", "step": "download", "pct": 0,
             "version_to": version, "error": str(exc),
@@ -760,7 +760,7 @@ def system_upgrade(request):
             {"detail": f"'{version}' is not a release in the configured repo."},
             status=400,
         )
-    # Atomic single-slot lock — blocks a concurrent request even during the
+    # Atomic single-slot lock - blocks a concurrent request even during the
     # bundle-download window (before the systemd unit is active).
     lock_owner = _acquire_upgrade_lock()
     if lock_owner is None:
@@ -769,7 +769,7 @@ def system_upgrade(request):
         how = start_upgrade(version, lock_owner)
     except UpgradeLaunchUncertain as exc:
         return Response({"detail": str(exc)}, status=502)
-    except Exception as exc:  # noqa: BLE001 — bundle download / verify failure
+    except Exception as exc:  # noqa: BLE001 - bundle download / verify failure
         _record_launch_failure(exc)
         _release_upgrade_lock(lock_owner)
         return Response({"detail": str(exc)}, status=502)
@@ -872,7 +872,7 @@ def _upgrade_process_alive() -> bool:
     Used by the cancel action to refuse clearing a genuinely-running upgrade.
     Unlike ``_lock_is_active`` (which stays True under ambiguity so a second
     upgrade can't race a maybe-running one), this returns True only on a
-    positive identity match — so a stuck lock left by a dead/interrupted
+    positive identity match - so a stuck lock left by a dead/interrupted
     upgrade is correctly reported as not-alive and can be cleared.
     """
     lock = _read_lock_unlocked()
@@ -927,7 +927,7 @@ def _force_clear_upgrade_lock() -> None:
 def system_upgrade_cancel(request):
     """Clear a STUCK upgrade lock so a new upgrade can start. users.manage only.
 
-    Refuses (409) if an upgrade process is genuinely still alive — otherwise
+    Refuses (409) if an upgrade process is genuinely still alive - otherwise
     removes the lock + stale status so the next attempt isn't blocked by "An
     upgrade is already running." (A dead/interrupted upgrade, or a lock left
     un-expirable by a missing status file, is the case this fixes.)"""
@@ -935,7 +935,7 @@ def system_upgrade_cancel(request):
         return Response({"detail": "users.manage required."}, status=403)
     if _upgrade_process_alive():
         return Response(
-            {"detail": "An upgrade is genuinely still running — wait for it to "
+            {"detail": "An upgrade is genuinely still running - wait for it to "
                        "finish or fail before cancelling."},
             status=409,
         )

@@ -17,7 +17,7 @@ export function useFieldErrors() {
   const handleApiError = useCallback((err: unknown): string | null => {
     // A staged planned change is not an error: useSaveObject already reported
     // it and navigated away. Returning null means the form shows no toast and
-    // its onSaved never runs, which is exactly right — nothing was saved.
+    // its onSaved never runs, which is exactly right - nothing was saved.
     if (err instanceof PlanStaged) return null
     if (
       err instanceof ApiError &&
@@ -31,14 +31,14 @@ export function useFieldErrors() {
         err.body as Record<string, unknown>
       )) {
         const msg = Array.isArray(v) ? String(v[0]) : String(v)
-        // `detail` / `non_field_errors` aren't tied to a form field — surface
+        // `detail` / `non_field_errors` aren't tied to a form field - surface
         // them as the toast message instead of silently highlighting nothing.
         if (k === "detail" || k === "non_field_errors") general = msg
         else errs[k] = msg
       }
       setFieldErrors(errs)
       if (Object.keys(errs).length > 0) {
-        return general ?? "Couldn't save — check the highlighted fields."
+        return general ?? "Couldn't save - check the highlighted fields."
       }
       return general ?? "Couldn't save."
     }

@@ -16,11 +16,11 @@ import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 
 type Row = Record<string, unknown>
 
-// Render one field/cell value per its declared kind. Kept intentionally small —
+// Render one field/cell value per its declared kind. Kept intentionally small -
 // the server describes, this renders, no plugin code.
 function renderValue(kind: string, value: unknown) {
   if (value === null || value === undefined || value === "") {
-    return <span className="text-muted-foreground">—</span>
+    return <span className="text-muted-foreground">-</span>
   }
   switch (kind) {
     case "time":
@@ -50,7 +50,7 @@ function buildColumns(
         const href = spec.detail_route.replace("$id", String(row.original.id))
         return (
           <Link to={href as never} className="link font-mono">
-            {String(v ?? "—")}
+            {String(v ?? "-")}
           </Link>
         )
       }

@@ -1,4 +1,4 @@
-"""Service-control API — superuser only.
+"""Service-control API - superuser only.
 
 Restarting production services is high-stakes, so these endpoints require
 ``is_superuser`` regardless of RBAC grants. They never touch the database
@@ -57,7 +57,7 @@ def set_workers(request):
         return Response({"detail": "Superuser required."}, status=403)
     result = services.set_worker_count(request.data.get("count"))
     # A save that couldn't apply (unmanaged env / drop-in error) still persisted
-    # the setting — surface it as 200 with ok=false so the UI can explain.
+    # the setting - surface it as 200 with ok=false so the UI can explain.
     status = 200 if (result.get("ok") or result.get("saved")) else 400
     return Response(result, status=status)
 

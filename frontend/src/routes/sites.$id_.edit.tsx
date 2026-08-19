@@ -54,7 +54,7 @@ function EditSitePage() {
 /**
  * Compact pointer to the site's address scope. The ranges themselves are
  * managed on the detail page's Prefixes tab (a site can own several), but
- * people instinctively look for "this site's subnet" on the edit form — so
+ * people instinctively look for "this site's subnet" on the edit form - so
  * show what's assigned and link straight to where it's managed.
  */
 function AddressScopePanel({ siteId }: { siteId: string }) {

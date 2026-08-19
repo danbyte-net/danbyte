@@ -7,7 +7,7 @@ import {
 } from "@/components/cells/lifecycle-cell"
 import { useDateFormat } from "@/lib/datetime"
 
-// "Lifecycle" overview card — device type + platform detail pages. Shows the
+// "Lifecycle" overview card - device type + platform detail pages. Shows the
 // lifetime progress bar (release → EoL) plus every vendor date the user
 // entered. Rendered even when empty, so the feature is discoverable.
 

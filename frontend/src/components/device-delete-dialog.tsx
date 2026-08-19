@@ -46,7 +46,7 @@ export function DeviceDeleteDialog({
           <AlertDialogTitle>Delete {device?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {ips > 0
-              ? `${ips} IP${ips === 1 ? "" : "s"} are assigned to this device — they'll be unassigned. Interfaces are removed.`
+              ? `${ips} IP${ips === 1 ? "" : "s"} are assigned to this device - they'll be unassigned. Interfaces are removed.`
               : "This also removes its interfaces. This action can't be undone."}
           </AlertDialogDescription>
         </AlertDialogHeader>

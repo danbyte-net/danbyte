@@ -28,7 +28,7 @@ const KIND_ENDPOINT: Record<Exclude<TerminationKind, "power_feed">, string> = {
   aux_port: "aux-ports",
 }
 
-// Every kind a chip may need to LABEL — the picker's map plus power_feed,
+// Every kind a chip may need to LABEL - the picker's map plus power_feed,
 // which only ever arrives pre-seeded (`/cables/new?a_kind=power_feed&…`)
 // since feeds hang off power panels, not devices. Used for label resolution
 // only; the type dropdown below stays device-first (KIND_ENDPOINT).
@@ -55,7 +55,7 @@ const KIND_OPTIONS = Object.keys(KIND_ENDPOINT).map((k) => ({
 
 const keyOf = (t: { kind: TerminationKind; id: string }) => `${t.kind}:${t.id}`
 
-/** One port row from any of the device-port endpoints — they all serialise a
+/** One port row from any of the device-port endpoints - they all serialise a
  * name plus the owning device. */
 interface PortRow {
   id: string
@@ -64,7 +64,7 @@ interface PortRow {
 }
 
 /** A detail row fetched only to label a chip. Feeds belong to a power panel,
- * everything else to a device — so both owners are optional here. */
+ * everything else to a device - so both owners are optional here. */
 interface LabelRow {
   id: string
   name: string
@@ -78,7 +78,7 @@ export interface CableTerminationSideProps {
   error?: string
   value: TerminationInput[]
   onChange: (next: TerminationInput[]) => void
-  /** Existing terminations (edit mode) — used to label the chips and to
+  /** Existing terminations (edit mode) - used to label the chips and to
    * pre-focus the picker on the first termination's device. */
   initialTerminations?: Termination[]
 }
@@ -87,7 +87,7 @@ export interface CableTerminationSideProps {
  * One end (A or B) of a cable: pick a **type**, pick a **device**
  * (via the shared DevicePicker + its advanced search), then tick one or more of
  * that device's **ports**. Selections accumulate as chips, so you can switch
- * device/type and keep adding — a side may span several devices (breakout).
+ * device/type and keep adding - a side may span several devices (breakout).
  */
 export function CableTerminationSide({
   label,
@@ -118,7 +118,7 @@ export function CableTerminationSide({
   }, [initialTerminations])
 
   // Any selected termination we don't yet have a label for (e.g. an A-side port
-  // pre-seeded by "Connect cable" from a device page) — fetch its detail so the
+  // pre-seeded by "Connect cable" from a device page) - fetch its detail so the
   // chip shows "device:port" instead of the raw uuid.
   const unlabeled = value.filter((v) => !labels[keyOf(v)])
   const fetched = useQueries({
@@ -169,7 +169,7 @@ export function CableTerminationSide({
   return (
     <Field label={label} hint={hint} error={error}>
       <div className="space-y-3 rounded-lg border border-border p-3">
-        {/* Selected terminations — chips persist across device/type switches. */}
+        {/* Selected terminations - chips persist across device/type switches. */}
         {value.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {value.map((v) => {

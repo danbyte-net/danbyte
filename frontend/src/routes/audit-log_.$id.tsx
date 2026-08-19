@@ -169,7 +169,7 @@ function ChangeLogDetail() {
               labels={e.related_labels}
               emptyText={
                 e.action === "create"
-                  ? "None — the object did not exist yet."
+                  ? "None - the object did not exist yet."
                   : "No snapshot recorded (entry predates snapshots)."
               }
             />
@@ -181,7 +181,7 @@ function ChangeLogDetail() {
               labels={e.related_labels}
               emptyText={
                 e.action === "delete"
-                  ? "None — the object was deleted."
+                  ? "None - the object was deleted."
                   : "No snapshot recorded (entry predates snapshots)."
               }
             />
@@ -334,7 +334,7 @@ function SnapshotCard({
 }
 
 /** JSON-ish value rendering: strings quoted, null/numbers/bools plain,
- * objects pretty-printed — matching what the snapshot actually stores. */
+ * objects pretty-printed - matching what the snapshot actually stores. */
 function fmtValue(v: unknown): string {
   if (v === undefined) return "null"
   if (v !== null && typeof v === "object") return JSON.stringify(v, null, 2)
@@ -343,7 +343,7 @@ function fmtValue(v: unknown): string {
 
 /** Renders a snapshot/diff value. When the value is a UUID the backend
  * resolved to a related object (site, device, interface…), show the human
- * name and keep the raw UUID beside it, muted — so the log reads in names
+ * name and keep the raw UUID beside it, muted - so the log reads in names
  * without losing the exact reference. Everything else renders as raw JSON. */
 function FieldValue({
   value,

@@ -1,4 +1,4 @@
-"""Status roll-up helpers — collapse many check statuses into one.
+"""Status roll-up helpers - collapse many check statuses into one.
 
 Severity order (worst wins): ``down`` > ``degraded`` > ``stale`` > ``unknown``
 > ``up``. So a target with one down check rolls up to ``down``; an all-``up``

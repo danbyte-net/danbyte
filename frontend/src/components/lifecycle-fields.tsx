@@ -1,7 +1,7 @@
 import type { LifecycleInfo } from "@/lib/api"
 import { FormDate, FormText } from "@/components/forms"
 
-// Shared "Lifecycle" form section — device types (hardware) and platforms
+// Shared "Lifecycle" form section - device types (hardware) and platforms
 // (OS) carry the same vendor lifecycle window. The user picks the dates;
 // the lifetime bar and state badge derive from them.
 

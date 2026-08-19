@@ -24,7 +24,7 @@ const TopologyCanvas = lazy(() =>
   }))
 )
 
-// Topology widget for the device detail page. Default view is **Paths** —
+// Topology widget for the device detail page. Default view is **Paths** -
 // one flat end-to-end strip per cabled port (the cable page's design),
 // panels crossed front ⇄ rear. **Map** keeps the React Flow neighbourhood
 // with LLDP ghosts; "Full map" jumps to /topology focused here.
@@ -126,7 +126,7 @@ export function DeviceMiniTopology({
             <div className="h-full w-full animate-pulse bg-muted/30" />
           ) : graph.nodes.length <= 1 ? (
             <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
-              Nothing cabled or seen via LLDP yet — cable up its interfaces, or
+              Nothing cabled or seen via LLDP yet - cable up its interfaces, or
               poll it over SNMP to discover neighbours.
             </div>
           ) : (

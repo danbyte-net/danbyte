@@ -40,7 +40,7 @@ export const Route = createFileRoute("/saved-filters")({
 })
 
 /** RBAC object slug → the list page it filters. Unknown slugs render as
- * plain text — the filter still edits and deletes fine. */
+ * plain text - the filter still edits and deletes fine. */
 const LISTS: Record<string, { label: string; to: string; api: string }> = {
   cable: { label: "Cables", to: "/cables", api: "/api/cables/" },
   certificate: {
@@ -340,7 +340,7 @@ function SavedFiltersPage() {
         tableId="saved-filters"
       />
       <p className="px-1 pt-2 text-[11px] text-muted-foreground">
-        Every saved view across every list — yours plus the ones shared with
+        Every saved view across every list - yours plus the ones shared with
         this tenant. Apply one from its own list page: the filter button next to
         the search box.
       </p>
@@ -363,7 +363,7 @@ function EditDialog({
   const [searchText, setSearchText] = useState(view.query.q ?? "")
 
   // A small sample of the target list feeds the expression editor's field
-  // dropdown and value pickers — same discovery the list dialog uses.
+  // dropdown and value pickers - same discovery the list dialog uses.
   const sample = useQuery({
     queryKey: ["saved-filter-sample", view.object_type],
     queryFn: () =>
@@ -379,7 +379,7 @@ function EditDialog({
     text: initialExpr,
     error: null,
   })
-  // Facet selections, editable as removable values — their labels live on the
+  // Facet selections, editable as removable values - their labels live on the
   // source list, so this edits what was saved rather than offering new picks.
   const [facets, setFacets] = useState<FilterSnapshot>(() => {
     const rest: FilterSnapshot = {}
@@ -513,7 +513,7 @@ function EditDialog({
                   </div>
                 ))}
                 <p className="text-[11px] text-muted-foreground">
-                  Ticked sidebar facets, by internal value — remove what no
+                  Ticked sidebar facets, by internal value - remove what no
                   longer belongs; add new ones from the list itself.
                 </p>
               </div>

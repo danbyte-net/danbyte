@@ -1,8 +1,8 @@
-"""danbyte-checks — the protocol check engine, standalone and Django-free.
+"""danbyte-checks - the protocol check engine, standalone and Django-free.
 
 One shared implementation of every check kind (ICMP/TCP/UDP/HTTP/SNMP/SSH/
 Telnet), so a check gives identical results whether it runs on the Danbyte core
-or on a remote **Outpost** — no drift. Each checker's
+or on a remote **Outpost** - no drift. Each checker's
 ``run(target, params, secret_params, timeout_ms) -> CheckOutcome`` takes plain
 values (no ORM), so this package has zero Danbyte/Django dependencies.
 

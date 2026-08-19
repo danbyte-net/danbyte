@@ -16,8 +16,8 @@ import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
 // The one source of truth for "a table of device types". Every surface that
-// lists device types — /device-types, the embedded table on a manufacturer's
-// detail page, the monitoring configuration tab — builds its columns here so a
+// lists device types - /device-types, the embedded table on a manufacturer's
+// detail page, the monitoring configuration tab - builds its columns here so a
 // device-type row reads identically everywhere. Page-specific columns (the
 // monitoring binding control) are spliced around this factory's output; the
 // shared cells are never re-authored inline.
@@ -74,7 +74,7 @@ const PANEL_LABELS: Record<PanelLayout, string> = {
   auto: "Auto",
 }
 
-/** What a device of this type draws as its panel — one value, because the panel
+/** What a device of this type draws as its panel - one value, because the panel
  * itself picks one (`useHasImagePorts`): photo markers win, but only when there
  * is a photo under them; otherwise a saved faceplate layout; otherwise the
  * automatic one. So "Auto" is the not-yet-laid-out queue. */
@@ -92,7 +92,7 @@ export interface DeviceTypeColumnOpts<T extends DeviceType = DeviceType> {
   include?: DeviceTypeColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
   /** Header for the rack-units column: "U" where the row is dense, "Height"
    * where the embedded table has room to spell it out. */
@@ -238,7 +238,7 @@ export function buildDeviceTypeColumns<T extends DeviceType = DeviceType>(
           label: "Faceplate",
           get: (r: T) => panelLayout(r),
           formatValue: (v) => ({ label: PANEL_LABELS[v as PanelLayout] }),
-          // Nothing laid out yet (or everything) — the split is the only
+          // Nothing laid out yet (or everything) - the split is the only
           // reason this facet is interesting.
           hideWhenSingle: true,
         },
@@ -278,7 +278,7 @@ export function buildDeviceTypeColumns<T extends DeviceType = DeviceType>(
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     }),

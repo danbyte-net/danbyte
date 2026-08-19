@@ -62,7 +62,7 @@ import {
 } from "./world"
 
 /**
- * The 3D room view — the floor plan extruded into a navigable scene: racks as
+ * The 3D room view - the floor plan extruded into a navigable scene: racks as
  * cabinets at their tile positions (clickable devices at true U positions up
  * close), trays at their recorded elevations, monitoring beacons from the same
  * `/state/` poll the 2D canvas uses. Double-click a rack to fly the camera to
@@ -89,7 +89,7 @@ export default function FloorScene3D({
   planId: string
   liveState: FloorPlanLiveState | null
   traceCableId?: string | null
-  /** Overlay toggles — owned by the route's View popover, like the 2D prefs. */
+  /** Overlay toggles - owned by the route's View popover, like the 2D prefs. */
   showUNumbers?: boolean
   showNames?: boolean
   showAirflow?: boolean
@@ -97,14 +97,14 @@ export default function FloorScene3D({
    * trays and cable runs read through the plenum. */
   floorPeek?: boolean
   showCables?: boolean
-  /** Walls default ON — a drawn wall that silently didn't render would read
+  /** Walls default ON - a drawn wall that silently didn't render would read
    * as a bug; hiding the room shell is the opt-in. */
   showWalls?: boolean
-  /** Ceiling plane — default OFF; it only reads from inside the room. */
+  /** Ceiling plane - default OFF; it only reads from inside the room. */
   showCeiling?: boolean
   /** Cabinet shell: solid (doors on) / cutaway (open frame) / x-ray. */
   shellMode?: ShellMode
-  /** Effects budget (shadows, AO, dpr) — per-device, "auto" probes the GPU. */
+  /** Effects budget (shadows, AO, dpr) - per-device, "auto" probes the GPU. */
   quality?: RenderQualitySetting
 }) {
   const scene = useScene(planId)
@@ -115,7 +115,7 @@ export default function FloorScene3D({
   const [traySel, setTraySel] = useState<string | null>(null)
   const flyToRef = useRef<FlyToRequest | null>(null)
   // Focus (F): the selected rack/device stays lit, the rest of the room
-  // ghosts. Session state, deliberately not persisted — it is a look, not a
+  // ghosts. Session state, deliberately not persisted - it is a look, not a
   // preference.
   const [focusOn, setFocusOn] = useState(false)
   // Isolation: only these tile ids render (zone click or "Isolate row").
@@ -123,10 +123,10 @@ export default function FloorScene3D({
     label: string
     ids: Set<string>
   } | null>(null)
-  // Which face the camera last framed for the selected rack — the HUD's
+  // Which face the camera last framed for the selected rack - the HUD's
   // front↔rear flip toggles it.
   const [viewSide, setViewSide] = useState<"front" | "rear">("front")
-  // Per-area raised-floor lifts (click an area's edge skirt) — the global
+  // Per-area raised-floor lifts (click an area's edge skirt) - the global
   // "Lift raised floor" toggle and x-ray still lift everything.
   const [liftedIds, setLiftedIds] = useState<Set<string>>(new Set())
   // invalidate() bridge for HUD-triggered camera moves: DOM buttons live
@@ -166,7 +166,7 @@ export default function FloorScene3D({
     id: string
     name: string
   } | null>(null)
-  // Parts list for the editor — fetched only while it's open, on the Hardware
+  // Parts list for the editor - fetched only while it's open, on the Hardware
   // tab's cache key so an edit lands in both places.
   const partInventory = useQuery({
     queryKey: ["device-inventory", partEdit?.deviceId],
@@ -197,7 +197,7 @@ export default function FloorScene3D({
   const startConnect = async (sel: Sel, path: "maker" | "3d") => {
     const a = await resolvePort(sel)
     if (!a?.id || !a.kind) {
-      toast.error("This port isn't defined on the device yet — can't cable it.")
+      toast.error("This port isn't defined on the device yet - can't cable it.")
       return
     }
     if (a.connected) {
@@ -215,13 +215,13 @@ export default function FloorScene3D({
     setConnecting({ portLabel: a.name, a: aInput, tileId: sel.tileId })
   }
 
-  // The far end was clicked while arming — resolve it and open the creator with
+  // The far end was clicked while arming - resolve it and open the creator with
   // both ends seeded.
   const pickFarEnd = async (sel: Sel) => {
     if (!connecting) return
     const b = await resolvePort(sel)
     if (!b?.id || !b.kind) {
-      toast.error("This port isn't defined on the device yet — can't cable it.")
+      toast.error("This port isn't defined on the device yet - can't cable it.")
       return
     }
     if (b.connected) {
@@ -261,7 +261,7 @@ export default function FloorScene3D({
         })
       } catch {
         toast.error(
-          "Couldn't assign the cable to a duct — set it on the 2D plan."
+          "Couldn't assign the cable to a duct - set it on the 2D plan."
         )
         return
       }
@@ -275,7 +275,7 @@ export default function FloorScene3D({
       return
     }
     setCableSel(null)
-    // A different cabinet resets the flip — you arrive at its front. (Plain
+    // A different cabinet resets the flip - you arrive at its front. (Plain
     // sequential setState: the first version nested this inside the
     // setSelection updater, and a state update from inside an updater is a
     // render-phase side effect React is allowed to double-fire.)
@@ -318,12 +318,12 @@ export default function FloorScene3D({
 
   // Every near-tier device reports the colours it draws; the HUD legend keys
   // their union (and hides when nothing photo-anchored is in view). Above the
-  // WebGL/loading early returns — hook order has to be unconditional.
+  // WebGL/loading early returns - hook order has to be unconditional.
   const { content: legend, report: onLegend } = useLegendCollector()
   const supported = useMemo(webglSupported, [])
   // Where the operator is looking: the selected rack's centre. Racks between
   // the camera and this point auto-ghost (see RackMesh). Above the early
-  // returns — hook order must be unconditional.
+  // returns - hook order must be unconditional.
   const attention = useMemo<[number, number, number] | null>(() => {
     const d = scene.data
     if (!selection || !d) return null
@@ -336,7 +336,7 @@ export default function FloorScene3D({
   if (!supported)
     return (
       <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">
-        This browser can't do WebGL — the 3D view needs it. The 2D view has
+        This browser can't do WebGL - the 3D view needs it. The 2D view has
         everything else.
       </div>
     )
@@ -358,7 +358,7 @@ export default function FloorScene3D({
   const [w, d] = cellToWorld(plan, plan.grid_width, plan.grid_height)
   const rackTiles = data.tiles.filter((t) => t.kind === "rack" && t.rack)
   const diag = Math.max(w, d)
-  // Corners, tees and crossings across every tray — rails trim back to these
+  // Corners, tees and crossings across every tray - rails trim back to these
   // and a plate bridges each one.
   const trayJoints = trayJunctions(plan, data.trays)
   const trayJointPoints = trayJoints.map((j) => j.at)
@@ -369,7 +369,7 @@ export default function FloorScene3D({
   // Big-hall guard: the shadow pass re-renders the whole scene from the light
   // every frame, so a hundred cabinets of gear shadow-cast is the dominant
   // per-frame cost. Above this many racks, Auto/High fall back to "low" (no
-  // shadows, no AO) — the room stays readable and the frame rate holds. An
+  // shadows, no AO) - the room stays readable and the frame rate holds. An
   // explicit Flat pick is already the cheapest and is left alone; an explicit
   // Low/Medium is the operator's call and is respected.
   const BIG_HALL_RACKS = 40
@@ -387,7 +387,7 @@ export default function FloorScene3D({
   // ── Isolation ──────────────────────────────────────────────────────────
   // Pure client state: a set of tile ids that stay mounted, everything else
   // unmounts (hidden racks can't be raycast, so nothing invisible eats
-  // clicks). Zones and the room shell always stay — they are the context.
+  // clicks). Zones and the room shell always stay - they are the context.
   // Entry points live on the rack HUD: a first version made zone patches
   // clickable, and every empty-floor click inside a zone isolated instead
   // of deselecting.
@@ -413,7 +413,7 @@ export default function FloorScene3D({
       ids,
     })
   }
-  // Zones the selected rack stands in, most specific (smallest) first —
+  // Zones the selected rack stands in, most specific (smallest) first -
   // powers the HUD's "Isolate zone".
   const zonesForSelected = selTile
     ? data.tiles
@@ -446,7 +446,7 @@ export default function FloorScene3D({
     ? rackTiles.filter((t) => isolation.ids.has(t.id))
     : rackTiles
 
-  // HUD front↔rear flip — same viewpoint math as the double-click fly-to.
+  // HUD front↔rear flip - same viewpoint math as the double-click fly-to.
   const flipView = () => {
     if (!selTile?.rack) return
     const side = viewSide === "front" ? "rear" : "front"
@@ -469,7 +469,7 @@ export default function FloorScene3D({
     <div className="relative h-full min-h-0 w-full">
       <Canvas
         frameloop="demand"
-        // `shadows` costs nothing until a light casts — the quality tier
+        // `shadows` costs nothing until a light casts - the quality tier
         // gates that per light, so Low never pays the shadow pass.
         shadows
         // Render at the display's real pixel ratio (capped at 2): 1.75 left a
@@ -479,7 +479,7 @@ export default function FloorScene3D({
         camera={{
           position: [w / 2 + diag * 0.55, diag * 0.6, d + diag * 0.45],
           fov: 45,
-          // Initial only — CameraRig re-fits `near` per frame to the orbit
+          // Initial only - CameraRig re-fits `near` per frame to the orbit
           // distance (1 cm nose-on, 0.5 m across the hall).
           near: 0.05,
           far: diag * 10 + 50,
@@ -488,18 +488,18 @@ export default function FloorScene3D({
           setSelection(null)
           setConnecting(null)
           setCableSel(null)
-          // Focus follows the selection — a click into nothing ends both.
+          // Focus follows the selection - a click into nothing ends both.
           setFocusOn(false)
         }}
       >
         <InvalidatorBridge apiRef={invalidateRef} />
         {/* Light rig: soft ambient + one shadow-casting key light + a dim
             fill, over a procedural studio environment (PMREM'd
-            RoomEnvironment — zero assets, so airgap/CSP-safe). Intensities
+            RoomEnvironment - zero assets, so airgap/CSP-safe). Intensities
             re-balanced for the environment's contribution; tone mapping is
             r3f's default ACESFilmic (that's why photo faceplates opt out
             with toneMapped={false}). */}
-        {/* Flat: ONE full-strength ambient and nothing else — no key light,
+        {/* Flat: ONE full-strength ambient and nothing else - no key light,
             no shadow pass, no environment probe. Standard materials still
             shade, they just have a single uniform light to answer to, which
             is the cheapest honest way to take the light rig out of the
@@ -596,7 +596,7 @@ export default function FloorScene3D({
             key={a.id}
             plan={plan}
             area={a}
-            // X-ray lifts every raised floor — the plenum is half the point.
+            // X-ray lifts every raised floor - the plenum is half the point.
             peek={floorPeek || shellMode === "xray" || liftedIds.has(a.id)}
             onToggleLift={(id) =>
               setLiftedIds((prev) => {
@@ -617,7 +617,7 @@ export default function FloorScene3D({
               mode={shellMode === "xray" ? "ghost" : "solid"}
             />
           ))}
-        {/* Unlinked / non-rack tiles as ghost massing — a typed tile holds
+        {/* Unlinked / non-rack tiles as ghost massing - a typed tile holds
             its ground before any object is linked ("build in advance"). */}
         {scene.data.tiles
           .filter(
@@ -674,7 +674,7 @@ export default function FloorScene3D({
           onToggleFocus={() => setFocusOn((v) => !v)}
         />
       )}
-      {/* Isolation pill — hidden racks must read as "isolated", never as
+      {/* Isolation pill - hidden racks must read as "isolated", never as
           "my racks vanished". */}
       {isolation && (
         <div
@@ -740,7 +740,7 @@ export default function FloorScene3D({
           </Button>
         </div>
       )}
-      {/* Cable creator — seeded with the picked end(s); on save we just close
+      {/* Cable creator - seeded with the picked end(s); on save we just close
           and stay in the room view (occupancy + paths re-fetch). */}
       <Dialog open={!!modal} onOpenChange={(o) => !o && setModal(null)}>
         <DialogContent size="xl" className="max-h-[90vh] overflow-y-auto">
@@ -749,7 +749,7 @@ export default function FloorScene3D({
           </DialogHeader>
           {modal && (
             <>
-              {/* Routing — point-to-point (same-rack patch) or through the
+              {/* Routing - point-to-point (same-rack patch) or through the
                   plan's ducts, chosen up-front like an installer would. */}
               <div className="grid gap-1.5 rounded-md border border-border p-2.5">
                 <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
@@ -765,7 +765,7 @@ export default function FloorScene3D({
                       Point-to-point
                       <span className="text-muted-foreground">
                         {" "}
-                        — patch inside the rack / straight run
+                        - patch inside the rack / straight run
                       </span>
                     </label>
                   </div>
@@ -775,7 +775,7 @@ export default function FloorScene3D({
                       Through ducts
                       <span className="text-muted-foreground">
                         {" "}
-                        — ride the plan's cable trays
+                        - ride the plan's cable trays
                       </span>
                     </label>
                   </div>
@@ -809,7 +809,7 @@ export default function FloorScene3D({
                     </div>
                   ) : (
                     <p className="text-[11px] text-muted-foreground">
-                      No ducts on this plan yet — draw trays in the 2D Cables
+                      No ducts on this plan yet - draw trays in the 2D Cables
                       mode first.
                     </p>
                   ))}
@@ -838,7 +838,7 @@ export default function FloorScene3D({
           )}
         </DialogContent>
       </Dialog>
-      {/* Module install / part editor for marker clicks — the same dialogs the
+      {/* Module install / part editor for marker clicks - the same dialogs the
           2D faceplate opens (shared writes, toasts, and invalidations), so the
           clicked marker re-reads its occupancy/status on save. */}
       {installBay && (
@@ -863,7 +863,7 @@ export default function FloorScene3D({
         />
       )}
       {/* The SAME legend the 2D faceplate uses, keyed to what the near-tier
-          devices actually draw — so it's absent until a photo panel with real
+          devices actually draw - so it's absent until a photo panel with real
           ports is in view, and then explains only those colours. The overlay
           toggles live in the route's View popover. */}
       {!legendIsEmpty(legend) && (
@@ -877,7 +877,7 @@ export default function FloorScene3D({
 
 /**
  * The shadow-casting key light, aimed at the room's centre with an
- * orthographic frustum fitted to the room — one shadow pass, paid only on
+ * orthographic frustum fitted to the room - one shadow pass, paid only on
  * frames the demand loop already renders. Keyed by its shadow config so a
  * quality change rebuilds the map cleanly instead of resizing it in place.
  */
@@ -924,7 +924,7 @@ function KeyLight({
 
 /**
  * Procedural studio IBL: three's RoomEnvironment baked through PMREM once
- * per mount. Zero external assets (no HDRI fetch — CSP/airgap-safe), and it
+ * per mount. Zero external assets (no HDRI fetch - CSP/airgap-safe), and it
  * is what gives painted steel and rails something to reflect; without an
  * environment, metalness only darkens.
  */
@@ -964,7 +964,7 @@ function InvalidatorBridge({
   return null
 }
 
-/** Overlay card for the selected rack — name, live rollup, the operator's
+/** Overlay card for the selected rack - name, live rollup, the operator's
  * focus/isolate/flip controls, jump-off. */
 function RackHud({
   tile,
@@ -1055,7 +1055,7 @@ function RackHud({
   )
 }
 
-/** Overlay card for a selected device — identity, status, where it sits. */
+/** Overlay card for a selected device - identity, status, where it sits. */
 function DeviceHud({
   tile,
   dev,
@@ -1169,13 +1169,13 @@ function PortHud({
   dev: SceneDevice
   selection: Sel
   onConnect: (path: "maker" | "3d") => void
-  /** An empty module bay was clicked — open the install dialog for it. */
+  /** An empty module bay was clicked - open the install dialog for it. */
   onInstall: (bay: { id: string; name: string }) => void
-  /** A hardware marker (disk bay, PSU…) was clicked — open its part editor. */
+  /** A hardware marker (disk bay, PSU…) was clicked - open its part editor. */
   onEditPart: (part: { id: string; name: string }) => void
 }) {
   const { canDo } = useMe()
-  // Installing a module / editing a part writes to the device — the same gate
+  // Installing a module / editing a part writes to the device - the same gate
   // the Modules pane and the 2D faceplate use.
   const canEditParts = canDo("device", "change")
   const [choosing, setChoosing] = useState(false)
@@ -1225,7 +1225,7 @@ function PortHud({
   // separates them from hardware: a bay reads occupied/empty, not health.
   const bay = !!fp?.id && selection.portKind === "module-bay"
   // Hardware markers (inventory items) resolve with a status, never a
-  // termination kind — the card shows part health, not cabling.
+  // termination kind - the card shows part health, not cabling.
   const hardware = !!fp?.id && !bay && fp.kind === null
   // State chip, tinted like every other badge (bg = color at ~15%, text =
   // color). Hardware wears its status colour; bays their occupancy; ports
@@ -1274,7 +1274,7 @@ function PortHud({
               {selection.portKind.replace(/-/g, " ")}
             </span>
           )}
-        {/* Side-mounted strips have no U — the rack alone locates them. */}
+        {/* Side-mounted strips have no U - the rack alone locates them. */}
         {row(
           "Position",
           dev.position != null ? `${rack.name} · U${dev.position}` : rack.name
@@ -1304,7 +1304,7 @@ function PortHud({
           <span className="min-w-0 flex-1 break-words">
             {fp.drift}
             <span className="mt-0.5 block text-muted-foreground">
-              Review it on the device's Monitoring tab — nothing changes until
+              Review it on the device's Monitoring tab - nothing changes until
               you accept it.
             </span>
           </span>
@@ -1376,7 +1376,7 @@ function PortHud({
                 asChild
                 className="h-6 flex-1 px-2 text-[11px]"
               >
-                {/* Same route, ?trace= — the room draws the run as a
+                {/* Same route, ?trace= - the room draws the run as a
                     marching line (and 2D uses the identical param). */}
                 <Link
                   to="/floorplans/$id"
@@ -1462,7 +1462,7 @@ function PortHud({
       )}
       {fp && !fp.id && (
         <p className="mt-2 text-[11px] text-muted-foreground">
-          No matching component on this device — add the interface (or fix the
+          No matching component on this device - add the interface (or fix the
           marker name) to cable it.
         </p>
       )}
@@ -1477,13 +1477,13 @@ function PortHud({
 }
 
 /**
- * Overlay card for a cable clicked in the cables layer — identity, both ends
+ * Overlay card for a cable clicked in the cables layer - identity, both ends
  * (device:port, each a jump-off), length, and the run trace.
  */
 /**
  * An opened tray: what actually rides through it. Clicking a tray in the room
  * is the natural "show me this duct's contents" gesture, and without this the
- * basket was scenery — you could see runs pass through but never ask which.
+ * basket was scenery - you could see runs pass through but never ask which.
  */
 function TrayHud({
   planId,
@@ -1520,7 +1520,7 @@ function TrayHud({
       <div className="mt-2 grid gap-0.5 text-[12px]">
         {carried.length === 0 ? (
           <span className="text-muted-foreground">
-            Nothing routed through this tray yet — a cable follows it once its
+            Nothing routed through this tray yet - a cable follows it once its
             routing names it.
           </span>
         ) : (
@@ -1565,7 +1565,7 @@ function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
   const c = cable.data
   // What this run is set to FOLLOW. Without it the room showed a cable
   // ignoring an obvious tray with no way to tell whether that was the routing
-  // or a bug — the answer is almost always "it's point-to-point".
+  // or a bug - the answer is almost always "it's point-to-point".
   const scene = useScene(planId)
   const paths = useCablePaths(planId)
   const path = paths.data?.cables.find((p) => p.id === cableId)
@@ -1627,7 +1627,7 @@ function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
               </span>
               {followed.length === 0 ? (
                 <span className="text-muted-foreground">
-                  Point-to-point — follows no tray
+                  Point-to-point - follows no tray
                 </span>
               ) : (
                 <span className="break-words">

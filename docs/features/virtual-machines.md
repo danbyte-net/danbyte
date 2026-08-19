@@ -7,7 +7,7 @@ icon: lucide/server-cog
 A **virtual machine** is a first-class object next to devices: it carries its
 own interfaces, IP addresses, disks and services, so monitoring, IPAM, config
 context and change history all work the same way they do for physical
-hardware — a virtual router is checked and SNMP-polled exactly like a switch.
+hardware - a virtual router is checked and SNMP-polled exactly like a switch.
 
 Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 [sync](external-sync.md) can import them instead.
@@ -16,12 +16,12 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 
 | Field | Notes |
 | --- | --- |
-| **Name**, **status** | As for a device — the same status catalog. |
-| **Power** | Read-only, from the hypervisor — see [Power state](#power-state). |
+| **Name**, **status** | As for a device - the same status catalog. |
+| **Power** | Read-only, from the hypervisor - see [Power state](#power-state). |
 | **Role**, **platform** | Also the device catalogs, so one role can span physical and virtual. |
 | **Cluster** | The [cluster](clusters.md) it runs on. |
-| **Host device** | The physical host *inside* that cluster — see [Placement](#placement-site-and-host-device). |
-| **Site** | Its own location, independent of the cluster's — see [Placement](#placement-site-and-host-device). |
+| **Host device** | The physical host *inside* that cluster - see [Placement](#placement-site-and-host-device). |
+| **Site** | Its own location, independent of the cluster's - see [Placement](#placement-site-and-host-device). |
 | **vCPUs**, **Memory**, **Disk** | Resource sizing. Memory is entered in MB, disk in GB. |
 | **Primary IP** | The address the VM is reached on; monitoring uses it. |
 | **Description**, **tags**, **custom fields** | Free-form notes, labels and your own attributes. |
@@ -44,13 +44,13 @@ diagram. Then:
 ## Power state
 
 For a VM a [sync](external-sync.md) tracks, Danbyte shows the hypervisor's
-reported **power state** — *Powered on*, *Powered off* or *Suspended* — on the
+reported **power state** - *Powered on*, *Powered off* or *Suspended* - on the
 VM's hero, in its Overview with the time the reading was taken, and as a
 filterable **Power** column in VM tables.
 
 It is deliberately separate from **Status**, and the distinction matters:
 
-- **Status** is *yours*. It's the lifecycle — staged, active, decommissioning —
+- **Status** is *yours*. It's the lifecycle - staged, active, decommissioning -
   and nothing overwrites it.
 - **Power** is the *hypervisor's*. It changes whenever someone shuts a machine
   down.
@@ -63,7 +63,7 @@ tracks shows no power state at all, rather than an unknown-looking dash.
 
 Two different questions, two different fields:
 
-- **Site** — *where in the world*. This is the VM's **own** field: a cluster in
+- **Site** - *where in the world*. This is the VM's **own** field: a cluster in
   your datacentre can host VMs whose site is a branch office, which is usually
   what you want to record, so a cluster's site is not inherited by default. When
   the two really are the same place, tick **Give VMs on this cluster its site**
@@ -72,7 +72,7 @@ Two different questions, two different fields:
   [placement](external-sync.md#where-synced-hosts-and-vms-land), which reads
   the hypervisor's own datacenter/folder/cluster structure. Either way, a
   site's page lists the VMs placed there.
-- **Host device** — *which physical machine*. Model the ESXi host or Proxmox
+- **Host device** - *which physical machine*. Model the ESXi host or Proxmox
   node as a **Device**, then pick it as the VM's *Host device*. The device's
   own page lists the VMs it hosts.
 
@@ -82,7 +82,7 @@ Two different questions, two different fields:
 
     You can create those hosts yourself, or tick **Create hosts as devices** on
     the [source](external-sync.md) and let the sync add each hypervisor node as
-    a Device — name, cluster, status and, when
+    a Device - name, cluster, status and, when
     [placement](external-sync.md#where-synced-hosts-and-vms-land) resolves one,
     a site. A *Hypervisor* role is created on demand. It still leaves **device
     type empty**: nothing the hypervisor reports says what the hardware is. A
@@ -99,7 +99,7 @@ IP addresses attach to an interface exactly as on a device. From the VM's
 **Components** tab:
 
 - the **+** on an interface row opens the IP form with that VM and interface
-  already filled in — use it to record a **new** address;
+  already filled in - use it to record a **new** address;
 - **Assign IP** attaches an **existing** address to the VM instead.
 
 You can also set it from the address itself: the IP form has **Virtual
@@ -112,12 +112,12 @@ that is what monitoring checks.
 
 !!! note "A synced IP needs its prefix to exist first"
     When a hypervisor reports a guest address, Danbyte records it only if a
-    **prefix containing it already exists** — the sync never invents address
+    **prefix containing it already exists** - the sync never invents address
     space, because nothing in the guest data says what the subnet is. Create
     the prefix, sync again, and the address attaches to its interface.
 
     Which VRF it looks in is the source's **Address VRF**, overridden per NIC by
-    a VRF you set on the **VM interface** — sync reads that field and never
+    a VRF you set on the **VM interface** - sync reads that field and never
     writes it. See [where synced addresses
     land](external-sync.md#where-synced-addresses-land).
 
@@ -131,7 +131,7 @@ that is what monitoring checks.
 ## Disks
 
 **Virtual disks** are listed on the VM's Overview: name, size, the storage pool
-or datastore they live on, and their controller. They're descriptive — the VM's
+or datastore they live on, and their controller. They're descriptive - the VM's
 own *Disk* figure is its own field, not a total of these. A sync imports them
 when **Sync disks** is enabled on the source.
 
@@ -139,8 +139,8 @@ when **Sync disks** is enabled on the source.
 
 For a VM that came from a hypervisor:
 
-- **The hypervisor owns** its existence, its host, its power state, and — in
-  *Automatic* mode — its specs (vCPU / RAM / disk).
+- **The hypervisor owns** its existence, its host, its power state, and - in
+  *Automatic* mode - its specs (vCPU / RAM / disk).
 - **You own** everything else: role, platform, **site**, tags, custom fields,
   description and the primary-IP choice. A sync never overwrites those, in any
   mode.
@@ -150,7 +150,7 @@ overwritten, and never deleted by a sync.
 
 ## See also
 
-- [Clusters](clusters.md) — where VMs run.
-- [Virtual switches & topology](virtual-switches.md) — how VMs reach the network.
+- [Clusters](clusters.md) - where VMs run.
+- [Virtual switches & topology](virtual-switches.md) - how VMs reach the network.
 - [Proxmox VE sync](virt-proxmox.md) · [VMware vCenter sync](virt-vcenter.md)
-- [Devices](../dcim/devices.md) — the physical counterpart.
+- [Devices](../dcim/devices.md) - the physical counterpart.

@@ -1,7 +1,7 @@
 // Thin utilisation bar + percentage. Color tiers match the prefix table:
 // ≤85 neutral (primary), 85–95 amber, >95 red. Null = n/a (IPv6, container).
 export function UtilCell({ pct }: { pct: number | null }) {
-  if (pct === null) return <span className="text-muted-foreground">—</span>
+  if (pct === null) return <span className="text-muted-foreground">-</span>
   const color =
     pct > 95 ? "bg-red-500" : pct > 85 ? "bg-amber-500" : "bg-primary"
   return (

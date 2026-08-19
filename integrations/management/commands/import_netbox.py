@@ -6,7 +6,7 @@
 
 Everything lands in ONE Danbyte tenant (hard isolation boundary). NetBox's own
 `tenant` label is kept in each object's `custom_fields.netbox_tenant` for
-reference — it is not turned into separate Danbyte tenants (that's a deliberate
+reference - it is not turned into separate Danbyte tenants (that's a deliberate
 policy decision, not something to infer).
 
 Design:
@@ -22,7 +22,7 @@ Design:
     get real created/failed counts without persisting anything.
 
 Unsupported NetBox concepts (site-groups, rack-reservations, NAT self-links,
-scripts, etc.) are skipped by design — see docs/architecture/netbox-parity.md.
+scripts, etc.) are skipped by design - see docs/architecture/netbox-parity.md.
 """
 from __future__ import annotations
 
@@ -112,7 +112,7 @@ class NetBoxClient:
     """Thin paginated GET client for the NetBox REST API.
 
     ``guard=True`` (the web path) SSRF-checks every URL before fetching and
-    refuses redirects — a tenant admin supplies the URL, so the server must
+    refuses redirects - a tenant admin supplies the URL, so the server must
     not be talked into reaching loopback / cloud-metadata / internal hosts.
     The CLI runs unguarded: an operator's NetBox is almost always an internal
     address, and guarding it would break the feature's main use. An internal
@@ -136,7 +136,7 @@ class NetBoxClient:
 
             assert_public_url(self.base)
             # Guarded (web-triggered, attacker-controlled host): don't touch the
-            # target with a plain httpx client — assert_public_url only
+            # target with a plain httpx client - assert_public_url only
             # resolve-and-checks, and httpx re-resolves at connect time, so the
             # host could DNS-rebind to 169.254.169.254 / an internal address
             # between the two. Every guarded fetch goes through
@@ -147,7 +147,7 @@ class NetBoxClient:
             self.client = httpx.Client(
                 # NetBox's front-port / rear-port list endpoints compute
                 # link_peers per row and can be far slower than the rest of the
-                # API on cabled patch panels — 60s was enough for 80k interface
+                # API on cabled patch panels - 60s was enough for 80k interface
                 # templates but not always for a 250-row port page.
                 timeout=120,
                 verify=verify,
@@ -157,7 +157,7 @@ class NetBoxClient:
 
     def _get(self, url: str):
         if self.guard:
-            # Pinned, redirect-refusing GET — closes the DNS-rebinding TOCTOU.
+            # Pinned, redirect-refusing GET - closes the DNS-rebinding TOCTOU.
             import requests
 
             from core.ssrf import safe_get
@@ -175,13 +175,13 @@ class NetBoxClient:
         try:
             return self.client.get(url)
         except httpx.TimeoutException:
-            return self.client.get(url)  # one retry — slow pages, not dead hosts
+            return self.client.get(url)  # one retry - slow pages, not dead hosts
 
     def list_url(self, path: str) -> str:
         """First-page URL for a list path.
 
         `path` may carry its own query string (e.g. the module-type
-        interface-template filter) — splice it in before ``limit`` instead of
+        interface-template filter) - splice it in before ``limit`` instead of
         appending after it, which produced `…?filter/?limit=250`, a 301 from
         NetBox, and (redirects being refused under guard) a failed fetch.
         """
@@ -206,7 +206,7 @@ class NetBoxClient:
         return out
 
     def status(self) -> dict:
-        """NetBox's /api/status/ — version probe for the connection test."""
+        """NetBox's /api/status/ - version probe for the connection test."""
         r = self._get(f"{self.base}/api/status/")
         r.raise_for_status()
         return r.json()
@@ -262,7 +262,7 @@ class _Importer:
                 "updated": 0, "failed": 0, "skipped": 0,
             }
         )
-        # (key, reason) → {"count": n, "samples": ["nb#1", …]} — rolled into
+        # (key, reason) → {"count": n, "samples": ["nb#1", …]} - rolled into
         # notes by report() so a type where every row skipped is diagnosable.
         self._skips: dict[tuple[str, str], dict] = {}
         self.failures: list[str] = []
@@ -309,7 +309,7 @@ class _Importer:
         so the lookup must carry the tenant: without it we'd either adopt
         another tenant's identically-named tag or mint a NULL-tenant
         "legacy global" one that the importing tenant can't even edit.
-        Keyed on slug — NetBox's stable identifier — so a renamed tag updates
+        Keyed on slug - NetBox's stable identifier - so a renamed tag updates
         rather than duplicating.
 
         Each tag is its own savepoint: a tag that can't be created (e.g. two
@@ -332,7 +332,7 @@ class _Importer:
                         slug=slug,
                         defaults={"name": name, "color": color},
                     )
-            except Exception as e:  # noqa: BLE001 — never fail the parent object
+            except Exception as e:  # noqa: BLE001 - never fail the parent object
                 self.notes.append(f"tag '{name}' skipped: {e}")
                 continue
             tags.append(tag)
@@ -356,7 +356,7 @@ class _Importer:
         Existing rows are left untouched unless ``--update-existing`` is set,
         in which case `defaults` are re-applied over them (a re-sync during a
         migration) and counted as ``updated``. Tags are reconciled on every
-        run, not just on create — otherwise a re-run could never pick up a tag
+        run, not just on create - otherwise a re-run could never pick up a tag
         added in NetBox after the first import.
         """
         self.stats[key]["fetched"] += 1
@@ -374,7 +374,7 @@ class _Importer:
                     self.stats[key]["updated"] += 1
                 if tags:
                     self.tag(obj, nb)
-        except Exception as e:  # noqa: BLE001 — one bad row shouldn't stop the run
+        except Exception as e:  # noqa: BLE001 - one bad row shouldn't stop the run
             self.stats[key]["failed"] += 1
             label = nb.get("name") or nb.get("display") or nb.get("id")
             self.failures.append(f"[{key}] {label} (nb#{nb.get('id')}): {e}")
@@ -385,7 +385,7 @@ class _Importer:
 
     def skip(self, key: str, nb: dict, reason: str, *, counted: bool = False):
         """Count a row deliberately not imported (its parent ref is missing,
-        or the shape is unsupported). Skips used to be silent ``continue``s —
+        or the shape is unsupported). Skips used to be silent ``continue``s -
         a type where EVERY row skipped simply vanished from the report, which
         read as "nothing to do" when it actually meant "nothing worked".
 
@@ -407,14 +407,14 @@ class _Importer:
         UI's bar advances within a slow step (e.g. thousands of interfaces).
 
         ``optional=True`` marks a plugin endpoint (e.g. netbox-map): a fetch
-        failure there is a note, not a failure — most NetBox installs simply
+        failure there is a note, not a failure - most NetBox installs simply
         don't have the plugin.
         """
         only, skip = self.opts["only"], self.opts["skip"]
         if (only and key not in only) or key in skip:
             return
         try:
-            # Report each page as it arrives — a big type (thousands of rows,
+            # Report each page as it arrives - a big type (thousands of rows,
             # many pages) otherwise shows no movement for the whole fetch.
             rows = self.nb.list(
                 path,
@@ -426,12 +426,12 @@ class _Importer:
         except Exception as e:  # noqa: BLE001
             if optional:
                 self.notes.append(
-                    f"{key}: not imported — optional endpoint /{path}/ "
+                    f"{key}: not imported - optional endpoint /{path}/ "
                     f"not available ({e})"
                 )
                 return
             # Both a note (the zero-fetch detector greps for "fetch failed")
-            # and a failure row — a note alone left the type invisible in the
+            # and a failure row - a note alone left the type invisible in the
             # report table, so a whole endpoint could fail without a trace.
             self.notes.append(f"{key}: fetch failed ({e})")
             self.stats[key]["failed"] += 1
@@ -455,7 +455,7 @@ class _Importer:
                 "finalize_"
             )
             # Emit BEFORE the step runs so the UI shows the current step name
-            # immediately — otherwise a slow step looks frozen on the previous
+            # immediately - otherwise a slow step looks frozen on the previous
             # one (or blank, for the first step).
             self.on_progress(i, self._step_total, self._cur_key, dict(self.stats))
             step()
@@ -881,7 +881,7 @@ class _Importer:
 
     def _fetch_image(self, obj, field, url, *, label="device_types:image"):
         """Download a NetBox media image into an ImageField (skips if already set
-        or during --dry-run — file writes aren't transactional)."""
+        or during --dry-run - file writes aren't transactional)."""
         if not url or getattr(obj, field) or self.opts.get("dry_run"):
             return
         try:
@@ -1129,7 +1129,7 @@ class _Importer:
             )
 
     def _component(self, key, path, model, extra=None, *, typed=True):
-        # typed=False for models without a `type` column (ModuleBay) — passing
+        # typed=False for models without a `type` column (ModuleBay) - passing
         # the NetBox field through blew up get_or_create on every single row.
         for nb in self.each(key, path):
             device = self.ref("devices", nb.get("device"))
@@ -1384,7 +1384,7 @@ class _Importer:
             elif ao and ao_type == "virtualization.vminterface":
                 vmiface = self.ref("vm_interfaces", ao)
                 # IPAddress.save() derives assigned_device from an interface but
-                # has no VM equivalent, so set assigned_vm explicitly here —
+                # has no VM equivalent, so set assigned_vm explicitly here -
                 # else VM-attached IPs land unlinked from their VM.
                 if vmiface is not None:
                     vm = vmiface.vm
@@ -1735,7 +1735,7 @@ class _Importer:
             if len(resolved) < 2:
                 if not diag:
                     # Every present end resolved, there just aren't two of
-                    # them — a dangling cable (one side patched, the other
+                    # them - a dangling cable (one side patched, the other
                     # not yet). Valid in NetBox; nothing to connect here.
                     self.skip(
                         "cables", nb, "only one end connected in NetBox",
@@ -1745,12 +1745,12 @@ class _Importer:
                 self.stats["cables"]["failed"] += 1
                 self.failures.append(f"[cables] nb#{nb['id']}: " + "; ".join(diag))
                 continue
-            # A cable has no natural key of its own — but each termination
+            # A cable has no natural key of its own - but each termination
             # POINT is unique (a component sits on at most one cable), so an
             # existing termination on our first endpoint IS this cable. Without
             # this the create below fires on every re-run, the termination's
             # unique constraint rolls it back, and every cable reports as a
-            # failure — drowning the real ones.
+            # failure - drowning the real ones.
             end0, attr0, comp0 = resolved[0]
             found = (
                 m.CableTermination.objects
@@ -1879,7 +1879,7 @@ class _Importer:
             self.stats["contact_assignments"]["created"] += 1
 
     # ── floor plans (netbox-map plugin, optional) ────────────────────────
-    # https://github.com/danbyte-net/netbox-map — floorplans hang off a
+    # https://github.com/danbyte-net/netbox-map - floorplans hang off a
     # site (+ optional location); Danbyte plans hang off a Location, so
     # location-less plans land in a per-site "Imported floor plans" bucket.
 
@@ -1898,7 +1898,7 @@ class _Importer:
     def _floor_tile_type(self, value: str):
         """netbox-map's tile_type is a string enum; ours is tenant data.
         Mint one FloorTileType per distinct source value (import-derived
-        data, like tags/statuses — not seed data)."""
+        data, like tags/statuses - not seed data)."""
         slug = slugify(value) or "tile"
         cache = getattr(self, "_ftt_cache", None)
         if cache is None:
@@ -1985,7 +1985,7 @@ class _Importer:
                     defaults["link_kind"] = kind
                 else:
                     # Tile still imports (position + label survive), just
-                    # unlinked — tallied so the loss is visible.
+                    # unlinked - tallied so the loss is visible.
                     link_misses[ot] = link_misses.get(ot, 0) + 1
             if linked is None:
                 lfp = self.ref("floor_plans", nb.get("linked_floorplan"))
@@ -2008,7 +2008,7 @@ class _Importer:
             )
         for ot, n in sorted(link_misses.items()):
             self.notes.append(
-                f"floor_plan_tiles: {n} tile(s) imported without their link — "
+                f"floor_plan_tiles: {n} tile(s) imported without their link - "
                 f"{ot} not imported/supported"
             )
 
@@ -2054,11 +2054,11 @@ class _Importer:
     # ── report ───────────────────────────────────────────────────────────
     def report(self) -> dict:
         # Roll the skip tallies into notes so an all-skipped type is
-        # diagnosable from the report ("front_ports: 700 skipped — rear port
+        # diagnosable from the report ("front_ports: 700 skipped - rear port
         # not imported (e.g. nb#40, nb#41, nb#42)").
         for (key, reason), entry in sorted(self._skips.items()):
             self.notes.append(
-                f"{key}: {entry['count']} skipped — {reason} "
+                f"{key}: {entry['count']} skipped - {reason} "
                 f"(e.g. {', '.join(entry['samples'])})"
             )
         rows = sorted(self.stats.items())
@@ -2154,7 +2154,7 @@ class Command(BaseCommand):
             raise CommandError("No matching Danbyte tenant. Run `bootstrap` first.")
         if n > 1:
             raise CommandError(
-                "Ambiguous tenant — pass --tenant <slug> (and --org if needed). "
+                "Ambiguous tenant - pass --tenant <slug> (and --org if needed). "
                 f"Candidates: {', '.join(t.slug for t in qs[:10])}"
             )
         return qs.first()
@@ -2177,7 +2177,7 @@ class Command(BaseCommand):
         imp = _Importer(self, client, tenant, opts)
 
         if o["dry_run"]:
-            self.stdout.write(self.style.WARNING("DRY RUN — nothing will be saved.\n"))
+            self.stdout.write(self.style.WARNING("DRY RUN - nothing will be saved.\n"))
             try:
                 with transaction.atomic():
                     imp.run()
@@ -2193,4 +2193,4 @@ class Command(BaseCommand):
                 json.dump(result, fh, indent=2, default=str)
             self.stdout.write(f"\nJSON report → {o['report']}")
         if o["dry_run"]:
-            self.stdout.write(self.style.WARNING("\n(rolled back — dry run)"))
+            self.stdout.write(self.style.WARNING("\n(rolled back - dry run)"))

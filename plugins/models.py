@@ -1,7 +1,7 @@
 """Per-tenant plugin enablement.
 
 Install is deployment-wide (a package in ``PLUGINS``); *enablement* is layered on
-top with a cascade — a tenant row overrides the deployment default, which
+top with a cascade - a tenant row overrides the deployment default, which
 overrides the plugin's own ``default_enabled``. A ``PluginConfig`` row with a
 NULL tenant is the deployment default; a row with a tenant is that tenant's
 override. ``config`` holds per-scope settings overrides (JSON).

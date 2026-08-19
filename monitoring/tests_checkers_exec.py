@@ -1,4 +1,4 @@
-"""M20 — exec / script checker: exit-code mapping + safety gates."""
+"""M20 - exec / script checker: exit-code mapping + safety gates."""
 from __future__ import annotations
 
 import asyncio

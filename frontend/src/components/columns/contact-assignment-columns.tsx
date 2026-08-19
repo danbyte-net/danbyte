@@ -9,7 +9,7 @@ import { selectionColumn } from "@/components/data-table"
 import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
-// The one source of truth for "a table of contact assignments" — the generic
+// The one source of truth for "a table of contact assignments" - the generic
 // (contact → object, in a role, at a priority) rows. Two surfaces read the same
 // list from opposite ends: a contact's "Attached to" tab (omit "contact") and a
 // contact role's "Assignments" tab (omit "role"). Both build here so the rows
@@ -75,7 +75,7 @@ export function buildContactAssignmentColumns<
       header: "Object",
       enableSorting: false,
       // The target is a generic (object_type, object_id) pair, so there is no
-      // name to show without a second fetch per row — the short id is the
+      // name to show without a second fetch per row - the short id is the
       // stable, honest label, and the link resolves it.
       cell: ({ row }) => {
         const t = CONTACT_OBJECT_TYPES[row.original.object_type]

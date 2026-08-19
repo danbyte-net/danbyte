@@ -173,7 +173,7 @@
 }
 
 @layer components {
-  /* Opt-in zebra striping — a table renders `data-stripes="on"` when the
+  /* Opt-in zebra striping - a table renders `data-stripes="on"` when the
      user's `table_stripes` preference is set. Lives in the components layer
      so Tailwind's `hover:` / `data-[state=selected]:` utilities (utilities
      layer) always win over the static even-row tint. */
@@ -269,7 +269,7 @@
      map so app overlays always render on top. */
   isolation: isolate;
 }
-/* Attribution must stay readable in both themes — never hidden. */
+/* Attribution must stay readable in both themes - never hidden. */
 .leaflet-control-attribution {
   background: color-mix(in oklab, var(--background) 85%, transparent);
   color: var(--muted-foreground);
@@ -393,8 +393,8 @@
   }
 }
 
-/* Tabular figures. Applied at ~370 call sites — every counter, percentage,
-   timestamp, latency and byte total — so digits keep their column as data
+/* Tabular figures. Applied at ~370 call sites - every counter, percentage,
+   timestamp, latency and byte total - so digits keep their column as data
    updates instead of jittering (docs/design/visual-language.md).
    This lived in the archived reference/design/tokens.css and was deleted with
    it in 9ba017d ("Prep repo to go public"), silently breaking every one of
@@ -403,7 +403,7 @@
    `--destructive-foreground` (fixed in this pass). */
 /* Deliberately a plain rule, not `@utility`: prettier-plugin-tailwindcss reads
    this stylesheet, so registering `num` as a utility makes it sortable and
-   re-orders the class across all ~370 call sites — 218 files of churn mixed
+   re-orders the class across all ~370 call sites - 218 files of churn mixed
    into a one-line fix. Same runtime result. Promote it to `@utility` later in a
    dedicated formatting commit if variants (`sm:num`) are ever wanted. */
 .num {
@@ -413,7 +413,7 @@
 /* Canonical link. Neutral by design: inherits the surrounding text colour (no
    blue) and only reveals an underline on hover / keyboard focus, so a page
    dense with object references doesn't turn into a wall of blue. `--primary`
-   stays reserved for buttons, active tabs and focus rings — never links.
+   stays reserved for buttons, active tabs and focus rings - never links.
    Plain rule, not `@utility`, to keep prettier from re-sorting `link` across
    its ~150 call sites (same reasoning as `.num` above).
    Opt-in `.link-icon` adds a trailing chain glyph (Lucide `link-2`) for the
@@ -451,7 +451,7 @@
   mask: var(--link-icon) no-repeat center / contain;
 }
 
-/* Optional link colour (the "Link colour" preference — an accessibility aid,
+/* Optional link colour (the "Link colour" preference - an accessibility aid,
    e.g. a colour-blind user picking a hue they can distinguish). Default unset →
    `inherit`, so links stay neutral. Placed in `@layer components` so an explicit
    colour utility on a link (text-destructive on a delete link, text-muted-

@@ -34,13 +34,13 @@ interface SensorReading {
 }
 
 /**
- * Custom SNMP sensors — define an OID + value map once, poll it with the
+ * Custom SNMP sensors - define an OID + value map once, poll it with the
  * device's SNMP profile, and watch inventory-item statuses flip. The escape
  * hatch for BMCs / gear that expose health only over vendor OIDs.
  *
  * Serves both surfaces from one component: on a DEVICE it also explores OIDs,
  * polls, and shows the last readings; on a device TYPE (no `deviceId`) it edits
- * the definitions the whole model inherits, which is where they belong — a
+ * the definitions the whole model inherits, which is where they belong - a
  * sensor is a property of the hardware, not of one box.
  */
 export function DeviceSensorsCard({
@@ -158,8 +158,8 @@ export function DeviceSensorsCard({
             }
           >
             {typeScoped
-              ? "Define one — an OID plus a value→status map — and every device of this model reads hardware health from it."
-              : "Define one — an OID plus a value→status map — to read hardware health over vendor SNMP."}
+              ? "Define one - an OID plus a value→status map - and every device of this model reads hardware health from it."
+              : "Define one - an OID plus a value→status map - to read hardware health over vendor SNMP."}
           </EmptyState>
         ) : (
           <div className="grid gap-1">
@@ -257,7 +257,7 @@ export function DeviceSensorsCard({
 }
 
 /** A column chosen in the OID explorer: its OID, and the distinct values it
- * actually returned — the raw side of the value map, already filled in. */
+ * actually returned - the raw side of the value map, already filled in. */
 export interface SensorPrefill {
   oid: string
   values: string[]
@@ -401,7 +401,7 @@ export function SensorDialog({
           </Field>
           <Field
             label="OID"
-            hint="numeric — a table column to walk, or a scalar"
+            hint="numeric - a table column to walk, or a scalar"
           >
             <Input
               value={oid}
@@ -504,14 +504,14 @@ export function SensorDialog({
 
           <FormCheckbox
             label="Apply readings automatically"
-            hint="off (default) keeps readings observed-only and lists the difference as drift for you to accept — Danbyte never overwrites a status you set unless you ask it to"
+            hint="off (default) keeps readings observed-only and lists the difference as drift for you to accept - Danbyte never overwrites a status you set unless you ask it to"
             checked={autoApply}
             onChange={setAutoApply}
           />
 
           <FormSelect
             label="Never reported"
-            hint="status for parts this sensor covers that the agent doesn't list — the empty bays a chassis template stamped. Only applied after a poll that returned readings."
+            hint="status for parts this sensor covers that the agent doesn't list - the empty bays a chassis template stamped. Only applied after a poll that returned readings."
             value={absentStatus || null}
             onChange={(v) => setAbsentStatus(v ?? "")}
             options={statusOptions}

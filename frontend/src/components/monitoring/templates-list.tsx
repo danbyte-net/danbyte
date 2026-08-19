@@ -109,7 +109,7 @@ export function TemplatesList() {
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <p className="text-sm text-muted-foreground">
-          Reusable checks — attach one to many IPs or prefixes; editing updates
+          Reusable checks - attach one to many IPs or prefixes; editing updates
           them all.
         </p>
         <Button size="sm" className="ml-auto" onClick={() => setCreating(true)}>

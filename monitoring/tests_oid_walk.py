@@ -68,7 +68,7 @@ class OidWalkTests(APITestCase):
     @staticmethod
     def _children(base, subs, depth=1):
         """Fake a one-level listing: `depth` is how far below each child its
-        first value sits — 1 marks a table column, more marks a branch."""
+        first value sits - 1 marks a table column, more marks a branch."""
         return patch(
             "monitoring.oid_walk.list_oid_children_sync",
             return_value=[
@@ -126,12 +126,12 @@ class OidWalkTests(APITestCase):
         self.assertFalse(body["is_table"])
         self.assertEqual([c["sub"] for c in body["children"]], ["2", "2021", "8072"])
         self.assertEqual(body["columns"], [])
-        # No subtree walk at all — browsing a branch is one GETNEXT per child,
+        # No subtree walk at all - browsing a branch is one GETNEXT per child,
         # which is what makes a high base navigable instead of budget-capped.
         fetch.assert_not_called()
 
     def test_a_single_child_is_a_branch_not_a_one_column_table(self):
-        """1.3.6.1.4.1.2.3.51 has exactly one child — descend, don't transpose."""
+        """1.3.6.1.4.1.2.3.51 has exactly one child - descend, don't transpose."""
         with self._reachable(), self._profile(), self._children(
             "1.3.6.1.4.1.2.3.51", ["3"], depth=1
         ), patch("monitoring.oid_walk.fetch_oid_sync") as fetch:

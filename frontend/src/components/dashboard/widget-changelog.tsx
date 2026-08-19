@@ -10,7 +10,7 @@ const DOT: Record<string, string> = {
   delete: "bg-red-500",
 }
 
-/** Dashboard widget: the most recent audit-log changes across the tenant —
+/** Dashboard widget: the most recent audit-log changes across the tenant -
  * who changed what, in one glance (issue #25). Mirrors the per-object History
  * tab, aggregated. */
 export function ChangelogWidget() {

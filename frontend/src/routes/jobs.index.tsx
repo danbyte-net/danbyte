@@ -59,7 +59,7 @@ function RunStatusBadge({ status }: { status: string }) {
   return <Badge variant={RUN_VARIANT[status] ?? "secondary"}>{status}</Badge>
 }
 
-// The periodic beat — systemd-timer oneshots that never touch RQ. Surfaced so
+// The periodic beat - systemd-timer oneshots that never touch RQ. Surfaced so
 // admins can see each one ran and when (digest, discovery, Outpost driver, …).
 function ScheduledTasksCard({ tasks }: { tasks: ScheduledTask[] }) {
   return (
@@ -68,7 +68,7 @@ function ScheduledTasksCard({ tasks }: { tasks: ScheduledTask[] }) {
         <Clock className="h-3.5 w-3.5 text-muted-foreground" />
         <h2 className="text-sm font-semibold">Scheduled tasks</h2>
         <span className="text-xs text-muted-foreground">
-          the periodic beat — runs on a timer, outside the queue
+          the periodic beat - runs on a timer, outside the queue
         </span>
       </header>
       <div className="divide-y divide-border">
@@ -98,7 +98,7 @@ function ScheduledTasksCard({ tasks }: { tasks: ScheduledTask[] }) {
               )}
             </div>
             <div className="shrink-0 text-right text-xs whitespace-nowrap text-muted-foreground">
-              {t.last_run ? <TimeCell iso={t.last_run.started_at} /> : "—"}
+              {t.last_run ? <TimeCell iso={t.last_run.started_at} /> : "-"}
               {t.last_run?.duration_seconds != null && (
                 <div className="text-[11px]">
                   {fmtDuration(t.last_run.duration_seconds)}
@@ -112,7 +112,7 @@ function ScheduledTasksCard({ tasks }: { tasks: ScheduledTask[] }) {
   )
 }
 
-// Where checks actually run — the local engine + any Outposts — with heartbeats.
+// Where checks actually run - the local engine + any Outposts - with heartbeats.
 function EnginesCard({ engines }: { engines: EngineHeartbeat[] }) {
   if (engines.length === 0) return null
   return (
@@ -159,7 +159,7 @@ function EnginesCard({ engines }: { engines: EngineHeartbeat[] }) {
 
 // Seconds → compact human duration.
 export function fmtDuration(s: number | null): string {
-  if (s == null) return "—"
+  if (s == null) return "-"
   if (s < 1) return `${Math.round(s * 1000)}ms`
   if (s < 60) return `${s.toFixed(1)}s`
   const m = Math.floor(s / 60)
@@ -303,7 +303,7 @@ const columns: ColumnDef<JobBrief>[] = [
     header: "Worker",
     cell: ({ row }) => (
       <span className="font-mono text-[11px] text-muted-foreground">
-        {row.original.worker_name ? row.original.worker_name.slice(0, 12) : "—"}
+        {row.original.worker_name ? row.original.worker_name.slice(0, 12) : "-"}
       </span>
     ),
   },
@@ -314,7 +314,7 @@ const columns: ColumnDef<JobBrief>[] = [
       row.original.enqueued_at ? (
         <TimeCell iso={row.original.enqueued_at} />
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
   },
   {
@@ -380,7 +380,7 @@ function JobsPage() {
   const total = counts.total ?? 0
 
   // Only surface deferred/scheduled facets when there's something in them.
-  // Counts come from the server's aggregates, not the visible page — no "All"
+  // Counts come from the server's aggregates, not the visible page - no "All"
   // row is needed: the rail's own "clear" is what resets to every state.
   const baseStates = ["queued", "started", "finished", "failed"]
   const extraStates = ["deferred", "scheduled"].filter(
@@ -414,7 +414,7 @@ function JobsPage() {
   const noWorkers = workers.length === 0
   const stalled = noWorkers && queued > 0
 
-  // Worker roll-up — the same readout on every tab, in the shell's action slot.
+  // Worker roll-up - the same readout on every tab, in the shell's action slot.
   const workerReadout = (
     <span className="flex items-center gap-2 text-xs text-muted-foreground">
       <Cpu className="h-3.5 w-3.5" />
@@ -476,7 +476,7 @@ function JobsPage() {
         >
           {sched.data && sched.data.engines.length === 0 ? (
             <EmptyState title="No monitoring engines yet.">
-              None are configured for this tenant — the local engine appears
+              None are configured for this tenant - the local engine appears
               here once checks run.
             </EmptyState>
           ) : (
@@ -522,7 +522,7 @@ function JobsPage() {
             {/* Self-upgrade progress / next auto-update countdown. */}
             {data?.system && <SystemUpgradeCard system={data.system} />}
 
-            {/* No-workers diagnostic — the exact failure mode this page exists for. */}
+            {/* No-workers diagnostic - the exact failure mode this page exists for. */}
             {stalled && (
               <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-[13px] text-destructive">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -540,7 +540,7 @@ function JobsPage() {
 
             {data?.truncated && (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[13px] text-amber-800 dark:text-amber-300">
-                Showing the first {data.total.toLocaleString()} jobs — narrow by
+                Showing the first {data.total.toLocaleString()} jobs - narrow by
                 state or queue to see the rest.
               </div>
             )}

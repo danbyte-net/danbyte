@@ -20,7 +20,7 @@ import { Field } from "@/components/forms"
 
 /** Multi-select assignee picker. Value is user ids.
  *
- * Reads /api/planning/assignable-users/, not /api/users/ — the latter is gated
+ * Reads /api/planning/assignable-users/, not /api/users/ - the latter is gated
  * on `user.view`, so anyone with task rights but no user-administration grant
  * got a 403 and an empty picker, making assignment quietly admin-only.
  *
@@ -33,7 +33,7 @@ export function UserPicker({
   onChange,
   team = null,
   onTeamChange,
-  /** Drop the labelled `Field` wrapper and the full-width outline button — for
+  /** Drop the labelled `Field` wrapper and the full-width outline button - for
    *  the task sheet's property list, where the value itself is the control. */
   bare = false,
 }: {

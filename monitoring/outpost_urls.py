@@ -1,4 +1,4 @@
-"""Outpost API URLs — mounted at ``/api/outpost/`` from ``api.api_urls``."""
+"""Outpost API URLs - mounted at ``/api/outpost/`` from ``api.api_urls``."""
 from __future__ import annotations
 
 from django.urls import path

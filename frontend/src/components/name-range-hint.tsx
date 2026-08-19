@@ -2,7 +2,7 @@ import { expandNameRange } from "@/lib/name-range"
 
 /**
  * Live feedback under a component's Name field: what a `[a-b]` range is about
- * to create. Shown on create only — editing renames one row, it never fans
+ * to create. Shown on create only - editing renames one row, it never fans
  * out. Renders nothing when the name has no range, so it can sit
  * unconditionally under any name input.
  */

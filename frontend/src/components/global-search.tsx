@@ -159,7 +159,7 @@ function SuggestionLink({
       onClick={onPick}
       className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted/60"
     >
-      {/* Main column — full value, never truncated. shrink-0 keeps the
+      {/* Main column - full value, never truncated. shrink-0 keeps the
           flex layout from squeezing an IP/CIDR down to its first octet. */}
       <span className="shrink-0 font-mono text-[12px] whitespace-nowrap text-foreground">
         {hit.label}

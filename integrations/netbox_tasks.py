@@ -45,7 +45,7 @@ def run_netbox_import(run_id: str) -> None:
         from rq import get_current_job
 
         job = get_current_job()
-    except Exception:  # noqa: BLE001 — inline (no RQ job) or rq missing
+    except Exception:  # noqa: BLE001 - inline (no RQ job) or rq missing
         job = None
 
     def on_progress(step_i, step_total, key, stats, fetching=None):
@@ -61,7 +61,7 @@ def run_netbox_import(run_id: str) -> None:
             "step": step_i, "total": step_total, "key": key,
             "pct": pct, "totals": totals, "by_type": stats,
             # Live per-page fetch counter ({"key","rows"}) while a big type is
-            # being pulled — proves the run is alive during a slow fetch.
+            # being pulled - proves the run is alive during a slow fetch.
             "fetching": fetching,
         }
         run.save(update_fields=["progress", "updated_at"])
@@ -70,7 +70,7 @@ def run_netbox_import(run_id: str) -> None:
                                     "key": key, "pct": pct}
             try:
                 job.save_meta()
-            except Exception:  # noqa: BLE001 — meta is best-effort
+            except Exception:  # noqa: BLE001 - meta is best-effort
                 pass
 
     class _Cmd:
@@ -98,7 +98,7 @@ def run_netbox_import(run_id: str) -> None:
         else:
             imp.run()
         run.report = imp.report()
-        # A run where NOTHING was fetched isn't a success — it means every
+        # A run where NOTHING was fetched isn't a success - it means every
         # step's fetch failed (TLS, auth, wrong URL) and the failures live in
         # the notes. A green "0 fetched" banner would hide that completely.
         totals = (run.report or {}).get("totals") or {}
@@ -109,12 +109,12 @@ def run_netbox_import(run_id: str) -> None:
         if not totals.get("fetched") and fetch_failures:
             run.status = "failed"
             run.error = (
-                "Nothing could be fetched from NetBox — "
+                "Nothing could be fetched from NetBox - "
                 + fetch_failures[0].split(": ", 1)[-1]
             )
         else:
             run.status = "success"
-    except Exception as exc:  # noqa: BLE001 — record, never crash the worker
+    except Exception as exc:  # noqa: BLE001 - record, never crash the worker
         logger.exception("netbox import %s failed", run_id)
         run.status = "failed"
         run.error = str(exc)
@@ -149,7 +149,7 @@ def enqueue_netbox_import(tenant, url, token, *, dry_run, update_existing,
         django_rq.get_queue("default").enqueue(
             run_netbox_import, str(run.id), job_timeout=3600,
         )
-    except Exception:  # noqa: BLE001 — Redis down: run inline so it still happens
+    except Exception:  # noqa: BLE001 - Redis down: run inline so it still happens
         logger.warning("RQ unavailable; running netbox import inline")
         try:
             run_netbox_import(str(run.id))

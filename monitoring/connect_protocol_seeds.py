@@ -3,7 +3,7 @@
 A fresh tenant starts with a small, **editable** catalog of the common device
 access methods (SSH, Telnet, RDP, HTTP/S) so the device Connect menu is useful on
 day one. These are launch-URL templates the browser hands to the OS protocol
-handler — not a fixed enum: an operator renames, edits, disables, or deletes them
+handler - not a fixed enum: an operator renames, edits, disables, or deletes them
 and adds their own custom schemes freely. Seeded like the built-in IP roles:
 ``bootstrap`` and ``TenantViewSet.perform_create`` call
 :func:`seed_builtin_connect_protocols`, and a data migration backfills tenants

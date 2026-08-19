@@ -2,7 +2,7 @@
 
 Demonstrates that a plugin can register a check kind into the shared checker
 registry (``danbyte_checks``) so it validates through the API and runs via the
-core runner and the Outposts — no core changes. Importing this module registers
+core runner and the Outposts - no core changes. Importing this module registers
 the checker (the ``@register`` side effect).
 """
 from __future__ import annotations

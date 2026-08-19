@@ -18,7 +18,7 @@ class ExamplePluginConfig(DanbytePluginConfig):
     max_version = None
 
     def ready(self):
-        # Guard against a future release moving past an (unset) max — kept as a
+        # Guard against a future release moving past an (unset) max - kept as a
         # no-op today, but documents where a plugin would assert compatibility
         # beyond the loader's static gate.
         super().ready()

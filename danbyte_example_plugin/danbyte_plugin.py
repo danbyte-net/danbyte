@@ -1,4 +1,4 @@
-"""Registration entry point — autodiscovered by ``plugins.apps.PluginsConfig``.
+"""Registration entry point - autodiscovered by ``plugins.apps.PluginsConfig``.
 
 A plugin performs ALL its contribution registrations here (or in modules it
 imports), so there is one conventional place to look. This runs after every app
@@ -21,10 +21,10 @@ from plugins.ui_registry import (
     register_page,
 )
 
-from . import checks  # noqa: F401 — registers the example_ping check kind
+from . import checks  # noqa: F401 - registers the example_ping check kind
 
 # 1. Expose Widget to RBAC (default-closed) + import/export + webhook/automation
-#    eventing — all three consumers iterate this registry.
+#    eventing - all three consumers iterate this registry.
 register_object_type("danbyte_example_plugin.Widget", "Widgets", "Plugins")
 
 # 2. Let object-reference custom fields point at a Widget.
@@ -50,7 +50,7 @@ def _noop_runner(target, payload, event):
 register_automation_provider("noop", _noop_runner)
 
 
-# 5. Server-driven UI — a nav item, a list + detail page, and a dashboard panel.
+# 5. Server-driven UI - a nav item, a list + detail page, and a dashboard panel.
 #    No plugin JavaScript: the generic frontend renders these from the metadata.
 _WIDGETS_API = "/api/plugins/example/widgets/"
 

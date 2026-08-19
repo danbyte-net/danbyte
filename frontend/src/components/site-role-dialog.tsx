@@ -30,7 +30,7 @@ type SiteRole = "editor" | "viewer"
 
 const ROLE_BLURB: Record<SiteRole, string> = {
   editor:
-    "Edit everything in the chosen site(s) — devices, prefixes, IPs, racks… — and read everything elsewhere. The “local IT” recipe.",
+    "Edit everything in the chosen site(s) - devices, prefixes, IPs, racks… - and read everything elsewhere. The “local IT” recipe.",
   viewer: "Read-only access to the chosen site(s). Nothing outside them.",
 }
 
@@ -51,7 +51,7 @@ export function SiteRoleDialog({
   /** Pre-scope the role to one site and hide the site picker. */
   lockedSiteId?: string
   lockedSiteName?: string
-  /** Lock to "viewer" and hide the role toggle — used for delegated invites
+  /** Lock to "viewer" and hide the role toggle - used for delegated invites
    * by a local site editor (who may never mint editors). */
   viewerOnly?: boolean
 }) {

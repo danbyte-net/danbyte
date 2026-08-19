@@ -23,9 +23,9 @@ type NavSection = {
   items: NavItem[]
 }
 
-// Two admin tiers: "This tenant" (can_manage_admin in the active tenant —
+// Two admin tiers: "This tenant" (can_manage_admin in the active tenant -
 // overrides inherit from the deployment defaults until enabled) and
-// "Deployment" (superuser / global users.manage — affects every tenant).
+// "Deployment" (superuser / global users.manage - affects every tenant).
 const SECTIONS: NavSection[] = [
   {
     title: "User",
@@ -33,7 +33,7 @@ const SECTIONS: NavSection[] = [
     items: [{ to: "/settings/preferences", label: "Preferences" }],
   },
   {
-    // Per-site settings — local IT manages its own site (gated by the
+    // Per-site settings - local IT manages its own site (gated by the
     // tenant's allow switch + site-admin qualification, me.settings_sites).
     title: "This site",
     gate: "site",

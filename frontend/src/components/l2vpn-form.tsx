@@ -201,7 +201,7 @@ export function L2vpnForm({ l2vpn, onSaved, onCancel }: L2vpnFormProps) {
         />
         <FormText
           label="Identifier"
-          hint="optional — VNI / VPN id"
+          hint="optional - VNI / VPN id"
           type="number"
           value={identifier}
           onChange={setIdentifier}

@@ -21,7 +21,7 @@ interface ComponentPopoverConfig {
   defaults: string[]
 }
 
-/** Labels + hints for the server's vocabulary — an unknown key still renders
+/** Labels + hints for the server's vocabulary - an unknown key still renders
  * (raw), so a newly-added server field is never invisible here. */
 const FIELD_META: Record<string, { label: string; hint: string }> = {
   name: { label: "Name", hint: "The interface, linked to its page" },
@@ -50,7 +50,7 @@ const meta = (key: string) =>
   FIELD_META[key] ?? { label: key, hint: "Server-defined field" }
 
 /**
- * Which fields a faceplate port's hover card shows, in what order — the
+ * Which fields a faceplate port's hover card shows, in what order - the
  * component analogue of the floor-plan tile popover. Deployment-wide; every
  * device page's faceplate (2D) reads the same list.
  */
@@ -77,7 +77,7 @@ function ComponentPopoverSettings() {
     onSuccess: (data) => {
       qc.setQueryData(["deployment-component-popover"], data)
       qc.invalidateQueries({ queryKey: ["component-popover"] })
-      // The server answers a reset with the defaults it now falls back to —
+      // The server answers a reset with the defaults it now falls back to -
       // reflect that rather than showing an empty list.
       setFields(data.popover_fields)
       toast.success("Popover fields saved")
@@ -168,7 +168,7 @@ function ComponentPopoverSettings() {
         ))}
         {fields.length === 0 && (
           <p className="px-3 py-4 text-[13px] text-muted-foreground">
-            No fields — the popover falls back to the defaults.
+            No fields - the popover falls back to the defaults.
           </p>
         )}
       </div>

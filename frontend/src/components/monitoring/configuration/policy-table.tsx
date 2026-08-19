@@ -186,7 +186,7 @@ export function usePolicySave<T extends { id: string }>(
       }
     },
   })
-  // v5's `mutate` is referentially stable, so this callback is too — every
+  // v5's `mutate` is referentially stable, so this callback is too - every
   // panel's columns memo depends on `save`, and an unstable identity here
   // rebuilt all column defs (and re-derived the facet rails over ~500 rows)
   // on every render. Don't return a fresh arrow function from this hook.
@@ -195,7 +195,7 @@ export function usePolicySave<T extends { id: string }>(
     (args: { row: T; patch: Partial<MonitoringPolicy> }) => mutate(args),
     [mutate]
   )
-  // Which row's save is in flight — drives the per-button spinner. Changes
+  // Which row's save is in flight - drives the per-button spinner. Changes
   // only around a mutation (2 column rebuilds per click), not per render.
   const pendingId = isPending ? (variables?.row.id ?? null) : null
   return { save, pendingId }

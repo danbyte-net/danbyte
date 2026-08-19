@@ -1,24 +1,24 @@
 # ───────────────────────────────────────────────────────────────────────────
-# Danbyte documentation site — Zensical
+# Danbyte documentation site - Zensical
 # ───────────────────────────────────────────────────────────────────────────
 
 [project]
 site_name = "Danbyte"
-site_description = "Customizable IPAM / DCIM — docs"
+site_description = "Customizable IPAM / DCIM - docs"
 site_author = "Daniel K."
 copyright = "Copyright &copy; 2026 Danbyte"
 docs_dir = "docs"
 site_dir = "site"
 
 extra_css = ["stylesheets/extra.css"]
-# Client-side secret generator for the install guide — fills [data-secret]
+# Client-side secret generator for the install guide - fills [data-secret]
 # placeholders with crypto-random values in the reader's browser.
 extra_javascript = ["javascripts/gen-secrets.js"]
 
-# Explicit navigation — a single, collapsible LEFT sidebar (no top tabs).
+# Explicit navigation - a single, collapsible LEFT sidebar (no top tabs).
 # The groups mirror the app's own sidebar (Organization, IPAM, DCIM,
 # Connectivity, Monitoring), so a reader finds a feature's docs where they
-# find the feature. One level of grouping only — no umbrella sections — so
+# find the feature. One level of grouping only - no umbrella sections - so
 # every product area is one click from the root. Cross-cutting everyday
 # tools live under "Working with data"; developer material stays at the
 # bottom (Plugins, Architecture, Reference).
@@ -162,7 +162,7 @@ features = [
   "navigation.instant",
   "navigation.tracking",
   # One collapsible LEFT sidebar (deliberately NO top tabs and NO
-  # navigation.sections — categories stay collapsed until opened, so the menu is
+  # navigation.sections - categories stay collapsed until opened, so the menu is
   # short to scan). navigation.indexes makes a section's index page clickable.
   "navigation.indexes",
   "navigation.top",

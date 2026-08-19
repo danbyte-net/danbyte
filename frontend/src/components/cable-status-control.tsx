@@ -15,11 +15,11 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { apiErrorToast } from "@/lib/api-toast"
 
-/** Row tint from a cable's status **color** — whatever hex the user assigned to
+/** Row tint from a cable's status **color** - whatever hex the user assigned to
  * that status, at ~10% alpha. Derived (not a hardcoded name→color map) so it
  * works for any user-defined status naming (e.g. "Installed" vs "Connected").
  * `undefined` (no tint) when there's no cable / status / color. Returns an
- * inline style — pass to `DataTable`'s `rowStyle` (survives striping; hover
+ * inline style - pass to `DataTable`'s `rowStyle` (survives striping; hover
  * still wins via the `!important` rule in tokens.css). Shared by the
  * cables/interface/port tables. */
 export function cableTint(
@@ -69,7 +69,7 @@ export function CableStatusControl({
         method: "PATCH",
         body: JSON.stringify({ status_id: statusId }),
       }),
-    // A cable's status shows on cables, interfaces and ports — refresh broadly.
+    // A cable's status shows on cables, interfaces and ports - refresh broadly.
     onSuccess: () => qc.invalidateQueries(),
     onError: (e: unknown) => apiErrorToast(e, "Could not change status"),
   })

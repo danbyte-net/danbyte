@@ -49,7 +49,7 @@ import { useSaveObject } from "@/lib/save-object"
 
 const QUERY_KEY = "dt-service-templates"
 
-/** The "Services" tab on a device type — service templates that materialise a
+/** The "Services" tab on a device type - service templates that materialise a
  * Service onto every new device of the type. Ticking Monitor starts those
  * services watched. See docs/architecture/service-monitoring.md. */
 export function DeviceTypeServicesSection({
@@ -154,7 +154,7 @@ export function DeviceTypeServicesSection({
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No service templates. Add the services a device of this type exposes —
+          No service templates. Add the services a device of this type exposes -
           tick Monitor to have every new device watched automatically.
         </p>
       ) : (
@@ -242,7 +242,7 @@ function ServiceTemplateForm({
   const [description, setDescription] = useState(service?.description ?? "")
   const [templateId, setTemplateId] = useState<string | null>(null)
 
-  // "From template" (create only) — reuse a saved ServiceTemplate ("HTTPS —
+  // "From template" (create only) - reuse a saved ServiceTemplate ("HTTPS -
   // TCP 443") to stamp its name / protocol / ports / description into the form.
   const templates = useQuery({
     queryKey: ["service-templates", "all"],
@@ -308,7 +308,7 @@ function ServiceTemplateForm({
       {!editing && templateOptions.length > 0 && (
         <FormCombobox
           label="From template"
-          hint="optional — prefills the fields below"
+          hint="optional - prefills the fields below"
           value={templateId}
           onChange={applyTemplate}
           options={templateOptions}
@@ -398,7 +398,7 @@ function DeleteDialog({
           <AlertDialogTitle>Delete {service?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             Removes this service template from the device type. Existing devices
-            keep their services — only future devices are affected.
+            keep their services - only future devices are affected.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

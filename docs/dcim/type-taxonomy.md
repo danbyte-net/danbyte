@@ -4,7 +4,7 @@ icon: lucide/list-tree
 
 # Interface & cable types
 
-Interfaces and cables carry an optional **type** — the physical medium. The
+Interfaces and cables carry an optional **type** - the physical medium. The
 values are a **standards-based taxonomy** (IEEE / TIA / ITU-T media types),
 not tenant data: Danbyte ships the vocabulary the same way it ships length
 units, and nothing is pre-selected. Both dropdowns are searchable and
@@ -26,7 +26,7 @@ imports, operator muscle memory, and external tooling carry over 1:1.
 | 10 → 800 Gigabit Ethernet | per-speed groups: `10gbase-sr/lr/er`, `100gbase-dr/fr1/lr1`, `400gbase-zr`, … |
 | 1.6 Terabit Ethernet | `1.6tbase-cr8`, `1.6tbase-dr8` |
 | Ethernet (pluggable transceivers) | form-factor slugs: `10gbase-x-sfpp`, `100gbase-x-qsfp28`, `400gbase-x-osfp`, `1.6tbase-x-osfp1600` |
-| Ethernet (backplane) | `10gbase-kr`, `100gbase-kr4` — chassis/blade midplanes |
+| Ethernet (backplane) | `10gbase-kr`, `100gbase-kr4` - chassis/blade midplanes |
 | Wireless | 802.11a → 802.11be (Wi-Fi 7), Bluetooth, LR-WPAN |
 | Cellular | `gsm`, `cdma`, `lte`, `4g`, `5g` |
 | SONET / SDH | `sonet-oc3` → `sonet-oc3840` |
@@ -48,12 +48,12 @@ fixed-optic gear).
 
 | Group | Examples |
 |---|---|
-| Copper — twisted pair | `cat3` → `cat8`, `mrj21-trunk` |
-| Copper — twinax / DAC | `dac-active`, `dac-passive` |
-| Copper — coaxial | `coaxial`, `rg-6`/`rg-8`/`rg-11`/`rg-59`/`rg-62`/`rg-213`, `lmr-100/200/400` |
-| Fiber — multimode | `mmf`, `mmf-om1` → `mmf-om5` |
-| Fiber — single-mode | `smf`, `smf-os1`, `smf-os2` |
-| Fiber — other | `aoc` |
+| Copper - twisted pair | `cat3` → `cat8`, `mrj21-trunk` |
+| Copper - twinax / DAC | `dac-active`, `dac-passive` |
+| Copper - coaxial | `coaxial`, `rg-6`/`rg-8`/`rg-11`/`rg-59`/`rg-62`/`rg-213`, `lmr-100/200/400` |
+| Fiber - multimode | `mmf`, `mmf-om1` → `mmf-om5` |
+| Fiber - single-mode | `smf`, `smf-os1`, `smf-os2` |
+| Fiber - other | `aoc` |
 | Power / other | `power`, `usb` |
 
 The coax family matters for broadcast/OSP plants (RG-6/RG-11 drops, RG-59
@@ -68,36 +68,36 @@ unknown value verbatim at the top of the dropdown and keeps it selectable.
 The curated lists only control what the dropdown *offers*. Deployments can
 trim/extend the lists in `api/dcim_choices.py`.
 
-## Research notes — what was added and why
+## Research notes - what was added and why
 
 Added in the 2026-07 expansion:
 
 - **Media-specific Ethernet** (`10gbase-lr`, `100gbase-dr`, `400gbase-zr`, …)
-  — lets an interface say which IEEE PMD is in the port, not just the cage
+  - lets an interface say which IEEE PMD is in the port, not just the cage
   form factor. Needed for optical budget/reach planning and for modelling
   fixed-optic hardware.
 - **BiDi variants** (`1000base-bx10-d/u`, `10gbase-br-d/u`, `40gbase-sr4-bd`,
-  `100gbase-sr1.2`, `400gbase-sr4_2`) — single-strand links are direction-
+  `100gbase-sr1.2`, `400gbase-sr4_2`) - single-strand links are direction-
   asymmetric; FTTx and strand-constrained plants model each end differently.
-- **Backplane Ethernet** (`*base-kr*`, `*-kx*`, `*-kp4`) — blade chassis and
+- **Backplane Ethernet** (`*base-kr*`, `*-kx*`, `*-kp4`) - blade chassis and
   stacked fabric midplanes.
-- **1.6T Ethernet + OSFP1600/QSFP-DD1600** — IEEE P802.3dj generation; ships
+- **1.6T Ethernet + OSFP1600/QSFP-DD1600** - IEEE P802.3dj generation; ships
   in AI-fabric gear.
-- **SONET/SDH OC-3 → OC-3840** — legacy carrier/WAN links still in every
+- **SONET/SDH OC-3 → OC-3840** - legacy carrier/WAN links still in every
   telco inventory.
-- **Stacking media** (StackWise, VCP, SummitStack) — stack ports are cabled
+- **Stacking media** (StackWise, VCP, SummitStack) - stack ports are cabled
   ports; without a type they pollute "other".
 - **PON generations** `bpon`, `25g-pon`, `50g-pon` on top of the existing
-  GPON/XGS-PON set — 50G-PON (ITU-T G.9804) is the current build-out edge.
-- **Wi-Fi 7 / LR-WPAN / MoCA / DOCSIS / 4G / 5G** — access-edge completeness.
-- **Cable coax + USB families** — RG/LMR grades and USB (console/serial
+  GPON/XGS-PON set - 50G-PON (ITU-T G.9804) is the current build-out edge.
+- **Wi-Fi 7 / LR-WPAN / MoCA / DOCSIS / 4G / 5G** - access-edge completeness.
+- **Cable coax + USB families** - RG/LMR grades and USB (console/serial
   leads) so real patch schedules don't need free-text.
 
 Deliberately **not** added: vendor marketing names (e.g. "SFP56-DD"),
 pre-standard optics without an IEEE/ITU slug, and anything better modelled as
 a custom field on the interface (channel width, DWDM wavelength, PoE class).
 
-## Plan — parametric cable profiles (OSP fiber)
+## Plan - parametric cable profiles (OSP fiber)
 
 The type taxonomy says what a cable is *made of*; it does not describe its
 **internal structure** (strand/tube/ribbon layout). That's the next gap for
@@ -113,28 +113,28 @@ outside-plant fiber:
 
 Today Danbyte models this with `RearPort.positions` + `FrontPort` mappings on
 patch-panel devices, which covers structured cabling but forces splice
-closures to be modelled as devices. The plan — a cable-profiles /
-dynamic slug-parsing approach — is:
+closures to be modelled as devices. The plan - a cable-profiles /
+dynamic slug-parsing approach - is:
 
 1. **`Cable.profile` slug field** (blank = simple cable, current behaviour).
    Two parseable shapes, mirroring how symmetric cables really present:
-   - `single-{C}c{P}p` — one logical connector of *P* positions per end
+   - `single-{C}c{P}p` - one logical connector of *P* positions per end
      (`single-1c144p` = 144-fiber cable, one bundle).
-   - `trunk-{C}c{P}p` — *C* connectors of *P* positions per end
+   - `trunk-{C}c{P}p` - *C* connectors of *P* positions per end
      (`trunk-12c12p` = 12 buffer tubes × 12 fibers).
-2. **Slug parser + class factory, cached** — profiles are *generated* from
+2. **Slug parser + class factory, cached** - profiles are *generated* from
    the slug (regex `^(single|trunk)-(\d+)c(\d+)p$`), not hand-listed, so any
    real-world tube/ribbon count works without code changes. Generated
    classes are cached in a module dict keyed by slug (bulk tracing rebuilds
    nothing).
-3. **Complex profiles stay hardcoded** — breakout/shuffle layouts (non-linear
+3. **Complex profiles stay hardcoded** - breakout/shuffle layouts (non-linear
    position maps, e.g. MPO shuffle cassettes) get dedicated classes looked up
    by exact slug *before* the parser runs.
-4. **Validation in `Cable.clean()`**, not `choices=` — bounds
+4. **Validation in `Cable.clean()`**, not `choices=` - bounds
    `connectors ≤ 256`, `positions ≤ 8192` (8192, not 1024: Sumitomo ships
    6912-fiber cable; headroom on top). The UI dropdown stays a curated list;
    API/import accept any slug that parses.
-5. **Termination positions** — `CableTermination` grows a `positions` array
+5. **Termination positions** - `CableTermination` grows a `positions` array
    so an end can land on specific strands of a port; trace logic maps
    per-position through the profile instead of treating the cable as opaque.
 

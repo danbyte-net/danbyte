@@ -169,7 +169,7 @@ function AlertDialogCancel({
   className,
   // `ghost`, matching FormFooter. These were `outline` while every edit dialog's
   // Cancel was ghost, so the ~60 delete dialogs and ~64 edit dialogs never
-  // agreed — both "correct" per their own primitive.
+  // agreed - both "correct" per their own primitive.
   variant = "ghost",
   size = "default",
   ...props

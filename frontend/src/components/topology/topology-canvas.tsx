@@ -33,7 +33,7 @@ import { resolveLevels } from "./level-organiser"
 import { RoutedEdge } from "./routed-edge"
 
 // Defined once, outside the component (re-creating nodeTypes each render
-// re-mounts every node — a classic React Flow footgun).
+// re-mounts every node - a classic React Flow footgun).
 const nodeTypes = {
   device: StencilNode,
   interface: PortNode,
@@ -53,7 +53,7 @@ export interface CanvasHandle {
   exportPng: () => Promise<string | null>
 }
 
-// Deterministic palette per cable type — informational hue, not state.
+// Deterministic palette per cable type - informational hue, not state.
 const TYPE_PALETTE = [
   "#0ea5e9",
   "#8b5cf6",
@@ -96,11 +96,11 @@ function edgeStroke(
 type PosOf = (id: string) => { x: number; y: number } | undefined
 
 /** Point each cable edge at the port-handle side facing its neighbour, and
- * record which side each port landed on. Idempotent — the base (unsuffixed)
+ * record which side each port landed on. Idempotent - the base (unsuffixed)
  * port names live in edge.data so this can re-run with fresh positions after
  * a drag. */
 // Two cards count as "adjacent" (same rank) when their main-axis centres are
-// within this — closer than a rank gap. Only then do we connect them on the
+// within this - closer than a rank gap. Only then do we connect them on the
 // cross axis (side by side); otherwise the link runs along the main axis.
 const ADJACENCY = 120
 
@@ -148,7 +148,7 @@ function assignSides(
     const dy = b.y - a.y
     // Main axis follows the layout direction (x in side-to-side, y in tree);
     // the cross axis is the other one. Side-by-side (cross-axis) links are
-    // only for cards on the same rank — far-apart cards across ranks connect
+    // only for cards on the same rank - far-apart cards across ranks connect
     // along the main axis so the tree stays legible.
     const mainD = tb ? dy : dx
     const crossD = tb ? dx : dy
@@ -252,7 +252,7 @@ function build(
       continue
     }
 
-    // LLDP "ghost" link — SNMP-adjacent, no cable. Clicking offers to
+    // LLDP "ghost" link - SNMP-adjacent, no cable. Clicking offers to
     // materialise it.
     if (e.type === "ghost") {
       const ep = e.data?.pairs?.[0]
@@ -328,7 +328,7 @@ function build(
   let levels: Map<string, number> | undefined
   let mainOffsets: number[] | undefined
   if (opts.roleOrder && opts.roleOrder.length) {
-    // Bonded roles share one level, so a level can hold several roles — rank by
+    // Bonded roles share one level, so a level can hold several roles - rank by
     // LEVEL index, not by position in the order.
     const groups = resolveLevels(opts.roleOrder, opts.roleBonds ?? [])
     const rank = new Map<string, number>()
@@ -336,14 +336,14 @@ function build(
     const last = groups.length
     levels = new Map()
     for (const n of graph.nodes) {
-      // Patch panels aren't a device tier — leave them at their structural
+      // Patch panels aren't a device tier - leave them at their structural
       // position so they sit between the cables they join.
       if (n.data.role?.is_patch_panel) continue
       levels.set(n.id, rank.get(n.data.role?.name ?? "") ?? last)
     }
     // Cumulative main-axis offset per LEVEL. A level's gap comes from the
     // distance step of its FIRST role (bonded roles share the level, so they
-    // share its gap — their own dots are hidden in the organiser to match).
+    // share its gap - their own dots are hidden in the organiser to match).
     const base = opts.direction === "TB" ? 200 : 360
     const mult = [0.6, 0.8, 1, 1.4, 2] // 5 distance steps
     const gapOf = (role: string) => base * mult[opts.roleDistance?.[role] ?? 2]
@@ -424,7 +424,7 @@ export interface TopologyCanvasProps {
   direction?: "LR" | "TB"
   /** Role names in tier order (Level organiser); [] → structural layout. */
   roleOrder?: string[]
-  /** Roles sharing the level of the role above them in `roleOrder` — so several
+  /** Roles sharing the level of the role above them in `roleOrder` - so several
    * roles can occupy one level. */
   roleBonds?: string[]
   /** Role name → distance step (0–4) for the gap above its tier. */
@@ -437,7 +437,7 @@ export interface TopologyCanvasProps {
   positions?: Record<string, [number, number]>
   /** Bump to discard drags/saved positions and re-run the auto layout. */
   layoutTick?: number
-  /** Node ids matching the search — everything else renders dimmed. */
+  /** Node ids matching the search - everything else renders dimmed. */
   matchedIds?: Set<string> | null
   /** Device mini map: hide edges leaving these origin ports. */
   hiddenPorts?: Set<string>
@@ -446,7 +446,7 @@ export interface TopologyCanvasProps {
   onSelectEdge?: (data: NonNullable<TopoEdge["data"]>) => void
   onGhostEdge?: (ghost: GhostEdgeData) => void
   onCanvasClick?: () => void
-  /** Fired after a node drag settles — the parent can persist positions(). */
+  /** Fired after a node drag settles - the parent can persist positions(). */
   onDragEnd?: () => void
 }
 
@@ -514,7 +514,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const [nodes, setNodes, onNodesChange] = useNodesState(built.nodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(built.edges)
   // Hover/select emphasis: the active edge thickens and rises; every other
-  // edge fades — the only way crossings stay readable in a dense mesh.
+  // edge fades - the only way crossings stay readable in a dense mesh.
   const [hotEdge, setHotEdge] = useState<string | null>(null)
   const shownEdges = useMemo(() => {
     if (!hotEdge) return edges
@@ -543,11 +543,11 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   useEffect(() => {
     const prev = new Map(prevNodes.current.map((n) => [n.id, n.position]))
     // Keep the user's dragged positions only across INCIDENTAL rebuilds
-    // (colour mode, search highlight, a late graph refetch) — not when they
+    // (colour mode, search highlight, a late graph refetch) - not when they
     // deliberately re-ran the layout. Every deliberate relayout (direction,
     // Levels order/distance, Re-layout, applyView) bumps `layoutTick`, so a
     // changed tick means "use the fresh layout"; an unchanged tick means "an
-    // incidental rebuild — don't shuffle the user's arrangement". (A saved
+    // incidental rebuild - don't shuffle the user's arrangement". (A saved
     // view that pins `positions` bypasses keeping too.)
     const relaidOut = layoutTick !== prevTick.current
     prevTick.current = layoutTick
@@ -559,7 +559,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     })
     setNodes(nextNodes)
     // When we kept dragged positions, `built.edges` were routed for the
-    // layout's positions, not the kept ones — re-route from the actual
+    // layout's positions, not the kept ones - re-route from the actual
     // rendered positions so cables always match their cards.
     if (edgeRouting === "routed" && keepingDrags) {
       const wp = edgeWaypoints(nextNodes, built.edges, direction)
@@ -646,7 +646,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     [onGhostEdge, onSelectEdge]
   )
 
-  // Dragging a card changes which side of it faces each neighbour — re-snap
+  // Dragging a card changes which side of it faces each neighbour - re-snap
   // the edges, and RE-ROUTE the cables from the new positions (so moving a
   // node re-bends its cables around cards instead of leaving them straight).
   const onNodeDragStop = useCallback(() => {
@@ -695,7 +695,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   if (graph.nodes.length === 0)
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Nothing to map yet — cable some devices first.
+        Nothing to map yet - cable some devices first.
       </div>
     )
 

@@ -21,12 +21,12 @@ import type {
 import { cn } from "@/lib/utils"
 import { layOutWeek } from "./calendar-month"
 
-/** UTC-midnight Date for an ISO day — the convention layOutWeek expects. */
+/** UTC-midnight Date for an ISO day - the convention layOutWeek expects. */
 const parseISODay = (d: string) => new Date(`${d}T00:00:00Z`)
 
 /**
  * The Outlook-style time grid behind the Week and Day views: one column per
- * day, an hour axis down the left, and two altitudes of content —
+ * day, an hour axis down the left, and two altitudes of content -
  *
  * - **all-day** (the band under the headers): tasks (date-only spans, packed
  *   into lanes exactly like the month view), milestones, and planned changes;
@@ -103,7 +103,7 @@ export function CalendarTimeGrid({
   onPickDay,
   onMoveTask,
 }: {
-  /** ISO days, one column each — 7 for the week view, 1 for the day view. */
+  /** ISO days, one column each - 7 for the week view, 1 for the day view. */
   days: string[]
   data: PlanningCalendar | undefined
   today: string
@@ -365,7 +365,7 @@ function AllDayCell({
 }: {
   day: string
   droppable: boolean
-  /** Task-bar lanes overlaying the band — chips start below them. */
+  /** Task-bar lanes overlaying the band - chips start below them. */
   laneOffset: number
   children: React.ReactNode
 }) {

@@ -12,11 +12,11 @@ Design notes:
 * **PK choice.** Config + roll-up rows (``CheckTemplate``, ``CheckAssignment``,
   ``CheckState``) keep the project-wide UUID convention. The two append-only,
   high-volume tables (``CheckResult``, ``StateTransition``) use ``BigAutoField``
-  — they are written far more than they are referenced by id, a monotonic
+  - they are written far more than they are referenced by id, a monotonic
   integer indexes better, and a time-range partition plan (see
   ``CheckResult.Meta``) is cleaner on an integer PK.
 * **Target binding.** A check targets exactly one of {IPAddress, Prefix},
-  modelled as two nullable FKs guarded by a ``CheckConstraint`` — the same
+  modelled as two nullable FKs guarded by a ``CheckConstraint`` - the same
   "exactly one of N nullable FKs" pattern ``CableTermination`` already uses,
   preferred over a generic ``content_type`` so the FKs cascade and filter
   natively.
@@ -59,7 +59,7 @@ class CheckKind(models.TextChoices):
 
 
 def check_kinds() -> list[tuple[str, str]]:
-    """All selectable check kinds — the built-in enum plus any plugin-registered
+    """All selectable check kinds - the built-in enum plus any plugin-registered
     checker kinds (label falls back to the kind slug). The checker registry is
     the source of truth for what can actually run; this merges human labels in.
     """
@@ -84,8 +84,8 @@ class CheckStatus(models.TextChoices):
 
 class ScheduleMode(models.TextChoices):
     FOLLOW_GLOBAL = "follow_global", "Follow global schedule"
-    CUSTOM_ON = "custom_on", "Custom — always on"
-    CUSTOM_OFF = "custom_off", "Custom — off"
+    CUSTOM_ON = "custom_on", "Custom - always on"
+    CUSTOM_OFF = "custom_off", "Custom - off"
 
 
 # Named intervals mirror a common ping-monitor default. ``interval_seconds``
@@ -180,7 +180,7 @@ class CheckTemplate(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 
 class CheckAssignment(TimestampedModel):
-    """Binds a ``CheckTemplate`` to one target — an IP or a prefix.
+    """Binds a ``CheckTemplate`` to one target - an IP or a prefix.
 
     Prefix assignments inherit down the prefix-containment tree to child IPs
     (``apply_to_children``), minus any IPs in ``exclusions``. A per-IP
@@ -230,7 +230,7 @@ class CheckAssignment(TimestampedModel):
     overrides = models.JSONField(
         default=dict,
         blank=True,
-        help_text="Per-assignment overrides of the template — recognised keys: "
+        help_text="Per-assignment overrides of the template - recognised keys: "
         "interval_seconds, timeout_ms, rise, fall, params (shallow-merged).",
     )
     enabled = models.BooleanField(default=True)
@@ -468,7 +468,7 @@ class MonitoringDenySubnet(TimestampedModel):
 
 
 class CheckResult(models.Model):
-    """One executed check attempt — append-only time-series.
+    """One executed check attempt - append-only time-series.
 
     High write volume: indexed on ``(target_ip, timestamp)`` for the per-target
     history queries and sparklines. A native PostgreSQL RANGE partition by
@@ -478,7 +478,7 @@ class CheckResult(models.Model):
 
     id = models.BigAutoField(primary_key=True)
     # db_index=False on tenant/target_ip: both are covered as prefixes of the
-    # composite Meta indexes below — the auto FK btrees were pure write
+    # composite Meta indexes below - the auto FK btrees were pure write
     # amplification on a ~600k-inserts/day table and were never scanned.
     tenant = models.ForeignKey(
         Tenant,
@@ -570,7 +570,7 @@ class CheckState(TimestampedModel):
         null=True,
         blank=True,
         related_name="check_states",
-        help_text="Which engine runs this check — resolved from the target's "
+        help_text="Which engine runs this check - resolved from the target's "
         "site/location at materialise time (null = the tenant's local engine).",
     )
     kind = models.CharField(max_length=32, choices=CheckKind.choices)
@@ -631,7 +631,7 @@ class MonitoringSettings(TimestampedModel):
     schedule switch, the default interval new checks inherit, the **stale**
     thresholds (how long an IP stays down before it's flagged chronic), and the
     **skip** policy (IPs whose status is in ``skip_ip_statuses`` are not checked
-    — e.g. *reserved* addresses).
+    - e.g. *reserved* addresses).
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -720,7 +720,7 @@ class MonitoringSettings(TimestampedModel):
 
     # ─── certificate expiry alerting (X2) ────────────────────────────────
     # Thresholds for the expiry alerts raised over certificate *bindings*
-    # (endpoints), not certificate rows — see ``monitoring.cert_expiry``.
+    # (endpoints), not certificate rows - see ``monitoring.cert_expiry``.
     # A tenant with no settings row still alerts, on the defaults below.
     cert_expiry_alerts_enabled = models.BooleanField(
         default=True,
@@ -741,8 +741,8 @@ class MonitoringSettings(TimestampedModel):
     cert_binding_stale_days = models.PositiveSmallIntegerField(
         default=7,
         help_text="Days without observing an endpoint before its binding counts "
-        "as stale. A stale binding stops alerting — nobody is served by a "
-        "certificate we can no longer see — but is never deleted.",
+        "as stale. A stale binding stops alerting - nobody is served by a "
+        "certificate we can no longer see - but is never deleted.",
     )
 
     # ─── discovery (M12) ─────────────────────────────────────────────────
@@ -795,7 +795,7 @@ class MonitoringSettings(TimestampedModel):
 
     # ─── flapping monitor (M22) ──────────────────────────────────────────
     # IPs with one of these statuses are excluded from the "flapping a lot"
-    # surface — e.g. a DHCP-scope status where churn is expected and noisy.
+    # surface - e.g. a DHCP-scope status where churn is expected and noisy.
     flap_exclude_ip_statuses = models.ManyToManyField(
         "api.Status",
         blank=True,
@@ -805,7 +805,7 @@ class MonitoringSettings(TimestampedModel):
     )
 
     # ─── distributed engines ─────────────────────────────────────────────
-    # Tenant-wide default engine — used when a target's site/location doesn't
+    # Tenant-wide default engine - used when a target's site/location doesn't
     # pin one. Null falls back to the tenant's built-in local engine.
     default_engine = models.ForeignKey(
         "MonitoringEngine",
@@ -816,7 +816,7 @@ class MonitoringSettings(TimestampedModel):
         help_text="Default monitoring engine for targets with no site/location "
         "engine assigned (null = the local built-in engine).",
     )
-    # The Outpost agent's git repo — set once, then pick versions from a dropdown
+    # The Outpost agent's git repo - set once, then pick versions from a dropdown
     # in the package store (Danbyte fetches the CI-built binary of a release).
     outpost_repo_url = models.CharField(
         max_length=512, blank=True,
@@ -843,17 +843,17 @@ class MonitoringSettings(TimestampedModel):
 class MonitoringEngine(TimestampedModel):
     """Where checks for a scope actually run.
 
-    * ``local`` — the core server's RQ workers. One built-in, un-deletable row
+    * ``local`` - the core server's RQ workers. One built-in, un-deletable row
       per tenant (``local_for``). Unassigned targets resolve here, so nothing
       changes for deployments that never install an Outpost.
-    * ``remote`` — a **Danbyte Outpost**: an agent installed at a site that has
+    * ``remote`` - a **Danbyte Outpost**: an agent installed at a site that has
       no direct path to the core. It runs the same check code as the core and
       exchanges work/results over one of two **transports** (per engine):
 
-        - ``pull`` — the Outpost dials **out** to Danbyte over HTTPS (443) and
+        - ``pull`` - the Outpost dials **out** to Danbyte over HTTPS (443) and
           pulls work / pushes results, authenticating with ``token``. For NAT'd
           sites that can reach out but can't be reached in.
-        - ``ssh`` — Danbyte dials **out** to the Outpost over SSH (22) and drives
+        - ``ssh`` - Danbyte dials **out** to the Outpost over SSH (22) and drives
           it, for locked-down sites where only ``Danbyte → host`` is permitted.
           (SSH connection fields + driver land in Phase 1.)
 
@@ -887,7 +887,7 @@ class MonitoringEngine(TimestampedModel):
     kind = models.CharField(max_length=6, choices=KIND_CHOICES, default=REMOTE)
     enabled = models.BooleanField(default=True)
     # Bearer secret the Outpost authenticates with, stored as {"secret": …}.
-    # Write-only — the API exposes only whether it's set, never the value.
+    # Write-only - the API exposes only whether it's set, never the value.
     token = EncryptedJSONField(
         help_text="Outpost auth token (remote engines); {} until enrolled."
     )
@@ -895,26 +895,26 @@ class MonitoringEngine(TimestampedModel):
         default=15, help_text="How often the Outpost polls the core for work."
     )
     # When on, the agent self-updates to the default ("golden") release whenever
-    # its version differs — pull-transport binary Outposts only.
+    # its version differs - pull-transport binary Outposts only.
     auto_update = models.BooleanField(default=False)
     # Set by the "Discover now" button so this Outpost sweeps its due prefixes on
     # its *next* poll instead of waiting for the periodic cycle; cleared when it
     # pulls sweep-work.
     sweep_requested_at = models.DateTimeField(null=True, blank=True)
-    # SSH-transport connection — how Danbyte dials *in* to the Outpost host.
+    # SSH-transport connection - how Danbyte dials *in* to the Outpost host.
     ssh_host = models.CharField(max_length=255, blank=True)
     ssh_port = models.PositiveIntegerField(default=22)
     ssh_user = models.CharField(max_length=64, blank=True)
     # Encrypted at rest, never serialised out. {"private_key": …} or
-    # {"password": …} — how Danbyte authenticates to the host.
+    # {"password": …} - how Danbyte authenticates to the host.
     ssh_credential = EncryptedJSONField(
         help_text="SSH key/password for the SSH transport; {} until set."
     )
     # The host's expected public key ("ssh-ed25519 AAAA…"), pinned so Danbyte
     # verifies the server it connects to. Blank = trust-on-first-use (a warning
-    # is logged). Not secret — it's the host's public key.
+    # is logged). Not secret - it's the host's public key.
     ssh_host_key = models.TextField(blank=True)
-    # Heartbeat / agent facts — updated each time the Outpost checks in.
+    # Heartbeat / agent facts - updated each time the Outpost checks in.
     last_seen_at = models.DateTimeField(null=True, blank=True)
     # Set by the dispatcher's health sweep when a remote engine with assigned
     # checks goes unreachable (no poll within ~3× its interval); cleared on
@@ -957,7 +957,7 @@ class MonitoringEngine(TimestampedModel):
 
     @classmethod
     def local_for(cls, tenant) -> "MonitoringEngine":
-        """The tenant's built-in local engine — created on first access."""
+        """The tenant's built-in local engine - created on first access."""
         obj, _ = cls.objects.get_or_create(
             tenant=tenant,
             kind=cls.LOCAL,
@@ -970,7 +970,7 @@ class MonitoringEngineBinding(TimestampedModel):
     """Assigns a monitoring engine to a Site or Location.
 
     Kept on the monitoring side (referencing api ids by ``object_id``) so the
-    ``api`` app never depends on ``monitoring`` — the same pattern as
+    ``api`` app never depends on ``monitoring`` - the same pattern as
     ``SnmpProfileBinding``. One engine per (tenant, scope, object). Location
     beats Site when both are set (see ``monitoring/engines.py``).
     """
@@ -1010,13 +1010,13 @@ class MonitoringEngineBinding(TimestampedModel):
 class OutpostRelease(TimestampedModel):
     """A named Outpost build the Danbyte instance stores + serves.
 
-    Deployment-wide (not tenant-scoped) — it's software, not tenant data, and is
+    Deployment-wide (not tenant-scoped) - it's software, not tenant data, and is
     managed by deployment admins. Two sources:
 
-    * ``file`` — an uploaded build (binary / tarball) served straight from
+    * ``file`` - an uploaded build (binary / tarball) served straight from
       Danbyte, so **airgapped** hosts that can only reach Danbyte can still
       install it.
-    * ``git`` — a git URL + ref; the generated installer does a source install
+    * ``git`` - a git URL + ref; the generated installer does a source install
       (``pip install git+url@ref``), for hosts with internet access.
 
     An Outpost is installed with the one-liner Danbyte generates for a chosen
@@ -1057,7 +1057,7 @@ class OutpostRelease(TimestampedModel):
 
 
 class NotificationChannel(TimestampedModel):
-    """Where to send a status-change notification — one row per destination.
+    """Where to send a status-change notification - one row per destination.
 
     ``kind`` selects the transport; ``config`` holds its target
     (``{"url": …}`` for webhook, ``{"recipients": […]}`` for email).
@@ -1137,7 +1137,7 @@ class NotificationChannel(TimestampedModel):
         related_name="notification_channels",
         help_text="Only notify for IPs assigned to this device; blank = all.",
     )
-    # Auto-created by the per-prefix/IP "Notify me" shortcut — one shared channel
+    # Auto-created by the per-prefix/IP "Notify me" shortcut - one shared channel
     # per scope, hidden from the manual channel list and cleaned up when its last
     # subscriber leaves. Distinguishes managed watches from admin-built channels.
     auto_created = models.BooleanField(default=False)
@@ -1163,7 +1163,7 @@ class NotificationChannel(TimestampedModel):
 
 
 class NotificationSubscription(TimestampedModel):
-    """Who receives a channel's emails — a user or a whole group, on one channel.
+    """Who receives a channel's emails - a user or a whole group, on one channel.
 
     Subscriptions *add* recipients on top of the channel's free-text
     ``config.recipients``; :func:`monitoring.notify.resolve_recipients` merges
@@ -1171,7 +1171,7 @@ class NotificationSubscription(TimestampedModel):
     may **not** self-remove (the NOC-gets-DC-events case); a self-assigned
     subscription (``mandatory=False``, created by the user themselves) can be
     dropped from the Notifications page. Exactly one of ``user`` / ``group`` is
-    set — a group subscription fans out to its members' emails at send time and
+    set - a group subscription fans out to its members' emails at send time and
     is always mandatory from a member's point of view.
     """
 
@@ -1192,7 +1192,7 @@ class NotificationSubscription(TimestampedModel):
     )
     mandatory = models.BooleanField(
         default=False,
-        help_text="Admin/group-assigned — the subscriber cannot remove it.",
+        help_text="Admin/group-assigned - the subscriber cannot remove it.",
     )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
@@ -1253,7 +1253,7 @@ class AlertRule(TimestampedModel):
         default=100, help_text="Lower weights match first."
     )
 
-    # Matchers — empty list / null = match anything.
+    # Matchers - empty list / null = match anything.
     match_kinds = models.JSONField(
         default=list, blank=True, help_text="Check kinds this rule covers."
     )
@@ -1289,7 +1289,7 @@ class AlertRule(TimestampedModel):
 
 
 class Alert(TimestampedModel):
-    """An open (or resolved) alerting condition — an *incident*, distinct from
+    """An open (or resolved) alerting condition - an *incident*, distinct from
     the raw transition log.
 
     One **firing** alert exists per ``dedup_key`` (the (IP, check) pair): a check
@@ -1324,7 +1324,7 @@ class Alert(TimestampedModel):
 
     dedup_key = models.CharField(
         max_length=120,
-        help_text="Stable key for the alerting condition — (IP, check). One "
+        help_text="Stable key for the alerting condition - (IP, check). One "
         "firing alert per key.",
     )
     severity = models.CharField(
@@ -1364,7 +1364,7 @@ class Alert(TimestampedModel):
     )
     flapping = models.BooleanField(
         default=False,
-        help_text="Condition is opening/clearing repeatedly — renotify is paused.",
+        help_text="Condition is opening/clearing repeatedly - renotify is paused.",
     )
     escalated = models.BooleanField(
         default=False,
@@ -1392,7 +1392,7 @@ class Alert(TimestampedModel):
 
 
 class Silence(TimestampedModel):
-    """A time-bounded mute over matching alerts — also the maintenance-window
+    """A time-bounded mute over matching alerts - also the maintenance-window
     primitive (a silence whose window is in the future is planned downtime).
 
     While a silence is *active* (``starts_at`` ≤ now < ``ends_at``) and its
@@ -1408,7 +1408,7 @@ class Silence(TimestampedModel):
     )
     reason = models.CharField(max_length=255, blank=True, default="")
 
-    # Matchers — empty list / null = match anything.
+    # Matchers - empty list / null = match anything.
     match_kinds = models.JSONField(default=list, blank=True)
     match_statuses = models.JSONField(default=list, blank=True)
     match_tag_slugs = models.JSONField(default=list, blank=True)
@@ -1457,7 +1457,7 @@ class Silence(TimestampedModel):
 
 
 class StateTransition(models.Model):
-    """Append-only log of status changes — drives the history timeline and
+    """Append-only log of status changes - drives the history timeline and
     transition notifications (Up→Down etc.)."""
 
     id = models.BigAutoField(primary_key=True)
@@ -1498,7 +1498,7 @@ class StateTransition(models.Model):
 class SnmpProfile(TimestampedModel):
     """Reusable SNMP credentials (v1/v2c/v3), named per tenant and selected when
     polling a device for observed facts. Mirrors ``CheckTemplate``'s
-    ``params`` / ``secret_params`` split — secrets are encrypted at rest and
+    ``params`` / ``secret_params`` split - secrets are encrypted at rest and
     never returned by the API.
     """
 
@@ -1518,7 +1518,7 @@ class SnmpProfile(TimestampedModel):
         "auth_proto / priv_proto.",
     )
     secret_params = EncryptedJSONField(
-        help_text="Credentials — v2c community, or v3 auth_key / priv_key. "
+        help_text="Credentials - v2c community, or v3 auth_key / priv_key. "
         "Encrypted at rest; never returned by the API.",
     )
     timeout_ms = models.PositiveIntegerField(default=2000)
@@ -1553,7 +1553,7 @@ class SnmpProfile(TimestampedModel):
 class DeviceSnmp(TimestampedModel):
     """Per-device *observed* SNMP state: the read-only system facts last polled
     from the device. Stored separately from the ``api.Device`` source-of-truth
-    fields — discovery never overwrites intent (reconciliation is a later
+    fields - discovery never overwrites intent (reconciliation is a later
     phase; see issue #84).
     """
 
@@ -1562,7 +1562,7 @@ class DeviceSnmp(TimestampedModel):
         Tenant, on_delete=models.CASCADE, related_name="device_snmp"
     )
     # Target is a physical Device *or* a VirtualMachine (a virtual router /
-    # appliance) — exactly one, enforced by the constraint below. Both stay
+    # appliance) - exactly one, enforced by the constraint below. Both stay
     # nullable so existing device rows are untouched and VM rows slot in.
     device = models.OneToOneField(
         "api.Device", on_delete=models.CASCADE, related_name="snmp",
@@ -1628,14 +1628,14 @@ class DeviceSnmp(TimestampedModel):
 class SnmpSensor(TimestampedModel):
     """A reusable, user-defined SNMP reading that maps to hardware health.
 
-    SNMP has no standard disk/PSU/fan health MIB — every vendor uses its own
+    SNMP has no standard disk/PSU/fan health MIB - every vendor uses its own
     OIDs (Dell OpenManage, HPE, Supermicro, Synology…). This is the escape
     hatch: define an ``oid``, whether to WALK it (a table column, one value
     per component) or GET it (a single scalar), a ``value_map`` from the raw
     SNMP value to a status slug, and which inventory ``item_kind`` /
     ``name_template`` the readings describe. Bound to a ``device_type`` (or
     all types), it flips the matching inventory items' statuses on every poll
-    — using the device's own SNMP profile, so no extra credentials.
+    - using the device's own SNMP profile, so no extra credentials.
     """
 
     KIND_CHOICES = [
@@ -1658,7 +1658,7 @@ class SnmpSensor(TimestampedModel):
     )
     oid = models.CharField(
         max_length=255,
-        help_text="Numeric OID — a table column base to WALK, or a scalar to GET.",
+        help_text="Numeric OID - a table column base to WALK, or a scalar to GET.",
     )
     walk = models.BooleanField(
         default=True,
@@ -1681,20 +1681,20 @@ class SnmpSensor(TimestampedModel):
     absent_status = models.CharField(
         max_length=64, blank=True, default="",
         help_text="Status slug for items this sensor covers but the agent never "
-        "reported — the empty bays a chassis template stamped. Blank leaves "
+        "reported - the empty bays a chassis template stamped. Blank leaves "
         "them alone. Only applied after a poll that actually returned readings, "
         "so a timeout can't mark real hardware missing.",
     )
     APPLY_DRIFT = "drift"
     APPLY_AUTO = "auto"
     APPLY_CHOICES = [
-        (APPLY_DRIFT, "Surface as drift — you accept it"),
+        (APPLY_DRIFT, "Surface as drift - you accept it"),
         (APPLY_AUTO, "Apply automatically"),
     ]
     apply_mode = models.CharField(
         max_length=8, choices=APPLY_CHOICES, default=APPLY_DRIFT,
         help_text="What a reading does to the source of truth. 'drift' keeps "
-        "readings observed-only and lists the difference for review — Danbyte's "
+        "readings observed-only and lists the difference for review - Danbyte's "
         "normal contract, and the only mode that can't overwrite a status you "
         "set. 'auto' writes straight through, for health you want acted on with "
         "no one watching.",
@@ -1714,7 +1714,7 @@ class SnmpSensor(TimestampedModel):
 
 
 class RedfishEndpoint(TimestampedModel):
-    """A device's BMC, reachable over Redfish (DMTF's management REST API —
+    """A device's BMC, reachable over Redfish (DMTF's management REST API -
     what iDRAC, iLO, XClarity, Supermicro and UCS all speak). Config + the
     last observed inventory in one per-device row.
 
@@ -1727,7 +1727,7 @@ class RedfishEndpoint(TimestampedModel):
     Security: BMCs live on management (RFC1918) networks, which the outbound
     SSRF guard rightly blocks for user-supplied URLs. A Redfish endpoint is
     ADMIN-CONFIGURED (device change permission), pinned to this one host, and
-    fetched with redirects disabled — that is the deliberate, scoped
+    fetched with redirects disabled - that is the deliberate, scoped
     private-IP allowance. Loopback/link-local stay blocked.
     """
 
@@ -1779,7 +1779,7 @@ class SnmpProfileBinding(TimestampedModel):
     local devices with site-scoped credentials.
 
     Kept on the monitoring side (referencing api ids by ``object_id``) so the
-    ``api`` app never depends on ``monitoring`` — same direction as every other
+    ``api`` app never depends on ``monitoring`` - same direction as every other
     monitoring↔api link.
     """
 
@@ -1788,7 +1788,7 @@ class SnmpProfileBinding(TimestampedModel):
     SCOPE_TYPE = "device_type"
     SCOPE_LOCATION = "location"
     SCOPE_SITE = "site"
-    # VM (virtual router / appliance) scopes — #13.
+    # VM (virtual router / appliance) scopes - #13.
     SCOPE_VM = "vm"
     SCOPE_PLATFORM = "platform"
     SCOPE_CLUSTER = "cluster"
@@ -1817,7 +1817,7 @@ class SnmpProfileBinding(TimestampedModel):
     target = models.CharField(
         max_length=255, blank=True, default="",
         help_text="Poll this address instead of the device's own IPs (device "
-        "scope only) — e.g. a BMC or a management address the agent listens "
+        "scope only) - e.g. a BMC or a management address the agent listens "
         "on. Blank resolves management IP → primary IP → resolvable name.",
     )
 
@@ -1852,7 +1852,7 @@ class SnmpInterfaceSample(TimestampedModel):
         related_name="snmp_samples", null=True, blank=True,
     )
     if_index = models.CharField(max_length=32)
-    # ifHCInOctets/ifHCOutOctets are SNMP Counter64 — unsigned 64-bit (up to
+    # ifHCInOctets/ifHCOutOctets are SNMP Counter64 - unsigned 64-bit (up to
     # 1.8e19), which overflows a signed Postgres bigint (max 9.2e18). Store as a
     # 20-digit integer-valued decimal so a large counter can't crash the poll.
     in_octets = models.DecimalField(max_digits=20, decimal_places=0, default=0)
@@ -1909,7 +1909,7 @@ class PublicKeyAlgorithm(models.TextChoices):
 
 
 class Certificate(TimestampedModel):
-    """One observed X.509 certificate — **public data only**.
+    """One observed X.509 certificate - **public data only**.
 
     Every field here is a value the server broadcasts to every client that
     completes a handshake: subject, issuer, SANs, serial, fingerprint, validity
@@ -1924,7 +1924,7 @@ class Certificate(TimestampedModel):
 
     Identity is the **SHA-256 fingerprint of the DER**, scoped to the tenant:
 
-    * The same certificate served by ten endpoints is **one row**, not ten —
+    * The same certificate served by ten endpoints is **one row**, not ten -
       the fingerprint is over the exact bytes, so equality is exact.
     * Uniqueness is ``(tenant, fingerprint_sha256)`` rather than a global
       unique fingerprint: tenant isolation is a hard boundary, so two tenants
@@ -1932,11 +1932,11 @@ class Certificate(TimestampedModel):
       row, and one tenant can never read or delete another's.
     * **Renewal creates a new row.** A renewed certificate has a new validity
       window (and usually a new serial and key), so different DER, so a
-      different fingerprint. The previous row is never overwritten or deleted —
+      different fingerprint. The previous row is never overwritten or deleted -
       it stays as history, which is what makes "what were we serving when that
       outage happened?" answerable.
 
-    Everything stored here is **intrinsic** — a property of those exact DER
+    Everything stored here is **intrinsic** - a property of those exact DER
     bytes, so it cannot legitimately change while the fingerprint stays the
     same. Facts that depend on *where* the certificate was seen (how deep in
     the presented chain, whether that chain verified) belong to
@@ -1944,7 +1944,7 @@ class Certificate(TimestampedModel):
     on one host and be absent from another host's chain entirely.
 
     ``last_seen`` is the one deliberate exception: it is the roll-up across
-    every binding — "is this certificate still in service *anywhere*?" — and it
+    every binding - "is this certificate still in service *anywhere*?" - and it
     is refreshed on observation, never used to derive validity.
     """
 
@@ -1956,7 +1956,7 @@ class Certificate(TimestampedModel):
     fingerprint_sha256 = models.CharField(
         max_length=64,
         help_text="SHA-256 of the DER encoding, lowercase hex. The identity of "
-        "the certificate — the same cert seen anywhere is this same row.",
+        "the certificate - the same cert seen anywhere is this same row.",
     )
     subject = models.CharField(max_length=1024, blank=True, default="")
     subject_cn = models.CharField(max_length=255, blank=True, default="")
@@ -1991,7 +1991,7 @@ class Certificate(TimestampedModel):
     # ``subject_key_id`` / ``authority_key_id`` are the RFC 5280 key
     # identifiers; a leaf's AKI equals its issuer's SKI, which is how the chain
     # graph is built without trusting DN strings. ``issuer_certificate`` is the
-    # resolved parent in *this tenant's* inventory (nullable — the issuer may
+    # resolved parent in *this tenant's* inventory (nullable - the issuer may
     # not be known yet), letting the UI walk leaf → intermediate → root.
     is_ca = models.BooleanField(default=False, db_index=True)
     subject_key_id = models.CharField(max_length=128, blank=True, default="", db_index=True)
@@ -2009,7 +2009,7 @@ class Certificate(TimestampedModel):
 
     # ─── Origin: observed on the wire, declared by a human, or both ───────
     # The fingerprint is the identity, so a certificate that was uploaded and is
-    # later served (or vice-versa) is the *same row* — these two flags record
+    # later served (or vice-versa) is the *same row* - these two flags record
     # that convergence rather than duplicating it. "The cert I declared is the
     # one being served" is then simply ``uploaded and observed`` on one row.
     observed = models.BooleanField(
@@ -2027,7 +2027,7 @@ class Certificate(TimestampedModel):
         blank=True, default="",
         help_text="Public certificate PEM (uploaded certs only). Never a key.",
     )
-    # Authored metadata — editable for any row, meaningful for uploaded ones.
+    # Authored metadata - editable for any row, meaningful for uploaded ones.
     # The intrinsic facts (subject/issuer/serial/fingerprint/validity/key) are
     # never editable: they come from the DER bytes the fingerprint covers.
     name = models.CharField(
@@ -2055,7 +2055,7 @@ class Certificate(TimestampedModel):
     @property
     def origin(self) -> str:
         """How this row came to exist: ``observed``, ``uploaded``, ``both`` (the
-        declared cert is the one being served), or ``unknown`` (neither flag —
+        declared cert is the one being served), or ``unknown`` (neither flag -
         shouldn't happen for a persisted row)."""
         if self.uploaded and self.observed:
             return "both"
@@ -2077,8 +2077,8 @@ class Certificate(TimestampedModel):
         """Refuse to persist anything that looks like private key material.
 
         Belt and braces on top of "there is no field for it": the guarantee is
-        that no write path — collector, management command, shell, a future
-        import — can smuggle a key into a certificate row.
+        that no write path - collector, management command, shell, a future
+        import - can smuggle a key into a certificate row.
         """
         from django.core.exceptions import ValidationError
 
@@ -2099,7 +2099,7 @@ def certificate_endpoint_key(target_ip_id, port: int, server_name: str) -> str:
 
     Deliberately *not* the certificate. A renewal replaces the certificate on an
     endpoint but the endpoint is the same thing it was yesterday, so anything
-    that must survive a renewal — an expiry alert above all — has to key off
+    that must survive a renewal - an expiry alert above all - has to key off
     this, not off a :class:`Certificate` row.
 
     The SNI is hashed rather than embedded so the key stays inside the
@@ -2113,12 +2113,12 @@ def certificate_endpoint_key(target_ip_id, port: int, server_name: str) -> str:
 
 
 class CertificateBinding(TimestampedModel):
-    """One endpoint served one certificate — the row that makes the inventory
+    """One endpoint served one certificate - the row that makes the inventory
     answer *what breaks when it expires*.
 
     A :class:`Certificate` alone is a floating fact. The binding joins it to the
     endpoint that presented it, so a wildcard certificate on twelve hosts is
-    **one certificate row and twelve bindings** — which is the whole reason the
+    **one certificate row and twelve bindings** - which is the whole reason the
     fingerprint, not the hostname, is the certificate's identity.
 
     **The anchor is (IPAddress, port, server name).** That is exactly what the
@@ -2156,13 +2156,13 @@ class CertificateBinding(TimestampedModel):
     )
     endpoint_key = models.CharField(
         max_length=80, db_index=True,
-        help_text="Denormalised (IP, port, SNI) identity — stable across "
+        help_text="Denormalised (IP, port, SNI) identity - stable across "
         "renewals, which is what expiry alerts are keyed on.",
     )
 
     chain_depth = models.PositiveSmallIntegerField(
         default=0,
-        help_text="Position in the chain *this endpoint* presented — 0 is the "
+        help_text="Position in the chain *this endpoint* presented - 0 is the "
         "end-entity (leaf) certificate, 1 its issuer, and so on.",
     )
     chain_verified = models.BooleanField(
@@ -2176,7 +2176,7 @@ class CertificateBinding(TimestampedModel):
     )
     last_seen = models.DateTimeField(
         db_index=True,
-        help_text="Most recent observation. Going stale — not being deleted — is "
+        help_text="Most recent observation. Going stale - not being deleted - is "
         "how an endpoint that stopped serving this certificate is recorded.",
     )
 
@@ -2232,15 +2232,15 @@ class CertificateBinding(TimestampedModel):
 
 
 class SSHHostKey(TimestampedModel):
-    """An SSH host key a device presents on port 22 — **public key only**.
+    """An SSH host key a device presents on port 22 - **public key only**.
 
     A device's host key is its cryptographic identity to every SSH client.
     Recording the expected key and comparing it to what's actually presented
-    catches key rotation, reinstalls, and — the security case — a MITM. Same
+    catches key rotation, reinstalls, and - the security case - a MITM. Same
     observe → source-of-truth → drift shape as :class:`Certificate`, scoped to a
     device rather than a freely-assigned endpoint.
 
-    **A private key is never stored, requested, or accepted** — there is no
+    **A private key is never stored, requested, or accepted** - there is no
     field for one and :meth:`save` refuses key material outright.
 
     Identity is the OpenSSH ``SHA256:…`` fingerprint, scoped to the **device**,
@@ -2265,11 +2265,11 @@ class SSHHostKey(TimestampedModel):
     )
     public_key = models.TextField(
         help_text="The base64 public-key blob (the middle field of an OpenSSH "
-        "line). Public data only — never a private key.",
+        "line). Public data only - never a private key.",
     )
     fingerprint_sha256 = models.CharField(
         max_length=64,
-        help_text="OpenSSH SHA256:… fingerprint. The identity of the key — the "
+        help_text="OpenSSH SHA256:… fingerprint. The identity of the key - the "
         "same key seen anywhere is this same row.",
     )
     comment = models.CharField(max_length=255, blank=True, default="")
@@ -2324,7 +2324,7 @@ class SSHHostKey(TimestampedModel):
 
 class DeviceCredential(TimestampedModel):
     """A named login for a device that points at an **externally-authored**
-    secret — Danbyte stores only a *reference*, never the secret value.
+    secret - Danbyte stores only a *reference*, never the secret value.
 
     The credential records *how* to connect (kind, username, port, scheme) and
     *where the secret lives* (``secret_provider`` + ``secret_path``), so the
@@ -2332,7 +2332,7 @@ class DeviceCredential(TimestampedModel):
     secret store at use-time. There is deliberately **no field for the secret
     itself**: the value lives in the ``local`` (``StoredSecret``) or ``vault``
     store under ``secret_path`` and is only ever read by :meth:`resolve_secret`,
-    which the ``reveal`` action (and, later, Connect) call — never list/detail
+    which the ``reveal`` action (and, later, Connect) call - never list/detail
     serialization.
     """
 
@@ -2398,7 +2398,7 @@ class DeviceCredential(TimestampedModel):
         Fail-closed: raises :class:`SecretStoreDisabled` when no store is
         enabled, and :class:`SecretStoreError` when the store is reachable but
         nothing lives at ``secret_path``. Only the ``reveal`` action (and, later,
-        Connect) call this — never list/detail serialization."""
+        Connect) call this - never list/detail serialization."""
         from .secret_store import SecretStoreError, require_secret_store
 
         store = require_secret_store()
@@ -2432,15 +2432,15 @@ class DeviceCredential(TimestampedModel):
 
 
 class ConnectProtocol(TimestampedModel):
-    """A user-defined way to *reach* a device — a launch template a Connect menu
+    """A user-defined way to *reach* a device - a launch template a Connect menu
     turns into a URL the operator's browser hands to the OS.
 
     Danbyte does not hard-code a fixed set of access methods. An operator defines
     their own (``ssh://``, ``telnet://``, ``rdp://``, ``https://``, or any custom
     scheme they have registered as an OS protocol handler), so the same device
     can offer a native SSH client, a web UI, an RDP session, etc. The template is
-    a plain string with ``{placeholders}`` — ``{host}``, ``{username}``,
-    ``{port}``, ``{name}`` — filled from the device (and an optionally chosen
+    a plain string with ``{placeholders}`` - ``{host}``, ``{username}``,
+    ``{port}``, ``{name}`` - filled from the device (and an optionally chosen
     credential's username) **client-side** at launch. No secret is ever part of
     the template or the produced URL; the value stays server-side and is only
     reachable through :meth:`DeviceCredential.resolve_secret`.
@@ -2475,7 +2475,7 @@ class ConnectProtocol(TimestampedModel):
     description = models.TextField(blank=True, default="")
     # Optional targeting: restrict which devices offer this protocol. Empty =
     # every device. A device matches when its device_type is in `device_types`
-    # (if any are set) OR its role is in `roles` (if any are set) — a union, so a
+    # (if any are set) OR its role is in `roles` (if any are set) - a union, so a
     # protocol can target a set of types plus a set of roles. Untargeted
     # protocols always show.
     device_types = models.ManyToManyField(
@@ -2500,7 +2500,7 @@ class ConnectProtocol(TimestampedModel):
 
 
 class CertificateAssignment(TimestampedModel):
-    """Intent: *this certificate should be presented by that object* — the
+    """Intent: *this certificate should be presented by that object* - the
     source-of-truth half a drift check compares against.
 
     A generic reference (``object_type`` label + ``object_id``) rather than typed
@@ -2508,13 +2508,13 @@ class CertificateAssignment(TimestampedModel):
     on a device, an IP address, a virtual machine or a service without a column
     per kind, and the generic ref is the established "attach X to anything" shape.
     Because the reference is by label, this model needs no import of the ``api``
-    models it points at — tenant isolation of the target is enforced in the
+    models it points at - tenant isolation of the target is enforced in the
     viewset, exactly as ``ContactAssignment`` does.
 
     One certificate can be assigned to many objects (a wildcard on every host it
     covers); one object can carry several certificates (a device running several
     services). Uniqueness is therefore on the *triple* ``(certificate,
-    object_type, object_id)`` — declaring the same certificate on the same object
+    object_type, object_id)`` - declaring the same certificate on the same object
     twice is the only thing forbidden.
     """
 
@@ -2571,10 +2571,10 @@ class StoredSecret(TimestampedModel):
     """A named secret in the **local** secret store, encrypted at rest.
 
     The store CSR/ACME use to stash private-key material under an opaque ``ref``
-    so nothing else in the app holds the secret itself — only the reference. This
+    so nothing else in the app holds the secret itself - only the reference. This
     is the ``local`` provider's backing table; the ``vault`` provider keeps the
     same values in an external Vault/OpenBao and this table stays empty. There is
-    deliberately **no serializer, viewset, or audit registration** — a stored
+    deliberately **no serializer, viewset, or audit registration** - a stored
     secret is never returned over the API or written to the change log.
     """
 
@@ -2600,11 +2600,11 @@ class StoredSecret(TimestampedModel):
 
 
 class CertificateRequest(TimestampedModel):
-    """An operator's request for a new certificate — a CSR and its key.
+    """An operator's request for a new certificate - a CSR and its key.
 
     Danbyte generates the key pair and the CSR; the **public** CSR is stored on
     this row (a CSR is not secret), while the **private key** goes to the opt-in
-    secret store under ``key_ref`` — never a column here, and never returned
+    secret store under ``key_ref`` - never a column here, and never returned
     except to the operator who made the request. The request is a small state
     machine: ``generated`` (CSR ready to hand to a CA) → ``issued`` (the signed
     certificate came back and is linked) → or ``cancelled``.
@@ -2635,7 +2635,7 @@ class CertificateRequest(TimestampedModel):
         related_name="certificate_requests",
     )
 
-    # ─── subject (DN) — only common_name is required ──────────────────────
+    # ─── subject (DN) - only common_name is required ──────────────────────
     common_name = models.CharField(max_length=255)
     organization = models.CharField(max_length=255, blank=True, default="")
     organizational_unit = models.CharField(max_length=255, blank=True, default="")
@@ -2674,13 +2674,13 @@ class CertificateRequest(TimestampedModel):
 
 
 class Issuer(TimestampedModel):
-    """An external certificate authority Danbyte can request from — an ACME
+    """An external certificate authority Danbyte can request from - an ACME
     directory (public like Let's Encrypt, or internal like step-ca).
 
     The account **private key** lives in the secret store at ``account_ref``,
     never on this row; the EAB HMAC (a credential) is encrypted in ``secrets``.
     Deployment/tenant-admin configured, so the directory URL may be an internal
-    host — reached directly like the Redfish/Vault endpoints, not via the tenant
+    host - reached directly like the Redfish/Vault endpoints, not via the tenant
     SSRF guard.
     """
 
@@ -2741,11 +2741,11 @@ class Issuer(TimestampedModel):
 
 
 class AcmeOrder(TimestampedModel):
-    """One ACME issuance order — fulfilling a :class:`CertificateRequest`'s CSR
+    """One ACME issuance order - fulfilling a :class:`CertificateRequest`'s CSR
     against an :class:`Issuer`.
 
-    Carries the challenge data the operator (or a DNS connector) must satisfy —
-    DNS-01 TXT records or HTTP-01 tokens — and the order's lifecycle. On success
+    Carries the challenge data the operator (or a DNS connector) must satisfy -
+    DNS-01 TXT records or HTTP-01 tokens - and the order's lifecycle. On success
     the issued certificate is imported as a :class:`Certificate` and linked.
     """
 
@@ -2780,7 +2780,7 @@ class AcmeOrder(TimestampedModel):
     )
     identifiers = models.JSONField(default=list, blank=True)
     order_url = models.CharField(max_length=512, blank=True, default="")
-    # What the operator must publish to pass validation — a list of
+    # What the operator must publish to pass validation - a list of
     # {identifier, type, status, and the DNS record or HTTP token fields}.
     challenges = models.JSONField(default=list, blank=True)
     error = models.TextField(blank=True, default="")
@@ -2828,7 +2828,7 @@ class WatchedEndpoint(TimestampedModel):
     allow_self_signed = models.BooleanField(
         default=False,
         help_text="Treat a self-signed certificate as healthy (up) instead of "
-        "degraded — for endpoints that are self-signed by design. Expiry and "
+        "degraded - for endpoints that are self-signed by design. Expiry and "
         "not-yet-valid still degrade.",
     )
     last_run_at = models.DateTimeField(null=True, blank=True)
@@ -2867,7 +2867,7 @@ class MaintenanceEvent(TimestampedModel):
     a silence rather than growing a rival suppression mechanism (the ``silence``
     FK is the seam; wiring lands with the Silence device/circuit matcher).
     ``raw_email`` keeps the provider's original notification next to what was
-    parsed out of it — the audit trail issue #20 asks for.
+    parsed out of it - the audit trail issue #20 asks for.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -2896,13 +2896,13 @@ class MaintenanceEvent(TimestampedModel):
         related_name="maintenance_events",
         help_text="The carrier this came from; empty for internal work.",
     )
-    #: The provider's own reference ("MAINT-123456") — dedup key for ingestion.
+    #: The provider's own reference ("MAINT-123456") - dedup key for ingestion.
     external_ref = models.CharField(max_length=120, blank=True, default="")
 
     starts_at = models.DateTimeField()
     #: Outages start without a known end; maintenance always has one.
     ends_at = models.DateTimeField(null=True, blank=True)
-    #: Estimated time to restore — outages only.
+    #: Estimated time to restore - outages only.
     etr = models.DateTimeField(null=True, blank=True)
 
     #: The suppression this event drives while its window is open.
@@ -2952,7 +2952,7 @@ class MaintenanceEvent(TimestampedModel):
         """Create, update or retire the Silence this event drives.
 
         The silence mirrors the event's window and matches the devices its
-        impacts name — alerts for them are still tracked during the window,
+        impacts name - alerts for them are still tracked during the window,
         just not delivered. No device impacts → no silence (a blanket mute is
         never implied), and a terminal status retires it.
         """
@@ -3009,7 +3009,7 @@ class EventImpactLevel(models.TextChoices):
 
 
 class EventImpact(TimestampedModel):
-    """What an event touches — the Document/TaskLink generic-reference pattern
+    """What an event touches - the Document/TaskLink generic-reference pattern
     (label + id + denormalised site) plus how hard it hits."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

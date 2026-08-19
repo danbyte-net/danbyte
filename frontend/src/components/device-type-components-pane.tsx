@@ -53,7 +53,7 @@ import { useUrlSubTab } from "@/lib/use-url-tab"
 import { apiErrorToast } from "@/lib/api-toast"
 import { DeviceTypeServicesSection } from "@/components/device-type-services-section"
 
-// Bulk-editable fields per template kind — description everywhere; type on
+// Bulk-editable fields per template kind - description everywhere; type on
 // the port-ish kinds; interface templates add enabled/mgmt_only.
 const DESC: BulkFieldSpec = {
   key: "description",
@@ -285,7 +285,7 @@ const SECTIONS: { kind: TemplateKind; title: string; empty: string }[] = [
     kind: "device-bay",
     title: "Device bays",
     empty:
-      'No device bay templates. Device bays are chassis slots that hold whole child devices (blades, FEX) — set the child type\'s subdevice role to "child".',
+      'No device bay templates. Device bays are chassis slots that hold whole child devices (blades, FEX) - set the child type\'s subdevice role to "child".',
   },
   {
     kind: "module-bay",
@@ -297,13 +297,13 @@ const SECTIONS: { kind: TemplateKind; title: string; empty: string }[] = [
     kind: "inventory-item",
     title: "Inventory",
     empty:
-      "No inventory item templates. Parts the hardware ships with — PSUs, fans, CPUs — stamp onto new devices as serial-trackable inventory.",
+      "No inventory item templates. Parts the hardware ships with - PSUs, fans, CPUs - stamp onto new devices as serial-trackable inventory.",
   },
   {
     kind: "aux-port",
     title: "Aux ports",
     empty:
-      "No aux port templates. Aux ports model USB, video (HDMI/VGA/DP), card slots, grounding — everything the other kinds don't.",
+      "No aux port templates. Aux ports model USB, video (HDMI/VGA/DP), card slots, grounding - everything the other kinds don't.",
   },
 ]
 
@@ -314,7 +314,7 @@ export const DEVICE_TYPE_COMPONENT_SUBS: readonly SectionKind[] = [
   "service",
 ]
 
-/** The nine component-template tables on a device-type detail page — one per
+/** The nine component-template tables on a device-type detail page - one per
  * sub-tab so you don't scroll past eight sections to reach the ninth. */
 export function DeviceTypeComponentsPane({
   deviceTypeId,
@@ -330,7 +330,7 @@ export function DeviceTypeComponentsPane({
     DEVICE_TYPE_COMPONENT_SUBS
   )
 
-  // Fetch every kind's list up front — cheap, and it gives the tab counts plus
+  // Fetch every kind's list up front - cheap, and it gives the tab counts plus
   // instant switching. The keys/endpoints match TemplateSection's own query,
   // so the active section reads from this same cache (no double fetch).
   const counts = useQueries({
@@ -621,7 +621,7 @@ function TemplateDeleteDialog({
           <AlertDialogTitle>Delete {template?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             Removes this {TEMPLATE_NOUN[kind]} from the device type. Existing
-            devices keep their components — only future devices are affected.
+            devices keep their components - only future devices are affected.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

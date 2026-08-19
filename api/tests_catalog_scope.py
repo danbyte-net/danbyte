@@ -1,7 +1,7 @@
 """Local vs global catalog entries under enhanced site separation.
 
 Catalog types (tags, device types, manufacturers, zones, …) carry
-``owning_site`` — NULL = global to the tenant. With the separation flag ON, a
+``owning_site`` - NULL = global to the tenant. With the separation flag ON, a
 site-scoped user sees global + own-site local entries, creates land local to
 their site, and global entries are read-only for them. Flag OFF = catalogs
 behave tenant-wide exactly as before. Tags additionally became tenant-scoped
@@ -199,7 +199,7 @@ class DeviceTypeBulkDeleteTests(_CatalogBase):
 
     The id list is a *request*, never a grant: tenant and (with separation on)
     site scope are re-derived server-side, so an id the caller may see but not
-    delete — or one they can't even see — falls out of the set.
+    delete - or one they can't even see - falls out of the set.
     """
 
     def _post(self, ids):
@@ -211,7 +211,7 @@ class DeviceTypeBulkDeleteTests(_CatalogBase):
 
     def test_deletes_selection_and_counts_types_not_cascade(self):
         """A type takes its component templates with it, but the count the
-        operator is shown is types — the toast must not say "49 deleted"
+        operator is shown is types - the toast must not say "49 deleted"
         because one switch had 48 interface templates."""
         self._login(self.hq)
         keep = DeviceType.objects.create(
@@ -228,7 +228,7 @@ class DeviceTypeBulkDeleteTests(_CatalogBase):
         self.assertEqual(InterfaceTemplate.objects.count(), 0)  # cascaded
 
     def test_devices_survive_and_lose_their_type_reference(self):
-        """``Device.device_type`` is SET_NULL — the warning the bulk confirm
+        """``Device.device_type`` is SET_NULL - the warning the bulk confirm
         shows is the real behaviour, not a scare message."""
         self._login(self.hq)
         dev = Device.objects.create(
@@ -260,7 +260,7 @@ class DeviceTypeBulkDeleteTests(_CatalogBase):
         """The important one. A site-A editor submits four ids: their own local
         type, a type local to site B, a tenant-global type they can see but not
         write, and one belonging to another tenant entirely. Only their own
-        dies, and the count reflects that — no silent cross-scope deletion."""
+        dies, and the count reflects that - no silent cross-scope deletion."""
         other_org = Organization.objects.create(name="OO", slug="oo")
         other_tenant = Tenant.objects.create(org=other_org, name="TO", slug="to")
         other_mfr = Manufacturer.objects.create(
@@ -285,7 +285,7 @@ class DeviceTypeBulkDeleteTests(_CatalogBase):
         self.assertTrue(DeviceType.objects.filter(pk=foreign.pk).exists())
 
     def test_writes_exactly_one_audit_entry_per_deleted_type(self):
-        """A catalog wipe must leave a trace — and exactly one per row. The
+        """A catalog wipe must leave a trace - and exactly one per row. The
         cascade means Django can't fast-delete, so post_delete fires for every
         DeviceType; an extra explicit log_bulk_delete() would double every
         entry (which is what the sibling bulk-delete endpoints do today)."""

@@ -16,7 +16,7 @@ export interface LocalityBadgeProps {
 
 // Scope chip for local/global catalog entries (tags, zones, device types,
 // statuses, …). A null owning_site is a tenant-wide entry ("Global"); a set
-// one belongs to a single site ("Local — <name>").
+// one belongs to a single site ("Local - <name>").
 export function LocalityBadge({ owningSite, className }: LocalityBadgeProps) {
   if (!owningSite) {
     return (
@@ -33,7 +33,7 @@ export function LocalityBadge({ owningSite, className }: LocalityBadgeProps) {
   }
   return (
     <Badge variant="info" className={cn("text-[11px] font-normal", className)}>
-      Local — {owningSite.name}
+      Local - {owningSite.name}
     </Badge>
   )
 }
@@ -47,7 +47,7 @@ export interface PromoteToGlobalButtonProps {
   invalidate: readonly (readonly unknown[])[]
 }
 
-// "Make this local catalog entry tenant-wide" — the server only allows this
+// "Make this local catalog entry tenant-wide" - the server only allows this
 // for tenant-wide editors; callers additionally gate on
 // `editableSites === "all"` + the type-level change permission.
 export function PromoteToGlobalButton({

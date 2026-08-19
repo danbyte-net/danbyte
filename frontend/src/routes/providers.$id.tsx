@@ -233,7 +233,7 @@ function ProviderOverview({ provider: p }: { provider: Provider }) {
   )
 }
 
-/** The provider's provider networks — the peering/transit fabrics it operates
+/** The provider's provider networks - the peering/transit fabrics it operates
  * that circuits terminate onto. */
 function ProviderNetworksTable({ providerId }: { providerId: string }) {
   const q = useQuery({
@@ -271,7 +271,7 @@ function ProviderNetworksTable({ providerId }: { providerId: string }) {
           id: "service_id",
           header: "Service ID",
           cell: (r) => (
-            <span className="font-mono text-xs">{r.service_id || "—"}</span>
+            <span className="font-mono text-xs">{r.service_id || "-"}</span>
           ),
         },
         {

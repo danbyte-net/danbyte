@@ -24,7 +24,7 @@ export interface EditPageShellProps {
   /** Optional one-line subtitle under the heading. */
   subtitle?: React.ReactNode
   /** When both are set, announces this user as *editing* the object and shows a
-   * presence bar — so a second person opening the same form sees it. Omit on
+   * presence bar - so a second person opening the same form sees it. Omit on
    * /new pages (no object id yet). */
   presenceType?: string
   presenceId?: string
@@ -82,7 +82,7 @@ export function EditPageShell({
       {/* This is the scroll container: SidebarInset is `overflow-hidden`, so
           each page owns its own scroll via `min-h-0 flex-1 overflow-y-auto`.
           Without it a form taller than the viewport is clipped and can't
-          scroll — invisible on desktop (forms fit) but broken on mobile. */}
+          scroll - invisible on desktop (forms fit) but broken on mobile. */}
       <main className="min-h-0 flex-1 overflow-y-auto">
         <div
           className={cn(

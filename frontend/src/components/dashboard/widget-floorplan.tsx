@@ -43,7 +43,7 @@ export function FloorplanWidget() {
     return (
       <div className="flex h-56 items-center justify-center rounded-md border border-dashed border-border p-4 text-center text-[13px] text-muted-foreground">
         <span>
-          No floor plans yet —{" "}
+          No floor plans yet -{" "}
           <Link to="/floorplans" className="link">
             create one
           </Link>

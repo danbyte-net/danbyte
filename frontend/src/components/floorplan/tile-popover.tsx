@@ -75,11 +75,11 @@ const rack = (live?: LiveTile): FloorTileRackState | null =>
   live?.kind === "rack" ? live : null
 
 /**
- * The popover's field vocabulary — a **registry**, not a switch.
+ * The popover's field vocabulary - a **registry**, not a switch.
  *
  * Adding a field is one entry here; nothing else changes. (Our netbox-map plugin
  * assembles popover content in a big `switch`, so every new field is a code edit
- * in two places — this is the fix for that.)
+ * in two places - this is the fix for that.)
  *
  * Every field below resolves from the tile + the already-polled live state, so
  * the popover never fetches. Fields that WOULD need a fetch (primary IP, MAC,
@@ -202,7 +202,7 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
       const c = live?.check
       if (!c) return null
       // The real monitoring status pill (same palette as everywhere else),
-      // not a bare dot — matches the "Object status" badge above it.
+      // not a bare dot - matches the "Object status" badge above it.
       return <CheckStatusBadge status={c as CheckStatus} />
     },
   },
@@ -332,7 +332,7 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
   },
 }
 
-/** Custom fields ride a generic `cf_<key>` convention — never enumerated, since
+/** Custom fields ride a generic `cf_<key>` convention - never enumerated, since
  * the tenant defines them (zero pre-filled data). Resolved against the linked
  * object's values + its field definitions, so the value formats the same way it
  * does on the object's own detail page. */
@@ -375,12 +375,12 @@ export interface HoverTarget {
   tile: FloorPlanTile
   x: number
   y: number
-  /** Pinned by a click — survives pointer-leave, dismissed by Esc/outside. */
+  /** Pinned by a click - survives pointer-leave, dismissed by Esc/outside. */
   pinned: boolean
 }
 
 /**
- * Lazily fetch the tile's linked rack/device — only when a configured field
+ * Lazily fetch the tile's linked rack/device - only when a configured field
  * actually needs it, and only for kinds that carry detail.
  *
  * Deliberately lazy: the vast majority of popovers show tile-intrinsic fields
@@ -407,12 +407,12 @@ function useLinkedDetail(tile: FloorPlanTile | undefined, needed: boolean) {
 }
 
 /**
- * The tile popover — replaces the SVG `<title>` the browser used to render.
+ * The tile popover - replaces the SVG `<title>` the browser used to render.
  *
  * Anchored to a zero-size div at the hovered point (the canvas reports
  * screen-space coords), so Radix handles collision-flipping, Esc and
  * outside-click for us. Hover previews after a short delay; a click pins it so
- * the content can actually be read and its links clicked — the thing a native
+ * the content can actually be read and its links clicked - the thing a native
  * tooltip (and netbox-map's hover-only popover) can never do.
  */
 export function TilePopover({
@@ -430,14 +430,14 @@ export function TilePopover({
   onOpenChange: (open: boolean) => void
   /** The linked-object link, injected so this component stays route-agnostic. */
   renderLinked?: (tile: FloorPlanTile) => React.ReactNode
-  /** Actions (e.g. "Contents & trace") — rendered only when PINNED, since an
+  /** Actions (e.g. "Contents & trace") - rendered only when PINNED, since an
    * unpinned preview is pointer-transparent and can't be clicked. */
   renderActions?: (tile: FloorPlanTile) => React.ReactNode
 }) {
   const open = !!target
 
   // Resolve once so we know whether anything needs the linked object BEFORE
-  // fetching it — a popover of tile-intrinsic fields must stay fetch-free.
+  // fetching it - a popover of tile-intrinsic fields must stay fetch-free.
   const resolved = fields
     .filter((k) => k !== "linked")
     .map((key) => ({ key, field: resolvePopoverField(key) }))
@@ -487,7 +487,7 @@ export function TilePopover({
         }}
         // A click on the CANVAS is ours to interpret (pin this tile, re-pin
         // another, or close on the background). Without this, Radix's dismiss
-        // races the same click and cancels the pin — so the first click looked
+        // races the same click and cancels the pin - so the first click looked
         // like it did nothing and only a double-click appeared to work. Clicks
         // truly outside (header, sidebar) still dismiss normally.
         onPointerDownOutside={(e) => {
@@ -546,7 +546,7 @@ export function useTilePopover(delayMs = 250) {
   const pinned = useRef(false)
   // The last tile+point the pointer entered, recorded immediately (before the
   // open delay). A click is always preceded by a pointerenter on that tile, so
-  // this is where `pinCurrent()` gets its coords — the canvas's select callback
+  // this is where `pinCurrent()` gets its coords - the canvas's select callback
   // only carries an id.
   const lastHover = useRef<HoverTarget | null>(null)
 
@@ -576,7 +576,7 @@ export function useTilePopover(delayMs = 250) {
     }, delayMs)
   }
 
-  /** Pin whatever the pointer is currently over — the click path. Returns false
+  /** Pin whatever the pointer is currently over - the click path. Returns false
    * when the pointer isn't over a tile (a background click), so the caller can
    * treat that as a dismiss. */
   const pinCurrent = () => {

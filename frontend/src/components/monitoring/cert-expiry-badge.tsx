@@ -72,7 +72,7 @@ export function CertExpiryBadge({ worst }: { worst: WorstExpiry }) {
 /**
  * Fetches an object's certificate assignments (sharing the CertificatesPanel's
  * exact query key, so it hits cache rather than the network) and renders the
- * worst-expiry badge — nothing when every declared cert is healthy or none are
+ * worst-expiry badge - nothing when every declared cert is healthy or none are
  * assigned. Lets the Overview banner warn without opening the cert section.
  */
 export function ObjectCertExpiryBadge({

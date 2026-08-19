@@ -38,7 +38,7 @@ const WIDTHS: { value: RackWidth; label: string }[] = [
 
 export interface RackFormProps {
   rack?: Rack
-  /** Pre-pick a cabinet model on a NEW rack — "Add rack" from a rack type. */
+  /** Pre-pick a cabinet model on a NEW rack - "Add rack" from a rack type. */
   initialRackTypeId?: string
   onSaved: (saved: Rack) => void
   onCancel: () => void
@@ -79,7 +79,7 @@ export function RackForm({
     rack?.outer_width_mm != null ? String(rack.outer_width_mm) : ""
   )
   // The mounting rail opening is fixed (450 mm at 19"); any outer width beyond
-  // it is the ZERO-U SPACE — the channel each side of the rails where vertical
+  // it is the ZERO-U SPACE - the channel each side of the rails where vertical
   // PDUs and cable management live. Name it so widening the cabinet reads as
   // "make room for cable management", not a vanity dimension.
   const railOpeningMm = width === 23 ? 546 : 450
@@ -91,7 +91,7 @@ export function RackForm({
   const zeroUHint =
     zeroUPerSideMm > 0
       ? `zero-U space: ${zeroUPerSideMm} mm each side for vertical PDUs & cable management`
-      : "optional — widen past the rails to open zero-U space for vertical PDUs & cabling"
+      : "optional - widen past the rails to open zero-U space for vertical PDUs & cabling"
   const [outerDepth, setOuterDepth] = useState(
     rack?.outer_depth_mm != null ? String(rack.outer_depth_mm) : ""
   )
@@ -136,7 +136,7 @@ export function RackForm({
 
   const sites = useSiteOptions()
   // Enhanced site separation: a single-site user's creates land in their own
-  // site — prefill and lock the picker (useSiteOptions already filtered it).
+  // site - prefill and lock the picker (useSiteOptions already filtered it).
   const siteLocked = !!sites.lockedId
   useEffect(() => {
     if (!isEdit && sites.lockedId && !siteId) setSiteId(sites.lockedId)
@@ -159,7 +159,7 @@ export function RackForm({
   const canStamp = canDo("device", "add")
 
   // Picking a cabinet model copies its profile into the editable dim
-  // fields — the rack stays the source of truth and every value can still
+  // fields - the rack stays the source of truth and every value can still
   // be adjusted before saving.
   const applyTypeProfile = (t: RackType) => {
     setWidth(t.width)
@@ -172,7 +172,7 @@ export function RackForm({
     setMaxWeightUnit(t.max_weight_unit || "kg")
   }
   // Arriving from a rack type ("Add rack" on its page) pre-picks the model
-  // before its dims have loaded — apply the profile once they land, and only
+  // before its dims have loaded - apply the profile once they land, and only
   // once, so it never clobbers edits the operator has already made.
   const prefilled = useRef(false)
   useEffect(() => {
@@ -190,7 +190,7 @@ export function RackForm({
       api<Paginated<Status>>("/api/statuses/?available_to=rack&picker=1"),
     staleTime: 5 * 60_000,
   })
-  // Locations are per-site — the list follows the chosen site.
+  // Locations are per-site - the list follows the chosen site.
   const locations = useQuery({
     queryKey: ["locations-picker", siteId],
     queryFn: () =>
@@ -349,7 +349,7 @@ export function RackForm({
 
       <FormCombobox
         label="Rack type"
-        hint="optional · cabinet model — picking one fills the dims below"
+        hint="optional · cabinet model - picking one fills the dims below"
         value={rackTypeId}
         onChange={(v) => {
           setRackTypeId(v)
@@ -437,7 +437,7 @@ export function RackForm({
         />
         <FormText
           label="Outer depth (mm)"
-          hint="optional — blank = 1000"
+          hint="optional - blank = 1000"
           type="number"
           min={100}
           max={3000}
@@ -447,7 +447,7 @@ export function RackForm({
         />
         <FormText
           label="Weight budget"
-          hint="optional — floor / rack load rating"
+          hint="optional - floor / rack load rating"
           type="number"
           min={0}
           value={maxWeight}

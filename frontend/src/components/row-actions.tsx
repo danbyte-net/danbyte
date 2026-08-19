@@ -4,7 +4,7 @@ import { Pencil, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 /**
- * Inline row action buttons for DataTable "actions" columns — replaces the
+ * Inline row action buttons for DataTable "actions" columns - replaces the
  * per-row "…" dropdown with always-visible, subtle icon buttons (the row's
  * name is the Open link, so we only surface Edit + Delete here, plus any
  * `extra` actions a page needs). Right-aligned to sit at the table's edge.

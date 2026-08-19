@@ -41,8 +41,8 @@ def entry_site_id(instance):
     obj = instance
     # Walk intermediate FKs (e.g. device__site → obj.device), then read the
     # final FK's id column directly. A FK descriptor raises DoesNotExist (not
-    # AttributeError) when the id is set but the row is already gone — which
-    # happens mid-cascade during a teardown — so treat that as "unresolvable".
+    # AttributeError) when the id is set but the row is already gone - which
+    # happens mid-cascade during a teardown - so treat that as "unresolvable".
     try:
         for part in parts[:-1]:
             obj = getattr(obj, part, None)

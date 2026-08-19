@@ -1,8 +1,8 @@
-"""ConnectProtocol — tenant-scoped CRUD catalog + per-tenant seeding.
+"""ConnectProtocol - tenant-scoped CRUD catalog + per-tenant seeding.
 
 A Connect protocol is a launch-URL template (``ssh://{username}@{host}`` etc.)
 the device Connect menu renders client-side. No secret is involved, so this is
-plain tenant-scoped CRUD — the interesting behaviour is tenant isolation and the
+plain tenant-scoped CRUD - the interesting behaviour is tenant isolation and the
 editable seeded catalog.
 """
 from __future__ import annotations

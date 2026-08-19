@@ -177,7 +177,7 @@ class SensorSoTComplianceTests(_Base):
         self.disk.refresh_from_db()
         self.assertEqual(self.disk.status.slug, "active", "intent was overwritten")
         self.assertEqual(result["flipped"], 0)
-        # The observation is still recorded — that's what drift reads.
+        # The observation is still recorded - that's what drift reads.
         self.assertEqual(
             [(r["name"], r["status"]) for r in result["readings"]],
             [("Disk 1", "failed")],

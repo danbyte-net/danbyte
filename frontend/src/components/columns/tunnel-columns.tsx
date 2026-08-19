@@ -14,7 +14,7 @@ import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 // The one source of truth for "a table of tunnels". The /tunnels list, the
 // Tunnels pane on a tunnel group, and the Tunnels pane on an IPSec profile all
 // build their columns here, so a tunnel row reads identically in all three.
-// A group page omits "group" and a profile page omits "profile" — the column
+// A group page omits "group" and a profile page omits "profile" - the column
 // that repeats the object you are already looking at. Facet meta
 // (useTableFilters) is attached where it makes sense; panes that don't draw a
 // facet rail simply ignore it.
@@ -49,7 +49,7 @@ export interface TunnelColumnOpts<T extends Tunnel = Tunnel> {
   include?: TunnelColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
   tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }
@@ -195,7 +195,7 @@ export function buildTunnelColumns<T extends Tunnel = Tunnel>(
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     }),

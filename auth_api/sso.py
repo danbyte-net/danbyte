@@ -1,14 +1,14 @@
-"""Single sign-on — OpenID Connect login + JIT provisioning.
+"""Single sign-on - OpenID Connect login + JIT provisioning.
 
 OIDC providers are DB-driven (:class:`auth_api.models.IdentityProvider`). We
 discover endpoints from the issuer's ``/.well-known/openid-configuration``, run
 the standard authorization-code flow with ``state`` + ``nonce``, validate the ID
-token against the IdP's JWKS, then match — or, when ``jit_provisioning`` is on,
-create — the Danbyte user and re-sync their group membership from the asserted
+token against the IdP's JWKS, then match - or, when ``jit_provisioning`` is on,
+create - the Danbyte user and re-sync their group membership from the asserted
 groups via :class:`SsoGroupMapping`. Only *mapped* IdP groups grant anything.
 
 The IdP is operator-configured (same trust tier as LDAP / the Vault address), so
-HTTP to it is direct with TLS verification — not through the tenant SSRF guard.
+HTTP to it is direct with TLS verification - not through the tenant SSRF guard.
 """
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ def exchange_code(provider, code, redirect_uri, nonce) -> dict:
     if not id_token:
         raise SsoError("The identity provider returned no ID token.")
     claims = _validate_id_token(id_token, provider, doc, nonce)
-    # Groups often aren't in the ID token — pull userinfo if the mapped claim
+    # Groups often aren't in the ID token - pull userinfo if the mapped claim
     # is absent and the provider exposes a userinfo endpoint.
     if provider.claim_groups and provider.claim_groups not in claims:
         info = _userinfo(doc, data.get("access_token"))
@@ -122,12 +122,12 @@ def _validate_id_token(id_token, provider, doc, nonce) -> dict:
     if provider.oidc_client_id not in auds:
         raise SsoError("ID token audience mismatch.")
     # With multiple audiences the token MUST name the authorized party, and it
-    # must be us — otherwise a token minted for another client could be replayed.
+    # must be us - otherwise a token minted for another client could be replayed.
     if len(auds) > 1:
         if claims.get("azp") != provider.oidc_client_id:
             raise SsoError("ID token azp mismatch.")
     if nonce and claims.get("nonce") != nonce:
-        raise SsoError("ID token nonce mismatch — possible replay.")
+        raise SsoError("ID token nonce mismatch - possible replay.")
     return dict(claims)
 
 
@@ -149,7 +149,7 @@ def _userinfo(doc, access_token) -> dict:
 # ── Provisioning ─────────────────────────────────────────────────────────────
 
 def _subject(claims) -> str:
-    """The IdP's stable, immutable identifier for the user — OIDC ``sub`` or SAML
+    """The IdP's stable, immutable identifier for the user - OIDC ``sub`` or SAML
     ``NameID``. This, not a mutable email, is what an account is bound to."""
     return (str(claims.get("sub") or claims.get("nameid") or "")).strip()
 
@@ -161,7 +161,7 @@ def _email_verified(claims) -> bool:
 
 def _guard_safe_link(user, provider, subject) -> None:
     """Refuse to attach this SSO identity to an existing account when doing so
-    could hijack it — the core defence against an IdP asserting someone else's
+    could hijack it - the core defence against an IdP asserting someone else's
     email/username to seize their Danbyte account."""
     prof = getattr(user, "profile", None)
     if (prof is not None and prof.sso_provider_id == provider.id
@@ -279,13 +279,13 @@ def _apply_profile_and_groups(provider, user, claims, subject="") -> None:
             continue
         if tenant is not None and not group_is_tenant_safe(m.group, tenant):
             log.warning(
-                "SSO: skipping mapping %r for %s — group %r not narrowed to tenant",
+                "SSO: skipping mapping %r for %s - group %r not narrowed to tenant",
                 m.idp_group, provider.slug, m.group.name,
             )
             continue
         groups.append(m.group)
     # A baseline group (if configured) so a new SSO user always has some access,
-    # not just whatever the mappings grant — but a tenant-scoped provider may not
+    # not just whatever the mappings grant - but a tenant-scoped provider may not
     # hand out a group that isn't narrowed to its tenant (same guard as mappings).
     if provider.default_group_id:
         dg = provider.default_group
@@ -293,7 +293,7 @@ def _apply_profile_and_groups(provider, user, claims, subject="") -> None:
             groups.append(dg)
         else:
             log.warning(
-                "SSO: skipping default group %r for %s — not narrowed to tenant",
+                "SSO: skipping default group %r for %s - not narrowed to tenant",
                 dg.name, provider.slug,
             )
     user.groups.set(groups)

@@ -1,4 +1,4 @@
-"""Document attachments (#12) — generic file/link attach, private downloads,
+"""Document attachments (#12) - generic file/link attach, private downloads,
 SSRF-guarded links, RBAC/tenant/site scoping, and the dead-link sweep.
 
 Load-bearing guarantees under test: exactly one of file/url; you can only attach

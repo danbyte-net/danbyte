@@ -2,7 +2,7 @@
 
 Shell-exec mode: every call opens a WinRM shell and runs
 ``powershell -NoProfile -NonInteractive -EncodedCommand …`` with the script's
-output serialized as JSON (``ConvertTo-Json``). Stateless and simple — the
+output serialized as JSON (``ConvertTo-Json``). Stateless and simple - the
 PSRP upgrade path stays open if session reuse ever becomes a bottleneck.
 
 Two hard rules:
@@ -51,7 +51,7 @@ def run_ps(conn, script: str) -> str:
     """Run a PowerShell script on the connection's host, returning stdout.
 
     Raises :class:`WinRMError` on transport failures, auth failures, or a
-    non-zero exit — with the remote stderr in the message so sync logs are
+    non-zero exit - with the remote stderr in the message so sync logs are
     actionable.
     """
     try:

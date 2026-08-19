@@ -19,7 +19,7 @@ function SettingsIndex() {
         >
           <div className="text-sm font-semibold">Preferences</div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Your saved table layouts — reset a table to the tenant default.
+            Your saved table layouts - reset a table to the tenant default.
           </p>
         </Link>
         {canManage && (
@@ -29,7 +29,7 @@ function SettingsIndex() {
           >
             <div className="text-sm font-semibold">This tenant</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Per-tenant overrides — UI policy, sharing, email relay, and the
+              Per-tenant overrides - UI policy, sharing, email relay, and the
               tenant's own directory.
             </p>
           </Link>
@@ -41,7 +41,7 @@ function SettingsIndex() {
           >
             <div className="text-sm font-semibold">Deployment</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Install-wide defaults — deployment name, global email/LDAP,
+              Install-wide defaults - deployment name, global email/LDAP,
               updates, sharing policy.
             </p>
           </Link>

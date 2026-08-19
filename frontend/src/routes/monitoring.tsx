@@ -89,7 +89,7 @@ const SERIES_CONFIG = {
   down: { label: "Down", color: STATUS_COLOR.down },
 } satisfies ChartConfig
 
-// The brand chart palette (from the adopted preset) — used to colour the
+// The brand chart palette (from the adopted preset) - used to colour the
 // by-protocol bars, the shadcn way.
 const KIND_PALETTE = [
   "var(--chart-1)",
@@ -204,7 +204,7 @@ function MonitoringPage() {
         )}
       </header>
 
-      {/* Dead-Outpost banner — impossible to miss when checks are stalling. */}
+      {/* Dead-Outpost banner - impossible to miss when checks are stalling. */}
       <EngineHealthBanner />
 
       {/* Configuration lays out its own full-height rail + table shell (like
@@ -261,7 +261,7 @@ function MonitoringPage() {
               />
             </div>
 
-            {/* Certificate & key health — expiry buckets, SSH drift, firing
+            {/* Certificate & key health - expiry buckets, SSH drift, firing
                 alerts, each opening the matching list. Hidden with no certs. */}
             <CertKeyHealthCard />
 
@@ -452,7 +452,7 @@ function MonitoringPage() {
                             </Link>
                           ) : (
                             <span className="ml-2 text-muted-foreground">
-                              —
+                              -
                             </span>
                           )}
                           <span className="truncate text-muted-foreground">
@@ -473,7 +473,7 @@ function MonitoringPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <AlertTriangle className="h-4 w-4 text-amber-500" />
-                      Flapping a lot — maybe check on these
+                      Flapping a lot - maybe check on these
                     </CardTitle>
                     <CardDescription>
                       IPs bouncing repeatedly over the flap window. Tune the
@@ -516,7 +516,7 @@ function MonitoringPage() {
               )}
             </div>
 
-            {/* Settings — full width so its two-column form isn't cramped */}
+            {/* Settings - full width so its two-column form isn't cramped */}
             <Card>
               <CardHeader>
                 <CardTitle>Settings &amp; defaults</CardTitle>

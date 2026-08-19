@@ -30,7 +30,7 @@ function MapsPage() {
   return (
     <div className="space-y-6">
       <SettingsHeader title="Maps">
-        The tile servers behind the Site map — standard and satellite basemaps.
+        The tile servers behind the Site map - standard and satellite basemaps.
       </SettingsHeader>
       <SettingsGrid>
         <MapTilesCard />
@@ -94,7 +94,7 @@ function MapTilesCard() {
       </Field>
       <Field
         label="Attribution"
-        hint="shown on the map — required by most tile providers"
+        hint="shown on the map - required by most tile providers"
       >
         <Input
           value={tileAttrib}
@@ -129,7 +129,7 @@ function MapTilesCard() {
         />
       </Field>
       <p className="text-[11px] text-muted-foreground">
-        A custom tile host also needs to be allowed in the nginx CSP (img-src) —
+        A custom tile host also needs to be allowed in the nginx CSP (img-src) -
         see the Site map docs. OpenStreetMap's servers are donation-funded: keep
         the default only for light internal use, per their tile usage policy.
       </p>

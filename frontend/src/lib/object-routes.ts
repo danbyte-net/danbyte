@@ -44,7 +44,7 @@ export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
 }
 
 /** Detail route for an audited object type, or undefined when it has none
- * (or the object was deleted — callers should skip the link on deletes). */
+ * (or the object was deleted - callers should skip the link on deletes). */
 export function objectDetailRoute(objectType: string): string | undefined {
   return OBJECT_DETAIL_ROUTES[objectType]
 }

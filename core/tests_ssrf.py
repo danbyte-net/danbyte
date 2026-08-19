@@ -1,4 +1,4 @@
-"""SSRF guard (#58) — internal addresses are rejected, allow-list overrides."""
+"""SSRF guard (#58) - internal addresses are rejected, allow-list overrides."""
 from __future__ import annotations
 
 import os
@@ -55,7 +55,7 @@ class SSRFGuardTests(TestCase):
 
 
 class SiteSettingsSmtpGuardTests(TestCase):
-    """A SITE admin's SMTP host is SSRF-guarded like a tenant's — local IT
+    """A SITE admin's SMTP host is SSRF-guarded like a tenant's - local IT
     must not be able to point the mailer at internal services."""
 
     def test_site_smtp_host_guarded(self):

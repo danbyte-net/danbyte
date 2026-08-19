@@ -234,7 +234,7 @@ function buildColumns({
             {row.original.size.toLocaleString()}
           </span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -263,7 +263,7 @@ function buildColumns({
             {row.original.prefix.cidr}
           </Link>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -277,7 +277,7 @@ function buildColumns({
             color={row.original.role.color || undefined}
           />
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -286,7 +286,7 @@ function buildColumns({
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     },

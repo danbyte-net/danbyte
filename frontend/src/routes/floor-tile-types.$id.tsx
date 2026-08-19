@@ -252,7 +252,7 @@ function TypeOverview({ type: t }: { type: FloorTileType }) {
  * Markers on the geographic site map that reuse this tile type as their
  * vocabulary. Deliberately a short section on Overview rather than a tab: a
  * type is used by a handful of markers at most, while its placed tiles run to
- * hundreds — a tab here would be a mostly-empty pane. Both relations are
+ * hundreds - a tab here would be a mostly-empty pane. Both relations are
  * `PROTECT`, so both block a delete and both belong on the page.
  */
 function SiteMarkersSection({ typeId }: { typeId: string }) {
@@ -319,7 +319,7 @@ function SiteMarkersSection({ typeId }: { typeId: string }) {
   )
 }
 
-/** Every tile of this type placed on a floor plan — the impact analysis you
+/** Every tile of this type placed on a floor plan - the impact analysis you
  * want before recolouring, renaming, or deleting a palette entry. */
 function PlacedTilesTable({ typeId }: { typeId: string }) {
   const q = useQuery({

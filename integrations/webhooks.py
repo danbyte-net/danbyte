@@ -1,10 +1,10 @@
-"""Webhook delivery — signal handlers + the RQ worker that POSTs payloads.
+"""Webhook delivery - signal handlers + the RQ worker that POSTs payloads.
 
 Wiring: ``apps.ready()`` connects ``post_save`` / ``post_delete`` for every
 tenant-scoped model in the RBAC object-type registry. On a matching change we
 enqueue ``deliver_webhook`` on the ``low`` queue. Everything in the signal path
 is wrapped so a webhook problem (or a down Redis) can never break the actual
-save — webhooks are best-effort.
+save - webhooks are best-effort.
 """
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def _field_dict(instance) -> dict:
     # Never send secrets to an external URL. EncryptedJSONField columns decrypt
     # transparently on read, so a naive getattr() would ship plaintext SNMP
     # creds / API tokens in the webhook payload. Mask via the same classifier
-    # the audit trail and exports use (core.secret_fields) — "•••" when set,
+    # the audit trail and exports use (core.secret_fields) - "•••" when set,
     # None when empty, so the payload shows a field changed without its value.
     from core.secret_fields import is_secret_field
 
@@ -95,7 +95,7 @@ def _fire(instance, event: str) -> None:
             queue.enqueue(
                 deliver_webhook, str(h.id), event, slug, object_id, data
             )
-    except Exception:  # noqa: BLE001 — never break the originating save
+    except Exception:  # noqa: BLE001 - never break the originating save
         logger.exception("webhook dispatch failed (%s)", event)
 
 

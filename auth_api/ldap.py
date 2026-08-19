@@ -1,4 +1,4 @@
-"""LDAP / Active Directory authentication — optional and DB-driven.
+"""LDAP / Active Directory authentication - optional and DB-driven.
 
 Configuration lives on :class:`core.models.DeploymentSettings` (the admin UI),
 not Django settings, so it changes at runtime without a redeploy. The directory
@@ -9,7 +9,7 @@ not they're installed.
 Group membership is **explicitly mapped**: on each login a user's Danbyte groups
 are re-synced from the directory groups they belong to, via
 :class:`auth_api.models.LDAPGroupMapping` (each → an ``auth.Group`` carrying
-ObjectPermissions). Only mapped directory groups grant anything — the directory
+ObjectPermissions). Only mapped directory groups grant anything - the directory
 can't accidentally widen access.
 """
 from __future__ import annotations
@@ -73,7 +73,7 @@ def danbyte_groups_for_dns(group_dns, tenant=None):
             continue
         if tenant is not None and not group_is_tenant_safe(m.group, tenant):
             logger.warning(
-                "LDAP: skipping mapping %r for tenant %s — group %r carries "
+                "LDAP: skipping mapping %r for tenant %s - group %r carries "
                 "permissions not narrowed to this tenant",
                 m.ldap_group_dn, tenant.slug, m.group.name,
             )
@@ -89,7 +89,7 @@ def sync_user_groups(user, group_dns, tenant=None) -> None:
 
 def mark_ldap_user(user, source_tenant=None) -> None:
     """Stamp the account's auth source and (for tenant directories) which
-    tenant's directory owns it — the anchor the bind guards check."""
+    tenant's directory owns it - the anchor the bind guards check."""
     from .models import UserProfile
 
     prof, _ = UserProfile.objects.get_or_create(user=user)
@@ -120,7 +120,7 @@ def assert_public_ldap_uri(cfg) -> None:
     parsed = urlparse(uri)
     host = parsed.hostname
     if not host:
-        return  # empty URI — the backend build will no-op anyway
+        return  # empty URI - the backend build will no-op anyway
     port = parsed.port or (636 if parsed.scheme == "ldaps" else 389)
     from core.ssrf import assert_public_host
 
@@ -148,11 +148,11 @@ def _existing_owner(username: str):
 
 
 def _candidate_may_bind(final_username: str, owner_tenant) -> bool:
-    """Pre-bind ownership guard — evaluated BEFORE any directory I/O.
+    """Pre-bind ownership guard - evaluated BEFORE any directory I/O.
 
     A tenant directory may only match an account it owns (auth_source="ldap"
     and ldap_source_tenant == that tenant) or a username that doesn't exist yet
-    — so a tenant-configured (possibly malicious) directory can never
+    - so a tenant-configured (possibly malicious) directory can never
     authenticate as a local user, a deployment-LDAP user, or another tenant's
     user. The deployment directory keeps its historical semantics (it may adopt
     a local account) but refuses accounts owned by a tenant directory."""
@@ -170,10 +170,10 @@ def _candidate_may_bind(final_username: str, owner_tenant) -> bool:
 
 
 def _post_bind_ok(user, owner_tenant) -> bool:
-    """Defense-in-depth re-check on the row the directory actually bound —
+    """Defense-in-depth re-check on the row the directory actually bound -
     catches the backend producing a different username than predicted. Profiles
     are created lazily (no signals), so a user with NO profile is a fresh
-    account created by this very bind (OK — it gets stamped right after);
+    account created by this very bind (OK - it gets stamped right after);
     otherwise the same ownership rules as the pre-bind guard apply."""
     prof = getattr(user, "profile", None)
     if prof is None:
@@ -186,9 +186,9 @@ def _post_bind_ok(user, owner_tenant) -> bool:
 
 # ─── django-auth-ldap wiring (lazy) ──────────────────────────────────────────
 def _configured_backend(dep, django_username_map=None):
-    """A django-auth-ldap backend configured from a settings object — the
+    """A django-auth-ldap backend configured from a settings object - the
     DeploymentSettings singleton or a TenantSettings row (mirrored field names)
-    — or None if the deps are missing. ``django_username_map`` optionally
+    - or None if the deps are missing. ``django_username_map`` optionally
     rewrites the LDAP login name into the stored Django username (domain-routed
     tenant logins keep the full ``user@domain`` form)."""
     try:
@@ -204,7 +204,7 @@ def _configured_backend(dep, django_username_map=None):
         logger.warning("LDAP enabled but python-ldap/django-auth-ldap unavailable")
         return None
 
-    # A tenant admin (untrusted) controls a per-tenant directory URI — SSRF-guard
+    # A tenant admin (untrusted) controls a per-tenant directory URI - SSRF-guard
     # it so the bind can't reach internal services / cloud metadata. Deployment
     # directories are set by a trusted operator (may be internal on-prem), so
     # they're exempt (allowlist via DANBYTE_SSRF_ALLOWLIST if needed).
@@ -240,7 +240,7 @@ def _configured_backend(dep, django_username_map=None):
     s.CACHE_TIMEOUT = 0
     # OPT_REFERRALS=0 is required for Active Directory: a subtree search on a
     # domain base (DC=…) returns referrals which python-ldap otherwise chases
-    # with an anonymous bind — AD rejects that and the whole authenticate()
+    # with an anonymous bind - AD rejects that and the whole authenticate()
     # fails even though the user's own bind succeeded. The admin test/browse
     # endpoints already did this; the auth path was missing it (issue #152).
     opts: dict = {
@@ -293,7 +293,7 @@ class DanbyteLDAPBackend(ModelBackend):
                 (lambda _n, _final=final_username: _final) if domain_routed else None
             )
 
-            # Ownership guard BEFORE any directory I/O — a tenant-configured
+            # Ownership guard BEFORE any directory I/O - a tenant-configured
             # directory must never bind an account it doesn't own.
             if not _candidate_may_bind(final_username, owner_tenant):
                 logger.warning(
@@ -306,7 +306,7 @@ class DanbyteLDAPBackend(ModelBackend):
 
             backend = _configured_backend(cfg, django_username_map=username_map)
             if backend is None:
-                return None  # deps missing — no point trying further
+                return None  # deps missing - no point trying further
             try:
                 user = backend.authenticate(
                     request, username=search_name, password=password
@@ -322,7 +322,7 @@ class DanbyteLDAPBackend(ModelBackend):
             # Defense in depth: re-check ownership on the row actually bound.
             if not _post_bind_ok(user, owner_tenant):
                 logger.warning(
-                    "LDAP: post-bind ownership mismatch for %r — rejected",
+                    "LDAP: post-bind ownership mismatch for %r - rejected",
                     user.get_username(),
                 )
                 return None

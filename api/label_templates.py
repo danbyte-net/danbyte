@@ -1,9 +1,9 @@
-"""Label rendering — per-object Jinja2 in a sandbox.
+"""Label rendering - per-object Jinja2 in a sandbox.
 
 Renders one :class:`~api.models.LabelTemplate` against a single object into a
 sized HTML label. Uses Jinja's ``SandboxedEnvironment`` (like
 :mod:`api.export_templates`) so a template can't reach code-exec/mutating
-attributes, and — unlike export configs — with **autoescape on** so a field value
+attributes, and - unlike export configs - with **autoescape on** so a field value
 containing markup is escaped, not injected. The rendered HTML is then run through
 ``nh3`` (``sanitize_label_html``) to strip any ``<script>``/event handlers/unsafe
 URLs the *author's own* markup carries, so the frontend can print it inline (the
@@ -51,7 +51,7 @@ def available_fields(object_type, tenant=None) -> dict | None:
     """The token tree offered to the label editor for ``object_type``.
 
     Returns ``{"object", "tokens", "special"}`` where ``tokens`` are
-    ``{{ device.name }}``-style references the author can click to insert — the
+    ``{{ device.name }}``-style references the author can click to insert - the
     object's own fields, a few curated one-hop relations, and (when ``tenant`` is
     given) that tenant's custom fields for the type. Derived from the model so it
     tracks the schema instead of a hard-coded list.
@@ -114,8 +114,8 @@ def detail_path(obj) -> str:
 
 
 def short_link_path(obj) -> str:
-    """Compact SPA path keyed on the object's per-tenant human number (numid) —
-    ``/l/<tenant>/<type>/<numid>`` — which the ``/l`` route resolves to the real
+    """Compact SPA path keyed on the object's per-tenant human number (numid) -
+    ``/l/<tenant>/<type>/<numid>`` - which the ``/l`` route resolves to the real
     detail page. Encoding this instead of the full UUID URL keeps the QR small.
 
     The tenant slug is part of the path because ``numid`` is only unique *within*
@@ -132,7 +132,7 @@ def short_link_path(obj) -> str:
 
 
 def _cable_ends(cable) -> dict:
-    """`{a, b, a_port, b_port}` for a cable — the terminated device + the port
+    """`{a, b, a_port, b_port}` for a cable - the terminated device + the port
     object at each end. Missing/half-terminated ends resolve to None instead of
     raising, so a template referencing them just renders blank."""
     ends: dict = {}
@@ -152,7 +152,7 @@ def _cable_ends(cable) -> dict:
 
 def _context(obj, url: str) -> dict:
     """Template context: the object under its type name, plus `obj`, `url`,
-    common relations (managers materialised to lists), and — for a cable — its
+    common relations (managers materialised to lists), and - for a cable - its
     A/B ends (`a`/`b` devices + `a_port`/`b_port`)."""
     ctx = {obj._meta.model_name: obj, "obj": obj, "url": url}
     for attr in _RELATIONS:
@@ -160,7 +160,7 @@ def _context(obj, url: str) -> dict:
             continue
         try:
             val = getattr(obj, attr)
-        except Exception:  # noqa: BLE001 — a missing FK etc. just isn't exposed
+        except Exception:  # noqa: BLE001 - a missing FK etc. just isn't exposed
             continue
         if hasattr(val, "all"):  # a related manager
             try:
@@ -173,7 +173,7 @@ def _context(obj, url: str) -> dict:
     return ctx
 
 
-# Rendered label HTML is author-controlled markup — Jinja autoescaping only
+# Rendered label HTML is author-controlled markup - Jinja autoescaping only
 # escapes the {{ values }}, not the literal template body. Since a label prints
 # inline in the app origin, sanitize it: keep structural/formatting tags + inline
 # style, strip <script>, event handlers, and unsafe URLs. The QR is composited
@@ -204,7 +204,7 @@ def sanitize_label_html(html: str) -> str:
 
 
 def _fmt_date(value, fmt="%Y-%m-%d"):
-    """`| date` — a datetime/date rendered short (default YYYY-MM-DD) instead of
+    """`| date` - a datetime/date rendered short (default YYYY-MM-DD) instead of
     the raw `2026-07-31 18:34:55.339089+00:00`. Non-dates pass through as text."""
     if value in (None, ""):
         return ""
@@ -212,7 +212,7 @@ def _fmt_date(value, fmt="%Y-%m-%d"):
 
 
 def _fmt_datetime(value, fmt="%Y-%m-%d %H:%M"):
-    """`| datetime` — date + HH:MM, no microseconds/timezone noise."""
+    """`| datetime` - date + HH:MM, no microseconds/timezone noise."""
     return _fmt_date(value, fmt)
 
 
@@ -223,11 +223,11 @@ def _register_filters(env):
 
 
 def _qr_span(value: str, size_mm: float) -> str:
-    """A QR as an inline SVG sized to exactly ``size_mm`` — the print counterpart
+    """A QR as an inline SVG sized to exactly ``size_mm`` - the print counterpart
     of the frontend's qrcode.react composite, so a PDF label carries a crisp
     vector QR at the right size. Generated with segno (pure-Python, no native
     deps). Sizing via ``unit="mm"`` + a computed ``scale`` bakes both a mm
-    width/height AND a viewBox into the SVG, so it renders at true size — a
+    width/height AND a viewBox into the SVG, so it renders at true size - a
     CSS ``width:100%`` alone won't scale a viewBox-less QR."""
     import io
 
@@ -249,7 +249,7 @@ def _qr_span(value: str, size_mm: float) -> str:
     return buf.getvalue().decode("utf-8")
 
 
-# Inject the QR into the first `class="qr"` element — same contract as the
+# Inject the QR into the first `class="qr"` element - same contract as the
 # frontend's injectQr so HTML authored in the editor prints identically.
 _QR_PLACEHOLDER = re.compile(
     r'(<([a-z]+)[^>]*class="[^"]*\bqr\b[^"]*"[^>]*>)(</\2>)', re.IGNORECASE
@@ -272,13 +272,13 @@ PAPER_SIZES = {"a4": "A4", "letter": "Letter"}
 def _sheet_css(template, paper: str = "label") -> str:
     """Print stylesheet for the PDF.
 
-    ``paper="label"`` — one label per page, ``@page`` sized to the label with
+    ``paper="label"`` - one label per page, ``@page`` sized to the label with
     zero margin so a **label printer** produces true physical dimensions.
 
-    ``paper="a4"`` / ``"letter"`` — the page is that office size and labels are
+    ``paper="a4"`` / ``"letter"`` - the page is that office size and labels are
     **tiled** at their true mm size (dashed cut guides between them). Because the
     PDF page then matches the printer's paper, the print dialog has nothing to
-    scale up — so labels come out at real size on an ordinary printer even at the
+    scale up - so labels come out at real size on an ordinary printer even at the
     default "Fit to page".
     """
     lbl_box = (
@@ -317,8 +317,8 @@ def render_sheet_pdf(
 ) -> bytes:
     """Render ``template`` against ``objects`` into a print-ready PDF.
 
-    A browser can't be made to print an HTML page at an exact physical size —
-    ``@page { size }`` is advisory and the print dialog's paper size wins — so
+    A browser can't be made to print an HTML page at an exact physical size -
+    ``@page { size }`` is advisory and the print dialog's paper size wins - so
     the reliable path is a PDF with the page box baked in. ``paper`` picks the
     box: ``"label"`` (default) makes each page the label's mm size, one per page,
     for a label printer; ``"a4"``/``"letter"`` tiles the labels at true size onto
@@ -344,7 +344,7 @@ def render_sheet_pdf(
 
 
 def render_label_text(template, obj, *, base_url: str = "") -> str:
-    """The label's visible text as plain multi-line text — for copying into an
+    """The label's visible text as plain multi-line text - for copying into an
     external label printer's software (Phoenix Contact, Weidmüller, DYMO, …).
     Renders the template, drops the markup, and keeps one line per block."""
     import html as _html
@@ -385,11 +385,11 @@ def render_label(template, obj, *, base_url: str = "") -> dict:
         trim_blocks=True, lstrip_blocks=True, autoescape=True
     ))
     html = html_env.from_string(template.template_html or "").render(**ctx)
-    # Strip anything executable — the label prints inline in the app origin.
+    # Strip anything executable - the label prints inline in the app origin.
     html = sanitize_label_html(html)
 
     if template.qr_content:
-        # The QR payload is a scannable string, NOT HTML — render it with
+        # The QR payload is a scannable string, NOT HTML - render it with
         # autoescape OFF so e.g. a name with `<`/`&` encodes verbatim in the QR
         # instead of as `&lt;`/`&amp;`.
         qr_env = _register_filters(SandboxedEnvironment(autoescape=False))

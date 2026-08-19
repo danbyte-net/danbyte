@@ -34,7 +34,7 @@ class WorkerControlTests(APITestCase):
     def test_saves_the_count(self):
         self._login(self.admin)
         r = self.client.post("/api/services/workers/", {"count": 12}, format="json")
-        # In the test env systemd isn't reachable, so it can't restart — but the
+        # In the test env systemd isn't reachable, so it can't restart - but the
         # setting is persisted regardless (saved=true), returned as 200.
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(DeploymentSettings.load().rq_workers, 12)

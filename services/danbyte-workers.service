@@ -6,8 +6,8 @@ After=network.target
 Type=simple
 WorkingDirectory=%h/danbyte
 Environment=PYTHONUNBUFFERED=1
-# A *pool* of workers (not a single rqworker) so sharded jobs — monitoring
-# sweeps and the discovery shard fan-out — actually run in parallel. With one
+# A *pool* of workers (not a single rqworker) so sharded jobs - monitoring
+# sweeps and the discovery shard fan-out - actually run in parallel. With one
 # worker a 33-shard /16 discovery would still drain one shard at a time.
 # Override the size with `Environment=RQ_WORKERS=N` (or a drop-in).
 Environment=RQ_WORKERS=8
@@ -16,7 +16,7 @@ Restart=on-failure
 RestartSec=3
 # Warm shutdown: SIGINT tells RQ to finish the current job and exit cleanly
 # (SIGTERM was being ignored, so systemd waited the full default 90s stop-timeout
-# on every restart/upgrade). Cap the wait so an upgrade restart is quick — any
+# on every restart/upgrade). Cap the wait so an upgrade restart is quick - any
 # job still running at the cap is SIGKILLed and re-queued (monitoring jobs are
 # idempotent and rescheduled).
 KillSignal=SIGINT

@@ -33,7 +33,7 @@ function PreferencesPage() {
   return (
     <div className="space-y-6">
       <SettingsHeader title="Preferences">
-        Your account — how Danbyte looks for you, your sign-in, and your keys.
+        Your account - how Danbyte looks for you, your sign-in, and your keys.
         These apply to you only, not the whole tenant.
       </SettingsHeader>
       <SettingsGrid>
@@ -47,7 +47,7 @@ function PreferencesPage() {
   )
 }
 
-// One bulk request for the whole table list (instead of N per-table fetches —
+// One bulk request for the whole table list (instead of N per-table fetches -
 // Django's dev server is single-threaded, so the fan-out made this page crawl).
 function TableLayoutsSection() {
   const qc = useQueryClient()
@@ -76,7 +76,7 @@ function TableLayoutsSection() {
         <>
           Reorder and show/hide columns from the{" "}
           <span className="font-medium">Columns</span> menu on each table. Your
-          choices are saved per table — there's nothing to save here. Reset one
+          choices are saved per table - there's nothing to save here. Reset one
           to fall back to the tenant default.
         </>
       }
@@ -96,7 +96,7 @@ function TableLayoutsSection() {
   )
 }
 
-// The tenant default is the "auto" value for the date/time settings — see
+// The tenant default is the "auto" value for the date/time settings - see
 // auth_api.user_prefs (user override → tenant default → deployment default).
 const AUTO = "auto"
 
@@ -128,7 +128,7 @@ function DisplaySection() {
   return (
     <SettingsCard
       title="Display"
-      description="How Danbyte looks and behaves for you. Every control here saves itself as you change it — there's no save button."
+      description="How Danbyte looks and behaves for you. Every control here saves itself as you change it - there's no save button."
     >
       <div className="grid gap-4">
         <FormSelect
@@ -150,7 +150,7 @@ function DisplaySection() {
         />
         <FormColor
           label="Link colour"
-          hint="Colour used for links. Leave empty to keep them the same colour as text (underline on hover). Pick a hue if you want links to stand out — an accessibility aid."
+          hint="Colour used for links. Leave empty to keep them the same colour as text (underline on hover). Pick a hue if you want links to stand out - an accessibility aid."
           value={linkColor}
           onChange={setLinkColor}
         />
@@ -175,7 +175,7 @@ function DisplaySection() {
         />
         <FormSelect
           label="Timestamps"
-          hint="How dates show in tables — exact form is always on hover"
+          hint="How dates show in tables - exact form is always on hover"
           value={timeFormat}
           onChange={(v) => v && setPref("time_format", v)}
           options={[
@@ -185,7 +185,7 @@ function DisplaySection() {
         />
         <FormSelect
           label="Date format"
-          hint="How calendar dates render for you — Auto follows the tenant default"
+          hint="How calendar dates render for you - Auto follows the tenant default"
           value={dateFormat}
           onChange={(v) => v && setPref("date_format", v)}
           options={[
@@ -205,7 +205,7 @@ function DisplaySection() {
         />
         <FormCombobox
           label="Timezone"
-          hint="Times render in this IANA timezone — Auto follows the tenant default"
+          hint="Times render in this IANA timezone - Auto follows the tenant default"
           value={timezone === AUTO ? null : timezone}
           onChange={(v) => setPref("timezone", v ?? AUTO)}
           noneLabel="Auto (tenant default)"
@@ -228,7 +228,7 @@ function DisplaySection() {
           ]}
         />
         <FormSelect
-          label="Space map depth — IPv4"
+          label="Space map depth - IPv4"
           hint="Deepest subnet the prefix map draws; click a cell to zoom deeper"
           value={v4Max}
           onChange={(v) => v && setPref("space_map_v4_max", Number(v))}
@@ -244,7 +244,7 @@ function DisplaySection() {
           ]}
         />
         <FormSelect
-          label="Space map depth — IPv6"
+          label="Space map depth - IPv6"
           hint="Deepest subnet the prefix map draws for IPv6"
           value={v6Max}
           onChange={(v) => v && setPref("space_map_v6_max", Number(v))}
@@ -275,7 +275,7 @@ function DisplaySection() {
             Task emails
           </p>
           <p className="mb-2 text-[12px] text-muted-foreground">
-            Personal mails about planning tasks — each kind can be switched off
+            Personal mails about planning tasks - each kind can be switched off
             on its own.
           </p>
         </div>
@@ -305,7 +305,7 @@ function DisplaySection() {
         />
         <FormCheckbox
           label="Daily work reminder"
-          hint="Each morning: your overdue and upcoming tasks — only sent when you have some"
+          hint="Each morning: your overdue and upcoming tasks - only sent when you have some"
           checked={values.notify_task_due !== false}
           onChange={(v) => setPref("notify_task_due", v)}
         />

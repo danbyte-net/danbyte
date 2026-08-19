@@ -137,7 +137,7 @@ export function PlatformGroupForm({
       />
       <FormCombobox
         label="Parent group"
-        hint="optional — nest under another group"
+        hint="optional - nest under another group"
         value={parentId}
         onChange={setParentId}
         options={parentOptions.map((g) => ({

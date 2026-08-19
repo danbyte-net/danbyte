@@ -125,7 +125,7 @@ function NotificationsPage() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Notifications</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          What you're subscribed to, and — for admins — every channel and who it
+          What you're subscribed to, and - for admins - every channel and who it
           reaches.
         </p>
       </div>
@@ -284,7 +284,7 @@ function ForYouTab() {
           </div>
           {!data?.can_subscribe && (
             <p className="text-[11px] text-muted-foreground">
-              You don't have permission to change your own subscriptions — ask
+              You don't have permission to change your own subscriptions - ask
               an administrator.
             </p>
           )}
@@ -376,7 +376,7 @@ function AdminTab() {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Every subscription across channels — the groups and users each channel
+          Every subscription across channels - the groups and users each channel
           reaches. Group subscriptions fan out to members; mandatory ones can't
           be self-removed.
         </p>

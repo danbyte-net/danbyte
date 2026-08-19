@@ -17,7 +17,7 @@ from django.core.exceptions import PermissionDenied
 from django.shortcuts import render
 
 
-# (slug, friendly label, area) — `area` groups them on the edit form.
+# (slug, friendly label, area) - `area` groups them on the edit form.
 PERMISSIONS: list[tuple[str, str, str]] = [
     ("prefixes.view",   "View prefixes",                                  "IPAM"),
     ("prefixes.edit",   "Create / edit prefixes",                         "IPAM"),
@@ -73,7 +73,7 @@ def can_manage_admin(user, tenant=None) -> bool:
 
     Mirrors ``can_manage_users`` in ``me_json``: superusers and the legacy
     ``users.manage`` slug pass, **and** so does anyone with RBAC ``change`` on
-    the ``user`` object type — so an Administrator provisioned purely through an
+    the ``user`` object type - so an Administrator provisioned purely through an
     RBAC group (no legacy ``role``) isn't wrongly blocked. Pass the active
     ``tenant`` when you have one; ``None`` still honours tenant-unscoped grants
     (the built-in Administrator permission is unscoped).
@@ -94,7 +94,7 @@ def can_manage_deployment(user) -> bool:
     Stricter than :func:`can_manage_admin`: a tenant-narrowed admin grant does
     NOT pass. Passes for superusers, the legacy ``users.manage`` slug (legacy
     slugs are inherently global), or an RBAC ``change``-on-``user`` grant whose
-    ObjectPermission has NO tenant narrowing — ``effective_actions(user, None)``
+    ObjectPermission has NO tenant narrowing - ``effective_actions(user, None)``
     skips every tenant-scoped grant (see rbac.applicable_permissions), so it is
     exactly the unscoped grant set.
     """

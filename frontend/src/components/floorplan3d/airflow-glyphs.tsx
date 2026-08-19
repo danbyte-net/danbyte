@@ -13,10 +13,10 @@ import {
 } from "./world"
 import type { SceneRack } from "./world"
 
-// The UNIT cone every instance scales from — each glyph carries its own
+// The UNIT cone every instance scales from - each glyph carries its own
 // factor, sized to the device it annotates (world.airflowGlyphSizeM). A fixed
 // 50 mm cone was wider than the 42 mm 1U box it belonged to, and up close it
-// sat over the faceplate and hid the ports. 8 radial segments — dozens of
+// sat over the faceplate and hid the ports. 8 radial segments - dozens of
 // instances per rack.
 const CONE_H = GLYPH_UNIT_H_M
 const CONE_R = CONE_H * 0.42
@@ -24,7 +24,7 @@ const UP = new THREE.Vector3(0, 1, 0)
 
 /**
  * The rack's airflow layer: every device's intake/exhaust cones as two
- * InstancedMeshes (one per colour). Static — matrices are set once per data
+ * InstancedMeshes (one per colour). Static - matrices are set once per data
  * change, which invalidates by itself under the demand frameloop. Decoration:
  * never raycast, so it can't steal device/port clicks.
  *

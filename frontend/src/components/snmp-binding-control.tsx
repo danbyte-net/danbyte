@@ -43,7 +43,7 @@ function useBinding(scope: SnmpBinding["scope"], objectId: string) {
  * device type). Most-specific wins: device → role → type → tenant default
  * (issue #84).
  *
- * By default it renders the Select plus a resolved-profile hint stacked below —
+ * By default it renders the Select plus a resolved-profile hint stacked below -
  * fine inside a form column. Pass `inline` to render only the Select (for a
  * card header's actions row); render {@link SnmpBindingHint} in the card body
  * instead so the hint text doesn't wrap into the corner.
@@ -87,7 +87,7 @@ export function SnmpBindingControl({
       disabled={!canEdit || set.isPending}
     >
       <SelectTrigger className="h-8 w-60 text-xs">
-        <SelectValue placeholder="—" />
+        <SelectValue placeholder="-" />
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={INHERIT}>
@@ -110,7 +110,7 @@ export function SnmpBindingControl({
       <SnmpBindingHint scope={scope} objectId={objectId} />
       {profileList.length === 0 && (
         <p className="text-[11px] text-muted-foreground">
-          No SNMP profiles yet — create one in Settings → SNMP profiles.
+          No SNMP profiles yet - create one in Settings → SNMP profiles.
         </p>
       )}
     </div>

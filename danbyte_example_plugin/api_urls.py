@@ -1,4 +1,4 @@
-"""Example plugin API — mounted at ``/api/plugins/example/`` by the framework."""
+"""Example plugin API - mounted at ``/api/plugins/example/`` by the framework."""
 from rest_framework.routers import DefaultRouter
 
 from .viewsets import WidgetViewSet

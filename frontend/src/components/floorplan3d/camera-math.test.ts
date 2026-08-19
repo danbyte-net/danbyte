@@ -98,7 +98,7 @@ describe("panVector", () => {
     expect(panVector(keys("w"), FWD, 20, 1)[2]).toBeCloseTo(-18)
   })
 
-  it("moves vertically at ×0.6 — Space/PageUp rise, C/PageDown descend", () => {
+  it("moves vertically at ×0.6 - Space/PageUp rise, C/PageDown descend", () => {
     expect(panVector(keys(" "), FWD, DIST, 1)[1]).toBeCloseTo(5.4)
     expect(panVector(keys("PageUp"), FWD, DIST, 1)[1]).toBeCloseTo(5.4)
     expect(panVector(keys("c"), FWD, DIST, 1)[1]).toBeCloseTo(-5.4)
@@ -153,7 +153,7 @@ describe("pullInTarget", () => {
   })
 })
 
-describe("dollyThroughStep — the zoom wall becomes a walk", () => {
+describe("dollyThroughStep - the zoom wall becomes a walk", () => {
   // Camera 5 cm behind its target, looking toward −z: at the wall.
   const CAM = [0, 1, 5] as const
   const TGT = [0, 1, 4.95] as const
@@ -175,7 +175,7 @@ describe("dollyThroughStep — the zoom wall becomes a walk", () => {
     expect(dollyThroughStep(CAM, TGT, -1, 0.05)![2]).toBeCloseTo(-0.0175)
   })
 
-  it("is a pure translation — camera↔target distance is preserved", () => {
+  it("is a pure translation - camera↔target distance is preserved", () => {
     const s = dollyThroughStep(CAM, TGT, -100, 0.05)!
     const d = Math.hypot(
       TGT[0] + s[0] - (CAM[0] + s[0]),

@@ -28,7 +28,7 @@ import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useSaveObject } from "@/lib/save-object"
 
 /**
- * Create or edit a first-class MAC address object — its address, the interface
+ * Create or edit a first-class MAC address object - its address, the interface
  * it's assigned to (optional), a description, tags and custom fields. This is
  * the write path for the `/api/mac-addresses/` CRUD endpoint; the `/macs`
  * aggregation reflects the result once saved.
@@ -164,7 +164,7 @@ export function MacObjectDialog({
               label="Assigned interface"
               value={interfaceId}
               onChange={setInterfaceId}
-              noneLabel="— none —"
+              noneLabel="- none -"
               placeholder={deviceId ? "Pick interface" : "Pick device first"}
               options={(interfaces.data?.results ?? []).map((i) => ({
                 value: i.id,
@@ -176,7 +176,7 @@ export function MacObjectDialog({
             label="Description"
             value={description}
             onChange={setDescription}
-            placeholder="e.g. NIC1 — replaced 2026-06"
+            placeholder="e.g. NIC1 - replaced 2026-06"
             error={fieldErrors.description}
           />
           <FormTags label="Tags" value={tagIds} onChange={setTagIds} />

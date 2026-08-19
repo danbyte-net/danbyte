@@ -1,4 +1,4 @@
-"""Scheduled email digest — build, schedule gate, send, and the test endpoint."""
+"""Scheduled email digest - build, schedule gate, send, and the test endpoint."""
 from __future__ import annotations
 
 from datetime import datetime, timezone as dt_timezone

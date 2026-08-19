@@ -1,4 +1,4 @@
-"""Run periodic alert maintenance — renotify, escalation, flap dampening (A5).
+"""Run periodic alert maintenance - renotify, escalation, flap dampening (A5).
 
 Run on a timer by danbyte-alert-maintenance.timer.
 

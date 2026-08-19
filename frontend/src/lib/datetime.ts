@@ -5,7 +5,7 @@ import { useMe } from "@/lib/use-me"
 
 // Date/time formatting per the user's EFFECTIVE display settings (user pref →
 // tenant default → deployment default), resolved server-side and read from
-// /api/me/ (`me.datetime`). Formats via Intl — no date library.
+// /api/me/ (`me.datetime`). Formats via Intl - no date library.
 //
 // Components should reach for the `useDateFormat()` hook; the plain functions
 // take an explicit settings object for non-hook call sites.
@@ -20,7 +20,7 @@ export function defaultDateTimeSettings(): DateTimeSettings {
   }
 }
 
-// A bare calendar date ("2026-01-31" — lifecycle dates, DRF DateFields). These
+// A bare calendar date ("2026-01-31" - lifecycle dates, DRF DateFields). These
 // have no instant, so they must NOT be timezone-shifted: 2026-01-31 stays
 // 31 Jan regardless of the viewer's timezone.
 const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -53,7 +53,7 @@ function dateParts(d: Date, timeZone: string) {
       day: "2-digit",
     })
   } catch {
-    // Unknown zone from an older backend/browser — fall back to local.
+    // Unknown zone from an older backend/browser - fall back to local.
     fmt = new Intl.DateTimeFormat("en-GB", {
       year: "numeric",
       month: "2-digit",
@@ -105,21 +105,21 @@ function assembleTime(d: Date, style: TimeStyle, timeZone: string): string {
   }
 }
 
-/** "31.01.2026" — per the effective date format + timezone. */
+/** "31.01.2026" - per the effective date format + timezone. */
 export function formatDate(value: DateInput, s: DateTimeSettings): string {
   const d = toDate(value)
   if (!d) return ""
   return assembleDate(d, s.date_format, zoneFor(value, s.timezone))
 }
 
-/** "14:30" or "2:30 PM" — per the effective clock + timezone. */
+/** "14:30" or "2:30 PM" - per the effective clock + timezone. */
 export function formatTime(value: DateInput, s: DateTimeSettings): string {
   const d = toDate(value)
   if (!d) return ""
   return assembleTime(d, s.time_style, zoneFor(value, s.timezone))
 }
 
-/** "31.01.2026 14:30" — date + time in one string. */
+/** "31.01.2026 14:30" - date + time in one string. */
 export function formatDateTime(value: DateInput, s: DateTimeSettings): string {
   const d = toDate(value)
   if (!d) return ""
@@ -127,7 +127,7 @@ export function formatDateTime(value: DateInput, s: DateTimeSettings): string {
   return `${assembleDate(d, s.date_format, tz)} ${assembleTime(d, s.time_style, tz)}`
 }
 
-/** Today's calendar date as `YYYY-MM-DD` **in the given timezone** — the
+/** Today's calendar date as `YYYY-MM-DD` **in the given timezone** - the
  * reference point for "overdue", "due today" and calendar highlighting. Using
  * the effective display zone (not the browser's) keeps a Copenhagen team and a
  * Denver team agreeing on which cell is today. */

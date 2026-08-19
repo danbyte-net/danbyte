@@ -4,8 +4,8 @@ icon: lucide/key-round
 
 # Single sign-on (SSO)
 
-Let people sign in to Danbyte with your identity provider — **OpenID Connect
-(OIDC)** or **SAML 2.0** — instead of a local password. Works with Entra ID
+Let people sign in to Danbyte with your identity provider - **OpenID Connect
+(OIDC)** or **SAML 2.0** - instead of a local password. Works with Entra ID
 (Azure AD), Keycloak, Okta, Google Workspace, AD FS, and any standards-compliant
 provider. It's optional and off until an administrator adds a provider.
 
@@ -19,8 +19,8 @@ and local logins; you can run any mix.
    Identity providers (SSO)**.
 2. Each enabled provider shows a **Sign in with…** button on the login page.
 3. On sign-in, Danbyte reads the person's **email, username, and name** from the
-   provider and either matches an existing account or — with **just-in-time
-   (JIT) provisioning** on — creates one.
+   provider and either matches an existing account or - with **just-in-time
+   (JIT) provisioning** on - creates one.
 4. The groups the provider asserts are mapped to Danbyte groups, so all the
    usual [permissions](permissions.md) (tenant scope, roles, constraints) apply.
    Only groups you've explicitly mapped grant anything.
@@ -43,7 +43,7 @@ provider's *default tenant* when it's deployment-wide).
 
 - **Supported account types:** single tenant (your org only).
 - **Redirect URI** (platform **Web**): the **callback URL** Danbyte shows on the
-  provider's edit screen — `https://<your-danbyte>/api/auth/sso/<slug>/callback/`.
+  provider's edit screen - `https://<your-danbyte>/api/auth/sso/<slug>/callback/`.
 - After registering, note the **Application (client) ID** and **Directory
   (tenant) ID**, then create a **client secret** under *Certificates & secrets*.
 - *(Optional, for group mapping)* under *Token configuration*, add the **groups**
@@ -54,7 +54,7 @@ provider's *default tenant* when it's deployment-wide).
 | Field | Value |
 |---|---|
 | Name | e.g. `Entra` (shown on the button) |
-| Slug | e.g. `entra` (part of the callback URL — stable once set) |
+| Slug | e.g. `entra` (part of the callback URL - stable once set) |
 | Protocol | OpenID Connect |
 | Issuer | `https://login.microsoftonline.com/<tenant-id>/v2.0` |
 | Client ID | the Application (client) ID |
@@ -66,7 +66,7 @@ The default claim mapping (`preferred_username`, `email`, `given_name`,
 
 !!! note "Redirect URI must match exactly"
     The URI you register at the IdP must equal the callback URL shown on the
-    provider — same scheme, host, and `<slug>`. Behind a reverse proxy, make
+    provider - same scheme, host, and `<slug>`. Behind a reverse proxy, make
     sure Danbyte sees the external `https` host.
 
 ## Group mapping
@@ -83,7 +83,7 @@ mapping as OIDC. There are two ways to point Danbyte at the IdP:
 
 - **IdP metadata URL** (recommended): paste the IdP's federation-metadata URL and
   Danbyte fetches the **entity ID**, **SSO URL**, and **signing certificate(s)**
-  from it on save — and re-reads them hourly, so the login keeps working when the
+  from it on save - and re-reads them hourly, so the login keeps working when the
   IdP rotates its signing certificate. The fetch goes **directly to the IdP**
   (same trust tier as the OIDC issuer / LDAP / Vault address); for a cloud IdP it
   needs internet, for an on-prem IdP it only needs the LAN.
@@ -95,9 +95,9 @@ mapping as OIDC. There are two ways to point Danbyte at the IdP:
 When you save a SAML provider, its edit screen shows the values to register at
 the IdP:
 
-- **ACS / Reply URL** — `https://<danbyte>/api/auth/sso/<slug>/acs/`
-- **SP Identifier (Entity ID)** — `https://<danbyte>/api/auth/sso/<slug>/metadata/`
-- **SP metadata URL** — some IdPs import SP config from it directly.
+- **ACS / Reply URL** - `https://<danbyte>/api/auth/sso/<slug>/acs/`
+- **SP Identifier (Entity ID)** - `https://<danbyte>/api/auth/sso/<slug>/metadata/`
+- **SP metadata URL** - some IdPs import SP config from it directly.
 
 Danbyte requires the **assertion to be signed** and validates the issuer,
 audience (must be this SP), recipient (must be this ACS), `InResponseTo` (replay
@@ -116,7 +116,7 @@ registration):
    provider's edit screen).
 4. **Attributes & Claims:** ensure email/username (and a **groups** claim if you
    want group mapping) are emitted.
-5. **SAML Certificates:** copy the **App Federation Metadata Url** — this is the
+5. **SAML Certificates:** copy the **App Federation Metadata Url** - this is the
    easy path.
 6. In Danbyte, create a SAML provider, paste that URL into **IdP metadata URL**,
    and save. Danbyte fills the entity ID, SSO URL, and signing cert for you.
@@ -131,8 +131,8 @@ registration):
         Entra Identifier** from *Set up*, and be sure the pasted cert is the one
         actually signing (the metadata lists it).
 
-7. Set the claim mapping to the attribute names Entra emits (the defaults —
-   `emailaddress`, `givenname`, `surname`, `name` — already match).
+7. Set the claim mapping to the attribute names Entra emits (the defaults -
+   `emailaddress`, `givenname`, `surname`, `name` - already match).
 
 ### Example: Keycloak
 
@@ -150,7 +150,7 @@ LDAP, so AD accounts sign in via Keycloak:
 
 - **Account binding is by the IdP's stable subject** (OIDC `sub` / SAML
   `NameID`), never a mutable email. An existing local account that already has a
-  password is never silently taken over by an SSO assertion — an administrator
+  password is never silently taken over by an SSO assertion - an administrator
   must link it deliberately. An unverified email never links an account.
 - The OIDC flow uses `state` + `nonce` and validates the ID token against the
   provider's JWKS (issuer, audience, `azp` when multi-audience, nonce, expiry).
@@ -164,4 +164,4 @@ LDAP, so AD accounts sign in via Keycloak:
 - Tenant-scoped providers aren't advertised on the public login page, and a
   tenant provider can only map (or default to) groups narrowed to its tenant.
 - The provider is operator-configured, so Danbyte reaches it directly (TLS-
-  verified) — the same trust tier as the LDAP/Vault configuration.
+  verified) - the same trust tier as the LDAP/Vault configuration.

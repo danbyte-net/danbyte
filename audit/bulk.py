@@ -1,7 +1,7 @@
 """Explicit change-log writes for bulk operations.
 
 Bulk endpoints use ``queryset.update()`` / ``queryset.delete()`` for one
-round-trip, which **bypass** model signals — so they'd otherwise be invisible.
+round-trip, which **bypass** model signals - so they'd otherwise be invisible.
 Call these helpers around the bulk op to record one entry per affected object.
 
 Usage:
@@ -87,7 +87,7 @@ def apply_and_log_bulk_tags(qs, add_tag_ids, remove_tag_ids, tenant=None) -> Non
     raise ValueError on add and silently no-op on remove), and m2m operations
     fire no save signals, so the changes never reached the change log.
 
-    Pass ``tenant`` so foreign-tenant tag ids are silently dropped — tags are
+    Pass ``tenant`` so foreign-tenant tag ids are silently dropped - tags are
     tenant-scoped now, and this raw path bypasses the serializer's scoped
     field (legacy NULL-tenant tags stay attachable)."""
     if not add_tag_ids and not remove_tag_ids:

@@ -28,12 +28,12 @@ import { PriorityBadge } from "./task-card"
  * The sheet used to render eight labelled form inputs and a Save button, which
  * read as an edit form for a task rather than the task itself. These follow the
  * inline-badge idiom already used for cable status (`CableStatusControl`): the
- * value *is* the control, and picking writes straight away — same as dragging a
+ * value *is* the control, and picking writes straight away - same as dragging a
  * card between columns, which the board has always done with one small PATCH.
  */
 
 /**
- * The same labelled table `KvCard` gives every detail page — except the value
+ * The same labelled table `KvCard` gives every detail page - except the value
  * cell is the editor. Clicking a cell opens its picker; there is no separate
  * edit mode and no form to submit.
  */
@@ -98,7 +98,7 @@ function CellTrigger({
  * task sheet, which is a modal dialog: two nested modals both manage
  * `pointer-events` on the body and the inner one loses, so the menu opens and
  * nothing inside it can be clicked. The assignee picker never showed the bug
- * because Popover is not modal — which is exactly why only *it* worked.
+ * because Popover is not modal - which is exactly why only *it* worked.
  */
 function Empty({ children }: { children: ReactNode }) {
   return <span className="text-[12px] text-muted-foreground">{children}</span>
@@ -250,7 +250,7 @@ export function MilestonePicker({
 }
 
 /** One date cell: the chip is the value, sized to the cell like every other
- *  picker here. Start and Due are separate rows — jamming both plus the
+ *  picker here. Start and Due are separate rows - jamming both plus the
  *  overdue line into one cell wrapped it onto three cramped lines. */
 export function DateCell({
   value,
@@ -261,7 +261,7 @@ export function DateCell({
   canEdit,
 }: {
   value: string | null
-  /** Optional "HH:MM[:SS]" refinement — rendered once a date is set. */
+  /** Optional "HH:MM[:SS]" refinement - rendered once a date is set. */
   time?: string | null
   placeholder: string
   onChange: (v: string | null) => void
@@ -276,7 +276,7 @@ export function DateCell({
         {hhmm && ` · ${hhmm}`}
       </span>
     ) : (
-      <Empty>—</Empty>
+      <Empty>-</Empty>
     )
   }
   return (

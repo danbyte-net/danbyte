@@ -1,8 +1,8 @@
-"""ACME certificate renewal — re-issue certs before they expire.
+"""ACME certificate renewal - re-issue certs before they expire.
 
 Certificates issued through the ACME engine (an :class:`AcmeOrder` with an
 ``issued_certificate``) are re-issued automatically once they cross a fraction of
-their lifetime, so short-lived certs — step-ca defaults to **24 hours** — never
+their lifetime, so short-lived certs - step-ca defaults to **24 hours** - never
 lapse. The threshold is a *fraction* of the certificate's own lifetime, so the
 same rule fits a 24-hour cert (renew in the last 8h) and a 90-day one (renew in
 the last 30 days).
@@ -31,7 +31,7 @@ RENEW_AFTER_FRACTION = 2 / 3
 def _renew_due(cert, now) -> bool:
     total = (cert.not_after - cert.not_before).total_seconds()
     if total <= 0:
-        return True  # degenerate validity — treat as due
+        return True  # degenerate validity - treat as due
     elapsed = (now - cert.not_before).total_seconds()
     return elapsed >= total * RENEW_AFTER_FRACTION
 
@@ -74,7 +74,7 @@ def renew_due(now=None, enqueue: bool = True) -> dict:
             skipped_manual += 1  # manual issuer can't self-validate
             continue
         if req.acme_orders.filter(status__in=open_states).exists():
-            in_flight += 1  # a renewal is already running — don't stack another
+            in_flight += 1  # a renewal is already running - don't stack another
             continue
 
         order = AcmeOrder.objects.create(
@@ -89,7 +89,7 @@ def renew_due(now=None, enqueue: bool = True) -> dict:
                 django_rq.get_queue("default").enqueue(
                     "monitoring.acme_engine.issue_order_job", str(order.id)
                 )
-            except Exception as exc:  # noqa: BLE001 — Redis down: record, continue
+            except Exception as exc:  # noqa: BLE001 - Redis down: record, continue
                 order.status = AcmeOrder.Status.ERRORED
                 order.error = f"could not enqueue renewal: {exc}"
                 order.save(update_fields=["status", "error", "updated_at"])

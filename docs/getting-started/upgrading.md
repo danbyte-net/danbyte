@@ -8,11 +8,11 @@ Getting a new version, and (optionally) moving an existing install to the
 current `/opt` layout.
 
 !!! tip "You almost never need to move the install directory"
-    Version upgrades work **wherever Danbyte already lives** — `/srv/danbyte`,
+    Version upgrades work **wherever Danbyte already lives** - `/srv/danbyte`,
     `/opt/danbyte`, or a custom path. The systemd units are home-relative
     (`%h/danbyte`), so nothing is hard-wired to a location. The `/opt` default
     only affects **new** installs. Relocating an existing one is cosmetic and
-    entirely optional — see [Move an install to /opt](#move-an-install-to-opt)
+    entirely optional - see [Move an install to /opt](#move-an-install-to-opt)
     if you want to, and skip it otherwise.
 
 ## Upgrade to a new version
@@ -20,14 +20,14 @@ current `/opt` layout.
 !!! info "The Updates page loads instantly"
     **Settings → Updates** shows the running version and an environment table
     (Python, Django, PostgreSQL, Redis, platform) from a local, network-free
-    check — so it renders immediately even on an airgapped or offline box. The
+    check - so it renders immediately even on an airgapped or offline box. The
     release-repo check (the list of available versions) runs separately; if it's
     slow, failing, or disabled, the version and environment still show right
     away.
 
 !!! info "The top-bar update badge"
     When a newer release exists, a blue **Update available** badge appears
-    beside the product name in the top bar — only for users who can manage
+    beside the product name in the top bar - only for users who can manage
     deployment settings (it links to **Settings → Updates**). The running
     Danbyte version also shows at the bottom of the account menu. To hide the
     badge while still checking for updates, tick **Settings → Updates → Hide the
@@ -38,25 +38,25 @@ current `/opt` layout.
     A new release ships freshly-hashed frontend assets, so a browser tab still
     running the previous build would ask for chunk files that no longer exist.
     Danbyte detects that failed load and reloads the tab once to pick up the new
-    build — no hard refresh needed. If a tab ever seems stuck after an upgrade,
+    build - no hard refresh needed. If a tab ever seems stuck after an upgrade,
     a normal reload always clears it.
 
 === "In-app (recommended)"
 
     **Settings → Updates → Upgrade.** One click checks out the new release,
     installs dependencies, migrates the database, rebuilds the frontend,
-    restarts the services and health-checks — with the "Danbyte is updating"
+    restarts the services and health-checks - with the "Danbyte is updating"
     page shown to visitors in the meantime.
 
     - The DB is **backed up** before migrating; on failure the code is rolled
       back to the starting commit and the services restarted automatically.
-      (A migration that already ran is *not* auto-reverted — the backup is your
+      (A migration that already ran is *not* auto-reverted - the backup is your
       net there.)
     - Turn on **automatic updates** on the same page to track new releases
       hands-off.
     - **Airgapped install?** Tick **Settings → Updates → Airgapped install
-      (disable update check)**. Danbyte then never contacts the release repo —
-      no version check, no auto-update — and you upgrade only by uploading a
+      (disable update check)**. Danbyte then never contacts the release repo -
+      no version check, no auto-update - and you upgrade only by uploading a
       bundle (below). Turning it on forces automatic updates off.
 
     Under the hood this runs `scripts/danbyte-upgrade.sh <version>`, detached, so
@@ -86,7 +86,7 @@ current `/opt` layout.
 
 === "Offline bundle"
 
-    Download the release bundle, unpack, and re-run the installer — it's
+    Download the release bundle, unpack, and re-run the installer - it's
     **idempotent**: it keeps your existing `.env`, re-runs migrate + collectstatic
     + frontend, and restarts the services on the freshly-deployed code.
 
@@ -101,18 +101,18 @@ current `/opt` layout.
 
     You can also upgrade in-app **without unpacking**: **Settings → Updates →
     Upgrade from a bundle** takes the same `.tar.gz`, verifies it, backs up the
-    DB, migrates, and restarts — the offline equivalent of the one-click flow.
+    DB, migrates, and restarts - the offline equivalent of the one-click flow.
     Pair this with the **Airgapped install** toggle so Danbyte never tries to
     reach the release repo.
 
 ### Airgapped upgrade with the installer (step by step)
 
-The most thorough path for an offline box — it re-asserts the **production**
+The most thorough path for an offline box - it re-asserts the **production**
 service set (gunicorn + daphne + workers + built frontend), so it also repairs
 a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
 
 1. **On an internet-connected machine**, download the bundle for the target
-   version from the releases page — `danbyte-<version>-linux-x86_64.tar.gz`
+   version from the releases page - `danbyte-<version>-linux-x86_64.tar.gz`
    (e.g. `https://github.com/danbyte-net/danbyte/releases`).
 
 2. **Copy it to the server** (any path; `/tmp` is fine):
@@ -123,7 +123,7 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
 
 3. **On the server, unpack and run the installer as root.** It auto-detects the
    existing service user (`danbyte`) and *its* home, so it upgrades the install
-   in place — you do **not** pass a path:
+   in place - you do **not** pass a path:
 
     ```bash
     cd /tmp
@@ -142,19 +142,19 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
     # -> {"status": "ok", "database": true, "version": "<new version>"}
     ```
 
-    Or open **Settings → Updates** — the version and the environment table
+    Or open **Settings → Updates** - the version and the environment table
     (Python / Django / PostgreSQL / Redis) load instantly and show the new
     version.
 
 !!! note "What it keeps, what it needs"
 
     - **Keeps** your existing `.env` (prints `keeping existing …/.env`) and your
-      **database** — it runs `migrate`, never `flush`. Credentials stay
+      **database** - it runs `migrate`, never `flush`. Credentials stay
       decryptable (it backfills `MONITORING_SECRET_KEY` from your `SECRET_KEY`
       when missing).
     - **OS packages** (postgresql, redis-server, nginx) are only installed
       if a binary is *missing*. On a box that already runs Danbyte they're all
-      present, so the installer **skips apt entirely** — no network needed. On a
+      present, so the installer **skips apt entirely** - no network needed. On a
       truly bare airgapped host, pre-install those packages (or point apt at a
       local mirror) first.
     - Take a DB snapshot first if you want a manual net:
@@ -163,7 +163,7 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
 !!! tip "Prefer this over the dev runserver in production"
 
     A production install should run the **gunicorn** unit (`danbyte-web`), not
-    the dev **`danbyte-backend`** (runserver) unit — runserver's autoreload
+    the dev **`danbyte-backend`** (runserver) unit - runserver's autoreload
     restarts the app when files change, which can interrupt an in-place upgrade.
     Re-running `install.sh` enables the correct prod units. To disable a
     stray runserver unit by hand:
@@ -194,7 +194,7 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
 
     Equivalently, `POST /api/system/upgrade/cancel/` (users.manage).
 
-    **Last resort (shell), if the UI itself is down** — as the service user,
+    **Last resort (shell), if the UI itself is down** - as the service user,
     remove the lock files from the app directory (`<service-home>/danbyte`):
 
     ```bash
@@ -218,7 +218,7 @@ sudo -u danbyte XDG_RUNTIME_DIR=/run/user/$(id -u danbyte) \
 
 ## Move an install to /opt
 
-Optional — only to match the current default layout. It moves the service
+Optional - only to match the current default layout. It moves the service
 user's home (app included) from `/srv/danbyte` to `/opt/danbyte`, repoints the
 nginx static paths, and turns on `/var/log/danbyte` logging. **The database is
 untouched.** Back up first.
@@ -271,14 +271,14 @@ untouched.** Back up first.
 ## Turn on /var/log/danbyte logging
 
 Installs from before file logging log only to the systemd journal
-(`journalctl --user`). To also write `/var/log/danbyte/danbyte.log` (app —
+(`journalctl --user`). To also write `/var/log/danbyte/danbyte.log` (app -
 Django, workers, monitoring) and `gunicorn-*.log`:
 
 ```bash
-# as root — dir owned by the service user
+# as root - dir owned by the service user
 sudo install -d -o danbyte -g danbyte -m 755 /var/log/danbyte
 
-# as the service user — point the app at it and restart
+# as the service user - point the app at it and restart
 echo 'DANBYTE_LOG_DIR=/var/log/danbyte' >> ~/danbyte/.env
 systemctl --user restart danbyte-web danbyte-workers danbyte-ws
 ```

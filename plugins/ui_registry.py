@@ -1,7 +1,7 @@
 """Server-driven plugin UI registry.
 
-A plugin describes its UI as data — nav items, pages (backed by an object type +
-API endpoint), and dashboard panels — from its ``danbyte_plugin`` module. The
+A plugin describes its UI as data - nav items, pages (backed by an object type +
+API endpoint), and dashboard panels - from its ``danbyte_plugin`` module. The
 generic React frontend renders these with no plugin JavaScript and no rebuild,
 extending the custom-fields "server describes, client renders" pattern.
 

@@ -21,7 +21,7 @@ export function numidColumn<T>({
           #{n}
         </span>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       )
     },
   }

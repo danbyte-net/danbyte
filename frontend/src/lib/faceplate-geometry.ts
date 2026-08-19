@@ -23,7 +23,7 @@ export const PANEL_MM = {
   groupGap: 6,
 } as const
 
-/** Usable rack opening (mm) per nominal rail width in inches — 19″ is
+/** Usable rack opening (mm) per nominal rail width in inches - 19″ is
  * EIA-310's 450mm; the rest scale with the rail spacing (10″ half-racks,
  * 21/23″ telco). Shared by the 2D elevation, the 3D room view, and (as a
  * snapshot) the PDF drawings. */
@@ -35,8 +35,8 @@ export const OPENING_MM: Record<number, number> = {
 }
 
 /** Same case-insensitive matching the drift engine uses (ifName ↔ intent).
- * Lives here (not in the faceplate component) so pure geometry modules — the
- * 3D world math and its tests — can share the ONE normalization that decides
+ * Lives here (not in the faceplate component) so pure geometry modules - the
+ * 3D world math and its tests - can share the ONE normalization that decides
  * whether a marker, a component and an SNMP row name the same port. */
 export function normalizePortName(name: string): string {
   return name.trim().toLowerCase()
@@ -115,14 +115,14 @@ export const SINGLE_ROW_FAMILIES: ReadonlySet<ConnectorFamily> = new Set([
   "dsub-9",
 ])
 
-/** Render scale (pixels per millimetre). At 1.5 an SFP cage is ~21×14px —
+/** Render scale (pixels per millimetre). At 1.5 an SFP cage is ~21×14px -
  * about today's square size, and still comfortably clickable. */
 export const PX_PER_MM = { min: 1.5, default: 1.6, max: 3.2 } as const
 
 /** Below this rendered width (px) the port number is hidden (doesn't fit). */
 export const MIN_LABEL_PX = 16
 
-// Ordered matchers — pluggable form-factor suffixes FIRST (every modular slug
+// Ordered matchers - pluggable form-factor suffixes FIRST (every modular slug
 // ends in its form factor: "100gbase-x-qsfp28", "64gfc-qsfpp", …), then media
 // classes. First hit wins.
 const FAMILY_MATCHERS: [RegExp, ConnectorFamily][] = [
@@ -156,7 +156,7 @@ const FAMILY_MATCHERS: [RegExp, ConnectorFamily][] = [
   [/^rj-1[12]$|^rj11$/, "rj11"],
   [/^micro-?sd$|^sd$/, "sd"],
   [/^audio|^3\.5mm/, "audio"],
-  // Wireless / cellular — a stub antenna.
+  // Wireless / cellular - a stub antenna.
   [/^ieee802\.1[15]|^gsm$|^cdma$|^lte$|^4g$|^5g$|^other-wireless$/, "antenna"],
   // Copper media / backplane / legacy WAN / broadband / stacking → RJ45-ish.
   [
@@ -182,7 +182,7 @@ export function familyForType(slug: string): ConnectorFamily {
 const POSITION_TOKEN_RE = /\{position(?::(\d+))?\}/g
 
 /** TS mirror of the backend's render_module_name: `{module}` → the bay's
- * position the module is installed in. No default — an unresolved token
+ * position the module is installed in. No default - an unresolved token
  * stays literal so the gap is visible. */
 export function renderModuleName(name: string, modulePosition: string): string {
   if (!modulePosition) return name

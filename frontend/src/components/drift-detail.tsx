@@ -10,7 +10,7 @@ import {
 
 // Shared drift-detail rendering: one line per drift item (intended → observed),
 // used by the device drift inbox, the interface table's drift badge popover, and
-// the interface detail page. Read-only — accepting drift stays in the inbox.
+// the interface detail page. Read-only - accepting drift stays in the inbox.
 
 export function driftKey(item: SnmpDriftItem): string {
   switch (item.kind) {
@@ -35,7 +35,7 @@ export function driftKey(item: SnmpDriftItem): string {
 
 function val(v: string | boolean): string {
   if (typeof v === "boolean") return v ? "enabled" : "disabled"
-  return v || "—"
+  return v || "-"
 }
 
 export function DriftDescription({ item }: { item: SnmpDriftItem }) {
@@ -44,7 +44,7 @@ export function DriftDescription({ item }: { item: SnmpDriftItem }) {
       <span className="flex min-w-0 flex-wrap items-center gap-1.5">
         <span className="text-muted-foreground">{item.label}</span>
         <span className="font-mono line-through opacity-60">
-          {item.intended || "—"}
+          {item.intended || "-"}
         </span>
         <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
         <span className="font-mono">{item.observed}</span>
@@ -96,7 +96,7 @@ export function DriftDescription({ item }: { item: SnmpDriftItem }) {
         </span>
         <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
         <span className="font-mono capitalize">{item.observed}</span>
-        {/* The value the agent actually returned — "Failed" is a conclusion,
+        {/* The value the agent actually returned - "Failed" is a conclusion,
             "Critical" is the evidence for it. */}
         {item.raw && (
           <span className="text-[11px] text-muted-foreground">
@@ -151,7 +151,7 @@ export function DriftBadge({ items }: { items: SnmpDriftItem[] }) {
         <button
           type="button"
           onClick={(e) => e.stopPropagation()}
-          title="Config drift — click for details"
+          title="Config drift - click for details"
           className="inline-flex h-4 items-center gap-1 rounded-[5px] bg-amber-500/15 px-1.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-500/30 ring-inset hover:bg-amber-500/25 dark:text-amber-400"
         >
           <GitCompareArrows className="h-2.5 w-2.5" />
@@ -165,7 +165,7 @@ export function DriftBadge({ items }: { items: SnmpDriftItem[] }) {
         </div>
         <p className="mb-2 text-[11px] text-muted-foreground">
           What SNMP observed differs from the source of truth. Review and accept
-          in the device's <span className="font-medium">Drift</span> panel — the
+          in the device's <span className="font-medium">Drift</span> panel - the
           source of truth doesn't change until you do.
         </p>
         <ul className="space-y-1.5 text-[12px]">

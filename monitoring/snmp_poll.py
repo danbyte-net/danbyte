@@ -1,4 +1,4 @@
-"""Poll one device's SNMP observed state — shared by the on-demand view and the
+"""Poll one device's SNMP observed state - shared by the on-demand view and the
 scheduled ``poll_snmp`` command (#84, Phase 2).
 
 Stores facts + interfaces on ``DeviceSnmp`` and appends interface counter
@@ -24,7 +24,7 @@ def _device_target(device):
 
     Falling back to the name unconditionally sent unresolvable names into
     pysnmp, which surfaced as "Bad IPv4/UDP transport address <name>@161 …
-    Temporary failure in name resolution" — technically true, useless to the
+    Temporary failure in name resolution" - technically true, useless to the
     operator. Returning None instead yields the caller's plain "no primary IP
     or resolvable name" message.
     """
@@ -42,7 +42,7 @@ def _device_target(device):
     )
     if override:
         return override
-    # Management (out-of-band) IP next — that's the address an operator points
+    # Management (out-of-band) IP next - that's the address an operator points
     # SNMP/BMC tooling at; the primary IP may be a data-plane address the
     # agent doesn't even listen on.
     if device.oob_ip_id and device.oob_ip.ip_address:
@@ -62,7 +62,7 @@ def _device_target(device):
 def persist_snmp_result(tenant, profile, result, *, device=None, vm=None) -> DeviceSnmp:
     """Write a fetched SNMP result onto ``DeviceSnmp`` (+ counter samples) for a
     Device or a VM target. The ``result`` dict is exactly what ``fetch_snmp``
-    produces, whether it ran here or on an Outpost — so both paths persist
+    produces, whether it ran here or on an Outpost - so both paths persist
     identically."""
     lookup = {"vm": vm} if vm is not None else {"device": device}
     state, _ = DeviceSnmp.objects.get_or_create(
@@ -88,7 +88,7 @@ def persist_snmp_result(tenant, profile, result, *, device=None, vm=None) -> Dev
 def poll_device(device, tenant, profile=None):
     """Poll ``device`` and persist its observed SNMP state + counter samples.
 
-    Returns ``(DeviceSnmp | None, reason)`` — ``reason`` is ``"no_profile"`` or
+    Returns ``(DeviceSnmp | None, reason)`` - ``reason`` is ``"no_profile"`` or
     ``"no_target"`` on a setup error (state untouched), otherwise ``None`` and a
     saved ``DeviceSnmp`` (whose ``reachable`` reflects whether the device
     answered).
@@ -131,9 +131,9 @@ def _vm_target(vm):
 
 def poll_vm(vm, tenant, profile=None):
     """Poll a virtual machine (a virtual router / appliance) and persist its
-    observed SNMP state — same engine and storage as :func:`poll_device`.
+    observed SNMP state - same engine and storage as :func:`poll_device`.
 
-    Returns ``(DeviceSnmp | None, reason)`` — ``reason`` is ``"no_profile"`` or
+    Returns ``(DeviceSnmp | None, reason)`` - ``reason`` is ``"no_profile"`` or
     ``"no_target"`` on a setup error, otherwise ``None`` and a saved row."""
     if profile is None:
         profile, _source = resolve_vm_profile(vm, tenant)

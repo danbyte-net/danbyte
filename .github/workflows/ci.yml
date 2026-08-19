@@ -67,11 +67,11 @@ jobs:
         run: |
           coverage run --source='.' manage.py test --noinput
           coverage report
-      # Undefined-name (F821) is a hard gate — it catches the class of bug
+      # Undefined-name (F821) is a hard gate - it catches the class of bug
       # that shipped a NameError past the suite. Everything else stays advisory.
       - name: Ruff undefined-names (gate)
         run: ruff check --select F821 .
-      - name: Ruff (advisory — not yet a gate)
+      - name: Ruff (advisory - not yet a gate)
         continue-on-error: true
         run: ruff check .
 
@@ -89,7 +89,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
-      # Build first — it regenerates the TanStack routeTree that typecheck reads.
+      # Build first - it regenerates the TanStack routeTree that typecheck reads.
       - name: Build
         run: npm run build
       - name: Typecheck
@@ -97,6 +97,6 @@ jobs:
       - name: Prettier (advisory)
         continue-on-error: true
         run: npm run check
-      - name: ESLint (advisory — large pre-existing baseline)
+      - name: ESLint (advisory - large pre-existing baseline)
         continue-on-error: true
         run: npm run lint

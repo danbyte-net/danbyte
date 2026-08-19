@@ -167,7 +167,7 @@ function Column({
       toast.success(`Column “${status.name}” deleted`)
       qc.invalidateQueries({ queryKey: ["planning-statuses", boardId] })
     },
-    // The server refuses while tasks remain — the toast explains it.
+    // The server refuses while tasks remain - the toast explains it.
     onError: (e) => apiErrorToast(e),
   })
 
@@ -250,7 +250,7 @@ function Column({
               onBlur={() => {
                 if (!title.trim()) setAdding(false)
               }}
-              placeholder="Task title — Enter to add"
+              placeholder="Task title - Enter to add"
               className="h-8 text-[13px]"
             />
           </form>

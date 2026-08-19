@@ -126,7 +126,7 @@ def _viewable_exclusion_ids(request, tenant, assignment) -> list[str]:
 
 def _scoped_get(request, model, slug, action, obj_id):
     """Fetch a tenant object by id, restricted to the caller's RBAC **row/site**
-    scope for ``(slug, action)`` — not just type-level. Returns
+    scope for ``(slug, action)`` - not just type-level. Returns
     ``(obj|None, tenant)``. This is what closes the cross-site bypass: a viewer
     scoped to Site A gets ``None`` for a Site B object, same as the list views."""
     tenant = _get_active_tenant(request)
@@ -146,7 +146,7 @@ def _get_ip(request, ip_id):
 
 def _scope_ip_keyed(request, tenant, qs, field="target_ip"):
     """Restrict an IP-keyed monitoring queryset (CheckState, CheckResult, Alert,
-    StateTransition) to the IPs the caller may **view** — site-aware, via
+    StateTransition) to the IPs the caller may **view** - site-aware, via
     ``rbac.row_filter`` on ``ipaddress``. None grant → ``.none()``; unscoped
     grant → unchanged; scoped grant → ``field__in`` the viewable IPs. This is
     what stops a Site-A viewer from seeing Site-B checks/alerts/stats."""
@@ -162,7 +162,7 @@ def _scope_ip_keyed(request, tenant, qs, field="target_ip"):
 
 def _scope_device_keyed(request, tenant, qs, field="device"):
     """Restrict a device-keyed monitoring queryset (DeviceSnmp) to the devices
-    the caller may **view** — site-aware, via ``rbac.row_filter`` on
+    the caller may **view** - site-aware, via ``rbac.row_filter`` on
     ``device``. Same None/True/scoped semantics as :func:`_scope_ip_keyed`."""
     q = rbac.row_filter(request.user, tenant, "device", "view")
     if q is None:
@@ -266,7 +266,7 @@ def check_now_view(request, ip_id):
 def ip_checks_view(request, ip_id):
     """Effective checks for an IP, each joined with its current CheckState and a
     short latency/status sparkline. Resolves on the fly, so checks show up here
-    immediately after assignment — before the materialiser has run."""
+    immediately after assignment - before the materialiser has run."""
     ip, tenant = _get_ip(request, ip_id)
     if tenant is None:
         return Response({"detail": "No active tenant."}, status=403)
@@ -290,7 +290,7 @@ def ip_checks_view(request, ip_id):
             .values("timestamp", "status", "latency_ms")
         )
         spark.reverse()
-        # Policy-sourced checks have no CheckAssignment — they're configured on
+        # Policy-sourced checks have no CheckAssignment - they're configured on
         # the Monitoring → Configuration policy, not per-IP.
         a = rc.assignment
         checks.append(
@@ -304,7 +304,7 @@ def ip_checks_view(request, ip_id):
                 "interval_seconds": rc.interval_seconds,
                 "degraded_enabled": rc.degraded_enabled,
                 "params": rc.params,
-                # Per-assignment override editing (M18) — only meaningful to edit
+                # Per-assignment override editing (M18) - only meaningful to edit
                 # from the IP when the check is direct (not inherited/policy).
                 "enabled": a.enabled if a else True,
                 "schedule_mode": a.schedule_mode if a else None,
@@ -467,7 +467,7 @@ def prefix_checks_view(request, prefix_id):
                 "id": str(a.template_id),
                 "name": a.template.name,
                 "kind": a.template.kind,
-                # Template defaults — the UI shows these as override placeholders.
+                # Template defaults - the UI shows these as override placeholders.
                 "interval_seconds": a.template.interval_seconds,
                 "rise": a.template.rise,
                 "fall": a.template.fall,
@@ -486,7 +486,7 @@ def prefix_checks_view(request, prefix_id):
     ]
 
     child_ids = _viewable_child_ip_ids(request, prefix, tenant)
-    # Scope the child roll-up to IPs the caller may view — the prefix being
+    # Scope the child roll-up to IPs the caller may view - the prefix being
     # viewable doesn't imply every child IP is (grants can differ per type).
     states = list(
         _scope_ip_keyed(
@@ -562,7 +562,7 @@ def prefix_checks_view(request, prefix_id):
 def device_checks_view(request, device_id):
     """Monitoring for a device: a roll-up across every IP assigned to it, plus a
     per-IP status grid. Checks attach to IPs (and a service's check lives on its
-    IP), so a device has no checks of its own — this aggregates its IPs'."""
+    IP), so a device has no checks of its own - this aggregates its IPs'."""
     device, tenant = _scoped_get(request, Device, "device", "view", device_id)
     if tenant is None:
         return Response({"detail": "No active tenant."}, status=403)
@@ -578,7 +578,7 @@ def device_checks_view(request, device_id):
             "id", flat=True
         )
     )
-    # Scope the per-IP roll-up to IPs the caller may view — device.view doesn't
+    # Scope the per-IP roll-up to IPs the caller may view - device.view doesn't
     # imply ipaddress.view on every assigned IP (grants can differ per type).
     states = list(
         _scope_ip_keyed(
@@ -649,7 +649,7 @@ def prefix_discover_view(request, prefix_id):
     Small subnets sweep synchronously and return a summary (scanned / responders
     / created) so the UI can show "created N IPs" instantly. Larger subnets are
     enqueued onto an RQ worker (like Check-now) and return immediately with
-    ``{"queued": true, "scanned": <host_count>}`` — a synchronous sweep of a
+    ``{"queued": true, "scanned": <host_count>}`` - a synchronous sweep of a
     /16 takes minutes and would blow past the proxy timeout (502). Cheap guards
     (bad CIDR / IPv6 / too-large) still resolve synchronously."""
     import ipaddress
@@ -662,7 +662,7 @@ def prefix_discover_view(request, prefix_id):
     tenant = _get_active_tenant(request)
     if tenant is None:
         return Response({"detail": "No active tenant."}, status=403)
-    # Discovery seeds IPAddress rows — a source-of-truth write, so it needs the
+    # Discovery seeds IPAddress rows - a source-of-truth write, so it needs the
     # same grant the IP form does (not just tenant membership).
     if not rbac.has_action(request.user, tenant, "ipaddress", "add"):
         return Response(
@@ -756,7 +756,7 @@ def prefix_discover_view(request, prefix_id):
 def bulk_discover_view(request):
     """Discover responders across many selected prefixes at once. Always fans
     out onto the worker pool under a single `run_id` the UI polls (no inline
-    path — bulk is for big selections). Skips IPv6 / too-large prefixes."""
+    path - bulk is for big selections). Skips IPv6 / too-large prefixes."""
     from .discovery import enqueue_bulk_discovery
     from .models import MonitoringSettings
 
@@ -855,7 +855,7 @@ def settings_view(request):
     obj = MonitoringSettings.for_tenant(tenant)
     if request.method == "GET":
         return Response(MonitoringSettingsSerializer(obj).data)
-    # Monitoring settings are a tenant-wide admin setting — only admins may
+    # Monitoring settings are a tenant-wide admin setting - only admins may
     # change them (matches the Settings → Admin UI placement).
     from auth_api.permissions import can_manage_admin
 
@@ -904,7 +904,7 @@ def engine_health_view(request):
 
     Drives the "engine unreachable" banner: any enabled remote engine with
     ``stale_since`` set (stamped by the dispatcher's health sweep). Readable
-    by every authenticated user — operational status, not engine management.
+    by every authenticated user - operational status, not engine management.
     """
     from django.utils import timezone
 
@@ -1007,7 +1007,7 @@ def engine_binding_view(request, scope, object_id):
             return Response({"detail": "Not found."}, status=404)
         return Response({"engine_id": binding_engine_id(tenant, scope, object_id)})
 
-    # Assigning an engine is a change to the scoped object — gate on that (or admin).
+    # Assigning an engine is a change to the scoped object - gate on that (or admin).
     if not (is_admin or rbac.has_action(request.user, tenant, scope, "change")):
         return Response({"detail": "Not allowed."}, status=403)
     if not _in_scope("change"):
@@ -1035,7 +1035,7 @@ def engine_binding_view(request, scope, object_id):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def stats_view(request):
-    """Overall monitoring stats for the active tenant — drives the Monitoring
+    """Overall monitoring stats for the active tenant - drives the Monitoring
     dashboard: status + kind breakdowns, totals, and recent transitions."""
     tenant = _get_active_tenant(request)
     if tenant is None:
@@ -1077,7 +1077,7 @@ def stats_view(request):
 
 def _result_series(request, tenant, hours: int = 24) -> list[dict]:
     """Hourly counts of check results over the last ``hours``, grouped into
-    reachable / degraded / down buckets — drives the dashboard area chart.
+    reachable / degraded / down buckets - drives the dashboard area chart.
     Site-aware: only the caller's viewable IPs contribute."""
     from datetime import timedelta
 
@@ -1130,7 +1130,7 @@ def _result_series(request, tenant, hours: int = 24) -> list[dict]:
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def bulk_check_now_view(request):
-    """Force an immediate check of many targets — selected IPs and/or every IP
+    """Force an immediate check of many targets - selected IPs and/or every IP
     in selected prefixes. Materialises their checks, arms them (next_run=now),
     and dispatches through the worker so state + results update properly."""
     from django.utils import timezone
@@ -1183,7 +1183,7 @@ def bulk_check_now_view(request):
 
 # ─── Check-now live progress (Redis-backed, ephemeral) ───────────────────────
 # dispatch() claims the armed checks (in_flight=True) and the worker pool clears
-# in_flight as each completes — so progress is just "how many are still in
+# in_flight as each completes - so progress is just "how many are still in
 # flight". We stash the batch's CheckState ids under an opaque run id the UI
 # polls.
 _CHECK_RUN_TTL = 3600
@@ -1213,7 +1213,7 @@ def _seed_check_run(ids: list[str], tenant, owner):
             },
         )
         conn.expire(_check_run_key(run_id), _CHECK_RUN_TTL)
-    except Exception:  # noqa: BLE001 — progress is best-effort
+    except Exception:  # noqa: BLE001 - progress is best-effort
         return None
     return run_id
 
@@ -1317,7 +1317,7 @@ def check_run_view(request, run_id):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def alerts_view(request):
-    """Alerts for the active tenant — firing by default. Returns severity/status
+    """Alerts for the active tenant - firing by default. Returns severity/status
     counts (for the sidebar badge + filter chips) plus the filtered list."""
     tenant = _get_active_tenant(request)
     if tenant is None:
@@ -1348,7 +1348,7 @@ def alerts_view(request):
         qs = qs.filter(acknowledged_at__isnull=False)
     elif ack == "unacknowledged":
         qs = qs.filter(acknowledged_at__isnull=True)
-    # Free-text narrowing — target IP, its description, or the rule name — and
+    # Free-text narrowing - target IP, its description, or the rule name - and
     # a site filter, so a long alert list is navigable.
     q = (request.query_params.get("q") or "").strip()
     if q:
@@ -1360,14 +1360,14 @@ def alerts_view(request):
     site = request.query_params.get("site")
     if site:
         qs = qs.filter(target_ip__site_id=site)
-    # Alert kind (ssh, tls_cert, ping, …) — lets the cert/key-health "SSH key
+    # Alert kind (ssh, tls_cert, ping, …) - lets the cert/key-health "SSH key
     # drift" tile deep-link to just those alerts.
     kind = request.query_params.get("kind")
     if kind:
         qs = qs.filter(kind=kind)
     rows = list(qs.order_by("-opened_at")[:200])
 
-    # Annotate which firing alerts are currently muted by a silence — one
+    # Annotate which firing alerts are currently muted by a silence - one
     # silence fetch, matched in python (no per-row query).
     _annotate_silenced(tenant, rows)
 
@@ -1536,7 +1536,7 @@ def alert_ack_view(request, alert_id):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def checks_list_view(request):
-    """Every monitored check (CheckState) for the tenant — the global "Checks"
+    """Every monitored check (CheckState) for the tenant - the global "Checks"
     list. Supports status/kind/search filters + ordering + paging, and returns
     per-status counts so the UI can render quick-filter tabs with badges."""
     tenant = _get_active_tenant(request)
@@ -1683,12 +1683,12 @@ def bulk_status_view(request):
     ``?ips=id,id`` → ``{statuses: {ip_id: {status, checks}}}``
     ``?prefixes=id,id`` → ``{statuses: {prefix_id: {status, counts, monitored_ips}}}``
     ``?devices=id,id`` → ``{statuses: {device_id: {status, counts, monitored_ips}}}``
-        — rolled up across every IP assigned to the device (a service's check
+        - rolled up across every IP assigned to the device (a service's check
         lives on its IP, so service monitoring rolls up here too).
 
     Also accepts POST with ``{"ips": [...]}`` / ``{"prefixes": [...]}`` /
     ``{"devices": [...]}``. A page of ~110 prefix UUIDs makes a ~4.2 KB URL,
-    which is longer than gunicorn's default request-line limit (4094) — the
+    which is longer than gunicorn's default request-line limit (4094) - the
     proxy answered 400 before Django ever saw it, and every list page's
     monitoring column silently showed dashes. The SPA POSTs now; GET stays
     for scripts and backward compatibility.
@@ -1732,12 +1732,12 @@ def bulk_status_view(request):
     prefix_param = _ids("prefixes")
     if prefix_param:
         ids = [x for x in prefix_param.split(",") if x]
-        # _child_ip_ids walks every tenant IP in Python per prefix — bound the
+        # _child_ip_ids walks every tenant IP in Python per prefix - bound the
         # request so a member can't submit thousands of ids as a CPU DoS. The
         # UI sends at most one page of prefixes (~100).
         if len(ids) > 500:
             return Response(
-                {"detail": "Too many prefixes — request at most 500 per call."},
+                {"detail": "Too many prefixes - request at most 500 per call."},
                 status=400,
             )
         # Site-aware: only prefixes the caller may view roll up.
@@ -1867,7 +1867,7 @@ def device_snmp_view(request, device_id):
 @permission_classes([IsAuthenticated])
 def device_snmp_poll_view(request, device_id):
     """On-demand SNMP poll of a device's system facts. Body: ``{profile_id?}``
-    (falls back to the tenant's default profile). Stores the observed facts —
+    (falls back to the tenant's default profile). Stores the observed facts -
     it never touches the device's source-of-truth fields."""
     resolved, err = _resolve_device(request, device_id, "change")
     if err is not None:
@@ -1885,7 +1885,7 @@ def device_snmp_poll_view(request, device_id):
     state, reason = poll_device(device, tenant, profile)
     if reason == "no_profile":
         return Response(
-            {"detail": "No SNMP profile resolves for this device — assign one on "
+            {"detail": "No SNMP profile resolves for this device - assign one on "
              "the device, its role, its type, or set a tenant default."},
             status=400,
         )
@@ -1916,7 +1916,7 @@ def device_snmp_utilization_view(request, device_id):
     return Response({"interfaces": compute_device_utilization(device)})
 
 
-# ─── VM (virtual router / appliance) SNMP — #13 ──────────────────────────────
+# ─── VM (virtual router / appliance) SNMP - #13 ──────────────────────────────
 
 def _resolve_vm(request, vm_id, action="view"):
     """(vm, tenant) for a VM in the caller's RBAC scope, or (None, response)."""
@@ -1972,7 +1972,7 @@ def vm_snmp_poll_view(request, vm_id):
     state, reason = poll_vm(vm, tenant, profile)
     if reason == "no_profile":
         return Response(
-            {"detail": "No SNMP profile resolves for this VM — assign one on the "
+            {"detail": "No SNMP profile resolves for this VM - assign one on the "
              "VM, its platform/cluster, or set a tenant default."},
             status=400,
         )
@@ -2018,7 +2018,7 @@ def device_snmp_drift_view(request, device_id):
 _DRIFT_KINDS = ("device_field", "interface_missing", "interface_mismatch",
                 "interface_stale", "part_status", "part_missing")
 
-# Drift kinds that name an Interface row Danbyte ALREADY has — the only ones a
+# Drift kinds that name an Interface row Danbyte ALREADY has - the only ones a
 # per-interface marker can attach to (``?interfaces=1``).
 #
 # ``interface_missing`` is excluded because it describes a port Danbyte doesn't
@@ -2063,14 +2063,14 @@ _INTERFACE_DRIFT_KINDS = ("interface_mismatch", "interface_stale", "ip_missing")
 def snmp_drift_list_view(request):
     """Tenant-wide SNMP drift: one summary row per polled device, so the
     config-drift page can show observed-vs-intended drift across the fleet
-    alongside the Ansible config-drift list. Read-only — accepting a diff still
+    alongside the Ansible config-drift list. Read-only - accepting a diff still
     happens per-device on the reconcile endpoint (which needs `device.change`).
 
     Optional ``?status=drift|in_sync|unreachable`` filters the rows.
 
-    Optional ``?interfaces=1`` adds a top-level ``interfaces`` object —
+    Optional ``?interfaces=1`` adds a top-level ``interfaces`` object -
     ``{interface_id: {device, count, kinds}}`` for every drifted interface in the
-    rows returned — so the fleet interfaces list can mark drifted ports from the
+    rows returned - so the fleet interfaces list can mark drifted ports from the
     same single request the device list already makes. It is derived from the
     drift items this view already computes and discards, so it costs no extra
     query, and it is scoped by exactly the same device filter as the rows: a
@@ -2090,7 +2090,7 @@ def snmp_drift_list_view(request):
         .order_by("-polled_at")
     )
 
-    # Only list devices that have SNMP *deliberately configured* — an explicit
+    # Only list devices that have SNMP *deliberately configured* - an explicit
     # binding (device / role / type) or a tenant default profile. A device that
     # was only polled because it's the tenant's single fallback profile has no
     # real SNMP intent, so showing it as "unreachable" here would be noise.
@@ -2157,7 +2157,7 @@ def snmp_drift_list_view(request):
             k = it.get("kind")
             if k in by_kind:
                 by_kind[k] += 1
-            # Count distinct interfaces, not items — one interface can drift on
+            # Count distinct interfaces, not items - one interface can drift on
             # both MAC and admin-status (two mismatch items, one interface).
             if k == "interface_missing":
                 ifaces_drifted.add(("name", it.get("name")))
@@ -2229,7 +2229,7 @@ def snmp_topology_ghosts_view(request):
     tenant = _get_active_tenant(request)
     if tenant is None:
         return Response({"nodes": [], "edges": []})
-    # Row/site scope every device this endpoint touches — a Site-A viewer must
+    # Row/site scope every device this endpoint touches - a Site-A viewer must
     # not pull a Site-B device's LLDP graph by id, nor see Site-B ghost edges.
     viewable = rbac.restrict_queryset(
         Device.objects.filter(tenant=tenant),
@@ -2290,7 +2290,7 @@ def materialize_cable_view(request):
 
     d = request.data
     # Both endpoints must sit on devices the caller may view in their site scope
-    # — otherwise a Site-A grant + type-level cable.add could cable two Site-B
+    # - otherwise a Site-A grant + type-level cable.add could cable two Site-B
     # devices by interface id. Bound the interface lookup to viewable devices.
     viewable_devices = rbac.restrict_queryset(
         Device.objects.filter(tenant=tenant),
@@ -2365,7 +2365,7 @@ def device_snmp_reconcile_view(request, device_id):
         return err
     device, tenant = resolved
     # Writing observed values back into intent is a source-of-truth mutation, so
-    # it requires the same `device.change` grant the device form does — not just
+    # it requires the same `device.change` grant the device form does - not just
     # tenant membership (the read-only drift/poll views stay IsAuthenticated).
     if not rbac.has_action(request.user, tenant, "device", "change"):
         return Response(
@@ -2562,7 +2562,7 @@ def snmp_binding_view(request, scope, object_id):
 # ─── Redfish (BMC hardware inventory + health) ───────────────────────────────
 
 def _redfish_payload(ep):
-    """API shape for a Redfish endpoint — config + last observed state.
+    """API shape for a Redfish endpoint - config + last observed state.
     Secrets are write-only; only their PRESENCE is reported."""
     return {
         "device": str(ep.device_id),
@@ -2580,7 +2580,7 @@ def _redfish_payload(ep):
 
 
 @extend_schema(
-    summary="The device's BMC (Redfish) endpoint — config + last observed hardware",
+    summary="The device's BMC (Redfish) endpoint - config + last observed hardware",
     tags=["monitoring"],
     responses=OpenApiTypes.OBJECT,
     methods=["GET"],
@@ -2609,7 +2609,7 @@ def _redfish_payload(ep):
 @permission_classes([IsAuthenticated])
 def device_redfish_view(request, device_id):
     """Per-device BMC endpoint. GET returns config + the last observed
-    hardware (credentials are never returned — only whether they're set).
+    hardware (credentials are never returned - only whether they're set).
     PUT upserts config; omitting username/password keeps the stored ones.
     DELETE removes the endpoint (inventory items stay)."""
     from .models import RedfishEndpoint
@@ -2667,7 +2667,7 @@ def device_redfish_view(request, device_id):
 def device_redfish_poll_view(request, device_id):
     """On-demand BMC poll: walk the Redfish tree and reconcile the observed
     drives/CPUs/RAM/PSUs/fans into the device's inventory items (health →
-    lifecycle status). Synchronous — a BMC answers in a few seconds."""
+    lifecycle status). Synchronous - a BMC answers in a few seconds."""
     from .models import RedfishEndpoint
     from .redfish import poll_endpoint
 
@@ -2776,7 +2776,7 @@ def device_sensor_poll_view(request, device_id):
 @permission_classes([IsAuthenticated])
 def snmp_interface_link_view(request, device_id):
     """Record that a discovered interface name belongs to an interface the user
-    already created — the port silkscreened "Ethernet 1" reporting as "eth0".
+    already created - the port silkscreened "Ethernet 1" reporting as "eth0".
 
     Drift then matches the pair instead of listing it as both new and missing.
     Send an empty ``snmp_name`` to unlink. Source-of-truth write, so it needs
@@ -2810,11 +2810,11 @@ def snmp_interface_link_view(request, device_id):
         if clash is not None:
             return Response(
                 {"snmp_name": f'"{clash.name}" is already an interface on this '
-                              "device. Delete or rename that one first — a "
+                              "device. Delete or rename that one first - a "
                               "discovered name can only belong to one port."},
                 status=400,
             )
-        # One discovered name maps to one interface — clear any other claim.
+        # One discovered name maps to one interface - clear any other claim.
         Interface.objects.filter(device=device, snmp_name__iexact=name).exclude(
             pk=iface.pk
         ).update(snmp_name="")

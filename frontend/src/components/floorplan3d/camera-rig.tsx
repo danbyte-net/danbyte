@@ -35,7 +35,7 @@ const TARGET_MIN_Y = 0.05
  */
 const MAX_NAV_DT = 0.1
 
-/** Keydown targets that own the keyboard — navigation must not steal keys. */
+/** Keydown targets that own the keyboard - navigation must not steal keys. */
 const EDITABLE_SELECTOR = 'input, textarea, select, [contenteditable="true"]'
 
 const isEditableTarget = (t: EventTarget | null) =>
@@ -47,7 +47,7 @@ const _fwd = new THREE.Vector3()
 /**
  * OrbitControls plus an animated fly-to: push a request into `requestRef` and
  * the rig eases the camera + orbit target there over ~0.7 s. Works with
- * `frameloop="demand"` — the rig invalidates every animation frame itself.
+ * `frameloop="demand"` - the rig invalidates every animation frame itself.
  *
  * Also owns keyboard navigation: arrows / WASD pan the camera AND the orbit
  * target parallel to the ground plane (forward = camera→target projected to
@@ -64,7 +64,7 @@ export function CameraRig({
 }: {
   target: [number, number, number]
   maxDistance: number
-  /** Larger room side (m) — scales the wheel so hall size doesn't change feel. */
+  /** Larger room side (m) - scales the wheel so hall size doesn't change feel. */
   roomDiag: number
   requestRef: React.MutableRefObject<FlyToRequest | null>
 }) {
@@ -88,7 +88,7 @@ export function CameraRig({
       const key = normalizeKey(e.key)
       if (!NAV_KEYS.has(key)) return
       // Only keys whose default scrolls the page; w/a/s/d/c/Shift stay
-      // untouched (and Escape is never ours — connect/trace flows own it).
+      // untouched (and Escape is never ours - connect/trace flows own it).
       if (PAGE_SCROLL_KEYS.has(key)) e.preventDefault()
       // First nav key of a session: pull the orbit pivot to ~3 m ahead so
       // drag-look feels first-person while walking (fly-to re-anchors it on
@@ -119,7 +119,7 @@ export function CameraRig({
       // even if focus moved into a field or a modifier joined mid-hold.
       pressed.current.delete(normalizeKey(e.key))
       // The trailing frames that apply deferred LOD swaps come from the
-      // settle loop in useFrame — for every motion source, not just keys.
+      // settle loop in useFrame - for every motion source, not just keys.
     }
     const onBlur = () => {
       // Alt-tab with a key held must not pan forever.
@@ -136,9 +136,9 @@ export function CameraRig({
   }, [invalidate, requestRef, camera])
 
   // Dolly-through: OrbitControls' multiplicative dolly collapses to nothing
-  // at minDistance — the "zoom just stops" wall. At the wall, a wheel-in
+  // at minDistance - the "zoom just stops" wall. At the wall, a wheel-in
   // stops shortening the arm and instead walks camera + target forward along
-  // the sight line (orbit becomes fly — through the rack, into the aisle
+  // the sight line (orbit becomes fly - through the rack, into the aisle
   // behind it). Capture phase on the canvas's PARENT: capture on an ancestor
   // fires before OrbitControls' own target-phase listener, and a same-element
   // listener would lose the registration-order race. When the walk claims the
@@ -184,7 +184,7 @@ export function CameraRig({
     // (see camera-motion.ts), and with frameloop="demand" nothing else
     // promises a frame AFTER the motion window closes. Keep frames coming
     // through the window plus its tail, so the swap-applying frame always
-    // arrives — a wheel burst or drag used to end with the room stuck coarse
+    // arrives - a wheel burst or drag used to end with the room stuck coarse
     // until the next interaction nudged it.
     if (isCameraSettling()) invalidate()
     // Floor clamp: maxPolarAngle now allows looking up from below the pivot,
@@ -194,7 +194,7 @@ export function CameraRig({
       state.camera.position.y = CAMERA_MIN_Y
       c.update()
     }
-    // Dynamic near-plane: 1 cm nose-on, 0.5 m across the hall — a fixed near
+    // Dynamic near-plane: 1 cm nose-on, 0.5 m across the hall - a fixed near
     // small enough for faceplates would shimmer the 3 mm floor overlays from
     // a distance (depth precision). Re-fit only past 20% drift so the
     // projection isn't rebuilt every frame; runs only on frames something
@@ -260,7 +260,7 @@ export function CameraRig({
       markCameraMoving()
       c.update()
     }
-    // Demand frameloop: keep frames coming while any nav key is held —
+    // Demand frameloop: keep frames coming while any nav key is held -
     // opposing keys can sum to zero, but a release must resume motion
     // without needing a fresh keydown.
     invalidate()
@@ -271,19 +271,19 @@ export function CameraRig({
       ref={controls}
       makeDefault
       target={target}
-      // Every way OrbitControls itself moves the camera — mouse drags, its
-      // native wheel zoom — lands here. Marking motion from the change event
+      // Every way OrbitControls itself moves the camera - mouse drags, its
+      // native wheel zoom - lands here. Marking motion from the change event
       // is what actually defers the per-rack React swaps during a drag; the
       // rig's own paths (keys, fly-to, dolly-through) mark explicitly, but
       // drags never passed through them, so dragging still re-rendered
       // dozens of racks per frame. Drei keeps its internal invalidate-on-
       // change wiring alongside this handler.
       onChange={() => markCameraMoving()}
-      // Dolly toward the pointer, not the (possibly distant) orbit target —
+      // Dolly toward the pointer, not the (possibly distant) orbit target -
       // on a hall-sized plan, plain dolly could never reach a far corner.
       zoomToCursor
       // The camera STOPS when the mouse stops. Drei enables damping by
-      // default, which keeps easing the orbit for a while after you let go —
+      // default, which keeps easing the orbit for a while after you let go -
       // it reads as the room sliding out from under you, and on a hall-sized
       // plan you overshoot whatever you were trying to look at.
       enableDamping={false}

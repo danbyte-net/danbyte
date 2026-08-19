@@ -1,5 +1,5 @@
 """Cross-site row-level RBAC: a user whose grant is scoped to Site A must be
-denied Site B rows — the gap the secops retest named (type-level checks that
+denied Site B rows - the gap the secops retest named (type-level checks that
 skipped ObjectPermission.sites). Covers can_act_on, terraform render,
 monitoring, and audit/journal."""
 from django.contrib.auth.models import User
@@ -291,7 +291,7 @@ class AuditSiteTests(_SiteScopedBase):
 
     def test_delete_history_readable_after_object_gone(self):
         # A Site-A device is created then deleted; the DELETE entry (object now
-        # gone) must still be visible to the Site-A viewer — the stored
+        # gone) must still be visible to the Site-A viewer - the stored
         # object_site_id carries the scope re-fetching the object no longer can.
         self._grant("device")
         d_a = Device.objects.create(tenant=self.tenant, name="gone", site=self.site_a)

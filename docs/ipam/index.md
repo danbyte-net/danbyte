@@ -1,6 +1,6 @@
 # IPAM
 
-IP Address Management — your **address space**: the subnets you own, the
+IP Address Management - your **address space**: the subnets you own, the
 individual addresses in them, and the VLANs, VRFs, and route targets that
 organize them. If DCIM tracks the physical gear, IPAM tracks the addresses that
 live on it.

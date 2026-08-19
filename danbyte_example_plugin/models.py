@@ -1,8 +1,8 @@
 """Example plugin domain model.
 
 ``Widget`` is a minimal tenant-scoped object that opts into the cross-cutting
-core features via mixins — custom fields (``CustomFieldsMixin``) and tags
-(``TaggableMixin``) — exactly as a real plugin model would. UUID primary key
+core features via mixins - custom fields (``CustomFieldsMixin``) and tags
+(``TaggableMixin``) - exactly as a real plugin model would. UUID primary key
 and tenant FK follow the Danbyte domain-model conventions.
 """
 from __future__ import annotations

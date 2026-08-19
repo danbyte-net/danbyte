@@ -14,7 +14,7 @@ import { CheckDot, FoldableGroup } from "@/components/foldable-group"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { KIND_COLOR } from "@/components/site-map/connections-layer"
 
-// "On this map" — the site map's clone of the floor planner's ObjectsSidebar:
+// "On this map" - the site map's clone of the floor planner's ObjectsSidebar:
 // one search box, foldable groups, click to fly-to + select. Links (circuits /
 // tunnels / cross-site cables) are listed here too, grouped by kind, exactly
 // like tile types group tiles. No z-index: the map subtree is isolated, so

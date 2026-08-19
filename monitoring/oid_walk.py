@@ -5,13 +5,13 @@ Two things are needed, and they are not the same operation:
 
 **Browsing.** A walk returns OIDs in lexicographic order, so walking a high base
 like ``1.3.6.1.4.1`` spends its whole budget inside the first vendor it meets and
-never reveals the others exist. Listing one level at a time — a GETNEXT per
-child, skipping each child's subtree — is what makes the tree navigable.
+never reveals the others exist. Listing one level at a time - a GETNEXT per
+child, skipping each child's subtree - is what makes the tree navigable.
 
 **Reading a table.** Once the base *is* a table entry, the flat result is the
 wrong shape for a human: `snmpwalk` prints one line per (column, row) pair, and
 the reader has to mentally transpose it to answer the only question that
-matters — which column reports health, and what does it say? Reshaped back into
+matters - which column reports health, and what does it say? Reshaped back into
 rows-are-components / columns-are-attributes, the answer is visible: the column
 reading "Normal" beside the column reading "Power Supply 1" is the health
 column, and its distinct values are the value_map to write.
@@ -68,7 +68,7 @@ def walk_device_oid(device, tenant, oid: str, walk: bool = True, profile=None) -
 
     ``walk=False`` reads the single OID instead (a scalar GET).
 
-    Never raises for SNMP conditions — a timeout or a refused community comes
+    Never raises for SNMP conditions - a timeout or a refused community comes
     back as ``error`` so the UI can show it inline next to the field.
     """
     oid = (oid or "").strip().strip(".")
@@ -77,7 +77,7 @@ def walk_device_oid(device, tenant, oid: str, walk: bool = True, profile=None) -
     if not all(part.isdigit() for part in oid.split(".")):
         return _empty(
             oid,
-            "numeric OIDs only — a MIB name can't be resolved without its MIB "
+            "numeric OIDs only - a MIB name can't be resolved without its MIB "
             "file (e.g. 1.3.6.1.4.1.2.3.51.3.1.11.2.1)",
         )
 
@@ -170,12 +170,12 @@ def walk_device_oid(device, tenant, oid: str, walk: bool = True, profile=None) -
 
 def _oid_key(s: str) -> tuple:
     """Numeric-aware ordering, so column 10 follows column 9 and rows read
-    1..n rather than 1, 10, 11, 2 — as tables sort everywhere else here."""
+    1..n rather than 1, 10, 11, 2 - as tables sort everywhere else here."""
     return tuple(int(p) if p.isdigit() else p for p in s.split("."))
 
 
 def _scalar(args, oid: str, timeout_ms: int) -> dict:
-    """One OID, one value — no table to rebuild, so it's shown as one cell."""
+    """One OID, one value - no table to rebuild, so it's shown as one cell."""
     try:
         raw = fetch_oid_sync(*args, oid, False, timeout_ms)
     except SnmpFactsError as exc:

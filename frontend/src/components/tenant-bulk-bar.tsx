@@ -255,7 +255,7 @@ function BulkDeleteConfirm({
             This permanently deletes each tenant and{" "}
             <strong>everything it owns</strong>
             {totalObjects > 0
-              ? ` — about ${totalObjects.toLocaleString()} sites/prefixes/VLANs/IPs plus all other records`
+              ? ` - about ${totalObjects.toLocaleString()} sites/prefixes/VLANs/IPs plus all other records`
               : ""}
             . This can't be undone.
           </AlertDialogDescription>

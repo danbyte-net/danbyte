@@ -1,4 +1,4 @@
-"""Offline plugin upload — install/uninstall + safety, superuser-gated."""
+"""Offline plugin upload - install/uninstall + safety, superuser-gated."""
 from __future__ import annotations
 
 import io

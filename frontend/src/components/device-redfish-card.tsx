@@ -40,7 +40,7 @@ interface RedfishState {
 }
 
 /**
- * The device's BMC (Redfish) — configure the endpoint, poll on demand, and
+ * The device's BMC (Redfish) - configure the endpoint, poll on demand, and
  * see the hardware the collector reconciled into the Hardware tab. iDRAC,
  * iLO, XClarity, Supermicro and UCS BMCs all speak Redfish.
  */
@@ -80,7 +80,7 @@ export function DeviceRedfishCard({ deviceId }: { deviceId: string }) {
         port: Number(port) || 443,
         verify_tls: verifyTls,
       }
-      // Credentials only travel when typed — blank means "keep stored".
+      // Credentials only travel when typed - blank means "keep stored".
       if (username || password) {
         payload.username = username
         payload.password = password
@@ -105,7 +105,7 @@ export function DeviceRedfishCard({ deviceId }: { deviceId: string }) {
         method: "POST",
       }),
     onSuccess: (r) => {
-      if (r.reachable) toast.success("BMC polled — hardware reconciled")
+      if (r.reachable) toast.success("BMC polled - hardware reconciled")
       else toast.error(`BMC unreachable: ${r.error || "unknown error"}`)
       invalidateHardware()
     },
@@ -157,13 +157,13 @@ export function DeviceRedfishCard({ deviceId }: { deviceId: string }) {
         ) : undefined
       }
     >
-      {/* No `p-4` — matches the sensors card it sits beside. Section draws no
+      {/* No `p-4` - matches the sensors card it sits beside. Section draws no
           box, so the inset only misaligned the body from its own heading. */}
       <div className="grid gap-3">
         {configured && (
           <div className="grid gap-1 text-[13px]">
             <div className="flex items-center gap-2">
-              {/* Shared Badge — same reachability treatment as the SNMP card. */}
+              {/* Shared Badge - same reachability treatment as the SNMP card. */}
               <Badge
                 variant={
                   !s?.polled_at
@@ -190,7 +190,7 @@ export function DeviceRedfishCard({ deviceId }: { deviceId: string }) {
             )}
             {counts && (
               <p className="text-muted-foreground">
-                {s?.data.system?.manufacturer} {s?.data.system?.model} —{" "}
+                {s?.data.system?.manufacturer} {s?.data.system?.model} -{" "}
                 {counts}
               </p>
             )}

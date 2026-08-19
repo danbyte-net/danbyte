@@ -1,10 +1,10 @@
-"""Site map — the geographic analog of a floor plan.
+"""Site map - the geographic analog of a floor plan.
 
 One GET returns everything the map page needs: the effective tile-layer
 config (deployment setting, defaulting to OpenStreetMap's standard tiles
 with the attribution their usage policy requires) plus the RBAC-scoped
 sites and devices that carry coordinates. Sites *without* coordinates are
-included too — the edit mode lists them so they can be placed by clicking
+included too - the edit mode lists them so they can be placed by clicking
 the map.
 """
 from __future__ import annotations
@@ -33,7 +33,7 @@ OSM_ATTRIBUTION = (
 )
 
 
-# Esri World Imagery — free to use with this attribution. Note {z}/{y}/{x}.
+# Esri World Imagery - free to use with this attribution. Note {z}/{y}/{x}.
 ESRI_SAT_URL = (
     "https://server.arcgisonline.com/ArcGIS/rest/services/"
     "World_Imagery/MapServer/tile/{z}/{y}/{x}"
@@ -65,7 +65,7 @@ def effective_tiles() -> dict:
 
 
 @extend_schema(
-    summary="Site map payload — tile config, placed sites, devices, and markers",
+    summary="Site map payload - tile config, placed sites, devices, and markers",
     tags=["site-map"],
     request=None,
     responses={
@@ -111,7 +111,7 @@ def site_map(request):
         )
     from .models import FloorPlan
 
-    # Worst monitoring status per site / per device — one pass over
+    # Worst monitoring status per site / per device - one pass over
     # CheckState, reduced with the monitoring roll-up's severity order, so a
     # site pin can wear its health (red beats amber beats green).
     from monitoring.models import CheckState
@@ -130,7 +130,7 @@ def site_map(request):
             site_checks.setdefault(site_id, []).append(status)
         device_checks.setdefault(device_id, []).append(status)
 
-    # First few floor plans per site — the popover offers them as direct
+    # First few floor plans per site - the popover offers them as direct
     # jump-offs (the map → floorplan drill-down, like the plugin's
     # floorplan_link tiles).
     plans_by_site: dict = {}
@@ -180,7 +180,7 @@ def site_map(request):
             .values_list("id", flat=True)
         )
     def device_info(d):
-        """The display fields a device contributes to the map — shared by a
+        """The display fields a device contributes to the map - shared by a
         placed device pin and a marker's linked device, so both popovers show
         the same detail set (driven by the shared floor-plan popover config)."""
         return {
@@ -235,7 +235,7 @@ def site_map(request):
         for d in devices_qs
     ]
 
-    # Free markers — the whole tenant's; the marker vocabulary (tile types /
+    # Free markers - the whole tenant's; the marker vocabulary (tile types /
     # device roles) is tenant data, so no per-row RBAC beyond tenancy (the
     # same contract as floor-plan tiles).
     markers = [
@@ -295,7 +295,7 @@ def site_map(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def site_map_connections(request):
-    """Site-to-site connection edges for the map — derived, never modeled:
+    """Site-to-site connection edges for the map - derived, never modeled:
 
     - **circuits**: both A/Z terminations at placed sites;
     - **tunnels**: terminations resolved interface → device → site (two
@@ -398,7 +398,7 @@ def site_map_connections(request):
             pairs = [(hub_site, s) for s in sids if s != hub_site]
         elif len(sids) == 2:
             pairs = [(sids[0], sids[1])]
-        # >2 peer sites without a hub: ambiguous mesh — skipped in v1.
+        # >2 peer sites without a hub: ambiguous mesh - skipped in v1.
         for i, (sa_id, sz_id) in enumerate(pairs):
             edges.append({
                 "id": f"tunnel:{t.id}" + (f":{i}" if len(pairs) > 1 else ""),
@@ -417,7 +417,7 @@ def site_map_connections(request):
     # ── cross-site cables, aggregated per site pair ─────────────────────
     cable_view = rbac.row_filter(request.user, tenant, "cable", "view")
     if cable_view is not None:
-        # Which geographic routes each cable follows — so a bundle can draw
+        # Which geographic routes each cable follows - so a bundle can draw
         # along real geometry.
         routes_by_cable = _routes_by_cable(tenant)
         pair_cables: dict = {}
@@ -490,7 +490,7 @@ def _routes_by_cable(tenant) -> dict:
 @permission_classes([IsAuthenticated])
 def site_map_cables(request):
     """Every cable with BOTH ends resolvable to a map point, as a drawable
-    segment. A cable draws whether or not it's on a route — a device→device
+    segment. A cable draws whether or not it's on a route - a device→device
     run between two placed devices is a line on its own; ``route_ids`` lets
     the client draw it along real geometry when it has one.
 
@@ -507,7 +507,7 @@ def site_map_cables(request):
     if rbac.row_filter(request.user, tenant, "cable", "view") is None:
         return Response({"cables": []})
 
-    # A cable is only drawn when the caller may view BOTH endpoint devices —
+    # A cable is only drawn when the caller may view BOTH endpoint devices -
     # otherwise the map would leak a Site-B device (name/coords) to a Site-A
     # user via the cable line. (cable.view has no site path of its own.)
     viewable_devs = set(
@@ -517,7 +517,7 @@ def site_map_cables(request):
         ).values_list("id", flat=True)
     )
 
-    # Sites the caller may see, with coordinates — the fallback anchor.
+    # Sites the caller may see, with coordinates - the fallback anchor.
     site_pt = {}
     for s in rbac.restrict_queryset(
         Site.objects.filter(tenant=tenant),
@@ -526,7 +526,7 @@ def site_map_cables(request):
         site_pt[s.id] = (float(s.latitude), float(s.longitude), s.name)
 
     def resolve(dev):
-        """(lat, lng) for a device — its own coords, else its site's."""
+        """(lat, lng) for a device - its own coords, else its site's."""
         if dev.latitude is not None and dev.longitude is not None:
             return (float(dev.latitude), float(dev.longitude))
         sp = site_pt.get(dev.site_id)

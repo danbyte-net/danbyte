@@ -5,7 +5,7 @@
 #   sudo ./scripts/danbyte-relocate.sh                 # → /opt/danbyte
 #   sudo ./scripts/danbyte-relocate.sh --to /opt/danbyte --user danbyte
 #
-# This is OPTIONAL. Version upgrades work fine wherever Danbyte already lives —
+# This is OPTIONAL. Version upgrades work fine wherever Danbyte already lives -
 # the systemd units are home-relative (%h/danbyte). This only changes WHERE it
 # lives to match the current default layout. The database is never touched.
 #
@@ -42,10 +42,10 @@ SVC_UID="$(id -u "$SERVICE_USER")"
 MOVE=1
 if [ "$OLD_HOME" = "$NEW_HOME" ]; then
   MOVE=0
-  echo "Home already at $NEW_HOME — will only (re)apply logging + nginx paths."
+  echo "Home already at $NEW_HOME - will only (re)apply logging + nginx paths."
 else
-  [ -d "$OLD_HOME/danbyte" ] || die "no app at $OLD_HOME/danbyte — wrong --user?"
-  [ -e "$NEW_HOME" ] && die "$NEW_HOME already exists — move/remove it first."
+  [ -d "$OLD_HOME/danbyte" ] || die "no app at $OLD_HOME/danbyte - wrong --user?"
+  [ -e "$NEW_HOME" ] && die "$NEW_HOME already exists - move/remove it first."
 fi
 APP="$NEW_HOME/danbyte"
 
@@ -130,6 +130,6 @@ Verify:
     systemctl --user status danbyte-web danbyte-workers
   tail -f $LOG_DIR/*.log
 
-If anything looks wrong, the old home is gone (moved, not copied) — restore from
+If anything looks wrong, the old home is gone (moved, not copied) - restore from
 your backup, or move it back:  sudo usermod -m -d "$OLD_HOME" $SERVICE_USER
 EOF

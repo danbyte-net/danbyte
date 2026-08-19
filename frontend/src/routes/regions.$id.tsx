@@ -222,7 +222,7 @@ function RegionSitesTable({ regionId }: { regionId: string }) {
           header: "Location",
           cell: (s) => (
             <span className="text-xs text-muted-foreground">
-              {s.location || "—"}
+              {s.location || "-"}
             </span>
           ),
         },

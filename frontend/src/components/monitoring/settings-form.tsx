@@ -175,7 +175,7 @@ export function MonitoringSettingsForm() {
           title="Skip these IP statuses"
           hint={
             <>
-              IPs whose status is ticked are not checked — they show as{" "}
+              IPs whose status is ticked are not checked - they show as{" "}
               <span className="font-medium">Skipped</span>.
             </>
           }
@@ -358,7 +358,7 @@ export function MonitoringSettingsForm() {
                 Exclude statuses from the flapping monitor
               </Label>
               <p className="text-[11px] text-muted-foreground">
-                IPs with a ticked status are never surfaced as flapping — handy
+                IPs with a ticked status are never surfaced as flapping - handy
                 for <span className="font-medium">DHCP scopes</span> and other
                 expected-churn ranges. (Exclude a single IP from its Monitoring
                 tab.)
@@ -418,7 +418,7 @@ export function MonitoringSettingsForm() {
                     Auto-discover all prefixes
                   </span>
                   <span className="text-[11px] text-muted-foreground">
-                    Sweep every prefix by default — no per-prefix toggle needed.
+                    Sweep every prefix by default - no per-prefix toggle needed.
                     Off: only prefixes you flag{" "}
                     <span className="font-medium">auto-discover</span> (and
                     their child prefixes) are swept.
@@ -479,7 +479,7 @@ export function MonitoringSettingsForm() {
             onChange={(v) => set("arp_source_device", v)}
           />
           <p className="text-[11px] text-muted-foreground">
-            On L2-only networks a switch's own ARP table is nearly empty — pick
+            On L2-only networks a switch's own ARP table is nearly empty - pick
             the device that actually routes (the gateway or firewall) and its
             table feeds every switch's suggestions. Leave empty to use each
             switch's own. Mark individual ports as{" "}
@@ -490,7 +490,7 @@ export function MonitoringSettingsForm() {
       </div>
 
       {/* Sticky, and named: every group above is one settings object, so one
-          save is honest — but it must say so and stay reachable rather than
+          save is honest - but it must say so and stay reachable rather than
           hiding at the bottom of a long page. */}
       <div className="sticky bottom-0 -mx-4 mt-4 flex items-center gap-2 border-t border-border bg-background/95 px-4 py-3 backdrop-blur lg:-mx-6 lg:px-6">
         <span className="text-[11px] text-muted-foreground">

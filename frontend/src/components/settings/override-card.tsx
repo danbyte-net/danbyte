@@ -17,7 +17,7 @@ export function OverrideCard({
   description?: string
   overridden: boolean
   onOverriddenChange: (v: boolean) => void
-  /** What "inherit" currently means — the deployment default, read-only. */
+  /** What "inherit" currently means - the deployment default, read-only. */
   summary: ReactNode
   children: ReactNode
 }) {

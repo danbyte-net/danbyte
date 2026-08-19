@@ -4,7 +4,7 @@ icon: lucide/route
 
 # VLAN
 
-L2 namespace, tenant-scoped (intentionally NOT VRF-scoped — VLANs and VRFs are
+L2 namespace, tenant-scoped (intentionally NOT VRF-scoped - VLANs and VRFs are
 different layers).
 
 ## Fields

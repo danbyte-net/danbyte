@@ -69,7 +69,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
           row.original.type ? (
             <span className="text-xs">{row.original.type_display}</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -79,7 +79,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
           row.original.maximum_draw != null ? (
             <span className="num text-xs">{row.original.maximum_draw} W</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -89,7 +89,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
           row.original.allocated_draw != null ? (
             <span className="num text-xs">{row.original.allocated_draw} W</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -104,7 +104,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
           row.original.description ? (
             <span className="text-xs">{row.original.description}</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -118,7 +118,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
                 variant="ghost"
                 asChild
                 className="h-7 text-muted-foreground/60 hover:text-foreground"
-                title="Not cabled — connect a cable"
+                title="Not cabled - connect a cable"
               >
                 <Link
                   to="/cables/new"
@@ -172,7 +172,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
           row.original.type ? (
             <span className="text-xs">{row.original.type_display}</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -184,7 +184,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
               {row.original.power_port.name}
             </span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -194,7 +194,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
           row.original.feed_leg ? (
             <span className="text-xs">{row.original.feed_leg}</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -209,7 +209,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
           row.original.description ? (
             <span className="text-xs">{row.original.description}</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -223,7 +223,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
                 variant="ghost"
                 asChild
                 className="h-7 text-muted-foreground/60 hover:text-foreground"
-                title="Not cabled — connect a cable"
+                title="Not cabled - connect a cable"
               >
                 <Link
                   to="/cables/new"
@@ -284,7 +284,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : portRows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No power ports. A power port is the device's inlet (PSU) — cable it
+            No power ports. A power port is the device's inlet (PSU) - cable it
             to a feed, then hang outlets off it on a PDU.
           </p>
         ) : (
@@ -309,7 +309,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : outletRows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No power outlets. Outlets are the sockets a PDU offers — each one is
+            No power outlets. Outlets are the sockets a PDU offers - each one is
             fed by one of this device's power ports.
           </p>
         ) : (
@@ -392,7 +392,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
         endpoint="power-ports"
         queryKeys={[
           ["device-power-ports", deviceId],
-          // Outlets fed by this port lose their feed — refresh both lists.
+          // Outlets fed by this port lose their feed - refresh both lists.
           ["device-power-outlets", deviceId],
         ]}
         item={delPort}

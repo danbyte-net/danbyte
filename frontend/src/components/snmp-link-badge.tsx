@@ -15,7 +15,7 @@ import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
 /**
- * The `↔ eth0` chip on a port that's been linked to a discovered SNMP name —
+ * The `↔ eth0` chip on a port that's been linked to a discovered SNMP name -
  * and the way back out. Without an unlink here the mapping was a one-way door:
  * visible, but only re-linking to some other port could change it.
  *
@@ -66,7 +66,7 @@ export function SnmpLinkBadge({
         <button
           type="button"
           className="cursor-pointer rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-          title={`Discovered over SNMP as "${iface.snmp_name}" — click to unlink`}
+          title={`Discovered over SNMP as "${iface.snmp_name}" - click to unlink`}
         >
           {chip}
         </button>

@@ -2,14 +2,14 @@
 
 Each overridable group on :class:`~core.models.TenantSettings` carries an
 ``override_*`` toggle. The helpers here return **whichever model instance's
-fields should be used** — the tenant row when its toggle is on, else the
+fields should be used** - the tenant row when its toggle is on, else the
 :class:`~core.models.DeploymentSettings` singleton. Because TenantSettings
 mirrors DeploymentSettings' field names, consumers work unchanged with either
 object (``build_email_connection``, the LDAP backend builder, the sharing
-gates). The read path never creates rows — no row means "inherit everything".
+gates). The read path never creates rows - no row means "inherit everything".
 
 Deployment-only groups (updates, ``public_base_url``, ``webhook_timeout``,
-``outbound_proxy``, config-drift, retention) have no tenant counterpart —
+``outbound_proxy``, config-drift, retention) have no tenant counterpart -
 callers keep ``DeploymentSettings.load()`` for those.
 
 See ``docs/architecture/tenant-settings.md``.
@@ -92,7 +92,7 @@ def effective_ui(tenant):
 def effective_digest(tenant):
     """The object whose email-digest schedule/recipients apply (its own
     override group, mirroring email). ``digest_last_run`` is NOT read from here
-    — that is tracked per-tenant on TenantSettings."""
+    - that is tracked per-tenant on TenantSettings."""
     ts = _tenant_row(tenant)
     if ts is not None and ts.override_digest:
         return ts
@@ -118,7 +118,7 @@ def effective_datetime(tenant):
     Its own override group (like separation and the popover): flipping the
     date format must not force a tenant to fork the whole UI-policy group.
     Carries ``date_format`` / ``time_style`` / ``display_timezone``. Per-user
-    overrides sit ON TOP of this — see ``auth_api.user_prefs.datetime_prefs``.
+    overrides sit ON TOP of this - see ``auth_api.user_prefs.datetime_prefs``.
     """
     ts = _tenant_row(tenant)
     if ts is not None and ts.override_datetime:
@@ -143,7 +143,7 @@ def effective_datetime_values(tenant) -> dict:
 def effective_floorplan_row(tenant):
     """The object whose floor-plan popover config applies.
 
-    Its own override group, NOT ``override_ui`` — that one also governs
+    Its own override group, NOT ``override_ui`` - that one also governs
     device-field visibility and human IDs, and a tenant shouldn't have to
     override those just to change what a tile popover shows.
     """
@@ -156,16 +156,16 @@ def effective_floorplan_row(tenant):
 def effective_floorplan_popover(tenant) -> dict:
     """The floor-plan tile popover config for this tenant.
 
-    ``{"fields": [...], "tile_overrides": {scope: [...]}}`` — the global ordered
+    ``{"fields": [...], "tile_overrides": {scope: [...]}}`` - the global ordered
     field list plus per-scope lists, where a scope is ``tt:<tile-type-slug>`` or
     ``role:<device-role-slug>``. A scope that is ABSENT inherits ``fields``; only
     genuinely-different types store their own list. (Our netbox-map plugin
     instead seeds a copy of the global list onto every tile type, which then
-    drifts silently as the global changes — inheritance avoids that whole class
+    drifts silently as the global changes - inheritance avoids that whole class
     of bug.)
 
     Unknown keys are dropped on read as well as write, so a field removed from
-    the registry — or a custom field the tenant deleted — can never reach the
+    the registry - or a custom field the tenant deleted - can never reach the
     client.
     """
     from core.deployment import (

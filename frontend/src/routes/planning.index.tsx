@@ -116,7 +116,7 @@ function BoardListPage() {
         header: "Description",
         cell: ({ row }) => (
           <span className="text-muted-foreground">
-            {row.original.description || "—"}
+            {row.original.description || "-"}
           </span>
         ),
       },
@@ -200,7 +200,7 @@ function BoardListPage() {
     >
       {allRows.length === 0 && query.data ? (
         <EmptyState title="No boards yet.">
-          A board is a kanban surface for a team or a project — "DC migration",
+          A board is a kanban surface for a team or a project - "DC migration",
           "Daily ops". Tasks on it can link straight to devices, prefixes,
           circuits and anything else Danbyte knows about.
         </EmptyState>

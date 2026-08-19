@@ -51,7 +51,7 @@ export interface CircuitColumnOpts<T extends Circuit = Circuit> {
   include?: CircuitColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
   tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }
@@ -94,7 +94,7 @@ export function buildCircuitColumns<T extends Circuit = Circuit>(
       accessorFn: (c) => c.provider?.name ?? "",
       header: "Provider",
       cell: ({ row }) => (
-        <span className="text-xs">{row.original.provider?.name ?? "—"}</span>
+        <span className="text-xs">{row.original.provider?.name ?? "-"}</span>
       ),
       meta: {
         facet: {
@@ -162,8 +162,8 @@ export function buildCircuitColumns<T extends Circuit = Circuit>(
         if (!a && !z) return dash
         return (
           <span className="text-xs">
-            {a ?? "—"} <span className="text-muted-foreground">→</span>{" "}
-            {z ?? "—"}
+            {a ?? "-"} <span className="text-muted-foreground">→</span>{" "}
+            {z ?? "-"}
           </span>
         )
       },
@@ -187,7 +187,7 @@ export function buildCircuitColumns<T extends Circuit = Circuit>(
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     }),

@@ -69,7 +69,7 @@ function PowerPanelsPage() {
         header: "Comments",
         cell: ({ row }) => (
           <span className="line-clamp-1 block text-muted-foreground">
-            {row.original.comments || "—"}
+            {row.original.comments || "-"}
           </span>
         ),
       },

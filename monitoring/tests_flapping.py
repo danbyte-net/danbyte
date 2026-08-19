@@ -1,4 +1,4 @@
-"""M22 — proactive flapping-IP monitor + exclusions."""
+"""M22 - proactive flapping-IP monitor + exclusions."""
 from __future__ import annotations
 
 from django.test import TestCase

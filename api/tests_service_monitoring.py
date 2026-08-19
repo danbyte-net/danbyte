@@ -1,4 +1,4 @@
-"""Service monitoring — the `monitored` flag, device-type materialisation, and
+"""Service monitoring - the `monitored` flag, device-type materialisation, and
 check reconciliation. See docs/architecture/service-monitoring.md."""
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase

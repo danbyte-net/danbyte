@@ -40,7 +40,7 @@ import { ObjectRow, objectIcon, slugFromObjectType } from "./object-chip"
  *
  * Each row is one saved edit of the object's own form, rendered as the diff the
  * server computed: `Label  old → new`. Applying writes it into Danbyte's record
- * — never to the device — and is offered only to someone who may change (or, for
+ * - never to the device - and is offered only to someone who may change (or, for
  * a create, add) that kind of object. */
 export function PlannedChangePanel({
   task,
@@ -74,7 +74,7 @@ export function PlannedChangePanel({
           <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
           <p className="text-[13px] text-muted-foreground">
             Nothing planned yet. Use <strong>Plan</strong> on a linked object
-            above — it opens that object's own edit form, and whatever you
+            above - it opens that object's own edit form, and whatever you
             change is recorded here instead of being written.
           </p>
         </div>
@@ -85,7 +85,7 @@ export function PlannedChangePanel({
   return (
     <section className="space-y-2">
       <Header count={open || changes.length} openLabel={open > 0} />
-      {/* One frame around the list, like linked objects — a single planned
+      {/* One frame around the list, like linked objects - a single planned
           change used to arrive as a box inside a box. */}
       <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
         {groups.map((rows) => {
@@ -163,7 +163,7 @@ function ChangeSetRow({
     qc.invalidateQueries({ queryKey: ["planning-tasks"] })
     qc.invalidateQueries({ queryKey: ["planned-changes-map"] })
     qc.invalidateQueries({ queryKey: ["planned-changes-for"] })
-    // The object itself changed — its detail page and lists must not go stale.
+    // The object itself changed - its detail page and lists must not go stale.
     qc.invalidateQueries({ queryKey: ["device"] })
     qc.invalidateQueries({ queryKey: ["device-interfaces"] })
     qc.invalidateQueries({ queryKey: ["interfaces"] })
@@ -190,11 +190,11 @@ function ChangeSetRow({
 
   const applied = () =>
     toast.success(
-      c.object_id ? "Change applied" : "Created — the object now exists"
+      c.object_id ? "Change applied" : "Created - the object now exists"
     )
 
   /** A 409 means the object moved since planning. Rather than failing, collect
-   *  what changed and ask — in a real dialog, since this is a decision about
+   *  what changed and ask - in a real dialog, since this is a decision about
    *  overwriting someone else's edit. */
   const applyNow = () =>
     act.mutate(
@@ -249,13 +249,13 @@ function ChangeSetRow({
             {c.object_id && (
               <>
                 <span className="font-mono line-through opacity-60">
-                  {d.from || "—"}
+                  {d.from || "-"}
                 </span>
                 <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
               </>
             )}
             <span className={`font-mono ${done ? "opacity-70" : ""}`}>
-              {d.to || "—"}
+              {d.to || "-"}
             </span>
           </span>
         ))}
@@ -386,11 +386,11 @@ function ChangeSetRow({
                   </span>
                   <span className="flex flex-wrap items-center gap-1.5">
                     <span className="text-muted-foreground">now</span>
-                    <span className="font-mono">{live || "—"}</span>
+                    <span className="font-mono">{live || "-"}</span>
                     <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
                     <span className="text-muted-foreground">planned</span>
                     <span className="font-mono font-medium">
-                      {row?.to || "—"}
+                      {row?.to || "-"}
                     </span>
                   </span>
                 </div>

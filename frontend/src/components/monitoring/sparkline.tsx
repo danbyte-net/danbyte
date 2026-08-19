@@ -2,7 +2,7 @@ import type { SparkPoint } from "@/lib/api"
 
 // A tiny status/latency sparkline: one bar per recent result. Bar colour shows
 // the status (green up / red down / amber degraded / zinc unknown); bar height
-// shows latency relative to the window's max. No axes, no library — it sits
+// shows latency relative to the window's max. No axes, no library - it sits
 // inline in a dense row.
 const COLOR: Record<string, string> = {
   up: "var(--color-emerald-500)",

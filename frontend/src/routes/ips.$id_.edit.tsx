@@ -10,7 +10,7 @@ import { planSearch, type PlanSearch } from "@/lib/save-object"
 
 export const Route = createFileRoute("/ips/$id_/edit")({
   component: EditIpPage,
-  // ?from=<href> — e.g. a prefix's IPs tab sends the user back there on save,
+  // ?from=<href> - e.g. a prefix's IPs tab sends the user back there on save,
   // instead of always landing on the IP detail page.
   validateSearch: (
     s: Record<string, unknown>

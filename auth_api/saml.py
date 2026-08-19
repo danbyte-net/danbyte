@@ -1,14 +1,14 @@
-"""SSO — SAML 2.0 service provider (SP).
+"""SSO - SAML 2.0 service provider (SP).
 
 Pure-Python: builds the AuthnRequest (HTTP-Redirect binding), and validates the
 IdP's signed Response (HTTP-POST binding) with :mod:`signxml` (which rides
-``lxml`` + ``cryptography`` — no ``xmlsec1`` system dependency, so it drops
+``lxml`` + ``cryptography`` - no ``xmlsec1`` system dependency, so it drops
 straight into the offline wheel bundle). The extracted NameID + attributes are
 turned into the same claims dict the OIDC path produces, then handed to the
 shared :func:`auth_api.sso.resolve_user` for provisioning.
 
 Signature handling is XSW-safe: we verify the whole document and then read
-**only** the verified subtree returned by signxml — never the raw parse.
+**only** the verified subtree returned by signxml - never the raw parse.
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def _now():
 
 
 def _parser():
-    # No network, no DTD, no entity expansion — closes XXE / billion-laughs.
+    # No network, no DTD, no entity expansion - closes XXE / billion-laughs.
     return etree.XMLParser(
         resolve_entities=False, no_network=True, dtd_validation=False,
         load_dtd=False, huge_tree=False,
@@ -136,7 +136,7 @@ def parse_and_validate(provider, saml_response_b64, acs_url, base_url, *,
         try:
             verified = XMLVerifier().verify(doc, x509_cert=cert).signed_xml
             break
-        except Exception as exc:  # noqa: BLE001 — try the next trusted cert
+        except Exception as exc:  # noqa: BLE001 - try the next trusted cert
             last_exc = exc
     if verified is None:
         raise SamlError(f"SAML signature verification failed: {last_exc}")
@@ -184,7 +184,7 @@ def _split_certs(field: str) -> list[str]:
 
 def _trusted_certs(provider) -> list[str]:
     """Every signing cert we'll accept for this provider: the ones published in
-    the IdP metadata (if a metadata URL is set — kept fresh so cert rotation just
+    the IdP metadata (if a metadata URL is set - kept fresh so cert rotation just
     works) plus any manually pasted into the x509 field. De-duplicated."""
     certs: list[str] = []
     url = getattr(provider, "saml_idp_metadata_url", "") or ""
@@ -207,7 +207,7 @@ def fetch_idp_metadata(url: str, *, use_cache: bool = True) -> dict:
     """Fetch and parse a SAML 2.0 IdP metadata document. Returns
     ``{"entity_id", "sso_url", "certs": [pem, ...]}``. Cached for an hour.
 
-    Reached directly with TLS verification — the metadata URL is operator-set
+    Reached directly with TLS verification - the metadata URL is operator-set
     (same trust tier as the OIDC issuer / LDAP / Vault address), not
     attacker-controlled, so it does not go through the tenant SSRF guard."""
     url = (url or "").strip()
@@ -297,7 +297,7 @@ def _check_conditions(assertion, provider, base_url) -> None:
         raise SamlError("SAML assertion not yet valid.")
     if na and now - SKEW >= na:
         raise SamlError("SAML assertion has expired.")
-    # Audience is mandatory and must be our SP entity id — otherwise an assertion
+    # Audience is mandatory and must be our SP entity id - otherwise an assertion
     # minted for a different SP could be replayed against us.
     audiences = [a.text.strip() for a in cond.findall(".//saml:Audience", NS) if a.text]
     if not audiences:

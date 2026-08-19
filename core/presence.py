@@ -1,7 +1,7 @@
-"""Ephemeral collaborative presence — who is viewing/editing an object.
+"""Ephemeral collaborative presence - who is viewing/editing an object.
 
 Backed by Redis (already running for RQ + the Django cache) with a short TTL so a
-user's presence auto-expires when they navigate away — no cleanup job, no stale
+user's presence auto-expires when they navigate away - no cleanup job, no stale
 rows. Strictly best-effort: any Redis failure degrades to "nobody else here"
 rather than breaking the page.
 
@@ -39,7 +39,7 @@ def heartbeat(tenant_id, object_type, object_id, *, user_id, name, mode) -> None
             json.dumps({"name": name, "mode": mode, "ts": time.time()}),
         )
         conn.expire(key, HARD_TTL)
-    except Exception:  # noqa: BLE001 — never break the request path
+    except Exception:  # noqa: BLE001 - never break the request path
         pass
 
 

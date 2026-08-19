@@ -49,7 +49,7 @@ function CablesPage() {
   const columns = useMemo<ColumnDef<Cable>[]>(
     () => [
       ...buildCableColumns({
-        // Strand counts only mean anything for fibre — /fiber-cables owns them.
+        // Strand counts only mean anything for fibre - /fiber-cables owns them.
         omit: ["strands", "labelled"],
         selection: true,
         humanIds,

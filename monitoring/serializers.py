@@ -103,12 +103,12 @@ class DeviceSnmpSerializer(serializers.ModelSerializer):
 
 
 class CertificateSerializer(serializers.ModelSerializer):
-    """An X.509 certificate — public fields only.
+    """An X.509 certificate - public fields only.
 
     The intrinsic facts are properties of the exact DER bytes the fingerprint
     covers, so they are **read-only**: subject/issuer/serial/fingerprint/validity/
     key can never be edited, whatever a payload says. Only the authored metadata
-    (``name``, ``notes``) is writable, and only via PATCH — there is still no way
+    (``name``, ``notes``) is writable, and only via PATCH - there is still no way
     for a payload to reach a fact field, which is the outermost layer of "a
     private key is never accepted". ``pem`` is the stored **public** PEM (present
     only for uploaded certs) and is read-only here; it is set by the upload path.
@@ -123,10 +123,10 @@ class CertificateSerializer(serializers.ModelSerializer):
     binding_count = serializers.IntegerField(
         read_only=True, default=0,
         help_text="How many endpoints are on record as having served this "
-        "certificate — the size of the blast radius when it expires.",
+        "certificate - the size of the blast radius when it expires.",
     )
     assignment_count = serializers.IntegerField(read_only=True, default=0)
-    # CA / chain context — the resolved parent in this tenant's inventory, named
+    # CA / chain context - the resolved parent in this tenant's inventory, named
     # so the UI can render "issued by <CA>" and walk leaf → root without a lookup.
     issuer_certificate_subject_cn = serializers.CharField(
         source="issuer_certificate.subject_cn", read_only=True, default=None
@@ -157,7 +157,7 @@ class CertificateSerializer(serializers.ModelSerializer):
 class CertificateUploadSerializer(serializers.Serializer):
     """Input for authoring a certificate from a pasted/uploaded public PEM.
 
-    Only ``pem`` (plus optional metadata) is accepted — the facts are extracted
+    Only ``pem`` (plus optional metadata) is accepted - the facts are extracted
     from the bytes, never trusted from the payload. The private-key refusal and
     parsing happen in :func:`monitoring.certificates.upload_certificate`.
     """
@@ -174,7 +174,7 @@ class CertificateUploadSerializer(serializers.Serializer):
 
 
 class CertificateBindingSerializer(serializers.ModelSerializer):
-    """An endpoint that served a certificate — read-only, like the certificate.
+    """An endpoint that served a certificate - read-only, like the certificate.
 
     This is the row that answers "what breaks when this expires": one
     certificate, N of these. ``chain_depth`` and ``chain_verified`` are
@@ -208,11 +208,11 @@ class CertificateBindingSerializer(serializers.ModelSerializer):
 
 
 class SSHHostKeySerializer(serializers.ModelSerializer):
-    """A device's SSH host key — public data only, facts read-only.
+    """A device's SSH host key - public data only, facts read-only.
 
     Authoring is by pasting an OpenSSH public-key line into ``public_key_line``
-    (write-only). The type/blob/fingerprint are parsed from it — never trusted
-    from the payload — in :func:`monitoring.ssh_host_keys.upload_host_key`, which
+    (write-only). The type/blob/fingerprint are parsed from it - never trusted
+    from the payload - in :func:`monitoring.ssh_host_keys.upload_host_key`, which
     also refuses private keys. ``device`` is required (a host key belongs to a
     device)."""
 
@@ -243,7 +243,7 @@ class SSHHostKeySerializer(serializers.ModelSerializer):
 
 
 class DeviceCredentialSerializer(serializers.ModelSerializer):
-    """A device login. The secret value is **never** serialised back — only
+    """A device login. The secret value is **never** serialised back - only
     whether one is set. Fetching it is the viewset's ``reveal`` action.
 
     Two sourcing modes (``secret_managed``):
@@ -258,7 +258,7 @@ class DeviceCredentialSerializer(serializers.ModelSerializer):
     device_name = serializers.CharField(
         source="device.name", read_only=True, default=None
     )
-    # Write-only secret material — accepted on create/update, never returned.
+    # Write-only secret material - accepted on create/update, never returned.
     password = serializers.CharField(
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
@@ -303,12 +303,12 @@ class DeviceCredentialSerializer(serializers.ModelSerializer):
 class ConnectProtocolSerializer(serializers.ModelSerializer):
     """A user-defined device access method (a launch-URL template).
 
-    Plain tenant-scoped CRUD — no secret is involved. The template is rendered
+    Plain tenant-scoped CRUD - no secret is involved. The template is rendered
     into a URL client-side at launch; the server only stores the template.
 
     Optional targeting: ``device_type_ids`` / ``role_ids`` restrict which devices
     offer the protocol (empty = all). A device matches when its device_type is in
-    ``device_types`` OR its role is in ``roles`` — the ``?device=<id>`` list
+    ``device_types`` OR its role is in ``roles`` - the ``?device=<id>`` list
     filter applies exactly that union."""
 
     device_type_ids = TenantScopedPrimaryKeyRelatedField(
@@ -358,7 +358,7 @@ class CertificateAssignmentSerializer(serializers.ModelSerializer):
     certificate_not_after = serializers.DateTimeField(
         source="certificate.not_after", read_only=True, default=None
     )
-    # The generic target as a human sees it: "10.0.0.1", "sw1" — not the raw
+    # The generic target as a human sees it: "10.0.0.1", "sw1" - not the raw
     # UUID. `object_context` carries the disambiguator that matters for the type
     # (an IP's VRF, a device's site), so an assignment reads without a lookup.
     object_label = serializers.SerializerMethodField()
@@ -427,7 +427,7 @@ class CertificateAssignmentSerializer(serializers.ModelSerializer):
 
 
 class CertificateRequestSerializer(serializers.ModelSerializer):
-    """A CSR request — read view. The private key is never here (it lives in the
+    """A CSR request - read view. The private key is never here (it lives in the
     secret store); the public CSR is. Only ``notes`` is writable via PATCH."""
 
     key_spec_display = serializers.CharField(source="get_key_spec_display", read_only=True)
@@ -459,7 +459,7 @@ class IssuerSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
     eab_hmac_set = serializers.SerializerMethodField()
-    # The TSIG secret for RFC2136 DNS-01 auto-publish — write-only, encrypted at
+    # The TSIG secret for RFC2136 DNS-01 auto-publish - write-only, encrypted at
     # rest in ``secrets`` exactly like the EAB HMAC.
     tsig_secret = serializers.CharField(
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
@@ -493,7 +493,7 @@ class IssuerSerializer(serializers.ModelSerializer):
         for field, key in self._SECRET_FIELDS.items():
             value = validated_data.pop(field, None)
             if value is None:
-                continue  # not supplied — leave the stored secret untouched
+                continue  # not supplied - leave the stored secret untouched
             if value:
                 secrets[key] = value
             else:
@@ -517,7 +517,7 @@ class IssuerSerializer(serializers.ModelSerializer):
 
 
 class AcmeOrderSerializer(serializers.ModelSerializer):
-    """An ACME issuance order — read view (created/driven by the engine)."""
+    """An ACME issuance order - read view (created/driven by the engine)."""
 
     issuer_name = serializers.CharField(source="issuer.name", read_only=True)
     request_common_name = serializers.CharField(
@@ -594,7 +594,7 @@ class CheckTemplateSerializer(serializers.ModelSerializer):
 
     def validate_kind(self, value):
         # The checker registry is the source of truth (built-ins + plugin kinds),
-        # not the CheckKind enum — so a plugin-registered kind validates too.
+        # not the CheckKind enum - so a plugin-registered kind validates too.
         if get_checker(value) is None:
             raise serializers.ValidationError(f"unknown kind '{value}'")
         return value
@@ -656,7 +656,7 @@ class CheckAssignmentSerializer(serializers.ModelSerializer):
         prefix = attrs.get("prefix", getattr(self.instance, "prefix", None))
         if bool(ip) == bool(prefix):
             raise serializers.ValidationError(
-                "Assign to exactly one target — an IP or a prefix, not both."
+                "Assign to exactly one target - an IP or a prefix, not both."
             )
         return attrs
 
@@ -1014,7 +1014,7 @@ class NotificationSubscriptionSerializer(serializers.ModelSerializer):
 
 
 class MonitoringEngineSerializer(serializers.ModelSerializer):
-    """A monitoring engine — the built-in ``local`` or a remote **Outpost**.
+    """A monitoring engine - the built-in ``local`` or a remote **Outpost**.
 
     The auth token is never read back; the API exposes only ``token_set`` (and
     the one-time value from the ``enroll`` action). ``kind`` is read-only: remote
@@ -1025,7 +1025,7 @@ class MonitoringEngineSerializer(serializers.ModelSerializer):
     token_set = serializers.BooleanField(read_only=True)
     is_local = serializers.BooleanField(read_only=True)
     ssh_configured = serializers.BooleanField(read_only=True)
-    # Write-only — the credential is never serialised back out.
+    # Write-only - the credential is never serialised back out.
     ssh_credential = serializers.JSONField(write_only=True, required=False)
     binding_count = serializers.SerializerMethodField()
     check_count = serializers.SerializerMethodField()
@@ -1071,7 +1071,7 @@ class EngineBindingSerializer(serializers.Serializer):
 
 class OutpostReleaseSerializer(serializers.ModelSerializer):
     """A stored Outpost build. The artifact is write-only (upload); reads expose
-    only whether it's present — downloads go through the auth'd endpoint."""
+    only whether it's present - downloads go through the auth'd endpoint."""
 
     has_artifact = serializers.SerializerMethodField()
     artifact = serializers.FileField(write_only=True, required=False)
@@ -1106,7 +1106,7 @@ class OutpostReleaseSerializer(serializers.ModelSerializer):
 
 
 class WatchedEndpointSerializer(serializers.ModelSerializer):
-    """A bare TLS endpoint (host:port + SNI) watched on a schedule — no device
+    """A bare TLS endpoint (host:port + SNI) watched on a schedule - no device
     required. Poll state is read-only; the poller stamps it."""
 
     last_certificate_fingerprint = serializers.CharField(

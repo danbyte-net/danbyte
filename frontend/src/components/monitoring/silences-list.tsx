@@ -108,7 +108,7 @@ export function SilencesList() {
       <div className="flex items-center gap-2">
         <p className="text-sm text-muted-foreground">
           A silence mutes notifications for matching alerts during its window.
-          One scheduled for the future is a maintenance window — alerts still
+          One scheduled for the future is a maintenance window - alerts still
           open, they just aren&apos;t delivered.
         </p>
         {canAdd && (
@@ -124,7 +124,7 @@ export function SilencesList() {
 
       {q.data && rows.length === 0 ? (
         <div className="overflow-hidden rounded-lg border border-border bg-card px-3 py-10 text-center text-sm text-muted-foreground">
-          No silences — every matching alert notifies.
+          No silences - every matching alert notifies.
         </div>
       ) : (
         <DataTable

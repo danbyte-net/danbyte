@@ -53,7 +53,7 @@ type Vec3 = [number, number, number]
 
 /**
  * How a cable LEAVES one end: out of the port quad, a short stub off the
- * face, then a sideways sweep — clear of the faceplates, at stub depth — to
+ * face, then a sideways sweep - clear of the faceplates, at stub depth - to
  * the cabinet's NEAREST front corner, where the riser runs like a vertical
  * cable manager hugging the rack edge. (History: v1 jogged across the
  * faceplate AT the face plane and sliced panels; v2 dropped straight down
@@ -64,7 +64,7 @@ type Vec3 = [number, number, number]
 interface EndRun {
   entry: Vec3[]
   railAt: (y: number) => Vec3
-  /** Which face the lead exits — true = rear. Two same-face ends on one rack
+  /** Which face the lead exits - true = rear. Two same-face ends on one rack
    * patch directly; opposite faces must wrap the side, not cut through. */
   rear: boolean
   /** Rack-LOCAL anchor + tile, so a same-rack run can be routed in local
@@ -73,7 +73,7 @@ interface EndRun {
   local: { tile: SceneTile; x: number; y: number; z: number; stubZ: number; chanX: number }
 }
 
-/** The traced run draws last and ignores depth — above the glass and ghosts
+/** The traced run draws last and ignores depth - above the glass and ghosts
  * that TRANSPARENT_ORDER sequences, so nothing in the room can hide it. */
 const TRACE_ORDER = 10
 
@@ -116,7 +116,7 @@ function portEndRun(
   const { width, depth } = rackFootprintM(rack)
 
   // ── Side-mounted 0U strip (a vertical PDU). No U, so deviceBoxM geometry
-  // would be nonsense — anchor on the STRIP instead, at the SAME spot
+  // would be nonsense - anchor on the STRIP instead, at the SAME spot
   // SideStripMesh draws that port's clickable quad (stripPortLocalM is the
   // one layout both consume). Before this, every power cable in the room
   // resolved to null and simply was not drawn.
@@ -140,7 +140,7 @@ function portEndRun(
   }
 
   // Search BOTH panels. The port's own panel decides where the cable lands,
-  // not the face the chassis is bolted to — a front-mounted server has its
+  // not the face the chassis is bolted to - a front-mounted server has its
   // NICs and PSU inlets on its REAR, which is the whole reason hot aisles are
   // where the cabling lives. Keying this off dev.face sent every run to the
   // cold aisle regardless of where the port physically is.
@@ -169,8 +169,8 @@ function portEndRun(
   const portRear = onFront ? false : m != null || dev.is_full_depth
   const box = deviceBoxM(rack, dev, width, depth)
   // A matched marker gives the exact port. Without one, a POWER component
-  // still has its synthetic quad — the same row DeviceMesh renders, from the
-  // same layout function — so the anchor is a spot you can actually click.
+  // still has its synthetic quad - the same row DeviceMesh renders, from the
+  // same layout function - so the anchor is a spot you can actually click.
   // Anything else anchors on the middle of the device's panel: not nothing.
   // Returning null here sent the run to a drop at the tile centre, i.e.
   // inside the cabinet, which is why in-rack cables looked like they dived
@@ -191,7 +191,7 @@ function portEndRun(
     worldOf(scene, tile, x, y, z)
 
   // Stub OUT of the face (toward the rack-space side portLocalM resolved the
-  // panel to), then sweep sideways at stub depth — clear of every faceplate —
+  // panel to), then sweep sideways at stub depth - clear of every faceplate -
   // to the nearest cabinet edge, and rise there: the front-corner channel,
   // like a vertical manager bolted to the rail.
   const outZ = panelRear !== box.mountedRear ? 0.12 : -0.12
@@ -259,12 +259,12 @@ export function cableRunPoints(
   const B = endRun(cp.b_points, cp.b_tiles[0])
 
   // Same rack (or same tile). Two cases, told apart by the exit face:
-  //  · SAME face (both rear, e.g. a PSU→PDU cord): a short direct patch —
+  //  · SAME face (both rear, e.g. a PSU→PDU cord): a short direct patch -
   //    port → stub → stub → port. No corner channels (they sit outside the
-  //    rack edges, so taking both looped the lead across the cabinet — the
+  //    rack edges, so taking both looped the lead across the cabinet - the
   //    "big loops").
   //  · OPPOSITE faces (front↔rear): a straight hop would spear through the
-  //    gear, so wrap the SIDE — port → stub → side corner (front depth) →
+  //    gear, so wrap the SIDE - port → stub → side corner (front depth) →
   //    same-side corner (rear depth) → stub → port. Forcing both to ONE side
   //    (A's) keeps it hugging that edge instead of crossing the cabinet.
   if (cp.a_tiles[0] === cp.b_tiles[0]) {
@@ -273,7 +273,7 @@ export function cableRunPoints(
     const w = (x: number, y: number, z: number) =>
       worldOf(scene, la.tile, x, y, z)
     if (A.rear === B.rear) {
-      // Same face — a short direct patch, port → stub → stub → port, hugging
+      // Same face - a short direct patch, port → stub → stub → port, hugging
       // the gear. No corner channels (outside the rack edges, they looped the
       // lead across the whole cabinet).
       return filletPath(
@@ -286,7 +286,7 @@ export function cableRunPoints(
         0.05
       )
     }
-    // Opposite faces — wrap ONE side edge (A's channel), so the lead never
+    // Opposite faces - wrap ONE side edge (A's channel), so the lead never
     // crosses the cabinet interior: out A's face, over to A's side, along that
     // edge to B's depth, in to B. Built in local coords so a rotated rack
     // can't turn "the side" into a diagonal through the gear.
@@ -312,7 +312,7 @@ export function cableRunPoints(
     b,
     trays.map((t) => t.points)
   )
-  // Ride INSIDE the assigned trays — on the basket floor at their (average)
+  // Ride INSIDE the assigned trays - on the basket floor at their (average)
   // elevation, not on the tray datum, which buried every run in the tin.
   // Straight runs with no tray fly at 2/3 room height so they read as an
   // abstract link. Each cable gets a deterministic LANE across the tray and a
@@ -335,11 +335,11 @@ export function cableRunPoints(
   pts.push(...A.entry, A.railAt(rideY)) // leave the A port, rise the corner…
   for (const [x, z] of rideWorld) pts.push([x, rideY, z]) // …ride the lane…
   pts.push(B.railAt(rideY), ...[...B.entry].reverse()) // …drop to the B port.
-  // Hard corners become bends — nobody installs cable at 90°.
+  // Hard corners become bends - nobody installs cable at 90°.
   return filletPath(pts, 0.12)
 }
 
-/** Shared cable-paths fetch — same endpoint + query key as the 2D canvas. */
+/** Shared cable-paths fetch - same endpoint + query key as the 2D canvas. */
 export function useCablePaths(planId: string) {
   return useQuery({
     queryKey: ["floor-plan-cable-paths", planId],
@@ -380,7 +380,7 @@ export function CableTrace3D({
 // ─── All-cables layer ────────────────────────────────────────────────────────
 
 /**
- * Every cable on the plan, drawn port-to-port through its trays — the room's
+ * Every cable on the plan, drawn port-to-port through its trays - the room's
  * physical cabling at a glance. Hover brightens; click selects (the scene
  * shows the cable card). The actively traced/selected run upgrades to the
  * marching line.
@@ -394,7 +394,7 @@ export function CablesLayer({
 }: {
   planId: string
   scene: ScenePayload
-  /** X-ray shell mode: cables draw through racks — seeing the runs is the
+  /** X-ray shell mode: cables draw through racks - seeing the runs is the
    * point of opening the room up. Solid/cutaway keep physical occlusion. */
   xray?: boolean
   selectedId: string | null
@@ -417,11 +417,11 @@ export function CablesLayer({
   }, [paths.data, scene, sites])
 
   // Each run is its own Line2/tube draw call, so a big hall is well over a
-  // thousand per frame — the dominant cost while orbiting. Hide the bulk layer
+  // thousand per frame - the dominant cost while orbiting. Hide the bulk layer
   // WHILE THE CAMERA MOVES (large plans only) and show it again on settle: you
   // can't read an individual cable mid-orbit anyway. group.visible skips the
   // draw without unmounting, so there's nothing to rebuild when it returns.
-  // The selected/traced run is exempt — it stays up so a trace never blinks.
+  // The selected/traced run is exempt - it stays up so a trace never blinks.
   const group = useRef<THREE.Group>(null)
   const shown = useRef(true)
   const invalidate = useThree((s) => s.invalidate)
@@ -474,18 +474,18 @@ export function CablesLayer({
   )
 }
 
-/** Above this many runs, tubes fall back to cheap lines — geometry for a
+/** Above this many runs, tubes fall back to cheap lines - geometry for a
  * thousand-cable hall is a loom problem (roadmap P8 follow-up), not a
  * per-cable-mesh problem. */
 const TUBE_LIMIT = 200
 
-/** Above this run count, the bulk cable layer hides while the camera moves —
+/** Above this run count, the bulk cable layer hides while the camera moves -
  * each run is its own draw call, so a full hall is the per-frame bottleneck. */
 const MOTION_CULL_LIMIT = 300
 
 /**
  * One cable as REAL geometry: a tube with a millimetre jacket radius by kind
- * (power > copper > fibre), lit and AO'd like everything else in the room —
+ * (power > copper > fibre), lit and AO'd like everything else in the room -
  * a screen-space line neither thickens up close nor sits in the light.
  * Static geometry, demand-frameloop safe; hover glows instead of re-widening.
  */
@@ -510,7 +510,7 @@ function CableTube({
       path.add(new THREE.LineCurve3(v[i], v[i + 1]))
     let len = 0
     for (let i = 0; i < v.length - 1; i++) len += v[i].distanceTo(v[i + 1])
-    // The path is already filleted — segments only need to keep up with it.
+    // The path is already filleted - segments only need to keep up with it.
     const segments = Math.min(400, Math.max(24, Math.round(len / 0.06)))
     return new THREE.TubeGeometry(path, segments, radius, 6, false)
   }, [points, radius])
@@ -587,7 +587,7 @@ function CableLine({
 /**
  * The dash crawl runs at this rate, not at display refresh.
  *
- * Every animated frame `invalidate()`s the whole demand-frameloop canvas — so
+ * Every animated frame `invalidate()`s the whole demand-frameloop canvas - so
  * a traced cable was re-rendering the entire room (shadows, AO, the lot) at
  * 60–144 Hz. Up close on a High-quality device that tanked the frame rate for
  * a decorative crawl. 30 Hz reads identically and halves the work; the offset

@@ -34,7 +34,7 @@ const TYPES: DnsRecordType[] = [
   "CAA",
 ]
 
-// Per-type hint for the value field — mirrors the server-side validation.
+// Per-type hint for the value field - mirrors the server-side validation.
 const VALUE_HINT: Record<DnsRecordType, string> = {
   A: "IPv4 address, e.g. 10.0.0.5",
   AAAA: "IPv6 address, e.g. 2a09:…::5",
@@ -47,7 +47,7 @@ const VALUE_HINT: Record<DnsRecordType, string> = {
   CAA: '"<flags> <tag> <value>", e.g. 0 issue letsencrypt.org',
 }
 
-/** Create or edit an authored (managed) DNS record — the "Add record" form.
+/** Create or edit an authored (managed) DNS record - the "Add record" form.
  * `record` prefills for editing; `zoneId` locks the zone for a zone page. */
 export function DnsRecordDialog({
   open,

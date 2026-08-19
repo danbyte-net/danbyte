@@ -52,8 +52,8 @@ function NewDevicePage() {
       title={cloning ? "Clone device" : "Add device"}
       subtitle={
         cloning
-          ? "Pre-filled from an existing device — give it a new name, serial, and rack placement."
-          : "A physical device — its type, site, and status."
+          ? "Pre-filled from an existing device - give it a new name, serial, and rack placement."
+          : "A physical device - its type, site, and status."
       }
     >
       {cloning && cloneQ.isLoading ? (

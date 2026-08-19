@@ -1,6 +1,6 @@
 """Floor-plan walls: CRUD, isolation, lattice snapping shared with trays,
 opening validation, and the scene payload. v1 walls are documentation
-geometry — nothing here touches routing, by design."""
+geometry - nothing here touches routing, by design."""
 from django.contrib.auth import get_user_model
 
 from rest_framework.test import APITestCase
@@ -46,7 +46,7 @@ class WallCrudTests(_Base):
         r = self._mk(points=[[0.24, 0], [9.76, 0.26]])
         self.assertEqual(r.status_code, 201, r.content)
         body = r.json()
-        # Half-cell snap — the same lattice rule trays use.
+        # Half-cell snap - the same lattice rule trays use.
         self.assertEqual(body["points"], [[0, 0], [10, 0.5]])
         wall_id = body["id"]
 

@@ -35,7 +35,7 @@ export interface AssignIpTarget {
   /** Omit to attach the IP to the device itself (no interface). */
   interfaceId?: string | null
   interfaceName?: string | null
-  /** Display name of the target — the device name for a device-level assign. */
+  /** Display name of the target - the device name for a device-level assign. */
   deviceName?: string
   /** A virtual-machine target: the VM, and optionally one of its interfaces. */
   vmId?: string
@@ -44,12 +44,12 @@ export interface AssignIpTarget {
 }
 
 // Cap on candidates pulled into the picker. Danbyte instances can hold millions
-// of IPs, so we never list them all — the user narrows with the filters below
+// of IPs, so we never list them all - the user narrows with the filters below
 // and the server returns at most this many matches.
 const RESULT_CAP = 50
 
 /**
- * Attach an *existing* IP to a device interface — the complement to "Add IP"
+ * Attach an *existing* IP to a device interface - the complement to "Add IP"
  * (which creates a new one). Filters (site / VRF / subnet / search) narrow the
  * candidate set **server-side** so this scales to huge address spaces.
  */
@@ -89,7 +89,7 @@ export function AssignIpDialog({
     onOpenChange(next)
   }
 
-  // Filter option sources (small, tenant-scoped — safe to load whole).
+  // Filter option sources (small, tenant-scoped - safe to load whole).
   const sites = useQuery({
     queryKey: ["sites-picker"],
     queryFn: () => api<Paginated<SiteOption>>("/api/sites/?picker=1"),
@@ -114,7 +114,7 @@ export function AssignIpDialog({
     staleTime: 60_000,
   })
 
-  // The candidate IPs — narrowed server-side, capped at RESULT_CAP.
+  // The candidate IPs - narrowed server-side, capped at RESULT_CAP.
   const ips = useQuery({
     queryKey: ["ips-assign", site, vrf, prefix, debounced],
     queryFn: () => {
@@ -164,7 +164,7 @@ export function AssignIpDialog({
       qc.invalidateQueries({ queryKey: ["device-ips", target!.deviceId] })
       qc.invalidateQueries({ queryKey: ["device", target!.deviceId] })
       // The whole-stack table (device page's "Whole stack" scope + the virtual
-      // chassis page) reads interfaces under its own key — refresh it too, or an
+      // chassis page) reads interfaces under its own key - refresh it too, or an
       // assign made from that table wouldn't show up.
       qc.invalidateQueries({
         queryKey: ["vc-member-interfaces", target!.deviceId],
@@ -292,7 +292,7 @@ export function AssignIpDialog({
         </div>
         {truncated && (
           <p className="text-xs text-muted-foreground">
-            Showing first {rows.length} of {total} — refine the filters to
+            Showing first {rows.length} of {total} - refine the filters to
             narrow the list.
           </p>
         )}

@@ -1,12 +1,12 @@
-"""The calendar as an iCalendar feed — subscribe from Outlook/Google/Apple.
+"""The calendar as an iCalendar feed - subscribe from Outlook/Google/Apple.
 
 Calendar clients cannot send an ``Authorization`` header, so the feed accepts a
-Danbyte **API token** as ``?token=`` — the same revocable, tenant-scoped tokens
+Danbyte **API token** as ``?token=`` - the same revocable, tenant-scoped tokens
 scripts use, validated identically (hash lookup, expiry, active user). Use a
 dedicated token for a subscription: it rides in a URL, and revoking it kills
 just the feed.
 
-The data is :func:`planning.calendar.calendar_payload` — the exact rows the
+The data is :func:`planning.calendar.calendar_payload` - the exact rows the
 on-screen calendar shows that token's user, RBAC and all.
 """
 from __future__ import annotations
@@ -74,7 +74,7 @@ def _next_day(day: str) -> str:
 
 
 def _resolve_token(request):
-    """The (user, token) behind ``?token=`` — mirroring the header auth's
+    """The (user, token) behind ``?token=`` - mirroring the header auth's
     checks so a feed token is not a weaker class of credential."""
     key = request.GET.get("token", "")
     if not key:
@@ -93,14 +93,14 @@ def _resolve_token(request):
 
 @require_GET
 def calendar_ics(request):
-    """``?token=<api token>[&days=60][&board=<id>]`` — an iCal feed of the
+    """``?token=<api token>[&days=60][&board=<id>]`` - an iCal feed of the
     same window the calendar page shows."""
     token = _resolve_token(request)
     if token is None:
         return JsonResponse({"detail": "A valid API token is required."}, status=401)
 
     # The scoped querysets read the user, the token's tenant and
-    # ``query_params`` off the request, exactly as the JSON endpoint would —
+    # ``query_params`` off the request, exactly as the JSON endpoint would -
     # this is a plain Django view, so provide DRF's alias explicitly.
     request.user = token.user
     request.auth = token
@@ -123,7 +123,7 @@ def calendar_ics(request):
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
         "PRODID:-//Danbyte//Planning//EN",
-        f"X-WR-CALNAME:Danbyte — {_escape(token.tenant.name)}",
+        f"X-WR-CALNAME:Danbyte - {_escape(token.tenant.name)}",
     ]
     for t in data["tasks"]:
         s = t["start_date"] or t["due_date"]

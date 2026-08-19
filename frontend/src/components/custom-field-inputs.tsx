@@ -13,7 +13,7 @@ import {
 import { DatePicker } from "@/components/ui/date-picker"
 
 export interface CustomFieldInputsProps {
-  /** Model slug, e.g. "prefix" — must match the field's applies_to. */
+  /** Model slug, e.g. "prefix" - must match the field's applies_to. */
   model: string
   value: Record<string, unknown>
   onChange: (next: Record<string, unknown>) => void
@@ -138,7 +138,7 @@ function OneField({
           label={label}
           value={value == null || value === "" ? null : String(value)}
           onChange={(v) => onChange(v)}
-          noneLabel="—"
+          noneLabel="-"
           options={d.choices.map((c) => ({ value: c, label: c }))}
         />
       )
@@ -201,7 +201,7 @@ function ObjectField({
     (r) => r.value === d.related_model
   )
   if (!refMeta) {
-    // Registry entry gone (plugin removed) — fall back to the raw id.
+    // Registry entry gone (plugin removed) - fall back to the raw id.
     return (
       <FormText
         label={label}

@@ -96,7 +96,7 @@ function AuditLogPage() {
         rail={
           <FilterRail>
             {/* Single-select and server-side (`object_type=`), over the full
-                fixed type list — so it stays a Select rather than a FacetGroup,
+                fixed type list - so it stays a Select rather than a FacetGroup,
                 whose per-option counts the changelog API doesn't report. */}
             <div>
               <h3 className="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
@@ -174,7 +174,7 @@ function buildColumns(): ColumnDef<ChangeLogEntry>[] {
       id: "user",
       accessorFn: (r) => r.user_name || "",
       header: ({ column }) => <SortHeader column={column} label="User" />,
-      cell: ({ row }) => row.original.user_name || "—",
+      cell: ({ row }) => row.original.user_name || "-",
     },
     {
       id: "action",
@@ -232,7 +232,7 @@ function ChangesCell({ e }: { e: ChangeLogEntry }) {
   const [open, setOpen] = useState(false)
   const fields = Object.entries(e.changes)
   if (fields.length === 0)
-    return <span className="text-muted-foreground">—</span>
+    return <span className="text-muted-foreground">-</span>
   return (
     <div className="space-y-1.5">
       <button

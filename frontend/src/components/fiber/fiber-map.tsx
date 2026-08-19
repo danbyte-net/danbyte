@@ -55,7 +55,7 @@ export function FiberMap({
   onHighlight?: (position: number | null) => void
 }) {
   // Fall back to the standard palette when none is supplied (or during the
-  // first paint of the settings page, before local state is populated) — an
+  // first paint of the settings page, before local state is populated) - an
   // empty palette made `tube` below undefined and crashed on `tube.hex`.
   const pal = palette.length ? palette : TIA_598C
   const per = pal.length
@@ -195,10 +195,10 @@ function StrandCell({
             onValueChange={(v) => setStatus(v === "none" ? "" : v)}
           >
             <SelectTrigger className="h-8 text-xs">
-              <SelectValue placeholder="—" />
+              <SelectValue placeholder="-" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">—</SelectItem>
+              <SelectItem value="none">-</SelectItem>
               {STATUS_OPTS.map((o) => (
                 <SelectItem key={o.value} value={o.value}>
                   {o.label}

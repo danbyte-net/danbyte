@@ -1,4 +1,4 @@
-"""Per-tenant settings overrides — SPA JSON endpoints.
+"""Per-tenant settings overrides - SPA JSON endpoints.
 
 Tenant admins (``can_manage_admin`` in the active tenant) edit their tenant's
 :class:`~core.models.TenantSettings` here: each group carries an ``override_*``
@@ -88,7 +88,7 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
     def get_smtp_password_set(self, obj) -> bool:
         return bool((obj.secrets or {}).get("password"))
 
-    # Same allowlist as the deployment editor — a tenant must not be able to
+    # Same allowlist as the deployment editor - a tenant must not be able to
     # store a field key the popover registry doesn't know.
     def validate_floorplan_popover_fields(self, value):
         from core.deployment import clean_popover_fields
@@ -143,7 +143,7 @@ def _deployment_defaults() -> dict:
         "ldap_server_uri": dep.ldap_server_uri,
         "date_format": dep.date_format,
         "time_style": dep.time_style,
-        # Resolved for the "inherit" summary — blank means the server default.
+        # Resolved for the "inherit" summary - blank means the server default.
         "display_timezone": dep.display_timezone or settings.TIME_ZONE,
     }
 
@@ -242,7 +242,7 @@ def tenant_test_email(request):
             to=[to],
             connection=conn,
         ).send(fail_silently=False)
-    except Exception as exc:  # noqa: BLE001 — surface the SMTP error to the admin
+    except Exception as exc:  # noqa: BLE001 - surface the SMTP error to the admin
         from core.email import describe_smtp_error
 
         return Response(
@@ -315,7 +315,7 @@ def tenant_test_digest(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def device_fields_view(request):
-    """The EFFECTIVE optional-device-field visibility for the active tenant —
+    """The EFFECTIVE optional-device-field visibility for the active tenant -
     readable by any member (the device form needs it), unlike the
     deployment-default editor which is deployment-admin-only."""
     from api.views import _get_active_tenant
@@ -341,7 +341,7 @@ def device_fields_view(request):
 def my_default_prefix(request):
     """The prefix this user's site says new addresses should come from.
 
-    "Staff assigned to a site" = the sites they can EDIT (``editable_sites``) —
+    "Staff assigned to a site" = the sites they can EDIT (``editable_sites``) -
     a read-only viewer of ten sites has no home site, so no default. Resolves
     only when they edit exactly ONE site AND that site sets a default; anything
     else is ambiguous, and guessing would be worse than leaving the picker
@@ -389,7 +389,7 @@ def my_default_prefix(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def floorplan_popover_view(request):
-    """The EFFECTIVE floor-plan popover config for the active tenant — readable
+    """The EFFECTIVE floor-plan popover config for the active tenant - readable
     by any member, since the canvas needs it to render a popover at all."""
     from api.views import _get_active_tenant
 
@@ -437,7 +437,7 @@ def floorplan_popover_view(request):
 @api_view(["GET", "PUT"])
 @permission_classes([IsAuthenticated])
 def tenant_floorplan_popover(request):
-    """THIS TENANT's popover config — tenant-admin gated.
+    """THIS TENANT's popover config - tenant-admin gated.
 
     Mirrors the deployment editor's payload, plus `override` (this tenant's own
     switch, independent of the UI-policy group) and the read-only
@@ -494,7 +494,7 @@ def tenant_floorplan_popover(request):
     request=None,
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
-        description="`{dismissed, has_sites}` — drives whether the setup wizard opens.",
+        description="`{dismissed, has_sites}` - drives whether the setup wizard opens.",
     ),
 )
 @extend_schema(
@@ -509,7 +509,7 @@ def tenant_floorplan_popover(request):
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def onboarding_state(request):
-    """First-run wizard state — readable and dismissable by any tenant member
+    """First-run wizard state - readable and dismissable by any tenant member
     (not just admins): the wizard only creates a member's own first objects and
     stores no secrets. GET returns ``{dismissed, has_sites}``; POST sets the
     per-tenant ``onboarding_dismissed`` flag so it never reopens."""

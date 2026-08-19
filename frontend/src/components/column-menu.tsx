@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils"
 
 export interface ColumnsMenuProps {
   label: string
-  /** Admin-locked layout — the menu is read-only. */
+  /** Admin-locked layout - the menu is read-only. */
   isForced: boolean
   /** The user has a saved layout → offer Reset. */
   hasUserRow: boolean
@@ -43,7 +43,7 @@ export interface ColumnsMenuProps {
 /**
  * The list-table "Columns" control: drag to reorder (grip handle), tick to
  * show/hide, then **Save**. Edits are staged in a local draft and only written
- * on Save — one atomic request, so rapid toggles never race each other or the
+ * on Save - one atomic request, so rapid toggles never race each other or the
  * saved layout (the old per-toggle auto-save could drop changes / re-check
  * boxes). Closing without saving discards the draft.
  */

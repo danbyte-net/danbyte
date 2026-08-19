@@ -23,7 +23,7 @@ import { VlanBadge } from "@/components/cells/vlan-badge"
 
 const OBJECT_TYPE = "api.wirelesslan"
 
-// A WLAN has no reverse relations — nothing in the model points back at it.
+// A WLAN has no reverse relations - nothing in the model points back at it.
 // The honest page is therefore Overview + Journal + History: its own attributes,
 // links out to the group and VLAN it belongs to, and the change log that has
 // been recorded since the model was audited but had nowhere to show.
@@ -178,7 +178,7 @@ function WlanOverview({ wlan: w }: { wlan: WirelessLAN }) {
     },
   ]
 
-  // What the SSID is bridged to, and how a client authenticates onto it — the
+  // What the SSID is bridged to, and how a client authenticates onto it - the
   // two things you actually come to this page to read.
   const network: KvRow[] = [
     {

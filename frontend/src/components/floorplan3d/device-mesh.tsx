@@ -34,7 +34,7 @@ import {
 
 export const DEVICE_FALLBACK = "#52525b"
 const DEVICE_SELECTED = "#0ea5e9"
-/** Standing edge line — the box's silhouette, dark enough to read against
+/** Standing edge line - the box's silhouette, dark enough to read against
  * both a pale faceplate photo and a dark role colour. */
 const DEVICE_EDGE = "#18181b"
 
@@ -46,9 +46,9 @@ const PORT_UNDEFINED = "#3f3f46" // zinc-700 · marker with no real port here
 const PORT_SELECTED = "#fbbf24" // amber-400 · picked for cabling
 // Observed reality disagrees with the record. Outlined, NOT recoloured: the
 // marker keeps showing the source of truth and the drift reads as a separate
-// signal — same contract as the 2D faceplate's amber ring.
+// signal - same contract as the 2D faceplate's amber ring.
 const PORT_DRIFT = "#f59e0b" // amber-500
-/** How far the drift halo sticks out past the marker (metres) — ~2mm each side,
+/** How far the drift halo sticks out past the marker (metres) - ~2mm each side,
  * visible at rack distance without swallowing a small disk bay. */
 const DRIFT_HALO_M = 0.004
 
@@ -56,9 +56,9 @@ const DRIFT_HALO_M = 0.004
 // A hall of full cabinets holds thousands of devices, and nearly all of them
 // are one of a handful of sizes (1U and 2U at full width). Allocating a fresh
 // BoxGeometry AND EdgesGeometry per device meant ~5000 buffers for ~4 distinct
-// shapes — the dominant cost once racks got filled. Keyed to the millimetre
+// shapes - the dominant cost once racks got filled. Keyed to the millimetre
 // and shared: three.js keeps transforms per mesh, so one geometry serves any
-// number of devices. Never disposed — the set is tiny and lives as long as
+// number of devices. Never disposed - the set is tiny and lives as long as
 // the room does.
 const boxCache = new Map<string, THREE.BoxGeometry>()
 const edgeCache = new Map<string, THREE.BufferGeometry>()
@@ -101,7 +101,7 @@ function sharedPlane(w: number, h: number): THREE.PlaneGeometry {
 
 /** ONE material per image, not one per device wearing it. Twenty identical
  * servers used to mint twenty MeshBasicMaterials around the same texture, and
- * the renderer sorts by material — distinct materials mean re-binding the
+ * the renderer sorts by material - distinct materials mean re-binding the
  * program and uniforms for every box instead of once for the whole batch. */
 const faceMaterialCache = new Map<THREE.Texture, THREE.MeshBasicMaterial>()
 
@@ -117,7 +117,7 @@ function sharedFaceMaterial(t: THREE.Texture): THREE.MeshBasicMaterial {
 // ─── Face-texture cache ──────────────────────────────────────────────────────
 // One texture per device-type image URL, shared across every device box that
 // wears it (a rack of 20 identical switches loads one image). LRU-capped so a
-// huge catalog can't hold the GPU hostage — but generously: a tight cap made
+// huge catalog can't hold the GPU hostage - but generously: a tight cap made
 // rooms with many distinct device types thrash (evict → reload → planes
 // flickering in and out while moving).
 const MAX_TEXTURES = 256
@@ -196,38 +196,38 @@ export function DeviceMesh({
   rackDepthM: number
   selected: boolean
   /** X-ray / focus dimming: the box fades to a low-opacity ghost (still
-   * clickable — clicking a ghost selects it, which un-ghosts it). The
+   * clickable - clicking a ghost selects it, which un-ghosts it). The
    * caller also drops `showTexture`, so ghosts never fetch images/ports. */
   ghosted?: boolean
   /** Name of the photo port currently selected on THIS device, if any. */
   selectedPort?: string | null
-  /** Near tier only — keeps image fetches away from far cabinets. */
+  /** Near tier only - keeps image fetches away from far cabinets. */
   showTexture: boolean
-  /** True while the camera is behind the cabinet — picks which of the device's
+  /** True while the camera is behind the cabinet - picks which of the device's
    * own panels (and which photo) is the one you can see. */
   viewRear: boolean
   /** Resolve markers to real ports and poll live SNMP. Costs two fetches per
    * device, so the caller grants it only for the engaged cabinet. */
   livePorts: boolean
   onSelect: (deviceId: string) => void
-  /** A photo port was clicked — anchor for HUD + cable building. `side` is
-   * the device PANEL the marker lives on (image_ports front vs rear) — the
+  /** A photo port was clicked - anchor for HUD + cable building. `side` is
+   * the device PANEL the marker lives on (image_ports front vs rear) - the
    * key face-ports resolves it under. */
   onSelectPort: (
     deviceId: string,
     marker: ImagePortMarker,
     side: "front" | "rear"
   ) => void
-  /** Double-click — fly the camera onto this device's face. Same gesture the
+  /** Double-click - fly the camera onto this device's face. Same gesture the
    * rack already answers, one level down. */
   onZoomTo?: (dev: SceneDevice) => void
   /** Report the colours this face puts on screen, so the room's legend keys
-   * only those. Near tier only — a far cabinet draws no port colours. */
+   * only those. Near tier only - a far cabinet draws no port colours. */
   onLegend?: LegendReporter
 }) {
   const [hovered, setHovered] = useState(false)
   const [hoveredPort, setHoveredPort] = useState<number | null>(null)
-  // Shared geometry — the cables layer anchors runs to these same numbers.
+  // Shared geometry - the cables layer anchors runs to these same numbers.
   const { y, h, dx, dz, dw, dd, boxH, mountedRear } = deviceBoxM(
     rack,
     dev,
@@ -255,7 +255,7 @@ export function DeviceMesh({
   // would make it recompute (and re-report) forever.
   //
   // Power components with no photo marker get SYNTHETIC quads on the rear
-  // panel — laid out by world.syntheticPortMarkers, the same function the
+  // panel - laid out by world.syntheticPortMarkers, the same function the
   // cable layer anchors runs with, then rendered/clicked through the exact
   // same path as photo markers. Without them a PSU inlet that no photo marks
   // simply could not be clicked to start a connection.
@@ -283,7 +283,7 @@ export function DeviceMesh({
     if (d) for (const p of [...d.front, ...d.rear]) m.set(p.marker, p)
     return m
   }, [facePorts.data])
-  // Live SNMP facts, same source (and cache) as the 2D faceplate — near
+  // Live SNMP facts, same source (and cache) as the 2D faceplate - near
   // devices with markers only, so the room doesn't poll every cabinet.
   const observed = useObservedPorts(wantPorts ? dev.id : undefined)
   // Demand frameloop: nudge a redraw when the resolved/live state (colours) land.
@@ -292,7 +292,7 @@ export function DeviceMesh({
     invalidate()
   }, [resolved, observed, invalidate])
 
-  // Which colours this face actually uses — walked exactly like the quads
+  // Which colours this face actually uses - walked exactly like the quads
   // below, so the room's legend can't claim a tier nothing on screen wears.
   const legend = useMemo(() => {
     if (!wantPorts) return EMPTY_LEGEND
@@ -303,7 +303,7 @@ export function DeviceMesh({
     for (const m of markers) {
       const fp = resolved.get(m.name)
       if (!fp?.id) continue
-      // A module bay reads occupancy, not health — and it shares `kind: null`
+      // A module bay reads occupancy, not health - and it shares `kind: null`
       // with hardware, so the MARKER's kind is what tells them apart.
       if (m.kind === "module-bay") {
         bays.push({ occupied: !!fp.module })
@@ -334,7 +334,7 @@ export function DeviceMesh({
       ? "#71717a"
       : dev.role_color || DEVICE_FALLBACK
 
-  // Both SHARED across every device of the same size — see the caches above.
+  // Both SHARED across every device of the same size - see the caches above.
   // The edge line is drawn for every solid device, not just the selected one:
   // with a photo face on the front and the studio key light raking the sides,
   // an un-edged box loses its silhouette and the faceplate reads as a picture
@@ -457,7 +457,7 @@ export function DeviceMesh({
                       ? liveHex(obs)
                       : (capability ?? portHex(tint!))
             // Undefined markers sit dim in the back; idle ports and empty bays
-            // faint (the photo stays the star — mirrors the 2D ~35% outline);
+            // faint (the photo stays the star - mirrors the 2D ~35% outline);
             // lit ports, hardware and filled bays solid.
             const opacity =
               isSel || isHot
@@ -474,7 +474,7 @@ export function DeviceMesh({
             return (
               <group key={i}>
                 {/* Drift halo: an amber quad a touch larger, sitting just
-                    BEHIND the marker so only its border shows — the 3D reading
+                    BEHIND the marker so only its border shows - the 3D reading
                     of the 2D ring. Declarative <planeGeometry> so r3f owns
                     (and disposes) it; raycast off so it never eats a click. */}
                 {defined && fp!.drift && !isSel && (
@@ -505,7 +505,7 @@ export function DeviceMesh({
                     // The panel this marker is ON (the shown side), not the
                     // face the box is bolted to: a front-mounted server's PSU
                     // markers live in image_ports.rear, and face-ports
-                    // resolves per panel — passing the mount face made every
+                    // resolves per panel - passing the mount face made every
                     // rear-panel port unresolvable from the HUD.
                     onSelectPort(dev.id, m, side)
                   }}

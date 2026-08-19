@@ -43,7 +43,7 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
-      // Don't retry on auth/permission failures — they won't fix themselves
+      // Don't retry on auth/permission failures - they won't fix themselves
       // with another fetch and they make every page sit on "Loading…" for
       // 6+ seconds. Other errors still get the default 3 retries.
       retry: (failureCount, error) => {
@@ -118,7 +118,7 @@ export const Route = createRootRoute({
   component: AppLayout,
 })
 
-// AppLayout — every page hangs off this. Sidebar + header + outlet.
+// AppLayout - every page hangs off this. Sidebar + header + outlet.
 // The SidebarProvider exposes a context that SidebarTrigger consumes,
 // so the toggle button in the header collapses/expands the sidebar.
 function AppLayout() {
@@ -127,9 +127,9 @@ function AppLayout() {
   const { me, isLoading } = useMe()
   const navigate = useNavigate()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
-  // Routes reachable without a session — rendered bare, no sidebar, and the
+  // Routes reachable without a session - rendered bare, no sidebar, and the
   // auth guard never bounces them to /login. (Public share links were removed;
-  // no /share/* exemption remains — every data route requires a session.)
+  // no /share/* exemption remains - every data route requires a session.)
   const isPublic = pathname === "/login" || pathname === "/set-password"
 
   useEffect(() => {
@@ -178,7 +178,7 @@ function AppLayout() {
 
   // SECURITY: never render an app page until we *know* the caller is
   // authenticated. While /api/me/ is in flight, or when it comes back
-  // anonymous (we're mid-redirect to /login), render only a neutral splash —
+  // anonymous (we're mid-redirect to /login), render only a neutral splash -
   // no sidebar, no route Outlet, no data. This prevents any flash of real
   // content to a signed-out visitor. The API enforces auth independently;
   // this just keeps the UI from ever leaking a page it shouldn't.
@@ -215,7 +215,7 @@ function AppLayout() {
               <Outlet />
             </ErrorBoundary>
           </div>
-          {/* First-run setup wizard — self-gates on a fresh tenant, renders
+          {/* First-run setup wizard - self-gates on a fresh tenant, renders
               nothing otherwise. Mounted once here so it overlays any page. */}
           <OnboardingWizard me={me} />
         </SidebarInset>
@@ -225,8 +225,8 @@ function AppLayout() {
 }
 
 // Neutral full-screen splash shown while auth is being resolved or while a
-// signed-out visitor is being bounced to /login. Deliberately content-free —
-// no nav, no data — so a page is never flashed to someone not signed in.
+// signed-out visitor is being bounced to /login. Deliberately content-free -
+// no nav, no data - so a page is never flashed to someone not signed in.
 function AuthSplash() {
   return (
     <div className="flex min-h-svh items-center justify-center bg-zinc-50 dark:bg-zinc-950">

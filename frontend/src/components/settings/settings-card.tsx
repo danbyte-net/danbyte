@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
  *
  * 1. **Wasted width.** Settings pages were pinned to `max-w-2xl` inside a
  *    full-width shell, so ~70% of a wide screen was empty. `SettingsGrid` flows
- *    cards into balanced columns instead — the width gets used without any
+ *    cards into balanced columns instead - the width gets used without any
  *    single form row growing to an unreadable 2000px.
  * 2. **Ambiguous saves.** One "Save" at the bottom of a long page gave no clue
  *    which of the six things above it were about to be written. A `SettingsCard`
@@ -74,7 +74,7 @@ export function SettingsCard({
   /** Enables the save + shows the "unsaved" marker. */
   dirty,
   saving,
-  /** Overrides the footer verb — default "Save <title>". */
+  /** Overrides the footer verb - default "Save <title>". */
   saveLabel,
   footer,
   className,
@@ -91,7 +91,7 @@ export function SettingsCard({
   className?: string
 }) {
   return (
-    // Full-width cards (long tables) are NOT a variant here — put them after the
+    // Full-width cards (long tables) are NOT a variant here - put them after the
     // SettingsGrid instead. `column-span: all` inside a multicol container
     // collapses its margins against the balanced columns above, which left no
     // gap above the spanning card.

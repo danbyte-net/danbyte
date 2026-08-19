@@ -1,4 +1,4 @@
-"""Presence endpoints — heartbeat (write+read) and an explicit leave.
+"""Presence endpoints - heartbeat (write+read) and an explicit leave.
 
 The heartbeat returns the current presence list in the same round-trip, so the
 SPA polls one endpoint to both announce itself and learn who else is here.
@@ -40,7 +40,7 @@ def _args(data):
 def _may_view(user, tenant, object_type: str) -> bool:
     """Whether ``user`` may see presence on ``object_type`` in ``tenant``.
 
-    The SPA sends the bare RBAC slug (``model._meta.model_name`` — e.g.
+    The SPA sends the bare RBAC slug (``model._meta.model_name`` - e.g.
     ``"device"``, ``"vlan"``); an ``app_label.`` prefix is tolerated. Gate on
     the viewer's ``view`` action for that model so a member with no read access
     to, say, Devices can't harvest which devices are being edited or which
@@ -75,7 +75,7 @@ def _may_view(user, tenant, object_type: str) -> bool:
     responses={
         200: OpenApiResponse(
             response=OpenApiTypes.OBJECT,
-            description="{'present': [...]} — other users currently on the object.",
+            description="{'present': [...]} - other users currently on the object.",
         ),
         400: OpenApiResponse(
             response=OpenApiTypes.OBJECT,
@@ -131,7 +131,7 @@ def presence_heartbeat(request):
     responses={
         200: OpenApiResponse(
             response=OpenApiTypes.OBJECT,
-            description="{'present': [...]} — other users currently on the object.",
+            description="{'present': [...]} - other users currently on the object.",
         )
     },
 )

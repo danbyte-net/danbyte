@@ -49,7 +49,7 @@ export function DeviceSyncTypeDialog({
   const qc = useQueryClient()
   const [removeExtra, setRemoveExtra] = useState(false)
 
-  // Preview (dry-run) whenever the dialog is open — never mutates.
+  // Preview (dry-run) whenever the dialog is open - never mutates.
   const preview = useQuery({
     queryKey: ["device-sync-preview", deviceId],
     enabled: open,
@@ -81,7 +81,7 @@ export function DeviceSyncTypeDialog({
         `Synced ${deviceName}: +${added} added` +
           (removed ? `, −${removed} removed` : "")
       )
-      // A structural change — refetch everything on the page.
+      // A structural change - refetch everything on the page.
       qc.invalidateQueries()
       onOpenChange(false)
       setRemoveExtra(false)
@@ -119,7 +119,7 @@ export function DeviceSyncTypeDialog({
           <QueryError error={preview.error} />
         ) : inSync ? (
           <p className="text-sm text-muted-foreground">
-            This device already matches its type — nothing to sync.
+            This device already matches its type - nothing to sync.
           </p>
         ) : (
           <div className="space-y-4">
@@ -179,7 +179,7 @@ export function DeviceSyncTypeDialog({
                   label={`Also remove the ${totalExtra} component${totalExtra === 1 ? "" : "s"} not defined by the type`}
                   checked={removeExtra}
                   onChange={setRemoveExtra}
-                  hint="Destructive — deletes these components and cascades their cabling / IP assignments"
+                  hint="Destructive - deletes these components and cascades their cabling / IP assignments"
                 />
                 {removeExtra && risk > 0 && (
                   <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">

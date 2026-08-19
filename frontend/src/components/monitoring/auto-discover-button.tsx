@@ -19,19 +19,19 @@ export type ScanResult = {
   responders?: number
   created?: number
   skipped?: string
-  /** Large prefixes sweep on a worker — the response returns before results. */
+  /** Large prefixes sweep on a worker - the response returns before results. */
   queued?: boolean
   /** Id of the background run to poll for live progress (queued path only). */
   run_id?: string
   shards?: number
-  /** The prefix is served by a remote Outpost — it sweeps there, not on the core. */
+  /** The prefix is served by a remote Outpost - it sweeps there, not on the core. */
   queued_on_outpost?: boolean
   engine?: { id: string; name: string }
 }
 
 export const SCAN_SKIP_MSG: Record<string, string> = {
   too_large:
-    "Prefix is larger than the discovery min-prefix-length — raise it in Monitoring settings or rely on the periodic timer.",
+    "Prefix is larger than the discovery min-prefix-length - raise it in Monitoring settings or rely on the periodic timer.",
   ipv6: "IPv6 ranges can't be ICMP-swept.",
   bad_cidr: "Couldn't parse this prefix's CIDR.",
   no_hosts: "No host addresses to scan.",
@@ -41,7 +41,7 @@ export function describeScan(r: ScanResult): string {
   if (r.skipped)
     return SCAN_SKIP_MSG[r.skipped] ?? `Scan skipped (${r.skipped}).`
   if (r.queued)
-    return `Sweeping ${(r.scanned ?? 0).toLocaleString()} hosts in the background — new IPs will appear here as responders are found.`
+    return `Sweeping ${(r.scanned ?? 0).toLocaleString()} hosts in the background - new IPs will appear here as responders are found.`
   return `Scanned ${r.scanned ?? 0} hosts · ${r.responders ?? 0} responder${
     r.responders === 1 ? "" : "s"
   } · ${r.created ?? 0} new IP${r.created === 1 ? "" : "s"}.`
@@ -83,7 +83,7 @@ export function useDiscoveryRun(onComplete?: () => void) {
     if (!run?.done || settled.current) return
     settled.current = true
     toast.success(
-      `Discovery of ${run.cidr} complete — ${run.responders} responder${run.responders === 1 ? "" : "s"} · ${run.created} new IP${run.created === 1 ? "" : "s"}.`
+      `Discovery of ${run.cidr} complete - ${run.responders} responder${run.responders === 1 ? "" : "s"} · ${run.created} new IP${run.created === 1 ? "" : "s"}.`
     )
     qc.invalidateQueries({ queryKey: ["prefix-ips"] })
     qc.invalidateQueries({ queryKey: ["prefix-space-map"] })
@@ -254,7 +254,7 @@ export function DiscoverNowButton({
   const qc = useQueryClient()
   const { run, start } = useDiscoveryRun(onDone)
   // Set while a remote Outpost is sweeping; `baseline` is the prefix's
-  // last_discovered_at at request time — we're done when it advances.
+  // last_discovered_at at request time - we're done when it advances.
   const [outpost, setOutpost] = useState<{
     name: string
     baseline: string | null
@@ -398,7 +398,7 @@ export function PrefixScanGroup({
       toast.success(describeScan(r))
       if (r.queued && r.run_id) start(r.run_id)
       else {
-        // Small prefix swept inline — refresh the IP list / map immediately.
+        // Small prefix swept inline - refresh the IP list / map immediately.
         qc.invalidateQueries({ queryKey: ["prefix-ips"] })
         qc.invalidateQueries({ queryKey: ["prefix-space-map"] })
         onDone?.()
@@ -447,7 +447,7 @@ export function PrefixScanGroup({
 }
 
 /**
- * Compact auto-discover toggle for a single prefix — usable in the prefix
+ * Compact auto-discover toggle for a single prefix - usable in the prefix
  * detail header. Reflects + flips `Prefix.auto_discover`. Periodic discovery
  * also needs the global switch on (Monitoring → Settings); the title says so.
  */

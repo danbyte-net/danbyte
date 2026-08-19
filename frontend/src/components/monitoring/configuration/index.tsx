@@ -15,7 +15,7 @@ import { ProfilesPanel } from "./profiles-panel"
 type ConfigTab = "global" | "devices" | "types" | "roles" | "prefixes" | "deny"
 
 // Monitoring configuration: scope-based policy (what checks apply to what)
-// across the inheritance hierarchy. One module per panel — see the sibling
+// across the inheritance hierarchy. One module per panel - see the sibling
 // files in this directory.
 export function MonitoringConfiguration() {
   const [tab, setTab] = useState<ConfigTab>("prefixes")

@@ -110,7 +110,7 @@ export function scheduleLabel(
 
 /** One kanban card. Draggable via dnd-kit (6px activation upstream keeps plain
  * clicks working); clicking opens the detail sheet. The card is meant to answer
- * "what, which object, and when" on its own — linked inventory renders as real
+ * "what, which object, and when" on its own - linked inventory renders as real
  * chips so the board reads as part of Danbyte, not beside it. */
 export function TaskCard({
   task,
@@ -196,7 +196,7 @@ export function TaskCard({
                   </AvatarGroupCount>
                 )}
               </AvatarGroup>
-              {/* Initials alone don't answer "who has this?" — name the single
+              {/* Initials alone don't answer "who has this?" - name the single
                   assignee, and count the rest rather than a row of riddles. */}
               <span className="truncate text-[11px] text-muted-foreground">
                 {task.assignee_detail.length === 1

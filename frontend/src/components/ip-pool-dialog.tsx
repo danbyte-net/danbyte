@@ -39,14 +39,14 @@ export function IpPoolDialog({
   prefixId: string
   cidr: string
   dhcpRanges?: DhcpScopeRange[]
-  /** Addresses already registered in the prefix — for the live skip count. */
+  /** Addresses already registered in the prefix - for the live skip count. */
   existingAddresses: string[]
   onOpenChange: (open: boolean) => void
 }) {
   const qc = useQueryClient()
   const usable = useMemo(() => cidrHostRange(cidr), [cidr])
-  // Default to the prefix's first DHCP pool when it has one — that's the
-  // common reason to bulk-add — and keep the select ticked accordingly.
+  // Default to the prefix's first DHCP pool when it has one - that's the
+  // common reason to bulk-add - and keep the select ticked accordingly.
   const [preset, setPreset] = useState<string | null>(
     dhcpRanges?.[0] ? `dhcp:${dhcpRanges[0].scope_id}` : usable ? "prefix" : null
   )
@@ -209,14 +209,14 @@ export function IpPoolDialog({
             label="Description"
             value={description}
             onChange={setDescription}
-            placeholder="optional — applied to every address"
+            placeholder="optional - applied to every address"
           />
           <p className="text-[11px] text-muted-foreground">
             {!rangeValid ? (
               "Enter a start and end address inside this prefix."
             ) : overCap ? (
               <span className="text-destructive">
-                That range is {total.toLocaleString()} addresses — the limit is{" "}
+                That range is {total.toLocaleString()} addresses - the limit is{" "}
                 {POOL_MAX.toLocaleString()} per pool. Narrow the range.
               </span>
             ) : (

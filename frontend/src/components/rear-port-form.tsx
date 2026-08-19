@@ -23,7 +23,7 @@ import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 
 export interface RearPortFormProps {
   port?: RearPort
-  /** Device this port belongs to (locked — ports are added from a device). */
+  /** Device this port belongs to (locked - ports are added from a device). */
   deviceId: string
   onSaved: (p: RearPort) => void
   onCancel: () => void
@@ -87,7 +87,7 @@ export function RearPortForm({
           id: port!.id,
           payload,
         }).then((saved) => ({ saved, count: 1 }))
-      // A [a-b] range in the name fans out — "Rear[1-12]" adds a whole panel
+      // A [a-b] range in the name fans out - "Rear[1-12]" adds a whole panel
       // row, each port with its own strands. In plan mode saveObject stages one
       // create per expanded name, so a planned range records the whole row.
       const names = expandNameRange(payload.name)
@@ -168,7 +168,7 @@ export function RearPortForm({
             <>
               Optical splitter (PON){" "}
               <span className="text-muted-foreground">
-                — every front port carries the input signal
+                - every front port carries the input signal
               </span>
             </>
           }

@@ -138,7 +138,7 @@ function FloorplanSettingsPage() {
     queryKey: ["device-roles"],
     queryFn: () => api<Paginated<DeviceRole>>("/api/device-roles/"),
   })
-  // Custom fields are the tenant's own — never enumerated server-side, so the
+  // Custom fields are the tenant's own - never enumerated server-side, so the
   // options come from their definitions and ride the generic cf_<key> convention.
   const deviceCfs = useQuery({
     queryKey: ["custom-fields-for", "device"],
@@ -199,7 +199,7 @@ function FloorplanSettingsPage() {
           ? ["tenant-floorplan-popover"]
           : ["deployment-floorplan-popover"],
       })
-      // The canvas reads the effective config — refresh so it takes effect
+      // The canvas reads the effective config - refresh so it takes effect
       // without a reload.
       qc.invalidateQueries({ queryKey: ["floorplan-popover"] })
       toast.success("Floor-plan popover updated")
@@ -228,7 +228,7 @@ function FloorplanSettingsPage() {
   const cfKeys = Object.keys(cfMeta)
 
   // The list being edited: the global one, or the scope's override. While this
-  // tenant inherits, nothing is editable — it's a preview.
+  // tenant inherits, nothing is editable - it's a preview.
   const isGlobal = scope === GLOBAL
   const overriding = !inheriting && (isGlobal || scope in overrides)
   const current = isGlobal ? fields : (overrides[scope] ?? fields)
@@ -381,7 +381,7 @@ function FloorplanSettingsPage() {
             </p>
           )}
           {roles.data?.results.map((r) =>
-            // Roles carry no icon — the badge falls back to a colour chip.
+            // Roles carry no icon - the badge falls back to a colour chip.
             scopeRow(
               `role:${r.slug}`,
               r.name,
@@ -478,7 +478,7 @@ function FloorplanSettingsPage() {
             ))}
             {current.length === 0 && (
               <li className="rounded-md border border-dashed border-border px-2 py-3 text-center text-[13px] text-muted-foreground">
-                No fields — the popover shows just the tile's name.
+                No fields - the popover shows just the tile's name.
               </li>
             )}
           </ul>

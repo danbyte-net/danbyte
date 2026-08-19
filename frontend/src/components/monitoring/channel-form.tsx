@@ -255,7 +255,7 @@ export function ChannelForm({
                 { value: "instant", label: "Instant (per check batch)" },
                 {
                   value: "batched",
-                  label: "Batched — a periodic mini-digest",
+                  label: "Batched - a periodic mini-digest",
                 },
               ]}
             />
@@ -300,7 +300,7 @@ export function ChannelForm({
               />
             )}
             <p className="text-[12px] text-muted-foreground">
-              The status filter above also applies here — leave it unticked to
+              The status filter above also applies here - leave it unticked to
               notify on every change.
             </p>
           </div>

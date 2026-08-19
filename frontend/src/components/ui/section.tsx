@@ -1,7 +1,7 @@
 import * as React from "react"
 
 /**
- * Titled detail-page section — the uppercase mini-heading used by KvCard, the
+ * Titled detail-page section - the uppercase mini-heading used by KvCard, the
  * SNMP tab, and the monitoring summary, with optional count, badge,
  * description, and right-aligned actions. One component so every tab on a
  * detail page reads identically.

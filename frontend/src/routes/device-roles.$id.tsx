@@ -113,7 +113,7 @@ function Body({ role: r }: { role: DeviceRole }) {
               />
             </div>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Default SNMP profile for devices with this role — a device or
+              Default SNMP profile for devices with this role - a device or
               device type can override it.
             </p>
           </section>

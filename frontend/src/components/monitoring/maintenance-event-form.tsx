@@ -21,7 +21,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { useSaveObject } from "@/lib/save-object"
 
-// ISO ↔ <input type="datetime-local"> — same helpers the silence form uses.
+// ISO ↔ <input type="datetime-local"> - same helpers the silence form uses.
 function toLocalInput(iso: string | null): string {
   if (!iso) return ""
   const d = new Date(iso)
@@ -72,7 +72,7 @@ export function MaintenanceEventForm({
 
   // The user-editable /statuses catalog: both workflows (tentative → completed,
   // reported → resolved) are seeded rows, and anything the tenant added shows
-  // up here too — Settings → Statuses, available to Maintenance & outage events.
+  // up here too - Settings → Statuses, available to Maintenance & outage events.
   const statuses = useQuery({
     queryKey: ["statuses", "maintenanceevent"],
     queryFn: () =>
@@ -148,7 +148,7 @@ export function MaintenanceEventForm({
           value={statusId}
           onChange={(v) => v && setStatusId(v)}
           options={statusRows.map((s) => ({ value: s.id, label: s.name }))}
-          info="Rows from Settings → Statuses that are available to maintenance events — add your own there."
+          info="Rows from Settings → Statuses that are available to maintenance events - add your own there."
           error={fieldErrors.status_id}
         />
       </div>
@@ -179,7 +179,7 @@ export function MaintenanceEventForm({
           value={externalRef}
           onChange={setExternalRef}
           placeholder="MAINT-77031"
-          info="The provider's own ticket id — automated ingestion uses it to update instead of duplicate."
+          info="The provider's own ticket id - automated ingestion uses it to update instead of duplicate."
           error={fieldErrors.external_ref}
         />
       </div>

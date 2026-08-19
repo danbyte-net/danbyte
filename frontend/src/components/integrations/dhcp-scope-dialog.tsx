@@ -23,14 +23,14 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 
-// The Server select's "no server" sentinel — a local, Danbyte-owned scope.
+// The Server select's "no server" sentinel - a local, Danbyte-owned scope.
 const LOCAL = "__local__"
 // The Prefix select's "type a subnet instead" sentinel.
 const NEW_SUBNET = "__new__"
 
 /**
  * Author a DHCP scope. With a server picked, saving pushes it to that Windows
- * server first (Add-DhcpServerv4Scope) — the row only exists once the server
+ * server first (Add-DhcpServerv4Scope) - the row only exists once the server
  * accepted it. With "Local", the scope is Danbyte-owned documentation for
  * deployments that don't sync a DHCP server. The subnet comes from an existing
  * prefix (keeping its VRF) or a typed CIDR in a chosen VRF.
@@ -135,7 +135,7 @@ export function DhcpScopeDialog({
             placeholder="Select a server…"
             info="Pick the Windows DHCP server to create the scope on, or Local for a Danbyte-owned scope with no server behind it."
             options={[
-              { value: LOCAL, label: "Local — Danbyte-managed" },
+              { value: LOCAL, label: "Local - Danbyte-managed" },
               ...servers.map((c) => ({ value: c.id, label: c.name })),
             ]}
             error={fieldErrors.connection}
@@ -215,7 +215,7 @@ export function DhcpScopeDialog({
           />
           <p className="text-[11px] text-muted-foreground">
             {isLocal
-              ? "A local scope is stored in Danbyte only — nothing is pushed anywhere."
+              ? "A local scope is stored in Danbyte only - nothing is pushed anywhere."
               : "Saving creates the scope on the DHCP server immediately."}
           </p>
           <FormFooter

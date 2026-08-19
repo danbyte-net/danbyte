@@ -4,9 +4,9 @@ import { cn } from "@/lib/utils"
 
 /**
  * A deliberately small, safe Markdown renderer for operator-authored text
- * (compliance remediation guides, notes). Parses a practical subset —
+ * (compliance remediation guides, notes). Parses a practical subset -
  * headings, paragraphs, ordered/unordered lists, fenced code blocks, inline
- * `code`, **bold**, *italic*, and [links](https://…) — straight to React
+ * `code`, **bold**, *italic*, and [links](https://…) - straight to React
  * elements. No HTML pass-through and no dangerouslySetInnerHTML, so raw
  * HTML/script in the source renders as plain text and needs no sanitizer.
  */
@@ -125,7 +125,7 @@ function parseBlocks(src: string): Block[] {
       blocks.push({ kind: "ol", items })
       continue
     }
-    // paragraph — consecutive plain lines
+    // paragraph - consecutive plain lines
     const buf: string[] = [line]
     i++
     while (

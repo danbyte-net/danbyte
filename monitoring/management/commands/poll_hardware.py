@@ -1,4 +1,4 @@
-"""poll_hardware — refresh hardware inventory + health on a schedule.
+"""poll_hardware - refresh hardware inventory + health on a schedule.
 
 Runs the BMC (Redfish) collector and the custom SNMP sensors for every device
 that has them configured, reconciling drives/CPUs/RAM/PSUs/fans and flipping
@@ -8,8 +8,8 @@ page does the same for one device; this is the periodic beat (systemd timer
 
 Scheduled scope, kept bounded:
   * every device with an enabled ``RedfishEndpoint``;
-  * every device whose type a ``SnmpSensor`` targets, plus — when a tenant has
-    an all-types sensor — every device with a primary IP.
+  * every device whose type a ``SnmpSensor`` targets, plus - when a tenant has
+    an all-types sensor - every device with a primary IP.
 """
 from __future__ import annotations
 

@@ -7,7 +7,7 @@ import { useMe } from "@/lib/use-me"
 // connections, with a corner link into the full Site map.
 export function OsmMapWidget() {
   const { canDo } = useMe()
-  // Hidden entirely without site-view — no empty map, no link into a page the
+  // Hidden entirely without site-view - no empty map, no link into a page the
   // user can't use.
   if (!canDo("site", "view")) return null
   return (

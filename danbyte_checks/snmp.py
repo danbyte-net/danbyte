@@ -101,7 +101,7 @@ class SnmpChecker:
                 mod.ContextData(),
                 mod.ObjectType(mod.ObjectIdentity(oid)),
             )
-        except Exception as e:  # noqa: BLE001 — engine/config issue, not an outage
+        except Exception as e:  # noqa: BLE001 - engine/config issue, not an outage
             return CheckOutcome.unknown(f"snmp error: {e}")
 
         if error_indication:

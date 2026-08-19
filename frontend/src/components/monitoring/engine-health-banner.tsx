@@ -34,7 +34,7 @@ export function EngineHealthBanner() {
       {stale.map((e) => (
         <span key={e.id}>
           Engine <span className="font-semibold">{e.name}</span> unreachable
-          (down {timeAgo(e.stale_since)}) —{" "}
+          (down {timeAgo(e.stale_since)}) -{" "}
           <span className="num">{e.stalled_checks}</span> check
           {e.stalled_checks === 1 ? "" : "s"} stalled.
         </span>

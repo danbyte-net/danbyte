@@ -1,13 +1,13 @@
-"""Registries that make custom fields model-aware — both are extensible at
+"""Registries that make custom fields model-aware - both are extensible at
 runtime so a future plugin can join with one call from its AppConfig.ready().
 
-1. **Customizable models** — what a custom field can attach to
+1. **Customizable models** - what a custom field can attach to
    (``applies_to``). Auto-derived: every installed model that mixes in
    :class:`core.models.CustomFieldsMixin` qualifies, labelled by its
    ``verbose_name_plural``. Plugins that keep their JSONB elsewhere can
    still opt in via :func:`register_customizable_model`.
 
-2. **Reference models** — what an *object-reference* custom field can point
+2. **Reference models** - what an *object-reference* custom field can point
    at (the "dropbox of users / groups / devices"). Each entry names the
    model, its list endpoint, and how to label an instance. Plugins add
    theirs via :func:`register_reference_model`.
@@ -34,7 +34,7 @@ def register_customizable_model(slug: str, label: str) -> None:
 @lru_cache(maxsize=1)
 def customizable_models() -> list[tuple[str, str]]:
     """(slug, label) for every model carrying CustomFieldsMixin, plus
-    registered extras. Lazy — the app registry isn't ready at import time."""
+    registered extras. Lazy - the app registry isn't ready at import time."""
     from core.models import CustomFieldsMixin
 
     out: dict[str, str] = {}
@@ -57,7 +57,7 @@ def customizable_model_values() -> set[str]:
 class ReferenceModel:
     slug: str
     label: str
-    app_model: str          # "api.Device" — resolved lazily via apps registry
+    app_model: str          # "api.Device" - resolved lazily via apps registry
     endpoint: str           # SPA list endpoint
     # The attribute holding the display label. None → the model's own __str__,
     # for models whose bare field is ambiguous (an interface name is unique only
@@ -70,7 +70,7 @@ class ReferenceModel:
     # skips tenant filtering entirely, so never use it to paper over a bad path.
     tenant_field: str | None = "tenant"
     route: str | None = None  # SPA detail route template ("/devices/$id")
-    # Joins resolve_labels should follow — needed when the label comes from
+    # Joins resolve_labels should follow - needed when the label comes from
     # __str__ and reaches through a relation, or a 200-id batch is an N+1.
     select_related: tuple[str, ...] = ()
 
@@ -132,7 +132,7 @@ for _e in [
                    label_field="cidr", picker=False, route="/prefixes/$id"),
     ReferenceModel("ipaddress", "IP addresses", "api.IPAddress", "/api/ips/",
                    label_field="ip_address", picker=False, route="/ips/$id"),
-    # Interfaces carry no tenant FK — scope through the device, exactly as
+    # Interfaces carry no tenant FK - scope through the device, exactly as
     # InterfaceViewSet does. The label is the device-qualified __str__ because
     # "Gi2/1" alone doesn't identify anything (unique_together device+name).
     ReferenceModel("interface", "Interfaces", "api.Interface",

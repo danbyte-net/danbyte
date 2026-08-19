@@ -1,7 +1,7 @@
 """Pluggable round-trip export/import handlers.
 
 A *round-trip* file carries each object's ``id`` (UUID) plus stable, human-readable
-keys for its foreign keys, tags and custom fields — so it can be exported, edited
+keys for its foreign keys, tags and custom fields - so it can be exported, edited
 offline, and re-uploaded to **update** existing rows (matched by ``id``, then by a
 natural key, else created). This is distinct from the pretty client-side export in
 ``frontend/src/lib/table-export.ts`` (visible columns, not reimportable).
@@ -127,7 +127,7 @@ class ModelIOHandler:
         from core.secret_fields import is_secret_field
 
         if is_secret_field(self.model, f):
-            return ""  # defence in depth — secrets are not even columns
+            return ""  # defence in depth - secrets are not even columns
         if f.is_relation:
             rel = getattr(obj, f.name, None)
             if rel is None:
@@ -196,7 +196,7 @@ class ModelIOHandler:
             matches = list(base.filter(**filt)[:2])
             if len(matches) > 1:
                 raise ValidationError(
-                    f"Ambiguous {'+'.join(self.natural_key)} '{val}' — supply id."
+                    f"Ambiguous {'+'.join(self.natural_key)} '{val}' - supply id."
                 )
             if matches:
                 return matches[0]
@@ -225,7 +225,7 @@ class ModelIOHandler:
             field = self._fields.get(key)
             if field is None:
                 continue  # unknown column ignored
-            # A nullable FK left blank — or written as "global"/"none"/"-" —
+            # A nullable FK left blank - or written as "global"/"none"/"-" -
             # means "no link" (e.g. VRF empty = the global table).
             if (
                 field.is_relation
@@ -274,7 +274,7 @@ class ModelIOHandler:
             # Tags are tenant-scoped (name unique per tenant). Keying the
             # lookup on name alone reused / created tags across tenant lines
             # (and could raise MultipleObjectsReturned when the name exists in
-            # more than one tenant) — bind to the object's own tenant.
+            # more than one tenant) - bind to the object's own tenant.
             tenant = getattr(obj, "tenant", None)
             for name in tag_names:
                 t, _ = Tag.objects.get_or_create(

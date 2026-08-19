@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils"
 import { apiErrorToast } from "@/lib/api-toast"
 
 // A friendlier path to the same AutomationTarget the manual form creates. Three
-// steps — pick the kind, fill the connection, review + create — then a done
+// steps - pick the kind, fill the connection, review + create - then a done
 // panel that tests the connection and points at the next thing to do. Everything
 // here funnels into POST /api/automation-targets/, identical payload shape to
 // AutomationTargetForm; this just narrates the choices for a first-timer.
@@ -50,7 +50,7 @@ const KINDS: {
     value: "webhook",
     label: "Generic webhook",
     blurb:
-      "Anything that can receive a signed HTTP POST — your own runner, CI, a script. Danbyte posts the deploy event.",
+      "Anything that can receive a signed HTTP POST - your own runner, CI, a script. Danbyte posts the deploy event.",
     icon: Webhook,
   },
 ]
@@ -94,9 +94,9 @@ export function AutomationTargetWizard() {
     onError: (err) => {
       const msg = handleApiError(err)
       if (msg) toast.error(msg)
-      // Every editable field lives on the Connect step — jump back so any
+      // Every editable field lives on the Connect step - jump back so any
       // server-side field error (and its highlight) is actually visible.
-      // (Can't read `fieldErrors` here — handleApiError's setState is async,
+      // (Can't read `fieldErrors` here - handleApiError's setState is async,
       // so the closed-over value is still stale this tick.)
       setStep(1)
     },
@@ -128,7 +128,7 @@ export function AutomationTargetWizard() {
             </h2>
             <p className="text-[13px] text-muted-foreground">
               Danbyte will hand off deploys to this target. It still never
-              touches your devices — your runner does, with its own credentials.
+              touches your devices - your runner does, with its own credentials.
             </p>
           </div>
         </div>
@@ -141,7 +141,7 @@ export function AutomationTargetWizard() {
             <li className="flex items-start gap-2">
               <span className="num mt-0.5 text-muted-foreground">1.</span>
               <span>
-                Check it's reachable —{" "}
+                Check it's reachable -{" "}
                 <button
                   type="button"
                   onClick={() => test.mutate()}
@@ -244,7 +244,7 @@ export function AutomationTargetWizard() {
         ))}
       </ol>
 
-      {/* Step 0 — choose kind */}
+      {/* Step 0 - choose kind */}
       {step === 0 && (
         <div className="space-y-3">
           <p className="text-[13px] text-muted-foreground">
@@ -284,7 +284,7 @@ export function AutomationTargetWizard() {
           ))}
           <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-[12px] text-muted-foreground">
             Just want <span className="text-foreground">drift detection</span>{" "}
-            from your own cron? You don't need a target at all — point a runner
+            from your own cron? You don't need a target at all - point a runner
             at Danbyte's inventory on a schedule. See{" "}
             <a
               href={docsUrl(
@@ -301,7 +301,7 @@ export function AutomationTargetWizard() {
         </div>
       )}
 
-      {/* Step 1 — connection */}
+      {/* Step 1 - connection */}
       {step === 1 && (
         <div className="space-y-4">
           <FormText
@@ -351,7 +351,7 @@ export function AutomationTargetWizard() {
             autoComplete="new-password"
             hint={
               kind === "awx"
-                ? "AWX/AAP OAuth token — sent as Authorization: Bearer."
+                ? "AWX/AAP OAuth token - sent as Authorization: Bearer."
                 : "Optional. If set, Danbyte signs the payload (HMAC-SHA512) in X-Danbyte-Signature so your runner can verify it."
             }
             value={token}
@@ -361,7 +361,7 @@ export function AutomationTargetWizard() {
         </div>
       )}
 
-      {/* Step 2 — review */}
+      {/* Step 2 - review */}
       {step === 2 && (
         <div className="space-y-3">
           <p className="text-[13px] text-muted-foreground">
@@ -387,7 +387,7 @@ export function AutomationTargetWizard() {
               <div key={k} className="grid grid-cols-3 gap-4 px-4 py-2.5">
                 <dt className="text-muted-foreground">{k}</dt>
                 <dd className="col-span-2 font-mono text-[12px] break-all">
-                  {v || "—"}
+                  {v || "-"}
                 </dd>
               </div>
             ))}

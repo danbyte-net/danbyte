@@ -60,8 +60,8 @@ TMP="$(mktemp -d)"
 tar -xzf "$TARBALL" -C "$TMP" 2>/dev/null || fail extract "could not extract bundle (not a .tar.gz?)"
 SRC="$(find "$TMP" -maxdepth 1 -type d -name 'danbyte-*' | head -1)"
 [ -d "$SRC" ] || SRC="$TMP"
-[ -f "$SRC/manage.py" ] || fail preflight "bundle missing manage.py — not a Danbyte release"
-[ -d "$SRC/vendor/wheels" ] || fail preflight "bundle has no vendor/wheels — not an OFFLINE bundle"
+[ -f "$SRC/manage.py" ] || fail preflight "bundle missing manage.py - not a Danbyte release"
+[ -d "$SRC/vendor/wheels" ] || fail preflight "bundle has no vendor/wheels - not an OFFLINE bundle"
 
 status running backup 15
 mkdir -p "$BACKUP_DIR"
@@ -78,12 +78,12 @@ PYEOF
 )"
   BACKUP_FILE="$BACKUP_DIR/db-pre-$VERSION-$(date +%s).sql.gz"
   # Don't rely on a pipe's exit status (gzip masks pg_dump's). Dump to a temp
-  # file, check pg_dump succeeded AND produced a non-trivial file, THEN gzip —
+  # file, check pg_dump succeeded AND produced a non-trivial file, THEN gzip -
   # a failed/empty backup must abort BEFORE any migration, not silently proceed.
   DUMP_TMP="$BACKUP_DIR/.db-pre-$VERSION.sql.tmp"
   DUMP_ERR="$BACKUP_DIR/.db-pre-$VERSION.err"
   # -w: never prompt for a password. Detached (no tty), a prompt would block
-  # forever — the classic "stuck on Backup…". `timeout` bounds a wedged
+  # forever - the classic "stuck on Backup…". `timeout` bounds a wedged
   # connection too. Capture stderr so the real reason reaches the UI.
   [ -n "${PGPASSWORD:-}" ] || PG_NOPW="-w"
   if command -v timeout >/dev/null 2>&1; then DUMP_TIMEOUT="timeout 900"; else DUMP_TIMEOUT=""; fi
@@ -96,10 +96,10 @@ PYEOF
     reason="$(tail -c 300 "$DUMP_ERR" 2>/dev/null | tr '\n' ' ')"
     rm -f "$DUMP_TMP" "$DUMP_ERR"
     [ -n "$reason" ] || reason="pg_dump errored or produced an empty dump (timed out after 900s, or auth/connection failed)"
-    fail backup "db backup failed — aborting before any migration: $reason"
+    fail backup "db backup failed - aborting before any migration: $reason"
   fi
 else
-  echo "upgrade: pg_dump not found — skipping db backup" >&2
+  echo "upgrade: pg_dump not found - skipping db backup" >&2
 fi
 # Code backup for rollback (skip the heavy, regenerable trees).
 BACKUP="$BACKUP_DIR/code-pre-$VERSION-$(date +%s).tgz"
@@ -137,7 +137,7 @@ ok=""
 i=0
 while [ "$i" -lt 12 ]; do
   i=$((i + 1)); sleep 3
-  # Require the real readiness endpoint (200 = Django up AND DB reachable) — a
+  # Require the real readiness endpoint (200 = Django up AND DB reachable) - a
   # 2xx/3xx from "/" would also pass on the nginx "updating" page or a login
   # redirect while the app is actually broken.
   for probe in "https://127.0.0.1/api/health/" "http://127.0.0.1:8000/api/health/"; do

@@ -44,7 +44,7 @@ function SearchResultsPage() {
     staleTime: 10 * 1000,
   })
 
-  // Build the visible group list — only groups with >0 hits get a tab.
+  // Build the visible group list - only groups with >0 hits get a tab.
   const visibleGroups = useMemo(() => {
     if (!query.data) return []
     return SEARCH_GROUPS.filter(
@@ -84,7 +84,7 @@ function SearchResultsPage() {
 
       {query.data && (
         <>
-          {/* Group filter bar — "All" + one tab per non-empty group. */}
+          {/* Group filter bar - "All" + one tab per non-empty group. */}
           <nav className="flex h-10 shrink-0 items-center overflow-x-auto border-b border-border px-3">
             <SegmentedTabs
               value={activeGroup}
@@ -150,7 +150,7 @@ function GroupTable({ label, hits }: { label: string; hits: SearchHit[] }) {
                   </Link>
                 </TableCell>
                 <TableCell className="py-2 text-xs text-muted-foreground">
-                  {hit.sublabel || "—"}
+                  {hit.sublabel || "-"}
                 </TableCell>
                 <TableCell className="py-2 text-[11px] text-muted-foreground">
                   {summarizeExtras(hit)}
@@ -170,5 +170,5 @@ function summarizeExtras(hit: SearchHit): string {
     if (v == null || v === "" || v === false) continue
     parts.push(`${k}: ${String(v)}`)
   }
-  return parts.join(" · ") || "—"
+  return parts.join(" · ") || "-"
 }

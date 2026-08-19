@@ -5,7 +5,7 @@ icon: lucide/file-code
 # Export templates
 
 Export templates let you turn every object of a given type into a text file of
-your own design — a CSV extract, a device config, a DNS zone file, a report,
+your own design - a CSV extract, a device config, a DNS zone file, a report,
 anything you can write as a template.
 
 You write the template once using **Jinja2** (a widely used templating language),
@@ -50,7 +50,7 @@ Total: {{ count }}
 ```
 
 !!! note "Templates run in a sandbox"
-    Templates are rendered in a restricted environment — they can read your object
+    Templates are rendered in a restricted environment - they can read your object
     data and use normal Jinja2 features, but they can't reach into Python
     internals or run arbitrary code. This keeps a shared template library safe.
 
@@ -60,16 +60,16 @@ Clicking a name in **Customize → Export templates** opens that template's deta
 page, the same way every other object in Danbyte works. The pencil in the header
 edits it; **Render** produces the file without leaving the page.
 
-- **Overview** — what the template is for (name, object type, description), what
+- **Overview** - what the template is for (name, object type, description), what
   it produces (file extension, MIME type, inline or attachment), when it was
   created and last changed, and then the **template body itself**, rendered in a
   scrollable monospace box.
-- **Journal** — your notes on this template.
-- **History** — the change log for the row.
+- **Journal** - your notes on this template.
+- **History** - the change log for the row.
 
 An export template has no reverse relations: nothing in the data model points
 back at one, and a render is produced on demand rather than stored. So the page
-is deliberately short — the template body is the content, and there is no
+is deliberately short - the template body is the content, and there is no
 "what uses this" tab to show.
 
 ## Preview and download
@@ -83,7 +83,7 @@ is deliberately short — the template body is the content, and there is no
 ## Config-template bindings
 
 An export template with object type **device** can double as a device's **config
-template** — the source of its intended configuration. Instead of picking a
+template** - the source of its intended configuration. Instead of picking a
 template by hand every time, bind one where it belongs:
 
 | Bound on | Where | Applies to |
@@ -92,13 +92,13 @@ template by hand every time, bind one where it belongs:
 | **Device role** | role form → **Config template** | every device with that role. |
 | **Platform** | platform form → **Config template** | every device on that OS. |
 
-Resolution is **device → role → platform** — the first binding found wins.
+Resolution is **device → role → platform** - the first binding found wins.
 The binding is used in two places:
 
 - The device's **Config tab** preselects the resolved template in its
   **Render config** box and shows how it was bound (*device* or *role/platform*).
 - `GET /api/devices/<id>/render/` renders the bound template when no
-  `?template=` parameter is given — so a drift runner doesn't need to know
+  `?template=` parameter is given - so a drift runner doesn't need to know
   template ids per device.
 
 See [Config drift](iac-runner.md) for the full intended-vs-actual loop.

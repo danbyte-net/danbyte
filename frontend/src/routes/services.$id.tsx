@@ -69,11 +69,11 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
   // The monitor endpoint resolves the target IP as: the service's own IP,
   // else the parent device/VM's primary IP. The Service payload only carries
   // the parent's id+name, so fetch the parent to learn whether it has a
-  // primary IP — but only when the service has no IP of its own.
+  // primary IP - but only when the service has no IP of its own.
   const needsParent = !s.ip_address && !!(s.device || s.virtual_machine)
   const parentQuery = useQuery({
     queryKey: ["service-parent", s.device?.id ?? s.virtual_machine?.id],
-    // Device and VirtualMachine share the same `primary_ip` shape — narrow to
+    // Device and VirtualMachine share the same `primary_ip` shape - narrow to
     // that so the union return type doesn't trip up the query generics.
     queryFn: (): Promise<Pick<Device, "primary_ip">> =>
       s.device
@@ -88,7 +88,7 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
   const resolvableIp =
     s.ip_address?.ip_address ?? parentPrimaryIp?.ip_address ?? null
   // Until the parent fetch settles we don't yet know if a primary IP exists,
-  // so don't claim "no IP" — keep the button busy rather than show the wrong
+  // so don't claim "no IP" - keep the button busy rather than show the wrong
   // tooltip and then flip to enabled.
   const resolvingParent = needsParent && parentQuery.isPending
   const canMonitor = !!resolvableIp
@@ -194,7 +194,7 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
             disabledReason={
               canMonitor || resolvingParent
                 ? undefined
-                : "No IP to monitor — set the service's IP or a primary IP on its device / VM."
+                : "No IP to monitor - set the service's IP or a primary IP on its device / VM."
             }
             onClick={() => monitor.mutate()}
           />
@@ -245,7 +245,7 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
-        {/* Summary — details, custom fields, timestamps. */}
+        {/* Summary - details, custom fields, timestamps. */}
         <div className="grid gap-6 lg:grid-cols-2">
           <KvCard title="Details" rows={detailRows} />
           {customFieldRows.length > 0 && (
@@ -271,7 +271,7 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
         <ChangeLogPanel objectType="api.service" objectId={s.id} />
       </DetailTab>
 
-      {/* Services have no `/services/$id/edit` route — the same dialog the
+      {/* Services have no `/services/$id/edit` route - the same dialog the
           device/VM Services tab uses is the editor here too. */}
       <ServiceFormDialog
         service={s}
@@ -302,7 +302,7 @@ function MonitorButton({
 }: {
   /** The monitor mutation is in flight. */
   pending: boolean
-  /** The parent fetch hasn't settled yet — disable, but don't blame the IP. */
+  /** The parent fetch hasn't settled yet - disable, but don't blame the IP. */
   busy: boolean
   /** When set, the button is disabled and this text is shown in a tooltip. */
   disabledReason?: string

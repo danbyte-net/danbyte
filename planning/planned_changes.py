@@ -1,6 +1,6 @@
 """Planned-change services: resolve a target, stage a change set, apply it.
 
-Kept out of the viewset because three surfaces need the same logic — the
+Kept out of the viewset because three surfaces need the same logic - the
 serializer (to compute ``stale``), create (to diff and snapshot) and apply (to
 re-validate and write).
 
@@ -26,7 +26,7 @@ from .models import PlannedChangeKind, PlannedChangeState
 class StaleValue(Exception):
     """The live object moved since the plan was written.
 
-    Carries what changed so the caller can offer "it's X now — apply anyway?"
+    Carries what changed so the caller can offer "it's X now - apply anyway?"
     rather than a bare validation error.
     """
 
@@ -45,7 +45,7 @@ def model_for_label(object_type: str):
 
 def resolve_target(pc):
     """The live target row, or None when the label doesn't resolve, the row is
-    gone, or this is a create. Deliberately unscoped — callers gate with
+    gone, or this is a create. Deliberately unscoped - callers gate with
     ``_can_act_on_object``."""
     if pc.kind == PlannedChangeKind.CREATE or pc.object_id is None:
         return None
@@ -76,7 +76,7 @@ def apply_change(pc, request, *, force=False):
     Every check fails closed. Raises ``ValidationError``/``PermissionDenied``, or
     ``StaleValue`` when the premise has changed and ``force`` is not set.
 
-    This updates *Danbyte's* record only — pushing the change to hardware is the
+    This updates *Danbyte's* record only - pushing the change to hardware is the
     separate automation/deploy path.
     """
     if pc.state != PlannedChangeState.PLANNED:
@@ -159,7 +159,7 @@ def _apply_update(pc, request, *, force=False):
 
 
 def _apply_create(pc, request):
-    """Create the planned object. Gated on **add**, not change — making a new
+    """Create the planned object. Gated on **add**, not change - making a new
     interface is not the same right as editing an existing one."""
     from audit.api import _object_site_id
     from auth_api import rbac
@@ -186,7 +186,7 @@ def _apply_create(pc, request):
         pc.object_id = obj.pk
         site_id = _object_site_id(pc.object_type, str(obj.pk))
         _finish(pc, request, site_id)
-        # The task now touches a real object — say so in Linked objects.
+        # The task now touches a real object - say so in Linked objects.
         TaskLink.objects.get_or_create(
             task=pc.task, object_type=pc.object_type, object_id=obj.pk,
             defaults={"tenant": pc.tenant, "object_site_id": site_id},
@@ -225,7 +225,7 @@ def _journal(pc, request, obj, *, created=False):
 
     lines = [
         f"{d.get('label') or d['field']}: "
-        f"{d.get('from') or '—'} → {d.get('to') or '—'}"
+        f"{d.get('from') or '-'} → {d.get('to') or '-'}"
         for d in (pc.display or [])
     ]
     what = "Created from" if created else "Applied planned change from"

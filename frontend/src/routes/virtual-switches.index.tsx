@@ -50,7 +50,7 @@ function VirtualSwitchesPage() {
               {row.original.kind_display}
             </Badge>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -66,7 +66,7 @@ function VirtualSwitchesPage() {
               {row.original.cluster.name}
             </Link>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -75,7 +75,7 @@ function VirtualSwitchesPage() {
         header: "Uplinks",
         cell: ({ row }) => (
           <span className="font-mono text-xs">
-            {row.original.uplinks || "—"}
+            {row.original.uplinks || "-"}
           </span>
         ),
       },
@@ -87,7 +87,7 @@ function VirtualSwitchesPage() {
           row.original.mtu != null ? (
             <span className="num text-xs">{row.original.mtu}</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
     ],
@@ -107,7 +107,7 @@ function VirtualSwitchesPage() {
           <span className="font-medium">
             Sync virtual switches &amp; networks
           </span>{" "}
-          enabled has run — the bridges / vSwitches its VMs use are imported
+          enabled has run - the bridges / vSwitches its VMs use are imported
           automatically.
         </EmptyState>
       ) : (

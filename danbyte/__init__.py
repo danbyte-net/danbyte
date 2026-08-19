@@ -1,4 +1,4 @@
-"""Danbyte — customizable IPAM/DCIM platform.
+"""Danbyte - customizable IPAM/DCIM platform.
 
 ``__version__`` is the single source of truth for the release the code
 corresponds to. Bump it when cutting a ``vX.Y.Z`` tag/release; the in-app

@@ -4,7 +4,7 @@
 //
 // Keys are app route prefixes ("/devices" also covers "/devices/<id>/edit");
 // values are docs paths as the static site serves them (".md" dropped,
-// "index.md" → its directory). Adding a page? Add its mapping here — the
+// "index.md" → its directory). Adding a page? Add its mapping here - the
 // repo's docs-link hook reminds you when a new route ships without one.
 
 export const DOCS_LINKS: Record<string, string> = {
@@ -133,7 +133,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/settings": "access/",
 }
 
-/** The docs URL for an app pathname — longest-prefix match, or the docs home. */
+/** The docs URL for an app pathname - longest-prefix match, or the docs home. */
 export function docsUrlFor(pathname: string): string {
   const path = pathname.replace(/\/+$/, "") || "/"
   let best = ""

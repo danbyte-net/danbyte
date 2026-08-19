@@ -1,8 +1,8 @@
-"""ICMP (ping) checker — async, unprivileged.
+"""ICMP (ping) checker - async, unprivileged.
 
 Uses ``icmplib`` in unprivileged mode (Linux ``SOCK_DGRAM`` ICMP) so it works
 without ``cap_net_raw`` as long as ``net.ipv4.ping_group_range`` covers the
-worker's gid. We never shell out to the ``ping`` binary — that breaks airgapped
+worker's gid. We never shell out to the ``ping`` binary - that breaks airgapped
 batching and is far slower for prefix-wide fan-out (see ``multiping`` in the
 dispatcher).
 
@@ -42,7 +42,7 @@ class IcmpChecker:
                 privileged=False,
             )
         except SocketPermissionError as e:
-            # Can't open the ICMP socket — sysctl/privilege problem, not an
+            # Can't open the ICMP socket - sysctl/privilege problem, not an
             # outage of the target.
             return CheckOutcome.unknown(f"icmp socket permission: {e}")
         except (ICMPLibError, OSError, asyncio.TimeoutError) as e:
@@ -60,7 +60,7 @@ class IcmpChecker:
             return CheckOutcome("down", None, detail)
 
         latency = host.avg_rtt
-        # Degraded: reachable but slow / lossy. Advisory — the runner only keeps
+        # Degraded: reachable but slow / lossy. Advisory - the runner only keeps
         # it when the template enables degraded evaluation.
         threshold = params.get("latency_degraded_ms")
         loss_threshold = params.get("loss_degraded_pct")

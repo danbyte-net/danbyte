@@ -46,7 +46,7 @@ export function PlatformDeleteDialog({
           <AlertDialogTitle>Delete platform {platform?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {usage > 0
-              ? `${usage} object${usage === 1 ? "" : "s"} currently use this platform — they'll be left without one.`
+              ? `${usage} object${usage === 1 ? "" : "s"} currently use this platform - they'll be left without one.`
               : "This action can't be undone."}
           </AlertDialogDescription>
         </AlertDialogHeader>

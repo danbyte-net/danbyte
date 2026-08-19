@@ -1,4 +1,4 @@
-"""Change-log retention — delete entries past CHANGELOG_RETENTION_DAYS.
+"""Change-log retention - delete entries past CHANGELOG_RETENTION_DAYS.
 
 Append-only audit data grows forever otherwise. Default 730 days (2 years);
 ``CHANGELOG_RETENTION_DAYS=0`` disables pruning. Deletes in bounded batches so a
@@ -23,7 +23,7 @@ def _retention_days() -> int:
         from core.models import DeploymentSettings
 
         return int(DeploymentSettings.load().changelog_retention_days)
-    except Exception:  # noqa: BLE001 — table missing during early migrate, etc.
+    except Exception:  # noqa: BLE001 - table missing during early migrate, etc.
         return int(getattr(settings, "CHANGELOG_RETENTION_DAYS", 730))
 
 

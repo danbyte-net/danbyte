@@ -57,14 +57,14 @@ be used to force an amplified, memory-heavy response.
 
 ## DEBUG (default-closed)
 
-`DEBUG` defaults to **`False`** — production must not accidentally run in debug
+`DEBUG` defaults to **`False`** - production must not accidentally run in debug
 (tracebacks leak source/settings and `ALLOWED_HOSTS` is bypassed). Development
 sets `DEBUG=True` explicitly in `.env`. With `DEBUG` off the app also refuses to
 start on the shared dev `DJANGO_SECRET_KEY` or a missing `MONITORING_SECRET_KEY`
 (see [Secrets](#secrets)).
 
 `DEBUG` controls **only** debug behaviour (tracebacks, `ALLOWED_HOSTS`). It does
-**not** decide whether cookies are TLS-only — that's `DANBYTE_HTTPS` below.
+**not** decide whether cookies are TLS-only - that's `DANBYTE_HTTPS` below.
 
 ## TLS / transport hardening (`DANBYTE_HTTPS`)
 
@@ -79,7 +79,7 @@ redirect. Defaults to **`False`**.
 !!! warning "Don't enable it without TLS"
     A `Secure` cookie set over a plain-`http://` origin is **discarded by the
     browser**. The login POST succeeds, the session cookie is dropped, the next
-    request is anonymous — so the app bounces straight back to the login form
+    request is anonymous - so the app bounces straight back to the login form
     **with no error message**. If login silently loops, check this setting first.
 
 This is deliberately independent of `DEBUG`: tying transport requirements to the
@@ -92,7 +92,7 @@ upstreams regardless (see [Security headers](#security-headers)).
 ## Static
 
 `STATICFILES_DIRS` includes `design/`, so the mockup `theme.js` and
-`tokens.css` are served at `/static/theme.js` and `/static/tokens.css` — used
+`tokens.css` are served at `/static/theme.js` and `/static/tokens.css` - used
 by `_shell.html`.
 
 ## Hosts
@@ -106,12 +106,12 @@ Environment=ALLOWED_HOSTS=localhost,127.0.0.1,<your-vpn-fqdn>,<your-vpn-ip>
 
 ## Outbound requests (SSRF guard)
 
-User-configured outbound URLs — webhooks, notification channels, automation
-targets, device-type import URLs, and **per-tenant** SMTP/LDAP hosts — are
+User-configured outbound URLs - webhooks, notification channels, automation
+targets, device-type import URLs, and **per-tenant** SMTP/LDAP hosts - are
 validated before each request: the host is resolved and rejected if it points at
 a loopback / RFC1918 / link-local / `169.254.0.0/16` (cloud metadata) / ULA /
 reserved address. This stops a tenant admin pointing a webhook (or a tenant SMTP
-relay) at internal services and reading the response back — critical for the
+relay) at internal services and reading the response back - critical for the
 cloud-hosted, multi-tenant deployments.
 
 The guard is **DNS-rebinding safe**: the resolved public IP is pinned for the
@@ -134,12 +134,12 @@ default (all internal addresses blocked).
 ### Check-engine targets (central-runner SSRF)
 
 The monitoring check engine runs both on remote **outpost agents** (deployed
-inside a network to monitor internal hosts — reaching loopback/RFC1918 is the
+inside a network to monitor internal hosts - reaching loopback/RFC1918 is the
 point) and in the **central server** (where a tenant-defined check target of
 `127.0.0.1` or an RFC1918 neighbour is an SSRF oracle onto internal services).
 The cloud-metadata endpoint (`169.254.0.0/16`) and the unspecified address are
 refused everywhere. To also refuse loopback / RFC1918 / reserved targets on the
-central runner — the posture for a **cloud, multi-tenant** deployment — set:
+central runner - the posture for a **cloud, multi-tenant** deployment - set:
 
 ```text
 Environment=DANBYTE_CHECK_BLOCK_INTERNAL=True
@@ -155,8 +155,8 @@ Response hardening is applied at the **nginx** edge (see
 `deploy/nginx/danbyte.prod.conf.template`), so it covers the SPA, API, and docs
 uniformly and survives an app restart:
 
-- `server_tokens off` — no nginx version banner.
-- **HSTS** — `max-age=31536000; includeSubDomains`.
+- `server_tokens off` - no nginx version banner.
+- **HSTS** - `max-age=31536000; includeSubDomains`.
 - `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` (also enforced by
   Django's `SECURE_CONTENT_TYPE_NOSNIFF` / `X_FRAME_OPTIONS`).
 - `Referrer-Policy: same-origin`, a restrictive `Permissions-Policy`, and
@@ -165,7 +165,7 @@ uniformly and survives an app restart:
   The SPA loads only same-origin bundled assets (no external scripts/styles/
   fonts, no `eval`, no web workers; the presence WebSocket is same-origin), so
   the policy doesn't block anything it serves. `'unsafe-inline'` is still
-  permitted for the SSR hydration + chart `<style>` injection — the next
+  permitted for the SSR hydration + chart `<style>` injection - the next
   hardening step is a nonce-based `script-src` (needs SSR nonce plumbing). Any
   real-browser violation is POSTed to `/api/csp-report/` and logged to the
   `danbyte.csp` logger, so tightening the policy later is observable rather than
@@ -203,7 +203,7 @@ have working defaults, so the feature runs with none of them set.
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `MONITORING_SECRET_KEY` | derived from `SECRET_KEY` in DEBUG; **required when `DEBUG=False`** | Encryption key for SNMP/SSH/SMTP/LDAP credentials at rest (Fernet). A dedicated key gives credential encryption an independent lifecycle: rotating `SECRET_KEY` doesn't void stored secrets, and a `SECRET_KEY` leak can't decrypt them. The app refuses to start in production without it. `scripts/install.sh` generates one (and backfills older installs *from* the existing `SECRET_KEY` so already-stored secrets stay decryptable). **Never change it once secrets are stored** — old ciphertext becomes unreadable. |
+| `MONITORING_SECRET_KEY` | derived from `SECRET_KEY` in DEBUG; **required when `DEBUG=False`** | Encryption key for SNMP/SSH/SMTP/LDAP credentials at rest (Fernet). A dedicated key gives credential encryption an independent lifecycle: rotating `SECRET_KEY` doesn't void stored secrets, and a `SECRET_KEY` leak can't decrypt them. The app refuses to start in production without it. `scripts/install.sh` generates one (and backfills older installs *from* the existing `SECRET_KEY` so already-stored secrets stay decryptable). **Never change it once secrets are stored** - old ciphertext becomes unreadable. |
 | `MONITORING_SECRETS_BACKEND` | empty (Fernet) | Dotted path to a factory returning a `SecretsBackend`. Swap in an external store (OpenBao/Vault) without touching models. |
 | `MONITORING_CONCURRENCY` | `100` | Max concurrent check attempts in one worker job's asyncio loop. Raising it needs a matching `LimitNOFILE` bump on the worker unit. |
 | `MONITORING_GLOBAL_INTERVAL_SECONDS` | `300` | Default schedule (seconds) for assignments in `follow_global` mode. |
@@ -211,8 +211,8 @@ have working defaults, so the feature runs with none of them set.
 | `MONITORING_SHARD_SIZE` | `2000` | Targets per ICMP multiping shard (one RQ job each). |
 | `MONITORING_GENERIC_SHARD_SIZE` | `200` | Targets per TCP/HTTP/… shard. |
 | `MONITORING_INFLIGHT_DEADLINE_SECONDS` | `600` | A check claimed (`in_flight`) longer than this is treated as orphaned by a dead/restarted worker and reclaimed by the dispatcher's reaper, so it re-runs instead of being stuck `unknown`. A healthy run clears `in_flight` within seconds. |
-| `MONITORING_EXEC_ENABLED` | `False` | Master switch for `exec` (script/plugin) checks. Off by default — running local commands from the UI is privileged. Set `True` **and** `MONITORING_PLUGIN_DIR` to use them. See [Script / exec checks](../features/monitoring.md#check-types). |
+| `MONITORING_EXEC_ENABLED` | `False` | Master switch for `exec` (script/plugin) checks. Off by default - running local commands from the UI is privileged. Set `True` **and** `MONITORING_PLUGIN_DIR` to use them. See [Script / exec checks](../features/monitoring.md#check-types). |
 | `MONITORING_PLUGIN_DIR` | empty | Directory of trusted Nagios-style plugins. An `exec` check may only run a plugin (by bare name, no path traversal) inside this dir; args are passed without a shell. |
 | `MONITORING_WEBHOOK_TIMEOUT` | `5` | Per-channel webhook POST timeout (seconds). |
-| `MONITORING_RESULT_RETENTION_DAYS` | `30` | Delete `CheckResult` rows older than this (daily prune). Raw results run ~600k rows/day on a busy install (~2.4 GB heap at 17 days) — raise only with the disk to match; the rolled-up state + transitions carry the long-term story. |
+| `MONITORING_RESULT_RETENTION_DAYS` | `30` | Delete `CheckResult` rows older than this (daily prune). Raw results run ~600k rows/day on a busy install (~2.4 GB heap at 17 days) - raise only with the disk to match; the rolled-up state + transitions carry the long-term story. |
 | `MONITORING_TRANSITION_RETENTION_DAYS` | `365` | Delete `StateTransition` rows older than this. |

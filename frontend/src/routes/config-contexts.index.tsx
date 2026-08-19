@@ -92,7 +92,7 @@ function ConfigContextsPage() {
           const keys = Object.keys(row.original.data ?? {})
           return (
             <span className="font-mono text-[11px] text-muted-foreground">
-              {keys.length ? keys.join(", ") : "—"}
+              {keys.length ? keys.join(", ") : "-"}
             </span>
           )
         },

@@ -1,4 +1,4 @@
-"""Custom-field group API tests — CRUD, auto-slug, tenant scoping, and the
+"""Custom-field group API tests - CRUD, auto-slug, tenant scoping, and the
 group read-fields the frontend renders sections from."""
 from __future__ import annotations
 
@@ -119,7 +119,7 @@ class CustomFieldGroupTests(APITestCase):
         self.assertEqual([f["key"] for f in body["results"]], ["grouped"])
 
     def test_field_group_filter_cannot_read_another_tenant(self):
-        """The filter narrows the tenant-scoped queryset — it never widens it,
+        """The filter narrows the tenant-scoped queryset - it never widens it,
         so another tenant's group id returns nothing rather than their fields."""
         foreign = CustomFieldGroup.objects.create(
             tenant=self.other, name="Foreign", slug="foreign"

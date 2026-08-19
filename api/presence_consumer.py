@@ -1,10 +1,10 @@
-"""WebSocket presence consumer — real-time "who else is here".
+"""WebSocket presence consumer - real-time "who else is here".
 
 Layered on top of the same Redis presence store the polling endpoints use
 (``core.presence``), so WS and any polling clients see one another. On
 connect/disconnect/mode-change it broadcasts to a per-object channel group; each
 member then re-reads the (self-excluded) present list and pushes it to its
-client. Sync consumer — the presence store is plain (sync) Redis.
+client. Sync consumer - the presence store is plain (sync) Redis.
 """
 from __future__ import annotations
 

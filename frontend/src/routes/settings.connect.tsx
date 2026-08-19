@@ -57,7 +57,7 @@ export const Route = createFileRoute("/settings/connect")({
   component: ConnectProtocolsSettingsPage,
 })
 
-/** The (i) tip that explains the template placeholders — kept out of the page
+/** The (i) tip that explains the template placeholders - kept out of the page
  * body so the prose doesn't clutter the table (CLAUDE.md: explain via (i)). */
 function PlaceholderTip() {
   return (
@@ -78,19 +78,19 @@ function PlaceholderTip() {
         </p>
         <ul className="mt-2 space-y-1">
           <li>
-            <code className="font-mono">{"{host}"}</code> — the device's primary
+            <code className="font-mono">{"{host}"}</code> - the device's primary
             IP (then OOB IP, then its name), mask stripped
           </li>
           <li>
-            <code className="font-mono">{"{username}"}</code> — chosen at launch
+            <code className="font-mono">{"{username}"}</code> - chosen at launch
             time
           </li>
           <li>
-            <code className="font-mono">{"{port}"}</code> — the default port
+            <code className="font-mono">{"{port}"}</code> - the default port
             below, if set
           </li>
           <li>
-            <code className="font-mono">{"{name}"}</code> — the device name
+            <code className="font-mono">{"{name}"}</code> - the device name
           </li>
         </ul>
         <p className="mt-2">
@@ -169,8 +169,8 @@ function ConnectProtocolsSettingsPage() {
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : rows.length === 0 ? (
         <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
-          No connect protocols yet. Add one — for example{" "}
-          <code className="font-mono">ssh://{"{username}"}@{"{host}"}</code> — so
+          No connect protocols yet. Add one - for example{" "}
+          <code className="font-mono">ssh://{"{username}"}@{"{host}"}</code> - so
           it appears on every device's Connect menu.
         </p>
       ) : (
@@ -239,7 +239,7 @@ function buildColumns({
         row.original.default_port != null ? (
           <span className="num text-xs">{row.original.default_port}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -318,7 +318,7 @@ function ProtocolDialog({
     reset()
   }, [open, protocol, reset])
 
-  // Targeting pickers — only fetched while the dialog is open.
+  // Targeting pickers - only fetched while the dialog is open.
   const dtOptQ = useQuery({
     queryKey: ["device-types-picker"],
     queryFn: () =>
@@ -444,7 +444,7 @@ function ProtocolDialog({
           />
           <Field
             label="Applies to"
-            info="Leave empty to offer this protocol on every device. Restricting by device type and/or role limits which devices show it in the Connect menu — a device matches when its type is in the list OR its role is."
+            info="Leave empty to offer this protocol on every device. Restricting by device type and/or role limits which devices show it in the Connect menu - a device matches when its type is in the list OR its role is."
           >
             <div className="space-y-2">
               <div className="space-y-1">

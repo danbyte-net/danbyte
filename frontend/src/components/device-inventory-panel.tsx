@@ -12,7 +12,7 @@ interface DeviceInventory {
   hostvars: Record<string, unknown>
 }
 
-// Read-only "what Ansible sees" for this device — the groups it lands in and the
+// Read-only "what Ansible sees" for this device - the groups it lands in and the
 // hostvars Danbyte exports, the exact slice of /api/inventory/ansible/ for this
 // host. Lets a user verify the export without curling the API.
 export function DeviceInventoryPanel({ deviceId }: { deviceId: string }) {
@@ -47,7 +47,7 @@ export function DeviceInventoryPanel({ deviceId }: { deviceId: string }) {
               <span className="font-mono text-[12px]">
                 {data.ansible_host ?? (
                   <span className="text-muted-foreground">
-                    — no primary IP set
+                    - no primary IP set
                   </span>
                 )}
               </span>

@@ -65,7 +65,7 @@ export function buildReshapeLayer(
     group.addLayer(m)
   })
 
-  // Midpoint "+" handles — click to splice a new vertex into the segment.
+  // Midpoint "+" handles - click to splice a new vertex into the segment.
   for (let i = 0; i < pts.length - 1; i++) {
     const mid: Pt = [
       (pts[i][0] + pts[i + 1][0]) / 2,

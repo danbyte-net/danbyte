@@ -17,20 +17,20 @@ customer. For a single-company deployment, one tenant.
 | **PK** | UUID |
 | **Parent** | `core.Organization` (the SaaS install) |
 | **Visibility** | Tenants are *never displayed together*. The UI shows one tenant at a time. |
-| **Switcher** | Sidebar dropdown (Phase 2 — UI hook is in place; lands shortly) |
+| **Switcher** | Sidebar dropdown (Phase 2 - UI hook is in place; lands shortly) |
 | **Session storage** | `request.session['current_tenant_id']` |
 
 Every domain object has a `tenant` FK:
 
 - `Site`, `VRF`, `Prefix`, `IPAddress`, `VLAN`, `Device`, `DeviceType`, `Cable`
 
-There is **no tenant column** in any list — by construction, every list is
+There is **no tenant column** in any list - by construction, every list is
 already scoped to a single tenant.
 
 ## VRF
 
 A `VRF` is a **routing context** inside a tenant. Two prefixes with identical
-CIDR in different VRFs are valid and distinct — that's the whole point of L3VPN-style
+CIDR in different VRFs are valid and distinct - that's the whole point of L3VPN-style
 separation.
 
 | | |
@@ -46,7 +46,7 @@ separation.
 ### The prefix owns the routing context
 
 Only `Prefix.vrf` is set directly. An address's and a range's VRF are
-**denormalised** from the prefix they belong to — they exist so a query can
+**denormalised** from the prefix they belong to - they exist so a query can
 filter by VRF without a join, and they are kept in step automatically:
 
 - saving an `IPAddress` or `IPRange` re-derives its VRF from its prefix;
@@ -62,7 +62,7 @@ prefix in the target VRF.
 The same rule decides where a **synced** address lands: the sync picks a
 containing prefix, and the prefix's VRF follows. So the configurable part is
 *which VRF's prefixes are eligible*, never what VRF to stamp on the address.
-`api/vrf_placement.py` is the single resolver — used by the Proxmox/vCenter,
+`api/vrf_placement.py` is the single resolver - used by the Proxmox/vCenter,
 Windows DHCP/DNS and SNMP-discovery paths alike. See [where synced addresses
 land](../features/external-sync.md#where-synced-addresses-land).
 
@@ -89,7 +89,7 @@ class Prefix(models.Model):
 The `nulls_distinct=False` is critical: without it, PostgreSQL would treat two
 `(tenant, NULL, '10.0.10.0/24')` rows as distinct (because two NULLs aren't
 equal in SQL by default). With it, Global behaves like a real VRF for
-uniqueness purposes — exactly one `10.0.10.0/24` is allowed per `(tenant,
+uniqueness purposes - exactly one `10.0.10.0/24` is allowed per `(tenant,
 Global)`, and exactly one per `(tenant, production)`, etc.
 
 Same constraint applies to `IPAddress`: `(tenant, vrf, ip_address)`.
@@ -97,7 +97,7 @@ Same constraint applies to `IPAddress`: `(tenant, vrf, ip_address)`.
 ## Reading the prefix list with VRFs
 
 When `sort=cidr` (the default), the list view groups prefixes by `(vrf,
-family)` before computing depth — so:
+family)` before computing depth - so:
 
 1. **Depth resets per VRF.** `10.0.0.0/16` in `production` doesn't pretend to
    parent `10.0.10.0/24` in `lab`.
@@ -113,7 +113,7 @@ family)` before computing depth — so:
    …
 
 ▾ VRF · production     3 prefixes        RD 65001:100
-   10.0.0.0/16                                ← same CIDR, different VRF — fine
+   10.0.0.0/16                                ← same CIDR, different VRF - fine
      └ 10.0.10.0/24
      └ 10.0.20.0/24
 
@@ -142,11 +142,11 @@ parent 10.0.10.0/24"*.
 | Same `(tenant, vrf, ip_address)` rejected | `IPAddressForm.clean_ip_address()` + DB |
 | IP must fall inside its parent prefix | `IPAddressForm.clean_ip_address()` |
 | CIDR must be valid (canonical form) | `PrefixForm.clean_cidr()` (uses `ipaddress.ip_network`) |
-| Cross-tenant queries | Every view's `Prefix.objects.filter(tenant=tenant)` — soft (caller responsibility); add a `TenantOwnedManager` later for safety |
+| Cross-tenant queries | Every view's `Prefix.objects.filter(tenant=tenant)` - soft (caller responsibility); add a `TenantOwnedManager` later for safety |
 
 ## What's not yet wired
 
-- A tenant switcher in the sidebar UI (the data hook is in place — Phase 2)
+- A tenant switcher in the sidebar UI (the data hook is in place - Phase 2)
 - VRF management page (CRUD via Django admin only, for now)
-- `Site.vrfs` M2M is documentation only — not used in any validation today
-- Per-tenant tag scoping (tags are still global — Phase 5)
+- `Site.vrfs` M2M is documentation only - not used in any validation today
+- Per-tenant tag scoping (tags are still global - Phase 5)

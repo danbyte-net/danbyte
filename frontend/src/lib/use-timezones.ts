@@ -6,7 +6,7 @@ import { api } from "@/lib/api"
  * Timezone options for the settings pickers, **from the server**.
  *
  * Building the list from `Intl.supportedValuesOf("timeZone")` offered names a
- * canonical-only server build rejects — a browser lists `Europe/Kiev` (renamed
+ * canonical-only server build rejects - a browser lists `Europe/Kiev` (renamed
  * to `Europe/Kyiv` in tzdata 2022b), the save then failed with "not a valid
  * IANA timezone" for a value the app itself had shown (#31). The API answers
  * with exactly what it will accept; the browser list is only a fallback for

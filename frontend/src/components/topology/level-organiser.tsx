@@ -34,7 +34,7 @@ export interface RoleTier {
  *
  * A role listed in `bonds` shares the level of the role directly above it, so
  * several roles can occupy one level (core switches beside routers, say). The
- * first role can never be bonded — there's nothing above it.
+ * first role can never be bonded - there's nothing above it.
  *
  * Shared with the canvas so the popover and the layout can't disagree.
  */
@@ -49,13 +49,13 @@ export function resolveLevels(order: string[], bonds: string[]): string[][] {
 }
 
 /**
- * Drag device roles into the tier order you want them stacked in — top of the
+ * Drag device roles into the tier order you want them stacked in - top of the
  * list = first level (left in side-to-side, top in tree). Nodes then lay out
  * by their role's position here instead of by pure graph structure. Roles left
  * off, and devices with no role, fall to the last tier.
  *
  * Roles can be **bonded** to the row above with the link button between them,
- * putting both on one level — for when two roles belong side by side rather
+ * putting both on one level - for when two roles belong side by side rather
  * than stacked.
  */
 export function LevelOrganiser({
@@ -90,7 +90,7 @@ export function LevelOrganiser({
   ]
   const colorOf = new Map(roles.map((r) => [r.name, r.color]))
 
-  // Level number per row — bonded rows share the number of the row above.
+  // Level number per row - bonded rows share the number of the row above.
   const levels = resolveLevels(ordered, bonds)
   const levelOf = new Map<string, number>()
   levels.forEach((group, i) => group.forEach((n) => levelOf.set(n, i + 1)))
@@ -103,7 +103,7 @@ export function LevelOrganiser({
     if (from < 0 || to < 0) return
     const next = arrayMove(ordered, from, to)
     onChange(next)
-    // The first row can't be bonded — there's nothing above it to bond to.
+    // The first row can't be bonded - there's nothing above it to bond to.
     if (next.length && bonds.includes(next[0]))
       onBonds(bonds.filter((b) => b !== next[0]))
   }
@@ -121,7 +121,7 @@ export function LevelOrganiser({
         </Button>
       </PopoverTrigger>
       {/* Long role lists must scroll inside the popover, not overflow the
-          viewport — cap to the available height. */}
+          viewport - cap to the available height. */}
       <PopoverContent
         align="end"
         className="flex max-h-[min(70vh,32rem)] w-60 flex-col p-2"
@@ -208,7 +208,7 @@ export function LevelOrganiser({
             }}
             className="mt-2 w-full shrink-0 rounded px-1 py-1 text-left text-[11px] text-muted-foreground hover:text-foreground"
           >
-            Clear — lay out by structure
+            Clear - lay out by structure
           </button>
         )}
       </PopoverContent>
@@ -226,7 +226,7 @@ function TierRow({
   bonded,
 }: {
   name: string
-  /** 1-based level this role lands on — shared with the row above when bonded. */
+  /** 1-based level this role lands on - shared with the row above when bonded. */
   level: number
   color?: string
   distance: number

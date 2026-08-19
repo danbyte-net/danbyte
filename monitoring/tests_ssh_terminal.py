@@ -1,4 +1,4 @@
-"""SshTerminalConsumer — the authorization gate.
+"""SshTerminalConsumer - the authorization gate.
 
 These exercise every check that must pass *before* an SSH connection is even
 attempted: the deployment opt-in, authentication, active tenant, device
@@ -151,7 +151,7 @@ class SshTerminalGateTests(TransactionTestCase):
         self.assertEqual(msg["t"], "error")
 
     def test_unknown_host_key_requires_accept_new(self):
-        # Superuser, feature on, valid credential — but no recorded SSH host key
+        # Superuser, feature on, valid credential - but no recorded SSH host key
         # and accept_new not set: the consumer refuses before connecting.
         accepted, msg = self._connect(user=self._user("root", superuser=True))
         self.assertTrue(accepted)

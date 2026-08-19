@@ -67,7 +67,7 @@ BUILTIN_STATUS_COLORS = {
     "resolved": "#10b981",
 }
 
-# (model slug, ModelName, default status value) — drives the data migration's
+# (model slug, ModelName, default status value) - drives the data migration's
 # per-tenant seeding + backfill. ModelName resolved via apps.get_model("api", …).
 STATUS_MODEL_SEEDS = [
     ("ipaddress", "IPAddress", None),  # already FKs Status; seeding handled separately
@@ -89,7 +89,7 @@ STATUS_MODEL_SEEDS = [
 # Built-in status values per object type, mirroring the historical per-model
 # enums (the ``STATUS_CHOICES`` constants that 0047 replaced with a Status FK).
 # This is the source of truth for the built-in catalog that every tenant should
-# start with — see ``seed_builtin_statuses``. The default for each type comes
+# start with - see ``seed_builtin_statuses``. The default for each type comes
 # from ``STATUS_MODEL_SEEDS``.
 STATUS_MODEL_VALUES = {
     "ipaddress": ["active", "reserved", "deprecated"],
@@ -105,7 +105,7 @@ STATUS_MODEL_VALUES = {
     "wirelesslan": ["active", "reserved", "disabled", "deprecated"],
     "tunnel": ["planned", "active", "disabled"],
     "location": ["active", "planned", "decommissioning", "retired"],
-    # Hardware parts: health/lifecycle — "failed" lights the faceplate red,
+    # Hardware parts: health/lifecycle - "failed" lights the faceplate red,
     # "empty" is a bay a chassis template stamped that holds nothing.
     "inventoryitem": ["active", "planned", "failed", "spare", "empty"],
     # Maintenance & outage events (issue #20): the maintenance workflow
@@ -122,7 +122,7 @@ STATUS_MODEL_VALUES = {
 
 # Semantic flags stamped onto seeded rows so renaming a status never loses
 # its machine meaning (mirrors ``is_available`` for IPs). Applied on create
-# only — users own the flags afterwards.
+# only - users own the flags afterwards.
 STATUS_SEMANTIC_FLAGS = {
     "confirmed": {"suppresses_alerts": True},
     "in_progress": {"suppresses_alerts": True},
@@ -146,14 +146,14 @@ def seed_builtin_statuses(tenant, *, Status=None):
 
     Creates a shared ``Status`` row per built-in value (merging into any existing
     row with the same slug) and extends its ``available_to`` / ``default_for``
-    scope for every object type that uses it. Safe to call repeatedly — on tenant
+    scope for every object type that uses it. Safe to call repeatedly - on tenant
     creation (``TenantViewSet.perform_create``), from ``manage.py
     seed_builtin_statuses`` / ``manage.py bootstrap``, or to backfill an existing
     tenant. Returns the number of new ``Status`` rows created.
 
     The migration ``0047_unified_status`` only seeded values that *existing*
     objects already used, so a fresh install (or any tenant created after the
-    migration ran) never received the built-in catalog — this function closes
+    migration ran) never received the built-in catalog - this function closes
     that gap.
     """
     if Status is None:
@@ -161,7 +161,7 @@ def seed_builtin_statuses(tenant, *, Status=None):
 
     cache = {s.slug: s for s in Status.objects.filter(tenant=tenant)}
     # Older data migrations replay this with a historical Status that predates
-    # the semantic-flag columns — only pass the flags the model actually has.
+    # the semantic-flag columns - only pass the flags the model actually has.
     model_fields = {f.name for f in Status._meta.get_fields()}
     created = 0
     for model_slug, values in STATUS_MODEL_VALUES.items():
@@ -200,13 +200,13 @@ def seed_builtin_statuses(tenant, *, Status=None):
 def resolve_status(tenant, value, model_slug=None, *, Status=None):
     """The tenant's ``Status`` for a value given as a **slug or human name**,
     matched case-insensitively (``"container"``, ``"Active"``, ``"in use"`` all
-    resolve). Assumes the built-in catalog is seeded — call
+    resolve). Assumes the built-in catalog is seeded - call
     ``seed_builtin_statuses(tenant)`` first. Falls back to the object type's
     default, then to ``active``/any, so seeders always get a usable FK; returns
     ``None`` only when the tenant has no statuses at all.
     """
     if Status is None:
-        from api.models import Status  # local import — keep this module Django-free
+        from api.models import Status  # local import - keep this module Django-free
 
     raw = (value or "").strip()
     slug = raw.lower().replace(" ", "-").replace("_", "-")

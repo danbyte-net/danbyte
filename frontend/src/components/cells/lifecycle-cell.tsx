@@ -4,12 +4,12 @@ import type { LifecycleState } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { SortHeader } from "@/components/data-table"
 
-// Vendor lifecycle rendering — shared by device types (hardware) and
+// Vendor lifecycle rendering - shared by device types (hardware) and
 // platforms (OS). The user enters the dates; everything here derives:
 //
 //   <LifecycleBadge state={row.lifecycle_state} />
-//   <LifecycleBar item={row} />                      — release → EoL bar
-//   lifecycleColumn<MyRow>({ get: (r) => r })        — table column + facet
+//   <LifecycleBar item={row} />                      - release → EoL bar
+//   lifecycleColumn<MyRow>({ get: (r) => r })        - table column + facet
 
 export interface LifecycleLike {
   release_date?: string | null
@@ -50,7 +50,7 @@ export function LifecycleBadge({
 }
 
 /** Risk-only badge for dense tables: renders nothing for "supported"/no
- *  dates — a green chip on every healthy row would be noise. */
+ *  dates - a green chip on every healthy row would be noise. */
 export function LifecycleFlag({
   state,
 }: {
@@ -97,13 +97,13 @@ export function LifecycleBar({
   item: LifecycleLike | null | undefined
   className?: string
 }) {
-  if (!item) return <span className="text-muted-foreground">—</span>
+  if (!item) return <span className="text-muted-foreground">-</span>
   const pct = lifecyclePct(item)
   if (pct === null) {
     return item.lifecycle_state ? (
       <LifecycleBadge state={item.lifecycle_state} />
     ) : (
-      <span className="text-muted-foreground">—</span>
+      <span className="text-muted-foreground">-</span>
     )
   }
   const color =

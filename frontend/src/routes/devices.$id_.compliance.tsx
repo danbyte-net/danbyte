@@ -82,7 +82,7 @@ function DeviceCompliancePage() {
           {q.isError && <QueryError error={q.error} />}
 
           {d && d.all_clear && (
-            <EmptyState title="All green — no violations.">
+            <EmptyState title="All green - no violations.">
               {d.device.name} passes every enabled compliance rule.
             </EmptyState>
           )}

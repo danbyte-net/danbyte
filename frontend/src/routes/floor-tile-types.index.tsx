@@ -76,7 +76,7 @@ function FloorTileTypesPage() {
     >
       {rows.length === 0 && !q ? (
         <p className="text-sm text-muted-foreground">
-          No tile types yet. The floor-plan palette is yours to define — create
+          No tile types yet. The floor-plan palette is yours to define - create
           “Rack”, “Wall”, “Cooling”, “Camera”… whatever your rooms contain.
           Device roles appear in the palette automatically.
         </p>
@@ -150,7 +150,7 @@ function buildColumns({
             <span className="font-mono text-xs">{row.original.color}</span>
           </span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -236,7 +236,7 @@ export function FloorTileTypeDeleteDialog({
           <AlertDialogTitle>Delete {tileType?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {placed > 0
-              ? `${placed} placed tile${placed === 1 ? "" : "s"} use this type — remove them from their floor plans first.`
+              ? `${placed} placed tile${placed === 1 ? "" : "s"} use this type - remove them from their floor plans first.`
               : "Removes this tile type from the palette."}
           </AlertDialogDescription>
         </AlertDialogHeader>

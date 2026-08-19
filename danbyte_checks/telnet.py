@@ -1,4 +1,4 @@
-"""Telnet checker — raw asyncio socket.
+"""Telnet checker - raw asyncio socket.
 
 ``telnetlib`` was removed in Python 3.13 (PEP 594), so this is a minimal check
 over a plain asyncio connection: TCP connect to port 23 (default) plus an

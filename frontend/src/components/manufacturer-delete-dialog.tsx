@@ -48,7 +48,7 @@ export function ManufacturerDeleteDialog({
           <AlertDialogTitle>Delete {manufacturer?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {inUse
-              ? `${manufacturer?.device_type_count} device type(s) reference this manufacturer — reassign or delete them first.`
+              ? `${manufacturer?.device_type_count} device type(s) reference this manufacturer - reassign or delete them first.`
               : "This action can't be undone."}
           </AlertDialogDescription>
         </AlertDialogHeader>

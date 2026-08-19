@@ -59,7 +59,7 @@ export function DeviceConfigRender({
       <div className="space-y-3 rounded-lg border border-border p-4">
         {options.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No device export templates yet — create one under{" "}
+            No device export templates yet - create one under{" "}
             <span className="font-medium">Customize → Export templates</span>{" "}
             with object type <span className="font-mono">device</span>.
           </p>

@@ -46,7 +46,7 @@ export function ZoneDeleteDialog({
           <AlertDialogTitle>Delete zone {zone?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {usage > 0
-              ? `${usage} VLAN${usage === 1 ? "" : "s"} currently use this zone — they'll be left without one.`
+              ? `${usage} VLAN${usage === 1 ? "" : "s"} currently use this zone - they'll be left without one.`
               : "This action can't be undone."}
           </AlertDialogDescription>
         </AlertDialogHeader>

@@ -14,7 +14,7 @@ import { SettingsCard } from "@/components/settings/settings-card"
 import { apiErrorToast } from "@/lib/api-toast"
 
 // Two-factor authentication: authenticator (TOTP) enrolment for the current
-// user. Email OTP needs no setup here — it's available at login whenever the
+// user. Email OTP needs no setup here - it's available at login whenever the
 // account has an email and `mfa_email` is on; an admin toggles `require_mfa`.
 export function TwoFactorSection() {
   const { me } = useMe()

@@ -2,10 +2,10 @@
 
 These helpers let any create view opt into:
 
-  - "Save and add more" — submit button that, on a successful save, redirects
+  - "Save and add more" - submit button that, on a successful save, redirects
     back to the same create form with the *non-unique* fields the user just
     entered carried over via GET so they can keep typing the next row.
-  - Initial seeding from GET — the redirect target reads its initial values
+  - Initial seeding from GET - the redirect target reads its initial values
     out of ``request.GET`` so the round-trip works without view-specific glue.
 
 Designed to compose with both bound Django ``Form``/``ModelForm`` and with

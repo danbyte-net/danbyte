@@ -42,7 +42,7 @@ function SelectTrigger({
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        // `w-full min-w-0`, matching Input and Combobox — the contract the 39
+        // `w-full min-w-0`, matching Input and Combobox - the contract the 39
         // explicit-`w-full` sites and all 166 FormSelect callers already assume.
         // Upstream shadcn ships `w-fit` here, which sizes the control to
         // whatever value is currently selected: narrow when empty, wider after
@@ -51,8 +51,8 @@ function SelectTrigger({
         // deliberate fixed-width toolbar selects are unaffected.
         //
         // Truncation: the value span is `flex` (it may hold an icon + text), and
-        // `display:flex` beats the `line-clamp-1` this used to carry — verified
-        // by compiling both utilities — so the clamp was inert and long values
+        // `display:flex` beats the `line-clamp-1` this used to carry - verified
+        // by compiling both utilities - so the clamp was inert and long values
         // clipped mid-glyph with no ellipsis. Ellipsise the inner text node
         // instead, which survives the flex.
         "flex w-full min-w-0 items-center justify-between gap-1.5 rounded-md border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[slot=select-value]:flex *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 *:data-[slot=select-value]:*:truncate *:data-[slot=select-value]:truncate dark:bg-input/30 dark:hover:bg-input/50 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",

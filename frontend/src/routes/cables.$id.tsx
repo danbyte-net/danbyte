@@ -38,7 +38,7 @@ import { StrandTraceDialog } from "@/components/fiber/strand-trace-dialog"
 export const Route = createFileRoute("/cables/$id")({ component: CableDetail })
 
 const summary = (terms: Termination[]) =>
-  terms.length ? terms.map((t) => `${t.device.name}:${t.name}`).join(", ") : "—"
+  terms.length ? terms.map((t) => `${t.device.name}:${t.name}`).join(", ") : "-"
 
 function CableDetail() {
   const { id } = Route.useParams()
@@ -59,7 +59,7 @@ function CableDetail() {
 }
 
 function TerminationBox({ t }: { t: Termination }) {
-  // A power feed hangs off a power panel, not a device — the API surfaces the
+  // A power feed hangs off a power panel, not a device - the API surfaces the
   // panel under the same `device` key, so both halves of the box point at the
   // power pages instead of a device that doesn't exist.
   const feed = t.kind === "power_feed"

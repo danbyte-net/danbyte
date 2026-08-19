@@ -1,4 +1,4 @@
-"""seed_demo — opt-in dev/demo data.
+"""seed_demo - opt-in dev/demo data.
 
 Creates one Organization, one default Tenant inside it, two VRFs (the
 implicit Global = NULL + an explicit "production"), four sites, ~25 prefixes
@@ -22,8 +22,8 @@ TENANT_NAME = "Acme Networks"
 TENANT_SLUG = "acme"
 
 SITES = [
-    ("dc-fra-01", "Frankfurt — Equinix FR4"),
-    ("dc-ams-02", "Amsterdam — Equinix AM3"),
+    ("dc-fra-01", "Frankfurt - Equinix FR4"),
+    ("dc-ams-02", "Amsterdam - Equinix AM3"),
     ("office-cph", "Copenhagen HQ"),
     ("edge-stk", "Stockholm POP"),
 ]
@@ -78,30 +78,30 @@ TAGS = [
 # vrf_name=None  → Global VRF (vrf=NULL)
 # vrf_name="…"   → looked up in VRFS_DEMO below
 PREFIXES = [
-    ("10.0.0.0/16", "container", None, 0, "Corp aggregate — Frankfurt primary region", ["prod", "core"], None),
-    ("10.0.10.0/24", "active", 10, 0, "Server LAN — production application tier", ["prod", "monitored"], None),
-    ("10.0.20.0/24", "active", 20, 0, "DMZ perimeter services — reverse proxies, WAFs, external bastion", ["dmz", "edge"], None),
+    ("10.0.0.0/16", "container", None, 0, "Corp aggregate - Frankfurt primary region", ["prod", "core"], None),
+    ("10.0.10.0/24", "active", 10, 0, "Server LAN - production application tier", ["prod", "monitored"], None),
+    ("10.0.20.0/24", "active", 20, 0, "DMZ perimeter services - reverse proxies, WAFs, external bastion", ["dmz", "edge"], None),
     ("10.0.30.0/24", "reserved", 30, 0, "Out-of-band management network", ["mgmt"], None),
-    ("10.0.40.0/24", "active", 15, 0, "Database tier — Postgres primaries + replicas", ["db", "prod", "critical"], None),
-    ("10.0.50.0/24", "active", 50, 0, "Voice / VoIP — handsets, SBCs, voicemail platform", ["voice"], None),
-    ("10.0.60.0/24", "active", 60, 0, "Storage replication — NetApp + Pure", ["storage", "prod"], None),
-    ("10.0.70.0/24", "active", 70, 0, "Backup network — Veeam + Cohesity replication", ["backup"], None),
-    ("10.0.80.0/24", "active", 80, 0, "CI/CD runners — GitHub Actions self-hosted pool", ["ci", "runners"], None),
-    ("10.0.90.0/24", "active", 90, 0, "vMotion — vSphere live migration", ["vmware"], None),
-    ("10.20.30.0/24", "active", 40, 0, "Kubernetes pod network — primary production cluster", ["k8s", "prod", "critical"], None),
-    ("10.10.0.0/16", "container", None, 1, "Branch aggregate — Amsterdam secondary region", ["branch"], None),
-    ("10.10.10.0/24", "active", 10, 1, "Branch server LAN — Amsterdam application tier", ["prod", "branch"], None),
-    ("10.10.20.0/24", "active", 20, 1, "AMS DMZ — perimeter services", ["dmz", "edge"], None),
-    ("10.10.30.0/24", "active", 30, 1, "AMS management plane — out-of-band", ["mgmt"], None),
+    ("10.0.40.0/24", "active", 15, 0, "Database tier - Postgres primaries + replicas", ["db", "prod", "critical"], None),
+    ("10.0.50.0/24", "active", 50, 0, "Voice / VoIP - handsets, SBCs, voicemail platform", ["voice"], None),
+    ("10.0.60.0/24", "active", 60, 0, "Storage replication - NetApp + Pure", ["storage", "prod"], None),
+    ("10.0.70.0/24", "active", 70, 0, "Backup network - Veeam + Cohesity replication", ["backup"], None),
+    ("10.0.80.0/24", "active", 80, 0, "CI/CD runners - GitHub Actions self-hosted pool", ["ci", "runners"], None),
+    ("10.0.90.0/24", "active", 90, 0, "vMotion - vSphere live migration", ["vmware"], None),
+    ("10.20.30.0/24", "active", 40, 0, "Kubernetes pod network - primary production cluster", ["k8s", "prod", "critical"], None),
+    ("10.10.0.0/16", "container", None, 1, "Branch aggregate - Amsterdam secondary region", ["branch"], None),
+    ("10.10.10.0/24", "active", 10, 1, "Branch server LAN - Amsterdam application tier", ["prod", "branch"], None),
+    ("10.10.20.0/24", "active", 20, 1, "AMS DMZ - perimeter services", ["dmz", "edge"], None),
+    ("10.10.30.0/24", "active", 30, 1, "AMS management plane - out-of-band", ["mgmt"], None),
     ("10.10.40.0/24", "reserved", 40, 1, "Kubernetes expansion (planned Q4)", ["k8s", "planned"], None),
-    ("10.50.0.0/16", "container", None, 3, "Edge aggregate — Stockholm POP", ["edge"], None),
+    ("10.50.0.0/16", "container", None, 3, "Edge aggregate - Stockholm POP", ["edge"], None),
     ("10.50.10.0/24", "active", 10, 3, "Edge production traffic", ["prod", "edge"], None),
-    ("192.168.1.0/24", "active", 100, 2, "Office wired — Copenhagen HQ employee network", ["office", "dhcp"], None),
-    ("192.168.2.0/24", "active", 101, 2, "Guest wifi — visitor traffic", ["guest", "wifi"], None),
-    ("192.168.10.0/24", "reserved", 110, 2, "Office test lab — engineering staging", ["lab", "test"], None),
-    ("172.16.0.0/24", "deprecated", 99, 3, "Legacy lab — scheduled for decommission after Q3", ["legacy", "lab"], None),
+    ("192.168.1.0/24", "active", 100, 2, "Office wired - Copenhagen HQ employee network", ["office", "dhcp"], None),
+    ("192.168.2.0/24", "active", 101, 2, "Guest wifi - visitor traffic", ["guest", "wifi"], None),
+    ("192.168.10.0/24", "reserved", 110, 2, "Office test lab - engineering staging", ["lab", "test"], None),
+    ("172.16.0.0/24", "deprecated", 99, 3, "Legacy lab - scheduled for decommission after Q3", ["legacy", "lab"], None),
     ("172.20.0.0/24", "deprecated", 200, 3, "Old subnet pending teardown", ["legacy"], None),
-    ("2001:db8:1::/64", "active", 10, 0, "IPv6 production segment — dual-stack rollout phase 2", ["ipv6", "prod"], None),
+    ("2001:db8:1::/64", "active", 10, 0, "IPv6 production segment - dual-stack rollout phase 2", ["ipv6", "prod"], None),
     ("2001:db8:2::/64", "reserved", 20, 0, "IPv6 DMZ (planned)", ["ipv6", "dmz"], None),
 
     # ─── VRF: production ─ same CIDRs allowed because different routing table ──
@@ -111,7 +111,7 @@ PREFIXES = [
 
     # ─── VRF: lab ─ small lab routing context ────────────────────────────
     ("10.10.0.0/16", "container", None, 1, "Lab VRF aggregate", ["lab"], "lab"),
-    ("10.10.10.0/24", "active", 99, 1, "Lab VRF — experiments", ["lab", "test"], "lab"),
+    ("10.10.10.0/24", "active", 99, 1, "Lab VRF - experiments", ["lab", "test"], "lab"),
 ]
 
 VRFS_DEMO = [
@@ -163,7 +163,7 @@ class Command(BaseCommand):
             vrf_map[name] = v
         self.stdout.write(f"VRFs: {len(vrf_map)} explicit + Global (NULL)")
 
-        # Tags (still global — Phase 5 makes them tenant-scoped)
+        # Tags (still global - Phase 5 makes them tenant-scoped)
         tag_map = {}
         for name, color in TAGS:
             tag, _ = Tag.objects.get_or_create(
@@ -250,7 +250,7 @@ class Command(BaseCommand):
                 hosts = list(net.hosts())
                 random.shuffle(hosts)
                 # Tenant default status (created earlier by the role/status
-                # migration) — every new IP needs an Status FK.
+                # migration) - every new IP needs an Status FK.
                 from api.models import Status
                 default_status = (
                     Status.objects.filter(

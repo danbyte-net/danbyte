@@ -44,7 +44,7 @@ function TableDefaultsPage() {
           <>
             Publish your current column layout as the starting point for
             everyone in this tenant. <span className="font-medium">Lock</span>{" "}
-            it to force the layout — users keep their saved layouts but can't
+            it to force the layout - users keep their saved layouts but can't
             change locked tables until you unlock.
           </>
         }

@@ -26,7 +26,7 @@ export const CERT_WARNING_DAYS = 30
 export type ExpiryTone = "expired" | "critical" | "warning" | "healthy"
 
 /** Derive urgency from the server-derived `is_expired` / `days_until_expiry`,
- * never a client-side date compare — a stale row can't read as healthy. */
+ * never a client-side date compare - a stale row can't read as healthy. */
 export function expiryTone(cert: Certificate): ExpiryTone {
   if (cert.is_expired || cert.days_until_expiry <= 0) return "expired"
   if (cert.days_until_expiry <= CERT_CRITICAL_DAYS) return "critical"
@@ -37,7 +37,7 @@ export function expiryTone(cert: Certificate): ExpiryTone {
 // Reuse the app's existing severity vocabulary (see alerts.tsx / the Badge
 // variants) rather than a new palette: expired = the `destructive`/down tone,
 // within-critical = `warning` (amber), within-warning = the `info` caution
-// tone, healthy = muted text (no pill — a cert with years left is not news).
+// tone, healthy = muted text (no pill - a cert with years left is not news).
 const TONE_VARIANT: Record<
   Exclude<ExpiryTone, "healthy">,
   "destructive" | "warning" | "info"
@@ -86,7 +86,7 @@ export function ExpiryBadge({ cert }: { cert: Certificate }) {
 }
 
 // Origin reuses the neutral Badge tones (secondary/outline) rather than a new
-// colour palette — it is a provenance label, not a severity. "Uploaded" is the
+// colour palette - it is a provenance label, not a severity. "Uploaded" is the
 // authored source of truth, "Observed" is what the wire showed, "Both" is an
 // uploaded cert since seen being served (the fingerprints matched).
 const ORIGIN_LABEL: Record<CertificateOrigin, string> = {
@@ -114,7 +114,7 @@ const ALG_LABEL: Record<PublicKeyAlgorithm, string> = {
   unknown: "Unknown",
 }
 
-/** "RSA 2048", "ECDSA 256" — algorithm plus key size. */
+/** "RSA 2048", "ECDSA 256" - algorithm plus key size. */
 export function fmtKey(cert: Certificate): string {
   const alg = ALG_LABEL[cert.public_key_algorithm]
   return cert.public_key_bits != null ? `${alg} ${cert.public_key_bits}` : alg
@@ -184,7 +184,7 @@ export function buildCertificateColumns<T extends Certificate = Certificate>(
       header: "Issuer",
       cell: ({ row }) => (
         <span className="text-xs">
-          {row.original.issuer_cn || row.original.issuer || "—"}
+          {row.original.issuer_cn || row.original.issuer || "-"}
         </span>
       ),
     }),

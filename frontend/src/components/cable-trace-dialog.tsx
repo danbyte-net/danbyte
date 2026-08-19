@@ -18,7 +18,7 @@ export interface CableTraceTarget {
   label: string
 }
 
-/** The end-to-end run for one cable, as the flat path strip in a dialog —
+/** The end-to-end run for one cable, as the flat path strip in a dialog -
  * launched from the cables table and the device Hardware tab without leaving
  * the page. Shares the trace cache with the cable page's Trace tab. */
 export function CableTraceDialog({
@@ -49,7 +49,7 @@ export function CableTraceDialog({
           <>
             {q.data && !q.data.complete && (
               <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                Incomplete — the run dead-ends before reaching a far port.
+                Incomplete - the run dead-ends before reaching a far port.
               </p>
             )}
             <div className="overflow-x-auto">
@@ -58,7 +58,7 @@ export function CableTraceDialog({
           </>
         ) : target ? (
           // Breakout / looped / otherwise non-linear runs can't be a flat
-          // strip — render the full trace graph inline (shares this dialog's
+          // strip - render the full trace graph inline (shares this dialog's
           // trace cache) instead of sending the user off to the cable page.
           <TraceSection
             url={`/api/cables/${target.id}/trace/`}

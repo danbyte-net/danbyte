@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest"
  *  treatment): `size="icon"`, `h-7 w-7`, muted → destructive on hover. Before
  *  this test the codebase had four sizes (xs/sm/icon/icon-sm) and two colour
  *  treatments for the same trash can, so tables looked subtly different from
- *  each other. Labelled buttons ("Delete 3 boards") are unaffected — this only
+ *  each other. Labelled buttons ("Delete 3 boards") are unaffected - this only
  *  covers ICON-ONLY trash buttons. */
 const SRC = join(process.cwd(), "src")
 

@@ -1,4 +1,4 @@
-"""User + tenant preferences — the cascading-default registry.
+"""User + tenant preferences - the cascading-default registry.
 
 Every settable preference goes through here so the same lookup rule applies
 everywhere:
@@ -7,7 +7,7 @@ everywhere:
 
 The first non-missing wins. Booleans are honored when explicitly set (so
 turning a default off doesn't fall through to the tenant default). Keys
-that aren't in :data:`DEFAULTS` are unknown — fail loudly when read.
+that aren't in :data:`DEFAULTS` are unknown - fail loudly when read.
 
 Adding a new preference:
 
@@ -30,12 +30,12 @@ DEFAULTS: dict[str, Any] = {
     "table_stripes":  False,       # Striped rows on by default?
 
     # ─── Visual ──────────────────────────────────────────────────────────
-    "theme":          "system",    # system | light | dark — initial render.
-    "time_format":    "relative",  # relative | absolute — how timestamps show.
+    "theme":          "system",    # system | light | dark - initial render.
+    "time_format":    "relative",  # relative | absolute - how timestamps show.
 
     # ─── Date & time display ─────────────────────────────────────────────
     # "auto" = inherit the tenant default (TenantSettings.override_datetime
-    # or the deployment default — core.effective_settings.effective_datetime).
+    # or the deployment default - core.effective_settings.effective_datetime).
     # Anything else is a personal override; resolution in datetime_prefs().
     "date_format":    "auto",      # auto | a DeploymentSettings.DATE_FORMAT_CHOICES key
     "time_style":     "auto",      # auto | 24h | 12h
@@ -63,9 +63,9 @@ DEFAULTS: dict[str, Any] = {
     "notify_task_due":      True,  # The daily "your work" reminder.
 
     # ─── IPAM defaults (set by admin, used as initial values on create) ──
-    "default_ip_status_id": None,   # Status.id or None — picks tenant's is_default
-    "default_ip_role_id":   None,   # IPRole.id or None — no role on create
-    "gateway_role_id":      None,   # IPRole.id flagged is_gateway — auto-fill on
+    "default_ip_status_id": None,   # Status.id or None - picks tenant's is_default
+    "default_ip_role_id":   None,   # IPRole.id or None - no role on create
+    "gateway_role_id":      None,   # IPRole.id flagged is_gateway - auto-fill on
                                     # site creation. None = use the role with
                                     # is_gateway=True in the tenant catalog.
 
@@ -128,7 +128,7 @@ def datetime_prefs(user, tenant=None) -> dict:
     """The EFFECTIVE date/time display settings for this user + tenant:
     ``{"date_format", "time_style", "timezone"}``.
 
-    Resolution per key: the user's pref when it is a *valid* explicit value —
+    Resolution per key: the user's pref when it is a *valid* explicit value -
     "auto" (the default), an unknown format, or a bogus timezone all fall
     through to the tenant-effective value
     (:func:`core.effective_settings.effective_datetime_values`, i.e. the

@@ -1,4 +1,4 @@
-"""Planning — boards, statuses, tasks, generic links."""
+"""Planning - boards, statuses, tasks, generic links."""
 from __future__ import annotations
 
 from django.contrib.auth.models import User
@@ -187,7 +187,7 @@ class TaskApiTests(Base):
 
 class AssignableUsersTests(Base):
     """Assignment must work for someone who can edit tasks but is not a user
-    administrator — /api/users/ requires `user.view`, which made the assignee
+    administrator - /api/users/ requires `user.view`, which made the assignee
     picker silently empty (and assignment impossible) for exactly the people
     who do the work."""
 

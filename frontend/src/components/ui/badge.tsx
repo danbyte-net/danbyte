@@ -19,7 +19,7 @@ const badgeVariants = cva(
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "link underline-offset-4",
-        // Danbyte status families — same shape as default but tinted.
+        // Danbyte status families - same shape as default but tinted.
         // Use these for any semantic "this thing is healthy/warning/dead"
         // signal. Kept separate from `default`/`destructive` so brand
         // theme swaps never change the meaning of green/amber/red.

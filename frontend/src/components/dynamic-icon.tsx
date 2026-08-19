@@ -21,7 +21,7 @@ for (const [pascal, component] of Object.entries(icons)) {
   byKebab.set(pascalToKebab(pascal), component)
 }
 
-/** All valid icon names (kebab-case), sorted — the icon picker's corpus. */
+/** All valid icon names (kebab-case), sorted - the icon picker's corpus. */
 export const ICON_NAMES: string[] = [...byKebab.keys()].sort()
 
 export function isValidIconName(name: string): boolean {

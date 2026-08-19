@@ -31,7 +31,7 @@ class LDAPGroupMappingTests(TestCase):
         )
 
     def test_maps_dns_case_insensitively(self):
-        # AD DNs are case-insensitive — a differently-cased DN still maps.
+        # AD DNs are case-insensitive - a differently-cased DN still maps.
         groups = set(
             danbyte_groups_for_dns(
                 {"cn=network admins,ou=groups,dc=acme,dc=local"}
@@ -58,7 +58,7 @@ class LDAPGroupMappingTests(TestCase):
             },
         )
         self.assertEqual(set(u.groups.all()), {self.admins, self.readers})
-        # the stray (unmapped) membership is gone — directory is source of truth
+        # the stray (unmapped) membership is gone - directory is source of truth
         self.assertNotIn(stray, u.groups.all())
 
 

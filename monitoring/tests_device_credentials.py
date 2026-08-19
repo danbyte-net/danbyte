@@ -1,4 +1,4 @@
-"""DeviceCredential — CRUD, tenant isolation, and the reveal capability verb.
+"""DeviceCredential - CRUD, tenant isolation, and the reveal capability verb.
 
 A device credential links a device to an *externally-authored* secret: Danbyte
 stores only the reference (provider + path), never the value. The secret is only
@@ -87,7 +87,7 @@ class DeviceCredentialCrudTests(_Mixin, APITestCase):
     def test_secret_value_never_serialised(self):
         r = self._make(secret_path="creds/x")
         body = r.json()
-        # Only the reference is exposed — provider + path, never a value column.
+        # Only the reference is exposed - provider + path, never a value column.
         self.assertEqual(body["secret_provider"], "local")
         self.assertEqual(body["secret_path"], "creds/x")
         for banned in ("secret", "value", "password", "secret_value", "private_key"):
@@ -123,7 +123,7 @@ class DeviceCredentialTenantIsolationTests(_Mixin, APITestCase):
         self._login(self.su)  # active tenant = One
 
     def test_other_tenant_credential_is_404(self):
-        # Superuser, but the active tenant is One — a Two credential is invisible.
+        # Superuser, but the active tenant is One - a Two credential is invisible.
         self.assertEqual(
             self.client.get(f"{BASE}{self.other_cred.id}/").status_code, 404
         )
@@ -159,7 +159,7 @@ class DeviceCredentialRevealRbacTests(_Mixin, APITestCase):
     # ── the verb itself is fail-closed and independent of change ────────────
     def test_reveal_denied_without_reveal_verb(self):
         u = self._user("editor")
-        # Can view AND change the credential, and view the device — but no reveal.
+        # Can view AND change the credential, and view the device - but no reveal.
         self._grant(u, {"devicecredential": ["view", "change"], "device": ["view"]})
         self._login(u)
         self.assertEqual(
@@ -210,7 +210,7 @@ class DeviceCredentialRevealRbacTests(_Mixin, APITestCase):
 
     def test_managed_secret_is_written_and_revealed(self):
         # Create a managed credential with a typed password: Danbyte stores it in
-        # the active store under its own ref, and reveal returns it — no manual
+        # the active store under its own ref, and reveal returns it - no manual
         # StoredSecret seeding.
         u = self._user("mgr", superuser=True)
         self._login(u)
@@ -243,7 +243,7 @@ class DeviceCredentialRevealRbacTests(_Mixin, APITestCase):
         self.assertEqual(r.status_code, 400)
 
     def test_reveal_never_resolves_another_tenants_secret(self):
-        # Another tenant holds a secret at the *same ref path* — the local store
+        # Another tenant holds a secret at the *same ref path* - the local store
         # must scope by tenant so this tenant's reveal can never read it. Drop
         # this tenant's own secret so only the other tenant's remains at the ref.
         StoredSecret.objects.filter(tenant=self.tenant, ref="creds/sw1/admin").delete()
@@ -291,7 +291,7 @@ class RbacVerbVocabularyTests(_Mixin, APITestCase):
         self.assertTrue(rbac.has_action(u, self.tenant, "device", "connect"))
 
     def test_existing_four_verb_grant_unchanged(self):
-        # A pre-existing CRUD grant still resolves exactly its four verbs — the
+        # A pre-existing CRUD grant still resolves exactly its four verbs - the
         # new verbs neither leak in nor drop the old ones.
         u = self._user("crud")
         self._grant(u, {"prefix": ["view", "add", "change", "delete"]})

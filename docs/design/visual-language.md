@@ -5,37 +5,37 @@ icon: lucide/palette
 # Visual language
 
 The visual standard for Danbyte is defined in `/CLAUDE.md` at the project root.
-The running React SPA in `frontend/` is its source of truth — read the shared
+The running React SPA in `frontend/` is its source of truth - read the shared
 primitives before adding UI.
 
 ## In one breath
 
 Restrained, real, neutral. Borders define edges, not shadows. Color exists
 only to convey state. The interface is built for technical operators who scan
-a lot of data fast — typography and spacing serve that, not decoration.
+a lot of data fast - typography and spacing serve that, not decoration.
 
 ## Tokens
 
 - **Neutrals**: Tailwind `zinc`. Not `gray`, not `slate`.
 - **Status colors** (only when conveying state):
-    - Success — `emerald`
-    - Warning — `amber`
-    - Danger — `red`
-    - Neutral — `zinc`
+    - Success - `emerald`
+    - Warning - `amber`
+    - Danger - `red`
+    - Neutral - `zinc`
 - **Primary / accent**: `--primary` is Danbyte **blue** (`styles.css`), and the
   chart ramp is built from it. Earlier drafts of this doc claimed a neutral
   primary with no brand accent; the shipped token has been blue for a long time
   and the whole product is built and screenshotted against it, so the doc was the
   stale side and has been corrected here rather than the token. Blue is for
-  *primary action and selection only* — it is not decoration, and it never
+  *primary action and selection only* - it is not decoration, and it never
   carries meaning that belongs to a status colour.
 - **One selection colour.** Anything meaning "this is the selected thing" uses
   `--primary`. Canvas surfaces (3D, floor plan, site map, topology) can't read
   CSS variables today and hard-code `#0ea5e9` in ~19 places, which is a
-  *different* blue — so selection currently reads as two colours depending on
+  *different* blue - so selection currently reads as two colours depending on
   which surface you're on. Until a `readCssVar()` bridge exists, keep new canvas
   code on the shared constant rather than adding another literal.
-- **Links**: never blue. Use the `.link` class (`styles.css`) — it inherits the
+- **Links**: never blue. Use the `.link` class (`styles.css`) - it inherits the
   surrounding text colour and reveals an underline only on **hover** and
   keyboard **focus** (with a focus ring). This keeps link-dense pages from
   turning into a wall of blue while still marking clickability. `--primary` is
@@ -54,14 +54,14 @@ badge, tag, table, dropdown, etc).
 
 ## Where to look
 
-- `frontend/src/styles.css` — the active design tokens and global styling
-- `frontend/src/components/ui/` — the shadcn primitives (button, badge, input,
+- `frontend/src/styles.css` - the active design tokens and global styling
+- `frontend/src/components/ui/` - the shadcn primitives (button, badge, input,
   checkbox, select, command, popover, dialog, …)
-- `frontend/src/components/forms/` — the form-field layer built on those
+- `frontend/src/components/forms/` - the form-field layer built on those
   primitives, re-exported from one barrel (`@/components/forms`)
-- `frontend/src/components/` — shared and domain components (`DataTable`,
+- `frontend/src/components/` - shared and domain components (`DataTable`,
   `ListPageShell`, `DetailShell`, `KvCard`, `StatusBadge`, `ObjectPicker`, …)
-- `docs/architecture/shadcn-tokens.md` — the token/variable reference
+- `docs/architecture/shadcn-tokens.md` - the token/variable reference
 
 ## Never hand-roll a control
 
@@ -80,7 +80,7 @@ browser's own widget, ignores the theme, and drifts the moment tokens change.
 | Free text with common values | `FormText` with `suggestions` (or `SuggestInput` directly) | `<datalist>`, or a `<select>` that locks out other values |
 | Object reference | `ObjectPicker` or an existing domain picker preset | a bespoke fetch + list |
 
-Radix controls report changes differently from DOM ones — `Checkbox` uses
+Radix controls report changes differently from DOM ones - `Checkbox` uses
 `onCheckedChange(bool)` and `Select` uses `onValueChange(string)`, not
 `onChange(event)`. A Radix `SelectItem` also cannot carry `value=""`; give an
 "any" row a sentinel value and map it at both ends.
@@ -106,12 +106,12 @@ A control must declare *one* width contract, and the shared primitives do:
 
 | primitive | contract |
 |---|---|
-| `Input`, `Textarea`, `SelectTrigger`, `Combobox` | `w-full min-w-0` — fill the slot, and stay shrinkable |
+| `Input`, `Textarea`, `SelectTrigger`, `Combobox` | `w-full min-w-0` - fill the slot, and stay shrinkable |
 | compact toolbar control | an explicit `w-*` **plus `shrink-0`** at the call site |
 
 Never let a control size itself to its *content*. `SelectTrigger` shipped with
 upstream shadcn's `w-fit`, so it was narrow when empty and grew when a value was
-picked — a labelled field in a grid row changed width and shoved its neighbours.
+picked - a labelled field in a grid row changed width and shoved its neighbours.
 
 Long values **ellipsise**, they don't clip. Watch for one trap: `truncate` and
 `line-clamp-*` both set `display`, so they lose to a sibling `flex` on the same
@@ -125,7 +125,7 @@ inner text node instead.
 `data-size`.
 
 **Do not pass a width class.** `cn()` is tailwind-merge, which only dedupes
-classes carrying the *same* modifier — so an unprefixed `max-w-lg` does **not**
+classes carrying the *same* modifier - so an unprefixed `max-w-lg` does **not**
 cancel the primitive's `sm:max-w-*`. Both land, specificity ties, and Tailwind
 emits the variant later, so the default wins on every desktop. Six dialogs
 shipped believing they were wide and weren't. `data-size` can't be clobbered
@@ -136,7 +136,7 @@ any 2-column grid, `2xl`/`3xl` for tables, trees and traces.
 
 ## List-page chrome
 
-Every list page is `ListPageShell` + `DataTable` — no exceptions, so header
+Every list page is `ListPageShell` + `DataTable` - no exceptions, so header
 height, search placement, action order, and the loading/error/empty treatment
 can't drift page to page (source of truth:
 `frontend/src/components/list-page-shell.tsx`, reference implementation
@@ -144,7 +144,7 @@ can't drift page to page (source of truth:
 
 - The shell owns the h-14 header (title · count chip · search · actions) and the
   scrolling body. Header order is fixed: **search first, then the action
-  cluster** — `TableActions` (Import / Export) and then `Add X`.
+  cluster** - `TableActions` (Import / Export) and then `Add X`.
 - `Add X` is the copy for a create button, with **no icon**. Not "New X".
 - Filters live in the rail (`FilterRail` + `FacetGroup`, usually via
   `useTableFilters`), not in a second toolbar row under the header. A filter that
@@ -154,18 +154,18 @@ can't drift page to page (source of truth:
 - A facet with no options renders nothing, and a **derived** enum facet (a
   yes/no or state split computed from the row rather than read off a catalog
   object) sets `hideWhenSingle` so it also disappears when every row lands in
-  the same bucket — ticking its one option would select the whole table. Rail
+  the same bucket - ticking its one option would select the whole table. Rail
   length is the budget: a rail you have to scroll to reach Manufacturer is worse
   than a short one.
 - Empty is either the `DataTable` "No results." row (a filter matched nothing)
-  or an `EmptyState` carrying first-run guidance (nothing exists yet) — never a
+  or an `EmptyState` carrying first-run guidance (nothing exists yet) - never a
   bare paragraph. Loading and errors are the shell's, via its `query` prop.
 - A **tabbed** list (Prefixes, Drift, Alerts, Compliance, Jobs) puts one h-10
   `SegmentedTabs` strip *above* the shell and renders a shell per tab, so each
   tab supplies its own count, search, rail, and actions.
 - Tables are paged by `DataTable` alone. When the API pages server-side, hand it
   `serverPagination={{ page, pageCount, totalRows, onPageChange }}` so that one
-  pager drives the server — don't add a second Prev/Next row.
+  pager drives the server - don't add a second Prev/Next row.
 - A list that is a view *of* another list (e.g. `/racks/elevations`) gets the
   shell's `backTo` / `backLabel` breadcrumb rather than its own nav.
 
@@ -177,7 +177,7 @@ list-page table names a `tableId` so it gets the persistent column picker.
 **One entity, one column factory** (`frontend/src/components/columns/`), reused
 by its list page *and* every embedded table. A second `ColumnDef[]` for the same
 entity is how a row starts reading differently depending on which page you
-opened it from — a device that shows its compliance marker on `/devices` and
+opened it from - a device that shows its compliance marker on `/devices` and
 hides it on the site page, a site link that is blue in one table and neutral in
 the next.
 
@@ -199,7 +199,7 @@ the next.
 | Device role | `buildDeviceRoleColumns()` |
 | Service | `buildServiceColumns()` |
 
-Each takes options — never per-caller branches inside the factory:
+Each takes options - never per-caller branches inside the factory:
 
 - `include` / `omit` pick columns; the factory's canonical order always applies,
   so two pages showing the same columns cannot show them in a different order.
@@ -211,7 +211,7 @@ Each takes options — never per-caller branches inside the factory:
   column, `tagFilter` wires tag chips to a page filter (omit it and the chips
   are static rather than falsely clickable), `cfDefs` adds custom-field columns.
 - A handful carry a named presentation knob where an embedded pane genuinely
-  renders a column differently from the list — `siteVariant` (linked vs muted
+  renders a column differently from the list - `siteVariant` (linked vs muted
   plain text), `buildClusterColumns`' `typeVariant`, `buildCableColumns`'
   `labelVariant` / `terminationsLinked` / `statusEditable`,
   `buildServiceColumns`' `linked` (the device / VM pane renders the name and IP
@@ -221,11 +221,11 @@ Each takes options — never per-caller branches inside the factory:
   column.
 - `plainHeaders`, `zeroCounts` and `countFacets` keep an older surface reading
   exactly as it did: a read-only or embedded table that never offered sorting on
-  a column, one that prints `0` rather than `—` for an empty count, or a tab that
+  a column, one that prints `0` rather than `-` for an empty count, or a tab that
   filters counts by range instead of the list page's in-use / unused split.
 - A page's own columns are **spliced around** the factory's output (rack
   position, monitoring bindings, a virtual-chassis Member column, the cables
-  list's trace-plus-row-actions pair) — see `routes/locations.$id.tsx`,
+  list's trace-plus-row-actions pair) - see `routes/locations.$id.tsx`,
   `routes/racks.$id.tsx`, and `routes/cables.index.tsx`.
 
 Object references inside a cell come from `components/cells/`: `siteColumn` /
@@ -246,16 +246,16 @@ Every object detail page follows one tab convention (source of truth:
   the object's name/title, status/state badges, tags, description, and at most
   one or two truly identifying stats (e.g. Site + Primary IP on a device).
   Don't crowd the header with a long `<dl>` of attributes.
-- All the remaining attributes live in an **Overview** tab — the first tab,
-  and the default — rendered as `KvCard` tables (`<KvCard title rows>`) in a
+- All the remaining attributes live in an **Overview** tab - the first tab,
+  and the default - rendered as `KvCard` tables (`<KvCard title rows>`) in a
   `grid gap-6 lg:grid-cols-2`, grouped into a few sensibly-titled cards. This
   is the "read it as tables in the page body" layout.
 - After Overview come the related-object tabs (with a count where the API
   provides one), then always **Journal** and **History** as the last two, in
   that order.
 
-Never render History (`ChangeLogPanel`) or Journal (`JournalPanel`) — or a
-wall of attribute fields — inline in the header. Attributes go in the Overview
+Never render History (`ChangeLogPanel`) or Journal (`JournalPanel`) - or a
+wall of attribute fields - inline in the header. Attributes go in the Overview
 tab's `KvCard`s; history and journal are always their own tabs.
 
 ## The detail hero
@@ -263,13 +263,13 @@ tab's `KvCard`s; history and journal are always their own tabs.
 The summary section itself is `DetailHero`, passed to `DetailShell`'s `hero`
 prop (source of truth: `frontend/src/components/detail-shell.tsx`, reference
 implementation `routes/aggregates.$id.tsx`). It owns the section wrapper, the
-title element and its size, and the stat rail — a page only supplies content:
+title element and its size, and the stat rail - a page only supplies content:
 
 | slot | renders |
 |---|---|
 | `title` (+ `mono`) | the page's single `<h1>`, always `text-2xl font-semibold tracking-tight` |
 | `badges` | status/state chips, inline with the title and wrapping with it |
-| `subtitle` | one secondary line — a parent link, a facility ID, ports, a second row of chips |
+| `subtitle` | one secondary line - a parent link, a facility ID, ports, a second row of chips |
 | `tags` | `<TagList tags={…} />` |
 | `description` | the object's description |
 | `children` | anything else in the left column, below the description |
@@ -281,7 +281,7 @@ copied 42× before this primitive existed and had drifted to four title sizes
 (`div`/`span`/`h1`, only four of them a real heading), two incompatible
 layouts, a local `DetailStat` fork that rendered prefix utilisation 50% larger
 than every other stat in the product, and one page (cables) with no title at
-all. If a title is an identifier — IP, CIDR, ASN, interface, circuit ID — pass
+all. If a title is an identifier - IP, CIDR, ASN, interface, circuit ID - pass
 `mono`; if it *is* a coloured catalog object, pass the `ColorBadge` as `title`
 so the badge still sizes itself and the `<h1>` still lands in the document
 outline.

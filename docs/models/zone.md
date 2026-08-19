@@ -4,7 +4,7 @@ icon: lucide/shield
 
 # Zone
 
-A **security zone** — models zone-based firewalling the way Palo Alto (and
+A **security zone** - models zone-based firewalling the way Palo Alto (and
 most modern firewalls) think about it: interfaces/segments belong to zones,
 and policy is written zone-to-zone. Danbyte ships **zero pre-filled zones**;
 each tenant defines its own catalog (e.g. `trust`, `untrust`, `dmz`,
@@ -29,7 +29,7 @@ on the same rows.
 
 ## API
 
-`/api/zones/` — standard CRUD (`?picker=1` for the light picker shape,
+`/api/zones/` - standard CRUD (`?picker=1` for the light picker shape,
 `?search=`), plus `POST /api/zones/<id>/promote/` and
 `POST /api/zones/<id>/assign-site/` for locality (tenant-wide editors only).
 RBAC object type: `zone` (IPAM group).

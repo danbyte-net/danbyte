@@ -1,14 +1,14 @@
 """Force-delete a tenant and everything it owns.
 
 Structural catalogs (``Status``, ``VRF``, ``Site``, ``Manufacturer``,
-``DeviceRole``, …) reference their tenant with ``on_delete=PROTECT`` — a
+``DeviceRole``, …) reference their tenant with ``on_delete=PROTECT`` - a
 deliberate guard so a stray click can't wipe a whole tenant. That also means a
 plain ``tenant.delete()`` always raises ``ProtectedError`` once the tenant has
 any data (even the statuses/roles seeded at creation).
 
 ``force_delete_tenant`` performs the *deliberate* teardown: it repeatedly tries
 to delete the tenant, and each time a ``ProtectedError`` names the rows blocking
-it, deletes those first (which cascades their children), then retries — peeling
+it, deletes those first (which cascades their children), then retries - peeling
 the PROTECT graph layer by layer until the tenant itself goes. Everything runs
 in one transaction, so a failure leaves the tenant untouched.
 
@@ -42,7 +42,7 @@ def force_delete_tenant(tenant) -> int:
     total = 0
     # The tenant's change log is deleted along with the tenant, so recording
     # each cascaded delete would write entries referencing a tenant row this
-    # same transaction removes — the deferred foreign key then fails at COMMIT
+    # same transaction removes - the deferred foreign key then fails at COMMIT
     # and the whole deletion rolls back (#37).
     with audit_suspended(), transaction.atomic():
         for _ in range(_MAX_PASSES):
@@ -66,12 +66,12 @@ def force_delete_tenant(tenant) -> int:
                             total += deleted
                             progressed = True
                     except ProtectedError:
-                        # Still protected by something else — it'll be peeled on
+                        # Still protected by something else - it'll be peeled on
                         # a later pass once its own protectors are gone.
                         pass
 
                 if not progressed:
-                    # Nothing could be removed this pass — surface the real error
+                    # Nothing could be removed this pass - surface the real error
                     # instead of spinning.
                     logger.error("force_delete_tenant stalled on %s", tenant.pk)
                     raise

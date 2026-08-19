@@ -245,7 +245,7 @@ function EmbeddedModuleTypeTable({
           id: "part_number",
           header: "Part number",
           cell: (r) => (
-            <span className="font-mono text-xs">{r.part_number || "—"}</span>
+            <span className="font-mono text-xs">{r.part_number || "-"}</span>
           ),
         },
         {

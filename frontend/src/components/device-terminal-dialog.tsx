@@ -31,7 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-// The credentials endpoint never returns the secret — only enough to pick one.
+// The credentials endpoint never returns the secret - only enough to pick one.
 interface SshCredentialRow {
   id: string
   name: string
@@ -45,7 +45,7 @@ type Phase = "picking" | "connecting" | "open" | "error" | "closed"
  * The in-browser SSH terminal. Opens a WebSocket to the device shell consumer,
  * which authorizes the session, verifies the host key, and bridges asyncssh; we
  * only render the PTY here via xterm.js. The credential's secret never reaches
- * the browser — we pass its id and the server fetches it. An unknown host key
+ * the browser - we pass its id and the server fetches it. An unknown host key
  * surfaces an explicit "accept new host" retry (trust-on-first-use).
  */
 export function DeviceTerminalDialog({
@@ -264,7 +264,7 @@ export function DeviceTerminalDialog({
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <TerminalSquare className="h-4 w-4" /> Terminal — {device.name}
+            <TerminalSquare className="h-4 w-4" /> Terminal - {device.name}
           </DialogTitle>
           <DialogDescription>
             An SSH session to this device, brokered by Danbyte. The credential's
@@ -331,7 +331,7 @@ export function DeviceTerminalDialog({
                   <p className="text-sm text-muted-foreground">Loading…</p>
                 ) : sshCreds.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    This device has no stored SSH credential — add one on the
+                    This device has no stored SSH credential - add one on the
                     device's <span className="font-medium">Access</span> tab, or
                     use <span className="font-medium">My login</span> above.
                   </p>

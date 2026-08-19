@@ -41,7 +41,7 @@ class _TenantClientMixin:
 
 class SnmpDiscoveryRbacTests(_TenantClientMixin, APITestCase):
     """Read-only members must not manage SNMP credentials, rebind them, or
-    seed IPs via discovery/sweeps — all were IsAuthenticated-only before."""
+    seed IPs via discovery/sweeps - all were IsAuthenticated-only before."""
 
     @classmethod
     def setUpTestData(cls):
@@ -79,7 +79,7 @@ class SnmpDiscoveryRbacTests(_TenantClientMixin, APITestCase):
             self.assertEqual(r.status_code, 403, url)
 
     def test_operator_passes_the_gate(self):
-        # Operator holds ipaddress.add — the gate opens. bulk-discover with no
+        # Operator holds ipaddress.add - the gate opens. bulk-discover with no
         # ids returns the early empty summary; no network activity involved.
         self._client(self._user("op", group="Operator"))
         r = self.client.post("/api/monitoring/bulk-discover/", {}, format="json")

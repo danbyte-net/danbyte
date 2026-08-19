@@ -3,7 +3,7 @@
 The same checkers run in two places:
 
 * on a **remote outpost agent**, deployed *inside* a customer's network to
-  monitor local and internal hosts — reaching loopback / RFC1918 there is the
+  monitor local and internal hosts - reaching loopback / RFC1918 there is the
   whole point, and
 * in the **central Danbyte server**, where a tenant-defined check target that
   points at ``127.0.0.1`` or an RFC1918 neighbour is an SSRF vector: the check
@@ -12,7 +12,7 @@ The same checkers run in two places:
 So the policy can't be hard-coded. This module keeps a process-wide policy that
 **defaults to permissive** (the outpost's needs, and backward-compatible for
 existing agents that never call :func:`configure`). The central process opts
-into a stricter policy at startup via :func:`configure` — see
+into a stricter policy at startup via :func:`configure` - see
 ``monitoring/apps.py``.
 
 The cloud-metadata endpoint (link-local ``169.254.0.0/16`` / ``fe80::/10``) and
@@ -31,8 +31,8 @@ _ALLOWLIST: list[ipaddress._BaseNetwork] = []
 def configure(*, block_internal: bool, allowlist: list[str] | None = None) -> None:
     """Set the process policy. Call once at startup.
 
-    ``block_internal`` — also refuse loopback / private (RFC1918 + ULA) /
-    reserved targets (the central-server posture). ``allowlist`` — CIDRs/IPs
+    ``block_internal`` - also refuse loopback / private (RFC1918 + ULA) /
+    reserved targets (the central-server posture). ``allowlist`` - CIDRs/IPs
     whose resolved addresses are permitted even when ``block_internal`` is on
     (e.g. an on-prem automation runner the operator explicitly trusts).
     """
@@ -75,7 +75,7 @@ def address_blocked(addr: ipaddress._BaseAddress) -> bool:
 def target_blocked(target: str) -> bool:
     """Whether a check target (an IP literal) is refused.
 
-    Non-literal targets (hostnames) return ``False`` here — checks are attached
+    Non-literal targets (hostnames) return ``False`` here - checks are attached
     to ``IPAddress`` objects, so the target is normally a literal; callers that
     accept hostnames should resolve first and re-check each address.
     """

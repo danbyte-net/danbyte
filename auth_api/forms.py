@@ -65,7 +65,7 @@ class UserForm(forms.ModelForm):
         widget=MultiPickerWidget(placeholder="Search tenants…"),
         label="Tenants",
         help_text=("Tenants this user can switch to and operate within. "
-                   "Ignored for admin / superuser — they see every tenant."),
+                   "Ignored for admin / superuser - they see every tenant."),
     )
 
     class Meta:

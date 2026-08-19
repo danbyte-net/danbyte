@@ -169,7 +169,7 @@ class ConnectionApiTests(APITestCase):
         )
 
     def test_vcenter_probe_says_vcenter(self):
-        """It used to say "Proxmox VE" — the client named the product itself."""
+        """It used to say "Proxmox VE" - the client named the product itself."""
         self._login(self.admin)
         self._enable(virtualization_enabled=True)
         src = self._source("vcenter", "192.0.2.20")

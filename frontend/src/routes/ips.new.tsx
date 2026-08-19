@@ -68,7 +68,7 @@ function NewIpPage() {
       title={cloning ? "Clone IP address" : "Add IP address"}
       subtitle={
         cloning
-          ? "Pre-filled from an existing IP — enter the new address."
+          ? "Pre-filled from an existing IP - enter the new address."
           : "Register a new IP in the active tenant."
       }
     >

@@ -3,7 +3,7 @@ import * as THREE from "three"
 
 import { useMaxAnisotropy } from "./texture-quality"
 
-/** Render text to a canvas texture (system font — no network fetch, so it's
+/** Render text to a canvas texture (system font - no network fetch, so it's
  * airgap/CSP-safe, unlike drei's troika `<Text>`). Returns the texture plus
  * its pixel width/height so callers can size a plane to the text aspect. */
 function textTexture(
@@ -17,7 +17,7 @@ function textTexture(
     anisotropy = 4,
     /** Canvas pixels per texture pixel. Labels are small on screen but read at
      * a steep angle, where an undersampled canvas is exactly what makes a rack
-     * name plate mushy — draw it at 2x and let mipmaps take it down. */
+     * name plate mushy - draw it at 2x and let mipmaps take it down. */
     scale = 2,
   } = {}
 ): { texture: THREE.CanvasTexture; w: number; h: number } {
@@ -52,7 +52,7 @@ function textTexture(
  * A FLAT text label lying in the scene (not billboarded), rendered as a
  * canvas-texture plane. Used for rack name plates, device names and U numbers
  * on the cabinet's front face: anchored to the hardware, they read cleanly
- * when you face the rack and — unlike sprites — never rotate to camera and
+ * when you face the rack and - unlike sprites - never rotate to camera and
  * pile up in the aisle. The caller positions/rotates it (front face = rotate
  * π about Y so the text reads from the −Z aisle side).
  */
@@ -110,7 +110,7 @@ export function TextSprite({
   color?: string
   background?: string
 }) {
-  // Same canvas painter as FaceLabel — one place that decides how crisp text
+  // Same canvas painter as FaceLabel - one place that decides how crisp text
   // in the room is.
   const anisotropy = useMaxAnisotropy()
   const { texture, aspect } = useMemo(() => {

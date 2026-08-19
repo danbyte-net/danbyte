@@ -1,4 +1,4 @@
-"""Export-template rendering — Jinja2 in a sandbox.
+"""Export-template rendering - Jinja2 in a sandbox.
 
 Renders every object of a template's ``object_type`` (in the active tenant) with
 the user-authored template. Uses Jinja's SandboxedEnvironment so a template
@@ -36,7 +36,7 @@ def render_export_template(template, tenant) -> str:
 
 
 def render_device_config(template, device, tenant) -> str:
-    """Render an export template for a single device — the per-device
+    """Render an export template for a single device - the per-device
     intended-config generator. Context: ``device``, its merged ``config_context``,
     ``interfaces``, ``ip_addresses`` (and ``objects``/``count`` for parity)."""
     from jinja2.sandbox import SandboxedEnvironment
@@ -58,7 +58,7 @@ def render_device_config(template, device, tenant) -> str:
 
 
 def render_vm_config(template, vm, tenant) -> str:
-    """Render an export template for a single virtual machine — the per-VM
+    """Render an export template for a single virtual machine - the per-VM
     generator behind the Terraform-for-VMs flow (the template author writes
     tfvars/HCL). Context mirrors the device renderer: ``vm`` (also exposed as
     ``device`` for template parity), merged ``config_context``, ``interfaces``,

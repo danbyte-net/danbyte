@@ -1,6 +1,6 @@
 # Circuits & links
 
-Connectivity beyond the rack — the carrier circuits, power, wireless, and VPN
+Connectivity beyond the rack - the carrier circuits, power, wireless, and VPN
 tunnels that tie your sites and devices together.
 
 ## In this section

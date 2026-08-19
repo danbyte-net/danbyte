@@ -1,12 +1,12 @@
-"""Outpost API — the remote agent's endpoints (HTTPS **pull** transport).
+"""Outpost API - the remote agent's endpoints (HTTPS **pull** transport).
 
 An Outpost authenticates with its Bearer token, pulls its due checks
-(``GET /api/outpost/work`` — claiming them so nothing double-runs), runs them
+(``GET /api/outpost/work`` - claiming them so nothing double-runs), runs them
 locally with the shared ``monitoring/checkers`` code, and posts results back
 (``POST /api/outpost/results`` → ``worker.ingest_results``, the same finalise
 path the core uses). ``POST /api/outpost/hello`` is a heartbeat.
 
-Everything is scoped to the authenticating engine's tenant — an Outpost only
+Everything is scoped to the authenticating engine's tenant - an Outpost only
 ever sees and reports its own tenant's checks.
 """
 from __future__ import annotations
@@ -47,7 +47,7 @@ _STATUSES = {"up", "down", "degraded", "unknown"}
 def claim_and_build_work(engine, now=None, limit: int = WORK_BATCH) -> list[dict]:
     """Claim this engine's due checks (``in_flight``, so nothing double-runs) and
     build the work payload. Shared by the HTTPS-pull ``/work`` endpoint and the
-    SSH driver — both transports hand the Outpost the same shape."""
+    SSH driver - both transports hand the Outpost the same shape."""
     from datetime import timedelta
 
     from django.utils import timezone
@@ -190,7 +190,7 @@ def outpost_hello_view(request):
 
 
 def _update_target(engine, agent_version):
-    """The version an auto-updating Outpost should move to — the default
+    """The version an auto-updating Outpost should move to - the default
     ("golden") **binary** release, when the agent isn't already on it. None
     otherwise (auto-update off, no default, non-binary, or already current)."""
     if not engine.auto_update:
@@ -286,7 +286,7 @@ def outpost_work_view(request):
 @authentication_classes([OutpostAuthentication])
 @permission_classes([IsAuthenticated])
 def outpost_results_view(request):
-    """Ingest results the Outpost ran — the same finalise path as the core."""
+    """Ingest results the Outpost ran - the same finalise path as the core."""
     eng = request.auth
     outcome_by_id: dict = {}
     for r in request.data.get("results") or []:
@@ -311,7 +311,7 @@ SWEEP_INTERVAL_SECONDS = 600  # how often an Outpost re-runs subnet discovery
 
 def build_snmp_work(engine) -> list[dict]:
     """The SNMP devices this engine should poll, each with its resolved (now
-    site/location-scoped) credentials. No claiming — SNMP discovery is periodic
+    site/location-scoped) credentials. No claiming - SNMP discovery is periodic
     and idempotent (last write wins), so a re-poll is harmless."""
     from .engines import devices_for_engine
     from .snmp_poll import _device_target
@@ -429,7 +429,7 @@ def outpost_sweep_work_view(request):
     from .discovery import sweep_work_for_engine
 
     eng = request.auth
-    # Clear the on-demand request — the agent is handling it now.
+    # Clear the on-demand request - the agent is handling it now.
     eng.last_seen_at = timezone.now()
     eng.sweep_requested_at = None
     eng.save(update_fields=["last_seen_at", "sweep_requested_at"])
@@ -468,7 +468,7 @@ def outpost_sweep_work_view(request):
 @authentication_classes([OutpostAuthentication])
 @permission_classes([IsAuthenticated])
 def outpost_discovered_view(request):
-    """Ingest an Outpost's sweep results — create IPs for new responders through
+    """Ingest an Outpost's sweep results - create IPs for new responders through
     the same path as a local sweep. Scoped to the engine's tenant."""
     from .discovery import ingest_discovered
 
@@ -501,7 +501,7 @@ def _render_install_script(base: str, release: OutpostRelease) -> str:
         f'-H "Authorization: Bearer $TOKEN"'
     )
     if _is_binary_release(release):
-        # No Python needed — drop the binary and run it directly. Download to a
+        # No Python needed - drop the binary and run it directly. Download to a
         # temp name and atomically `mv` it into place, so **updating a running
         # Outpost doesn't hit "text file busy"** (curl -o can't truncate a binary
         # that's currently executing; rename swaps the dir entry instead).
@@ -526,7 +526,7 @@ def _render_install_script(base: str, release: OutpostRelease) -> str:
         )
         exec_start = "$PREFIX/venv/bin/danbyte-outpost run $RUNARGS"
     return f"""#!/bin/sh
-# Danbyte Outpost installer — version {release.version}
+# Danbyte Outpost installer - version {release.version}
 # Self-signed Danbyte? add --insecure (and fetch this script with `curl -k`).
 set -eu
 OUTPOST_URL="{base}"
@@ -550,7 +550,7 @@ if [ -n "$INSECURE" ]; then CURLK="-k"; RUNARGS="--insecure"; fi
 echo "Installing Danbyte Outpost {release.version} into $PREFIX"
 {install}
 
-# Credentials go in a root-only env file, never on the command line — the
+# Credentials go in a root-only env file, never on the command line - the
 # agent reads OUTPOST_URL / OUTPOST_TOKEN from the environment.
 install -d -m 700 /etc/danbyte-outpost
 umask 077
@@ -578,7 +578,7 @@ UNIT
 systemctl daemon-reload
 systemctl enable danbyte-outpost >/dev/null 2>&1 || true
 # `restart` (not `enable --now`) so a re-install always picks up the new binary
-# **and the new token** — an already-running unit wouldn't otherwise reload.
+# **and the new token** - an already-running unit wouldn't otherwise reload.
 systemctl restart danbyte-outpost
 echo "Danbyte Outpost {release.version} installed and started."
 """

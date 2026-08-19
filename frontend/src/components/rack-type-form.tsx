@@ -198,7 +198,7 @@ export function RackTypeForm({
         />
         <FormText
           label="Outer width (mm)"
-          hint="optional — cabinet footprint, for 3D & drawings"
+          hint="optional - cabinet footprint, for 3D & drawings"
           type="number"
           min={100}
           max={2000}
@@ -208,7 +208,7 @@ export function RackTypeForm({
         />
         <FormText
           label="Outer depth (mm)"
-          hint="optional — blank = 1000"
+          hint="optional - blank = 1000"
           type="number"
           min={100}
           max={3000}
@@ -218,7 +218,7 @@ export function RackTypeForm({
         />
         <FormText
           label="Weight budget"
-          hint="optional — the cabinet's load rating"
+          hint="optional - the cabinet's load rating"
           type="number"
           min={0}
           value={maxWeight}

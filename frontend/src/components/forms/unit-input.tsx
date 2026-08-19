@@ -51,7 +51,7 @@ export function UnitInput({
   placeholder,
 }: {
   label: string
-  /** Base/stored unit symbol — must be one of `units` (e.g. "MB"). */
+  /** Base/stored unit symbol - must be one of `units` (e.g. "MB"). */
   base: string
   units: Unit[]
   /** Value in base units, as a string ("" when empty). */
@@ -80,7 +80,7 @@ export function UnitInput({
           min={0}
           value={display}
           onChange={(e) => typed(e.target.value)}
-          placeholder={placeholder ?? "—"}
+          placeholder={placeholder ?? "-"}
           className="min-w-0 flex-1"
         />
         <Select value={unit} onValueChange={setUnit}>

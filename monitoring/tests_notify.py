@@ -1,4 +1,4 @@
-"""Milestone 5 tests — notification channels + retention pruning."""
+"""Milestone 5 tests - notification channels + retention pruning."""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -118,7 +118,7 @@ class StatusChangeInstantTests(Base):
     def test_webhook_failure_does_not_raise(self):
         self._channel()
         with patch("monitoring.notify.safe_post", side_effect=RuntimeError("boom")):
-            # Must swallow — a notifier error can't fail the check run.
+            # Must swallow - a notifier error can't fail the check run.
             notify.dispatch_status_changes([self._transition()])
 
     def test_instant_email_sent(self):

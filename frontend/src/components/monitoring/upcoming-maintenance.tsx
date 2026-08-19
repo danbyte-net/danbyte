@@ -7,7 +7,7 @@ import { useDateFormat } from "@/lib/datetime"
 import { StatusBadge } from "@/components/status-badge"
 
 /**
- * "What maintenance touches this object?" — the reverse of an event's impact
+ * "What maintenance touches this object?" - the reverse of an event's impact
  * list, for device/circuit detail pages. Renders nothing when no open event
  * names this object, so it costs no space on the quiet majority of pages.
  */

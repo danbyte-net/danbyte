@@ -1,13 +1,13 @@
 """Scheduled config-drift dispatch.
 
-Danbyte never runs Ansible itself — a "scheduled drift" run simply dispatches a
+Danbyte never runs Ansible itself - a "scheduled drift" run simply dispatches a
 drift event to every configured automation target via
 ``integrations.dispatch.enqueue_deploy``. The accompanying management command
 (``manage.py drift_dispatch``) is fired every minute by a systemd timer; the
 work here self-throttles to the interval configured in DeploymentSettings, so
 the timer can stay coarse.
 
-No request context — we iterate active tenants explicitly.
+No request context - we iterate active tenants explicitly.
 """
 from __future__ import annotations
 

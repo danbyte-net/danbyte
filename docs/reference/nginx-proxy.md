@@ -2,7 +2,7 @@
 icon: lucide/route
 ---
 
-# Reverse proxy — everything on HTTPS / 443
+# Reverse proxy - everything on HTTPS / 443
 
 By default the pieces of Danbyte run on separate dev ports:
 
@@ -25,7 +25,7 @@ https://<host>/docs/     → these docs
 
 ## Install
 
-One command (needs `sudo` — it installs nginx, generates a self-signed cert,
+One command (needs `sudo` - it installs nginx, generates a self-signed cert,
 writes the site config, and reloads nginx):
 
 ```bash
@@ -46,7 +46,7 @@ make frontend-dev            # Vite :3000 (separate terminal)
 ```
 
 Visit `https://<host>/`. The self-signed cert triggers a one-time browser
-warning on the LAN — accept it. For a browser-trusted local cert, install
+warning on the LAN - accept it. For a browser-trusted local cert, install
 [`mkcert`](https://github.com/FiloSottile/mkcert) and point `CERT`/`KEY` at its
 output, or drop a real cert in `/etc/ssl/danbyte/`.
 
@@ -75,6 +75,6 @@ output, or drop a real cert in `/etc/ssl/danbyte/`.
 
 - **HMR through the proxy**: Vite's hot-reload websocket assumes the dev port.
   If live-reload misbehaves behind 443, develop against `http://<host>:3000`
-  directly — the proxy is for unified access, not required for development.
+  directly - the proxy is for unified access, not required for development.
 - The proxy is **opt-in**; nothing else depends on it. Without it, the docs link
   falls back to `http://<host>:8001/`.

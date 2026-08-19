@@ -20,7 +20,7 @@ class TagAdmin(admin.ModelAdmin):
     @admin.display(description="Color", ordering="color")
     def swatch(self, obj):
         if not obj.color:
-            return format_html('<span style="color:#999">— colorless —</span>')
+            return format_html('<span style="color:#999">- colorless -</span>')
         return format_html(
             '<span style="display:inline-block;width:14px;height:14px;border-radius:5px;'
             'background:{0};vertical-align:middle;margin-right:8px;'

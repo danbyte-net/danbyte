@@ -6,7 +6,7 @@ safety net for tightening the policy (e.g. dropping ``'unsafe-inline'`` for a
 nonce-based script-src) without silently breaking the SPA: watch
 ``danbyte.csp`` for violations, then adjust.
 
-Unauthenticated + CSRF-exempt by necessity — the browser posts these reports
+Unauthenticated + CSRF-exempt by necessity - the browser posts these reports
 with no session cookie and no CSRF token. It only logs; it never trusts the
 payload for anything.
 """
@@ -35,7 +35,7 @@ def csp_report(request):
         return HttpResponse(status=204)  # ignore malformed reports quietly
 
     # report-uri sends {"csp-report": {...}}; the Reporting API sends a list of
-    # {"type": "csp-violation", "body": {...}} — normalise to the inner dict(s).
+    # {"type": "csp-violation", "body": {...}} - normalise to the inner dict(s).
     reports = []
     if isinstance(payload, dict) and "csp-report" in payload:
         reports = [payload["csp-report"]]

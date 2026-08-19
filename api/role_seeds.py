@@ -1,7 +1,7 @@
 """Built-in IP roles, seeded per tenant.
 
 Migrations 0003/0007 seeded these for tenants that existed when they ran, but a
-tenant created afterwards (via `bootstrap` or the Tenants API) got none — so the
+tenant created afterwards (via `bootstrap` or the Tenants API) got none - so the
 gateway role was missing and the site gateway-policy autospawn had no role to
 apply. `bootstrap` and `TenantViewSet.perform_create` call `seed_builtin_roles`
 so every tenant starts with the catalog. Idempotent (keyed on slug).

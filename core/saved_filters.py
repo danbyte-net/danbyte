@@ -3,14 +3,14 @@
 Deliberately *not* RBAC-gated the way domain objects are: a saved filter is a
 view preference, like a bookmark, and making people ask an administrator for a
 grant before they can name their own working set would be absurd. What it is
-gated on is ownership and tenancy — you see your own filters plus the ones
+gated on is ownership and tenancy - you see your own filters plus the ones
 shared into the tenant you are in, and only the author can change one. A shared
 filter therefore cannot be redefined under the people using it.
 
 The stored ``query`` is the list page's own filter state, so it carries object
 ids the author could see. That is not a leak: applying a filter re-runs the
 reader's own list request, which is scoped to *them*, so a shared filter shows
-each person only the rows they may already view — it can select fewer rows for
+each person only the rows they may already view - it can select fewer rows for
 one reader than another, never more.
 """
 from __future__ import annotations

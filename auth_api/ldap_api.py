@@ -1,4 +1,4 @@
-"""LDAP / Active Directory admin API — settings, connection test, group browse,
+"""LDAP / Active Directory admin API - settings, connection test, group browse,
 and AD-group → Danbyte-group mappings. All gated by ``users.manage``.
 
 The bind password is write-only and stored Fernet-encrypted in
@@ -149,7 +149,7 @@ def ldap_test(request):
     try:
         conn = _bind_connection(dep)
         conn.unbind_s()
-    except Exception as exc:  # noqa: BLE001 — surface the bind error to the admin
+    except Exception as exc:  # noqa: BLE001 - surface the bind error to the admin
         return Response({"ok": False, "error": str(exc)}, status=502)
     return Response({"ok": True})
 
@@ -176,7 +176,7 @@ def ldap_test(request):
 def ldap_test_login(request):
     """Dry-run a directory login and return the *why* (issue #152).
 
-    The service-account test proves connectivity but not authentication — a
+    The service-account test proves connectivity but not authentication - a
     user login can still die on the user search, referrals, REQUIRE_GROUP, or
     group mapping, all surfaced to the end user as a generic "invalid
     credentials". This endpoint runs the real backend with a username +
@@ -235,7 +235,7 @@ def ldap_test_login(request):
         return Response(
             {
                 "ok": False,
-                "error": "Authentication failed — see the trace for the stage "
+                "error": "Authentication failed - see the trace for the stage "
                 "(user search, bind, or required group).",
                 "trace": buf[-40:],
             }
@@ -370,7 +370,7 @@ class TenantLDAPSettingsSerializer(serializers.ModelSerializer):
         # A login domain routes ``user@domain`` straight to one tenant's
         # directory (ldap_directory_chain short-circuits on it). If two tenants
         # claimed the same domain, that routing would be ambiguous and a tenant
-        # could siphon another's logins — so a domain may be owned by at most
+        # could siphon another's logins - so a domain may be owned by at most
         # one tenant deployment-wide.
         domains = attrs.get("ldap_login_domains")
         if domains:
@@ -466,7 +466,7 @@ def tenant_ldap_test(request):
     try:
         conn = _bind_connection(ts)
         conn.unbind_s()
-    except Exception as exc:  # noqa: BLE001 — surface the bind error to the admin
+    except Exception as exc:  # noqa: BLE001 - surface the bind error to the admin
         return Response({"ok": False, "error": str(exc)}, status=502)
     return Response({"ok": True})
 
@@ -492,7 +492,7 @@ def tenant_ldap_test(request):
 @permission_classes([IsAuthenticated])
 def tenant_ldap_test_login(request):
     """Dry-run a login against THIS tenant's directory only (bypassing the
-    chain), with the django-auth-ldap debug trace — same shape as the
+    chain), with the django-auth-ldap debug trace - same shape as the
     deployment test-login."""
     import logging as _logging
 
@@ -526,7 +526,7 @@ def tenant_ldap_test_login(request):
         return Response({
             "ok": False,
             "error": "That username already exists and is not owned by this "
-                     "tenant's directory — the login would be refused. Use a "
+                     "tenant's directory - the login would be refused. Use a "
                      "login domain to avoid collisions.",
         })
 
@@ -554,7 +554,7 @@ def tenant_ldap_test_login(request):
     if user is None:
         return Response({
             "ok": False,
-            "error": "Authentication failed — see the trace for the stage "
+            "error": "Authentication failed - see the trace for the stage "
                      "(user search, bind, or required group).",
             "trace": buf[-40:],
         })
@@ -674,7 +674,7 @@ class TenantLDAPGroupMappingViewSet(viewsets.ModelViewSet):
         if group is not None and not group_is_tenant_safe(group, tenant):
             raise DRFValidationError({
                 "group_id": "This group carries permissions that are not "
-                            "narrowed to this tenant — mapping it would grant "
+                            "narrowed to this tenant - mapping it would grant "
                             "access beyond the tenant.",
             })
 
@@ -702,7 +702,7 @@ class TenantLDAPGroupMappingViewSet(viewsets.ModelViewSet):
 
 
 class LDAPGroupMappingViewSet(viewsets.ModelViewSet):
-    """Mappings for the DEPLOYMENT directory only (tenant IS NULL) — tenant
+    """Mappings for the DEPLOYMENT directory only (tenant IS NULL) - tenant
     directories manage their own via TenantLDAPGroupMappingViewSet."""
 
     queryset = LDAPGroupMapping.objects.select_related("group").filter(

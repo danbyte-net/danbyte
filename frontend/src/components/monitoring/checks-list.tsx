@@ -60,7 +60,7 @@ const COLUMNS: SimpleColumn<CheckListRow>[] = [
     align: "right",
     cell: (r) => (
       <span className="num text-muted-foreground">
-        {r.last_latency_ms != null ? `${r.last_latency_ms.toFixed(1)} ms` : "—"}
+        {r.last_latency_ms != null ? `${r.last_latency_ms.toFixed(1)} ms` : "-"}
       </span>
     ),
   },

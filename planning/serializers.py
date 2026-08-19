@@ -1,4 +1,4 @@
-"""Planning serializers — boards, statuses, labels, tasks and generic links."""
+"""Planning serializers - boards, statuses, labels, tasks and generic links."""
 from __future__ import annotations
 
 from rest_framework import serializers
@@ -96,7 +96,7 @@ class TaskLinkSerializer(serializers.ModelSerializer):
         return label
 
     def validate(self, attrs):
-        # A link's target is immutable — replace the link, don't retarget it.
+        # A link's target is immutable - replace the link, don't retarget it.
         if self.instance is not None:
             for field in ("object_type", "object_id", "task"):
                 if field in attrs and attrs[field] != getattr(self.instance, field):
@@ -201,7 +201,7 @@ class TaskSerializer(serializers.ModelSerializer):
         read_only_fields = ["created_by", "created_at", "updated_at"]
 
     def validate(self, attrs):
-        # The status must belong to the task's board — both on create and when
+        # The status must belong to the task's board - both on create and when
         # either side changes.
         board = attrs.get("board", getattr(self.instance, "board", None))
         status = attrs.get("status", getattr(self.instance, "status", None))

@@ -28,7 +28,7 @@ export function PlatformCell({
   className,
 }: PlatformCellProps) {
   if (!platform) {
-    return <span className="text-muted-foreground">—</span>
+    return <span className="text-muted-foreground">-</span>
   }
   if (!linked) {
     return <span className={className}>{platform.name}</span>

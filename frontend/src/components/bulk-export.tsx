@@ -16,7 +16,7 @@ const FMTS: [IOFormat, string][] = [
 ]
 
 /**
- * "Export selected" for a bulk-action bar — round-trip export of just the
+ * "Export selected" for a bulk-action bar - round-trip export of just the
  * selected rows (`/api/io/<slug>/export/?ids=…`). Drop into any bulk bar with
  * the rows' object slug + ids.
  */

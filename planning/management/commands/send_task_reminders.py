@@ -2,7 +2,7 @@
 
 Run daily by a systemd timer (services/danbyte-task-reminders.timer) or the
 container scheduler. One mail per user with overdue / due-today / due-this-week
-tasks — assigned to them, or unclaimed in one of their teams' queues — and no
+tasks - assigned to them, or unclaimed in one of their teams' queues - and no
 mail at all when there is nothing to say. Users opt out with the
 ``notify_task_due`` preference.
 

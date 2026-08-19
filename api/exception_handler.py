@@ -1,7 +1,7 @@
 """Project-wide DRF exception handler.
 
 DRF's default handler only knows `APIException` / `Http404` / `PermissionDenied`
-— a raw `django.db.IntegrityError` (e.g. a unique-constraint violation that a
+- a raw `django.db.IntegrityError` (e.g. a unique-constraint violation that a
 serializer didn't validate) escapes uncaught and becomes a 500. That's a poor
 experience (the user just hit a duplicate) and leaks a traceback.
 
@@ -9,7 +9,7 @@ We convert an uncaught IntegrityError into a clean response and log the
 original, so a genuine bug is still visible in the logs but the client gets a
 sane, *honest* message. The Postgres SQLSTATE tells us which constraint class
 actually failed, so we don't call a not-null (or FK, or check) violation a
-"duplicate" — that wording actively misleads debugging. Everything else falls
+"duplicate" - that wording actively misleads debugging. Everything else falls
 through to DRF's default handler unchanged. Serializers that validate the
 conflict up front (see `PrefixSerializer.validate`) still return the nicer
 field-level 400 first; this is the safety net for the ones that don't.
@@ -38,7 +38,7 @@ def _sqlstate(exc: BaseException) -> str | None:
 
     The driver error is wrapped by Django on ``exc.__cause__``; psycopg3
     exposes it as ``sqlstate`` and psycopg2 as ``pgcode``. Returns None when
-    it can't be determined — e.g. a Django-level ``ProtectedError`` raised by
+    it can't be determined - e.g. a Django-level ``ProtectedError`` raised by
     the delete collector, which has no DB cause at all.
     """
     cause = getattr(exc, "__cause__", None)

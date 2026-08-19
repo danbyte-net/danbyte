@@ -64,7 +64,7 @@ interface DataTableProps<T> {
     count: number
     sampleRow: T
   }) => React.ReactNode
-  /** Fired whenever the row selection changes — receives the array of
+  /** Fired whenever the row selection changes - receives the array of
    * originals so the parent can wire bulk-action bars without thinking
    * about TanStack's keyed selection state. */
   onSelectedRowsChange?: (rows: T[]) => void
@@ -97,26 +97,26 @@ interface DataTableProps<T> {
   /** Optional per-row tailwind classes (e.g. a status-based background tint).
    * Row hover/selection still win (declared `!important` in tokens.css). */
   rowClassName?: (original: T) => string | undefined
-  /** Optional per-row inline style — use for tints derived from user-chosen
+  /** Optional per-row inline style - use for tints derived from user-chosen
    * colors (arbitrary hex) that can't be expressed as a Tailwind class. Row
    * hover/selection still win (declared `!important` in tokens.css). */
   rowStyle?: (original: T) => React.CSSProperties | undefined
-  /** Embedded in a detail-page tab / pane — suppress the Export + Columns
+  /** Embedded in a detail-page tab / pane - suppress the Export + Columns
    * toolbar (those belong on full list pages). The selection count still
    * appears when rows are ticked; with nothing selected the toolbar bar is
    * omitted entirely so there's no empty spacer above the table. */
   embedded?: boolean
   /** Grouped views show the whole hierarchy by default. Opt in to paging the
    * post-expansion rows (group banners interleaved) when a grouped table can
-   * hold hundreds of interactive rows — e.g. the monitoring policy tables. */
+   * hold hundreds of interactive rows - e.g. the monitoring policy tables. */
   pagedWhenGrouped?: boolean
   /** Show a filter box above the table. Embedded panes (device components,
    * detail tabs) suppress the Export/Columns toolbar but still want to find a
-   * row in a long list — this is that box, and it filters every column. */
+   * row in a long list - this is that box, and it filters every column. */
   searchable?: boolean
   /** Placeholder for the filter box. */
   searchPlaceholder?: string
-  /** Server-paginated lists (the API hands back one page at a time — audit log,
+  /** Server-paginated lists (the API hands back one page at a time - audit log,
    * jobs) pass their page state here so the table's own pager drives the
    * *server* page. Without it those pages hand-rolled a second Prev/Next row
    * under the table and showed two pagers. Client-side paging is off in this
@@ -132,7 +132,7 @@ interface DataTableProps<T> {
 }
 
 // Headless data table for every list page in Danbyte. Hands the column
-// definitions in — TanStack Table handles sort + filter + group +
+// definitions in - TanStack Table handles sort + filter + group +
 // selection + visibility. The shadcn primitives provide the visual layer.
 export function DataTable<T>({
   columns,
@@ -175,7 +175,7 @@ export function DataTable<T>({
 
   // ─── Pagination ────────────────────────────────────────────────────────
   // Client-side paging driven by the user's "Default page size" preference
-  // (Settings → Preferences). Grouped/tree views aren't paged — they show the
+  // (Settings → Preferences). Grouped/tree views aren't paged - they show the
   // whole hierarchy. `0` (or grouping) means "show all".
   const prefPageSize = Number(displayPrefs.page_size) || 25
   const paged =
@@ -213,7 +213,7 @@ export function DataTable<T>({
   }, [columns])
 
   // Apply the saved layout. The ORDER is re-derived whenever the column set
-  // changes — data-gated columns (monitoring, range) mount only after their
+  // changes - data-gated columns (monitoring, range) mount only after their
   // fetch resolves, and an order computed without them would exile them past
   // the pinned actions column at the far right. Re-deriving is safe: pref.order
   // tracks in-session reorders optimistically, so this is idempotent for them.
@@ -248,7 +248,7 @@ export function DataTable<T>({
     pref.hidden.join(" "),
   ])
 
-  // Persisted change handlers — write through to the pref hook (no-op when
+  // Persisted change handlers - write through to the pref hook (no-op when
   // there's no tableId or the layout is forced).
   const persistHidden = (vis: VisibilityState) => {
     if (!tableId || pref.isForced) return
@@ -262,13 +262,13 @@ export function DataTable<T>({
       return next
     })
   }
-  // Commit a full layout from the Columns menu in ONE atomic write — order +
+  // Commit a full layout from the Columns menu in ONE atomic write - order +
   // hidden together. (The old per-toggle auto-save could race itself and drop
   // changes / re-check boxes; staging a draft and saving once fixes that.)
   const applyLayout = (order: string[], hidden: string[]) => {
     if (pref.isForced) return
     setColumnOrder(applyManageableOrder(allIds, manageableIds, order))
-    // Raw visibility set (bypasses the per-toggle persist wrapper) — the single
+    // Raw visibility set (bypasses the per-toggle persist wrapper) - the single
     // pref.setLayout below is the one and only write.
     setColumnVisibility(() => {
       const vis: VisibilityState = {}
@@ -284,9 +284,9 @@ export function DataTable<T>({
     pref.reset()
   }
   // Default to every group expanded so the child rows show on first
-  // render — collapsing is interactive but a fresh page should reveal
+  // render - collapsing is interactive but a fresh page should reveal
   // its data, not hide it. When the data changes (filter applied, new
-  // groups appear), reset back to "all expanded" — otherwise an old
+  // groups appear), reset back to "all expanded" - otherwise an old
   // expanded-id map silently collapses any group whose id wasn't in it.
   const [expanded, setExpanded] = useState<ExpandedState>(true)
   useEffect(() => {
@@ -325,7 +325,7 @@ export function DataTable<T>({
     autoResetPageIndex: false,
     autoResetExpanded: false,
     // When grouping, treat sub-rows as the items to render after the
-    // group header — without this, expanded() doesn't reach them.
+    // group header - without this, expanded() doesn't reach them.
     getSubRows: (row) =>
       (row as unknown as { subRows?: unknown[] }).subRows as
         | never[]
@@ -337,7 +337,7 @@ export function DataTable<T>({
   // Bubble the actual row originals up so parents don't have to map keys.
   // Only when the selection actually CHANGED: a parent typically stores this
   // in state, so emitting a fresh array on every `data` identity change turns
-  // an unstable upstream memo into an infinite render loop (React #185 — it
+  // an unstable upstream memo into an infinite render loop (React #185 - it
   // took down the tenants page). The equality guard keeps every table immune.
   const lastEmitted = useRef<T[] | null>(null)
   useEffect(() => {
@@ -370,7 +370,7 @@ export function DataTable<T>({
           aria-label="Filter rows"
         />
       )}
-      {/* Compact bar above the table — only shows up at all if there's
+      {/* Compact bar above the table - only shows up at all if there's
           something to say. Selection count on the left when rows are
           ticked, Columns dropdown on the right. The full row of "36
           rows" duplicating the page-header badge is gone. Embedded tables
@@ -537,7 +537,7 @@ export function DataTable<T>({
               table.getRowModel().rows.map((row) => {
                 // Grouped header row: rendered when the row is a grouping
                 // pseudo-row (one per unique groupBy value). Skip rendering
-                // it as data — we paint a banner row instead.
+                // it as data - we paint a banner row instead.
                 if (row.getIsGrouped()) {
                   const groupVal = row.getValue(grouping[0])
                   const sampleRow = (row.subRows[0]?.original ??
@@ -568,7 +568,7 @@ export function DataTable<T>({
                             <>
                               {typeof groupVal === "string"
                                 ? groupVal
-                                : String(groupVal ?? "—")}
+                                : String(groupVal ?? "-")}
                               <span className="ml-1 tracking-normal text-muted-foreground/70 normal-case">
                                 {row.subRows.length}{" "}
                                 {row.subRows.length === 1 ? "row" : "rows"}
@@ -635,7 +635,7 @@ export function DataTable<T>({
         </Table>
       </div>
 
-      {/* Pager — shown on every flat (non-grouped) list, even single-page ones,
+      {/* Pager - shown on every flat (non-grouped) list, even single-page ones,
           so the row count + rows-per-page control are always available (the
           selector persists to Settings → Preferences). In `serverPagination`
           mode the same row drives the server's page instead, and the
@@ -759,8 +759,8 @@ function resolveColumnLabel(
 // extracts the current manageable sequence back out for the menu.
 
 /** Slot ids the sequence has never seen (new feature columns) at their
- * *designed* position — right after the nearest preceding column the sequence
- * knows — instead of appending them at the far end, where a saved layout from
+ * *designed* position - right after the nearest preceding column the sequence
+ * knows - instead of appending them at the far end, where a saved layout from
  * before the column existed would banish it off-screen. */
 function insertUnknownAtDesignedPosition(
   norm: string[],

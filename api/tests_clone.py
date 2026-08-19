@@ -1,4 +1,4 @@
-"""CloneableMixin — GET /<type>/<id>/clone/ returns a create-form seed that
+"""CloneableMixin - GET /<type>/<id>/clone/ returns a create-form seed that
 carries the allowlisted context but drops identity/unique fields, is
 tenant-scoped, and honours RBAC."""
 from __future__ import annotations
@@ -41,7 +41,7 @@ class CloneEndpointTests(TestCase):
             site=self.site, status=status_for(self.a),
             serial_number="SN-1", asset_tag="AT-1", description="edge fw",
         )
-        # B's prefix — A must not be able to clone it.
+        # B's prefix - A must not be able to clone it.
         self.b_prefix = Prefix.objects.create(
             tenant=self.b, cidr="10.9.0.0/24", status=status_for(self.b)
         )

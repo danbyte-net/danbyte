@@ -26,8 +26,8 @@ function NewDeviceTypePage() {
       title={cloning ? "Clone device type" : "Add device type"}
       subtitle={
         cloning
-          ? "Physical spec carried over — pick a new model name. Faceplate and images are not copied."
-          : "A device template — manufacturer, model, and rack height."
+          ? "Physical spec carried over - pick a new model name. Faceplate and images are not copied."
+          : "A device template - manufacturer, model, and rack height."
       }
     >
       {cloning && cloneQ.isLoading ? (

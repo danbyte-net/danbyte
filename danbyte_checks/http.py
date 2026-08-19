@@ -1,6 +1,6 @@
 """HTTP(S) checker.
 
-Connects to the **assigned IP** (never an arbitrary hostname — that's the SSRF
+Connects to the **assigned IP** (never an arbitrary hostname - that's the SSRF
 guard: the target is fixed by the assignment, the user only chooses scheme /
 port / path). ``up`` when the response status is in ``expected_status`` (and the
 optional body regex matches); ``degraded`` when reachable but those criteria

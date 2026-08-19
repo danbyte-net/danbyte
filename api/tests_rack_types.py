@@ -198,7 +198,7 @@ class RackTypeCatalogTests(APITestCase):
         self.assertEqual(a.mount_span_u, 38)
         self.assertIsNone(a.position)
         self.assertEqual(a.site_id, rack.site_id)
-        # The type's outlet templates materialised — the PDU is a real PDU.
+        # The type's outlet templates materialised - the PDU is a real PDU.
         self.assertEqual(a.power_outlets.count(), 1)
         # And the rack detail carries the type for the UI.
         body = self.client.get(f"/api/racks/{rack.id}/").json()
@@ -307,13 +307,13 @@ class RackTypeCatalogTests(APITestCase):
             format="json",
         )
         self.assertEqual(r.status_code, 200, r.content)
-        # Already stamped at create time — a second sync adds nothing.
+        # Already stamped at create time - a second sync adds nothing.
         self.assertEqual(r.json()["result"]["accessories"], [])
         self.assertEqual(rack.devices.count(), 2)
 
     def test_sync_retypes_a_strip_when_the_accessory_changed(self):
         # The reported bug: swap the accessory's device type and sync said
-        # "already matches" — it only ever asked whether a strip with that
+        # "already matches" - it only ever asked whether a strip with that
         # label existed, never whether it still agreed with the accessory.
         rt_id = self._rack_type().json()["id"]
         acc_id = self._accessory(rt_id, label="PDU").json()["id"]
@@ -356,7 +356,7 @@ class RackTypeCatalogTests(APITestCase):
         rt_id = self._typed()
         self._post_rack("rack-extra", rt_id, True)
         rack = Rack.objects.get(name="rack-extra")
-        # A strip nobody's type defines any more — real, possibly cabled gear.
+        # A strip nobody's type defines any more - real, possibly cabled gear.
         Device.objects.create(
             tenant=self.tenant, name="rack-extra-PDU-Z", site=self.site,
             rack=rack, device_type=self.dt_pdu, mount="side_left",
@@ -399,7 +399,7 @@ class RackTypeCatalogTests(APITestCase):
         self.assertEqual(r.status_code, 400)
 
     def test_accessory_face_stamps_onto_the_device(self):
-        # The channel an accessory names must reach the stamped device —
+        # The channel an accessory names must reach the stamped device -
         # otherwise every factory PDU lands face-blank and draws on both
         # elevations, which is the thing this field exists to stop.
         rt_id = self._rack_type().json()["id"]
@@ -417,7 +417,7 @@ class RackTypeCatalogTests(APITestCase):
 
     def test_accessory_audit_entries_carry_the_owning_tenant(self):
         # RackTypeAccessory has no tenant column; the audit trail stamps
-        # instance.tenant_id, so the model resolves it through the parent —
+        # instance.tenant_id, so the model resolves it through the parent -
         # otherwise these rows would log NULL/NULL and fail closed out of
         # the tenant's own history.
         from audit.models import ChangeLogEntry

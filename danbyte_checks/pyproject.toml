@@ -1,7 +1,7 @@
 [project]
 name = "danbyte-checks"
 version = "0.1.0"
-description = "Danbyte's protocol check engine — one Django-free implementation of every check kind, shared by the core and the Outpost agent so results never drift."
+description = "Danbyte's protocol check engine - one Django-free implementation of every check kind, shared by the core and the Outpost agent so results never drift."
 requires-python = ">=3.11"
 dependencies = [
     "icmplib>=3.0",   # icmp

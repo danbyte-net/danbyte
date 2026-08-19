@@ -45,7 +45,7 @@ interface PickRow {
 }
 
 /**
- * The "Assign to…" control on a certificate's Assignments tab — the inverse of
+ * The "Assign to…" control on a certificate's Assignments tab - the inverse of
  * the per-object CertificatesPanel. Pick an object type (device / VM / IP) and
  * an object of that type, and declare that it should present this certificate.
  * The generic `(object_type, object_id)` target is exactly what the cert-drift

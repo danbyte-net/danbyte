@@ -1,4 +1,4 @@
-"""drive_outposts — poll the SSH-transport Outposts.
+"""drive_outposts - poll the SSH-transport Outposts.
 
 For engines whose transport is ``ssh`` (airgapped: only Danbyte→host is allowed),
 Danbyte drives the run itself. Run on a short timer, like ``dispatch_checks``.

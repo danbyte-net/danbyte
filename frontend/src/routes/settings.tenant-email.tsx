@@ -138,7 +138,7 @@ function TenantEmailPage() {
         <div>
           <h2 className="text-sm font-semibold">Send a test email</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Uses this tenant's effective config — the override above when
+            Uses this tenant's effective config - the override above when
             enabled, else the deployment relay. Save first if you just changed
             it.
           </p>

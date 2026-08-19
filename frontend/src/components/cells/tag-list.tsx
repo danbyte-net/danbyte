@@ -5,22 +5,22 @@ import { type Tag } from "@/lib/api"
 
 interface TagListProps {
   tags: Tag[]
-  /** Slugs currently active in the filter — those badges get a ring. */
+  /** Slugs currently active in the filter - those badges get a ring. */
   activeSlugs?: Set<string>
   /** Click → toggle in the active set. When omitted, badges are static. */
   onToggle?: (slug: string) => void
   className?: string
   /** Table-cell mode: single-line, horizontal scroll if overflow. Default
-   * (false) wraps onto multiple lines — appropriate for page headers and
+   * (false) wraps onto multiple lines - appropriate for page headers and
    * detail panes where vertical space is available. */
   inline?: boolean
 }
 
 // A clickable strip of tag chips. Each chip uses the tag's own color
 // (falls back to the secondary variant when blank). Clicking a chip
-// calls onToggle(slug) — the parent owns the filter state.
+// calls onToggle(slug) - the parent owns the filter state.
 // Same component shape works for every table: Prefixes, IPs, Devices,
-// Sites, VLANs, VRFs — they all carry the same `Tag[]` shape on the API.
+// Sites, VLANs, VRFs - they all carry the same `Tag[]` shape on the API.
 export function TagList({
   tags,
   activeSlugs,
@@ -29,7 +29,7 @@ export function TagList({
   inline,
 }: TagListProps) {
   if (tags.length === 0) {
-    return <span className="text-muted-foreground">—</span>
+    return <span className="text-muted-foreground">-</span>
   }
   return (
     <div

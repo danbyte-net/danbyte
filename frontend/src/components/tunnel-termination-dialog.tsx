@@ -68,7 +68,7 @@ export function TunnelTerminationDialog({
   const [vmInterfaceId, setVmInterfaceId] = useState<string | null>(null)
   const [outsideIpId, setOutsideIpId] = useState<string | null>(null)
 
-  // Reset the form every time the dialog opens — blank for create, prefilled
+  // Reset the form every time the dialog opens - blank for create, prefilled
   // from the row being edited.
   useEffect(() => {
     if (!open) return
@@ -252,7 +252,7 @@ export function TunnelTerminationDialog({
 
           <IpPicker
             label="Outside IP"
-            hint="optional — the address this end terminates on"
+            hint="optional - the address this end terminates on"
             value={outsideIpId}
             onChange={setOutsideIpId}
             noneLabel="No outside IP"

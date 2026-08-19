@@ -2,7 +2,7 @@
 
 Sync engines never invent address space: an address is recorded only when a
 containing Prefix already exists. This module answers the question that comes
-first — *whose* prefixes do we look at.
+first - *whose* prefixes do we look at.
 
 Historically every sync searched the Global VRF alone, so moving a prefix into a
 VRF didn't put its addresses in the wrong place, it made them **disappear**:
@@ -18,7 +18,7 @@ Two rules the callers depend on:
   effect on the next pass with nothing to backfill.
 * **A stated VRF is a hard scope, not a preference.** If a policy names a VRF
   and no prefix there contains the address, the address is skipped and reported
-  — never quietly re-homed into Global. A pin that silently falls back is worse
+  - never quietly re-homed into Global. A pin that silently falls back is worse
   than no pin at all.
 """
 from __future__ import annotations
@@ -26,7 +26,7 @@ from __future__ import annotations
 import ipaddress
 from dataclasses import dataclass
 
-# "No opinion — search every VRF." Distinct from ``None``, which is the Global
+# "No opinion - search every VRF." Distinct from ``None``, which is the Global
 # VRF: a real, nameable routing context, not the absence of one.
 ANY_VRF = object()
 
@@ -48,7 +48,7 @@ def vrf_label(vrf) -> str:
 class Placement:
     """Where one address is allowed to live.
 
-    ``preferred`` is a VRF instance or ``None`` (``None`` = Global VRF — a real
+    ``preferred`` is a VRF instance or ``None`` (``None`` = Global VRF - a real
     value, not "unset"). ``allow_other_vrfs`` widens the search to every other
     VRF *after* the preferred one misses, which is what ``search`` mode means.
     """
@@ -64,7 +64,7 @@ class Placement:
     def from_policy(cls, obj) -> Placement:
         """Read ``vrf_mode``/``vrf`` off a connection or source.
 
-        Anything without the fields — or with a mode we don't recognise — gets
+        Anything without the fields - or with a mode we don't recognise - gets
         the pinned/Global default, which is exactly the behaviour that shipped
         before placement existed. Fail closed: an unreadable policy must never
         silently widen the search.
@@ -106,7 +106,7 @@ def _parse(ip):
 def load_prefixes(tenant, *, vrf=ANY_VRF):
     """Materialise ``[(network, prefix)]`` once for many placements.
 
-    ``_attach_ips`` used to rebuild this per guest — a full Prefix scan per VM.
+    ``_attach_ips`` used to rebuild this per guest - a full Prefix scan per VM.
     Callers placing more than one address should hoist it and pass it in.
     """
     from api.models import Prefix
@@ -141,7 +141,7 @@ def containing_prefix(tenant, ip, vrf=ANY_VRF):
     ``vrf`` scopes the search so an address lands in the prefix of the right
     routing context and overlapping space across VRFs doesn't collide. With
     ``ANY_VRF`` the tie-break between equally-specific prefixes in different
-    VRFs is arbitrary — use :func:`place` where that matters.
+    VRFs is arbitrary - use :func:`place` where that matters.
     """
     addr = _parse(ip)
     if addr is None:
@@ -161,7 +161,7 @@ def place(tenant, ip, placement: Placement, *, prefixes=None) -> Placed:
     """Pick the prefix a discovered address belongs in, under ``placement``.
 
     The preferred VRF is tried **first and on its own**. Only if it holds
-    nothing — and only in ``search`` mode — do other VRFs get a look. That
+    nothing - and only in ``search`` mode - do other VRFs get a look. That
     ordering is what makes ``search`` safe to turn on: it can place addresses
     that are dropped today, but it can never move one that already places.
     A plain longest-match across all VRFs would relocate an address sitting in a
@@ -180,7 +180,7 @@ def place(tenant, ip, placement: Placement, *, prefixes=None) -> Placed:
     if not placement.allow_other_vrfs:
         # Terse on purpose: this repeats once per address, and the remedy is
         # stated once in the run's summary rather than 200 times beside it.
-        return Placed(None, "no_prefix", f"{ip} — no prefix in {where}")
+        return Placed(None, "no_prefix", f"{ip} - no prefix in {where}")
 
     # Widened search: the best match within each other VRF, then compare.
     best_per_vrf = {}
@@ -194,7 +194,7 @@ def place(tenant, ip, placement: Placement, *, prefixes=None) -> Placed:
             best_per_vrf[p.vrf_id] = (net.prefixlen, p)
 
     if not best_per_vrf:
-        return Placed(None, "no_prefix", f"{ip} — no prefix in any VRF")
+        return Placed(None, "no_prefix", f"{ip} - no prefix in any VRF")
     longest = max(length for length, _ in best_per_vrf.values())
     winners = [p for length, p in best_per_vrf.values() if length == longest]
     if len(winners) == 1:
@@ -202,7 +202,7 @@ def place(tenant, ip, placement: Placement, *, prefixes=None) -> Placed:
     names = ", ".join(sorted(vrf_label(p.vrf) for p in winners))
     return Placed(
         None, "ambiguous_vrf",
-        f"{ip} — matched equally well in {names}, so the VRF is ambiguous",
+        f"{ip} - matched equally well in {names}, so the VRF is ambiguous",
     )
 
 
@@ -210,7 +210,7 @@ def existing_row(tenant, ip, placement: Placement):
     """The address's IPAM row under ``placement``, plus a warning if odd.
 
     Returns ``(row_or_None, warning)``. The same literal address legitimately
-    exists once per VRF, so "found it" has to mean "found it *here*" — adopting
+    exists once per VRF, so "found it" has to mean "found it *here*" - adopting
     a row from another routing context would be editing someone else's record.
     """
     from api.models import IPAddress

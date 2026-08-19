@@ -75,7 +75,7 @@ export function IpMonitoring({
     onSuccess: (data) => {
       const up = data.results.filter((r) => r.status === "up").length
       toast.success(
-        `Ran ${data.count} check${data.count === 1 ? "" : "s"} — ${up} up`
+        `Ran ${data.count} check${data.count === 1 ? "" : "s"} - ${up} up`
       )
       qc.invalidateQueries({ queryKey: ["ip-checks", ip.id] })
     },
@@ -103,7 +103,7 @@ export function IpMonitoring({
         <div className="ml-auto flex items-center gap-3">
           <label
             className="flex items-center gap-1.5 text-[12px] text-muted-foreground"
-            title="Exclude this IP from the 'flapping a lot' monitor — for a known noisy host."
+            title="Exclude this IP from the 'flapping a lot' monitor - for a known noisy host."
           >
             <Checkbox
               checked={flapExclude}
@@ -226,7 +226,7 @@ function CheckRow({
         </button>
         <Sparkline points={check.sparkline} />
         <span className="num w-20 text-right text-xs text-muted-foreground">
-          {latency != null ? `${latency.toFixed(1)} ms` : "—"}
+          {latency != null ? `${latency.toFixed(1)} ms` : "-"}
         </span>
         <span className="w-28 text-right text-[11px] text-muted-foreground">
           {check.state?.last_checked

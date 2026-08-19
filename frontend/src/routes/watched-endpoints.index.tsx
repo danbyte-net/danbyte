@@ -53,7 +53,7 @@ function statusReason(ep: WatchedEndpoint): string {
     return "chain verified, in validity window"
   }
   if (ep.last_status === "down")
-    return (d.error as string) || "no TLS — connection refused or timed out"
+    return (d.error as string) || "no TLS - connection refused or timed out"
   if (ep.last_status === "degraded") {
     if (d.expired) return "certificate has expired"
     if (d.not_yet_valid) return "certificate is not yet valid"
@@ -135,7 +135,7 @@ function WatchedEndpointsPage() {
         cell: ({ row }) => {
           const r = row.original
           if (!r.last_certificate)
-            return <span className="text-muted-foreground">—</span>
+            return <span className="text-muted-foreground">-</span>
           const label =
             r.last_certificate_subject_cn?.trim() || "View certificate"
           return (
@@ -158,7 +158,7 @@ function WatchedEndpointsPage() {
             | number
             | undefined
           if (days === undefined)
-            return <span className="text-muted-foreground">—</span>
+            return <span className="text-muted-foreground">-</span>
           const cls =
             days < 0
               ? "text-destructive"
@@ -246,7 +246,7 @@ function WatchedEndpointsPage() {
       {rows.length === 0 ? (
         <EmptyState title="No watched endpoints yet.">
           Add a <span className="font-mono">host:port</span> and Danbyte reads
-          its TLS certificate on a schedule — no device needed. Observed
+          its TLS certificate on a schedule - no device needed. Observed
           certificates land in the Certificates inventory, with expiry,
           fingerprint-change and chain state.
         </EmptyState>
@@ -333,7 +333,7 @@ function CheckNowButton({ ep }: { ep: WatchedEndpoint }) {
         { method: "POST", body: "{}" }
       ),
     onSuccess: (d) => {
-      toast.success(`Checked ${ep.host} — ${d.last_status}`)
+      toast.success(`Checked ${ep.host} - ${d.last_status}`)
       qc.invalidateQueries({ queryKey: ["watched-endpoints"] })
       qc.invalidateQueries({ queryKey: ["certificates"] })
     },
@@ -504,7 +504,7 @@ function EndpointFormDialog({
             label="Accept self-signed certificate"
             checked={allowSelfSigned}
             onChange={setAllowSelfSigned}
-            hint="For endpoints that are self-signed by design — reads healthy instead of degraded. Expiry is still flagged."
+            hint="For endpoints that are self-signed by design - reads healthy instead of degraded. Expiry is still flagged."
           />
         </div>
         <DialogFooter>

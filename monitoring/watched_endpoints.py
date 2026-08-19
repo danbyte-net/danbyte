@@ -1,4 +1,4 @@
-"""Watched-endpoint polling — the "just give me a host:port" TLS-cert monitor.
+"""Watched-endpoint polling - the "just give me a host:port" TLS-cert monitor.
 
 Isolated from the IP-anchored check engine on purpose: each
 :class:`monitoring.models.WatchedEndpoint` is read on its own schedule by
@@ -22,7 +22,7 @@ from .models import WatchedEndpoint
 
 log = logging.getLogger("monitoring.watched_endpoints")
 
-# Kept small — a summary of the last read, mirrored to the API/UI.
+# Kept small - a summary of the last read, mirrored to the API/UI.
 _DETAIL_KEYS = (
     "validity", "expired", "not_yet_valid", "self_signed",
     "expires_in_days", "tls_version", "error",
@@ -33,7 +33,7 @@ def _status(obs: dict, *, allow_self_signed: bool = False) -> str:
     """Same mapping as ``danbyte_checks.tls_cert``'s checker ``run``.
 
     ``allow_self_signed`` accepts a chain that only failed trust verification
-    *because the leaf is self-signed* (self-signed by design) — it reads ``up``
+    *because the leaf is self-signed* (self-signed by design) - it reads ``up``
     instead of ``degraded``. Expiry / not-yet-valid still degrade, and an
     untrusted chain that is **not** self-signed (e.g. an unknown CA or a
     hostname mismatch) still degrades, so this never blesses a real trust gap.
@@ -84,7 +84,7 @@ def run_watched_endpoint(ep: WatchedEndpoint, now=None) -> str:
 
 
 def run_due_watched_endpoints(now=None) -> dict:
-    """Poll every enabled endpoint whose interval has elapsed. Never raises —
+    """Poll every enabled endpoint whose interval has elapsed. Never raises -
     one bad endpoint must not stop the rest (or the dispatch beat that calls us)."""
     now = now or timezone.now()
     ran = 0
@@ -98,6 +98,6 @@ def run_due_watched_endpoints(now=None) -> dict:
         try:
             run_watched_endpoint(ep, now=now)
             ran += 1
-        except Exception:  # noqa: BLE001 — isolate a bad endpoint
+        except Exception:  # noqa: BLE001 - isolate a bad endpoint
             log.exception("watched endpoint poll failed: %s", ep.pk)
     return {"ran": ran}

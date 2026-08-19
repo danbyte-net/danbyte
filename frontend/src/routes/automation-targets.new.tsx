@@ -25,7 +25,7 @@ function NewPage() {
         >
           Use guided setup
         </Link>{" "}
-        instead — it walks you through the same fields.
+        instead - it walks you through the same fields.
       </p>
       <AutomationTargetForm
         onSaved={() => nav({ to: "/automation-targets" })}

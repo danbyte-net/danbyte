@@ -287,7 +287,7 @@ function buildColumns({
         const types = row.original.available_to
         const defaults = row.original.default_for
         if (!types.length)
-          return <span className="text-muted-foreground">—</span>
+          return <span className="text-muted-foreground">-</span>
         return (
           <span className="flex flex-col gap-0.5">
             <span className="flex flex-wrap gap-1">
@@ -327,7 +327,7 @@ function buildColumns({
             ))}
           </span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         )
       },
     },
@@ -337,7 +337,7 @@ function buildColumns({
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     },

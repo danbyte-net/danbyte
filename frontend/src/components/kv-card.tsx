@@ -23,7 +23,7 @@ export interface KvRow {
 }
 
 /**
- * Labelled field table — a titled, bordered, zebra-striped table
+ * Labelled field table - a titled, bordered, zebra-striped table
  * of label/value rows, with an optional per-row copy button. Shared by the
  * Device and VM (and future) detail "Overview" tabs so they look identical.
  */
@@ -73,7 +73,7 @@ export function CopyButton({ value }: { value: string }) {
       onClick={async () => {
         const ok = await copyText(value)
         if (!ok) {
-          toast.error("Couldn't copy — clipboard blocked by the browser")
+          toast.error("Couldn't copy - clipboard blocked by the browser")
           return
         }
         setDone(true)

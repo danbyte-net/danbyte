@@ -1,4 +1,4 @@
-"""Tests for per-tenant human-readable object numbers (numid) — issue #82."""
+"""Tests for per-tenant human-readable object numbers (numid) - issue #82."""
 from __future__ import annotations
 
 from django.core.management import call_command
@@ -18,7 +18,7 @@ class NumIdTests(TestCase):
         a1 = Cable.objects.create(tenant=self.t_a)
         b1 = Cable.objects.create(tenant=self.t_b)
         a2 = Cable.objects.create(tenant=self.t_a)
-        # Each tenant counts from 1 independently — A's #1 and B's #1 are
+        # Each tenant counts from 1 independently - A's #1 and B's #1 are
         # different objects that don't collide.
         self.assertEqual(a1.numid, 1)
         self.assertEqual(b1.numid, 1)
@@ -36,7 +36,7 @@ class NumIdTests(TestCase):
     def test_allocation_persists_under_scoped_update_fields(self):
         # A null-numid row saved with update_fields= that omits "numid" (the
         # common ip.save(update_fields=["role"]) pattern) must still persist the
-        # freshly allocated numid — not burn the sequence and leave it NULL.
+        # freshly allocated numid - not burn the sequence and leave it NULL.
         c = Cable.objects.create(tenant=self.t_a)
         Cable.objects.filter(pk=c.pk).update(numid=None)
         NumIdSequence.objects.all().delete()

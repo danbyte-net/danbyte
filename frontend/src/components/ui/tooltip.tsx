@@ -38,14 +38,14 @@ function TooltipContent({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Content> & {
   /**
-   * `default` — the inverted chip (dark on light, light on dark). Right for a
+   * `default` - the inverted chip (dark on light, light on dark). Right for a
    * one-line hint, and what every plain tooltip uses.
    *
-   * `panel` — the normal popover surface. Use it for RICH content: anything
+   * `panel` - the normal popover surface. Use it for RICH content: anything
    * with headings, lists, muted secondary text or semantic colour. Those
    * colours (`text-muted-foreground`, amber drift, severity dots) are chosen
    * against the PAGE background, so on the inverted chip they range from
-   * off-palette to unreadable — which in dark mode reads as "a white box".
+   * off-palette to unreadable - which in dark mode reads as "a white box".
    */
   variant?: "default" | "panel"
 }) {

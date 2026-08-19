@@ -10,7 +10,7 @@ import { timeAgoColumn } from "@/components/cells/time-ago"
 import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
-// The one source of truth for "a table of rack types" — the catalog list and
+// The one source of truth for "a table of rack types" - the catalog list and
 // any embedded listing build their columns here so a rack-model row reads
 // identically everywhere.
 
@@ -42,7 +42,7 @@ export interface RackTypeColumnOpts<T extends RackType = RackType> {
   include?: RackTypeColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
   /** Trailing RowActions column. */
   actions?: ActionsColumnOpts<T>
@@ -83,7 +83,7 @@ export function buildRackTypeColumns<T extends RackType = RackType>(
       id: "dimensions",
       accessorKey: "u_height",
       header: ({ column }) => <SortHeader column={column} label="Size" />,
-      // 42U · 19″ · 600×1070 mm — the profile a rack inherits on pick.
+      // 42U · 19″ · 600×1070 mm - the profile a rack inherits on pick.
       cell: ({ row }) => {
         const r = row.original
         const outer =
@@ -131,7 +131,7 @@ export function buildRackTypeColumns<T extends RackType = RackType>(
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     }),

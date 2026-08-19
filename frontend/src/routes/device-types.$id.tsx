@@ -173,7 +173,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
                         {d.manufacturer.name}
                       </Link>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-muted-foreground">-</span>
                     )
                   }
                 />
@@ -183,7 +183,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
                     d.model ? (
                       <span className="font-mono text-[13px]">{d.model}</span>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-muted-foreground">-</span>
                     )
                   }
                 />
@@ -201,7 +201,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
               />
             </div>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Default SNMP profile for devices of this type — overridden by a
+              Default SNMP profile for devices of this type - overridden by a
               device's role or the device itself.
             </p>
           </section>

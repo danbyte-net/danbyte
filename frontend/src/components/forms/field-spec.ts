@@ -34,7 +34,7 @@ export type BulkFieldSpec =
       key: string
       label: string
       /** A caller-supplied static option list (model choices without a
-       * /api/dcim/choices/ entry — inventory kind/media etc.). */
+       * /api/dcim/choices/ entry - inventory kind/media etc.). */
       kind: "options"
       options: { value: string; label: string }[]
       hint?: string
@@ -58,7 +58,7 @@ export type BulkFieldSpec =
   | {
       key: string
       label: string
-      /** Any object from the customization reference registry — a site, rack,
+      /** Any object from the customization reference registry - a site, rack,
        *  device, status-bearing catalog row. Rendered with CfObjectPicker. */
       kind: "object"
       /** Reference-registry slug ("site", "rack"), used to look up refMeta. */
@@ -67,7 +67,7 @@ export type BulkFieldSpec =
     }
 
 /**
- * The wire shape of one row from `GET /api/editable-fields/?model=<slug>` —
+ * The wire shape of one row from `GET /api/editable-fields/?model=<slug>` -
  * the server telling the SPA which fields of a model are editable and how to
  * render each one, so a single-object editor needs no hand-authored spec.
  *

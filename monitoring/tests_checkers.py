@@ -1,4 +1,4 @@
-"""Milestone 2 tests — checker engine + check-now.
+"""Milestone 2 tests - checker engine + check-now.
 
 The live checks target loopback (always present, no network needed) so they run
 in any environment. ICMP may resolve to ``unknown`` where unprivileged ping
@@ -121,7 +121,7 @@ class CheckNowTests(TestCase):
             tenant=self.tenant, template=t, ip_address=self.ip
         )
         # A closed port → down; with fall=1 the rolled-up state must flip to down,
-        # not stay 'unknown' — the bug this fixes.
+        # not stay 'unknown' - the bug this fixes.
         check_now(self.ip)
         st = CheckState.objects.get(target_ip=self.ip, template=t)
         self.assertEqual(st.status, "down")

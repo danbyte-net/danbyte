@@ -1,4 +1,4 @@
-"""Planned changes: stage a form submission, see the diff, apply it — and every
+"""Planned changes: stage a form submission, see the diff, apply it - and every
 way that must fail.
 
 Plans are staged the way the UI stages them: the object's own edit form submits
@@ -23,7 +23,7 @@ from .tests import Base
 
 class _PlanBase(Base):
     def _task(self, board=None, **kw):
-        # One board per test — its slug is unique per tenant, so a second
+        # One board per test - its slug is unique per tenant, so a second
         # _board() call in the same test would collide.
         if board is None:
             if not hasattr(self, "_cached_board"):
@@ -51,7 +51,7 @@ class _PlanBase(Base):
 
     def _device_payload(self, dev, **over):
         """A device write body, as DeviceForm submits it (the subset that
-        matters here — the serializer accepts a partial for an edit)."""
+        matters here - the serializer accepts a partial for an edit)."""
         base = {
             "name": dev.name,
             "device_type_id": str(dev.device_type_id),
@@ -172,7 +172,7 @@ class DiffTests(_PlanBase):
     def test_list_and_json_valued_fields_do_not_crash(self):
         """A real DeviceForm payload carries `tag_ids` (a list) and
         `custom_fields` (a dict). Rendering those through a choices lookup raised
-        `unhashable type: \'list\'` and 500'd the whole plan — taggit's
+        `unhashable type: \'list\'` and 500'd the whole plan - taggit's
         TaggableManager reports many_to_many but is not a ManyToManyField, so the
         m2m branch was skipped."""
         dev = self._device()
@@ -237,7 +237,7 @@ class DiffTests(_PlanBase):
 
     def test_id_aliases_are_not_mistaken_for_secrets(self):
         """`write_only` marks every `*_id` input alias, so it can't be the test
-        for a secret on its own — an FK edit must still be recorded."""
+        for a secret on its own - an FK edit must still be recorded."""
         dev = self._device()
         other = Status.objects.create(
             tenant=self.tenant, name="Planned maintenance", slug="planned-maint",
@@ -250,7 +250,7 @@ class DiffTests(_PlanBase):
         self.assertEqual(list(change.payload), ["status_id"])
 
     def test_any_routed_model_can_be_planned(self):
-        """Plan capability follows the router, not the bulk-edit allow-list — a
+        """Plan capability follows the router, not the bulk-edit allow-list - a
         site has no per-field allow-list and must still be plannable."""
         site = Site.objects.create(tenant=self.tenant, name="Planned site")
         r = self._plan(self._task(), "site", site.id,
@@ -311,7 +311,7 @@ class ApplyUpdateTests(_PlanBase):
         ).count()
         self._apply(pid)
 
-        # Exactly one new entry — the serializer save fires the audit signal;
+        # Exactly one new entry - the serializer save fires the audit signal;
         # nothing should also call log_bulk_update.
         self.assertEqual(
             ChangeLogEntry.objects.filter(
@@ -354,7 +354,7 @@ class ApplyUpdateTests(_PlanBase):
         self.assertEqual(self._apply(pid).status_code, 400)
 
     def test_several_change_sets_on_one_object_are_allowed(self):
-        """A task may stage more than one edit to the same object — the old
+        """A task may stage more than one edit to the same object - the old
         per-field uniqueness would have blocked this."""
         dev = self._device()
         iface = self._iface(dev, enabled=True, description="")

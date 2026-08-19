@@ -36,7 +36,7 @@ class InventoryTests(APITestCase):
         self.dev = Device.objects.create(
             tenant=self.tenant, name="sw1", device_type=dt, site=site,
             role=role, platform=plat, primary_ip=ip,
-            status=status_for(self.tenant),  # status is a FK — must serialize as a slug
+            status=status_for(self.tenant),  # status is a FK - must serialize as a slug
         )
         cc = ConfigContext.objects.create(
             tenant=self.tenant, name="base", data={"ntp": ["10.0.0.1"]}

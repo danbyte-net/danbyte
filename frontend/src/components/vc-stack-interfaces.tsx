@@ -56,7 +56,7 @@ export function useStackInterfaces(members: VirtualChassisMember[]): {
     : members.flatMap((m, i) =>
         // Name-sort, then nest PER MEMBER (a parent interface always belongs to
         // the same device), so each child follows its parent and carries a depth
-        // — the same hierarchy the per-device table renders.
+        // - the same hierarchy the per-device table renders.
         nestInterfaces(
           [...(queries[i].data?.results ?? [])].sort((a, b) =>
             a.name.localeCompare(b.name, undefined, { numeric: true })
@@ -77,7 +77,7 @@ type StackRow = NestedInterface & { _member: VirtualChassisMember }
 
 /** The combined whole-stack interfaces table. Renders the SAME rich interface
  * columns as the per-device "This member" table (shared `buildInterfaceColumns`),
- * with a Member column in front — so the two views stay identical.
+ * with a Member column in front - so the two views stay identical.
  * `highlightMemberId` tints the rows of one member (the device page uses it to
  * anchor "you are here"). */
 export function StackInterfacesTable({
@@ -91,19 +91,19 @@ export function StackInterfacesTable({
   loading: boolean
   error: Error | null
   highlightMemberId?: string
-  /** Row actions, identical to the per-device table's. Omit `deviceIdFor` — the
+  /** Row actions, identical to the per-device table's. Omit `deviceIdFor` - the
    * stack table resolves the owning member per row. Leave unset to render the
    * table read-only. */
   actions?: Omit<InterfaceActionsOpts<StackRow>, "deviceIdFor">
 }) {
-  // `iface` already carries its `_depth` from useStackInterfaces — don't flatten
+  // `iface` already carries its `_depth` from useStackInterfaces - don't flatten
   // it, or sub-interfaces lose the indentation the per-device table shows.
   const data = useMemo<StackRow[]>(
     () => rows.map(({ member, iface }) => ({ ...iface, _member: member })),
     [rows]
   )
   // Destructured so the columns memo keys off the primitive flags + the (stable)
-  // setState callbacks rather than the `actions` object's identity — callers pass
+  // setState callbacks rather than the `actions` object's identity - callers pass
   // a fresh object each render.
   const {
     canAddIp = false,
@@ -143,7 +143,7 @@ export function StackInterfacesTable({
           return (
             <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
               <span className="num inline-flex h-5 w-5 items-center justify-center rounded-sm border border-border text-[11px] text-muted-foreground">
-                {m.vc_position ?? "—"}
+                {m.vc_position ?? "-"}
               </span>
               <Link
                 to="/devices/$id"
@@ -157,7 +157,7 @@ export function StackInterfacesTable({
         },
       },
       // The identical interface columns + row actions used by the per-device
-      // table. Widened to StackRow (a superset of NestedInterface) — the cells
+      // table. Widened to StackRow (a superset of NestedInterface) - the cells
       // only read interface fields, so this is safe.
       ...(buildInterfaceColumns({
         planned: plannedMap,

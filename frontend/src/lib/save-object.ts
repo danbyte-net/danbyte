@@ -7,7 +7,7 @@ import { api } from "@/lib/api"
 /**
  * The one sanctioned object write.
  *
- * Every form in Danbyte ends the same way — build the complete payload, then
+ * Every form in Danbyte ends the same way - build the complete payload, then
  * `PATCH` it if editing or `POST` it if creating. `useSaveObject()` replaces
  * those two calls with one, and that single seam is what lets **planning reuse
  * the real edit forms**: when the route carries `?plan=<taskId>`, the payload is
@@ -20,7 +20,7 @@ import { api } from "@/lib/api"
  */
 
 /** Thrown after a planned change is recorded, to stop the form's success path.
- *  Not an error the user should ever see — see `useFieldErrors`. */
+ *  Not an error the user should ever see - see `useFieldErrors`. */
 export class PlanStaged extends Error {
   constructor() {
     super("Change planned")
@@ -34,7 +34,7 @@ export class PlanStaged extends Error {
  *  This is a **fail-safe**, not a feature flag: a form that still writes
  *  directly must never be reachable in plan mode, or saving it would change the
  *  live object while the banner promised nothing would be written. Add a type
- *  here only once its form is migrated — `save-object.test.ts` checks that every
+ *  here only once its form is migrated - `save-object.test.ts` checks that every
  *  entry has one.
  *
  *  Deliberate absences: `api.cable`, whose payload carries `a`/`b` termination
@@ -130,7 +130,7 @@ export function isPlanCapable(objectType: string): boolean {
 export function usePlanTarget(): { taskId: string; boardId: string } | null {
   // Read the LOCATION's search, not the route's validated search. A route that
   // validates its own params returns only those, which would silently drop
-  // `plan` — and a form that thinks it isn't planning writes to the live object
+  // `plan` - and a form that thinks it isn't planning writes to the live object
   // while the banner promises it won't. The location is unfiltered.
   const search = useRouterState({
     select: (state) => state.location.search as Record<string, unknown>,
@@ -169,7 +169,7 @@ export interface SaveObjectArgs {
   /** Field the names fan out over. Defaults to "name". */
   nameField?: string
   /** Create-only, and takes precedence over `names`: the complete bodies a range
-   *  would have created, for forms whose range advances more than the name —
+   *  would have created, for forms whose range advances more than the name -
    *  front ports step the rear strand too. Ignored outside plan mode, where the
    *  form still posts them one at a time so a clash names the offender. */
   bodies?: unknown[]
@@ -211,14 +211,14 @@ export function useSaveObject() {
       }
       qc.invalidateQueries({ queryKey: ["planning-tasks"] })
       qc.invalidateQueries({ queryKey: ["planned-changes-map"] })
-      // The per-object query behind the field marks (PendingFieldsProvider) —
+      // The per-object query behind the field marks (PendingFieldsProvider) -
       // without this, a detail page kept showing its pre-plan marks until the
       // cache aged out.
       qc.invalidateQueries({ queryKey: ["planned-changes-for"] })
       toast.success(
         staged.length > 1
           ? `${staged.length} changes planned`
-          : "Change planned — nothing written yet"
+          : "Change planned - nothing written yet"
       )
       // Back to the task, with its sheet open, so the staged change is right
       // there rather than something the user has to go find.

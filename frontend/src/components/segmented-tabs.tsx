@@ -8,7 +8,7 @@ export interface SegmentedTab<V extends string = string> {
 }
 
 /**
- * The canonical Danbyte tab control — a segmented row of buttons where the
+ * The canonical Danbyte tab control - a segmented row of buttons where the
  * active tab fills with `bg-muted`. This is the single source of truth for tab
  * styling across the app (list pages, detail pages, section nav). Pages own
  * their own panels; this component only renders the bar and reports changes.

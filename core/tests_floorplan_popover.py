@@ -123,7 +123,7 @@ class EffectiveConfigTests(TestCase):
         self.assertNotIn("tt:rack", cfg["tile_overrides"])
 
     def test_custom_fields_ride_the_generic_cf_convention(self):
-        # Never enumerated server-side — the tenant defines them.
+        # Never enumerated server-side - the tenant defines them.
         dep = DeploymentSettings.load()
         dep.floorplan_popover_fields = ["name", "cf_owner", "cf_bad key", "cf_"]
         dep.save()

@@ -1,4 +1,4 @@
-"""Service-control + plugin-apply API — superuser gating + response shape.
+"""Service-control + plugin-apply API - superuser gating + response shape.
 
 The actual restart/apply launches a detached systemd unit, so it is not
 exercised here (no systemd in CI); these cover the security gate and payloads.

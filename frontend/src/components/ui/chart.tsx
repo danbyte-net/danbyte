@@ -87,7 +87,7 @@ export function ChartContainer({
 // config key) and the value (the color) are attacker-controlled if a config
 // is keyed by a user-managed name (status/site/manufacturer names). Allowlist
 // strictly: keys must be plain identifiers, colors must be a hex literal or a
-// CSS var() token. Anything else is dropped — no CSS can break out.
+// CSS var() token. Anything else is dropped - no CSS can break out.
 const SAFE_KEY = /^[A-Za-z0-9_-]+$/
 const SAFE_COLOR =
   /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$|^var\(--[A-Za-z0-9_-]+\)$/
@@ -314,7 +314,7 @@ export function ChartLegendContent({
   )
 }
 
-// Resolve a config entry from a recharts payload item + a key — handles the
+// Resolve a config entry from a recharts payload item + a key - handles the
 // pie/radial case where the real key lives on item.payload[nameKey].
 function getPayloadConfigFromPayload(
   config: ChartConfig,

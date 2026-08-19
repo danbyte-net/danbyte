@@ -1,8 +1,8 @@
-"""The topbar bell's endpoints — a user's own notifications, nothing else.
+"""The topbar bell's endpoints - a user's own notifications, nothing else.
 
 Deliberately not an RBAC-registered object type: rows are personal (always
 filtered to ``request.user``), so the only gate that matters is being signed
-in — the same stance as ``/api/me/prefs/``.
+in - the same stance as ``/api/me/prefs/``.
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def notifications(request):
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def notifications_read(request):
-    """Mark ``{"ids": [...]}`` — or ``{"all": true}`` — as read."""
+    """Mark ``{"ids": [...]}`` - or ``{"all": true}`` - as read."""
     qs = Notification.objects.filter(user=request.user, read_at__isnull=True)
     if not request.data.get("all"):
         ids = [str(i) for i in request.data.get("ids", []) if i]

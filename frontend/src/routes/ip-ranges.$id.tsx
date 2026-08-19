@@ -109,7 +109,7 @@ function Body({ range: r }: { range: IPRange }) {
                 label="Size"
                 value={
                   <span className="num">
-                    {r.size != null ? r.size.toLocaleString() : "—"}
+                    {r.size != null ? r.size.toLocaleString() : "-"}
                   </span>
                 }
               />
@@ -117,7 +117,7 @@ function Body({ range: r }: { range: IPRange }) {
                 label="Family"
                 value={
                   <span className="num">
-                    {r.family ? `IPv${r.family}` : "—"}
+                    {r.family ? `IPv${r.family}` : "-"}
                   </span>
                 }
               />
@@ -246,7 +246,7 @@ function IpRangeOverview({ range: r }: { range: IPRange }) {
           {r.prefix.cidr}
         </Link>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
     },
   ]

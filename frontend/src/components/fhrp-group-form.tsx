@@ -214,7 +214,7 @@ export function FhrpGroupForm({
         </Field>
         <Field label="Auth key" error={fieldErrors.auth_key}>
           <Input
-            placeholder={authType ? "shared secret" : "—"}
+            placeholder={authType ? "shared secret" : "-"}
             value={authKey}
             disabled={!authType}
             onChange={(e) => setAuthKey(e.target.value)}

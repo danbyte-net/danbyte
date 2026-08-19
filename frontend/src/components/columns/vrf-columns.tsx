@@ -16,8 +16,8 @@ import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
 // The one source of truth for "a table of VRFs". Every surface that lists
-// VRFs — /vrfs, the route-target detail pane, the compliance affected-objects
-// table — builds its columns here so a VRF row reads identically everywhere.
+// VRFs - /vrfs, the route-target detail pane, the compliance affected-objects
+// table - builds its columns here so a VRF row reads identically everywhere.
 // Page-specific columns (the route target's import/export direction) are
 // spliced around this factory's output; the shared cells are never re-authored
 // inline.
@@ -57,15 +57,15 @@ export interface VrfColumnOpts<T extends VRF = VRF> {
   include?: VrfColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
   /** Header for the name column: "Name" on general lists, "VRF" where the
    * surrounding page is about something else (the route-target detail pane). */
   nameHeader?: string
-  /** Columns whose header stays plain text instead of a sortable SortHeader —
+  /** Columns whose header stays plain text instead of a sortable SortHeader -
    * the embedded / read-only tables never offered sorting on them. */
   plainHeaders?: VrfColumnId[]
-  /** Count columns render `—` for zero (the list page, which also facets on
+  /** Count columns render `-` for zero (the list page, which also facets on
    * "has prefixes") or print the 0 (embedded and read-only tables). */
   zeroCounts?: ZeroCounts
   /** Compliance violation badge next to the name. Pass a pre-resolved map to
@@ -186,7 +186,7 @@ export function buildVrfColumns<T extends VRF = VRF>(
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     }),

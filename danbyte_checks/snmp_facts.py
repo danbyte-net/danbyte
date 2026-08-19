@@ -1,8 +1,8 @@
-"""SNMP system-facts fetch — the read-only *observed* layer for Phase 1 of the
+"""SNMP system-facts fetch - the read-only *observed* layer for Phase 1 of the
 discovery feature (issue #84).
 
 A single SNMP GET of the system MIB (sysDescr/sysObjectID/sysUpTime/sysContact/
-sysName/sysLocation), returned as a named dict — never raw OIDs to the caller.
+sysName/sysLocation), returned as a named dict - never raw OIDs to the caller.
 Reuses the v2c/v3 credential shape used by ``monitoring.checkers.snmp`` so an
 ``SnmpProfile``'s ``params`` + ``secret_params`` work unchanged here.
 
@@ -45,7 +45,7 @@ class SnmpFactsError(Exception):
 
 
 def _auth_data(version, params, secret_params, mod):
-    """Mirror of ``SnmpChecker._auth_data`` — build pysnmp auth from the same
+    """Mirror of ``SnmpChecker._auth_data`` - build pysnmp auth from the same
     ``params`` / ``secret_params`` shape an ``SnmpProfile`` stores."""
     if version == "v3":
         user = secret_params.get("username") or params.get("username")
@@ -115,7 +115,7 @@ def fetch_system_facts_sync(
     )
 
 
-# ─── Interface enrichment (IF-MIB ifTable + ifXTable) — Phase 2 ─────────────
+# ─── Interface enrichment (IF-MIB ifTable + ifXTable) - Phase 2 ─────────────
 #
 # Per LibreNMS/Observium practice we read ifXTable (ifName/ifAlias/ifHighSpeed)
 # alongside the base ifTable; ifXTable's HC counters don't wrap on fast links.
@@ -150,7 +150,7 @@ _IANA_IFTYPE = {
     "117": "ethernet", "142": "ipForward",
 }
 
-# Q-BRIDGE-MIB (802.1Q) — for per-interface access VLAN (PVID). VLAN membership
+# Q-BRIDGE-MIB (802.1Q) - for per-interface access VLAN (PVID). VLAN membership
 # is keyed by *bridge port*, not ifIndex, so we also read the bridge-port→ifIndex
 # map. (Tagged-VLAN egress bitmaps are a later add; the access/untagged VLAN is
 # what an IPAM cares about most.)
@@ -225,7 +225,7 @@ async def fetch_interfaces(
                 for oid, value in var_binds:
                     if_index = str(oid).split(".")[-1]
                     rows.setdefault(if_index, {})[key] = value.prettyPrint()
-        except Exception:  # noqa: BLE001 — a missing column shouldn't fail the rest
+        except Exception:  # noqa: BLE001 - a missing column shouldn't fail the rest
             continue
 
     # ipAddrTable (IPv4 ipAdEntIfIndex): map ifIndex → its configured addresses,
@@ -243,10 +243,10 @@ async def fetch_interfaces(
             for oid, value in var_binds:
                 ip = str(oid)[len(_IP_AD_ENT_IFINDEX) + 1:]
                 ip_by_ifindex.setdefault(value.prettyPrint(), []).append(ip)
-    except Exception:  # noqa: BLE001 — ipAddrTable is optional
+    except Exception:  # noqa: BLE001 - ipAddrTable is optional
         pass
 
-    # Q-BRIDGE-MIB: per-interface access VLAN (PVID). Optional — L3-only devices
+    # Q-BRIDGE-MIB: per-interface access VLAN (PVID). Optional - L3-only devices
     # and non-switches simply won't answer, which is fine.
     vlan_cols: dict[str, dict] = {}
     for ckey, base in (
@@ -385,7 +385,7 @@ async def _walk_column(
     """Walk one column → ``{oid_tail_after_base: prettyValue}``. Tolerant: a
     missing/blocked column yields ``{}`` rather than failing the whole fetch.
 
-    ``limit`` stops after that many bindings — for exploring a whole table base
+    ``limit`` stops after that many bindings - for exploring a whole table base
     interactively, where the subtree can be far larger than any one column.
     """
     result: dict = {}
@@ -452,7 +452,7 @@ def fetch_topology_sync(
 
 def fetch_snmp(target, version, params, secret_params, timeout_ms) -> dict:
     """Fetch a device's full observed SNMP state → ``{data, interfaces,
-    neighbors, arp, reachable, error}``. Pure (no ORM) — the **same** function
+    neighbors, arp, reachable, error}``. Pure (no ORM) - the **same** function
     the core (``poll_device``) and a remote Outpost both run, so discovery gives
     identical results wherever it happens. Facts are required (their failure =
     unreachable); interfaces + topology are best-effort.
@@ -536,7 +536,7 @@ async def list_oid_children(
     the others exist.
 
     So each child is found with a single GETNEXT, then its whole subtree is
-    skipped by probing ``base.child.4294967295`` — greater than anything within
+    skipped by probing ``base.child.4294967295`` - greater than anything within
     that child (max sub-identifier), yet still less than the next sibling, so no
     sibling is stepped over. That's one round trip per child instead of one per
     value.
@@ -580,7 +580,7 @@ async def list_oid_children(
             oid, value = var_binds[0]
             found = str(oid)
             if not found.startswith(prefix):
-                break  # walked out of the subtree — done
+                break  # walked out of the subtree - done
             sub = found[len(prefix):].split(".")[0]
             out.append({
                 "sub": sub,

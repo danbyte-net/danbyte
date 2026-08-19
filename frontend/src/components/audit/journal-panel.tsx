@@ -41,7 +41,7 @@ const KIND_OPTIONS = [
 ]
 
 /**
- * Per-object journal — free-form notes humans write about an object (distinct
+ * Per-object journal - free-form notes humans write about an object (distinct
  * from the auto change log). Drop into a detail-page "Journal" tab. Anyone can
  * add a note; authors (and superusers) can edit/delete their own.
  */
@@ -90,7 +90,7 @@ export function JournalPanel({
 
   return (
     <div className="space-y-4">
-      {/* Composer — the textarea has its own border, so a card around it was a
+      {/* Composer - the textarea has its own border, so a card around it was a
           box inside a box. */}
       <div>
         <MentionTextarea
@@ -243,7 +243,7 @@ function JournalRow({
 // lights up here is what actually notifies.
 const MENTION_RE = /@([A-Za-z0-9_.@+-]+)/g
 
-/** The note text with @names tinted — display only, no lookup. */
+/** The note text with @names tinted - display only, no lookup. */
 function renderWithMentions(text: string) {
   const parts = text.split(MENTION_RE)
   if (parts.length === 1) return text
@@ -261,7 +261,7 @@ function renderWithMentions(text: string) {
 
 /**
  * A journal textarea that offers username completion while an "@word" token is
- * being typed at the caret. Task journals only — that's where a mention sends
+ * being typed at the caret. Task journals only - that's where a mention sends
  * an email; elsewhere it stays a plain textarea.
  */
 function MentionTextarea({

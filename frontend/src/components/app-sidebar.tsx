@@ -131,19 +131,19 @@ import { usePluginUi } from "@/lib/plugins"
 import { DynamicIcon } from "@/components/dynamic-icon"
 import { apiErrorToast } from "@/lib/api-toast"
 
-// Information architecture mirrors the original Danbyte CLAUDE.md — the
+// Information architecture mirrors the original Danbyte CLAUDE.md - the
 // order is load-bearing (matches the user's mental model). Stub `/foo`
 // routes 404 until their .tsx file lands in src/routes/.
 
 // How a nav item earns its place in the sidebar. The visibility gate mirrors
 // the API so the nav never advertises a page that would only 403:
-//   • `objectType`  — single RBAC object-type slug (Django `model_name`); shown
+//   • `objectType`  - single RBAC object-type slug (Django `model_name`); shown
 //                     when the user can `view` it in the active tenant.
-//   • `anyOf`       — aggregate pages that read several types (MACs, Topology,
+//   • `anyOf`       - aggregate pages that read several types (MACs, Topology,
 //                     Monitoring, Alerts); shown when ANY is viewable.
-//   • `perm`        — a flat permission slug (`useMe().can`), for pages with no
+//   • `perm`        - a flat permission slug (`useMe().can`), for pages with no
 //                     single owning object type (Audit log, External sync).
-//   • none of these — genuinely universal (Dashboard landing, own Preferences);
+//   • none of these - genuinely universal (Dashboard landing, own Preferences);
 //                     always shown to a signed-in user.
 type NavItem = {
   title: string
@@ -156,7 +156,7 @@ type NavItem = {
   integration?: Array<"dhcp" | "dns" | "virtualization">
 }
 // A cluster is a labelled run of items inside a section (rendered as a small
-// sub-heading). `label` is optional — a single unlabelled cluster renders as a
+// sub-heading). `label` is optional - a single unlabelled cluster renders as a
 // plain list, so short sections stay flat.
 type NavCluster = {
   label?: string
@@ -943,7 +943,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   // it. An item matches if its URL is the path or a parent of it.
   const inGroup = (urls: string[]) =>
     urls.some((u) => pathname === u || pathname.startsWith(u + "/"))
-  // Hide any link the user can't reach — mirrors the API so the nav never
+  // Hide any link the user can't reach - mirrors the API so the nav never
   // advertises a page that would only 403 (see NavItem for the gate kinds).
   // An item with no gate is universal and always shows.
   // Integration-gated items also need their tenant toggle on (Settings →
@@ -994,14 +994,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" {...props}>
       {/* Header: tenant switcher.
-          Currently a static "Danbyte / Acme Networks" item — when we wire
+          Currently a static "Danbyte / Acme Networks" item - when we wire
           /api/tenants/, swap the body of TenantSwitcher to fetch + map. */}
       <SidebarHeader>
         <TenantSwitcher />
       </SidebarHeader>
 
       <SidebarContent className="gap-0">
-        {/* Dashboard sits above the grouped sections — single top-level item. */}
+        {/* Dashboard sits above the grouped sections - single top-level item. */}
         <FavoritesSection />
 
         <SidebarGroup className="py-0.5">
@@ -1162,7 +1162,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         )}
       </SidebarContent>
 
-      {/* Footer: just the signed-in user — Preferences / Settings / Docs all
+      {/* Footer: just the signed-in user - Preferences / Settings / Docs all
           live in its popover now, so the nav stays focused on data pages. */}
       <SidebarFooter>
         <SidebarMenu>
@@ -1177,7 +1177,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   )
 }
 
-// Sentinel for "no parent folder" — the Select primitive disallows an empty
+// Sentinel for "no parent folder" - the Select primitive disallows an empty
 // SelectItem value, so it maps back to null on change.
 const ROOT = "__root__"
 
@@ -1544,7 +1544,7 @@ function TenantSwitcher() {
     onSuccess: (t) => {
       // Hard boundary: a full navigation to "/" is the only way to guarantee
       // NO previous-tenant data survives the switch. qc.clear() empties the
-      // cache but does NOT refetch already-mounted observers — they keep
+      // cache but does NOT refetch already-mounted observers - they keep
       // rendering their stale (other-tenant) result until something re-triggers
       // them, a cross-tenant leak. A document load rebuilds every query against
       // the new active tenant from scratch.
@@ -1604,7 +1604,7 @@ function TenantSwitcher() {
                 disabled
                 className="gap-2 p-2 text-xs text-muted-foreground"
               >
-                No tenants — create one in Tenants
+                No tenants - create one in Tenants
               </DropdownMenuItem>
             )}
             {tenants.map((t) => {
@@ -1657,7 +1657,7 @@ function UserMenu() {
   const email = me.email || ""
   const initials = name.slice(0, 2).toUpperCase()
 
-  // Running Danbyte version — a neat footer in the menu. system/info is
+  // Running Danbyte version - a neat footer in the menu. system/info is
   // users.manage-gated, so only show it to those who can see it.
   const info = useQuery({
     queryKey: ["system-info"],

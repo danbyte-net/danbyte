@@ -52,7 +52,7 @@ function TenantsPage() {
     onSuccess: (t) => {
       // Hard boundary: full document load so NO previous-tenant data survives.
       // invalidateQueries leaves mounted observers rendering stale rows until
-      // each refetch resolves — a cross-tenant flash. (Same as the sidebar.)
+      // each refetch resolves - a cross-tenant flash. (Same as the sidebar.)
       toast.success(`Switched to ${t.name}`)
       qc.clear()
       window.location.assign("/")
@@ -61,9 +61,9 @@ function TenantsPage() {
   })
 
   const handleDelete = useCallback((t: Tenant) => setDeleting(t), [])
-  // Depend on `mutate` (stable), never the mutation object — that object is a
-  // new identity every render, which made `columns` — and everything memoised
-  // from it — change every render.
+  // Depend on `mutate` (stable), never the mutation object - that object is a
+  // new identity every render, which made `columns` - and everything memoised
+  // from it - change every render.
   const switchTenant = switchMutation.mutate
   const handleSwitch = useCallback(
     (t: Tenant) => switchTenant(t.id),
@@ -195,7 +195,7 @@ export function buildTenantColumns({
       header: ({ column }) => <SortHeader column={column} label="Group" />,
       cell: ({ row }) => (
         <span className="text-muted-foreground">
-          {row.original.group?.name ?? "—"}
+          {row.original.group?.name ?? "-"}
         </span>
       ),
       meta: {
@@ -236,7 +236,7 @@ export function buildTenantColumns({
         row.original.site_count > 0 ? (
           <span className="num text-xs">{row.original.site_count}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -247,7 +247,7 @@ export function buildTenantColumns({
         row.original.prefix_count > 0 ? (
           <span className="num text-xs">{row.original.prefix_count}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -258,7 +258,7 @@ export function buildTenantColumns({
         row.original.vlan_count > 0 ? (
           <span className="num text-xs">{row.original.vlan_count}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -269,7 +269,7 @@ export function buildTenantColumns({
         row.original.ip_count > 0 ? (
           <span className="num text-xs">{row.original.ip_count}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -278,7 +278,7 @@ export function buildTenantColumns({
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     },

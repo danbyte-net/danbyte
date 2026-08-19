@@ -2,7 +2,7 @@
 
 These exercise the engine against the ``acme`` library's real challenge objects
 and the real certificate-import path, with only the network calls to the CA
-mocked — so challenge-value computation, order persistence, and finalize→import
+mocked - so challenge-value computation, order persistence, and finalize→import
 are covered without a live CA. The engine itself is validated end-to-end against
 a real step-ca separately.
 """
@@ -395,7 +395,7 @@ class IssueJobTests(TestCase):
             identifier="svc.danbyte.lan", type="dns-01",
             record_name="_acme-challenge.svc.danbyte.lan", record_value="v",
         )
-        # issue() keeps the opened order in memory and finalizes it directly —
+        # issue() keeps the opened order in memory and finalizes it directly -
         # never reloading from the CA on the automated path.
         with (
             mock.patch.object(
@@ -533,7 +533,7 @@ class AcmeApiTests(TestCase):
             tenant=self.tenant, name="ca", directory_url="https://ca/d",
             account_uri="https://ca/acct/1",
         )
-        # An issuer that belongs to a different tenant — must not be usable.
+        # An issuer that belongs to a different tenant - must not be usable.
         self.foreign = Issuer.objects.create(
             tenant=self.other_tenant, name="foreign", directory_url="https://x/d",
         )

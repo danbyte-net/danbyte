@@ -26,7 +26,7 @@ import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
-/** The chassis's device bays and the child devices installed in them —
+/** The chassis's device bays and the child devices installed in them -
  * blades, FEX: whole devices, unlike modules (which contribute ports). */
 export function DeviceBaysPane({ deviceId }: { deviceId: string }) {
   const { canDo } = useMe()
@@ -98,7 +98,7 @@ export function DeviceBaysPane({ deviceId }: { deviceId: string }) {
                     )}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    {b.description || "—"}
+                    {b.description || "-"}
                   </TableCell>
                   <TableCell>
                     {canWrite && (
@@ -175,7 +175,7 @@ function InstallChildDialog({
         <DialogHeader>
           <DialogTitle>Install a device in {bay?.name}</DialogTitle>
           <DialogDescription>
-            The child device keeps its own ports, IPs and lifecycle — the bay
+            The child device keeps its own ports, IPs and lifecycle - the bay
             just records where it physically lives.
           </DialogDescription>
         </DialogHeader>

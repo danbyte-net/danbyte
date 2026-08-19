@@ -137,7 +137,7 @@ function Body({ conn }: { conn: WindowsConnection }) {
           r.dhcp_scopes !== undefined && `${r.dhcp_scopes} DHCP scopes`,
           r.dns_zones !== undefined && `${r.dns_zones} DNS zones`,
         ].filter(Boolean)
-        toast.success(`Connected — ${bits.join(", ")}`)
+        toast.success(`Connected - ${bits.join(", ")}`)
       } else {
         toast.error(r.dhcp_error || r.dns_error || r.error || "Probe failed")
       }
@@ -292,8 +292,8 @@ function Overview({
     onSuccess: (_, { on }) => {
       toast.success(
         on
-          ? "Lease sync on — leases arrive on the next sync"
-          : "Lease sync off — synced leases are removed on the next sync"
+          ? "Lease sync on - leases arrive on the next sync"
+          : "Lease sync off - synced leases are removed on the next sync"
       )
       qc.invalidateQueries({ queryKey: ["dhcp-scopes"] })
     },
@@ -645,7 +645,7 @@ function DriftCell({
     isPending: boolean
   }
 }) {
-  if (!r.drift) return <span className="text-xs text-muted-foreground">—</span>
+  if (!r.drift) return <span className="text-xs text-muted-foreground">-</span>
   const label =
     r.drift === "missing" ? "missing on server" : "modified on server"
   const detail = Object.entries(r.drift_detail || {})
@@ -720,7 +720,7 @@ function Leases({
         header: "MAC",
         cell: ({ row }) => (
           <span className="font-mono text-[11px] text-muted-foreground">
-            {row.original.mac || "—"}
+            {row.original.mac || "-"}
           </span>
         ),
       },
@@ -736,7 +736,7 @@ function Leases({
         header: "State",
         cell: ({ row }) => (
           <span className="text-xs text-muted-foreground">
-            {row.original.address_state || "—"}
+            {row.original.address_state || "-"}
           </span>
         ),
       },
@@ -760,7 +760,7 @@ function Leases({
       <EmptyState title={anyOptIn ? "No leases yet." : "Lease sync is off."}>
         {anyOptIn
           ? "Leases appear here after the next sync of an opted-in scope."
-          : "Leases churn constantly, so they're opt-in per scope — flip the Lease sync switch on a scope in the Overview tab."}
+          : "Leases churn constantly, so they're opt-in per scope - flip the Lease sync switch on a scope in the Overview tab."}
       </EmptyState>
     )
   return (

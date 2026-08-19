@@ -4,7 +4,7 @@ Periodically evaluates each prefix's ``utilisation_pct`` and fires a
 notification (via the tenant's channels) when it crosses the alert threshold.
 Uses hysteresis so an alert isn't re-sent every tick: a prefix is "armed" again
 only after it drops back below the clear threshold. The armed/alerted flag lives
-in the Django cache (redis) — no schema change, and it self-expires.
+in the Django cache (redis) - no schema change, and it self-expires.
 
 Thresholds are settings (``MONITORING_UTIL_ALERT_THRESHOLD`` /
 ``MONITORING_UTIL_ALERT_CLEAR``). Only IPv4, non-container prefixes report a

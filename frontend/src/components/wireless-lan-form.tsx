@@ -221,14 +221,14 @@ export function WirelessLANForm({
           label="Authentication"
           value={authType || null}
           onChange={(v) => setAuthType((v as WirelessAuthType) ?? "")}
-          noneLabel="—"
+          noneLabel="-"
           options={AUTH_TYPES}
         />
         <FormSelect
           label="Cipher"
           value={authCipher || null}
           onChange={(v) => setAuthCipher((v as WirelessAuthCipher) ?? "")}
-          noneLabel="—"
+          noneLabel="-"
           options={AUTH_CIPHERS}
         />
       </div>

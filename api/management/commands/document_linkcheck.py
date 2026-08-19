@@ -3,7 +3,7 @@
 Run daily by ``danbyte-document-linkcheck.timer``. For every URL-bearing
 :class:`api.models.Document` it does a short, SSRF-guarded ``GET`` (redirects are
 disabled and the connection is pinned to a validated public IP) and records
-whether the link is reachable — so a broken datasheet/runbook link surfaces in
+whether the link is reachable - so a broken datasheet/runbook link surfaces in
 the UI without a user clicking it.
 
     manage.py document_linkcheck
@@ -31,7 +31,7 @@ def _check_one(url: str) -> tuple[str, int | None]:
         resp = safe_get(url, timeout=_TIMEOUT)
     except SSRFError:
         return Document.LinkStatus.BROKEN, None
-    except Exception:  # noqa: BLE001 — any transport error is a broken link
+    except Exception:  # noqa: BLE001 - any transport error is a broken link
         return Document.LinkStatus.BROKEN, None
     code = resp.status_code
     ok = 200 <= code < 400

@@ -1,13 +1,13 @@
-"""Round-trip export/import API — generic over any IO-capable object type.
+"""Round-trip export/import API - generic over any IO-capable object type.
 
-* ``GET  /api/io/types/``            — types the user may export/import.
-* ``GET  /api/io/<slug>/fields/``    — columns + field metadata for a type.
-* ``GET  /api/io/<slug>/export/``    — stream the (RBAC-scoped) rows as CSV/JSON/XLSX.
-* ``POST /api/io/<slug>/import/``    — upsert rows (dry-run preview + commit).
+* ``GET  /api/io/types/``            - types the user may export/import.
+* ``GET  /api/io/<slug>/fields/``    - columns + field metadata for a type.
+* ``GET  /api/io/<slug>/export/``    - stream the (RBAC-scoped) rows as CSV/JSON/XLSX.
+* ``POST /api/io/<slug>/import/``    - upsert rows (dry-run preview + commit).
 
 RBAC is enforced per row: creating needs ``add``, updating needs ``change``, and
 the target of an update/create must fall inside the user's row scope
-(``restrict_queryset`` — constraints **and** site scope). The pretty client-side
+(``restrict_queryset`` - constraints **and** site scope). The pretty client-side
 export is unrelated; this is the editable data round-trip.
 """
 from __future__ import annotations
@@ -161,14 +161,14 @@ def io_export_view(request, slug):
     if not _can(request, tenant, slug, "view"):
         return Response({"detail": f"You can't view {slug}."}, status=403)
 
-    # NB: not ``format`` — that's DRF's reserved content-negotiation param.
+    # NB: not ``format`` - that's DRF's reserved content-negotiation param.
     fmt = request.query_params.get("fmt", "csv").lower()
     qs = _scoped_qs(request, tenant, handler, model, "view")
     ids = request.query_params.get("ids")
     if ids:
         qs = qs.filter(pk__in=[i for i in ids.split(",") if i.strip()])
     # Optional field filters (e.g. ipaddress export scoped to ?prefix=<id>).
-    # Only narrows the already RBAC-scoped queryset — a concrete model field →
+    # Only narrows the already RBAC-scoped queryset - a concrete model field →
     # exact match; unknown params ignored. Can't widen access, only restrict.
     field_names = {f.name for f in model._meta.concrete_fields}
     reserved = {"fmt", "ids", "format"}

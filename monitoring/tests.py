@@ -1,4 +1,4 @@
-"""Milestone 1 tests — the effective-check resolver and secrets-at-rest.
+"""Milestone 1 tests - the effective-check resolver and secrets-at-rest.
 
 The resolver's inheritance/override rules are the load-bearing logic of the
 whole feature, so they get exhaustive coverage here.
@@ -94,7 +94,7 @@ class ResolverInheritanceTests(ResolverTestBase):
         from api.models import VRF
 
         vrf = VRF.objects.create(tenant=self.tenant, name="red")
-        # Prefix lives in a VRF, the IP is in the Global VRF (NULL) — no match.
+        # Prefix lives in a VRF, the IP is in the Global VRF (NULL) - no match.
         pvrf = Prefix.objects.create(
             tenant=self.tenant, cidr="10.0.10.0/24", vrf=vrf, status=status_for(self.tenant)
         )
@@ -105,7 +105,7 @@ class ResolverInheritanceTests(ResolverTestBase):
 
 class ResolverConflictTests(ResolverTestBase):
     def test_most_specific_prefix_wins(self):
-        # Same template assigned at /16 and /24 with different intervals — the
+        # Same template assigned at /16 and /24 with different intervals - the
         # /24 (longer mask) wins.
         t = self.make_template(interval_seconds=300)
         self.assign_prefix(t, self.p16, overrides={"interval_seconds": 3600})
@@ -418,7 +418,7 @@ class PolicyDefaultPingTests(ResolverTestBase):
 
 class PolicyFollowGlobalNoPingTests(ResolverTestBase):
     """A 'Follow global' (inherit) policy with nothing selected contributes no
-    checks of its own — the ping fallback is only for explicit 'Monitor on'."""
+    checks of its own - the ping fallback is only for explicit 'Monitor on'."""
 
     def test_inherit_empty_policy_does_not_ping(self):
         from .models import MonitoringPolicy

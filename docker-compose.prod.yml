@@ -9,7 +9,7 @@
 # Podman: `podman-compose -f docker-compose.prod.yml --env-file .env up -d`.
 # See docs/getting-started/docker.md.
 
-# Shared app config — every Python service gets the same DB/Redis/secret env.
+# Shared app config - every Python service gets the same DB/Redis/secret env.
 x-app-env: &app-env
   DEBUG: "False"
   DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY in .env}
@@ -87,7 +87,7 @@ services:
       retries: 5
       start_period: 60s
 
-  # WebSockets — a SEPARATE ASGI process (channels never sits in the HTTP path).
+  # WebSockets - a SEPARATE ASGI process (channels never sits in the HTTP path).
   # Wait for the backend to be healthy: it runs migrate/bootstrap once, so ws
   # and workers don't crash-loop against an unmigrated schema on a fresh DB.
   ws:
@@ -124,7 +124,7 @@ services:
   # timer; a container has no init to do that, so one process reads the same
   # table and calls the same commands. Without it nothing is ever *triggered*:
   # checks stay unmaterialised and never dispatch, digests never send, retention
-  # never runs — an install that looks configured but measures nothing.
+  # never runs - an install that looks configured but measures nothing.
   # Keep it to one replica per deployment (it claims each occurrence in Redis,
   # so a second replica is safe, but it buys nothing).
   scheduler:
@@ -139,7 +139,7 @@ services:
       backend:
         condition: service_healthy
 
-  # The SPA server — TanStack Start SSR build served by vite preview. nginx
+  # The SPA server - TanStack Start SSR build served by vite preview. nginx
   # proxies `/` here (the build has no static index.html to serve directly).
   frontend:
     build:

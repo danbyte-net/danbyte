@@ -12,18 +12,18 @@ export interface PrefixPickerProps extends Omit<ObjectPickerProps, "label"> {
   label?: string
 }
 
-/** Shared detail cache key — the same one prefix detail pages use, so a
+/** Shared detail cache key - the same one prefix detail pages use, so a
  * hydration fetch here warms their cache (and vice versa). */
 export const prefixDetailKey = (id: string) => ["prefix", id] as const
 
-/** The prefix preset of ObjectPicker — options read "10.0.0.0/24 · prod",
+/** The prefix preset of ObjectPicker - options read "10.0.0.0/24 · prod",
  * advanced search by VRF / site / location. Replaces the page_size=1000
  * dropdown pattern: the combobox holds one page, the modal finds the rest. */
 export function PrefixPicker({ label = "Prefix", ...rest }: PrefixPickerProps) {
   const spec = useMemo<ObjectPickerSpec<Prefix, Prefix>>(
     () => ({
       noun: "prefix",
-      // No compact ?picker=1 shape exists for prefixes — the standard list
+      // No compact ?picker=1 shape exists for prefixes - the standard list
       // first page is fine for the combobox; the modal covers the long tail.
       pickerEndpoint: "/api/prefixes/",
       pickerQueryKey: ["prefixes-picker"],
@@ -69,7 +69,7 @@ export function PrefixPicker({ label = "Prefix", ...rest }: PrefixPickerProps) {
         {
           header: "Site",
           cell: (p) => (
-            <span className="text-muted-foreground">{p.site?.name ?? "—"}</span>
+            <span className="text-muted-foreground">{p.site?.name ?? "-"}</span>
           ),
         },
         { header: "Status", cell: (p) => <StatusBadge status={p.status} /> },
@@ -77,7 +77,7 @@ export function PrefixPicker({ label = "Prefix", ...rest }: PrefixPickerProps) {
           header: "Description",
           cell: (p) => (
             <span className="line-clamp-1 text-muted-foreground">
-              {p.description || "—"}
+              {p.description || "-"}
             </span>
           ),
         },

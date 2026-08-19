@@ -1,11 +1,11 @@
-"""Ansible dynamic-inventory endpoint — Danbyte as a pull source of truth.
+"""Ansible dynamic-inventory endpoint - Danbyte as a pull source of truth.
 
 `GET /api/inventory/ansible/` returns the standard Ansible inventory-script JSON
 for the active tenant's **devices and virtual machines**: groups by
 site/region/role/platform/status/tag (plus cluster/cluster-group for VMs), and
 per-host vars (primary IP as ansible_host, key attributes, and the merged config
 context). Point an Ansible inventory plugin / `-i` script at it and playbooks
-render + push — credentials stay in the runner, never in Danbyte.
+render + push - credentials stay in the runner, never in Danbyte.
 
 Each host's ``danbyte.kind`` is ``device`` or ``virtual_machine``, and the
 ``all_devices`` / ``all_vms`` groups let a play target one or the other. Host
@@ -72,7 +72,7 @@ def _iface_dict(iface) -> dict:
 
 def with_inventory_relations(qs):
     """Apply the select_related + Prefetch chain that ``device_hostvars`` /
-    ``device_groups`` need, so building them is N+1-free — for the whole fleet
+    ``device_groups`` need, so building them is N+1-free - for the whole fleet
     *and* a single-device fetch."""
     from django.db.models import Prefetch
 
@@ -96,7 +96,7 @@ def with_inventory_relations(qs):
 
 
 def device_hostvars(d) -> dict:
-    """The per-host vars Ansible sees for one device — the ``danbyte`` metadata
+    """The per-host vars Ansible sees for one device - the ``danbyte`` metadata
     block, interfaces, custom fields, merged config context, and ansible_host."""
     hv = {
         "danbyte": {
@@ -196,7 +196,7 @@ def with_vm_inventory_relations(qs):
 
 
 def vm_hostvars(vm) -> dict:
-    """Per-host vars for one VM — the ``danbyte`` block (with cluster + resource
+    """Per-host vars for one VM - the ``danbyte`` block (with cluster + resource
     facts), interfaces, custom fields, merged config context, and ansible_host."""
     hv = {
         "danbyte": {
@@ -229,7 +229,7 @@ def vm_hostvars(vm) -> dict:
 
 
 def vm_groups(vm) -> list[str]:
-    """The inventory groups one VM belongs to — the device set plus cluster and
+    """The inventory groups one VM belongs to - the device set plus cluster and
     cluster-group, and the catch-all ``all_vms``."""
     groups = ["all_vms"]
     if vm.site_id:
@@ -368,7 +368,7 @@ def ansible_inventory(request):
 
         for vm in vqs:
             host = vm.name
-            # A device with the same name already claimed this host — Ansible
+            # A device with the same name already claimed this host - Ansible
             # keys hostvars by name, so the device wins and the VM is skipped
             # rather than silently clobbering the device's vars.
             if host in hostvars:

@@ -1,5 +1,5 @@
 """Tests for the built-in Status catalog seeding and the dashboard status
-aggregation regression — both from issue #51 (fresh-install first-run bugs)."""
+aggregation regression - both from issue #51 (fresh-install first-run bugs)."""
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
@@ -14,7 +14,7 @@ User = get_user_model()
 
 
 class SeedBuiltinStatusesTests(TestCase):
-    """#51/2 — a runtime/fresh-install tenant should get the built-in catalog."""
+    """#51/2 - a runtime/fresh-install tenant should get the built-in catalog."""
 
     def setUp(self):
         org = Organization.objects.create(name="O", slug="o")
@@ -61,7 +61,7 @@ class SeedBuiltinStatusesTests(TestCase):
 
 
 class DashboardStatusRegressionTests(APITestCase):
-    """#51/1 — the dashboard 500'd because prefix/device status aggregation
+    """#51/1 - the dashboard 500'd because prefix/device status aggregation
     still read the pre-0047 enum column instead of the Status FK."""
 
     def setUp(self):

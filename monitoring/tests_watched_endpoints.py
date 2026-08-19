@@ -1,4 +1,4 @@
-"""Watched-endpoint poller — status mapping + stamping, no network.
+"""Watched-endpoint poller - status mapping + stamping, no network.
 
 ``observe_endpoint`` is mocked so these run offline; the live collector itself
 is covered by ``tests_certificates`` and the ``danbyte_checks`` suite.

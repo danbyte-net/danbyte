@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/dialog"
 import { apiErrorToast } from "@/lib/api-toast"
 
-// Floating action bar for /devices — appears when rows are selected. Today it
+// Floating action bar for /devices - appears when rows are selected. Today it
 // offers a single bulk action: deploy the selection to an automation target.
 // Danbyte hands off to the runner; it never touches the devices directly.
 export interface DeviceBulkBarProps {
@@ -132,7 +132,7 @@ function DeployDialog({
         <DialogHeader>
           <DialogTitle>Deploy {devices.length} devices</DialogTitle>
           <DialogDescription>
-            Danbyte launches the runner, which holds the device credentials — it
+            Danbyte launches the runner, which holds the device credentials - it
             never connects to the devices directly.
           </DialogDescription>
         </DialogHeader>

@@ -21,7 +21,7 @@ export function objCan(
 
 const ANON: Me = { is_authenticated: false, perms: [], permissions: {} }
 
-// Current user's identity + effective permissions. Cached for the session —
+// Current user's identity + effective permissions. Cached for the session -
 // permissions only change on an admin edit, which the user won't see mid-page
 // anyway. Anonymous callers resolve to ANON (200 from the backend), never an
 // error, so consumers can read `.perms` unconditionally.
@@ -44,10 +44,10 @@ export function useMe() {
       (me.permissions?.[objectType]?.includes(action) ?? false),
     /** Can manage users/groups/permissions + this tenant's settings. */
     canManage: !!me.can_manage_users || me.perms.includes("users.manage"),
-    /** Can edit deployment-wide settings (global email/LDAP, updates) — a
+    /** Can edit deployment-wide settings (global email/LDAP, updates) - a
      * tenant-narrowed admin grant does NOT qualify. */
     canManageDeployment: !!me.can_manage_deployment,
-    /** The install's display name — shown in the sidebar header, browser title,
+    /** The install's display name - shown in the sidebar header, browser title,
      * and login pages. Set under Settings → Deployment; blank falls back to the
      * product name. */
     brandName: me.deployment_name?.trim() || "Danbyte",
@@ -65,7 +65,7 @@ export function useMe() {
     /** Enhanced site separation on for this tenant? When true, forms filter
      * site pickers to editableSites (see useSiteOptions). */
     siteSeparation: me.site_separation === true,
-    /** Sites this user may WRITE in — "all", or a list of site ids. */
+    /** Sites this user may WRITE in - "all", or a list of site ids. */
     editableSites: me.editable_sites ?? "all",
   }
 }

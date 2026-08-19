@@ -88,7 +88,7 @@ class ZeroUMountTests(APITestCase):
 
     def test_mount_never_keeps_a_half_width_side(self):
         # A 0U strip is not half-width gear, so a stray rack_side is
-        # normalised away rather than rejected — the same rule that already
+        # normalised away rather than rejected - the same rule that already
         # keeps stale sides off every full-width device.
         r = self._post("pdu", self.dt_pdu, mount="side_left", rack_side="left")
         self.assertEqual(r.status_code, 201, r.content)
@@ -137,7 +137,7 @@ class ZeroUMountTests(APITestCase):
         self.assertEqual(r.json()["used_units"], 1)  # just the 1U server
 
     def test_rack_power_skips_distributors(self):
-        # The PDU's inlet restates its children's draw — counting both
+        # The PDU's inlet restates its children's draw - counting both
         # doubled the rack. Only the leaf device's draw may count.
         pdu = Device.objects.create(
             tenant=self.tenant, site=self.site, name="pdu",

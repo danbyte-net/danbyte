@@ -1,12 +1,12 @@
-"""Notification dispatch — alerts and opt-in raw status changes.
+"""Notification dispatch - alerts and opt-in raw status changes.
 
 Two independent notification paths feed ``NotificationChannel`` rows:
 
-1. **Alerts** (the primary path) — :mod:`monitoring.alerts` opens/resolves
+1. **Alerts** (the primary path) - :mod:`monitoring.alerts` opens/resolves
    ``Alert`` rows from an AlertRule and routes them via ``notify_alert`` /
    ``notify_alert_group`` (severity + status gated, silence-aware).
 
-2. **Raw status changes** (opt-in, no alert rules) — a channel with
+2. **Raw status changes** (opt-in, no alert rules) - a channel with
    ``send_status_changes=True`` receives every status transition for the IPs it
    matches (``on_statuses`` + ``match_prefix`` subnet scope). Either **instant**
    (``dispatch_status_changes``, coalesced per check batch) or **batched**
@@ -14,7 +14,7 @@ Two independent notification paths feed ``NotificationChannel`` rows:
    minute beat). This is for operators who want transition emails without the
    full alert-rule machinery.
 
-All sends are **best-effort**: a failing channel is logged, never raised — a
+All sends are **best-effort**: a failing channel is logged, never raised - a
 notification error must not fail the check run.
 """
 from __future__ import annotations
@@ -86,7 +86,7 @@ def _send_webhook(channel, events: list[dict]) -> None:
 
 def resolve_recipients(channel) -> list[str]:
     """Every email address a channel delivers to: its free-text
-    ``config.recipients`` plus each subscription — a subscribed user's email, and
+    ``config.recipients`` plus each subscription - a subscribed user's email, and
     every member email of a subscribed group. Deduped, blanks dropped, order
     stable (config first). Subscriptions only add *people*, so this is meaningful
     for email channels; other transports ignore it.
@@ -128,7 +128,7 @@ def _send_email(channel, events: list[dict]) -> None:
     body = (
         f"{len(events)} monitoring status change(s):\n\n" + "\n".join(lines) + "\n"
     )
-    subject = f"{_deployment_name()} — {len(events)} monitoring status change(s)"
+    subject = f"{_deployment_name()} - {len(events)} monitoring status change(s)"
     rows = [
         [
             ek.escape(str(e["target_ip"])),
@@ -172,7 +172,7 @@ def _device_ip_ids(channel) -> set[str]:
 
 def _scope_allows(channel, ip_addr, ip_id=None) -> bool:
     """Whether a channel's scope admits this IP. A channel may be scoped to a
-    single IP (``match_ip``), a device (``match_device`` — any IP assigned to
+    single IP (``match_ip``), a device (``match_device`` - any IP assigned to
     it), or a subnet (``match_prefix``); with none it matches everything.
     Applies to both status changes and alerts, so a scoped channel only ever
     fires for its own target."""
@@ -209,7 +209,7 @@ def dispatch_status_changes(transitions: list, now=None) -> None:
     one message per channel carrying all of the batch's matching changes.
 
     Called at the end of ``process_transitions`` (every check batch). Best-effort
-    per channel — a delivery error can never fail the batch.
+    per channel - a delivery error can never fail the batch.
     """
     if not transitions:
         return
@@ -233,7 +233,7 @@ def dispatch_status_changes(transitions: list, now=None) -> None:
                     _send_webhook(ch, relevant)
                 elif ch.kind == "email":
                     _send_email(ch, relevant)
-            except Exception:  # noqa: BLE001 — one channel must not break others
+            except Exception:  # noqa: BLE001 - one channel must not break others
                 log.exception("status channel %s (%s) failed", ch.name, ch.kind)
 
 
@@ -279,7 +279,7 @@ def run_due_status_change_digests(now=None) -> int:
             try:
                 _send_status_digest(ch, rows, since, now)
                 sent += 1
-            except Exception:  # noqa: BLE001 — one channel must not break others
+            except Exception:  # noqa: BLE001 - one channel must not break others
                 log.exception("status digest %s (%s) failed", ch.name, ch.kind)
         ch.status_change_last_run = now
         ch.save(update_fields=["status_change_last_run", "updated_at"])
@@ -305,7 +305,7 @@ def _send_status_digest(channel, rows: list, since, now) -> None:
         render_status_digest(rows, since, now, name),
         render_status_digest_text(rows, since, now),
     )
-    subject = f"{name} — {len(rows)} status change(s) in the last window"
+    subject = f"{name} - {len(rows)} status change(s) in the last window"
     send_html_email(
         subject, recipients, html_body=html, text_body=text,
         tenant=channel.tenant_id,
@@ -316,7 +316,7 @@ def notify_event(
     tenant_id, subject: str, body: str, payload: dict, site_id=None
 ) -> None:
     """Send a one-off alert (not a status transition) to a tenant's enabled
-    channels — e.g. a prefix-utilization warning. Best-effort per channel.
+    channels - e.g. a prefix-utilization warning. Best-effort per channel.
 
     ``site_id``: when the event concerns a single site-bound object, pass its
     site so the email transport resolves the SITE's SMTP override
@@ -353,7 +353,7 @@ def notify_event(
                         subject, recipients, html_body=html, text_body=body + "\n",
                         tenant=tenant_id, site=site_id,
                     )
-        except Exception:  # noqa: BLE001 — one channel must not break others
+        except Exception:  # noqa: BLE001 - one channel must not break others
             log.exception("notify_event channel %s (%s) failed", ch.name, ch.kind)
 
 
@@ -409,7 +409,7 @@ def _ssh_summary(detail: dict) -> str | None:
         return None
     kt = detail.get("key_type") or "host key"
     served = detail.get("served") or "unknown"
-    return f"SSH host-key mismatch ({kt}) — served {served}"
+    return f"SSH host-key mismatch ({kt}) - served {served}"
 
 
 def _alert_specific(alert) -> str | None:
@@ -427,9 +427,9 @@ def _alert_summary(alert, event: str, ip: str) -> str:
     verb = _EVENT_VERB.get(event, "FIRING")
     specific = _alert_specific(alert)
     if specific:
-        return f"[{verb}] {alert.severity.upper()}: {ip} — {specific}"
+        return f"[{verb}] {alert.severity.upper()}: {ip} - {specific}"
     name = alert.template.name if alert.template_id else alert.kind
-    return f"[{verb}] {alert.severity.upper()}: {ip} — {name} is {alert.check_status}"
+    return f"[{verb}] {alert.severity.upper()}: {ip} - {name} is {alert.check_status}"
 
 
 def _alert_payload(alert, event: str, ip: str) -> dict:
@@ -475,8 +475,8 @@ def _alert_url(dep) -> str | None:
 
 
 def build_email_connection(dep):
-    """Build an SMTP connection from a settings object — the deployment
-    singleton or a TenantSettings override (same field names) — falling back to
+    """Build an SMTP connection from a settings object - the deployment
+    singleton or a TenantSettings override (same field names) - falling back to
     Django's configured backend when SMTP host is unset.
 
     A bounded socket timeout is essential: without it a wrong/unreachable
@@ -488,10 +488,10 @@ def build_email_connection(dep):
     from django.core.mail import get_connection
 
     if not dep.smtp_host:
-        return get_connection()  # console/env backend — dev default
+        return get_connection()  # console/env backend - dev default
     timeout = getattr(settings, "EMAIL_SMTP_TIMEOUT", 10)
     # TENANT and SITE admins (untrusted customers / local IT) control their
-    # smtp_host/port via overrides — SSRF-guard those so the connect can't
+    # smtp_host/port via overrides - SSRF-guard those so the connect can't
     # scan internal services or reach cloud metadata. A DEPLOYMENT admin is a
     # trusted operator who may legitimately use an internal relay
     # (self-hosted), so their singleton is not guarded here (use
@@ -554,15 +554,15 @@ def _alert_detail_rows(alert, ip: str):
 
 
 def _alert_lead(alert, event: str) -> str:
-    """One plain sentence describing the alert — no severity/verb prefix (the
+    """One plain sentence describing the alert - no severity/verb prefix (the
     title and the Severity pill already carry those)."""
     specific = _alert_specific(alert)
     name = alert.template.name if getattr(alert, "template_id", None) else alert.kind
     desc = specific or f"{name} is {alert.check_status}"
     if event == "resolved":
-        return f"This alert has resolved — {desc}."
+        return f"This alert has resolved - {desc}."
     if event in ("reminder", "escalated"):
-        return f"{_EVENT_VERB[event].title().replace('_', ' ')} — {desc}."
+        return f"{_EVENT_VERB[event].title().replace('_', ' ')} - {desc}."
     return f"{desc}."
 
 
@@ -592,7 +592,7 @@ def _alert_group_email_html(alerts: list, event: str, url: str | None) -> str:
     verb_word = {"resolved": "resolved", "reminder": "still firing",
                  "escalated": "escalated"}.get(event, "firing")
     lead_text = (
-        f"{len(alerts)} alert{'s' if len(alerts) != 1 else ''} {verb_word} — "
+        f"{len(alerts)} alert{'s' if len(alerts) != 1 else ''} {verb_word} - "
         f"worst severity {worst}."
     )
     rows = [
@@ -726,7 +726,7 @@ def notify_alert(alert, event: str) -> None:
     """Route one alert (event = 'firing' | 'resolved') to matching channels.
 
     Suppressed entirely when an active Silence / maintenance window covers the
-    alert — the alert is still tracked, just not delivered.
+    alert - the alert is still tracked, just not delivered.
     """
     from .models import NotificationChannel
 
@@ -747,7 +747,7 @@ def notify_alert(alert, event: str) -> None:
             continue
         try:
             _dispatch_to_channel(ch, alert, event, ip)
-        except Exception:  # noqa: BLE001 — one channel must not break others
+        except Exception:  # noqa: BLE001 - one channel must not break others
             log.exception("alert channel %s (%s) failed", ch.name, ch.kind)
 
 
@@ -757,7 +757,7 @@ def _group_summary(alerts: list, event: str) -> str:
     ips = [a.target_ip.ip_address for a in alerts]
     head = ", ".join(ips[:5])
     more = f" +{len(ips) - 5} more" if len(ips) > 5 else ""
-    return f"[{verb}] {worst.upper()}: {len(alerts)} alerts — {head}{more}"
+    return f"[{verb}] {worst.upper()}: {len(alerts)} alerts - {head}{more}"
 
 
 def _dispatch_group_to_channel(channel, alerts: list, event: str, dep) -> None:
@@ -842,13 +842,13 @@ def notify_alert_group(tenant_id, alerts: list, event: str) -> None:
             continue
         try:
             _dispatch_group_to_channel(ch, matched, event, dep)
-        except Exception:  # noqa: BLE001 — one channel must not break others
+        except Exception:  # noqa: BLE001 - one channel must not break others
             log.exception("grouped channel %s (%s) failed", ch.name, ch.kind)
 
 
 def send_test(channel) -> None:
     """Send a synthetic test alert through a channel (for the 'Send test'
-    button). Raises on failure so the UI can show WHY a channel is silent —
+    button). Raises on failure so the UI can show WHY a channel is silent -
     for email that means surfacing the actual SMTP error instead of the
     best-effort swallow the production paths use."""
 
@@ -882,7 +882,7 @@ def send_test(channel) -> None:
         alert = _Fake()
         ip = "203.0.113.1 (test)"
         subject = f"[Test] {_alert_summary(alert, 'firing', ip)}"
-        # No fail_silently here — a bad SMTP host/credential must surface.
+        # No fail_silently here - a bad SMTP host/credential must surface.
         msg = EmailMultiAlternatives(
             subject,
             _alert_summary(alert, "firing", ip) + "\n",

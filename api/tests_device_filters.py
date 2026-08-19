@@ -2,7 +2,7 @@
 (/api/devices/ ?location= / ?region= / ?tag=). See GitHub issue #135.
 
 Region is a plain adjacency-list tree (no MPTT), so ?region= must include
-devices in descendant regions' sites — that's the interesting case here.
+devices in descendant regions' sites - that's the interesting case here.
 """
 from __future__ import annotations
 
@@ -86,7 +86,7 @@ class DeviceFilterTests(APITestCase):
         self.assertEqual(self._names("region=%s" % uuid.uuid4()), set())
 
     def test_with_vc_picker_carries_virtual_chassis(self):
-        # The DevicePicker ghosts switches already in a stack — the picker
+        # The DevicePicker ghosts switches already in a stack - the picker
         # response must tell it which those are.
         vc = VirtualChassis.objects.create(tenant=self.tenant, name="core-1")
         self.d_ams.virtual_chassis = vc
@@ -97,7 +97,7 @@ class DeviceFilterTests(APITestCase):
         by_name = {d["name"]: d for d in data["results"]}
         self.assertEqual(by_name["ams-sw1"]["virtual_chassis"]["name"], "core-1")
         self.assertIsNone(by_name["us-sw1"]["virtual_chassis"])
-        # The plain picker stays lean — no virtual_chassis field.
+        # The plain picker stays lean - no virtual_chassis field.
         plain = self.client.get("/api/devices/?picker=1").json()
         self.assertNotIn("virtual_chassis", plain["results"][0])
 

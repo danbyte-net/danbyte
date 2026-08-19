@@ -1,4 +1,4 @@
-"""Plugin framework URLs — mounted at ``/api/plugins/`` from ``api/api_urls.py``.
+"""Plugin framework URLs - mounted at ``/api/plugins/`` from ``api/api_urls.py``.
 
 The framework's own endpoints come first; then each installed plugin that ships
 an ``api_urls`` module is mounted under ``/api/plugins/<slug>/``. This runs at

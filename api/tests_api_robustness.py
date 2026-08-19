@@ -3,7 +3,7 @@
 Two reported bugs, both reproducible against a real install:
 
 1. The DRF ``IntegrityError`` safety net called *every* database constraint a
-   "duplicate" — so a not-null violation (e.g. an IP create that reached the DB
+   "duplicate" - so a not-null violation (e.g. an IP create that reached the DB
    with a null tenant) was reported as a 409 duplicate, actively misleading
    debugging. The handler now keys on the Postgres SQLSTATE and words each
    class honestly (unique → 409 "duplicate"; not-null / FK / check → 400).
@@ -91,7 +91,7 @@ class ExceptionHandlerTests(TestCase):
 
     def test_unknown_sqlstate_falls_back_to_409_without_duplicate(self):
         # A Django-level ProtectedError (delete of an in-use row) has no DB
-        # cause, so no SQLSTATE — must stay 409 but never say "duplicate".
+        # cause, so no SQLSTATE - must stay 409 but never say "duplicate".
         resp = self._handle(IntegrityError("no cause"))
         self.assertEqual(resp.status_code, status.HTTP_409_CONFLICT)
         self.assertNotIn("duplicate", resp.data["detail"].lower())
@@ -161,7 +161,7 @@ class DeviceNestedKeyTests(_TenantCase):
 
 class NoActiveTenantCreateTests(TestCase):
     """A superuser with no active tenant must not reach the DB with a null
-    tenant — the create fails closed with a clean 4xx, not a 500/409."""
+    tenant - the create fails closed with a clean 4xx, not a 500/409."""
 
     def setUp(self):
         # Deliberately create NO Tenant, so _get_active_tenant() returns None.
@@ -174,7 +174,7 @@ class NoActiveTenantCreateTests(TestCase):
         resp = self.client_api.post(
             "/api/ips/", {"ip_address": "10.20.30.40"}, format="json"
         )
-        # 403 (no active tenant) — the point is it's a clean client error,
+        # 403 (no active tenant) - the point is it's a clean client error,
         # never a 500 or a misleading 409 "duplicate".
         self.assertIn(resp.status_code, (400, 403), resp.content)
         self.assertNotEqual(resp.status_code, 409)

@@ -75,7 +75,7 @@ export function PrefixBulkBar({ selected, onCleared }: PrefixBulkBarProps) {
     onSuccess: (res) => {
       if (!res.queued || !res.run_id) {
         toast.warning(
-          `Nothing to sweep${res.skipped ? ` — ${res.skipped} skipped (too large to enumerate)` : ""}.`
+          `Nothing to sweep${res.skipped ? ` - ${res.skipped} skipped (too large to enumerate)` : ""}.`
         )
         return
       }

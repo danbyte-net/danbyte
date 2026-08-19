@@ -2,7 +2,7 @@
 
 The Python twin of the frontend's ``cable-route.ts`` (which renders assigned
 trays): same half-cell-lattice geometry, same junction rules (shared vertices,
-T-splits, mid-segment crossings), same Dijkstra — but this side also reports
+T-splits, mid-segment crossings), same Dijkstra - but this side also reports
 *which trays* the winning path rides and estimates the physical cable length,
 because the server persists the result (tray M2M + ``Cable.length``) and the
 BOM/drawings consume it.
@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 Pt = tuple[float, float]
 
-#: How far (cells) a vertex may sit from another tray and still join it —
+#: How far (cells) a vertex may sit from another tray and still join it -
 #: mirrors cable-route.ts's default `snap`.
 SNAP_CELLS = 0.75
 #: Extra length allowance for service loops, dressing and termination waste.
@@ -28,7 +28,7 @@ SLACK_FACTOR = 0.10
 DEFAULT_PLENUM_MM = 300
 #: Overhead trays hang this far below the ceiling when elevation is blank.
 OVERHEAD_DROP_MM = 300
-#: Rack-top math for vertical drops: U pitch + plinth height (mm) — the same
+#: Rack-top math for vertical drops: U pitch + plinth height (mm) - the same
 #: constants world.ts renders cabinets with (PANEL_MM.uPitch, RACK_BASE_M).
 U_PITCH_MM = 44.45
 RACK_PLINTH_MM = 100.0
@@ -173,7 +173,7 @@ def route_through_trays(
                     breakpoints[ti].append((pos_on_tray(ti, si, t), p))
                     breakpoints[tj].append((pos_on_tray(tj, sj, u), p))
 
-    # Entry/exit: project A and B onto their nearest tray — but only within
+    # Entry/exit: project A and B onto their nearest tray - but only within
     # max_entry, otherwise the endpoint simply isn't served by the network.
     def entry_point(p: Pt) -> Pt | None:
         best_d, best_pt, best_ti, best_seg, best_t = math.inf, p, 0, 0, 0.0
@@ -269,7 +269,7 @@ def tray_elevation_mm(
     ceiling_mm: int,
     plenum_mm: float = DEFAULT_PLENUM_MM,
 ) -> float:
-    """A tray's resolved elevation — the Python twin of world.ts's
+    """A tray's resolved elevation - the Python twin of world.ts's
     ``trayElevationM`` derivation (overhead → ceiling−300, underfloor →
     −plenum, floor → 0). ``plenum_mm`` comes from the raised-floor area the
     run sits in; callers with no area data get the historical 300."""
@@ -307,7 +307,7 @@ def rack_drop_mm(
     ceiling_mm: int,
     plenum_mm: float = DEFAULT_PLENUM_MM,
 ) -> float:
-    """Vertical run between a rack's top and a tray's elevation (mm) — the
+    """Vertical run between a rack's top and a tray's elevation (mm) - the
     drop term in length estimation. Replaces two identical inline closures
     that each hardcoded the U pitch and plinth. ``abs()`` makes underfloor
     work unchanged: the run goes down instead of up."""

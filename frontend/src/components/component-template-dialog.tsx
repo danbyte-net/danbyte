@@ -98,7 +98,7 @@ export const TEMPLATE_NOUN: Record<TemplateKind, string> = {
   "inventory-item": "inventory item template",
 }
 
-/** Union-ish row shape so one dialog/table can hold any of the 7 kinds —
+/** Union-ish row shape so one dialog/table can hold any of the 7 kinds -
  * the per-kind extras are simply absent on the kinds that lack them. */
 export type AnyTemplate = ComponentTemplateBase &
   Partial<Pick<InterfaceTemplate, "enabled" | "mgmt_only" | "combo_group">> &
@@ -133,11 +133,11 @@ export interface ComponentTemplateDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-// Create/edit dialog shared by all seven component-template tables — common
+// Create/edit dialog shared by all seven component-template tables - common
 // name/description plus the kind's extras. Templates are stamped onto every
 // new device of the type.
 //
-// A name may contain one [a-b] range — "GigabitEthernet{position}/0/[1-24]"
+// A name may contain one [a-b] range - "GigabitEthernet{position}/0/[1-24]"
 // creates 24 templates in one go. Expansion happens client-side on create;
 // {position} stays in the stored name and resolves per stack member when
 // components are stamped (1 for standalone devices, {position:0} for
@@ -178,7 +178,7 @@ export function ComponentTemplateDialog({
     null
   )
   const [rearPortPosition, setRearPortPosition] = useState("1")
-  // Module-bay extras — what {module} resolves to in installed port names, and
+  // Module-bay extras - what {module} resolves to in installed port names, and
   // an optional module type pre-seated into the bay on device create / sync.
   const [bayPosition, setBayPosition] = useState("")
   const [defaultModuleTypeId, setDefaultModuleTypeId] = useState<string | null>(
@@ -414,7 +414,7 @@ export function ComponentTemplateDialog({
           />
           <NamePreview name={name} editing={editing} />
 
-          {/* Type — grouped combobox where the backend serves a choice list,
+          {/* Type - grouped combobox where the backend serves a choice list,
               free text for the panel-port kinds. */}
           {kind === "inventory-item" ? (
             <div className="grid gap-3">
@@ -448,7 +448,7 @@ export function ComponentTemplateDialog({
                     value={invMedia || null}
                     onChange={(v) => setInvMedia(v ?? "")}
                     options={INVENTORY_MEDIA_OPTIONS}
-                    placeholder="—"
+                    placeholder="-"
                     error={fieldErrors.media}
                   />
                 )}
@@ -513,7 +513,7 @@ export function ComponentTemplateDialog({
                   value: m.id,
                   label: m.name,
                 }))}
-                hint="Pre-installed on new devices and on sync into an empty bay — replaceable per device"
+                hint="Pre-installed on new devices and on sync into an empty bay - replaceable per device"
                 error={fieldErrors.default_module_type_id}
               />
             </div>
@@ -553,7 +553,7 @@ export function ComponentTemplateDialog({
                 label="PoE type"
                 value={poeType || null}
                 onChange={(v) => setPoeType(v ?? "")}
-                noneLabel="—"
+                noneLabel="-"
                 options={choices.poe_types ?? []}
               />
             </div>
@@ -638,7 +638,7 @@ export function ComponentTemplateDialog({
                 type="number"
                 value={positions}
                 onChange={setPositions}
-                hint="Strands on the rear side — each maps to one front port"
+                hint="Strands on the rear side - each maps to one front port"
                 error={fieldErrors.positions}
               />
               <FormCheckbox
@@ -646,7 +646,7 @@ export function ComponentTemplateDialog({
                   <>
                     Optical splitter (PON){" "}
                     <span className="text-muted-foreground">
-                      — every front port carries the input signal
+                      - every front port carries the input signal
                     </span>
                   </>
                 }

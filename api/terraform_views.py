@@ -1,8 +1,8 @@
-"""Per-VM render endpoint — the Terraform-for-VMs pull surface.
+"""Per-VM render endpoint - the Terraform-for-VMs pull surface.
 
 A user authors an ExportTemplate (object_type=virtualmachine) whose body is
 tfvars/HCL, and a Terraform workspace pulls the rendered output for one VM from
-here — the same "Danbyte renders intended state, the runner applies it" pattern
+here - the same "Danbyte renders intended state, the runner applies it" pattern
 as the Ansible inventory + device render. Standalone view (not a viewset action)
 so it lives independently of the VM CRUD viewset.
 """
@@ -71,7 +71,7 @@ def vm_render_view(request, pk):
         return Response({"detail": "No active tenant."},
                         status=drf_status.HTTP_400_BAD_REQUEST)
     # The render merges config-context (may hold secrets), so fetch through the
-    # RBAC row filter — a VM outside the caller's view grant / site scope 404s
+    # RBAC row filter - a VM outside the caller's view grant / site scope 404s
     # here rather than leaking its existence (#59). restrict_queryset honours
     # ObjectPermission.sites, so a Site-A-scoped viewer can't render a Site-B VM.
     vm = (

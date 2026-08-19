@@ -1,7 +1,7 @@
 import type { Prefix } from "@/lib/api"
 
 // CIDR → numeric [start, end, prefixlen] (BigInt to handle IPv6 cleanly).
-// Returns null for unparseable input — the caller treats null as "no
+// Returns null for unparseable input - the caller treats null as "no
 // containment, render as root."
 export interface Cidr {
   start: bigint
@@ -43,7 +43,7 @@ export function parseCidr(cidr: string): Cidr | null {
 }
 
 function ipv6ToBigInt(addr: string): bigint | null {
-  // Minimal IPv6 parser — handles :: shorthand. We don't need to handle
+  // Minimal IPv6 parser - handles :: shorthand. We don't need to handle
   // IPv4-mapped notation here.
   const parts = addr.split("::")
   if (parts.length > 2) return null
@@ -137,7 +137,7 @@ export function cidrHostRange(
  * network/broadcast trim as Python's `net.hosts()`: v4 `/≤30` drops the network
  * + broadcast; v6 `/≤126` drops only the network (no broadcast); /31·/32 and
  * /127·/128 keep all (point-to-point / host). Returns null if unparseable or if
- * the host count exceeds `cap` (too big to enumerate — e.g. a v6 /64). The cap
+ * the host count exceeds `cap` (too big to enumerate - e.g. a v6 /64). The cap
  * mirrors the backend `ENUMERABLE_HOST_CAP`. */
 export function enumerableHostInts(
   cidr: string,
@@ -184,14 +184,14 @@ export function annotateNesting(prefixes: Prefix[]): NestedPrefix[] {
   const annotated = new Map<string, NestedPrefix>()
   for (const [, list] of byVrf) {
     // Sort by prefixlen ascending so each prefix encounters its potential
-    // parents BEFORE itself. CIDR string is the secondary key — matches
+    // parents BEFORE itself. CIDR string is the secondary key - matches
     // the visual order users expect.
     const enriched = list
       .map((p) => ({ p, c: parseCidr(p.cidr) }))
       .filter((x) => x.c !== null) as { p: Prefix; c: Cidr }[]
     // Sort by start address asc, then prefixlen asc. Sorting by prefixlen
     // alone breaks the stack walk when multiple top-level prefixes share
-    // the same prefixlen — pushing a peer pops the previous one, leaving
+    // the same prefixlen - pushing a peer pops the previous one, leaving
     // later descendants without their true ancestor. Address-first keeps
     // every potential parent on the stack until its range is exhausted.
     enriched.sort((a, b) => {
@@ -199,7 +199,7 @@ export function annotateNesting(prefixes: Prefix[]): NestedPrefix[] {
       return a.c.prefixlen - b.c.prefixlen
     })
 
-    // Track active ancestors via a stack — a new prefix's parent is the
+    // Track active ancestors via a stack - a new prefix's parent is the
     // deepest entry on the stack that still contains it. O(n) amortised
     // since each entry is pushed and popped once.
     const stack: { id: string; c: Cidr; depth: number }[] = []
@@ -218,7 +218,7 @@ export function annotateNesting(prefixes: Prefix[]): NestedPrefix[] {
     }
   }
 
-  // Re-emit in the order the parent prefixes/groupings will expect —
+  // Re-emit in the order the parent prefixes/groupings will expect -
   // depth-first per VRF, parents before children. Sorting the table
   // itself can break this; callers should keep grouping intact.
   const result: NestedPrefix[] = []

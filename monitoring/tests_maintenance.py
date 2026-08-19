@@ -18,7 +18,7 @@ class _MaintBase(_PlanBase):
     def setUp(self):
         super().setUp()
         # The workflow vocabularies are editable /statuses rows, seeded on
-        # install — mirror that seeding here.
+        # install - mirror that seeding here.
         from api.status_registry import seed_builtin_statuses
 
         seed_builtin_statuses(self.tenant)
@@ -57,7 +57,7 @@ class MaintenanceEventTests(_MaintBase):
 
     def test_status_must_come_from_the_catalog(self):
         # A status that isn't available to maintenance events (device-only
-        # "Active") is refused — the /statuses catalog is the vocabulary.
+        # "Active") is refused - the /statuses catalog is the vocabulary.
         r = self._event(status="active")
         self.assertEqual(r.status_code, 400, r.content)
         # A row the user added themselves works like a built-in one.
@@ -121,7 +121,7 @@ class MaintenanceEventTests(_MaintBase):
         self.assertEqual(r.status_code, 201, r.content)
         self.assertEqual(r.json()["object_type"], "api.device")
 
-        # A member with event rights but no device view cannot mark impact —
+        # A member with event rights but no device view cannot mark impact -
         # on an object not yet impacted, so RBAC is what answers, not the
         # uniqueness validator.
         dev2 = self._device(name="dev2")

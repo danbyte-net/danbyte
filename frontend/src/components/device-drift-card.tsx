@@ -38,8 +38,8 @@ import { apiErrorToast } from "@/lib/api-toast"
 /**
  * Reconciliation inbox for a device (#84, Phase 3). Shows where the *observed*
  * SNMP state differs from the device's *intended* source of truth, and lets an
- * operator **accept** a difference — the only path by which discovery writes the
- * SoT — or **dismiss** it from view until the next poll.
+ * operator **accept** a difference - the only path by which discovery writes the
+ * SoT - or **dismiss** it from view until the next poll.
  *
  * Accepting *creates what Danbyte is missing*: a new interface, a find-or-create
  * VLAN, an observed IP dropped into its containing prefix, or a first-class MAC
@@ -88,7 +88,7 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
     onSuccess: (data) => {
       qc.setQueryData(["device-snmp-drift", deviceId], data)
       invalidateSot()
-      toast.success("Applied — intent updated to match the network")
+      toast.success("Applied - intent updated to match the network")
     },
     onError: (e) => apiErrorToast(e),
   })
@@ -114,18 +114,18 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
       ].filter(Boolean)
       toast.success(
         bits.length
-          ? `Synced — ${bits.join(", ")}`
+          ? `Synced - ${bits.join(", ")}`
           : "Already in sync with SNMP"
       )
       if (r.ips_skipped)
         toast.info(
-          `${r.ips_skipped} IP(s) skipped — no containing prefix (add the prefix, then sync again).`
+          `${r.ips_skipped} IP(s) skipped - no containing prefix (add the prefix, then sync again).`
         )
     },
     onError: (e) => apiErrorToast(e),
   })
 
-  // "This port can never be polled" — flag it once instead of dismissing the
+  // "This port can never be polled" - flag it once instead of dismissing the
   // same stale row after every poll. Sets Interface.snmp_ignore.
   const ignore = useMutation({
     mutationFn: (it: { interface_id: string }) =>
@@ -135,7 +135,7 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
       }),
     onSuccess: () => {
       toast.success(
-        "Excluded from SNMP drift — undo on the interface's edit form."
+        "Excluded from SNMP drift - undo on the interface's edit form."
       )
       qc.invalidateQueries({ queryKey: ["device-snmp-drift", deviceId] })
       qc.invalidateQueries({ queryKey: ["device-interfaces", deviceId] })
@@ -176,7 +176,7 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
                 disabled={busy}
               />
             )}
-            {/* A stale row for a port the agent can never report — exclude it
+            {/* A stale row for a port the agent can never report - exclude it
                 once, instead of dismissing the same row after every poll. */}
             {canApply && item.kind === "interface_stale" && (
               <Button
@@ -184,14 +184,14 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
                 variant="outline"
                 className="h-7"
                 disabled={busy || ignore.isPending}
-                title="This port can't be polled — stop flagging it as drift"
+                title="This port can't be polled - stop flagging it as drift"
                 onClick={() => ignore.mutate(item)}
               >
                 <EyeOff className="h-3.5 w-3.5" /> Exclude
               </Button>
             )}
             {noPrefix && (
-              // No prefix contains this IP yet — offer to create one (pre-filled).
+              // No prefix contains this IP yet - offer to create one (pre-filled).
               <Button
                 size="sm"
                 variant="outline"
@@ -218,7 +218,7 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
                 variant="ghost"
                 className="h-7 w-7 text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
                 disabled={busy}
-                title="Accept — write this into the source of truth"
+                title="Accept - write this into the source of truth"
                 aria-label="Accept difference"
                 onClick={() => accept.mutate(item)}
               >
@@ -230,7 +230,7 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
               variant="ghost"
               className="h-7 w-7 text-muted-foreground hover:text-foreground"
               disabled={busy}
-              title="Dismiss — hide until the next poll"
+              title="Dismiss - hide until the next poll"
               aria-label="Dismiss difference"
               onClick={() =>
                 setDismissed((prev) => new Set(prev).add(driftKey(item)))
@@ -256,7 +256,7 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
             variant="outline"
             disabled={busy}
             onClick={() => sync.mutate()}
-            title="Accept every difference at once — create the interfaces, VLANs, IPs and MACs Danbyte is missing"
+            title="Accept every difference at once - create the interfaces, VLANs, IPs and MACs Danbyte is missing"
           >
             <RefreshCw
               className={
@@ -272,7 +272,7 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
         columns={columns}
         data={items}
         getRowKey={(item) => driftKey(item)}
-        empty="All differences dismissed — poll again to re-check."
+        empty="All differences dismissed - poll again to re-check."
       />
     </Section>
   )
@@ -281,7 +281,7 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
 /** A stable identity for a drift item, so we can track dismissals and keys. */
 
 /**
- * "Link to…" — record that a discovered SNMP name belongs to an interface the
+ * "Link to…" - record that a discovered SNMP name belongs to an interface the
  * user already created. Lists the device's interfaces (unlinked first) and
  * writes the link, so the pair stops drifting as both new and missing.
  */

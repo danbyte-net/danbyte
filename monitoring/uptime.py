@@ -7,14 +7,14 @@ toward whatever interval happened to be in effect).
 
 Definitions:
 
-* **up**  — time in ``up`` or ``degraded`` (degraded is still reachable).
-* **down** — time in ``down`` or ``stale``.
-* **excluded** — time in ``unknown`` (no verdict) or ``skipped`` (deliberately
+* **up**  - time in ``up`` or ``degraded`` (degraded is still reachable).
+* **down** - time in ``down`` or ``stale``.
+* **excluded** - time in ``unknown`` (no verdict) or ``skipped`` (deliberately
   not checked). Excluded from the SLA denominator, and reported separately so a
   100%-looking number can't hide a check that simply wasn't running.
 
 ``uptime_pct = up / (up + down)``. Also returned: number of **incidents** (downs
-opened in the window) and **MTTR** (mean time to recovery — average duration of
+opened in the window) and **MTTR** (mean time to recovery - average duration of
 a down period).
 """
 from __future__ import annotations
@@ -31,7 +31,7 @@ _DOWN = {"down", "stale"}
 
 
 def _status_at(tenant_id, ip_id, template_id, when) -> str:
-    """The status in effect at ``when`` — the to_status of the last transition
+    """The status in effect at ``when`` - the to_status of the last transition
     before it, or 'unknown' if the check has no prior history."""
     tr = (
         StateTransition.objects.filter(

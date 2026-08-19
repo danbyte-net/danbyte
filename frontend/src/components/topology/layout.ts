@@ -11,7 +11,7 @@ import type { StencilData } from "./stencil-node"
 // Fixed tier spacing when the Level organiser forces a role order.
 const LEVEL_GAP_LR = 460
 const LEVEL_GAP_TB = 280
-const CROSS_GAP = 120 // intra-tier peer spacing — wide enough that a
+const CROSS_GAP = 120 // intra-tier peer spacing - wide enough that a
 // vertical cable’s label between tiers isn’t hidden behind the next node, and
 // that fanned-out cable bundles have room between neighbouring cards.
 
@@ -35,7 +35,7 @@ interface Rect {
   h: number
 }
 
-/** A cable's route through one clear "channel" — the main-axis coordinate `m`
+/** A cable's route through one clear "channel" - the main-axis coordinate `m`
  * its perpendicular run sits at, plus the two cross endpoints and the gap
  * bounds `m` must stay within. `blocked` means `m` had to dodge a card. */
 interface Channel {
@@ -80,7 +80,7 @@ function channelRoute(
     gapHi = aLo
   }
   if (gapHi - gapLo < 8) {
-    // Cards overlap/touch on the main axis — fall back to the centre span.
+    // Cards overlap/touch on the main axis - fall back to the centre span.
     gapLo = Math.min(aMain, bMain)
     gapHi = Math.max(aMain, bMain)
   }
@@ -125,7 +125,7 @@ function channelRoute(
 }
 
 /** Node-avoiding routes for every edge, from the laid-out node rectangles.
- * Cables sharing a channel are FANNED OUT — each gets its own parallel line so
+ * Cables sharing a channel are FANNED OUT - each gets its own parallel line so
  * a bundle doesn't collapse onto one shared run. */
 function computeWaypoints(
   laid: Node[],
@@ -248,12 +248,12 @@ export function layoutNodes(
   const tb = direction === "TB"
   const sizeOf = (id: string) => g.node(id)
 
-  // Role tiers active: place each tier explicitly — main axis by tier index,
+  // Role tiers active: place each tier explicitly - main axis by tier index,
   // cross axis by natural name order with real per-node spacing, so peers
   // never overlap and sort 01, 02, 10. (Manually-pinned nodes still win.)
   if (levels) {
     const mainGap = tb ? LEVEL_GAP_TB : LEVEL_GAP_LR
-    // Neighbours — for panel gap detection + cross-axis ordering.
+    // Neighbours - for panel gap detection + cross-axis ordering.
     const nbr = new Map<string, string[]>()
     for (const e of edges) {
       ;(nbr.get(e.source) ?? nbr.set(e.source, []).get(e.source)!).push(
@@ -267,7 +267,7 @@ export function layoutNodes(
     // ── Panel placement from the cable trace ─────────────────────────────
     // A panel (untiered) is seated in a lane BETWEEN the device tiers it links,
     // found by walking the cable chain (BFS through panel→panel hops) to the
-    // nearest device tier on each side — so a `srv → pp-cu-3a → pp-cu-3b →
+    // nearest device tier on each side - so a `srv → pp-cu-3a → pp-cu-3b →
     // access` run puts BOTH cu panels in their own lanes between access and
     // srv, never on a device row. Panel chains that never reach a device float.
     const panelNodes = nodes.filter(
@@ -286,7 +286,7 @@ export function layoutNodes(
             seen.add(nb)
             const t = levels.get(nb)
             if (t !== undefined) hits.push({ tier: t, hop })
-            else nextF.push(nb) // another panel — keep walking the run
+            else nextF.push(nb) // another panel - keep walking the run
           }
         frontier = nextF
       }
@@ -325,7 +325,7 @@ export function layoutNodes(
       const lastIdx = mainOffsets.length - 1
       return mainOffsets[lastIdx] + (lvl - lastIdx) * mainGap
     }
-    // A panel gap is widened only as much as its sub-lanes NEED — so if the
+    // A panel gap is widened only as much as its sub-lanes NEED - so if the
     // Level distance already makes the device gap big, the panels spread across
     // that big gap (big device spacing → big panel spacing); a tight distance
     // still gets a minimum so panels never overlap.
@@ -373,7 +373,7 @@ export function layoutNodes(
       }
     }
 
-    // Device tiers — natural name order (fw-01 before fw-02 before fw-10).
+    // Device tiers - natural name order (fw-01 before fw-02 before fw-10).
     const tiers = new Map<number, Node[]>()
     for (const n of nodes) {
       if (positions?.[n.id]) continue
@@ -411,7 +411,7 @@ export function layoutNodes(
     for (const [key, ids] of laneOf) {
       const [lo, idx] = key.split(":").map(Number)
       const laneCount = fracsByGap.get(lo)?.length ?? 1
-      // Even slots across the (now wide-enough) gap, in depth order — so lanes
+      // Even slots across the (now wide-enough) gap, in depth order - so lanes
       // sit ≥ one pitch apart and can't collide even when two panels' run depths
       // land close together. A single panel (laneCount 1) still lands mid-gap.
       const slot = (idx + 1) / (laneCount + 1)
@@ -451,7 +451,7 @@ export function layoutNodes(
       if (pinned) return { ...n, position: { x: pinned[0], y: pinned[1] } }
       const p = placed.get(n.id)
       if (p) return { ...n, position: p }
-      // Still unplaced (isolated panel) — keep its dagre position.
+      // Still unplaced (isolated panel) - keep its dagre position.
       const g0 = g.node(n.id)
       return {
         ...n,

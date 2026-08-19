@@ -11,6 +11,6 @@ ExecStart=%h/danbyte/.venv/bin/python manage.py certificate_expiry
 
 # Triggered daily by danbyte-certificate-expiry.timer. Certificate observations
 # already reconcile their own endpoint's alert as they land; this pass is what
-# lets *time passing* open one — a cert crosses the warning line whether or not
+# lets *time passing* open one - a cert crosses the warning line whether or not
 # anything scanned it today.
 # Logs: journalctl --user -fu danbyte-certificate-expiry

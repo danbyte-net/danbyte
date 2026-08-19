@@ -45,7 +45,7 @@ export function IpRangeDeleteDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Delete IP range {label}?</AlertDialogTitle>
           <AlertDialogDescription>
-            This removes the range record only — individual IP addresses inside
+            This removes the range record only - individual IP addresses inside
             it are not touched. This action can't be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>

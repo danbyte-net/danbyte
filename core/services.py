@@ -1,14 +1,14 @@
-"""Service control — restart Danbyte's systemd **user** units from the UI, and
+"""Service control - restart Danbyte's systemd **user** units from the UI, and
 apply plugin changes (migrate + restart).
 
 The web process can't restart itself synchronously, so a restart launches a
-detached transient unit (``systemd-run --user``) that waits briefly — letting
-the triggering HTTP response flush — then ``systemctl --user restart`` the
+detached transient unit (``systemd-run --user``) that waits briefly - letting
+the triggering HTTP response flush - then ``systemctl --user restart`` the
 requested units. This is the same mechanism the in-app upgrade uses
 (``core/upgrade.py``); we reuse its ``_systemd_env`` so the web (service) context
 can reach the user systemd bus.
 
-Superuser-only at the API layer — restarting production services is high-stakes.
+Superuser-only at the API layer - restarting production services is high-stakes.
 Never manages the database. The set of manageable units is configurable via
 ``settings.MANAGEABLE_SERVICES`` and filtered to units that actually exist.
 """
@@ -31,7 +31,7 @@ WORKER_MIN, WORKER_MAX = 1, 64
 
 # key → {unit, label, core}. `core` units are what "Restart Danbyte" cycles.
 # Overridable via settings.MANAGEABLE_SERVICES; only units that exist on the box
-# are surfaced. Deliberately no database entry — never restart Postgres from here.
+# are surfaced. Deliberately no database entry - never restart Postgres from here.
 DEFAULT_MANAGEABLE_SERVICES: dict[str, dict] = {
     "web": {"unit": "danbyte-web", "label": "Web / API (gunicorn)", "core": True},
     "backend": {"unit": "danbyte-backend", "label": "Backend (dev runserver)", "core": True},
@@ -133,7 +133,7 @@ def restart_danbyte() -> dict:
 # ── Worker pool size ─────────────────────────────────────────────────────────
 # The worker count is RQ_WORKERS in the danbyte-workers unit. We persist the
 # desired value on DeploymentSettings and apply it by writing a systemd drop-in
-# (RQ_WORKERS=N), reloading systemd, and restarting *only* the workers unit —
+# (RQ_WORKERS=N), reloading systemd, and restarting *only* the workers unit -
 # which, unlike the web unit, can be restarted straight from the web process.
 
 def _worker_dropin_path() -> Path:
@@ -188,7 +188,7 @@ def set_worker_count(n: int) -> dict:
             ["systemctl", "--user", "daemon-reload"],
             capture_output=True, text=True, timeout=15, env=_systemd_env(),
         )
-    except Exception:  # noqa: BLE001 — restart below still applies on next boot
+    except Exception:  # noqa: BLE001 - restart below still applies on next boot
         pass
     result = restart_services(["workers"])
     result["saved"] = True
@@ -199,7 +199,7 @@ def set_worker_count(n: int) -> dict:
 # ── plugin apply (migrate + restart) ─────────────────────────────────────────
 def pending_migrations_by_app() -> dict[str, list[str]]:
     """Unapplied migrations keyed by app_label (used to flag plugins needing an
-    apply). Safe to call per request — reads the migration graph, no writes."""
+    apply). Safe to call per request - reads the migration graph, no writes."""
     from django.db import connections
     from django.db.migrations.executor import MigrationExecutor
 
@@ -212,7 +212,7 @@ def pending_migrations_by_app() -> dict[str, list[str]]:
 
 
 def apply_plugins() -> dict:
-    """Run ``migrate --noinput`` then restart the core units — detached, so a
+    """Run ``migrate --noinput`` then restart the core units - detached, so a
     long migration + the restart survive independent of this request."""
     ok = _launch_detached(
         APPLY_SCRIPT,

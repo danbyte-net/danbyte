@@ -213,7 +213,7 @@ export function DeviceTypeForm({
       </div>
       <FormCombobox
         label="Platform"
-        hint="optional — default OS for devices of this type"
+        hint="optional - default OS for devices of this type"
         value={platformId}
         onChange={setPlatformId}
         options={(platforms.data?.results ?? []).map((p) => ({
@@ -289,7 +289,7 @@ export function DeviceTypeForm({
       </div>
       <FormSelect
         label="Subdevice role"
-        hint="optional — chassis nesting"
+        hint="optional - chassis nesting"
         value={subdeviceRole}
         onChange={setSubdeviceRole}
         noneLabel="Neither"

@@ -29,7 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-// Object types a label makes sense for — matches api/label_templates.py's
+// Object types a label makes sense for - matches api/label_templates.py's
 // FRONTEND_ROUTES so `{{ url }}` and the default QR resolve to a real page.
 const OBJECT_TYPES: { value: string; label: string }[] = [
   { value: "device", label: "Device" },
@@ -52,7 +52,7 @@ const STARTER_HTML =
   '  <div class="qr"></div>\n</div>'
 
 // ── Simple (low-code) builder ────────────────────────────────────────────────
-// A stack of blocks — each a field token or a line of static text — that
+// A stack of blocks - each a field token or a line of static text - that
 // generates the HTML for authors who don't want to write Jinja. Switching to
 // the HTML tab shows (and lets you refine) what it produced.
 type SimpleBlock = {
@@ -320,7 +320,7 @@ export function LabelTemplateFormDialog({
               value={d.object_type}
               onChange={(v) => {
                 if (!v) return
-                // Targeting only applies to devices/VMs — clear it otherwise so
+                // Targeting only applies to devices/VMs - clear it otherwise so
                 // a stray restriction can't hide the template later.
                 setD((prev) => ({
                   ...prev,
@@ -337,7 +337,7 @@ export function LabelTemplateFormDialog({
             {canTarget && (
               <Field
                 label="Applies to"
-                info="Leave empty to apply to every object of this type. Restricting by device type and/or role limits which objects offer this label — a device can still match several templates."
+                info="Leave empty to apply to every object of this type. Restricting by device type and/or role limits which objects offer this label - a device can still match several templates."
               >
                 <div className="space-y-2">
                   {d.object_type === "device" && (
@@ -443,7 +443,7 @@ export function LabelTemplateFormDialog({
                 <div className="space-y-2 rounded-md border border-border bg-card p-2">
                   {blocks.length === 0 && (
                     <p className="px-1 py-2 text-[12px] text-muted-foreground">
-                      Add a field or a line of text — or click a field on the
+                      Add a field or a line of text - or click a field on the
                       right. The label builds itself.
                     </p>
                   )}
@@ -461,7 +461,7 @@ export function LabelTemplateFormDialog({
                           }
                         >
                           <SelectTrigger className="h-8 min-w-0 flex-1 font-mono text-[11px]">
-                            <SelectValue placeholder="— pick a field —" />
+                            <SelectValue placeholder="- pick a field -" />
                           </SelectTrigger>
                           <SelectContent>
                             {allTokens.map((t) => (
@@ -691,7 +691,7 @@ export function LabelTemplateFormDialog({
             </div>
             <div>
               <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
-                Fields —{" "}
+                Fields -{" "}
                 {mode === "simple" ? "click to add a line" : "click to insert"}
               </span>
               <input

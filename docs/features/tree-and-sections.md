@@ -12,8 +12,8 @@ This page explains how that view behaves and when it switches to a flat table.
 
 | Sort by | You get | Pages? |
 |---|---|---|
-| **CIDR** (default) | Sections per VRF, with a tree inside each section | No — sections show in full |
-| **Updated, Created, Status, or Site** | A flat, sortable table | Yes — paged (25 per page by default) |
+| **CIDR** (default) | Sections per VRF, with a tree inside each section | No - sections show in full |
+| **Updated, Created, Status, or Site** | A flat, sortable table | Yes - paged (25 per page by default) |
 
 Sort by CIDR when you want the hierarchy. Sort by anything else when you want a
 plain ranked list.
@@ -27,7 +27,7 @@ within each VRF. What this means in practice:
   distinguisher (if any), and a prefix count. **Global** (no VRF) comes first,
   then named VRFs alphabetically.
 - **Nesting resets per VRF.** A `10.0.0.0/16` in *production* doesn't claim a
-  `10.0.10.0/24` that lives in *lab* — they're in different sections.
+  `10.0.10.0/24` that lives in *lab* - they're in different sections.
 - **IPv4 and IPv6 never mix.** An IPv4 block never parents an IPv6 block, even
   inside the same VRF.
 
@@ -39,7 +39,7 @@ within each VRF. What this means in practice:
    …
 
 ▾ VRF · production     3 prefixes        RD 65001:100
-   10.0.0.0/16                                ← same CIDR, different VRF — fine
+   10.0.0.0/16                                ← same CIDR, different VRF - fine
      └ 10.0.10.0/24
 
 ▾ VRF · lab            2 prefixes        RD 65001:200
@@ -55,12 +55,12 @@ the hierarchy at a glance.
 When you apply a filter and a parent prefix is filtered out but its children
 match, the children **rise to the top level** of their section rather than
 hanging under an invisible parent. Danbyte never draws a "ghost" parent just to
-keep the indentation — you only ever see rows that match.
+keep the indentation - you only ever see rows that match.
 
 ## Edge cases
 
 | Situation | What you see |
 |---|---|
-| The same CIDR in two VRFs | Two separate rows in two separate sections — no parent/child link between them. |
+| The same CIDR in two VRFs | Two separate rows in two separate sections - no parent/child link between them. |
 | A prefix and a smaller block inside it | A tree: the container and its child each get their own row. |
 | Both IPv4 and IPv6 in one VRF | One section, with the IPv4 group listed first, then the IPv6 group. |

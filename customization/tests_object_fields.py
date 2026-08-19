@@ -27,7 +27,7 @@ class _Base(APITestCase):
 class RegistryTests(_Base):
     def test_customizable_models_auto_derived(self):
         vals = customizable_model_values()
-        # Everything with CustomFieldsMixin qualifies — including models the
+        # Everything with CustomFieldsMixin qualifies - including models the
         # old hand-kept list forgot (modules landed with the mixin).
         for slug in ("device", "prefix", "vlan", "moduletype", "rack"):
             self.assertIn(slug, vals)
@@ -131,7 +131,7 @@ class LabelResolverTests(_Base):
 
 class TenantScopedReferenceTests(_Base):
     """Object-reference CFs whose target is tenant-scoped exercise the
-    tenant-filter branch of _coerce — which raised NameError before the fix
+    tenant-filter branch of _coerce - which raised NameError before the fix
     (secops 'other confirmed bugs')."""
 
     def setUp(self):

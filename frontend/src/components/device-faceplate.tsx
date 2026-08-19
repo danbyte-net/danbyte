@@ -77,17 +77,17 @@ import {
 import { cn } from "@/lib/utils"
 
 /**
- * Draws a device's front panel at millimetre-true scale — the "switch
+ * Draws a device's front panel at millimetre-true scale - the "switch
  * builder". Connector cages are sized from real form-factor dimensions
  * (SFF-8432 SFP, QSFP MSA, EIA-310 panel), so an SFP28 field reads narrower
  * than the QSFP28 uplinks beside it, exactly like the hardware. Layout comes
  * from the device type's saved faceplate document when one exists (the
- * drag-and-drop builder), else from `autoLayout()` — same doc shape either
+ * drag-and-drop builder), else from `autoLayout()` - same doc shape either
  * way, one render path. Color carries state only; every interface links to
  * its page and carries a tooltip; live SNMP facts overlay as dots.
  */
 
-/** Live (observed) facts for one port, keyed by normalized interface name —
+/** Live (observed) facts for one port, keyed by normalized interface name -
  * read-only SNMP data drawn OVER the intent, never instead of it. */
 export interface ObservedPort {
   oper_status: string
@@ -99,7 +99,7 @@ export interface ObservedPort {
 // its tests) can share it; re-exported because consumers import it from here.
 export { normalizePortName }
 
-/** Observed per-port facts from the device's last SNMP poll — shares the
+/** Observed per-port facts from the device's last SNMP poll - shares the
  * ["device-snmp", id] cache with the SNMP tab, so no extra polling. Returns
  * null until data exists (device never polled / SNMP not set up). */
 export function useObservedPorts(
@@ -306,7 +306,7 @@ function Cage({
 
 const PORT_POPOVER_DEFAULTS = ["name", "type", "state", "vlan", "live", "ips"]
 
-/** The admin-ordered field list for the port hover card — the component
+/** The admin-ordered field list for the port hover card - the component
  * analogue of the floor-plan tile popover (Settings → Components). */
 function usePortPopoverFields(): string[] {
   const q = useQuery({
@@ -472,7 +472,7 @@ function GroupBlock({
 }
 
 /** Resolved groups arranged into per-U lanes (`g.u`, default 1), stacked
- * vertically — a 2U device draws its slot-1 groups above its slot-2 groups.
+ * vertically - a 2U device draws its slot-1 groups above its slot-2 groups.
  * Dividers separate adjacent groups of different families within a lane. */
 function FaceplateLanes({
   resolved,
@@ -551,7 +551,7 @@ function useContainerWidth(): [React.RefObject<HTMLDivElement | null>, number] {
   return [ref, width]
 }
 
-// Component kinds a saved layout may reference and their list endpoints —
+// Component kinds a saved layout may reference and their list endpoints -
 // fetched lazily, only when a doc actually places that kind.
 const KIND_LIST_ENDPOINT: Record<Exclude<SlotKind, "interface">, string> = {
   "console-port": "console-ports",
@@ -593,21 +593,21 @@ export function DeviceFaceplate({
   deviceId?: string
   /** Enables the device type's saved faceplate layout. */
   deviceTypeId?: string | null
-  /** Stack member number — resolves `{position}` in saved slot names. */
+  /** Stack member number - resolves `{position}` in saved slot names. */
   vcPosition?: number | null
-  /** Which panel to draw — rear exists only via a saved layout. */
+  /** Which panel to draw - rear exists only via a saved layout. */
   side?: FaceplateSide
   /** "container" = fit panel to wrapper width (clamped); number = px/mm;
-   * default = fixed 1.6 px/mm (stack bars — their container is w-fit). */
+   * default = fixed 1.6 px/mm (stack bars - their container is w-fit). */
   fit?: "container" | number
   className?: string
   /** Live SNMP facts by normalized port name (see useObservedPorts). Adds a
-   * status dot per port + a "live:" tooltip line — decoration only; the
+   * status dot per port + a "live:" tooltip line - decoration only; the
    * source-of-truth styling is untouched. */
   observed?: Map<string, ObservedPort> | null
   /** Report the colours this panel actually uses (see `useLegendCollector`). */
   onLegend?: LegendReporter
-  /** Identifies this panel to the collector — a stack passes one key per
+  /** Identifies this panel to the collector - a stack passes one key per
    * member so the legend unions them. */
   legendKey?: string
 }) {
@@ -626,7 +626,7 @@ export function DeviceFaceplate({
   const savedDoc: FaceplateDoc | null = dt.data?.faceplate ?? null
 
   // Installed modules whose TYPE has a saved faceplate get composed into the
-  // device render at their bay — slot names resolved {module} → bay position
+  // device render at their bay - slot names resolved {module} → bay position
   // (then {position} resolves with the rest of the pipeline), so the cages
   // match the interfaces the install stamped onto the device.
   const modulesQ = useQuery({
@@ -691,7 +691,7 @@ export function DeviceFaceplate({
     ...kindQueries.map((q) => q.data),
   ])
 
-  // The cages this panel actually drew — a saved layout places a subset of the
+  // The cages this panel actually drew - a saved layout places a subset of the
   // device's ports, so the device's interface list is the wrong source.
   const legend = useMemo(() => {
     const drawn = resolved.groups.flatMap((g) => g.resolved)
@@ -717,7 +717,7 @@ export function DeviceFaceplate({
   const [wrapRef, containerWidth] = useContainerWidth()
   // "Full width" layouts render the whole blade even when sparsely populated
   // (a rear side with two PSUs shouldn't hug into a tiny box). The blade is
-  // the type's actual footprint — half-width gear draws half the opening.
+  // the type's actual footprint - half-width gear draws half the opening.
   const fullWidth = !!savedDoc?.full
   const bladeMm = PANEL_MM.opening * (dt.data?.rack_width === "half" ? 0.5 : 1)
   const panelSpanMm = fullWidth
@@ -732,7 +732,7 @@ export function DeviceFaceplate({
           )
         : PX_PER_MM.default
       : (fit ?? PX_PER_MM.default)
-  // Bar height follows the type's rack height — a 2U device draws a 2U blade.
+  // Bar height follows the type's rack height - a 2U device draws a 2U blade.
   const uHeight = Math.max(1, dt.data?.u_height ?? 1)
   const faceMm = PANEL_MM.uPitch * (uHeight - 1) + PANEL_MM.face
 
@@ -770,7 +770,7 @@ export function DeviceFaceplate({
   return panel
 }
 
-/** Template-driven, non-interactive faceplate — draws a device TYPE as
+/** Template-driven, non-interactive faceplate - draws a device TYPE as
  * hardware without touching per-device state. Used by rack elevations'
  * "Render" mode: templates + the saved layout are cached per TYPE, so a rack
  * of twenty identical switches costs one fetch, not twenty. */
@@ -784,7 +784,7 @@ export function TypeFaceplate({
 }: {
   deviceTypeId: string
   side?: FaceplateSide
-  /** Max scale (px per mm) — the panel shrinks below this to fit its
+  /** Max scale (px per mm) - the panel shrinks below this to fit its
    * container so every port stays visible. */
   pxPerMm: number
   vcPosition?: number | null
@@ -846,7 +846,7 @@ export function TypeFaceplate({
     const doc = savedDoc ?? autoLayout(componentsByKind.interface ?? [])
     const out = resolveLayout(doc, side, componentsByKind, vcPosition)
     if (compact) {
-      // Rack scale: group captions just clutter — drop them (ports remain).
+      // Rack scale: group captions just clutter - drop them (ports remain).
       return {
         ...out,
         groups: out.groups.map((g) => ({ ...g, label: undefined })),
@@ -884,8 +884,8 @@ export type FaceplateMode = "image" | "rendered"
 
 /**
  * One faceplate, either way. `mode="image"` draws the device type's PHOTO with
- * ports marked on it when the type actually has a photo + markers; otherwise —
- * and for `mode="rendered"` — it draws the schematic faceplate. So a caller
+ * ports marked on it when the type actually has a photo + markers; otherwise -
+ * and for `mode="rendered"` - it draws the schematic faceplate. So a caller
  * can offer an Image/Rendered toggle and default to the photo without having
  * to branch, and a type with no photo silently falls back to the schematic.
  */
@@ -949,7 +949,7 @@ export function FaceplateView({
 // ─── image-anchored ports (photo faceplate) ─────────────────────────────────
 
 /** True when a device type has a photo + at least one placed port marker on
- * either side — i.e. the image faceplate should render instead of the
+ * either side - i.e. the image faceplate should render instead of the
  * schematic one. Shares the ["device-type", id] cache. */
 export function useHasImagePorts(deviceTypeId?: string | null): boolean {
   const dt = useQuery({
@@ -965,11 +965,11 @@ export function useHasImagePorts(deviceTypeId?: string | null): boolean {
 
 /**
  * A device's front/rear PHOTO with its interface ports marked directly on the
- * image — the "photo faceplate". Markers come from the device type's
+ * image - the "photo faceplate". Markers come from the device type's
  * `image_ports` (normalized 0..1, center-anchored); each is matched to the
  * device's real interface by name (`{position}`-rendered), so it carries the
  * same state color, live SNMP dot, hover card and link as the schematic
- * faceplate. Coexists with it — the caller picks which to show.
+ * faceplate. Coexists with it - the caller picks which to show.
  */
 export function ImagePortsFaceplate({
   deviceTypeId,
@@ -983,7 +983,7 @@ export function ImagePortsFaceplate({
   className,
 }: {
   deviceTypeId: string
-  /** Resolves hardware (inventory-item) markers to the device's real parts —
+  /** Resolves hardware (inventory-item) markers to the device's real parts -
    * status-coloured disk bays etc. Optional; without it they render ghosts. */
   deviceId?: string
   interfaces: Interface[]
@@ -991,7 +991,7 @@ export function ImagePortsFaceplate({
   side: FaceplateSide
   observed?: Map<string, ObservedPort> | null
   /** Report the colours this panel actually uses, so a legend can key just
-   * those — a shelf of disk bays shouldn't explain 400G. */
+   * those - a shelf of disk bays shouldn't explain 400G. */
   onLegend?: LegendReporter
   /** Identifies this panel to the collector; default fits one panel per page. */
   legendKey?: string
@@ -999,22 +999,22 @@ export function ImagePortsFaceplate({
 }) {
   const { canDo } = useMe()
   // Editing a bay writes to the device's parts, so it needs the same permission
-  // the Hardware tab does — and a device to write them to. Module bays install
+  // the Hardware tab does - and a device to write them to. Module bays install
   // through the same gate (matching the Modules pane).
   const canEditParts = !!deviceId && canDo("device", "change")
   // Cabling a free power/console/aux/panel port from its marker.
   const canConnect = !!deviceId && canDo("cable", "add")
   const [partDialog, setPartDialog] = useState<{
     item: InventoryItemRow | null
-    /** The marker's rendered name — the bay being filled, when creating. */
+    /** The marker's rendered name - the bay being filled, when creating. */
     name: string
   } | null>(null)
-  // An empty module-bay marker was clicked — install into it.
+  // An empty module-bay marker was clicked - install into it.
   const [installBay, setInstallBay] = useState<{
     id: string
     name: string
   } | null>(null)
-  // A free non-interface port marker was clicked — connect a cable from it.
+  // A free non-interface port marker was clicked - connect a cable from it.
   const [connect, setConnect] = useState<{
     id: string
     kind: TerminationKind
@@ -1030,7 +1030,7 @@ export function ImagePortsFaceplate({
     () => new Map(interfaces.map((i) => [normalizePortName(i.name), i])),
     [interfaces]
   )
-  // For the connect dialog's title — callers pass this device's own
+  // For the connect dialog's title - callers pass this device's own
   // interfaces, so any row names the device.
   const deviceName = interfaces.at(0)?.device.name ?? ""
 
@@ -1045,7 +1045,7 @@ export function ImagePortsFaceplate({
     !!deviceId && markers.some((m) => m.kind === "inventory-item")
   // Console / power / aux / panel-port markers resolve through the same
   // /face-ports/ payload the 3D room uses. Without this they fell through to
-  // the "not on this device" ghost even when the component was right there —
+  // the "not on this device" ghost even when the component was right there -
   // this component knew only two of the nine kinds, while 3D knew them all.
   const wantsFacePorts =
     !!deviceId &&
@@ -1213,13 +1213,13 @@ export function ImagePortsFaceplate({
           width: `${m.w * 100}%`,
           height: `${m.h * 100}%`,
         }
-        // Hardware markers (disk bays…) — coloured by the PART's lifecycle
+        // Hardware markers (disk bays…) - coloured by the PART's lifecycle
         // status (failed = red), not the port speed ramp.
         if (kind === "inventory-item") {
           const item = itemByName.get(normalizePortName(name))
           const hex = item?.status?.color || "#64748b"
           // An empty bay: the marker is drawn but no part fills it. With write
-          // access it's the install affordance — click to fit hardware here,
+          // access it's the install affordance - click to fit hardware here,
           // named after the bay so a sensor keyed on that name picks it up.
           if (!item)
             return canEditParts ? (
@@ -1227,7 +1227,7 @@ export function ImagePortsFaceplate({
                 key={`${m.name}-${idx}`}
                 type="button"
                 style={style}
-                title={`${name} — empty, click to install hardware`}
+                title={`${name} - empty, click to install hardware`}
                 onClick={() => setPartDialog({ item: null, name })}
                 className="absolute cursor-pointer rounded-[2px] border border-dashed border-border/70 bg-background/20 hover:border-primary hover:bg-primary/10"
               />
@@ -1252,8 +1252,8 @@ export function ImagePortsFaceplate({
                     }}
                     title={
                       partDrift.get(item.id)
-                        ? `${item.name} — SNMP says ${partDrift.get(item.id)}, click to review`
-                        : `${item.name} — click to edit`
+                        ? `${item.name} - SNMP says ${partDrift.get(item.id)}, click to review`
+                        : `${item.name} - click to edit`
                     }
                     onClick={() => setPartDialog({ item, name })}
                     className={cn(
@@ -1324,7 +1324,7 @@ export function ImagePortsFaceplate({
                     SNMP {sensorByName.get(normalizePortName(name))}
                   </div>
                 )}
-                {/* Set status vs observed health, side by side — the difference
+                {/* Set status vs observed health, side by side - the difference
                     is the point, and accepting it stays in the drift inbox. */}
                 {partDrift.get(item.id) && (
                   <div className="font-sans text-[10px] text-amber-600 dark:text-amber-400">
@@ -1343,7 +1343,7 @@ export function ImagePortsFaceplate({
         // Module bays (line-card slots) read OCCUPANCY: an installed bay is
         // filled, a free one is the same faint outline an idle port wears.
         // Without a device (a type preview) every bay is definitionally
-        // unoccupied — that's an empty slot, not a broken marker.
+        // unoccupied - that's an empty slot, not a broken marker.
         if (kind === "module-bay") {
           const fp = portByMarker.get(m.name)
           if (deviceId && !fp?.id)
@@ -1357,7 +1357,7 @@ export function ImagePortsFaceplate({
             )
           const mod = fp?.module ?? null
           const hex = bayHex(!!mod)
-          // An EMPTY bay on a real device is the install affordance — click to
+          // An EMPTY bay on a real device is the install affordance - click to
           // seat a module, exactly like an empty disk bay installs hardware.
           // (Removal stays on the Modules pane; occupied bays just report.)
           const installable = !mod && !!fp?.id && canEditParts
@@ -1371,7 +1371,7 @@ export function ImagePortsFaceplate({
                   <button
                     type="button"
                     style={bayStyle}
-                    title={`${name} — empty, click to install a module`}
+                    title={`${name} - empty, click to install a module`}
                     onClick={() =>
                       fp.id && setInstallBay({ id: fp.id, name: fp.name })
                     }
@@ -1412,8 +1412,8 @@ export function ImagePortsFaceplate({
           )
         }
         // A non-interface port kind (power inlet, console, aux, panel port):
-        // resolved through /face-ports/, drawn as a real cage — cabled ports
-        // tinted, free ones outlined — with drift ringed like everywhere else.
+        // resolved through /face-ports/, drawn as a real cage - cabled ports
+        // tinted, free ones outlined - with drift ringed like everywhere else.
         if (kind !== "interface") {
           const fp = portByMarker.get(m.name)
           if (!fp?.id)
@@ -1426,7 +1426,7 @@ export function ImagePortsFaceplate({
               />
             )
           const hex = fp.connected ? PORT_NEUTRAL.cabled : PORT_NEUTRAL.free
-          // A FREE port is the connect affordance — click opens the cable
+          // A FREE port is the connect affordance - click opens the cable
           // maker in place with this end already on side A. Cabled markers
           // keep the plain hovercard; unknown marker kinds stay inert.
           const termKind = markerTerminationKind(kind)
@@ -1446,7 +1446,7 @@ export function ImagePortsFaceplate({
                   <button
                     type="button"
                     style={portStyle}
-                    title={`${fp.name} — free, click to connect a cable`}
+                    title={`${fp.name} - free, click to connect a cable`}
                     onClick={() =>
                       fp.id &&
                       setConnect({ id: fp.id, kind: termKind, name: fp.name })
@@ -1508,7 +1508,7 @@ export function ImagePortsFaceplate({
                 style={
                   // On a photo: cabled markers get an OPAQUE tier border +
                   // solid-enough fill; idle markers are a VERY faint outline
-                  // only (capability-tinted when the type tells us) — no fill,
+                  // only (capability-tinted when the type tells us) - no fill,
                   // so the artwork stays the star until a port lights up.
                   tiered
                     ? { ...style, ...portOverlayStyle(portHex(tint)) }
@@ -1570,7 +1570,7 @@ export function ImagePortsFaceplate({
           </HoverCard>
         )
       })}
-      {/* The real part editor, not a copy of it — so changing a disk's status
+      {/* The real part editor, not a copy of it - so changing a disk's status
           from the faceplate is the same write (and the same audit trail) as
           editing it on the Hardware tab. Shares its query key, so the bay
           recolours on save. */}
@@ -1587,7 +1587,7 @@ export function ImagePortsFaceplate({
         />
       )}
       {/* Same deal for module bays: the Modules pane's install dialog, not a
-          copy — the write, the toast, and the cache invalidations are shared,
+          copy - the write, the toast, and the cache invalidations are shared,
           so the bay marker flips to occupied on save. */}
       {canEditParts && deviceId && installBay && (
         <InstallModuleDialog
@@ -1624,7 +1624,7 @@ export function ImagePortsFaceplate({
 }
 
 /** The device type's saved faceplate doc (null = none / auto). Shares the
- * ["device-type", id] cache — parents use this to decide on a Front/Rear
+ * ["device-type", id] cache - parents use this to decide on a Front/Rear
  * toggle without a second fetch. */
 export function useSavedFaceplate(
   deviceTypeId?: string | null
@@ -1638,7 +1638,7 @@ export function useSavedFaceplate(
   return dt.data?.faceplate ?? null
 }
 
-/** Speed-scale key for the port colors — render once per page, under a
+/** Speed-scale key for the port colors - render once per page, under a
  * faceplate. The colorbar itself lives in `SpeedScale` (shared with the 3D
  * room HUD); this adds the faceplate-only extras (trunk mark, live dot). */
 export function FaceplateLegend({
@@ -1654,7 +1654,7 @@ export function FaceplateLegend({
    * `content` is given, which knows this for itself. */
   hardware?: boolean
   /** What the panel(s) below actually drew, from `useLegendCollector`. Used
-   * ONLY to pick the hardware statuses to list — the speed ramp is static, so
+   * ONLY to pick the hardware statuses to list - the speed ramp is static, so
    * the same scale reads the same on every page. */
   content?: LegendContent
 }) {

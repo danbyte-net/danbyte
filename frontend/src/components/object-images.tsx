@@ -19,7 +19,7 @@ type ImageList = { count: number; results: ImageAttachment[] }
  * can't add any, to keep the detail page uncluttered.
  *
  * `apiBase` is the object's collection path *without* trailing slash, e.g.
- * `/api/devices/<id>` — the component appends `/images/`.
+ * `/api/devices/<id>` - the component appends `/images/`.
  */
 export function ObjectImages({
   apiBase,

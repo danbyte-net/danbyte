@@ -1,4 +1,4 @@
-"""Hardware/OS lifecycle management (EoS / EoL) — LifecycleMixin on
+"""Hardware/OS lifecycle management (EoS / EoL) - LifecycleMixin on
 DeviceType + Platform, the derived lifecycle_state, and the ?lifecycle=
 filter buckets."""
 from __future__ import annotations

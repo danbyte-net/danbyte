@@ -81,7 +81,7 @@ logger = logging.getLogger("monitoring.viewsets")
 class _EnginePermission(permissions.BasePermission):
     """Anyone signed into the tenant may *read* the engine list (the site /
     location forms need it for the assignment dropdown); only admins may create,
-    edit, enroll, or delete — a deployment-admin surface like Users / Email."""
+    edit, enroll, or delete - a deployment-admin surface like Users / Email."""
 
     message = "Admin access required."
 
@@ -94,7 +94,7 @@ class _EnginePermission(permissions.BasePermission):
 
 
 class MonitoringEngineViewSet(viewsets.ModelViewSet):
-    """Monitoring engines (Outposts) — admin-gated, tenant-scoped. The built-in
+    """Monitoring engines (Outposts) - admin-gated, tenant-scoped. The built-in
     local engine is ensured on read; it can't be created or deleted here."""
 
     serializer_class = MonitoringEngineSerializer
@@ -120,7 +120,7 @@ class MonitoringEngineViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def enroll(self, request, pk=None):
-        """(Re)generate this Outpost's token — returned **once**; afterwards the
+        """(Re)generate this Outpost's token - returned **once**; afterwards the
         API exposes only ``token_set``."""
         engine = self.get_object()
         if engine.is_local:
@@ -210,15 +210,15 @@ class SnmpProfileViewSet(TenantScopedViewSet):
 
 
 class CertificateViewSet(TenantScopedViewSet):
-    """Certificates — tenant-scoped, authenticated, and authored-or-observed.
+    """Certificates - tenant-scoped, authenticated, and authored-or-observed.
 
     Observed rows are written by the collector; uploaded rows are authored by an
     operator (source of truth). The write surface is deliberately narrow:
 
-    * **create** is *upload only* — POST a public PEM (see ``CertificateUpload``);
+    * **create** is *upload only* - POST a public PEM (see ``CertificateUpload``);
       the facts are extracted from the bytes, and a private key is a clean 400.
       There is no way to POST fact fields directly.
-    * **update** touches only ``name`` / ``notes`` — every intrinsic fact is
+    * **update** touches only ``name`` / ``notes`` - every intrinsic fact is
       ``read_only`` on the serializer, so a PATCH can never rewrite the bytes'
       properties.
     * **delete** removes the tenant's row. An *observed* certificate that is
@@ -242,7 +242,7 @@ class CertificateViewSet(TenantScopedViewSet):
         from django.db.models import Count
         from django.utils import timezone
 
-        # Aggregation drops Meta.ordering (Django ≥3.1), so restate it — an
+        # Aggregation drops Meta.ordering (Django ≥3.1), so restate it - an
         # unordered paginated list silently reshuffles between pages.
         qs = (
             super().get_queryset()
@@ -306,7 +306,7 @@ class CertificateViewSet(TenantScopedViewSet):
         """At-a-glance certificate + key health for the monitoring overview.
 
         Expiry buckets against the tenant's own thresholds, the self-signed
-        count, SSH host-key drift, and the tenant's firing-alert total — one
+        count, SSH host-key drift, and the tenant's firing-alert total - one
         tenant-scoped read instead of a fistful of list calls the client would
         have to bucket itself. Each count maps to an existing filtered list view.
         """
@@ -344,7 +344,7 @@ class CertificateViewSet(TenantScopedViewSet):
 
     @action(detail=True, methods=["get"])
     def chain(self, request, pk=None):
-        """The issuer chain for this certificate — leaf → intermediate → root.
+        """The issuer chain for this certificate - leaf → intermediate → root.
 
         Walks ``issuer_certificate`` up from this row within the tenant, capped
         and cycle-guarded. Each hop is the full certificate serialisation so the
@@ -360,7 +360,7 @@ class CertificateViewSet(TenantScopedViewSet):
 
     @action(detail=False)
     def authorities(self, request):
-        """The tenant's Certificate Authorities — every CA certificate with how
+        """The tenant's Certificate Authorities - every CA certificate with how
         many certs it has issued and its own expiry, soonest-expiring first."""
         from django.db.models import Count
 
@@ -385,8 +385,8 @@ class CertificateViewSet(TenantScopedViewSet):
 
     @action(detail=False, methods=["post"], url_path="import-bundle")
     def import_bundle(self, request):
-        """Import every certificate in a PEM bundle — leaf, intermediates, root
-        — as its own row, so a whole chain lands at once and its issuer links
+        """Import every certificate in a PEM bundle - leaf, intermediates, root
+        - as its own row, so a whole chain lands at once and its issuer links
         resolve. Body: ``{"pem": "<concatenated PEM>", "name"?, "notes"?}``.
         Public-only: a private-key block anywhere is a clean 400.
         """
@@ -438,9 +438,9 @@ class CertificateViewSet(TenantScopedViewSet):
 
 
 class SSHHostKeyViewSet(TenantScopedViewSet):
-    """A device's SSH host keys — tenant-scoped, public data only.
+    """A device's SSH host keys - tenant-scoped, public data only.
 
-    * **create** is *upload only* — POST ``{device, public_key_line}`` with an
+    * **create** is *upload only* - POST ``{device, public_key_line}`` with an
       OpenSSH public-key line; the type/blob/fingerprint are parsed from it, a
       private key or PEM cert is a clean 400, and an existing fingerprint dedups
       (marked uploaded, 200) rather than duplicating.
@@ -504,11 +504,11 @@ class SSHHostKeyViewSet(TenantScopedViewSet):
 
 
 class DeviceCredentialViewSet(TenantScopedViewSet):
-    """A device's login credentials — each references an externally-stored secret.
+    """A device's login credentials - each references an externally-stored secret.
 
     Standard tenant-scoped CRUD (the secret value is never serialised, only its
     provider + path). The extra **reveal** action fetches the actual secret from
-    the configured store at call-time — gated on the ``reveal`` RBAC verb (which
+    the configured store at call-time - gated on the ``reveal`` RBAC verb (which
     is independent of ``change``: a user who can edit a credential still can't
     reveal it without the verb), re-checks that the caller may view the target
     device, audits the disclosure, and fails closed when no store is enabled.
@@ -529,7 +529,7 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
         return qs
 
     def _validate_device(self, serializer):
-        """A credential's device must belong to the active tenant — never trust a
+        """A credential's device must belong to the active tenant - never trust a
         posted device UUID to be in-tenant (the picker is only a convenience)."""
         tenant = self._tenant_or_403()
         device = serializer.validated_data.get("device")
@@ -574,7 +574,7 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
         self._validate_device(serializer)
         value = self._pop_secret(serializer)
         # Atomic: if writing the managed secret fails (e.g. no store enabled),
-        # roll back the row so no orphaned credential is left behind — otherwise
+        # roll back the row so no orphaned credential is left behind - otherwise
         # a retry collides on the (tenant, device, name) unique constraint.
         with transaction.atomic():
             super().perform_create(serializer)
@@ -590,7 +590,7 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
             self._store_secret(serializer.instance, value)
 
     def _audit_reveal(self, cred):
-        """Record who revealed which credential's secret, when — revealing a
+        """Record who revealed which credential's secret, when - revealing a
         secret writes no model change, so nothing else logs it (mirrors the
         certificate-request key-reveal trail)."""
         from audit.context import current_request_id
@@ -628,7 +628,7 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
         try:
             secret = cred.resolve_secret()
         except SecretStoreDisabled as exc:
-            # No store configured — fail closed with an actionable message.
+            # No store configured - fail closed with an actionable message.
             raise ValidationError({"detail": str(exc)}) from exc
         except SecretStoreError as exc:
             raise ValidationError({"detail": str(exc)}) from exc
@@ -637,7 +637,7 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
 
 
 class ConnectProtocolViewSet(TenantScopedViewSet):
-    """A tenant's Connect launch templates — plain tenant-scoped CRUD.
+    """A tenant's Connect launch templates - plain tenant-scoped CRUD.
 
     No secret is involved: a protocol is a URL template the Connect menu renders
     client-side. Managing them uses the CRUD verbs; *using* one (the device
@@ -680,14 +680,14 @@ class ConnectProtocolViewSet(TenantScopedViewSet):
 
 
 class CertificateBindingViewSet(TenantScopedReadViewSet):
-    """Which endpoints served which certificate — tenant-scoped and read-only.
+    """Which endpoints served which certificate - tenant-scoped and read-only.
 
     This is the "what breaks when it expires" surface: filter by
     ``?certificate=<id>`` for a certificate's blast radius, or by
     ``?target_ip=<id>`` for everything one address has ever presented.
 
     Bindings are history, so nothing here is deleted when an endpoint stops
-    serving a certificate — use ``?stale=1`` / ``?stale=0`` to separate what is
+    serving a certificate - use ``?stale=1`` / ``?stale=0`` to separate what is
     still being observed from what used to be.
     """
 
@@ -738,7 +738,7 @@ class CertificateBindingViewSet(TenantScopedReadViewSet):
 
 
 class CertificateAssignmentViewSet(TenantScopedViewSet):
-    """Declare which object should present a certificate — the intent a drift
+    """Declare which object should present a certificate - the intent a drift
     check compares against. Writable, tenant-scoped, default-closed.
 
     Filter by ``?certificate=<id>`` (a certificate's declared objects),
@@ -746,13 +746,13 @@ class CertificateAssignmentViewSet(TenantScopedViewSet):
     device/IP detail page can list what it's supposed to serve.
 
     The generic ``(object_type, object_id)`` target is validated to exist **in
-    the active tenant** on create and update — mirroring ``ContactAssignment`` —
+    the active tenant** on create and update - mirroring ``ContactAssignment`` -
     so a certificate can never be attached to another tenant's object.
     """
 
     queryset = CertificateAssignment.objects.select_related("certificate")
     serializer_class = CertificateAssignmentSerializer
-    # accept_served creates/replaces an assignment, so it needs an `add` grant —
+    # accept_served creates/replaces an assignment, so it needs an `add` grant -
     # not the default `change` a custom action would otherwise demand.
     rbac_action_map = {"accept_served": "add"}
 
@@ -780,7 +780,7 @@ class CertificateAssignmentViewSet(TenantScopedViewSet):
 
     def _check_target(self, serializer):
         """The generic ``(object_type, object_id)`` target must belong to the
-        active tenant — otherwise a certificate could be declared on another
+        active tenant - otherwise a certificate could be declared on another
         tenant's object (cross-tenant reference)."""
         from django.apps import apps
 
@@ -826,7 +826,7 @@ class CertificateAssignmentViewSet(TenantScopedViewSet):
     def _reevaluate_sot_expiry(self):
         """Fire the source-of-truth expiry pass now, so assigning/unassigning a
         declared cert opens or resolves its expiry alert immediately instead of
-        waiting for the nightly sweep. Best-effort — never breaks the write."""
+        waiting for the nightly sweep. Best-effort - never breaks the write."""
         from .cert_expiry import evaluate_sot_expiry
 
         try:
@@ -867,7 +867,7 @@ class CertificateAssignmentViewSet(TenantScopedViewSet):
 
 
 class CertificateRequestViewSet(TenantScopedViewSet):
-    """Certificate signing requests — Danbyte generates the key + CSR.
+    """Certificate signing requests - Danbyte generates the key + CSR.
 
     * **create** generates a key pair and CSR from the posted subject/SANs/key
       spec, stores the private key in the secret store, and returns the CSR plus
@@ -901,7 +901,7 @@ class CertificateRequestViewSet(TenantScopedViewSet):
         return qs
 
     def _audit_key_reveal(self, req):
-        """Leave a trail whenever stored private-key material is handed out —
+        """Leave a trail whenever stored private-key material is handed out -
         who, which request, when (revealing a secret writes no model change, so
         nothing else logs it)."""
         from audit.context import current_request_id
@@ -954,7 +954,7 @@ class CertificateRequestViewSet(TenantScopedViewSet):
         except CsrError as exc:
             raise ValidationError({"detail": str(exc)}) from exc
         data = self.get_serializer(req).data
-        # The private key is returned exactly once — it is not stored on the row
+        # The private key is returned exactly once - it is not stored on the row
         # and this response is the operator's chance to save it locally.
         data["private_key"] = private_key
         self._audit_key_reveal(req)
@@ -1002,7 +1002,7 @@ class CertificateRequestViewSet(TenantScopedViewSet):
 
         Creates the :class:`AcmeOrder`, calls the CA's newOrder, and returns the
         order with the challenges the operator (or a publisher) must satisfy. The
-        issuer is looked up scoped to the active tenant — a cross-tenant issuer id
+        issuer is looked up scoped to the active tenant - a cross-tenant issuer id
         can't be used.
         """
         from .acme_engine import AcmeError, create_order
@@ -1047,7 +1047,7 @@ class CertificateRequestViewSet(TenantScopedViewSet):
     def acme_finalize(self, request, pk=None):
         """Finalize a previously opened ACME order (challenges now published).
 
-        Runs asynchronously (it polls the CA) — enqueues the finalize job and
+        Runs asynchronously (it polls the CA) - enqueues the finalize job and
         returns the order at its current state. The order must belong to this
         request and tenant.
         """
@@ -1062,7 +1062,7 @@ class CertificateRequestViewSet(TenantScopedViewSet):
             raise ValidationError({"order": "Unknown order for this request."})
         if not order.order_url:
             raise ValidationError(
-                {"order": "This order was never opened — create it first."}
+                {"order": "This order was never opened - create it first."}
             )
         order.status = AcmeOrder.Status.PROCESSING
         order.error = ""
@@ -1071,7 +1071,7 @@ class CertificateRequestViewSet(TenantScopedViewSet):
             django_rq.get_queue("default").enqueue(
                 "monitoring.acme_engine.finalize_order_job", str(order.id)
             )
-        except Exception as exc:  # noqa: BLE001 — Redis down: report, don't 500
+        except Exception as exc:  # noqa: BLE001 - Redis down: report, don't 500
             raise ValidationError(
                 {"detail": f"Could not enqueue the issuance job: {exc}"}
             ) from exc
@@ -1080,7 +1080,7 @@ class CertificateRequestViewSet(TenantScopedViewSet):
     @action(detail=True, methods=["post"], url_path="acme-issue")
     def acme_issue(self, request, pk=None):
         """Fully-automated issuance: open the order, auto-publish the DNS-01
-        challenge, finalize, and import — all on the worker queue.
+        challenge, finalize, and import - all on the worker queue.
 
         Requires the issuer to have a DNS-01 auto-publisher configured; without
         one, use ``acme-order`` + ``acme-finalize`` (operator-published).
@@ -1118,7 +1118,7 @@ class CertificateRequestViewSet(TenantScopedViewSet):
             django_rq.get_queue("default").enqueue(
                 "monitoring.acme_engine.issue_order_job", str(order.id)
             )
-        except Exception as exc:  # noqa: BLE001 — Redis down: report, don't 500
+        except Exception as exc:  # noqa: BLE001 - Redis down: report, don't 500
             order.delete()
             raise ValidationError(
                 {"detail": f"Could not enqueue the issuance job: {exc}"}
@@ -1156,7 +1156,7 @@ class IssuerViewSet(TenantScopedViewSet):
     def register_account(self, request, pk=None):
         """Create (or re-register) the issuer's ACME account and store its key.
 
-        Synchronous — it is a handful of round trips and the operator wants the
+        Synchronous - it is a handful of round trips and the operator wants the
         success/failure immediately. Fail-closed if no secret store is enabled.
         """
         from .acme_engine import AcmeError, register_account
@@ -1173,7 +1173,7 @@ class IssuerViewSet(TenantScopedViewSet):
 
 
 class AcmeOrderViewSet(TenantScopedReadViewSet):
-    """ACME issuance orders — read-only here; created and driven by the ACME
+    """ACME issuance orders - read-only here; created and driven by the ACME
     engine. Filter with ``?issuer=`` / ``?request=`` / ``?status=``."""
 
     queryset = AcmeOrder.objects.select_related(
@@ -1194,7 +1194,7 @@ class SnmpSensorViewSet(TenantScopedViewSet):
     queryset = SnmpSensor.objects.select_related("device_type").order_by("name")
     serializer_class = SnmpSensorSerializer
 
-    # A sensor is a portable definition — an OID, a value map, a naming rule —
+    # A sensor is a portable definition - an OID, a value map, a naming rule -
     # with no secrets and no per-device state, which is exactly what makes it
     # worth moving between deployments. Version the envelope so a future shape
     # change can be detected rather than silently mis-imported.
@@ -1219,7 +1219,7 @@ class SnmpSensorViewSet(TenantScopedViewSet):
                 qs = qs.filter(device_type__isnull=True)
             else:
                 qs = qs.filter(Q(device_type__isnull=True) | Q(device_type_id=dt))
-        # `only=1` narrows to sensors bound to exactly this type — the device
+        # `only=1` narrows to sensors bound to exactly this type - the device
         # TYPE page manages its own, where inheriting the all-types rows would
         # invite editing a shared definition by accident.
         only = self.request.query_params.get("device_type_only")
@@ -1264,7 +1264,7 @@ class SnmpSensorViewSet(TenantScopedViewSet):
         version = payload.get("danbyte_snmp_sensor_pack")
         if version is None:
             raise ValidationError(
-                {"danbyte_snmp_sensor_pack": "Not a sensor pack — the key is missing."}
+                {"danbyte_snmp_sensor_pack": "Not a sensor pack - the key is missing."}
             )
         if version != self.PACK_VERSION:
             raise ValidationError({
@@ -1287,7 +1287,7 @@ class SnmpSensorViewSet(TenantScopedViewSet):
                 "Overwriting existing sensors needs change access; import "
                 "without ?replace=1 to add only the new ones."
             )
-        # Resolved once, and only within this tenant — a pack naming another
+        # Resolved once, and only within this tenant - a pack naming another
         # tenant's device type must not reach across.
         types = {
             name.strip().lower(): pk
@@ -1305,7 +1305,7 @@ class SnmpSensorViewSet(TenantScopedViewSet):
             if dt_name:
                 pk = types.get(str(dt_name).strip().lower())
                 if pk is None:
-                    # Keep the sensor, lose the binding, say so — better than
+                    # Keep the sensor, lose the binding, say so - better than
                     # dropping a definition the user can rebind in one click.
                     unbound.append(dt_name)
                 data["device_type"] = pk
@@ -1463,8 +1463,8 @@ class CheckAssignmentViewSet(_TargetScopedConfigurationMixin, TenantScopedViewSe
         return qs
 
     def _validate_targets(self, serializer):
-        """Every target the assignment references — the IP/prefix it monitors,
-        its template, and each exclusion IP — must be in the caller's row/site
+        """Every target the assignment references - the IP/prefix it monitors,
+        its template, and each exclusion IP - must be in the caller's row/site
         VIEW scope, not merely the same tenant. Otherwise a Site-A user could
         attach a check to a Site-B IP/prefix, and the ``exclusions`` list (which
         was queryset=IPAddress.objects.all()) could pull in a foreign-tenant IP
@@ -1689,7 +1689,7 @@ class NotificationChannelViewSet(TenantScopedViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         # Auto-created per-prefix/IP watch channels are managed from the
-        # prefix/IP page + the Notifications "for you" view — keep them out of
+        # prefix/IP page + the Notifications "for you" view - keep them out of
         # the manual channel list unless explicitly asked for.
         if self.request.query_params.get("auto") != "1":
             qs = qs.filter(auto_created=False)
@@ -1705,7 +1705,7 @@ class NotificationChannelViewSet(TenantScopedViewSet):
         channel = self.get_object()
         try:
             send_test(channel)
-        except Exception as exc:  # noqa: BLE001 — surface the transport error
+        except Exception as exc:  # noqa: BLE001 - surface the transport error
             from core.email import describe_smtp_error
 
             detail = (
@@ -1718,7 +1718,7 @@ class NotificationChannelViewSet(TenantScopedViewSet):
 
 
 class NotificationSubscriptionViewSet(TenantScopedViewSet):
-    """Admin CRUD for channel subscriptions — a user or a group attached to a
+    """Admin CRUD for channel subscriptions - a user or a group attached to a
     channel. Tenant-scoped + RBAC via the registered object type. Ordinary users
     manage their own via the self-service endpoints below, not this viewset."""
 
@@ -1733,7 +1733,7 @@ class NotificationSubscriptionViewSet(TenantScopedViewSet):
         if channel:
             qs = qs.filter(channel_id=channel)
         # Per-prefix/IP watch subscriptions (on auto channels) are personal and
-        # numerous — keep them out of the admin overview unless asked for.
+        # numerous - keep them out of the admin overview unless asked for.
         elif self.request.query_params.get("auto") != "1":
             qs = qs.filter(channel__auto_created=False)
         return qs
@@ -1747,7 +1747,7 @@ class NotificationSubscriptionViewSet(TenantScopedViewSet):
 
 
 def _channel_summary(ch) -> dict:
-    """The compact channel shape the Notifications page shows for each row —
+    """The compact channel shape the Notifications page shows for each row -
     including the monitored object so the UI can deep-link to it."""
     scope_kind = scope_id = scope_label = None
     if ch.match_ip_id:
@@ -1812,7 +1812,7 @@ def notifications_me(request):
             "mandatory": s.mandatory,
             "can_unsubscribe": source == "self" and can_sub,
         })
-    # Channels that list the user's address directly in config.recipients — shown
+    # Channels that list the user's address directly in config.recipients - shown
     # read-only (admin-managed), not a subscription row.
     email = (user.email or "").strip().lower()
     if email:
@@ -1872,7 +1872,7 @@ def notifications_subscribe(request):
 @permission_classes([permissions.IsAuthenticated])
 def notifications_unsubscribe(request):
     """Drop my own self-assigned subscription. Admin/group-assigned ones cannot
-    be self-removed — they return a clear 400."""
+    be self-removed - they return a clear 400."""
     tenant = _get_active_tenant(request)
     if tenant is None:
         raise PermissionDenied("No active tenant selected.")
@@ -1895,7 +1895,7 @@ def notifications_unsubscribe(request):
 # ─── per-prefix / per-IP "Notify me" shortcut ────────────────────────────────
 # The simple case: "email me when this prefix/IP changes". Backed by a shared,
 # auto-created email channel scoped to that prefix/IP (one per scope, reused by
-# every watcher) plus a self subscription — so channels stay invisible here.
+# every watcher) plus a self subscription - so channels stay invisible here.
 
 
 def _watch_scope(request, create=False):
@@ -1992,7 +1992,7 @@ def notifications_unwatch(request):
         channel=channel, user=request.user, mandatory=False
     ).delete()
     # Tidy up: an auto channel with no subscribers left and no direct recipients
-    # serves nobody — remove it so it doesn't linger.
+    # serves nobody - remove it so it doesn't linger.
     if (
         channel.auto_created
         and not channel.subscriptions.exists()
@@ -2138,7 +2138,7 @@ class _IsAdminOnly(permissions.BasePermission):
 
 class _IsDeploymentAdminOnly(permissions.BasePermission):
     """Deployment-wide admin, for GLOBAL (tenant-less) resources. A
-    tenant-scoped ``change-user`` grant does NOT pass — otherwise a tenant
+    tenant-scoped ``change-user`` grant does NOT pass - otherwise a tenant
     admin could upload/select the software distributed to every outpost
     (fleet RCE / supply-chain escalation)."""
 
@@ -2173,7 +2173,7 @@ def _fetch_github_binary(git_url, ref, token="", asset_name="danbyte-outpost"):
     with httpx.Client(timeout=30, follow_redirects=True) as client:
         r = client.get(api, headers=headers)
         if r.status_code == 404:
-            raise ValidationError(f"No release tagged '{ref}' (or repo is private — add a token).")
+            raise ValidationError(f"No release tagged '{ref}' (or repo is private - add a token).")
         r.raise_for_status()
         assets = r.json().get("assets", [])
         # Prefer the named binary; else the first non-source-archive asset.
@@ -2196,14 +2196,14 @@ def _fetch_github_binary(git_url, ref, token="", asset_name="danbyte-outpost"):
 
 
 def _list_github_releases(git_url, token=""):
-    """A repo's releases (newest first) — thin wrapper over the shared helper."""
+    """A repo's releases (newest first) - thin wrapper over the shared helper."""
     from core.github import list_releases
 
     return list_releases(git_url, token)
 
 
 class OutpostReleaseViewSet(viewsets.ModelViewSet):
-    """Deployment-wide Outpost builds (admin) — the package store. Upload a
+    """Deployment-wide Outpost builds (admin) - the package store. Upload a
     build file, point at a git repo + ref, or fetch the repo's built binary."""
 
     queryset = OutpostRelease.objects.all()
@@ -2227,7 +2227,7 @@ class OutpostReleaseViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def available(self, request):
-        """Releases in the tenant's configured Outpost repo — for the version
+        """Releases in the tenant's configured Outpost repo - for the version
         dropdown. Marks which tags are already imported."""
         from .models import MonitoringSettings
 
@@ -2237,7 +2237,7 @@ class OutpostReleaseViewSet(viewsets.ModelViewSet):
         token = (s.outpost_repo_token or {}).get("token", "")
         try:
             rels = _list_github_releases(s.outpost_repo_url, token)
-        except Exception as e:  # noqa: BLE001 — surface a friendly reason
+        except Exception as e:  # noqa: BLE001 - surface a friendly reason
             return Response(
                 {"repo_url": s.outpost_repo_url, "versions": [], "error": str(e)}
             )
@@ -2249,7 +2249,7 @@ class OutpostReleaseViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"])
     def fetch_binary(self, request):
         """Grab the CI-built binary from a GitHub release and store it as a
-        version — so a repo link becomes a served binary, no manual download.
+        version - so a repo link becomes a served binary, no manual download.
         The git URL + token default to the tenant's configured Outpost repo."""
         from django.core.files.base import ContentFile
 

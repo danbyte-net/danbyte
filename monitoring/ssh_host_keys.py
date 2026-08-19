@@ -4,7 +4,7 @@ The collector (:mod:`danbyte_checks.ssh`) captures the host key a device present
 this reconciles it into a tenant-scoped :class:`~monitoring.models.SSHHostKey`
 and, when the presented key doesn't match one the operator declared, raises
 ``ssh_host_key_mismatch`` through the **same Alert engine** as certificate drift
-— ack, silence, renotify and every channel come for free.
+- ack, silence, renotify and every channel come for free.
 
 Identity is the OpenSSH ``SHA256:…`` fingerprint (see
 :func:`danbyte_checks.ssh_hostkey.fingerprint_from_blob`), so an uploaded key
@@ -134,7 +134,7 @@ def record_ssh_results(results) -> int:
             if row is not None:
                 touched += 1
                 seen[(result.tenant_id, device.id, row.key_type)] = result.target_ip_id
-        except Exception:  # noqa: BLE001 — inventory must not break monitoring
+        except Exception:  # noqa: BLE001 - inventory must not break monitoring
             log.exception("ssh host-key reconcile failed for result %s", result.pk)
     for (tenant_id, device_id, key_type), target_ip_id in seen.items():
         try:
@@ -142,7 +142,7 @@ def record_ssh_results(results) -> int:
                 tenant_id=tenant_id, device_id=device_id, key_type=key_type,
                 target_ip_id=target_ip_id,
             )
-        except Exception:  # noqa: BLE001 — alerting must not break monitoring
+        except Exception:  # noqa: BLE001 - alerting must not break monitoring
             log.exception("ssh host-key drift eval failed for device %s", device_id)
     return touched
 
@@ -240,7 +240,7 @@ def evaluate_mismatch(*, tenant_id, device_id, key_type, target_ip_id=None) -> s
     target_ip_id = target_ip_id or _device_target_ip_id(device)
     if target_ip_id is None:
         # An alert must attach to an IP; a device with none can't carry one.
-        # Record nothing rather than crash — the mismatch is still visible on
+        # Record nothing rather than crash - the mismatch is still visible on
         # the device's key rows (uploaded vs observed differ).
         log.warning(
             "ssh host-key mismatch on device %s has no IP to alert on", device_id

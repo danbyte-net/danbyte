@@ -1,4 +1,4 @@
-"""API-token self-service — a user manages their own tokens. The full key is
+"""API-token self-service - a user manages their own tokens. The full key is
 returned exactly once, at creation."""
 from __future__ import annotations
 

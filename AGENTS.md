@@ -19,11 +19,11 @@ Some early project notes no longer describe the running application. Use this
 precedence when sources disagree:
 
 1. Current code, tests, migrations, and runtime configuration.
-2. The `docs/` tree — the canonical deep reference for features, data models,
+2. The `docs/` tree - the canonical deep reference for features, data models,
    IPAM/DCIM, architecture, and the design system. **Read the relevant page for
    any area you touch** (`make docs-up` to browse). `README.md` orients.
 
-> `CLAUDE.md` and `AGENTS.md` are kept **identical** — this same guide, so any
+> `CLAUDE.md` and `AGENTS.md` are kept **identical** - this same guide, so any
 > assistant gets the same contract. Edit both together (or edit one and copy).
 
 Important corrections:
@@ -199,7 +199,7 @@ the established zinc-based palette, color only for meaning, `rounded-md` or
 existing library. Avoid gradients, decorative shadows, colored dot-plus-name
 status treatments, hard-coded status-name palettes, and one-off SVG icons.
 
-The full design system — tokens, palette, type scale, and component patterns —
+The full design system - tokens, palette, type scale, and component patterns -
 lives in `docs/design/visual-language.md` and
 `docs/architecture/shadcn-tokens.md`. Read them before adding UI.
 

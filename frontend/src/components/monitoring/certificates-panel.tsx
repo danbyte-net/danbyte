@@ -54,7 +54,7 @@ interface RawAlert {
  * the certificates the object is **declared** to present (its assignments),
  * flags **drift** when an endpoint is serving something else (cert_mismatch)
  * with an Accept-served action, and lets an operator assign an existing
- * certificate or upload a new one. Drop into any detail page — it resolves
+ * certificate or upload a new one. Drop into any detail page - it resolves
  * everything from the `(object_type, object_id)` pair, exactly like the
  * cert-drift engine does server-side.
  */
@@ -86,7 +86,7 @@ export function CertificatesPanel({
       ),
   })
 
-  // The tenant's certificates — for the assign picker AND to enrich each
+  // The tenant's certificates - for the assign picker AND to enrich each
   // assignment row with the full cert (server-derived expiry/origin), so a
   // stale row can't read itself healthy and origin shows without a per-row fetch.
   const certs = useQuery({
@@ -103,7 +103,7 @@ export function CertificatesPanel({
     return m
   }, [certs.data])
 
-  // Firing cert_mismatch drift concerning THIS object — matched by the alert's
+  // Firing cert_mismatch drift concerning THIS object - matched by the alert's
   // declared assignments (the engine records which assignment it compared).
   const alerts = useQuery({
     queryKey: ["alerts", "firing", "cert-mismatch"],
@@ -240,7 +240,7 @@ export function CertificatesPanel({
         a.notes ? (
           <span className="text-xs">{a.notes}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -337,7 +337,7 @@ export function CertificatesPanel({
         })()}
 
         {/* Drift: the endpoint is serving a certificate other than the one this
-            object was declared to present. Amber, compare-arrows — the same
+            object was declared to present. Amber, compare-arrows - the same
             vocabulary as SNMP drift; accepting repoints intent at reality. */}
         {mismatches.map((m) => (
           <div

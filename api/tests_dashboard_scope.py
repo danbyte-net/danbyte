@@ -1,4 +1,4 @@
-"""Dashboard "Public vs private IPs" widget — address-scope classification
+"""Dashboard "Public vs private IPs" widget - address-scope classification
 and the aggregated distribution on /api/dashboard/. The buckets are derived
 from the address alone (no seed data, no config), so this pins the RFC ranges
 we sort into Public / Private / CGNAT / Special."""
@@ -17,21 +17,21 @@ User = get_user_model()
 class ClassifyIpScopeTests(APITestCase):
     def test_buckets(self):
         cases = {
-            # Private — RFC 1918 (v4) + ULA fc00::/7 (v6)
+            # Private - RFC 1918 (v4) + ULA fc00::/7 (v6)
             "192.168.1.10": "Private",
             "10.5.5.5": "Private",
             "172.16.9.9": "Private",
             "fc00::1": "Private",
-            # CGNAT — RFC 6598
+            # CGNAT - RFC 6598
             "100.64.0.1": "CGNAT",
             "100.127.255.254": "CGNAT",
-            # Special — loopback / link-local / unspecified / multicast
+            # Special - loopback / link-local / unspecified / multicast
             "127.0.0.1": "Special",
             "169.254.1.1": "Special",
             "::1": "Special",
             "fe80::1": "Special",
             "224.0.0.1": "Special",
-            # Public — globally routable
+            # Public - globally routable
             "8.8.8.8": "Public",
             "1.1.1.1": "Public",
             "2606:4700:4700::1111": "Public",

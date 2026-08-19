@@ -15,11 +15,11 @@ import { CableAdd } from "@/components/cable-add"
 import { Field } from "@/components/forms"
 import { cn } from "@/lib/utils"
 
-// Cables-mode panels for the site map — straight clones of the floor
+// Cables-mode panels for the site map - straight clones of the floor
 // planner's TrayRail / TrayInspector / TrayNameDialog, with routes
 // (geographic duct/aerial runs) in place of trays.
 
-/** Cables-mode left rail — draw control, edit toggle + the route list. */
+/** Cables-mode left rail - draw control, edit toggle + the route list. */
 export function RouteRail({
   routes,
   selectedRouteId,
@@ -78,7 +78,7 @@ export function RouteRail({
           </Button>
           {editMode && (
             <p className="px-1 pt-1.5 text-[11px] text-muted-foreground">
-              Click a route to reshape — drag points, ＋ to add a bend,
+              Click a route to reshape - drag points, ＋ to add a bend,
               right-click a point to remove.
             </p>
           )}
@@ -117,7 +117,7 @@ export function RouteRail({
   )
 }
 
-/** Cables-mode right inspector — route details + cable assignment. */
+/** Cables-mode right inspector - route details + cable assignment. */
 export function RouteInspector({
   route,
   highlightCableId,
@@ -316,7 +316,7 @@ export function RouteNameDialog({
   const [name, setName] = useState("")
   const [kind, setKind] = useState("")
   const [color, setColor] = useState("#71717a")
-  // Cables assigned right at draw time — drawing a single cable's path
+  // Cables assigned right at draw time - drawing a single cable's path
   // without any duct ceremony: pick the cable, the name prefills from it.
   const [cables, setCables] = useState<
     { id: string; label: string; color: string }[]
@@ -373,7 +373,7 @@ export function RouteNameDialog({
           </Field>
           <Field
             label="Cables"
-            hint="Optional — a run doesn't have to be a duct; pick one cable and the line you drew IS that cable's path"
+            hint="Optional - a run doesn't have to be a duct; pick one cable and the line you drew IS that cable's path"
           >
             <div className="grid gap-1.5">
               {cables.map((c) => (

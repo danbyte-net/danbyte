@@ -15,8 +15,8 @@ import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
 // The one source of truth for "a table of VLANs". Every surface that lists
-// VLANs — /vlans, the Site / VLAN group / Zone detail panes, the compliance
-// affected-objects table — builds its columns here so a VLAN row reads
+// VLANs - /vlans, the Site / VLAN group / Zone detail panes, the compliance
+// affected-objects table - builds its columns here so a VLAN row reads
 // identically everywhere. Page-specific columns are spliced around this
 // factory's output; the shared cells are never re-authored inline.
 //
@@ -55,7 +55,7 @@ export interface VlanColumnOpts<T extends VLAN = VLAN> {
   include?: VlanColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
   /** Header for the VID column: "VLAN" on general lists, "VID" where the
    * surrounding page is already about VLANs (the VLAN group detail pane). */
@@ -86,7 +86,7 @@ export function buildVlanColumns<T extends VLAN = VLAN>(
       header: ({ column }) => (
         <SortHeader column={column} label={opts.vidHeader ?? "VLAN"} />
       ),
-      // The VLAN id as a zone-coloured badge — VLANs read like zones/tags
+      // The VLAN id as a zone-coloured badge - VLANs read like zones/tags
       // everywhere now; unzoned VLANs get the neutral badge (colour optional).
       cell: ({ row }) => (
         <Link
@@ -205,7 +205,7 @@ export function buildVlanColumns<T extends VLAN = VLAN>(
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     }),

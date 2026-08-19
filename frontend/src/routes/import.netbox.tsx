@@ -201,7 +201,7 @@ function NetBoxImportPage() {
         <p className="text-xs text-muted-foreground">
           Migrate an existing NetBox instance into <b>this tenant</b> over its
           REST API. Test the connection to see what will be pulled, run a dry
-          run to preview, then import for real. Re-running is safe — existing
+          run to preview, then import for real. Re-running is safe - existing
           objects are skipped unless you opt into updating them.
         </p>
 
@@ -223,7 +223,7 @@ function NetBoxImportPage() {
           </Field>
           <Field
             label="API token"
-            hint="a read-only token is enough — never stored after the run"
+            hint="a read-only token is enough - never stored after the run"
           >
             <Input
               type="password"
@@ -292,7 +292,7 @@ function NetBoxImportPage() {
             <span>
               Dry run
               <span className="block text-[11px] text-muted-foreground">
-                Fetch and build everything, then roll back — real counts,
+                Fetch and build everything, then roll back - real counts,
                 nothing saved. Recommended first.
               </span>
             </span>
@@ -322,7 +322,7 @@ function NetBoxImportPage() {
               Download images
               <span className="block text-[11px] text-muted-foreground">
                 Pull device-type front/rear and floor-plan images from NetBox
-                media. Slower — fetches binary files over the same connection.
+                media. Slower - fetches binary files over the same connection.
               </span>
             </span>
           </label>
@@ -442,7 +442,7 @@ function RunPanel({
               </span>
               {run.dry_run && (
                 <span className="text-muted-foreground">
-                  — nothing was saved
+                  - nothing was saved
                 </span>
               )}
             </>
@@ -509,7 +509,7 @@ function RunPanel({
       )}
 
       {notes.length > 0 && (
-        // Open by default when short — the notes explain skips and fetch
+        // Open by default when short - the notes explain skips and fetch
         // failures, and collapsed-by-default hid exactly that diagnosis.
         <details
           className="text-[12px] text-muted-foreground"
@@ -543,7 +543,7 @@ function RunPanel({
       {run.status === "success" && run.dry_run && (
         <div>
           <Button onClick={onRunReal}>
-            <Play className="size-4" /> Looks good — run for real
+            <Play className="size-4" /> Looks good - run for real
           </Button>
         </div>
       )}

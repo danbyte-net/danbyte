@@ -81,7 +81,7 @@ export function VmSnmpCard({ vmId }: { vmId: string }) {
           const m = Number(row.original.speed_mbps)
           return (
             <span className="num text-xs">
-              {m > 0 ? (m >= 1000 ? `${m / 1000}G` : `${m}M`) : "—"}
+              {m > 0 ? (m >= 1000 ? `${m / 1000}G` : `${m}M`) : "-"}
             </span>
           )
         },
@@ -91,7 +91,7 @@ export function VmSnmpCard({ vmId }: { vmId: string }) {
         header: "MAC",
         cell: ({ row }) => (
           <span className="font-mono text-xs text-muted-foreground">
-            {row.original.mac || "—"}
+            {row.original.mac || "-"}
           </span>
         ),
       },
@@ -156,7 +156,7 @@ export function VmSnmpCard({ vmId }: { vmId: string }) {
       <div className="grid gap-6 lg:grid-cols-2">
         <KvCard
           title="System"
-          rows={factRows.length ? factRows : [{ label: "—", value: dash }]}
+          rows={factRows.length ? factRows : [{ label: "-", value: dash }]}
         />
       </div>
 

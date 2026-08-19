@@ -36,7 +36,7 @@ UniqueConstraint(
 
 Same IP in two VRFs is fine.
 
-`vrf` is never set directly — it always mirrors `prefix.vrf`. Saving the address
+`vrf` is never set directly - it always mirrors `prefix.vrf`. Saving the address
 re-derives it, and moving the **prefix** into another VRF carries its addresses
 with it. To move an address between VRFs, point it at a prefix in the target VRF.
 
@@ -63,19 +63,19 @@ use it.
 
 ## Validation
 
-- Must fall inside its parent prefix's CIDR — enforced in
+- Must fall inside its parent prefix's CIDR - enforced in
   `IPAddressSerializer.validate()` (the SPA/API path): rejected with a 400 if the
   address isn't a member of the selected prefix's network, or if its family
   (v4/v6) doesn't match.
-- Must not collide with another IP in the same `(tenant, vrf)` — DB-level unique
+- Must not collide with another IP in the same `(tenant, vrf)` - DB-level unique
   constraint (failsafe).
 
-**Host-part prefill** — when adding an IP inside a prefix, the form prefills the
+**Host-part prefill** - when adding an IP inside a prefix, the form prefills the
 network portion from the prefix CIDR (the fully-fixed leading octets, e.g.
 `10.0.10.0/24` → `10.0.10.`) so the operator types only the host part. See
 `networkPrefill()` in `frontend/src/components/ip-form.tsx`.
 
 ## Related
 
-- [Prefix](prefix.md) — parent model
-- [Gateway autospawn](../features/gateway-autospawn.md) — how role=gateway happens automatically
+- [Prefix](prefix.md) - parent model
+- [Gateway autospawn](../features/gateway-autospawn.md) - how role=gateway happens automatically

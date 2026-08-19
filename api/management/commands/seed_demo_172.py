@@ -1,4 +1,4 @@
-"""Seed a realistic 172.16.0.0/16 demo network — prefixes, IPs, devices, and
+"""Seed a realistic 172.16.0.0/16 demo network - prefixes, IPs, devices, and
 **healthy** monitoring state (seeded directly, so it won't go stale like real
 pings against fake hosts).
 
@@ -121,7 +121,7 @@ class Command(BaseCommand):
             tenant = Tenant.objects.create(
                 org=org, name="Default", slug="default", color="#3b82f6"
             )
-            self.stdout.write("No tenant existed — created a default one.")
+            self.stdout.write("No tenant existed - created a default one.")
 
         # Ensure the built-in Status catalog exists before assigning status FKs.
         seed_builtin_statuses(tenant)
@@ -139,7 +139,7 @@ class Command(BaseCommand):
             defaults={
                 "status": cat.status("container", "prefix"),
                 "site": cat.site("dc-ams-02"),
-                "description": "Demo — corporate supernet",
+                "description": "Demo - corporate supernet",
             },
         )
 
@@ -152,7 +152,7 @@ class Command(BaseCommand):
                 defaults={
                     "status": cat.status("active", "prefix"),
                     "site": cat.site(spec["site"]),
-                    "description": f"Demo — {spec['name']}",
+                    "description": f"Demo - {spec['name']}",
                 },
             )
             base = cidr.split("/")[0].rsplit(".", 1)[0]
@@ -275,7 +275,7 @@ class _Catalog:
     def status(self, name, model_slug=None):
         return resolve_status(self.t, name, model_slug)
 
-    # IPs land on a status too — resolve to the built-in catalog.
+    # IPs land on a status too - resolve to the built-in catalog.
     def ipstatus(self, name):
         return resolve_status(self.t, name, "ipaddress")
 

@@ -1,4 +1,4 @@
-"""Collaborative presence — heartbeat/list endpoints over the Redis store."""
+"""Collaborative presence - heartbeat/list endpoints over the Redis store."""
 from __future__ import annotations
 
 from django.contrib.auth.models import User
@@ -20,7 +20,7 @@ class PresenceTests(APITestCase):
         self.ot, self.oid = "device", "11111111-1111-1111-1111-111111111111"
 
     def tearDown(self):
-        # Real Redis is shared with dev — drop this object's key so we don't leak.
+        # Real Redis is shared with dev - drop this object's key so we don't leak.
         presence.leave(self.tenant.id, self.ot, self.oid, user_id=self.alice.id)
         presence.leave(self.tenant.id, self.ot, self.oid, user_id=self.bob.id)
 
@@ -77,7 +77,7 @@ class PresenceTests(APITestCase):
     def test_invalid_mode_falls_back_to_viewing(self):
         res = self._beat(self.ca, mode="bogus")
         self.assertEqual(res.status_code, 200)
-        # Bob reads Alice's mode — coerced to viewing.
+        # Bob reads Alice's mode - coerced to viewing.
         self.assertEqual(self._beat(self.cb).json()["present"][0]["mode"], "viewing")
 
     def test_missing_args_400(self):

@@ -49,7 +49,7 @@ function DiffLine({ line }: { line: string }) {
 }
 
 // Reads the device's latest reported config drift (the runner POSTs actual
-// config back to /api/devices/<id>/config-state/). Read-only — Danbyte never
+// config back to /api/devices/<id>/config-state/). Read-only - Danbyte never
 // pulls from the device itself.
 export function DeviceDriftPanel({ deviceId }: { deviceId: string }) {
   const q = useQuery({
@@ -111,7 +111,7 @@ export function DeviceDriftPanel({ deviceId }: { deviceId: string }) {
               {q.data.reported_at ? (
                 <TimeCell iso={q.data.reported_at} />
               ) : (
-                <span>—</span>
+                <span>-</span>
               )}
               {q.data.template_name && (
                 <span>· template {q.data.template_name}</span>
@@ -154,7 +154,7 @@ const HISTORY_COLUMNS: SimpleColumn<DeviceConfigSnapshot>[] = [
     header: "Source",
     flex: true,
     cell: (e) => (
-      <span className="text-muted-foreground">{e.source || "—"}</span>
+      <span className="text-muted-foreground">{e.source || "-"}</span>
     ),
   },
   {

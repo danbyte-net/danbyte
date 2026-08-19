@@ -65,7 +65,7 @@ class ComplianceRule(TimestampedModel):
     )
     check_type = models.CharField(max_length=16, choices=CheckType.choices)
 
-    # Check params — interpreted by the engine per check_type:
+    # Check params - interpreted by the engine per check_type:
     #   required / forbidden / regex  → {"field": "description", "pattern": "..."}
     #   required_tag                  → {"tag": "monitored"}
     #   required_cf                   → {"cf_key": "owner"}

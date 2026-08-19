@@ -1,5 +1,5 @@
 """Enqueue all due checks. Run every minute by a systemd timer (the
-minute-resolution beat) — see services/danbyte-dispatch.timer.
+minute-resolution beat) - see services/danbyte-dispatch.timer.
 
     manage.py dispatch_checks            # enqueue onto RQ
     manage.py dispatch_checks --sync     # run inline (no worker needed)
@@ -25,7 +25,7 @@ class Command(BaseCommand):
     def handle(self, *args, **opts):
         with record_run("dispatch", "Check engine (dispatch)") as run:
             result = dispatch(sync=opts["sync"])
-            # Watched-endpoint TLS polling piggybacks the minute beat — isolated
+            # Watched-endpoint TLS polling piggybacks the minute beat - isolated
             # from the IP check engine and guarded so it can never block dispatch.
             try:
                 from monitoring.watched_endpoints import run_due_watched_endpoints

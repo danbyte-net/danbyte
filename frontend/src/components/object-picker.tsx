@@ -33,7 +33,7 @@ export interface PickerFilter {
   label: string
   /** Options list endpoint (usually a ?picker=1 shape). */
   endpoint: string
-  /** Shared react-query key — reuse the app-wide one for this endpoint. */
+  /** Shared react-query key - reuse the app-wide one for this endpoint. */
   queryKey: string
   /** Param value for an option (default: its id). Tags use the slug. */
   paramOf?: (o: never) => string
@@ -46,7 +46,7 @@ export interface PickerColumn<T> {
   cell: (row: T) => React.ReactNode
 }
 
-/** Everything type-specific about a picker — endpoints, filters, columns.
+/** Everything type-specific about a picker - endpoints, filters, columns.
  * The generic core handles the combobox, the modal, paging, debouncing,
  * exclusion, and selected-value hydration. */
 export interface ObjectPickerSpec<
@@ -89,7 +89,7 @@ export interface ObjectPickerProps {
   placeholder?: string
   searchPlaceholder?: string
   emptyText?: string
-  /** Optional trailing control — e.g. a QuickAdd "+" button. */
+  /** Optional trailing control - e.g. a QuickAdd "+" button. */
   quickAdd?: React.ReactNode
   /** Ids hidden from both the combobox and the modal table. */
   excludeIds?: string[]
@@ -99,7 +99,7 @@ export interface ObjectPickerProps {
    * context-aware caller (a CCTV floor tile) opens it already narrowed. */
   initialFilters?: Record<string, string>
   /** Query fragment (e.g. "role=<id>") whose matches sort FIRST in the
-   * combobox — context-relevant options float to the top, everything else
+   * combobox - context-relevant options float to the top, everything else
    * stays reachable below. */
   preferQuery?: string
 }
@@ -140,7 +140,7 @@ export function ObjectPicker<
       api<Paginated<O>>(withCustomField(spec.pickerEndpoint, customFieldId)),
     staleTime: 10 * 60_000,
   })
-  // Context-relevant subset (e.g. devices with the floor tile's role) — its
+  // Context-relevant subset (e.g. devices with the floor tile's role) - its
   // ids float to the top of the combobox.
   const sep = spec.pickerEndpoint.includes("?") ? "&" : "?"
   const preferred = useQuery({
@@ -177,7 +177,7 @@ export function ObjectPicker<
     ]
   }, [compact.data, exclude, spec, preferredIds])
 
-  // The compact list is only the first page — hydrate a selected id it lacks
+  // The compact list is only the first page - hydrate a selected id it lacks
   // (covers values picked via the modal or preloaded by the form).
   const missingSelected = !!value && !options.some((o) => o.value === value)
   const selected = useQuery({
@@ -256,7 +256,7 @@ function usePickerOptions(key: string, url: string, enabled: boolean) {
   })
 }
 
-/** One filter dropdown — its options come from the shared picker caches. */
+/** One filter dropdown - its options come from the shared picker caches. */
 function FilterSelect({
   filter,
   value,
@@ -311,9 +311,9 @@ function ObjectSearchDialog<T extends { id: string }>({
     initialFilters ?? {}
   )
   const [page, setPage] = useState(1)
-  // Re-seed when the context changes (a different tile role) — the dialog is
+  // Re-seed when the context changes (a different tile role) - the dialog is
   // mounted once per picker, so initial state alone would go stale. Keyed by
-  // VALUE (not object identity — callers pass fresh literals every render,
+  // VALUE (not object identity - callers pass fresh literals every render,
   // which would clobber the user's in-dialog filter edits).
   const initialKey = JSON.stringify(initialFilters ?? {})
   useEffect(() => {

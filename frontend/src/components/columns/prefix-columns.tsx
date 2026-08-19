@@ -29,8 +29,8 @@ import {
 } from "@/components/columns/actions-column"
 
 // The one source of truth for "a table of prefixes". Every surface that
-// lists prefixes — /prefixes, the VLAN/VRF/Site detail panes, the monitoring
-// configuration tab — builds its columns here so a prefix row reads
+// lists prefixes - /prefixes, the VLAN/VRF/Site detail panes, the monitoring
+// configuration tab - builds its columns here so a prefix row reads
 // identically everywhere. Page-specific columns (e.g. monitoring engine
 // bindings) are spliced around this factory's output; the shared cells are
 // never re-authored inline.
@@ -78,7 +78,7 @@ export interface PrefixColumnOpts<T extends Prefix = Prefix> {
   include?: PrefixColumnId[]
   /** Emit exactly these columns in exactly this sequence, overriding the
    * canonical order. For a surface that genuinely leads with a different
-   * column — the compliance affected-objects table puts Utilisation third. */
+   * column - the compliance affected-objects table puts Utilisation third. */
   order?: PrefixColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
@@ -86,7 +86,7 @@ export interface PrefixColumnOpts<T extends Prefix = Prefix> {
   nested?: boolean
   /** Compliance violation badges on the CIDR cell. */
   violations?: Map<string, ComplianceViolation[]>
-  /** Monitoring status per prefix id — enables the "Monitoring" column. */
+  /** Monitoring status per prefix id - enables the "Monitoring" column. */
   monitoring?: Record<string, BulkStatusEntry>
   /** One column per tenant custom field (hidden by default via Columns menu). */
   cfDefs?: CustomField[]
@@ -112,7 +112,7 @@ function monitoringTooltip(e: BulkStatusEntry): string {
   const head = `${e.monitored_ips ?? 0} monitored IP${
     e.monitored_ips === 1 ? "" : "s"
   }`
-  return parts.length ? `${head} — ${parts.join(", ")}` : head
+  return parts.length ? `${head} - ${parts.join(", ")}` : head
 }
 
 export function buildPrefixColumns<T extends Prefix = Prefix>(
@@ -135,7 +135,7 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
           : 0
         return (
           <div className="flex items-center gap-0.5">
-            {/* One CornerDownRight per depth level — additive so the tree
+            {/* One CornerDownRight per depth level - additive so the tree
                 depth reads at a glance: /16 → /24 → /26 → /30 shows as 0,
                 1, 2, 3 chevrons. */}
             {Array.from({ length: depth }, (_, i) => (
@@ -216,7 +216,7 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
           kind: "enum",
           label: "DHCP",
           get: (r: T) => (r.dhcp ? "scope" : "__none__"),
-          formatValue: (v) => ({ label: v === "scope" ? "DHCP scope" : "—" }),
+          formatValue: (v) => ({ label: v === "scope" ? "DHCP scope" : "-" }),
         },
       },
     }),
@@ -299,7 +299,7 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
       header: "Description",
       cell: ({ row }) => (
         <span className="block whitespace-nowrap text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     }),
@@ -371,7 +371,7 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
   if (opts.vrfGroupColumn) {
     cols.push({
       // Kept as a column so TanStack's grouping can key on it, but hidden
-      // by default (see initialColumnVisibility) — the VRF group banner
+      // by default (see initialColumnVisibility) - the VRF group banner
       // already prints the name above each section, so repeating it on
       // every row is dead weight. User can re-show via the Columns menu.
       id: "vrfName",

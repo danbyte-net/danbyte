@@ -15,16 +15,16 @@ also have their own list and detail pages.
 ## Physical extras
 
 Interfaces carry the bread-and-butter switch fields: **management only**
-(out-of-band — badged `mgmt` in the device's interface table), **duplex**
+(out-of-band - badged `mgmt` in the device's interface table), **duplex**
 (half/full/auto), **PoE mode + type** (PD/PSE, 802.3af→bt and passive
 variants), and **WWN** for Fibre Channel. Interface *templates* carry
-mgmt-only and PoE too, so they stamp onto new devices — and the
+mgmt-only and PoE too, so they stamp onto new devices - and the
 devicetype-library importer maps `poe_mode`/`poe_type` from library files.
 
 ### Combo / shared ports
 
 A **combo group** models a shared port with more than one physical
-connector — the classic RJ45 + SFP twin, or two management jacks where only
+connector - the classic RJ45 + SFP twin, or two management jacks where only
 one is ever live. Give each connector its own interface with the **same combo
 group** name (e.g. `mgmt` on `mgmt0` and `mgmt0-sfp`). They're badged `combo`
 in the interface table, and Danbyte keeps them **mutually exclusive**:
@@ -34,7 +34,7 @@ only the active connector reads as up.
 Set the combo group on interface *templates* too and it materialises onto
 every device of that type. It also plays with SNMP: when a drift sync adopts
 the observed admin state (the connector that's actually up), the group flips
-the twin off to match — no manual bookkeeping.
+the twin off to match - no manual bookkeeping.
 
 ## Add an interface
 
@@ -43,29 +43,29 @@ From a device's **Interfaces** tab, click **Add interface**, then fill in:
 | Field | What it's for |
 |---|---|
 | **Name** | The port name, e.g. `GigabitEthernet0/1`, `eth0`, `ae1`. |
-| **Type** | The physical/logical media — pick from the dropdown (see below). |
+| **Type** | The physical/logical media - pick from the dropdown (see below). |
 | **Speed** | Link speed. Free text with suggestions (`1G`, `10G`, `100G`, …). |
 | **MTU** | Maximum transmission unit, e.g. 1500 or 9000. |
 | **VLAN** | An optional VLAN association. |
 | **MAC address** | The port's hardware address. |
 | **Enabled** | Whether the port is administratively up. |
-| **Description** | A short free-text note — what's on the far end, why the port is reserved, a ticket reference. |
+| **Description** | A short free-text note - what's on the far end, why the port is reserved, a ticket reference. |
 
 ### Interface type
 
 The **Type** dropdown is a searchable list of standard media types, organised
 into **sub-categories**:
 
-- **Ethernet by speed** — Fast Ethernet through 800G and 1.6T, including
+- **Ethernet by speed** - Fast Ethernet through 800G and 1.6T, including
   media-specific optics (`10gbase-lr`, `100gbase-dr`, BiDi variants)
-- **Pluggable transceivers** — SFP, SFP+, SFP28, QSFP+, QSFP28, QSFP-DD,
+- **Pluggable transceivers** - SFP, SFP+, SFP28, QSFP+, QSFP28, QSFP-DD,
   OSFP, … (the *cage*, when the medium depends on the inserted optic)
 - **Backplane Ethernet, Wireless, Cellular, SONET/SDH, Fibre Channel,
   InfiniBand, Serial/WAN, Broadband, PON, Stacking**
-- **Virtual** — for logical ports (see [Virtual interfaces](virtual-interfaces.md))
+- **Virtual** - for logical ports (see [Virtual interfaces](virtual-interfaces.md))
 
 Start typing (e.g. `sfp28`, `10gbase-lr`, `qsfp`) to filter across all groups.
-Type is optional — leave it blank if you don't care to record it. The full
+Type is optional - leave it blank if you don't care to record it. The full
 taxonomy, and when to pick a fixed-media slug vs a transceiver slug:
 [Interface & cable types](type-taxonomy.md).
 
@@ -88,20 +88,20 @@ and watch the live preview:
 Names that already exist on the device are skipped, so re-running is safe.
 
 The single **Add interface** form takes a `[a-b]` range too (`eth[0-3]`), which
-is handier for a few ports since you get the full field set — type, MTU, PoE,
-VLANs, VRF, LAG — applied to all of them. Bulk add is the one to use for a whole
+is handier for a few ports since you get the full field set - type, MTU, PoE,
+VLANs, VRF, LAG - applied to all of them. Bulk add is the one to use for a whole
 switch face: it does the work server-side, keeps zero-padding, and skips
 existing names. See
 [Adding many components at once](devices.md#adding-many-components-at-once).
 
 ## Edit many at once
 
-Tick the rows you want and a bar floats up from the bottom — **Edit** opens a
+Tick the rows you want and a bar floats up from the bottom - **Edit** opens a
 dialog that applies your changes to every selected interface.
 
 Each field starts on **Keep current** and is left untouched unless you change it,
 so you can retype one field across 48 ports without disturbing the rest.
-Choice-backed fields — type, 802.1Q mode, duplex — are searchable dropdowns
+Choice-backed fields - type, 802.1Q mode, duplex - are searchable dropdowns
 listing the real values, grouped the same way as the single-interface form; each
 also offers a **Clear** row to blank the field. Free-text fields (speed,
 description) pair a checkbox with an input: tick the box to arm the field.
@@ -114,12 +114,12 @@ type's component templates.
 On the device's **Interfaces** tab, each row shows the name, type, enabled state,
 speed, VLAN, cable count, any **IP addresses** attached to it, and the
 description. Sub-interfaces are indented under their parent, and aggregate
-members show their LAG — see
+members show their LAG - see
 [Virtual & aggregate interfaces](virtual-interfaces.md).
 
 ## Attaching IP addresses
 
-Two buttons on each interface row — **+ Add IP** and **Assign IP** — let you put
+Two buttons on each interface row - **+ Add IP** and **Assign IP** - let you put
 an address on the port without leaving the page. See
 [Assigning IP addresses](ip-assignment.md).
 
@@ -131,7 +131,7 @@ it, and a cable trace. From here you can also add or assign IPs.
 
 ## VM interfaces
 
-Virtual machines have interfaces too — managed from a VM's **Interfaces** tab —
+Virtual machines have interfaces too - managed from a VM's **Interfaces** tab -
 and they carry the same L2/L3 context as device ports:
 
 | Field | What it records |
@@ -142,5 +142,5 @@ and they carry the same L2/L3 context as device ports:
 | **VRF** | The VRF the interface routes in. |
 
 So a VLAN-trunked or VRF-scoped VM NIC is modelled exactly like a physical one
-(and imports from NetBox without data loss). VM interfaces don't cable or nest —
+(and imports from NetBox without data loss). VM interfaces don't cable or nest -
 no type, LAG, parent, or bridge.

@@ -14,14 +14,14 @@ import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
 // The one source of truth for "a table of aggregates". Every surface that
-// lists aggregates — /aggregates and the RIR detail page's aggregates pane —
+// lists aggregates - /aggregates and the RIR detail page's aggregates pane -
 // builds its columns here so an aggregate row reads identically everywhere.
 // Page-specific columns are spliced around this factory's output; the shared
 // cells are never re-authored inline.
 //
 // The /aggregates page drives its own hand-rolled FilterRail (RIR + tags)
 // rather than `useTableFilters`, so these columns intentionally carry no facet
-// meta — adding it would silently double up that page's rail.
+// meta - adding it would silently double up that page's rail.
 
 export type AggregateColumnId =
   | "numid"
@@ -51,9 +51,9 @@ export interface AggregateColumnOpts<T extends Aggregate = Aggregate> {
   include?: AggregateColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
-  /** Extra class slotted into the prefix link — the /aggregates list renders
+  /** Extra class slotted into the prefix link - the /aggregates list renders
    * it a shade smaller than the table's body text. */
   prefixClass?: string
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
@@ -129,7 +129,7 @@ export function buildAggregateColumns<T extends Aggregate = Aggregate>(
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     }),

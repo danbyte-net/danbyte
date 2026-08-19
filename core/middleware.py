@@ -4,7 +4,7 @@ from __future__ import annotations
 from django.core.cache import cache
 
 _IDLE_CACHE_KEY = "deployment:session_idle_timeout_minutes"
-_IDLE_CACHE_TTL = 60  # seconds — a settings change takes effect within a minute
+_IDLE_CACHE_TTL = 60  # seconds - a settings change takes effect within a minute
 
 
 def idle_timeout_minutes() -> int:
@@ -16,7 +16,7 @@ def idle_timeout_minutes() -> int:
 
         try:
             val = int(DeploymentSettings.load().session_idle_timeout_minutes or 0)
-        except Exception:  # noqa: BLE001 — never let this break a request
+        except Exception:  # noqa: BLE001 - never let this break a request
             val = 0
         cache.set(_IDLE_CACHE_KEY, val, _IDLE_CACHE_TTL)
     return val

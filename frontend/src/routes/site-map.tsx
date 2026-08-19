@@ -97,7 +97,7 @@ import { buildFovLayer, type FovSource } from "@/components/site-map/fov-layer"
 import { useMe } from "@/lib/use-me"
 import { cn } from "@/lib/utils"
 
-// The geographic floor plan. Same shell as /floorplans/$id — h-14 header with
+// The geographic floor plan. Same shell as /floorplans/$id - h-14 header with
 // View|Edit tabs + search + view tools, left palette rail in edit mode, the
 // canvas replaced by a Leaflet map, right inspector when something is
 // selected, and an "On this map" objects sidebar on the far right. Tiles come
@@ -105,9 +105,9 @@ import { cn } from "@/lib/utils"
 // default, per their usage policies: exact HTTPS URLs, visible attribution).
 
 export const Route = createFileRoute("/site-map")({
-  // ?focus=<deviceId> — arrive centered on a device (the "Show on site map"
+  // ?focus=<deviceId> - arrive centered on a device (the "Show on site map"
   // quick button on device detail pages).
-  // ?focus=<deviceId> · ?trace=<cableId> — arrive centered on a device, or
+  // ?focus=<deviceId> · ?trace=<cableId> - arrive centered on a device, or
   // with a routed cable highlighted (the "Show on site map" cable button).
   validateSearch: (
     s: Record<string, unknown>
@@ -168,7 +168,7 @@ function siteIcon(s: SiteMapSite, selected = false): L.DivIcon {
 }
 
 function deviceIcon(d: SiteMapDevice, selected = false): L.DivIcon {
-  // The floorplan badge — a tinted square with the role colour (a centred dot,
+  // The floorplan badge - a tinted square with the role colour (a centred dot,
   // since device roles carry no icon). Same visual language as the palette,
   // the sidebar, and free markers.
   const badge = renderToStaticMarkup(<TileBadge color={d.role?.color} />)
@@ -184,7 +184,7 @@ function deviceIcon(d: SiteMapDevice, selected = false): L.DivIcon {
 function freeMarkerIcon(m: SiteMapMarker, selected = false): L.DivIcon {
   const label = m.label || m.device?.name || m.type?.name || ""
   // The same TileBadge as the palette/sidebar, rendered to static HTML for
-  // the divIcon — a marker on the map looks identical to its sidebar row.
+  // the divIcon - a marker on the map looks identical to its sidebar row.
   // The .sm-badge wrapper gives the ~20% tint a solid backdrop over tiles.
   const badge = renderToStaticMarkup(
     <TileBadge color={m.type?.color} icon={m.type?.icon} />
@@ -319,7 +319,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   const canEditAny =
     data.sites.some((s) => s.can_edit) || canDo("device", "change")
 
-  // Shared popover config — the SAME effective floorplan-popover settings the
+  // Shared popover config - the SAME effective floorplan-popover settings the
   // floor-plan canvas uses, so which linked-device fields show on a device
   // popover is consistent between the floor plan and the site map.
   const popoverCfg = useQuery({
@@ -408,7 +408,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   const reshapeRef = useRef<L.LayerGroup | null>(null)
   const drawnCablesRef = useRef<L.LayerGroup | null>(null)
 
-  // Every cable with two placeable ends — drawn whether or not it's routed.
+  // Every cable with two placeable ends - drawn whether or not it's routed.
   const cablesQuery = useQuery({
     queryKey: ["site-map-cables"],
     queryFn: () => api<{ cables: SiteMapCable[] }>("/api/site-map/cables/"),
@@ -663,7 +663,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     mapRef.current = map
     setMapReady(true)
 
-    // Detect CSP-blocked tiles for BOTH basemaps (street + satellite) — the
+    // Detect CSP-blocked tiles for BOTH basemaps (street + satellite) - the
     // reverse proxy's img-src must allow each tile host, and a stale nginx
     // config otherwise fails silently with a gray map.
     const tileHosts = [data.tiles.url, data.tiles.satellite.url]
@@ -692,7 +692,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Basemap — street tiles or satellite imagery, swapped in place.
+  // Basemap - street tiles or satellite imagery, swapped in place.
   const baseRef = useRef<L.TileLayer | null>(null)
   useEffect(() => {
     const map = mapRef.current
@@ -752,7 +752,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
 
   // Every cable, drawn: routed cables follow their route geometry, un-routed
   // ones a curved chord. Highlight thickens members, dims the rest. Toggling
-  // the "routes" layer hides the routed geometry but not the raw cables — so
+  // the "routes" layer hides the routed geometry but not the raw cables - so
   // cabling is always visible.
   useEffect(() => {
     const map = mapRef.current
@@ -770,13 +770,13 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     drawnCablesRef.current = layer
   }, [drawnCables, highlightCableIds])
 
-  // Arriving with ?trace=<cableId>: highlight the cable and fit the view —
+  // Arriving with ?trace=<cableId>: highlight the cable and fit the view -
   // once, when the data lands.
   const tracedRef = useRef<string | null>(null)
   useEffect(() => {
     if (!trace || tracedRef.current === trace) return
     const rc = drawnCables.find((c) => c.id === trace)
-    if (!rc) return // cables still loading — effect re-runs
+    if (!rc) return // cables still loading - effect re-runs
     tracedRef.current = trace
     setHighlightCableIds(new Set([trace]))
     const carrier = routes.find((r) => r.cables.some((c) => c.id === trace))
@@ -822,7 +822,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     else map.doubleClickZoom.enable()
   }, [drawWaypoints])
 
-  // FOV cones — devices + free markers, live drafts overlaid.
+  // FOV cones - devices + free markers, live drafts overlaid.
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
@@ -1054,7 +1054,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   }
 
   // Inspector slots. FOV isn't a placement action, so it's editable whenever
-  // you select a camera you can change — not only in Edit mode.
+  // you select a camera you can change - not only in Edit mode.
   const deviceFovEditor =
     selDevice?.can_edit && selDevice.has_fov ? (
       <FovEditor
@@ -1258,7 +1258,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
               </p>
               <p className="mt-1 text-muted-foreground">
                 The reverse proxy's <span className="font-mono">img-src</span>{" "}
-                directive doesn't allow the tile server — see{" "}
+                directive doesn't allow the tile server - see{" "}
                 <a
                   href="/docs/features/site-map/"
                   target="_blank"
@@ -1284,7 +1284,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
               <span>
                 Click the map to place{" "}
                 <span className="font-medium">{placing.name}</span>
-                {placing.kind === "marker" && " — stays armed"} · Esc to cancel
+                {placing.kind === "marker" && " - stays armed"} · Esc to cancel
               </span>
               <button
                 onClick={() => setPlacing(null)}
@@ -1460,7 +1460,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
 
 /** After stamping a marker: name it and (optionally) link the real device.
  * Role markers open the picker pre-filtered to that role. The name is
- * optional — an unnamed marker displays its linked device's name, then the
+ * optional - an unnamed marker displays its linked device's name, then the
  * type name. */
 function MarkerLinkDialog({
   prompt,
@@ -1490,7 +1490,7 @@ function MarkerLinkDialog({
         <div className="grid gap-4">
           <Field
             label="Name"
-            hint="Optional — defaults to the linked device's name"
+            hint="Optional - defaults to the linked device's name"
           >
             <Input
               autoFocus
@@ -1532,7 +1532,7 @@ function MarkerLinkDialog({
   )
 }
 
-/** Header search — jump to a site / device / marker, like the plan's search. */
+/** Header search - jump to a site / device / marker, like the plan's search. */
 function MapSearch({
   sites,
   devices,
@@ -1824,7 +1824,7 @@ function deviceFieldRow(
 }
 
 // The device detail block (front image + the configured field rows), shared by
-// a placed device pin and a marker linked to a device — so both show the same
+// a placed device pin and a marker linked to a device - so both show the same
 // details the floor-plan popover config sets.
 function DeviceDetails({
   device: d,
@@ -1923,7 +1923,7 @@ function MarkerPopover({
   onClose,
 }: {
   marker: SiteMapMarker
-  /** Shared floor-plan popover config — a marker linked to a device shows the
+  /** Shared floor-plan popover config - a marker linked to a device shows the
    * same device details a device pin does. */
   fields?: string[]
   onClose: () => void

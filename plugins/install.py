@@ -1,4 +1,4 @@
-"""Offline plugin install — extract an uploaded plugin archive into the import
+"""Offline plugin install - extract an uploaded plugin archive into the import
 path and record it in the manifest.
 
 For airgapped deployments that can't ``pip install`` from PyPI: a superuser
@@ -7,7 +7,7 @@ into ``settings.PLUGIN_UPLOAD_DIR`` (a writable dir on ``sys.path``) and its
 module name written to ``installed.json``. The plugin is discovered on the next
 restart (Apply changes), exactly like a ``PLUGINS`` entry.
 
-SECURITY: this installs code that runs in-process — it is remote code execution
+SECURITY: this installs code that runs in-process - it is remote code execution
 by design and is gated to superusers at the API layer. Extraction is hardened
 against path traversal, oversized archives, and too many members.
 """
@@ -46,7 +46,7 @@ def uploaded_names() -> list[str]:
         return []
     try:
         return list(json.loads(p.read_text() or "{}").get("plugins", []))
-    except Exception:  # noqa: BLE001 — a corrupt manifest is not fatal
+    except Exception:  # noqa: BLE001 - a corrupt manifest is not fatal
         return []
 
 
@@ -68,7 +68,7 @@ def _safe_extract(archive: Path, dest: Path) -> None:
                 if sum(m.size for m in members) > MAX_UNCOMPRESSED_BYTES:
                     raise PluginInstallError("archive too large when uncompressed")
                 # filter="data" (Python 3.12+) blocks path traversal, absolute
-                # paths, and special files — raises on anything unsafe.
+                # paths, and special files - raises on anything unsafe.
                 tf.extractall(dest, filter="data")
         elif name.endswith(".zip"):
             with zipfile.ZipFile(archive) as zf:
@@ -86,7 +86,7 @@ def _safe_extract(archive: Path, dest: Path) -> None:
                 zf.extractall(dest)
         else:
             raise PluginInstallError(
-                "unsupported archive type — use .tar.gz, .tgz, .tar or .zip"
+                "unsupported archive type - use .tar.gz, .tgz, .tar or .zip"
             )
     except PluginInstallError:
         raise

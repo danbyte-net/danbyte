@@ -92,7 +92,7 @@ function DeviceFieldsCard() {
   return (
     <SettingsCard
       title="Device fields"
-      description="Choose which optional built-in fields appear on the device form and detail page. Hidden fields are simply omitted — existing values are kept and shown again if you re-enable the field."
+      description="Choose which optional built-in fields appear on the device form and detail page. Hidden fields are simply omitted - existing values are kept and shown again if you re-enable the field."
       onSave={() => save.mutate()}
       dirty={JSON.stringify(fields) !== JSON.stringify(data)}
       saving={save.isPending}

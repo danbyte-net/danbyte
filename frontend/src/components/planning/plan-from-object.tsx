@@ -29,7 +29,7 @@ import {
  * "Plan a change" from the object's own page.
  *
  * The other entry point is the task's linked-object row, but operators live on
- * device pages — they notice the thing that needs changing there, not on a board.
+ * device pages - they notice the thing that needs changing there, not on a board.
  * Pick the task the work belongs to and this drops straight into the object's
  * edit form in plan mode. When no existing task fits, the "+" flow creates one
  * on the spot: the new task auto-links this object, then opens the same editor.

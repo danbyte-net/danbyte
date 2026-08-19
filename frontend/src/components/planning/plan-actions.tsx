@@ -22,7 +22,7 @@ const DEVICE_CHILDREN: { label: string; to: string }[] = [
  * Planning is editing: this just navigates to the object's **own** edit form
  * with the plan params attached, so the operator gets every field, the real
  * validation and the familiar layout. Nothing is offered for a type whose form
- * hasn't been migrated onto `useSaveObject` yet — otherwise saving there would
+ * hasn't been migrated onto `useSaveObject` yet - otherwise saving there would
  * write to the live object while the banner promised it wouldn't. */
 export function PlanActions({
   objectType,

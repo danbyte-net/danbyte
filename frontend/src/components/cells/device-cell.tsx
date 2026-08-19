@@ -33,7 +33,7 @@ export function DeviceCell({
   className,
 }: DeviceCellProps) {
   if (!device) {
-    return <span className="text-muted-foreground">—</span>
+    return <span className="text-muted-foreground">-</span>
   }
   const name = linked ? (
     <Link to="/devices/$id" params={{ id: device.id }} className="link">

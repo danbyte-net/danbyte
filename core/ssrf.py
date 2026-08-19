@@ -7,13 +7,13 @@ Resolves the host and rejects loopback / RFC1918 / link-local /
 admin can't point egress at internal services and read the response back.
 
 Internal targets that are *legitimately* needed (e.g. an on-prem automation
-runner or SMTP relay) are allow-listed via ``DANBYTE_SSRF_ALLOWLIST`` — a
+runner or SMTP relay) are allow-listed via ``DANBYTE_SSRF_ALLOWLIST`` - a
 comma-separated list of CIDRs/IPs whose resolved addresses are permitted.
 Empty by default.
 
 Two entry points:
 - URL callers use ``safe_request`` / ``safe_post`` / ``safe_get`` instead of
-  ``requests.*`` — they validate the host, force ``allow_redirects=False`` (a
+  ``requests.*`` - they validate the host, force ``allow_redirects=False`` (a
   redirect could bounce to an internal address), AND **pin the connection to
   the validated IP** so a DNS-rebinding flip between the check and the connect
   can't reach an internal address (TOCTOU).
@@ -53,7 +53,7 @@ def _allowlist() -> tuple:
 def _db_allowlist() -> tuple:
     """Deployment-admin-managed allowlist (Settings → Deployment → General).
 
-    Read fresh per check — guards run rarely and the singleton read is one
+    Read fresh per check - guards run rarely and the singleton read is one
     indexed query, while caching would make the setting appear to "not work"
     until a restart. Deployment tier on purpose: a TENANT admin must never be
     able to widen the guard (that's who it protects against).
@@ -62,7 +62,7 @@ def _db_allowlist() -> tuple:
         from core.models import DeploymentSettings
 
         entries = DeploymentSettings.load().ssrf_allowlist or []
-    except Exception:  # noqa: BLE001 — DB not ready (migrations, early boot)
+    except Exception:  # noqa: BLE001 - DB not ready (migrations, early boot)
         return ()
     nets = []
     for part in entries:
@@ -138,7 +138,7 @@ def assert_public_host(host: str, port: int) -> None:
 
 class _PinnedSNIAdapter(HTTPAdapter):
     """Verifies TLS against the original hostname while the URL connects to a
-    pre-validated IP — so cert checking still works after we rewrite the URL's
+    pre-validated IP - so cert checking still works after we rewrite the URL's
     host to the pinned address."""
 
     def __init__(self, server_hostname: str, **kw):

@@ -18,7 +18,7 @@ export interface SuggestInputProps extends Omit<
 
 /**
  * A text field that offers the common values for it in a dropdown, while
- * staying free text — the operator can always type something the list has
+ * staying free text - the operator can always type something the list has
  * never heard of.
  *
  * This exists because `<datalist>` doesn't: the browser draws that popup
@@ -41,7 +41,7 @@ export function SuggestInput({
   const wrapRef = useRef<HTMLDivElement>(null)
 
   // Typing narrows the list. Once the value IS one of the options, offer them
-  // all again — the operator is changing their mind, not still searching.
+  // all again - the operator is changing their mind, not still searching.
   const matches = useMemo(() => {
     const q = value.trim().toLowerCase()
     if (!q || suggestions.some((s) => s.toLowerCase() === q)) return suggestions
@@ -108,7 +108,7 @@ export function SuggestInput({
               setOpen(true)
               setActive(-1)
             }}
-            // Click, type or ArrowDown opens it — not plain focus, or tabbing
+            // Click, type or ArrowDown opens it - not plain focus, or tabbing
             // through a form would pop a list open at every such field.
             onClick={(e) => {
               onClick?.(e)
@@ -150,7 +150,7 @@ export function SuggestInput({
           <button
             key={s}
             type="button"
-            // Keep the caret in the field — mousedown would blur it first.
+            // Keep the caret in the field - mousedown would blur it first.
             onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => setActive(i)}
             onClick={() => pick(s)}

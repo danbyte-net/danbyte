@@ -1,5 +1,5 @@
 [Unit]
-Description=Danbyte — drive SSH-transport Outposts (run their checks over SSH)
+Description=Danbyte - drive SSH-transport Outposts (run their checks over SSH)
 After=network.target
 Wants=danbyte-infra.service
 

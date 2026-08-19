@@ -54,7 +54,7 @@ function triggers(w: Webhook): string {
   return (
     [w.on_create && "create", w.on_update && "update", w.on_delete && "delete"]
       .filter(Boolean)
-      .join(" · ") || "—"
+      .join(" · ") || "-"
   )
 }
 
@@ -115,7 +115,7 @@ function WebhooksPage() {
           const ts = row.original.object_types
           return (
             <span className="font-mono text-[11px] text-muted-foreground">
-              {ts.includes("*") ? "All" : ts.join(", ") || "—"}
+              {ts.includes("*") ? "All" : ts.join(", ") || "-"}
             </span>
           )
         },
@@ -138,7 +138,7 @@ function WebhooksPage() {
               HMAC
             </Badge>
           ) : (
-            <span className="text-xs text-muted-foreground">—</span>
+            <span className="text-xs text-muted-foreground">-</span>
           ),
       },
       {

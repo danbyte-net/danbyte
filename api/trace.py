@@ -1,11 +1,11 @@
 """End-to-end cable trace.
 
-A generic BFS over *termination points* — any of the eight cable-termination
+A generic BFS over *termination points* - any of the eight cable-termination
 kinds (see api/cable_points.py). Two steps drive it:
 
-  * ``cable_step``   — from a point, find its cable and the opposite-end points
+  * ``cable_step``   - from a point, find its cable and the opposite-end points
                        (handles breakout fan-out).
-  * ``through_step`` — follow an internal pass-through (patch-panel front↔rear,
+  * ``through_step`` - follow an internal pass-through (patch-panel front↔rear,
                        PDU outlet→inlet). Interfaces, console, aux, and PDU
                        inlets are leaves.
 
@@ -60,7 +60,7 @@ def _cable_step(p):
 
 
 def _through_steps(p):
-    """Every internal pass-through partner — empty for leaves / unmapped
+    """Every internal pass-through partner - empty for leaves / unmapped
     strands, one for 1:1 pass-throughs, N for a splitter rear port (the PON
     fan-out). Delegates to the shared strand walker."""
     position = p[2] if p[0] == "rear_port" else 1
@@ -152,7 +152,7 @@ def trace(starts):
         # Expand the popped point's own pass-throughs too. For 1:1 panels
         # this only re-finds where we came from (processed → no-op), but a
         # splitter rear port reached from ONE output must still fan back to
-        # every sibling output — the shared-medium PON-tree semantic.
+        # every sibling output - the shared-medium PON-tree semantic.
         for thru in _through_steps(p):
             add_point(thru)
             add_through_edge(p, thru)

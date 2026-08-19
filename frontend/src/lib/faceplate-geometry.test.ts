@@ -102,7 +102,7 @@ describe("renderTemplateName", () => {
   })
 })
 
-describe("autoLayout — C9500-48Y4C shape", () => {
+describe("autoLayout - C9500-48Y4C shape", () => {
   const ports = [
     ...Array.from({ length: 48 }, (_, i) => ({
       id: `sfp-${i + 1}`,

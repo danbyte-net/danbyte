@@ -19,7 +19,7 @@ const RAIL_H = 30
 const RAIL_GAP = 22 // room for the interface label sitting above each rail
 const DROP = 26 // space between the box and the first rail
 
-// Shades of the Danbyte blue — zone colours (firewall semantics) override.
+// Shades of the Danbyte blue - zone colours (firewall semantics) override.
 const PALETTE = [
   "#1d63ed",
   "#0ea5e9",
@@ -87,7 +87,7 @@ export function VmTopologyCard({
       </h2>
       <div className="overflow-x-auto rounded-lg border border-border bg-muted/10 p-2">
         <svg width={W} height={height} style={{ fontFamily: "inherit" }}>
-          {/* legs — ribbon-cable lanes: each attachment runs box → its rail in
+          {/* legs - ribbon-cable lanes: each attachment runs box → its rail in
               its own parallel lane, labelled above the rail it plugs into */}
           {conns.map(({ iface }, i) => {
             const color = colorFor(i)
@@ -106,7 +106,7 @@ export function VmTopologyCard({
             )
           })}
 
-          {/* interface labels — drawn after the lanes and placed clear of the
+          {/* interface labels - drawn after the lanes and placed clear of the
               whole ribbon, so a lane never crosses its own or another label */}
           {conns.map(({ iface }, i) => (
             <text

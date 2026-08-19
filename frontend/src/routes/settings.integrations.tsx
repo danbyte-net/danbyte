@@ -27,9 +27,9 @@ const CARDS: {
   {
     key: "dhcp_sync_enabled",
     label: "Windows DHCP sync",
-    info: "Talks to the DhcpServer PowerShell module over WinRM — no agent on the server. The connecting account should be in the DHCP Administrators group, not a domain admin.",
+    info: "Talks to the DhcpServer PowerShell module over WinRM - no agent on the server. The connecting account should be in the DHCP Administrators group, not a domain admin.",
     description:
-      "Sync scopes, exclusion ranges and reservations from Windows DHCP servers into IPAM — and push reservations you create here back out.",
+      "Sync scopes, exclusion ranges and reservations from Windows DHCP servers into IPAM - and push reservations you create here back out.",
   },
   {
     key: "dns_sync_enabled",
@@ -86,7 +86,7 @@ function IntegrationsSettingsPage() {
         <h1 className="text-base font-medium">Integrations</h1>
         <p className="mt-1 max-w-prose text-xs text-muted-foreground">
           External systems Danbyte keeps in sync with. Everything is off until
-          you enable it here — a disabled integration hides its pages and stops
+          you enable it here - a disabled integration hides its pages and stops
           its scheduled syncs for this tenant.
         </p>
       </div>

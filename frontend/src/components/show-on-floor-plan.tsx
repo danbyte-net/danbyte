@@ -7,7 +7,7 @@ import type { FloorPlanTile, Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 
 /**
- * "Show on floor plan" — links to the plan where this rack/device is placed.
+ * "Show on floor plan" - links to the plan where this rack/device is placed.
  * For a device, falls back to its rack's placement ("via rack") when the
  * device itself isn't tiled. Renders nothing when nothing is placed.
  */

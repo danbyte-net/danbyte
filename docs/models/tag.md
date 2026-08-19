@@ -7,7 +7,7 @@ icon: lucide/tag
 User-defined label, optionally colored. **Tenant-scoped**: a tag belongs
 to the tenant that created it, so tenants never see each other's tag
 names. Rows with `tenant = NULL` are legacy deployment-globals from
-before scoping — visible to every tenant, writable only by superusers.
+before scoping - visible to every tenant, writable only by superusers.
 Under [enhanced site separation](../access/site-separation.md) a tag can
 additionally be local to one site (`owning_site`).
 
@@ -47,7 +47,7 @@ amber gets black text, emerald gets white).
 
 ## TaggedItem
 
-Custom `core.TaggedItem(GenericUUIDTaggedItemBase)` — needed because all our
+Custom `core.TaggedItem(GenericUUIDTaggedItemBase)` - needed because all our
 content models have UUID PKs and taggit's default `IntegerField` `object_id`
 would overflow.
 

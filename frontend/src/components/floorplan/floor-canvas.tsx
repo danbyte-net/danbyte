@@ -8,7 +8,7 @@ import type {
   FloorPlanTray,
   FloorPlanWall,
 } from "@/lib/api"
-// Pure geometry shared with the 3D room (world.ts imports no three.js) — the
+// Pure geometry shared with the 3D room (world.ts imports no three.js) - the
 // same span math shapes both views, so a door gap can't sit in two places.
 import {
   WALL_THICKNESS_M,
@@ -29,7 +29,7 @@ import { routeCable } from "./cable-route"
 import type { Pt } from "./cable-route"
 import { usePanZoom } from "./use-pan-zoom"
 
-/** Default tray color when the user hasn't picked one — neutral gray. */
+/** Default tray color when the user hasn't picked one - neutral gray. */
 const TRAY_DEFAULT = "#71717a"
 
 /** Imperative handle for parent-driven camera moves (fit, focus a tile). */
@@ -43,7 +43,7 @@ export interface FloorCanvasApi {
 /** Pixel size of one grid cell in world coordinates. */
 export const CELL = 40
 
-/** A normalized palette entry — a FloorTileType or a DeviceRole. */
+/** A normalized palette entry - a FloorTileType or a DeviceRole. */
 export interface PaletteEntry {
   key: string // "tt:<id>" | "role:<id>"
   kind: "tile_type" | "role"
@@ -65,7 +65,7 @@ export function tileName(t: FloorPlanTile): string {
   return t.label || t.linked?.name || ""
 }
 
-/** Zone tiles paint the background — they render under normal tiles and are
+/** Zone tiles paint the background - they render under normal tiles and are
  * exempt from the no-overlap rule. */
 export function tileIsZone(t: FloorPlanTile): boolean {
   return t.tile_type?.is_zone ?? false
@@ -156,7 +156,7 @@ export interface FloorCanvasProps {
   onCreateRect?: (rect: { x: number; y: number; w: number; h: number }) => void
   /** Viewer: tile clicked (also fired in editor on plain click, after select). */
   onOpenTile?: (tile: FloorPlanTile) => void
-  /** Pointer entered/left a tile — `at` is screen-space relative to the canvas
+  /** Pointer entered/left a tile - `at` is screen-space relative to the canvas
    * wrapper, for anchoring the tile popover. Fired only on boundary crossings
    * (never per pointermove), so it can't regress canvas panning. */
   onHoverTile?: (
@@ -165,7 +165,7 @@ export interface FloorCanvasProps {
   ) => void
   /** The element html-to-image snapshots for PNG export. */
   exportRef?: React.RefObject<HTMLDivElement | null>
-  /** Live per-tile metrics from /state/ — paints rack utilization bars and
+  /** Live per-tile metrics from /state/ - paints rack utilization bars and
    * monitoring rings. */
   liveState?: FloorPlanLiveState | null
   /** Auto-size labels to fit their tile instead of a fixed 11px + ellipsis. */
@@ -189,18 +189,18 @@ export interface FloorCanvasProps {
   selectedAreaId?: string | null
   /** Structure mode: an area outline was clicked. */
   onSelectArea?: (id: string | null) => void
-  /** Structure mode: an area was dragged/resized — persist its new rect. */
+  /** Structure mode: an area was dragged/resized - persist its new rect. */
   onAreaRectChange?: (
     id: string,
     rect: { x: number; y: number; width: number; height: number }
   ) => void
   // ── Walls (Structure mode) ─────────────────────────────────────────────
-  /** Wall polylines with door openings — drawn in ALL modes; interactive
+  /** Wall polylines with door openings - drawn in ALL modes; interactive
    * (select / move / place doors) only in Structure mode. */
   walls?: FloorPlanWall[]
   selectedWallId?: string | null
   onSelectWall?: (id: string | null) => void
-  /** Structure mode: a whole-wall drag ended — persist the translated points. */
+  /** Structure mode: a whole-wall drag ended - persist the translated points. */
   onMoveWall?: (id: string, points: [number, number][]) => void
   /** "Add door" is armed: the next click on a wall segment drops an opening. */
   doorArmed?: boolean
@@ -268,7 +268,7 @@ type DragState =
 /**
  * The rendering core: one `<svg>` with a pan/zoom `<g>`, a cell `<pattern>`
  * grid, the background blueprint, and one `<g>` per tile. Orientation is
- * grid-honest — the rect stays axis-aligned (rotating swaps width/height at
+ * grid-honest - the rect stays axis-aligned (rotating swaps width/height at
  * the editor level) and only the icon rotates, so a rotated aisle still
  * occupies exactly the cells it claims.
  */
@@ -356,7 +356,7 @@ export function FloorCanvas({
   const editing = trayEditMode
   const gw = plan.grid_width * CELL
   const gh = plan.grid_height * CELL
-  // Cable mode draws trays; Structure mode draws walls — same polyline rig.
+  // Cable mode draws trays; Structure mode draws walls - same polyline rig.
   const drawing = (mode === "cable" || mode === "structure") && !!drawPoints
 
   // Fit the grid on first mount (and when the plan changes identity).
@@ -522,7 +522,7 @@ export function FloorCanvas({
       onOpenTile?.(tile)
       return
     }
-    // Ctrl/⌘-click builds the multi-selection instead of moving — the bulk
+    // Ctrl/⌘-click builds the multi-selection instead of moving - the bulk
     // bar (orientation, delete) works the swept set.
     if ((e.ctrlKey || e.metaKey) && onToggleSelect) {
       onToggleSelect(tile.id)
@@ -559,7 +559,7 @@ export function FloorCanvas({
     e.currentTarget.setPointerCapture(e.pointerId)
   }
 
-  // Raw pointer position in cell units (no snapping) — for whole-tray moves.
+  // Raw pointer position in cell units (no snapping) - for whole-tray moves.
   const toCellRaw = (e: React.PointerEvent): [number, number] => {
     const w = toWorld(svgRef.current!, e.clientX, e.clientY)
     return [w.x / CELL, w.y / CELL]
@@ -765,7 +765,7 @@ export function FloorCanvas({
       }
     } else {
       d.end = c
-      // Imperative preview — avoids re-rendering every tile per pointermove.
+      // Imperative preview - avoids re-rendering every tile per pointermove.
       const r = paintRect(d.start, d.end)
       const el = paintPreview.current
       if (el) {
@@ -855,13 +855,13 @@ export function FloorCanvas({
   const reportHover = (tile: FloorPlanTile, e: React.PointerEvent) => {
     const rect = svgRef.current?.getBoundingClientRect()
     if (!rect) return
-    // Suppress while dragging/panning/drawing — a popover chasing the cursor
+    // Suppress while dragging/panning/drawing - a popover chasing the cursor
     // mid-drag is noise.
     if (drag.current || drawing) return
     onHoverTile?.(tile, { x: e.clientX - rect.left, y: e.clientY - rect.top })
   }
 
-  // Cables whose A↔B run touches a tile — for "trace cables here".
+  // Cables whose A↔B run touches a tile - for "trace cables here".
   const cablesTouching = (tileId: string) =>
     cablePaths
       .filter(
@@ -873,7 +873,7 @@ export function FloorCanvas({
     <div
       ref={exportRef}
       // Marks the canvas so overlays (the tile popover) can tell a click on the
-      // plan — which their own select/pin logic already handles — from a genuine
+      // plan - which their own select/pin logic already handles - from a genuine
       // click elsewhere in the app.
       data-floor-canvas=""
       className={cn(
@@ -943,7 +943,7 @@ export function FloorCanvas({
             pointerEvents="none"
           />
 
-          {/* Raised-floor areas — construction context under everything.
+          {/* Raised-floor areas - construction context under everything.
               Interactive (selectable) only in Structure mode. */}
           {(raisedFloors ?? []).map((raw) => {
             // While dragging/resizing, render the draft rect instead.
@@ -952,7 +952,7 @@ export function FloorCanvas({
                 ? { ...raw, ...areaDraft }
                 : raw
             const labelText = `${a.label || "Raised floor"} · ${a.plenum_mm} mm`
-            // ~5.6 px/char at 10px — hide the label when it would spill past
+            // ~5.6 px/char at 10px - hide the label when it would spill past
             // the area's edge (the rail always shows the full name).
             const labelFits = a.width * CELL - 12 >= labelText.length * 5.6
             return (
@@ -1047,7 +1047,7 @@ export function FloorCanvas({
             ...tiles.filter(tileIsZone),
             ...tiles.filter((tl) => !tileIsZone(tl)),
           ].map((tile) => (
-            // In Structure mode tiles are context, not targets — they pass
+            // In Structure mode tiles are context, not targets - they pass
             // pointer events through so an area underneath stays reachable
             // (and movable) even when fully covered by racks.
             <g
@@ -1065,7 +1065,7 @@ export function FloorCanvas({
                 live={liveState?.tiles[tile.id]}
                 onPointerDown={(e) => handleTileDown(tile, e)}
                 onResizeDown={(e) => handleResizeDown(tile, e)}
-                // In Cables mode a double-click finishes a tray draw — don't
+                // In Cables mode a double-click finishes a tray draw - don't
                 // also open the tile's deep-view underneath it.
                 onDoubleClick={() => {
                   if (mode !== "cable") onOpenTile?.(tile)
@@ -1086,7 +1086,7 @@ export function FloorCanvas({
               )
               .map((tl) => <FovCone key={`fov-${tl.id}`} tile={tl} />)}
 
-          {/* Walls — the structural print, in every mode: solid spans broken
+          {/* Walls - the structural print, in every mode: solid spans broken
               by door gaps with threshold ticks. Interactive (select / move /
               place doors) only in Structure mode. */}
           {walls.map((w) => (
@@ -1105,7 +1105,7 @@ export function FloorCanvas({
             />
           ))}
 
-          {/* Cable trays — drawn above tiles so the run reads on a builder's
+          {/* Cable trays - drawn above tiles so the run reads on a builder's
               print. Clickable only in cable mode so layout editing is undisturbed. */}
           {showTrays &&
             trays.map((tray) => {
@@ -1147,11 +1147,11 @@ export function FloorCanvas({
               )
             })}
 
-          {/* Cable A↔B links — routed THROUGH the cable's trays (falls back to
+          {/* Cable A↔B links - routed THROUGH the cable's trays (falls back to
               a straight line when the cable has no trays). The highlighted
               cable renders LAST so it sits on top of any it shares a path
               with; the rest dim so the traced run stands out. Clickable in
-              any mode when the links overlay is on — no Cables mode needed. */}
+              any mode when the links overlay is on - no Cables mode needed. */}
           {/* Edit mode hides cables entirely so trays are free to grab. */}
           {showCableLinks &&
             !trayEditMode &&
@@ -1209,12 +1209,12 @@ export function FloorCanvas({
         </g>
       </svg>
 
-      {/* Right-click menu — a small, extensible action list.
+      {/* Right-click menu - a small, extensible action list.
           The trigger is a zero-size anchor parked at the pointer (the same trick
           the tile popover's anchor uses) and the menu itself is the shared
           DropdownMenu, so it portals out of this wrapper and flips on collision.
           Hand-rolled, it was an absolute div inside `overflow-hidden` and got
-          cut off — unreachably — on a right-click near the canvas edge.
+          cut off - unreachably - on a right-click near the canvas edge.
           Non-modal: a click on the plan must still pan/select while dismissing,
           and the wheel must keep zooming. Keyed by position so a second
           right-click re-anchors even if the first menu never closed. */}
@@ -1312,7 +1312,7 @@ export function FloorCanvas({
 
 /**
  * A wall polyline: solid spans broken by door gaps (dashed threshold + jamb
- * ticks across each gap) — the plan-view read of exactly what the 3D wall
+ * ticks across each gap) - the plan-view read of exactly what the 3D wall
  * builds, via the same shared span math. Interactive only in Structure mode:
  * click selects, drag translates the whole run, and with "Add door" armed a
  * click on a segment drops an opening there. Only the invisible fat
@@ -1478,7 +1478,7 @@ function WallShape({
   )
 }
 
-/** A tray run: a subtle hollow channel (no bright core — cables show *inside*
+/** A tray run: a subtle hollow channel (no bright core - cables show *inside*
  * it when traced). Selected shows vertex dots; editing shows drag handles plus
  * per-segment "+" bend-inserters. */
 function TrayShape({
@@ -1530,7 +1530,7 @@ function TrayShape({
         {count === 1 ? "" : "s"}
         {interactive && !editing ? " · double-click to edit shape" : ""}
       </title>
-      {/* Channel body — wide + faint. No centerline: the middle stays empty
+      {/* Channel body - wide + faint. No centerline: the middle stays empty
           so a traced cable reads as running inside the tray. */}
       <polyline
         points={pts}
@@ -1741,7 +1741,7 @@ function tileTooltip(
 }
 
 /** Label sizing: fixed 11px + ellipsis, or (labelFit) scaled to FILL the
- * tile — as big as the footprint allows, bounded by width per glyph and by
+ * tile - as big as the footprint allows, bounded by width per glyph and by
  * tile height (leaving room for the utilization bar). */
 function labelLayout(name: string, w: number, h: number, labelFit: boolean) {
   if (!labelFit) {
@@ -1778,7 +1778,7 @@ function TileShape({
   onPointerDown: (e: React.PointerEvent) => void
   onResizeDown: (e: React.PointerEvent) => void
   onDoubleClick: () => void
-  /** Hover in/out — fires only on tile boundary crossings, so the popover
+  /** Hover in/out - fires only on tile boundary crossings, so the popover
    * costs nothing per pointermove (see the note on handleMove). */
   onPointerEnter?: (e: React.PointerEvent) => void
   onPointerLeave?: (e: React.PointerEvent) => void
@@ -1878,12 +1878,12 @@ function TileShape({
         strokeDasharray={dashed ? "6 3" : undefined}
       />
       {/* Facing is the tile's own property (build-in-advance): every
-          non-zone tile shows its front edge, linked or not — otherwise the
+          non-zone tile shows its front edge, linked or not - otherwise the
           bulk facing arrows change unlinked tiles invisibly. */}
       {!tileIsZone(tile) && (
         <FacingEdge w={w} h={h} orientation={tile.orientation} color={fill} />
       )}
-      {/* Icons live in the palette rail only — tiles stay clean: color,
+      {/* Icons live in the palette rail only - tiles stay clean: color,
           label, and live state. */}
       {label && (
         <text
@@ -1959,7 +1959,7 @@ function TileShape({
 
 /**
  * A rack tile's facing indicator: a thin threshold line floating just OUTSIDE
- * the edge the cabinet's FRONT (door) points at — like a door mark on an
+ * the edge the cabinet's FRONT (door) points at - like a door mark on an
  * architectural plan. Outside the rect so it never collides with the
  * utilization bar, label, or link dot inside the tile. Orientation matches
  * the 3D room: 0 = up (north), 90 = right, 180 = down, 270 = left.
@@ -1997,7 +1997,7 @@ function FovCone({ tile }: { tile: FloorPlanTile }) {
   const angle = Math.min(360, Math.max(10, tile.fov_deg ?? 90))
   const dist = (tile.fov_distance ?? 3) * CELL
   const dir = tile.fov_direction ?? 0
-  // The cone emits from the tile's anchor — a corner or the center
+  // The cone emits from the tile's anchor - a corner or the center
   // (the dice-5 picker in the inspector).
   const ax = tile.fov_anchor.includes("l")
     ? 0
@@ -2013,7 +2013,7 @@ function FovCone({ tile }: { tile: FloorPlanTile }) {
   const cy = (tile.y + tile.height * ay) * CELL
   const fill = tileFill(tile)
 
-  // PTZ: the camera can sweep the whole circle — draw a 360° ring instead
+  // PTZ: the camera can sweep the whole circle - draw a 360° ring instead
   // of a fixed wedge.
   if (tile.fov_ptz) {
     return (

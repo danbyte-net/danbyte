@@ -1,9 +1,9 @@
-"""What Danbyte runs periodically, and how often — for every install shape.
+"""What Danbyte runs periodically, and how often - for every install shape.
 
 Bare metal gets this as systemd timers under ``services/``; a container install
 gets it from ``manage.py run_scheduler``, which reads this table. Both answer to
 the list below, and ``core/tests_schedule.py`` fails if the units and the table
-disagree — the two ways of deploying cannot silently drift apart again.
+disagree - the two ways of deploying cannot silently drift apart again.
 
 Adding periodic work means: write the management command, add one row here, and
 add the matching ``.service``/``.timer`` pair.
@@ -27,7 +27,7 @@ class ScheduledTask:
     #: Wall-clock times ("HH:MM"), mirroring ``OnCalendar=*-*-* HH:MM:SS``.
     at: tuple[str, ...] = ()
     #: Whether a container install runs it. Upgrading is the one thing a
-    #: container does *not* do for itself — the image is the unit of upgrade —
+    #: container does *not* do for itself - the image is the unit of upgrade -
     #: so the auto-upgrade beat is bare-metal only.
     in_container: bool = True
     #: Why it exists, for the docs table and `run_scheduler --list`.
@@ -39,7 +39,7 @@ class ScheduledTask:
 
         Comparing slots rather than tracking deadlines means a scheduler that
         was asleep, restarted, or a second late still runs each occurrence once,
-        and never runs an occurrence twice — the same catch-up behaviour
+        and never runs an occurrence twice - the same catch-up behaviour
         ``Persistent=true`` gives the systemd timers.
         """
         if self.every:
@@ -73,7 +73,7 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         unit="danbyte-dispatch",
         commands=("dispatch_checks",),
         every=MINUTE,
-        label="Check engine — enqueue every check that is due",
+        label="Check engine - enqueue every check that is due",
     ),
     ScheduledTask(
         unit="danbyte-drift-dispatch",
@@ -134,7 +134,7 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         unit="danbyte-prune",
         commands=("prune_check_results", "prune_changelog"),
         at=("04:17",),
-        label="Retention — drop old check results and changelog rows",
+        label="Retention - drop old check results and changelog rows",
     ),
     ScheduledTask(
         unit="danbyte-cleanup",

@@ -100,7 +100,7 @@ describe("cellToWorld", () => {
   })
 })
 
-describe("deviceYM — must mirror the 2D elevation's unit math exactly", () => {
+describe("deviceYM - must mirror the 2D elevation's unit math exactly", () => {
   it("ascending units: U1 sits on the base, U42 at the top", () => {
     const r = rack()
     const u1 = deviceYM(r, dev(1))
@@ -134,7 +134,7 @@ describe("deviceYM — must mirror the 2D elevation's unit math exactly", () => 
   })
 })
 
-describe("0U appliances — non-rack-format gear renders as a shelf box, not a plane", () => {
+describe("0U appliances - non-rack-format gear renders as a shelf box, not a plane", () => {
   it("sits on its slot's bottom with a visible sub-1U height", () => {
     const { y, h } = deviceYM(rack(), dev(5, 0))
     expect(y).toBeCloseTo(RACK_BASE_M + 4 * 0.04445)
@@ -149,7 +149,7 @@ describe("0U appliances — non-rack-format gear renders as a shelf box, not a p
 
   it("boxes to appliance fractions, centred, flush with the front plane", () => {
     const b = deviceBoxM(rack(), dev(5, 0), 0.6, 1.0)
-    // Width is off the 19" opening (0.45 m), not the 0.6 m cabinet — the
+    // Width is off the 19" opening (0.45 m), not the 0.6 m cabinet - the
     // extra cabinet width is the zero-U bay, not device.
     expect(b.dw).toBeCloseTo(0.45 * APPLIANCE_W_FRAC)
     expect(b.dd).toBeCloseTo(1.0 * APPLIANCE_D_FRAC)
@@ -258,7 +258,7 @@ describe("airflowGlyphPlacements", () => {
   })
 
   it("glyphs ride the top edge, clear of the port field", () => {
-    // Centred on the face they covered the ports — head-on a cone reads as a
+    // Centred on the face they covered the ports - head-on a cone reads as a
     // fat disc. They must sit in the top slice of the unit and stay inside it.
     const b = box()
     const placements = airflowGlyphPlacements("front-to-rear", b)
@@ -343,7 +343,7 @@ describe("underfloorMM + area-aware trayElevationM", () => {
   })
 })
 
-describe("wallSegmentsWithOpenings — the geometry that shapes every room", () => {
+describe("wallSegmentsWithOpenings - the geometry that shapes every room", () => {
   const H = 3 // wall height (m) for these cases
   const run: [number, number][] = [
     [0, 0],
@@ -389,7 +389,7 @@ describe("wallSegmentsWithOpenings — the geometry that shapes every room", () 
       [{ seg: 0, from: 0, to: 1, height_mm: null }],
       H
     )
-    // Lintel + the rest of the run — nothing degenerate before the door.
+    // Lintel + the rest of the run - nothing degenerate before the door.
     expect(boxes).toHaveLength(2)
     expect(boxes[0].y0).toBeCloseTo(2.1)
     expect([boxes[1].x0, boxes[1].x1, boxes[1].y0]).toEqual([1, 10, 0])
@@ -456,7 +456,7 @@ describe("wallSegmentsWithOpenings — the geometry that shapes every room", () 
   })
 })
 
-describe("rackViewpoint — one math for double-click fly-to and the rear flip", () => {
+describe("rackViewpoint - one math for double-click fly-to and the rear flip", () => {
   // 2×2-cell rack tile centred at cell (5, 5) → world (3, 3) with 600 mm cells.
   const tile = {
     id: "t",
@@ -500,7 +500,7 @@ describe("rackViewpoint — one math for double-click fly-to and the rear flip",
   })
 })
 
-describe("sideStripBoxM — vertical 0U strips hang on the rail", () => {
+describe("sideStripBoxM - vertical 0U strips hang on the rail", () => {
   const pdu = (over = {}) =>
     dev(1, 0, { position: null, mount: "side_right", ...over })
 
@@ -531,7 +531,7 @@ describe("sideStripBoxM — vertical 0U strips hang on the rail", () => {
 
   it("cabinet width IS the zero-U channel", () => {
     // The 19″ rail opening is a fixed 450 mm, so every extra millimetre of
-    // cabinet width becomes channel — the whole reason 750/800 mm cabinets
+    // cabinet width becomes channel - the whole reason 750/800 mm cabinets
     // are sold. A 600 mm cabinet takes a slim strip and nothing more; a
     // genuinely narrow one takes none.
     const wide = zeroUChannelM(rack({ outer_width_mm: 800 }))
@@ -562,7 +562,7 @@ describe("sideStripBoxM — vertical 0U strips hang on the rail", () => {
   })
 })
 
-describe("filletPath — no installer bends a cable at 90°", () => {
+describe("filletPath - no installer bends a cable at 90°", () => {
   it("keeps endpoints exactly and passes collinear vertices through", () => {
     const straight: [number, number, number][] = [
       [0, 0, 0],
@@ -602,13 +602,13 @@ describe("filletPath — no installer bends a cable at 90°", () => {
       [0.05, 0, 0.05],
     ]
     const out = filletPath(tight, 0.5, 2)
-    // Pull-back is half the shortest leg (0.025) — start stays first.
+    // Pull-back is half the shortest leg (0.025) - start stays first.
     expect(out[0]).toEqual([0, 0, 0])
     expect(out[1][0]).toBeCloseTo(0.025)
   })
 })
 
-describe("offsetPolyline — tray lanes stay parallel", () => {
+describe("offsetPolyline - tray lanes stay parallel", () => {
   it("offsets a straight run along its normal", () => {
     const out = offsetPolyline(
       [
@@ -687,7 +687,7 @@ describe("cableLane + cableRadiusM", () => {
   })
 })
 
-describe("trayRideY — cables ride IN the basket, not inside the tin", () => {
+describe("trayRideY - cables ride IN the basket, not inside the tin", () => {
   it("sits above the tray floor and below the rail top", () => {
     const datum = 2.5
     const y = trayRideY(datum)
@@ -695,7 +695,7 @@ describe("trayRideY — cables ride IN the basket, not inside the tin", () => {
     expect(y).toBeLessThan(datum + TRAY_H_M / 2)
   })
 
-  it("never rides at the datum — that is what buried v1's runs", () => {
+  it("never rides at the datum - that is what buried v1's runs", () => {
     expect(trayRideY(2.5)).toBeLessThan(2.5)
   })
 
@@ -708,7 +708,7 @@ describe("trayRideY — cables ride IN the basket, not inside the tin", () => {
   })
 })
 
-describe("segmentCrossing + trayJunctions — where tray runs actually meet", () => {
+describe("segmentCrossing + trayJunctions - where tray runs actually meet", () => {
   const tray = (id: string, points: [number, number][]): SceneTray => ({
     id,
     name: id,
@@ -727,7 +727,7 @@ describe("segmentCrossing + trayJunctions — where tray runs actually meet", ()
     expect(hit![1]).toBeCloseTo(0)
   })
 
-  it("counts a tee — one run ENDING on another", () => {
+  it("counts a tee - one run ENDING on another", () => {
     expect(segmentCrossing([0, 0], [10, 0], [5, 0], [5, 6])).not.toBeNull()
   })
 
@@ -825,7 +825,7 @@ describe("segmentCrossing + trayJunctions — where tray runs actually meet", ()
   })
 })
 
-describe("freeAirRideY — a tray-less run flies OVER the cabinets", () => {
+describe("freeAirRideY - a tray-less run flies OVER the cabinets", () => {
   const sceneWith = (rackU: number): ScenePayload =>
     ({
       plan,
@@ -837,7 +837,7 @@ describe("freeAirRideY — a tray-less run flies OVER the cabinets", () => {
   it("clears a 42U cabinet by a real margin, not by millimetres", () => {
     const s = sceneWith(42)
     const rackTop = tallestRackTopM(s)
-    // The bug: 3 m ceiling × 2/3 = 1.98 m against a 1.967 m cabinet top —
+    // The bug: 3 m ceiling × 2/3 = 1.98 m against a 1.967 m cabinet top -
     // 13 mm of "clearance", which the cap lip and the lane lift eat, so runs
     // grazed and cut through every cabinet between their ends.
     expect((plan.ceiling_mm / 1000) * 0.66 - rackTop).toBeLessThan(0.02)
@@ -855,7 +855,7 @@ describe("freeAirRideY — a tray-less run flies OVER the cabinets", () => {
   })
 })
 
-describe("airflowGlyphSizeM — the cue must never outgrow the gear", () => {
+describe("airflowGlyphSizeM - the cue must never outgrow the gear", () => {
   it("keeps a 1U cone well under a rack unit", () => {
     const oneU = deviceBoxM(rack(), dev(10, 1), 0.6, 1.0)
     // The bug: a fixed 50 mm cone on a ~42 mm 1U box, drawn over the ports.
@@ -889,7 +889,7 @@ describe("airflowGlyphSizeM — the cue must never outgrow the gear", () => {
   })
 })
 
-describe("deviceViewpoint — double-click frames one device, not its rack", () => {
+describe("deviceViewpoint - double-click frames one device, not its rack", () => {
   const tile = {
     id: "t",
     x: 4,
@@ -932,7 +932,7 @@ describe("deviceViewpoint — double-click frames one device, not its rack", () 
   })
 })
 
-describe("wallDoorSpans — 2D gaps from the same clamp rules", () => {
+describe("wallDoorSpans - 2D gaps from the same clamp rules", () => {
   it("interpolates the door span along its segment", () => {
     const spans = wallDoorSpans(
       [
@@ -976,7 +976,7 @@ describe("tierFor", () => {
 
   it("holds each tier a little longer on the way out", () => {
     // Sitting at 8 m: whichever tier you arrived in, you keep it. This is the
-    // whole point of the hysteresis — orbiting on a boundary must not strobe.
+    // whole point of the hysteresis - orbiting on a boundary must not strobe.
     expect(tierFor(11.5, "detail")).toBe("detail")
     expect(tierFor(11.5, "mid")).toBe("mid")
     expect(tierFor(28, "mid")).toBe("mid")
@@ -991,7 +991,7 @@ describe("tierFor", () => {
   })
 })
 
-describe("portLocalM — a marker lands on the side its panel actually faces", () => {
+describe("portLocalM - a marker lands on the side its panel actually faces", () => {
   const m = { x: 0.25, y: 0.5 }
 
   it("front-mounted: front panel −Z (cold aisle), rear panel +Z (hot aisle)", () => {
@@ -1021,7 +1021,7 @@ describe("portLocalM — a marker lands on the side its panel actually faces", (
     expect(portLocalM(box, m, true)[0]).toBeCloseTo(box.dx + mx)
   })
 
-  it("defaults to the front panel — the faceplate side either way", () => {
+  it("defaults to the front panel - the faceplate side either way", () => {
     const front = deviceBoxM(rack(), dev(20), 0.6, 1.0)
     const rearMounted = deviceBoxM(
       rack(),
@@ -1036,7 +1036,7 @@ describe("portLocalM — a marker lands on the side its panel actually faces", (
   })
 })
 
-describe("syntheticPortMarkers — unmarked power gear still gets clickable quads", () => {
+describe("syntheticPortMarkers - unmarked power gear still gets clickable quads", () => {
   const srv = (over = {}) =>
     dev(10, 2, { power_ports: ["PSU 1", "PSU 2"], ...over })
   const mark = (name: string, kind = "power-port") => ({
@@ -1054,7 +1054,7 @@ describe("syntheticPortMarkers — unmarked power gear still gets clickable quad
     expect(ms.every((x) => x.kind === "power-port")).toBe(true)
     expect(ms[0].x).toBeLessThan(ms[1].x)
     for (const q of ms) {
-      expect(q.y).toBeGreaterThan(0.5) // lower half — off the port field
+      expect(q.y).toBeGreaterThan(0.5) // lower half - off the port field
       expect(q.x - q.w / 2).toBeGreaterThan(0)
       expect(q.x + q.w / 2).toBeLessThan(1)
       expect(q.y + q.h / 2).toBeLessThan(1)
@@ -1066,7 +1066,7 @@ describe("syntheticPortMarkers — unmarked power gear still gets clickable quad
     expect(ms.map((x) => x.name)).toEqual(["PSU 2", "PSU 10"])
   })
 
-  it("skips ports a photo marker already covers — matching is case-tolerant", () => {
+  it("skips ports a photo marker already covers - matching is case-tolerant", () => {
     // The real DC-TEST case: markers say "Psu 1", the ports say "PSU 1".
     const ms = syntheticPortMarkers(
       srv({ image_ports: { front: [], rear: [mark("Psu 1")] } })
@@ -1110,7 +1110,7 @@ describe("syntheticPortMarkers — unmarked power gear still gets clickable quad
   })
 })
 
-describe("stripPortLocalM — one layout for strip quads AND cable anchors", () => {
+describe("stripPortLocalM - one layout for strip quads AND cable anchors", () => {
   const pdu = (over = {}) =>
     dev(1, 0, { position: null, mount: "side_right", face: "rear", ...over })
   const stripOf = (d: ReturnType<typeof pdu>) =>

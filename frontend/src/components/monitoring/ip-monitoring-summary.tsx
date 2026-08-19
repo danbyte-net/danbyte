@@ -7,7 +7,7 @@ import { MixedStatusBadge } from "./mixed-status-badge"
 import { ObjectCertExpiryBadge } from "./cert-expiry-badge"
 
 /**
- * Compact monitoring status card for the IP detail Overview tab — the headline
+ * Compact monitoring status card for the IP detail Overview tab - the headline
  * status at a glance, with a jump to the full Monitoring tab. The heavy lifting
  * (per-check rows, add/remove, uptime) lives in <IpMonitoring/>.
  */

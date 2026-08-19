@@ -312,7 +312,7 @@ function AlertsTable({ rows }: { rows: MonitoringAlert[] }) {
               <Badge
                 variant="warning"
                 className="gap-1 text-[10px]"
-                title="Condition is opening/clearing repeatedly — renotify paused"
+                title="Condition is opening/clearing repeatedly - renotify paused"
               >
                 <Activity className="h-3 w-3" /> flapping
               </Badge>
@@ -333,7 +333,7 @@ function AlertsTable({ rows }: { rows: MonitoringAlert[] }) {
                 title={
                   (a.acknowledged_by_name
                     ? `by ${a.acknowledged_by_name}`
-                    : "") + (a.ack_note ? ` — ${a.ack_note}` : "")
+                    : "") + (a.ack_note ? ` - ${a.ack_note}` : "")
                 }
               >
                 <Check className="h-3 w-3" /> ack
@@ -364,7 +364,7 @@ function AlertsTable({ rows }: { rows: MonitoringAlert[] }) {
         )
       },
     },
-    // Ack / unack is the only row action alerts have — it rides the shared
+    // Ack / unack is the only row action alerts have - it rides the shared
     // actions column's `extra` slot instead of a bespoke cell.
     actionsColumn<MonitoringAlert>({
       extra: (a) => (a.status === "firing" ? <AckButton a={a} /> : null),

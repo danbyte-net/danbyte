@@ -26,7 +26,7 @@ _LUCIDE_CACHE: dict[str, str] = {}
 # would choke on.
 _LICENSE_RE = re.compile(r"<!--.*?-->", re.S)
 _CLASS_ATTR_RE = re.compile(r'class="[^"]*"')
-# Strip width/height ONLY from the <svg> opening tag — we always size via
+# Strip width/height ONLY from the <svg> opening tag - we always size via
 # class. Earlier this used a global ` (width|height)="\d+"` which also ate
 # the inner <rect width="14" height="14"/> on copy/grid/server icons, so
 # every rect-based icon rendered as a path-only ghost. The regex now
@@ -73,7 +73,7 @@ def _load_lucide(name: str) -> str:
 def lucide_html(name: str, classes: str = "h-4 w-4") -> str:
     """Return a Lucide icon as a raw HTML string.
 
-    This is the Python-level helper — use it from form widgets, view code,
+    This is the Python-level helper - use it from form widgets, view code,
     or anywhere outside a Django template. Templates should use
     ``{% lucide … %}`` (which delegates here).
     """
@@ -106,7 +106,7 @@ def lucide(name: str, classes: str = "h-4 w-4"):
 #   * {% bulk_td obj.id %}       first column cell  (per-row checkbox)
 #   * {% include "api/_bulk_bar.html" with ... %}
 # All three live in one place so plugin pages and new features just call
-# them — no checkbox styling, no event wiring, no per-page JS.
+# them - no checkbox styling, no event wiring, no per-page JS.
 
 @register.simple_tag(name="bulk_th")
 def bulk_th():
@@ -158,12 +158,12 @@ def prefix_status_badge(status: str):
 
     Falls back to a neutral zinc badge with the raw value for any status
     we don't have palette entries for (so future user-defined statuses
-    don't crash the page — they just render plainly).
+    don't crash the page - they just render plainly).
     """
     key = (status or "").lower()
     entry = _PREFIX_STATUS_PALETTE.get(key)
     if entry is None:
-        label = (status or "—").title()
+        label = (status or "-").title()
         return mark_safe(
             f'<span class="inline-flex items-center gap-1.5 rounded-md bg-zinc-100 '
             f'px-1.5 py-0.5 text-[11px] font-medium text-zinc-700 dark:bg-zinc-800 '
@@ -202,12 +202,12 @@ def index(seq, i):
 #
 # A closed set of Lucide icon names usable inside role chips. The IPRoleForm
 # exposes these names as choices. Anything outside this list renders as no
-# icon — we never inject arbitrary user strings into SVG. All bodies come
-# from api/lucide/<name>.svg (two locally-extended icons — `crown-off`,
-# `broadcast` — live there alongside the upstream set).
+# icon - we never inject arbitrary user strings into SVG. All bodies come
+# from api/lucide/<name>.svg (two locally-extended icons - `crown-off`,
+# `broadcast` - live there alongside the upstream set).
 
 ROLE_ICONS: tuple[str, ...] = (
-    # Crowns — HSRP/VRRP/FHRP master / standby distinctions.
+    # Crowns - HSRP/VRRP/FHRP master / standby distinctions.
     "crown", "crown-off",
     # Routers / network gear
     "router", "network", "server",

@@ -1,6 +1,6 @@
 """Re-issue ACME certificates that are near expiry.
 
-Run several times a day by ``danbyte-acme-renew.timer`` — step-ca's default
+Run several times a day by ``danbyte-acme-renew.timer`` - step-ca's default
 24-hour certs must be renewed well within the day. Each certificate is renewed
 once it is two-thirds through its own lifetime, so the same cadence safely covers
 both short-lived and 90-day certs.

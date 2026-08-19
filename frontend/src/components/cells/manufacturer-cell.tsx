@@ -28,7 +28,7 @@ export function ManufacturerCell({
   className,
 }: ManufacturerCellProps) {
   if (!manufacturer) {
-    return <span className="text-muted-foreground">—</span>
+    return <span className="text-muted-foreground">-</span>
   }
   if (!linked) {
     return <span className={className}>{manufacturer.name}</span>

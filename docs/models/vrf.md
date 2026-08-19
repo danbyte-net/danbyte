@@ -17,7 +17,7 @@ VRFs are valid and distinct.
 | `rd` | char(21) | `""` | Route Distinguisher, e.g. `65001:100` |
 | `description` | text | `""` | |
 | `enforce_unique` | bool | `True` | Reject overlapping child prefixes within this VRF |
-| `color` | char(7) | `""` | Optional `#xxxxxx` — shown as the section-header accent |
+| `color` | char(7) | `""` | Optional `#xxxxxx` - shown as the section-header accent |
 
 ## Constraints
 
@@ -30,7 +30,7 @@ class Meta:
 ## Global VRF
 
 `Prefix.vrf = NULL` is the **Global VRF**. We deliberately do not seed a
-`VRF(name='Global')` row — the absence of a row *is* the Global VRF. This keeps
+`VRF(name='Global')` row - the absence of a row *is* the Global VRF. This keeps
 the data model honest (one fewer row to maintain, no risk of "Global" being
 deleted, no name collision with a user-created VRF called Global).
 
@@ -39,6 +39,6 @@ constraints makes Global behave like a real VRF for uniqueness purposes.
 
 ## Related
 
-- `Prefix.vrf` and `IPAddress.vrf` — both nullable FKs
-- `Site.vrfs` — M2M (documentation only — "which VRFs operate at this site")
+- `Prefix.vrf` and `IPAddress.vrf` - both nullable FKs
+- `Site.vrfs` - M2M (documentation only - "which VRFs operate at this site")
 - [Tenant + VRF isolation](../architecture/tenant-vrf.md)

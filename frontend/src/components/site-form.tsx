@@ -224,7 +224,7 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
 
       <Field
         label="Time zone"
-        hint="optional — IANA name, e.g. Europe/Copenhagen"
+        hint="optional - IANA name, e.g. Europe/Copenhagen"
         error={fieldErrors.time_zone}
       >
         <Input
@@ -291,10 +291,10 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
       {isEdit && (
         <FormSelect
           label="Default prefix"
-          hint="pre-selected when staff here add an address — a hint, not a limit"
+          hint="pre-selected when staff here add an address - a hint, not a limit"
           value={defaultPrefixId}
           onChange={setDefaultPrefixId}
-          noneLabel="No default — staff pick every time"
+          noneLabel="No default - staff pick every time"
           options={(sitePrefixes.data?.results ?? []).map((p) => ({
             value: p.id,
             label: p.cidr,
@@ -302,7 +302,7 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
         />
       )}
 
-      <Field label="VRFs" hint="documentation only — not enforced">
+      <Field label="VRFs" hint="documentation only - not enforced">
         <VrfMultiSelect
           options={vrfs.data?.results ?? []}
           value={vrfIds}

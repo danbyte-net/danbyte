@@ -1,4 +1,4 @@
-"""A1 tests — the alerting engine (transitions → stateful alerts)."""
+"""A1 tests - the alerting engine (transitions → stateful alerts)."""
 from __future__ import annotations
 
 from django.test import TestCase
@@ -135,7 +135,7 @@ class AlertRuleTests(TestCase):
 
 
 class AlertRoutingTests(TestCase):
-    """A3 — alerts route to enabled channels through the severity gate."""
+    """A3 - alerts route to enabled channels through the severity gate."""
 
     def setUp(self):
         from unittest.mock import patch
@@ -198,7 +198,7 @@ class AlertRoutingTests(TestCase):
 
 
 class SilenceTests(TestCase):
-    """A4 — active silences suppress notification but still track the alert."""
+    """A4 - active silences suppress notification but still track the alert."""
 
     def setUp(self):
         from unittest.mock import patch
@@ -270,7 +270,7 @@ class SilenceTests(TestCase):
 
 
 class AlertAckApiTests(APITestCase):
-    """A4 — ack / unack endpoints and the silenced annotation."""
+    """A4 - ack / unack endpoints and the silenced annotation."""
 
     def setUp(self):
         from django.contrib.auth import get_user_model
@@ -338,7 +338,7 @@ class AlertAckApiTests(APITestCase):
 
 
 class AlertMaintenanceTests(TestCase):
-    """A5 — renotify / escalation / flap dampening (periodic maintenance)."""
+    """A5 - renotify / escalation / flap dampening (periodic maintenance)."""
 
     def setUp(self):
         from datetime import timedelta
@@ -451,7 +451,7 @@ class AlertMaintenanceTests(TestCase):
 
 
 class AlertGroupingTests(TestCase):
-    """A5 — a burst of new alerts coalesces into one grouped notification."""
+    """A5 - a burst of new alerts coalesces into one grouped notification."""
 
     def setUp(self):
         from unittest.mock import patch

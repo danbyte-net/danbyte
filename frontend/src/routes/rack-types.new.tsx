@@ -13,7 +13,7 @@ function NewRackTypePage() {
     <EditPageShell
       crumbs={[{ label: "Rack types", to: "/rack-types" }, { label: "Add" }]}
       title="Add rack type"
-      subtitle="A cabinet model — its dimensions pre-fill new racks, and its accessories can stamp factory-fitted PDU strips."
+      subtitle="A cabinet model - its dimensions pre-fill new racks, and its accessories can stamp factory-fitted PDU strips."
     >
       <RackTypeForm
         onSaved={(rt) => nav({ to: "/rack-types/$id", params: { id: rt.id } })}

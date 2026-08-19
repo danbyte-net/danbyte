@@ -51,7 +51,7 @@ export const Route = createFileRoute("/devices/")({
 })
 
 // Stable empty fallback so `columns` (which depends on `monitoring`) doesn't get
-// a fresh object identity every render while the status query is loading — that
+// a fresh object identity every render while the status query is loading - that
 // would rebuild the columns each render, give `filteredRows` a new identity, and
 // retrigger DataTable's selection effect in a loop (devices pass
 // onSelectedRowsChange for bulk deploy).
@@ -66,7 +66,7 @@ function DevicesPage() {
   const canAdd = canDo("device", "add")
   const canEdit = canDo("device", "change")
   const canDelete = canDo("device", "delete")
-  // Bulk deploy hands devices to an automation target — gate on being able to
+  // Bulk deploy hands devices to an automation target - gate on being able to
   // see targets (the backend re-checks on the target itself).
   const canDeploy = canDo("automationtarget", "view")
 
@@ -85,7 +85,7 @@ function DevicesPage() {
   const deviceIds = useMemo(() => allRows.map((r) => r.id), [allRows])
   const monQuery = useQuery({
     queryKey: ["device-mon-status", deviceIds],
-    // POST — a page of UUIDs makes a URL longer than proxy request-line
+    // POST - a page of UUIDs makes a URL longer than proxy request-line
     // limits (gunicorn 400s at ~110 ids), which blanked the whole column.
     queryFn: () =>
       api<BulkStatusResponse>("/api/monitoring/status/", {

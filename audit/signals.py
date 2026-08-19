@@ -4,7 +4,7 @@ Connected per-model in ``apps.ready()`` so they only fire for audited models.
 pre_save snapshots the old row; post_save diffs it; post_delete records removal.
 
 Limitations (v1): bulk operations (`queryset.update/delete`, `bulk_create`) and
-m2m edits (tags) don't fire these signals, so they aren't logged — single-object
+m2m edits (tags) don't fire these signals, so they aren't logged - single-object
 CRUD via the API / admin / shell is covered.
 """
 from __future__ import annotations
@@ -22,13 +22,13 @@ from .models import ChangeAction, ChangeLogEntry
 
 _SKIP_FIELDS = {"created_at", "updated_at"}
 
-# Secrets must never enter the change log in cleartext — not in the field diff,
+# Secrets must never enter the change log in cleartext - not in the field diff,
 # not in the pre/post snapshots. EncryptedJSONField columns decrypt
 # transparently on read (so a naive getattr() would log the plaintext), and a
 # few models keep credentials in plain columns. Redacted fields log "•••" when
 # set / None when empty: the trail still shows *that* a secret exists, never
 # its value. (Consequence: a rotation from one secret to another produces no
-# diff entry — by design; even revealing a hash would aid offline guessing.)
+# diff entry - by design; even revealing a hash would aid offline guessing.)
 # The classifier lives in core.secret_fields so exports and share links use
 # the exact same definition of "secret" as the audit trail.
 from core.secret_fields import is_secret_field as _is_secret  # noqa: E402
@@ -65,7 +65,7 @@ def _safe_repr(instance) -> str:
     DoesNotExist. Fall back to a stable type+pk label in that case."""
     try:
         return str(instance)[:255]
-    except Exception:  # noqa: BLE001 — logging must not break the delete/save
+    except Exception:  # noqa: BLE001 - logging must not break the delete/save
         return f"{instance._meta.label} {instance.pk}"[:255]
 
 

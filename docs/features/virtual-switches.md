@@ -6,7 +6,7 @@ icon: lucide/network
 
 A **virtual switch** is the hypervisor switch a VM's traffic passes through on
 its way to the physical network. Danbyte models it on the cluster, records the
-networks it carries, and connects it to the **real host NICs** — so a trace can
+networks it carries, and connects it to the **real host NICs** - so a trace can
 run from a VM all the way to a cabled port.
 
 ## Virtual switches
@@ -18,7 +18,7 @@ run from a VM all the way to a cabled port.
 | **Kind** | Standard switch · Distributed switch · Linux bridge · Open vSwitch · Bond. |
 | **Uplinks** | The physical port names the hypervisor reports. |
 
-Its detail page has a **Networks** tab — the port groups / bridges on the
+Its detail page has a **Networks** tab - the port groups / bridges on the
 switch, the VLAN each maps to, and the VMs attached to them.
 
 ## Uplinks · physical adapters
@@ -36,11 +36,11 @@ cluster-wide bridge collects the matching ports from **every** node, so one
 switch can show `eno1` on `pve1` and `eno1` on `pve2` side by side. Each entry
 names its host device, so it stays clear which port belongs where.
 
-- **Proxmox** fills these in **automatically**, per bridge — not per host: it
+- **Proxmox** fills these in **automatically**, per bridge - not per host: it
   reads each bridge's own port list (`bridge_ports` / `ovs_ports`) and matches
   those names to interfaces on **that node's** Device. So `vmbr0` with
   `bridge_ports eno1 eno2` gets exactly those two; a NIC that belongs to no
-  bridge is never linked. Nothing is guessed — the node must exist as a Device
+  bridge is never linked. Nothing is guessed - the node must exist as a Device
   carrying interfaces with matching names, and ticking **Create hosts as
   devices** on the source creates the Device half for you. Matching is
   additive, so an uplink you set by hand is never removed.
@@ -58,13 +58,13 @@ and the routing domain follows the **segment**, not the switch:
 | **Switch → Address VRF** | The default for every network on it. |
 | **Networks tab → VRF** | An override for that port group / bridge. |
 
-Empty means *no opinion* — not Global. A network with no VRF follows its
+Empty means *no opinion* - not Global. A network with no VRF follows its
 switch; a switch with none follows the [sync source](external-sync.md). So
 `vmbr0` can default to *prod* while `vmbr0:30` overrides to *dmz*, and the
 Networks tab shows which value is inherited.
 
 Both are read **live** at sync time, so changing one takes effect on the next
-pass with nothing to backfill — and neither is ever written by a sync. A VRF set
+pass with nothing to backfill - and neither is ever written by a sync. A VRF set
 on a **VM interface** is more specific still and wins for that NIC. The full
 order, and what happens when nothing matches, is in [where synced addresses
 land](external-sync.md#where-synced-addresses-land).
@@ -74,7 +74,7 @@ land](external-sync.md#where-synced-addresses-land).
 A **network** is a port group (vCenter) or a tagged bridge (Proxmox), mapped to
 a **VLAN** in Danbyte. When a source imports networks, each VLAN-tagged network
 becomes a VLAN in a VLAN group named after the source, and a VM interface's
-access VLAN is **blank-filled** from it — never overwriting a VLAN you set
+access VLAN is **blank-filled** from it - never overwriting a VLAN you set
 yourself.
 
 ## Network topology
@@ -98,4 +98,4 @@ Switches, networks and the topology are populated when **Sync virtual switches
 
 - [Virtual machines](virtual-machines.md) · [Clusters](clusters.md)
 - [Proxmox VE sync](virt-proxmox.md) · [VMware vCenter sync](virt-vcenter.md)
-- [VLANs](ipam-objects.md#vlans) — what the networks map onto.
+- [VLANs](ipam-objects.md#vlans) - what the networks map onto.

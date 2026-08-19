@@ -73,7 +73,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
   const qc = useQueryClient()
   const { canDo, humanIds } = useMe()
 
-  // Header "Check now" — runs every check on this IP and refreshes the
+  // Header "Check now" - runs every check on this IP and refreshes the
   // monitoring summary + tab. Reuses the same endpoint as the Monitoring tab.
   const checkNow = useMutation({
     mutationFn: () =>
@@ -86,7 +86,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       toast.success(
         data.count === 0
           ? "No checks on this IP yet"
-          : `Ran ${data.count} check${data.count === 1 ? "" : "s"} — ${up} up`
+          : `Ran ${data.count} check${data.count === 1 ? "" : "s"} - ${up} up`
       )
       qc.invalidateQueries({ queryKey: ["ip-checks", ip.id] })
     },
@@ -96,7 +96,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
   const family: 4 | 6 = ip.ip_address.includes(":") ? 6 : 4
   const dnsEnabled = useDnsEnabled()
 
-  // The IP range this address falls inside, if any — containment is computed
+  // The IP range this address falls inside, if any - containment is computed
   // client-side over the prefix's few ranges, same as the prefix IPs pane.
   const rangesQuery = useQuery({
     queryKey: ["prefix-ip-ranges", ip.prefix?.id],
@@ -116,7 +116,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
     return null
   })()
 
-  // ─── Row collections — single source of truth for table render + copy ─
+  // ─── Row collections - single source of truth for table render + copy ─
 
   const detailsRows: KvRow[] = [
     ...(humanIds && ip.numid != null
@@ -130,13 +130,13 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       : []),
     {
       label: "Description",
-      value: ip.description || <span className="text-muted-foreground">—</span>,
+      value: ip.description || <span className="text-muted-foreground">-</span>,
       copy: ip.description,
     },
     {
       label: "Reservation note",
       value: ip.reservation_note || (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
       copy: ip.reservation_note,
     },
@@ -172,7 +172,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
           )}
         </span>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
       copy: ip.assigned_device?.name ?? "",
     },
@@ -187,7 +187,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
           {ip.assigned_interface.name}
         </Link>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
       copy: ip.assigned_interface?.name ?? "",
     },
@@ -202,7 +202,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
           {ip.assigned_vm.name}
         </Link>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
       copy: ip.assigned_vm?.name ?? "",
     },
@@ -211,7 +211,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       value: ip.assigned_vm_interface ? (
         <span className="font-mono">{ip.assigned_vm_interface.name}</span>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
       copy: ip.assigned_vm_interface?.name ?? "",
     },
@@ -220,7 +220,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       value: ip.switch ? (
         <DeviceCell device={ip.switch} />
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
       copy: ip.switch?.name ?? "",
     },
@@ -242,7 +242,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
           )}
         </span>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
       copy: ip.switch_interface?.name ?? "",
     },
@@ -257,7 +257,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
           {ip.mac_address}
         </Link>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
       copy: ip.mac_address,
     },
@@ -266,7 +266,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       value: ip.dns_name ? (
         <span className="font-mono">{ip.dns_name}</span>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
       copy: ip.dns_name,
     },
@@ -313,11 +313,11 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
           {ip.prefix.cidr}
         </Link>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
       copy: ip.prefix?.cidr ?? "",
     },
-    // Only when the address actually falls inside a range — a "—" row for
+    // Only when the address actually falls inside a range - a "-" row for
     // every IP would just be noise.
     ...(containingRange
       ? [
@@ -353,7 +353,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
     {
       label: "Site",
       value: ip.prefix?.site?.name ?? (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
       copy: ip.prefix?.site?.name ?? "",
     },
@@ -362,7 +362,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       value: ip.prefix?.vlan ? (
         <VlanBadge vlan={ip.prefix.vlan} />
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
       copy: ip.prefix?.vlan
         ? `${ip.prefix.vlan.vlan_id} ${ip.prefix.vlan.name}`
@@ -373,7 +373,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       value: ip.prefix?.gateway ? (
         <span className="font-mono">{ip.prefix.gateway}</span>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
       copy: ip.prefix?.gateway ?? "",
     },
@@ -384,7 +384,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
     },
   ]
 
-  // Minimal subnet info — full breakdown lives on the prefix page.
+  // Minimal subnet info - full breakdown lives on the prefix page.
   const subnetRows: KvRow[] = ip.prefix ? subnetBasics(ip.prefix.cidr) : []
 
   // ─── Copy actions ─────────────────────────────────────────────────────
@@ -392,7 +392,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
   async function copyIp() {
     const ok = await copyText(ip.ip_address)
     if (ok) toast.success(`Copied ${ip.ip_address}`)
-    else toast.error("Couldn't copy — clipboard blocked by the browser")
+    else toast.error("Couldn't copy - clipboard blocked by the browser")
   }
 
   async function copyAllAsTable() {
@@ -414,7 +414,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
     }
     const ok = await copyText(blocks.join("\n"))
     if (ok) toast.success("Copied IP details to clipboard")
-    else toast.error("Couldn't copy — clipboard blocked by the browser")
+    else toast.error("Couldn't copy - clipboard blocked by the browser")
   }
 
   return (
@@ -491,7 +491,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
                 isVirtual={ip.role?.is_virtual}
               />
               {ip.dhcp && <DhcpBadge state={ip.dhcp} />}
-              {/* The containing subnet's zone (via its VLAN) — where this IP
+              {/* The containing subnet's zone (via its VLAN) - where this IP
                   lives, firewall-wise. */}
               {ip.prefix?.vlan?.zone && (
                 <ColorBadge
@@ -507,7 +507,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
           {ip.reservation_note && (
             <p className="max-w-prose text-xs text-muted-foreground italic">
               <span className="mr-1 text-muted-foreground/80">
-                Reservation note —
+                Reservation note -
               </span>
               {ip.reservation_note}
             </p>
@@ -609,7 +609,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
 
 function renderCustomValue(v: unknown): React.ReactNode {
   if (v === null || v === undefined || v === "") {
-    return <span className="text-muted-foreground">—</span>
+    return <span className="text-muted-foreground">-</span>
   }
   if (typeof v === "boolean") {
     return v ? (
@@ -632,7 +632,7 @@ function renderCustomValue(v: unknown): React.ReactNode {
 // ─── Subnet helpers ────────────────────────────────────────────────────
 
 // Tiny subnet decoder (IPv4 or IPv6) for the Network table's "Subnet"
-// sub-block. Renders network, range and (v4 only) netmask + broadcast —
+// sub-block. Renders network, range and (v4 only) netmask + broadcast -
 // using BigInt math so v6 doesn't overflow. The full breakdown lives on the
 // prefix detail page.
 function subnetBasics(cidr: string): KvRow[] {

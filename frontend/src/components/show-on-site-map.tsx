@@ -3,7 +3,7 @@ import { MapPin } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 
-/** "Show on site map" — jumps to the geographic Site map centered on this
+/** "Show on site map" - jumps to the geographic Site map centered on this
  *  device. Rendered only when the device has coordinates. */
 export function ShowOnSiteMap({
   deviceId,

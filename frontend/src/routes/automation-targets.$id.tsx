@@ -62,7 +62,7 @@ function Body({ target: t }: { target: AutomationTarget }) {
   const goBack = useCallback(() => nav({ to: "/automation-targets" }), [nav])
 
   // Hoisted so the hero + tab strip carry the run count. `TargetRuns` reads the
-  // same query key, so react-query serves it from cache — one request, not two.
+  // same query key, so react-query serves it from cache - one request, not two.
   const runs = useTargetRuns(t.id)
 
   return (
@@ -120,7 +120,7 @@ function Body({ target: t }: { target: AutomationTarget }) {
             <DetailStat
               label="Runs"
               value={
-                <span className="num">{runs.data ? runs.data.count : "—"}</span>
+                <span className="num">{runs.data ? runs.data.count : "-"}</span>
               }
             />
           }

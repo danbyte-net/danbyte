@@ -132,7 +132,7 @@ function CustomFieldDetailBody({ field: f }: { field: CustomField }) {
             {f.default ? (
               <span className="font-mono text-[13px]">{f.default}</span>
             ) : (
-              <span className="text-muted-foreground">—</span>
+              <span className="text-muted-foreground">-</span>
             )}
           </Row>
           <Row label="Required">{f.required ? "Yes" : "No"}</Row>

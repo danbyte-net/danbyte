@@ -9,7 +9,7 @@ import { selectionColumn } from "@/components/data-table"
 import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
-// The one source of truth for "a table of placed floor-plan tiles" — the flat,
+// The one source of truth for "a table of placed floor-plan tiles" - the flat,
 // tabular read of what the canvas draws. A tile has no detail page of its own
 // (it is a cell on a plan), so the row links out to the plan it sits on and to
 // whatever object it is linked to. Built for the floor-tile-type detail page's
@@ -105,7 +105,7 @@ export function buildFloorTileColumns<T extends FloorPlanTile = FloorPlanTile>(
     }),
     position: () => ({
       id: "position",
-      // Sort by row then column — reading order on the grid, which is what the
+      // Sort by row then column - reading order on the grid, which is what the
       // canvas orders by too.
       accessorFn: (t) => t.y * 1000 + t.x,
       header: "Cell",
@@ -172,7 +172,7 @@ export function buildFloorTileColumns<T extends FloorPlanTile = FloorPlanTile>(
       header: "Linked to",
       enableSorting: false,
       // A tile's behaviour comes from what it links to, not what its type is
-      // called — so this is the column that answers "is this tile doing
+      // called - so this is the column that answers "is this tile doing
       // anything".
       cell: ({ row }) => {
         const l = row.original.linked

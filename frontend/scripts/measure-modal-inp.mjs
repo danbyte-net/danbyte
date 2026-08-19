@@ -120,7 +120,7 @@ async function measure(page) {
     console.log(`samples: ${samples.map((n) => n.toFixed(0)).join(", ")}`)
     console.log(`median: ${pct(samples, 50)}  p95: ${pct(samples, 95)}  max: ${Math.max(...samples)}`)
     const pointers = events.filter((e) => e.name === "pointerdown" || e.name === "pointerup")
-    console.log("\n=== PerformanceEventTiming.duration (ms) — pointer events ===")
+    console.log("\n=== PerformanceEventTiming.duration (ms) - pointer events ===")
     console.log(`count: ${pointers.length}`)
     const durations = pointers.map((p) => p.duration)
     console.log(`min: ${Math.min(...durations).toFixed(0)}  median: ${pct(durations, 50)}  p95: ${pct(durations, 95)}  max: ${Math.max(...durations).toFixed(0)}`)

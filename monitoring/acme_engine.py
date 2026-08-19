@@ -15,7 +15,7 @@ the automated path (e.g. DNS-01 auto-publish).
 
 Secrets: the ACME **account private key** lives in the secret store at
 ``issuer.account_ref`` (never on the row), exactly like CSR keys. The directory
-URL may be an internal host, so it is reached directly — the tenant SSRF guard
+URL may be an internal host, so it is reached directly - the tenant SSRF guard
 does not apply to admin-configured issuer endpoints, matching Vault/Redfish.
 """
 from __future__ import annotations
@@ -94,7 +94,7 @@ class _DynamicDnsPublisher:
     """Shared RFC2136-style dynamic-update sender for DNS-01 auto-publish.
 
     Subclasses provide the TSIG keyring + algorithm via :meth:`_keyring_and_alg`
-    — a static HMAC key for :class:`Rfc2136Publisher`, a negotiated GSS context
+    - a static HMAC key for :class:`Rfc2136Publisher`, a negotiated GSS context
     for :class:`GssTsigPublisher`. The DNS server is admin-configured, so it is
     reached directly (like the ACME directory / Vault), not via the tenant SSRF
     guard.
@@ -147,7 +147,7 @@ class _DynamicDnsPublisher:
 
         try:
             keyring, alg = self._keyring_and_alg()
-        except Exception:  # noqa: BLE001 — cleanup is best-effort
+        except Exception:  # noqa: BLE001 - cleanup is best-effort
             return
         for rec in records:
             if rec.type != AcmeOrder.Challenge.DNS01:
@@ -156,7 +156,7 @@ class _DynamicDnsPublisher:
                 upd = dns.update.Update(self.zone, keyring=keyring, keyalgorithm=alg)
                 upd.delete(self._rel(rec.record_name), "TXT", rec.record_value)
                 self._send(upd)
-            except Exception:  # noqa: BLE001 — cleanup is best-effort
+            except Exception:  # noqa: BLE001 - cleanup is best-effort
                 pass
 
     def _wait_visible(self, records: list[ChallengeRecord]) -> None:
@@ -188,7 +188,7 @@ class _DynamicDnsPublisher:
                     )
                     if rec.record_value in values:
                         continue
-                except Exception:  # noqa: BLE001 — treat as not-yet-visible
+                except Exception:  # noqa: BLE001 - treat as not-yet-visible
                     pass
                 still.append(rec)
             pending = still
@@ -235,7 +235,7 @@ class GssTsigPublisher(_DynamicDnsPublisher):
     ``gssapi`` package (lazy-imported) and a Kerberos realm config.
 
     NOTE: the negotiation is validated against dnspython's API but not yet run
-    against a live DC — it needs a real keytab + KDC to confirm end to end.
+    against a live DC - it needs a real keytab + KDC to confirm end to end.
     """
 
     def __init__(self, issuer: Issuer):
@@ -408,7 +408,7 @@ def _client(issuer: Issuer):
     Returns ``(acme_client, jwk)``. Raises if the account isn't registered.
     """
     if not issuer.account_uri:
-        raise AcmeError("This issuer has no ACME account yet — register it first.")
+        raise AcmeError("This issuer has no ACME account yet - register it first.")
     store = require_secret_store()
     data = store.get(issuer.tenant_id, _account_ref(issuer)) or {}
     pem = data.get("account_key")
@@ -518,7 +518,7 @@ def create_order(order: AcmeOrder) -> AcmeOrder:
     """Open an ACME order for the request's CSR and persist the challenges.
 
     Leaves the order ``pending`` with :attr:`AcmeOrder.challenges` describing
-    exactly what to publish. Does not attempt to satisfy them — that is
+    exactly what to publish. Does not attempt to satisfy them - that is
     :func:`finalize_order` (after the operator or a publisher acts) or
     :func:`issue` (automated).
     """
@@ -571,9 +571,9 @@ def _finalize_with(acme, jwk, orderr, order: AcmeOrder):
         order.error = str(exc)
         order.save(update_fields=["status", "error", "updated_at"])
         raise AcmeError(f"ACME finalize failed: {exc}") from exc
-    except Exception as exc:  # noqa: BLE001 — surface poll timeouts cleanly
+    except Exception as exc:  # noqa: BLE001 - surface poll timeouts cleanly
         # A poll timeout (acme.errors.TimeoutError) must land in a terminal
-        # state, not stay PROCESSING — otherwise the UI polls it forever with
+        # state, not stay PROCESSING - otherwise the UI polls it forever with
         # no retry. ERRORED (vs INVALID) marks "didn't complete", retryable.
         order.status = AcmeOrder.Status.ERRORED
         order.error = str(exc)
@@ -599,7 +599,7 @@ def finalize_order(order: AcmeOrder):
     keeps the order in memory and never reloads.
     """
     if not order.order_url:
-        raise AcmeError("This order was never opened — create it first.")
+        raise AcmeError("This order was never opened - create it first.")
     acme, jwk = _client(order.issuer)
     orderr = _reload_order(acme, order)
     return _finalize_with(acme, jwk, orderr, order)
@@ -611,7 +611,7 @@ def issue(order: AcmeOrder, publisher: ChallengePublisher | None = None):
     Keeps the freshly opened order in memory and finalizes *that*, so the
     automated flow never re-fetches the order from the CA. ``publisher``
     publishes the challenge records (e.g. DNS-01 auto-publish) and is cleaned up
-    afterwards. With no publisher, the challenges are persisted but not solved —
+    afterwards. With no publisher, the challenges are persisted but not solved -
     use :func:`finalize_order` after publishing by hand.
     """
     acme, jwk, orderr, records = _open_order(order)
@@ -630,7 +630,7 @@ def issue(order: AcmeOrder, publisher: ChallengePublisher | None = None):
 def finalize_order_job(order_id) -> None:
     """RQ entry point: finalize a persisted order (polls, so it runs async).
 
-    Re-loads the order by id — never trusts an enqueue-time object — and lets
+    Re-loads the order by id - never trusts an enqueue-time object - and lets
     :func:`finalize_order` record any failure on the row (it sets ``error`` /
     ``status`` itself), so a raised :class:`AcmeError` is swallowed here.
     """

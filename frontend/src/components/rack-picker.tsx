@@ -11,7 +11,7 @@ export interface RackPickerProps extends Omit<ObjectPickerProps, "label"> {
   label?: string
 }
 
-/** The rack preset of ObjectPicker — advanced search by site / location,
+/** The rack preset of ObjectPicker - advanced search by site / location,
  * result table with height + utilisation. */
 export function RackPicker({ label = "Rack", ...rest }: RackPickerProps) {
   const spec = useMemo<ObjectPickerSpec<Rack>>(
@@ -49,7 +49,7 @@ export function RackPicker({ label = "Rack", ...rest }: RackPickerProps) {
           header: "Location",
           cell: (r) => (
             <span className="text-muted-foreground">
-              {r.location?.name ?? "—"}
+              {r.location?.name ?? "-"}
             </span>
           ),
         },

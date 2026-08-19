@@ -50,7 +50,7 @@ function PowerFeedDetail() {
   return <Body feed={q.data} />
 }
 
-/** The panel this feed draws from — its own page, one hop up the power path. */
+/** The panel this feed draws from - its own page, one hop up the power path. */
 function PanelLink({ panel }: { panel: { id: string; name: string } }) {
   return (
     <Link to="/power-panels/$id" params={{ id: panel.id }} className="link">
@@ -177,7 +177,7 @@ function FeedOverview({ feed: f }: { feed: PowerFeed }) {
         ]
       : []),
     { label: "Name", value: f.name, copy: f.name },
-    // A feed always draws from a panel — the FK is non-nullable.
+    // A feed always draws from a panel - the FK is non-nullable.
     { label: "Panel", value: <PanelLink panel={f.power_panel} /> },
     { label: "Rack", value: f.rack ? <RackCell rack={f.rack} /> : dash },
     { label: "Status", value: <StatusBadge status={f.status} /> },

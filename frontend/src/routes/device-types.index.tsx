@@ -43,8 +43,8 @@ function DeviceTypesPage() {
   const allRows = useMemo(() => query.data?.results ?? [], [query.data])
 
   // A hardware catalog runs to thousands of rows, so the rail carries the whole
-  // facet set the factory declares — manufacturer, height, images, faceplate,
-  // usage, lifecycle, scope, tags — and a new facetable column joins it for
+  // facet set the factory declares - manufacturer, height, images, faceplate,
+  // usage, lifecycle, scope, tags - and a new facetable column joins it for
   // free. These facet-source columns are never rendered; the render columns
   // below add selection, the tag-chip wiring, and row actions.
   const facetColumns = useMemo<ColumnDef<DeviceType>[]>(
@@ -101,7 +101,7 @@ function DeviceTypesPage() {
       actions={
         <>
           <TableActions ioType="devicetype" />
-          {/* Recovery tool — rewrites image fields on EXISTING types, so it
+          {/* Recovery tool - rewrites image fields on EXISTING types, so it
               rides the `change` grant, not `add`. */}
           {canEdit && (
             <Button
@@ -121,8 +121,8 @@ function DeviceTypesPage() {
               >
                 Import CSV
               </Button>
-              {/* A bundle is a whole configured model — templates, faceplate,
-                  photo ports, sensors — not just catalog rows. */}
+              {/* A bundle is a whole configured model - templates, faceplate,
+                  photo ports, sensors - not just catalog rows. */}
               <Button
                 size="sm"
                 variant="outline"
@@ -152,7 +152,7 @@ function DeviceTypesPage() {
       />
       {/* Selection comes from the table's filtered rows, so the bar only ever
           acts on what the rail is showing. Gated on the same `delete` grant
-          as the per-row action — the server re-checks it either way. */}
+          as the per-row action - the server re-checks it either way. */}
       {canDelete && (
         <DeviceTypeBulkBar
           selected={selectedRows}

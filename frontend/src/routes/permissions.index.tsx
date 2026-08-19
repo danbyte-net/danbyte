@@ -128,7 +128,7 @@ function buildColumns({
       header: "Actions",
       cell: ({ row }) => (
         <span className="font-mono text-[11px] text-muted-foreground">
-          {row.original.actions.join(" · ") || "—"}
+          {row.original.actions.join(" · ") || "-"}
         </span>
       ),
     },
@@ -140,7 +140,7 @@ function buildColumns({
         const ts = row.original.object_types
         const label = ts.includes("*")
           ? "All object types"
-          : ts.join(", ") || "—"
+          : ts.join(", ") || "-"
         return (
           <span className="line-clamp-1 block font-mono text-[11px] text-muted-foreground">
             {label}
@@ -172,7 +172,7 @@ function buildColumns({
         if (u) parts.push(`${u} user${u > 1 ? "s" : ""}`)
         return (
           <span className="text-xs text-muted-foreground">
-            {parts.join(" · ") || "—"}
+            {parts.join(" · ") || "-"}
           </span>
         )
       },
@@ -186,7 +186,7 @@ function buildColumns({
             scoped
           </Badge>
         ) : (
-          <span className="text-xs text-muted-foreground">—</span>
+          <span className="text-xs text-muted-foreground">-</span>
         ),
     },
     {

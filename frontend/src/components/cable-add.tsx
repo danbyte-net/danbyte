@@ -11,7 +11,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 
-/** Server-searched cable picker — used by the floor-plan tray inspector and
+/** Server-searched cable picker - used by the floor-plan tray inspector and
  * the site map's route inspector to assign physical cables to a run. */
 export function CableAdd({
   excludeIds,

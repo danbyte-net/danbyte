@@ -1,4 +1,4 @@
-"""SSO provisioning — JIT create, group mapping, and the pre-created-only gate.
+"""SSO provisioning - JIT create, group mapping, and the pre-created-only gate.
 
 These drive :func:`auth_api.sso.resolve_user` with claim dicts directly, so the
 provisioning logic is covered without a live IdP (the OIDC network dance is thin

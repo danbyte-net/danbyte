@@ -15,8 +15,8 @@ import { SavedViews, type SavedViewsProps } from "@/components/saved-views"
 // on the left, then a header bar (title + count chip + search + actions)
 // over a scrollable body that switches loading → error → content.
 // ListPageShell owns all of it so the ~70 list routes can't drift on header
-// height, rail wiring, search styling, the loading/error triad, or — the
-// bug that keeps recurring — the `min-h-0` that makes the body actually
+// height, rail wiring, search styling, the loading/error triad, or - the
+// bug that keeps recurring - the `min-h-0` that makes the body actually
 // scroll.
 //
 //   const { rail, filteredRows } = useTableFilters(columns, rows)
@@ -48,7 +48,7 @@ export function ListPageShell({
 }: {
   title: string
   /** Sub-list pages (a view *of* another list, e.g. /racks/elevations) get the
-   * same breadcrumb back-link DetailShell renders — pass the parent list route
+   * same breadcrumb back-link DetailShell renders - pass the parent list route
    * and its label. Omit on a top-level list. */
   backTo?: LinkProps["to"]
   backLabel?: string
@@ -56,7 +56,7 @@ export function ListPageShell({
   count?: number
   /** Filter rail (typically `useTableFilters().rail`) rendered to the left. */
   rail?: ReactNode
-  /** Search box in the header — the shell renders the icon + input. */
+  /** Search box in the header - the shell renders the icon + input. */
   search?: {
     value: string
     onChange: (value: string) => void
@@ -65,7 +65,7 @@ export function ListPageShell({
   /** Header action cluster (Import/Export, Add, …), right-aligned after search. */
   actions?: ReactNode
   /** Saved views for this list. One prop, because the control needs only the
-   * list's identity and its filter handle — the search box is already here. */
+   * list's identity and its filter handle - the search box is already here. */
   savedViews?: {
     /** RBAC object slug, e.g. "device". */
     objectType: string
@@ -74,7 +74,7 @@ export function ListPageShell({
   /** Drives the body's loading/error switch. When loading or errored, the
    * children are not rendered. Omit to always render children. */
   query?: { isLoading: boolean; isError: boolean; error: unknown }
-  /** The table (and any dialogs/bulk bars) — rendered once data is ready. */
+  /** The table (and any dialogs/bulk bars) - rendered once data is ready. */
   children: ReactNode
 }) {
   return (

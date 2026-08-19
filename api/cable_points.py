@@ -6,22 +6,22 @@ them once, gives each a stable node-id prefix and a visual family, and models
 the internal *pass-through* between the two ends of a device that a cable run
 should walk *through* (patch panel front↔rear, PDU outlet→inlet).
 
-Pass-through asymmetry — deliberate, see plan Feature A2:
+Pass-through asymmetry - deliberate, see plan Feature A2:
 
 * ``front_port ↔ rear_port@position`` is 1:1 both ways (fixed index).
 * ``power_outlet → power_port`` is deterministic (an outlet names its one
-  inlet) so we walk it — a run into a PDU outlet continues upstream.
+  inlet) so we walk it - a run into a PDU outlet continues upstream.
 * ``power_port → power_outlet`` is **not** walked: one inlet feeds many
   outlets with no index to pick "the" one, so auto-picking would fabricate a
   path. The PDU stays a visible node instead (like a panel with a dangling
   strand).
-* console / console-server / aux ports are intentional **leaves** — the cable
+* console / console-server / aux ports are intentional **leaves** - the cable
   terminates into that subsystem; there is nothing further to model.
 """
 from __future__ import annotations
 
 # One attr per point FK, in resolution order. Must list ALL of
-# CableTermination.POINT_FIELDS — a missing kind makes term_point() return
+# CableTermination.POINT_FIELDS - a missing kind makes term_point() return
 # (None, None) and blows up _key()/NODE_PREFIX[None] downstream.
 POINT_ATTRS = (
     "interface", "front_port", "rear_port", "console_port",
@@ -56,13 +56,13 @@ def term_point(t):
 
 
 def strands_of(kind, port, position=1):
-    """Every opposite side of an internal pass-through — a list of
+    """Every opposite side of an internal pass-through - a list of
     ``(partner_kind, partner_obj, partner_position)`` tuples, empty for a
     leaf or an unmapped strand.
 
     1:1 pass-throughs (patch panels, PDU outlet→inlet) return one partner.
     A **splitter** rear port (``is_splitter``) broadcasts its single input
-    position to *every* front port, so it returns them all — the fan-out
+    position to *every* front port, so it returns them all - the fan-out
     that makes PON trees traceable. The front→rear direction is always
     deterministic (one tuple), splitter or not.
     """
@@ -77,7 +77,7 @@ def strands_of(kind, port, position=1):
 
         if port.is_splitter:
             if position != 1:
-                # A splitter input has exactly one position — a trunk strand
+                # A splitter input has exactly one position - a trunk strand
                 # arriving beyond it is unmapped, not broadcast.
                 return []
             # Broadcast: the one input position feeds every output.
@@ -110,7 +110,7 @@ def strands_of(kind, port, position=1):
 
 
 def strand_of(kind, port, position=1):
-    """Single-partner view of :func:`strands_of` — the first partner or
+    """Single-partner view of :func:`strands_of` - the first partner or
     ``None``. Correct for every 1:1 pass-through; callers that must see a
     splitter's full fan-out use ``strands_of`` (and the topology collapse
     walk never crosses a splitter at all)."""

@@ -1,4 +1,4 @@
-"""Sync a device to its device type's current component templates —
+"""Sync a device to its device type's current component templates -
 ``diff_device_components`` / ``sync_device_components`` and the
 ``/api/devices/{id}/sync-from-type/`` action."""
 from django.contrib.auth import get_user_model
@@ -118,7 +118,7 @@ class MarkerStampTests(DeviceSyncTests):
             "front": [
                 {"kind": "inventory-item", "name": "Disk 1",
                  "x": 0.1, "y": 0.5, "w": 0.05, "h": 0.4},
-                # Front ports need a rear-port mapping a marker can't express —
+                # Front ports need a rear-port mapping a marker can't express -
                 # deliberately ignored rather than half-created.
                 {"kind": "front-port", "name": "FP1",
                  "x": 0.2, "y": 0.5, "w": 0.05, "h": 0.4},

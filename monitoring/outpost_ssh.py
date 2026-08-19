@@ -1,4 +1,4 @@
-"""SSH transport — Danbyte dials **out** to the Outpost host and drives it.
+"""SSH transport - Danbyte dials **out** to the Outpost host and drives it.
 
 For airgapped sites that only permit ``Danbyte → host`` on SSH (22). Danbyte
 claims the engine's due checks (the same claim used by the HTTPS-pull
@@ -32,7 +32,7 @@ def _known_hosts_entry(engine) -> bytes | None:
     key = (engine.ssh_host_key or "").strip()
     if not key:
         log.warning(
-            "SSH outpost %s has no pinned host key — trusting on first use. "
+            "SSH outpost %s has no pinned host key - trusting on first use. "
             "Set ssh_host_key to verify the server.",
             engine.name,
         )
@@ -43,7 +43,7 @@ def _known_hosts_entry(engine) -> bytes | None:
 
 
 def _connect_kwargs(engine) -> dict:
-    """asyncssh.connect kwargs for an engine — credential + host-key pinning.
+    """asyncssh.connect kwargs for an engine - credential + host-key pinning.
     Factored out so it's testable without a live host."""
     import asyncssh
 
@@ -100,7 +100,7 @@ def drive_ssh_engine(engine, now=None, *, run_ssh=None) -> dict:
 
 
 def drive_ssh_outposts(now=None) -> dict:
-    """Drive every enabled, configured SSH-transport engine — runs on a timer."""
+    """Drive every enabled, configured SSH-transport engine - runs on a timer."""
     now = now or timezone.now()
     total = {"engines": 0, "ran": 0, "ingested": 0, "errors": 0}
     for engine in MonitoringEngine.objects.filter(

@@ -33,7 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-// Only the username is ever exposed by the credentials endpoint — the secret
+// Only the username is ever exposed by the credentials endpoint - the secret
 // stays server-side. We use it purely to offer choices for {username}.
 interface DeviceCredentialRow {
   id: string
@@ -176,7 +176,7 @@ export function DeviceConnectMenu({ device }: { device: Device }) {
     try {
       localStorage.setItem(storeKey, u)
     } catch {
-      // Ignore — private-mode / disabled storage just loses the last-used hint.
+      // Ignore - private-mode / disabled storage just loses the last-used hint.
     }
   }
 
@@ -194,7 +194,7 @@ export function DeviceConnectMenu({ device }: { device: Device }) {
     })
     // OS-scheme handoff: an ssh:// / rdp:// URL can't be a TanStack `Link` (it
     // leaves the app entirely to the OS handler), so a transient anchor click
-    // is the one legitimate raw-anchor case here — not internal navigation.
+    // is the one legitimate raw-anchor case here - not internal navigation.
     // A web URL (a device management UI) opens in a new tab so Danbyte stays
     // put; a custom OS scheme is handed off in place without navigating away.
     const isWeb = /^https?:\/\//i.test(url)
@@ -261,7 +261,7 @@ export function DeviceConnectMenu({ device }: { device: Device }) {
             </div>
           ) : protocols.length === 0 ? (
             <div className="px-2 py-1.5 text-xs text-muted-foreground">
-              No connect protocols —{" "}
+              No connect protocols -{" "}
               <Link to="/settings/connect" className="link">
                 configure them in Settings
               </Link>

@@ -19,7 +19,7 @@ export interface MonitoringConfigData {
 
 const MonitoringConfigContext = createContext<MonitoringConfigData | null>(null)
 
-// Stable empty fallbacks — a fresh `[]` per render would rebuild every
+// Stable empty fallbacks - a fresh `[]` per render would rebuild every
 // panel's columns memo (and re-derive the facet rails over ~500 rows) on
 // each render while any of the four queries is still loading.
 const EMPTY: never[] = []

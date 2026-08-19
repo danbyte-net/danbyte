@@ -48,7 +48,7 @@ export function PlatformGroupDeleteDialog({
           </AlertDialogTitle>
           <AlertDialogDescription>
             {usage > 0
-              ? `${usage} platform${usage === 1 ? "" : "s"} belong to this group — reassign or delete them first.`
+              ? `${usage} platform${usage === 1 ? "" : "s"} belong to this group - reassign or delete them first.`
               : "Child groups are kept (they lose their parent). This action can't be undone."}
           </AlertDialogDescription>
         </AlertDialogHeader>

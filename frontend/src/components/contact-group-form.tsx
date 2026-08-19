@@ -52,7 +52,7 @@ export function ContactGroupForm({
     queryKey: ["contact-groups-picker"],
     queryFn: () => api<Paginated<ContactGroup>>("/api/contact-groups/"),
   })
-  // A group can't be its own parent — drop self from the options when editing.
+  // A group can't be its own parent - drop self from the options when editing.
   const parentOptions = (groupsQuery.data?.results ?? [])
     .filter((g) => g.id !== item?.id)
     .map((g) => ({ value: g.id, label: g.name }))

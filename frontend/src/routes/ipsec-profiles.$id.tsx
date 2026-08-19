@@ -135,7 +135,7 @@ function Body({ profile: p }: { profile: IPSecProfile }) {
   )
 }
 
-/** The crypto parameters, which are the whole point of the object — read them
+/** The crypto parameters, which are the whole point of the object - read them
  * here before you change a profile that tunnels already depend on. */
 function IPSecProfileOverview({ profile: p }: { profile: IPSecProfile }) {
   const { humanIds } = useMe()

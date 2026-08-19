@@ -7,7 +7,7 @@ import { usePlanTarget } from "@/lib/save-object"
 
 /** Says, unmistakably, that this form is not going to write anything.
  *
- * Rendered at the top of any edit/create page carrying `?plan=` — an operator
+ * Rendered at the top of any edit/create page carrying `?plan=` - an operator
  * who lands here from a task must not think they are editing the live object.
  * Renders nothing outside plan mode, so routes can mount it unconditionally. */
 export function PlanModeBanner() {
@@ -37,7 +37,7 @@ export function PlanModeBanner() {
         </p>
         <p className="text-[12px] text-muted-foreground">
           Saving records what you changed on the task. Nothing is written to
-          this object now — someone applies it when the work is done.
+          this object now - someone applies it when the work is done.
         </p>
       </div>
     </div>

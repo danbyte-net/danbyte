@@ -26,9 +26,9 @@ import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
 // The one source of truth for "a table of devices". Every surface that lists
-// devices — /devices, the embedded table on a related object's detail page, the
+// devices - /devices, the embedded table on a related object's detail page, the
 // rack devices pane, the monitoring configuration tab, the compliance
-// affected-objects table — builds its columns here so a device row reads
+// affected-objects table - builds its columns here so a device row reads
 // identically everywhere. Page-specific columns (rack position, monitoring
 // bindings) are spliced around this factory's output; the shared cells are
 // never re-authored inline.
@@ -82,19 +82,19 @@ export interface DeviceColumnOpts<T extends Device = Device> {
   include?: DeviceColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
   /** Compliance violation badge next to the name. Pass a pre-resolved map to
    * avoid one lookup per row; `true` lets each badge subscribe itself (the
    * shared query is cached, so a table of rows still costs one fetch). */
   violations?: boolean | Map<string, ComplianceViolation[]>
-  /** Fleet drift map from `useDriftMap()` — one request per table, shared by
+  /** Fleet drift map from `useDriftMap()` - one request per table, shared by
    * every row. Omit on views that are already about drift. */
   drift?: Map<string, DeviceDriftRow>
   /** Open planned changes keyed by "api.device:<id>", from
-   * `usePlannedChangeMap()` — one request per table. */
+   * `usePlannedChangeMap()` - one request per table. */
   planned?: Map<string, PlannedTargetRow>
-  /** Monitoring status per device id — enables the "Monitoring" column. */
+  /** Monitoring status per device id - enables the "Monitoring" column. */
   monitoring?: Record<string, BulkStatusEntry>
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
   tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }
@@ -103,7 +103,7 @@ export interface DeviceColumnOpts<T extends Device = Device> {
 }
 
 /** A device IP designation (primary / secondary / management), linked to its
- * IP. Neutral link — in-cell links underline on hover, they are not blue. */
+ * IP. Neutral link - in-cell links underline on hover, they are not blue. */
 export function DeviceIpRef({
   ip,
 }: {
@@ -128,7 +128,7 @@ function monitoringTooltip(e: BulkStatusEntry): string {
   const head = `${e.monitored_ips ?? 0} monitored IP${
     e.monitored_ips === 1 ? "" : "s"
   }`
-  return parts.length ? `${head} — ${parts.join(", ")}` : head
+  return parts.length ? `${head} - ${parts.join(", ")}` : head
 }
 
 export function buildDeviceColumns<T extends Device = Device>(
@@ -312,7 +312,7 @@ export function buildDeviceColumns<T extends Device = Device>(
           kind: "enum",
           label: "Manufacturer",
           // Rows carry the manufacturer NAME (not id), so the facet buckets by
-          // name — matching the dashboard "Devices by manufacturer" deep-link.
+          // name - matching the dashboard "Devices by manufacturer" deep-link.
           get: (r: T) => r.device_type?.manufacturer ?? "__none__",
           formatValue: (v) => ({ label: v }),
         },
@@ -380,7 +380,7 @@ export function buildDeviceColumns<T extends Device = Device>(
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     }),

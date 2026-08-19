@@ -1,6 +1,6 @@
 """Background bulk import from the NetBox devicetype-library.
 
-A folder (a manufacturer, or the whole ``device-types`` dir — thousands of
+A folder (a manufacturer, or the whole ``device-types`` dir - thousands of
 files) is too much for the synchronous import-yaml endpoint, so it runs here
 off the RQ ``low`` queue with pollable progress. Mirrors the NetBox import
 run's shape (``integrations/netbox_tasks.py``)."""
@@ -12,14 +12,14 @@ logger = logging.getLogger(__name__)
 
 #: Keep at most this many per-file failures on the run (avoid unbounded JSON).
 _MAX_FAILURES = 100
-#: Write progress to the DB every N files (not every one — one UPDATE per file
+#: Write progress to the DB every N files (not every one - one UPDATE per file
 #: on a 1000-file run is a lot of needless writes).
 _PROGRESS_EVERY = 5
 
 
 def run_devicetype_import(run_id: str) -> None:
     """Expand the run's folder URL, fetch each YAML, import it, and record
-    progress. Never raises — failures land on the run so the worker survives."""
+    progress. Never raises - failures land on the run so the worker survives."""
     from django.utils import timezone
 
     from core.ssrf import safe_get
@@ -32,10 +32,10 @@ def run_devicetype_import(run_id: str) -> None:
         # A worker that can't see the run is almost always the WRONG WORKER:
         # two instances sharing one Redis DB race for each other's jobs, and
         # the winner looks the id up in the wrong database. Returning silently
-        # here once turned that misconfiguration into "imports hang forever" —
+        # here once turned that misconfiguration into "imports hang forever" -
         # say it out loud so the next person greps it in minutes.
         logger.warning(
-            "devicetype import run %s not found in this database — is another "
+            "devicetype import run %s not found in this database - is another "
             "instance's worker sharing this Redis queue (RQ_REDIS_DB)?", run_id
         )
         return
@@ -52,7 +52,7 @@ def run_devicetype_import(run_id: str) -> None:
         run.save(update_fields=["progress", "updated_at"])
 
         # One image-repo listing for the whole run: the importer then fetches
-        # only images that exist, at their known extension — instead of up to
+        # only images that exist, at their known extension - instead of up to
         # four guess-probes per type, which made big folders look stuck.
         from .devicetype_import import _IMAGE_BASE, repo_image_inventory
 
@@ -76,7 +76,7 @@ def run_devicetype_import(run_id: str) -> None:
                             "name": report.get("name") or url,
                             "error": report.get("error") or "import failed",
                         })
-            except Exception as exc:  # noqa: BLE001 — record, keep going
+            except Exception as exc:  # noqa: BLE001 - record, keep going
                 failed += 1
                 if len(failures) < _MAX_FAILURES:
                     failures.append({"name": url, "error": str(exc)})
@@ -88,7 +88,7 @@ def run_devicetype_import(run_id: str) -> None:
                 }
                 run.save(update_fields=["progress", "updated_at"])
         run.status = "success"
-    except Exception as exc:  # noqa: BLE001 — the expand/list step blew up
+    except Exception as exc:  # noqa: BLE001 - the expand/list step blew up
         logger.exception("devicetype import %s failed", run_id)
         run.status = "failed"
         run.error = str(exc)
@@ -116,7 +116,7 @@ def _enqueue(task, run, label: str) -> None:
         import django_rq
 
         django_rq.get_queue("low").enqueue(task, str(run.id), job_timeout=3600)
-    except Exception:  # noqa: BLE001 — Redis down: run inline so it still runs
+    except Exception:  # noqa: BLE001 - Redis down: run inline so it still runs
         logger.warning("RQ unavailable; running %s inline", label)
         try:
             task(str(run.id))
@@ -127,7 +127,7 @@ def _enqueue(task, run, label: str) -> None:
 def run_devicetype_image_reimport(run_id: str) -> None:
     """Re-download elevation images for the run's in-scope EXISTING device
     types (see ``reimport_images_for_type``) and record progress. Never
-    raises — failures land on the run so the worker survives."""
+    raises - failures land on the run so the worker survives."""
     from django.utils import timezone
 
     from .devicetype_import import (
@@ -143,7 +143,7 @@ def run_devicetype_image_reimport(run_id: str) -> None:
     ).first()
     if run is None:
         logger.warning(
-            "image reimport run %s not found in this database — is another "
+            "image reimport run %s not found in this database - is another "
             "instance's worker sharing this Redis queue (RQ_REDIS_DB)?", run_id
         )
         return
@@ -153,7 +153,7 @@ def run_devicetype_image_reimport(run_id: str) -> None:
 
     failures: list[dict] = []
     try:
-        # Re-check at run time — enqueue-time state is not trusted: the
+        # Re-check at run time - enqueue-time state is not trusted: the
         # deployment may have been flipped to airgapped since.
         refusal = airgap_refusal()
         if refusal:
@@ -190,7 +190,7 @@ def run_devicetype_image_reimport(run_id: str) -> None:
                 inventory=inventory,
             )
             rows.append(row)
-            # Only actionable rows go to `failures` — a big catalog's happy
+            # Only actionable rows go to `failures` - a big catalog's happy
             # path (matched/skipped) lives in the totals.
             if row["status"] in ("no_match", "fetch_failed") and (
                 len(failures) < _MAX_FAILURES
@@ -208,7 +208,7 @@ def run_devicetype_image_reimport(run_id: str) -> None:
                 run.save(update_fields=["progress", "updated_at"])
         run.progress = {"done": total, "total": total, **summarize_reimport(rows)}
         run.status = "success"
-    except Exception as exc:  # noqa: BLE001 — scope/airgap refusal, DB trouble
+    except Exception as exc:  # noqa: BLE001 - scope/airgap refusal, DB trouble
         logger.exception("devicetype image reimport %s failed", run_id)
         run.status = "failed"
         run.error = str(exc)

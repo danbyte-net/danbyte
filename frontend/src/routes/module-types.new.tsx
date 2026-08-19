@@ -16,7 +16,7 @@ function NewModuleTypePage() {
         { label: "Add" },
       ]}
       title="Add module type"
-      subtitle="A pluggable hardware model — line card, uplink module, PSU sled."
+      subtitle="A pluggable hardware model - line card, uplink module, PSU sled."
     >
       <ModuleTypeForm
         onSaved={(m) => nav({ to: "/module-types/$id", params: { id: m.id } })}

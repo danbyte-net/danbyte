@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils"
 
 // Tag multi-select powered by shadcn's Combobox pattern (Command + Popover).
 // Renders the selected tags inline as a row of removable colored chips,
-// with the picker trigger at the end. Plain controlled state — pass
+// with the picker trigger at the end. Plain controlled state - pass
 // `value` (tag IDs) and `onChange`.
 
 export interface TagMultiSelectProps {

@@ -19,7 +19,7 @@ def _git(*args) -> str:
             capture_output=True, text=True, timeout=3, check=True,
         )
         return out.stdout.strip()
-    except Exception:  # noqa: BLE001 — best-effort, never fatal
+    except Exception:  # noqa: BLE001 - best-effort, never fatal
         return ""
 
 
@@ -47,7 +47,7 @@ def _postgres_version() -> str:
         with connection.cursor() as cur:
             cur.execute("SHOW server_version")
             return ((cur.fetchone() or [""])[0] or "").split()[0]
-    except Exception:  # noqa: BLE001 — best-effort, never fatal
+    except Exception:  # noqa: BLE001 - best-effort, never fatal
         return ""
 
 
@@ -58,14 +58,14 @@ def _redis_version() -> str:
 
         conn = django_rq.get_connection("default")
         return str(conn.info("server").get("redis_version", "") or "")
-    except Exception:  # noqa: BLE001 — best-effort, never fatal
+    except Exception:  # noqa: BLE001 - best-effort, never fatal
         return ""
 
 
 def system_info() -> dict:
     """Local, network-free runtime facts for the Updates/About page.
 
-    Never contacts the release repo, so it renders **instantly** — even on an
+    Never contacts the release repo, so it renders **instantly** - even on an
     airgapped or offline install where the release check times out. Pairs the
     running version with the component versions operators ask for when
     diagnosing (Python, Django, PostgreSQL, Redis)."""

@@ -1,9 +1,9 @@
-"""bootstrap — idempotent first-run setup for a clean deployment.
+"""bootstrap - idempotent first-run setup for a clean deployment.
 
 Brings a fresh install to a usable state without hand edits:
 
-  1. ensure an Organization exists (Tenants require one — see api.viewsets);
-  2. ensure a default Tenant exists (unless ``--no-default-tenant``) — needed so
+  1. ensure an Organization exists (Tenants require one - see api.viewsets);
+  2. ensure a default Tenant exists (unless ``--no-default-tenant``) - needed so
      the built-in Status catalog actually gets seeded on a fresh box, and so the
      demo seeders (``seed_demo_172``) have a tenant to write into;
   3. seed the built-in Status catalog for every tenant (the statuses features
@@ -11,7 +11,7 @@ Brings a fresh install to a usable state without hand edits:
   4. optionally create a superuser from ``DJANGO_SUPERUSER_*`` env vars.
 
 Safe to run on every boot (e.g. from the container entrypoint or ``make``).
-This is *production* bootstrap — distinct from ``seed_demo``, which loads
+This is *production* bootstrap - distinct from ``seed_demo``, which loads
 throwaway demo data.
 """
 from __future__ import annotations
@@ -83,7 +83,7 @@ class Command(BaseCommand):
         tenants = list(Tenant.objects.all())
         if not tenants:
             self.stdout.write(
-                "No tenants yet — built-in statuses seed automatically when the "
+                "No tenants yet - built-in statuses seed automatically when the "
                 "first tenant is created."
             )
             return
@@ -119,7 +119,7 @@ class Command(BaseCommand):
         email = os.environ.get("DJANGO_SUPERUSER_EMAIL", "")
         if not username or not password:
             self.stdout.write(
-                "DJANGO_SUPERUSER_USERNAME / DJANGO_SUPERUSER_PASSWORD not set — "
+                "DJANGO_SUPERUSER_USERNAME / DJANGO_SUPERUSER_PASSWORD not set - "
                 "skipping superuser creation."
             )
             return

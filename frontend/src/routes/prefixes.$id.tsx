@@ -167,7 +167,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   )
 
   // Edit from a prefix's IPs tab should return here (this exact tab), not the
-  // IP detail page — pass the current href as ?from.
+  // IP detail page - pass the current href as ?from.
   const currentHref = useCurrentHref()
   const handleEditIp = useCallback(
     (ip: IPAddress) =>
@@ -310,7 +310,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
               <ViolationBadge objectId={p.id} prominent />
               <VrfCell vrf={p.vrf} showRd />
               <StatusBadge status={p.status} />
-              {/* The VLAN's security zone — network context worth surfacing
+              {/* The VLAN's security zone - network context worth surfacing
                   at the same glance level as status/tags. */}
               {p.vlan?.zone && (
                 <ColorBadge
@@ -499,7 +499,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   )
 }
 
-/** The prefix's attributes, grouped into labelled tables — the detail that used
+/** The prefix's attributes, grouped into labelled tables - the detail that used
  * to crowd the page header. Only headline data (CIDR, VRF, status, tags,
  * description) and the single most-scanned metric (utilisation) stay up top;
  * everything else reads here. */
@@ -510,7 +510,7 @@ function PrefixOverview({
   prefix: Prefix
   humanIds: boolean | undefined
 }) {
-  // Custom fields live HERE (a table beside Details/Addressing) — not in the
+  // Custom fields live HERE (a table beside Details/Addressing) - not in the
   // always-visible header, where they'd repeat on every tab.
   const cfDefs = useCustomFieldDefs("prefix")
   const cfRows: KvRow[] = (cfDefs.data?.results ?? [])
@@ -529,7 +529,7 @@ function PrefixOverview({
           } satisfies KvRow,
         ]
       : []),
-    { label: "Family", value: `IPv${p.family ?? "—"}` },
+    { label: "Family", value: `IPv${p.family ?? "-"}` },
     { label: "Site", value: p.site?.name ?? dash },
   ]
 
@@ -539,7 +539,7 @@ function PrefixOverview({
       label: "Free",
       value: (
         <span className="num">
-          {p.utilisation_pct !== null ? freeCount(p) : "—"}
+          {p.utilisation_pct !== null ? freeCount(p) : "-"}
         </span>
       ),
     },
@@ -567,7 +567,7 @@ function PrefixOverview({
 }
 
 function UtilPct({ pct }: { pct: number | null }) {
-  if (pct === null) return <span className="text-muted-foreground">—</span>
+  if (pct === null) return <span className="text-muted-foreground">-</span>
   const tone =
     pct > 95
       ? "text-red-600 dark:text-red-400"
@@ -586,7 +586,7 @@ function UtilPct({ pct }: { pct: number | null }) {
 }
 
 function freeCount(p: Prefix): string {
-  if (p.utilisation_pct === null) return "—"
+  if (p.utilisation_pct === null) return "-"
   return `${100 - p.utilisation_pct}%`
 }
 
@@ -823,7 +823,7 @@ function ChildPrefixesPane({
       return c ? contains(parentCidr, c) : false
     })
     const nested = annotateNesting([parent, ...descendants])
-    // The parent anchors the tree at depth 0 but isn't shown — shift its
+    // The parent anchors the tree at depth 0 but isn't shown - shift its
     // children back to depth 0 so the indent chevrons start at the edge.
     return nested
       .filter((p) => p.id !== parent.id)
@@ -831,7 +831,7 @@ function ChildPrefixesPane({
   }, [query.data, parent])
 
   // Filter rail derives from the factory's facet metadata (status, site,
-  // utilisation, tags + one facet per tenant custom field) — same machinery as
+  // utilisation, tags + one facet per tenant custom field) - same machinery as
   // the /prefixes list, so a new facetable column shows up automatically.
   const cfDefs = useMemo(() => cfQuery.data?.results ?? [], [cfQuery.data])
   const includeCols = useMemo(
@@ -861,7 +861,7 @@ function ChildPrefixesPane({
   )
   const tagSelection = selectedValues("tags")
 
-  // Shared factory — a child-prefix row reads exactly like /prefixes,
+  // Shared factory - a child-prefix row reads exactly like /prefixes,
   // including the depth chevrons and the always-visible row actions.
   const columns = useMemo<ColumnDef<NestedPrefix>[]>(
     () =>
@@ -902,7 +902,7 @@ function ChildPrefixesPane({
   if (rows.length === 0) {
     return (
       <p className="p-4 text-sm text-muted-foreground lg:p-6">
-        No child prefixes — this prefix sits flat.
+        No child prefixes - this prefix sits flat.
       </p>
     )
   }

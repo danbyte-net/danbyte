@@ -24,7 +24,7 @@ from core.models import Tag
 def apply_tag_filter(qs: QuerySet, request: HttpRequest, *, field: str = "tags") -> QuerySet:
     """Narrow ``qs`` by the ``?tag=<slug>`` query params.
 
-    Multiple tags use AND semantics — a row must carry every selected tag
+    Multiple tags use AND semantics - a row must carry every selected tag
     (that matches what most users expect: "show
     rows tagged with prod AND core").
     """
@@ -44,17 +44,17 @@ def tag_facet_for(
     """Build the tag-facet context for ``api/_tag_facet.html``.
 
     The list only includes tags actually present on the (pre-tag-filtered)
-    queryset — there's no point showing zero-count tags. Returns ``None``
+    queryset - there's no point showing zero-count tags. Returns ``None``
     when no tags exist for this model, so the partial can render as a
     no-op section instead of an empty bordered block.
 
-    ``pre_tag_qs`` is the queryset BEFORE ``apply_tag_filter`` was applied —
+    ``pre_tag_qs`` is the queryset BEFORE ``apply_tag_filter`` was applied -
     pass it so usage counts reflect "rows that match every other filter",
     not "rows that already match the chosen tags". If omitted we fall back
     to ``qs`` (acceptable; counts then show the post-filter total).
     """
     base = pre_tag_qs if pre_tag_qs is not None else qs
-    # The reverse relation manager name is "tagged_items" on Tag — see
+    # The reverse relation manager name is "tagged_items" on Tag - see
     # core.models. Counting through the GenericRelation gets us the tag's
     # usage across the whole table; we want it scoped to *this* queryset
     # so we annotate on the queryset and group.

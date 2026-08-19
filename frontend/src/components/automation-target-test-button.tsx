@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { apiErrorToast } from "@/lib/api-toast"
 
-/** One-click "is this target reachable" probe — POST /automation-targets/<id>/test/.
+/** One-click "is this target reachable" probe - POST /automation-targets/<id>/test/.
  * Shared by the list row and the target's detail header so the probe behaves
  * identically in both. */
 export function AutomationTargetTestButton({

@@ -18,7 +18,7 @@ export const Route = createFileRoute("/settings/site")({
   component: SiteSettingsPage,
 })
 
-// Per-SITE settings (email v1) — for orgs whose sites run their own IT.
+// Per-SITE settings (email v1) - for orgs whose sites run their own IT.
 // Who sees this page: tenant admins always; otherwise the tenant's
 // "site-managed settings" switch must be on AND the user must be a site
 // editor there or hold a `sitesettings` grant (me.settings_sites).
@@ -118,7 +118,7 @@ function SiteSettingsPage() {
   return (
     <div className="max-w-5xl space-y-6">
       <p className="text-xs text-muted-foreground">
-        Settings for a single site — local IT manages its own overrides here.
+        Settings for a single site - local IT manages its own overrides here.
         Groups left on <span className="font-medium">inherited</span> follow the
         tenant (or deployment) values.
       </p>
@@ -146,7 +146,7 @@ function SiteSettingsPage() {
             className="space-y-6"
           >
             <OverrideCard
-              title={`Email (SMTP) — ${form.site.name}`}
+              title={`Email (SMTP) - ${form.site.name}`}
               description="Alert emails about this site's objects. Override to use a site-local relay and From address."
               overridden={form.override_email}
               onOverriddenChange={(v) => set("override_email", v)}
@@ -189,7 +189,7 @@ function SiteSettingsPage() {
             <div>
               <h2 className="text-sm font-semibold">Send a test email</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                Uses this site's effective config — the override above when
+                Uses this site's effective config - the override above when
                 enabled, else the tenant/deployment relay. Save first if you
                 just changed it. Note: only alerts about this site's objects use
                 the site relay; sign-in codes and digests stay on the

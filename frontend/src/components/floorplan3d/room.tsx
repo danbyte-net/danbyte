@@ -10,7 +10,7 @@ import {
 } from "./world"
 
 // One tiny canvas of grate slots shared by every perforated zone (clones only
-// re-upload the repeat). Canvas-drawn — CSP/airgap-safe like every texture in
+// re-upload the repeat). Canvas-drawn - CSP/airgap-safe like every texture in
 // this room.
 let grateBase: THREE.CanvasTexture | null = null
 function grateTexture(): THREE.CanvasTexture {
@@ -21,7 +21,7 @@ function grateTexture(): THREE.CanvasTexture {
   g.fillStyle = "#3f3f46"
   g.fillRect(0, 0, 64, 64)
   g.fillStyle = "#131316"
-  // Two columns of vent slots per 600 mm tile — the supply-tile look.
+  // Two columns of vent slots per 600 mm tile - the supply-tile look.
   for (const x of [10, 38]) {
     for (let row = 0; row < 4; row++) {
       g.fillRect(x, 6 + row * 15, 16, 9)
@@ -34,11 +34,11 @@ function grateTexture(): THREE.CanvasTexture {
 }
 
 /** The room shell: floor slab, grid lines, optional blueprint texture, and
- * zone tiles painted flat on the floor. Everything static — one draw each.
+ * zone tiles painted flat on the floor. Everything static - one draw each.
  * `xray` ghosts the slab so underfloor runs read through. Zone patches are
  * deliberately inert: a first version made them clickable (isolate), and
  * every empty-floor click inside a zone hid the room instead of
- * deselecting — isolation lives on the rack HUD now. */
+ * deselecting - isolation lives on the rack HUD now. */
 export function Room({
   scene,
   xray = false,
@@ -46,7 +46,7 @@ export function Room({
 }: {
   scene: ScenePayload
   xray?: boolean
-  /** Draw the ceiling plane — single-sided facing DOWN, so it encloses the
+  /** Draw the ceiling plane - single-sided facing DOWN, so it encloses the
    * room from inside but never blocks the bird's-eye view (and it neither
    * casts nor receives shadow: the key light sits above it). */
   ceiling?: boolean
@@ -69,7 +69,7 @@ export function Room({
 
   return (
     <group>
-      {/* Floor slab — ghosted in x-ray so the plenum reads from above. */}
+      {/* Floor slab - ghosted in x-ray so the plenum reads from above. */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
         position={[w / 2, -0.01, d / 2]}
@@ -109,7 +109,7 @@ export function Room({
       {ceiling && !xray && (
         // Faces DOWN, so it encloses the room from inside and never blocks
         // the bird's-eye. It also has to be light enough to SEE from below:
-        // the key light sits above it, so the underside gets ambient only —
+        // the key light sits above it, so the underside gets ambient only -
         // at near-black (#1c1c1f) it was indistinguishable from the empty
         // background and read as "the ceiling toggle does nothing".
         <mesh
@@ -139,7 +139,7 @@ function ZonePatch({
 }) {
   const [x, z] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
   const [w, d] = cellToWorld(plan, tile.w, tile.h)
-  // Perforated zones draw the grate pattern at one repeat per 600 mm tile —
+  // Perforated zones draw the grate pattern at one repeat per 600 mm tile -
   // the cold-aisle supply floor, legible without a heat map.
   const grate = useMemo(() => {
     if (!tile.perforated) return null

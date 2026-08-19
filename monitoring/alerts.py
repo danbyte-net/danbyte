@@ -1,4 +1,4 @@
-"""Alerting engine — turn status transitions into stateful alerts.
+"""Alerting engine - turn status transitions into stateful alerts.
 
 Called from the worker after each batch with the transitions it produced. A
 transition into a *bad* status opens (or updates) a single firing ``Alert`` for
@@ -181,7 +181,7 @@ def process_transitions(transitions, now) -> dict:
         from .notify import dispatch_status_changes
 
         dispatch_status_changes(transitions, now)
-    except Exception:  # noqa: BLE001 — notification must not break the engine
+    except Exception:  # noqa: BLE001 - notification must not break the engine
         log.exception("status-change dispatch failed")
 
     if opened or resolved:
@@ -215,5 +215,5 @@ def _dispatch_notifications(opened_by_tenant: dict, individual: list) -> None:
     for alert, event in individual:
         try:
             notify_alert(alert, event)
-        except Exception:  # noqa: BLE001 — notification must not break the engine
+        except Exception:  # noqa: BLE001 - notification must not break the engine
             log.exception("notify_alert failed for %s", alert.dedup_key)

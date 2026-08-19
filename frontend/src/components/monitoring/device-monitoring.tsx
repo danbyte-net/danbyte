@@ -21,11 +21,11 @@ function rollupTooltip(rollup: DeviceChecksResponse["rollup"]): string {
   const head = `${rollup.monitored_ips} monitored IP${
     rollup.monitored_ips === 1 ? "" : "s"
   }`
-  return parts.length ? `${head} — ${parts.join(", ")}` : head
+  return parts.length ? `${head} - ${parts.join(", ")}` : head
 }
 
 /**
- * The device's rolled-up monitoring status as a single mixed badge — for the
+ * The device's rolled-up monitoring status as a single mixed badge - for the
  * device header, next to the status badge. Renders nothing when the device has
  * no monitored IPs.
  */
@@ -44,7 +44,7 @@ export function DeviceMonitoringBadge({ deviceId }: { deviceId: string }) {
  * Monitoring summary for a device's Overview: a roll-up across every IP
  * assigned to the device plus a per-IP status grid. Checks attach to IPs (a
  * service's check lives on its IP), so this surfaces both IP and service
- * monitoring. Read-only — checks are managed on each IP's detail page.
+ * monitoring. Read-only - checks are managed on each IP's detail page.
  *
  * Renders nothing when the device has no monitored IPs, to keep the Overview
  * uncluttered for devices that aren't monitored.
@@ -62,7 +62,7 @@ export function DeviceMonitoring({ deviceId }: { deviceId: string }) {
   const hiddenCount = data.rollup.monitored_ips - shownIps.length
 
   // Compact: one combined (striped) rollup indicator + per-IP combined
-  // indicators as links. No legend, no plain status badges — the mixed badge
+  // indicators as links. No legend, no plain status badges - the mixed badge
   // carries the status. Full breakdown lives on each IP's page.
   return (
     <section className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-border bg-card px-4 py-2.5">

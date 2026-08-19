@@ -1,7 +1,7 @@
 """Physical-media vocabularies for interfaces and cables.
 
 These are **standards-based taxonomies** (IEEE / TIA / ITU-T media types and
-the standard cable/interface type lists), not tenant data — the same kind of
+the standard cable/interface type lists), not tenant data - the same kind of
 fixed vocabulary as ``Cable.status`` / ``length_unit``. They give the UI a
 ready-made dropdown.
 Stored as plain ``CharField`` values that default to blank, so nothing is
@@ -294,7 +294,7 @@ INTERFACE_TYPE_CHOICES: GroupedChoices = [
 
 # ─── Cable types (standard cable-type taxonomy) ──────────────────────────────
 CABLE_TYPE_CHOICES: GroupedChoices = [
-    ("Copper — twisted pair", [
+    ("Copper - twisted pair", [
         ("cat3", "CAT3"),
         ("cat5", "CAT5"),
         ("cat5e", "CAT5e"),
@@ -305,11 +305,11 @@ CABLE_TYPE_CHOICES: GroupedChoices = [
         ("cat8", "CAT8"),
         ("mrj21-trunk", "MRJ21 Trunk"),
     ]),
-    ("Copper — twinax / DAC", [
+    ("Copper - twinax / DAC", [
         ("dac-active", "Direct Attach Copper (Active)"),
         ("dac-passive", "Direct Attach Copper (Passive)"),
     ]),
-    ("Copper — coaxial", [
+    ("Copper - coaxial", [
         ("coaxial", "Coaxial"),
         ("rg-6", "RG-6"),
         ("rg-8", "RG-8"),
@@ -321,7 +321,7 @@ CABLE_TYPE_CHOICES: GroupedChoices = [
         ("lmr-200", "LMR-200"),
         ("lmr-400", "LMR-400"),
     ]),
-    ("Fiber — multimode", [
+    ("Fiber - multimode", [
         ("mmf", "Multimode Fiber"),
         ("mmf-om1", "Multimode Fiber (OM1)"),
         ("mmf-om2", "Multimode Fiber (OM2)"),
@@ -329,12 +329,12 @@ CABLE_TYPE_CHOICES: GroupedChoices = [
         ("mmf-om4", "Multimode Fiber (OM4)"),
         ("mmf-om5", "Multimode Fiber (OM5)"),
     ]),
-    ("Fiber — single-mode", [
+    ("Fiber - single-mode", [
         ("smf", "Single-mode Fiber"),
         ("smf-os1", "Single-mode Fiber (OS1)"),
         ("smf-os2", "Single-mode Fiber (OS2)"),
     ]),
-    ("Fiber — other", [
+    ("Fiber - other", [
         ("aoc", "Active Optical Cabling (AOC)"),
     ]),
     ("Power / other", [
@@ -371,7 +371,7 @@ CONSOLE_PORT_TYPE_CHOICES: GroupedChoices = [
 ]
 
 # ─── Power port types (device power inlets) ──────────────────────────────────
-# The high-traffic subset of NetBox's (very long) power connector taxonomy —
+# The high-traffic subset of NetBox's (very long) power connector taxonomy -
 # IEC 60320 couplers, NEMA locking/non-locking, and DC. Free-text still allowed
 # (fields are lenient CharFields), so anything else round-trips on import.
 POWER_PORT_TYPE_CHOICES: GroupedChoices = [
@@ -439,7 +439,7 @@ POWER_OUTLET_TYPE_CHOICES: GroupedChoices = [
 
 
 # ─── Aux port types (everything no other component type models) ─────────────
-# USB data ports, video outputs, card slots, grounding — the "model
+# USB data ports, video outputs, card slots, grounding - the "model
 # everything" catch-all. USB *console* stays a console-port type.
 AUX_PORT_TYPE_CHOICES: GroupedChoices = [
     ("USB", [
@@ -474,7 +474,7 @@ AUX_PORT_TYPE_CHOICES: GroupedChoices = [
 # The panel connector. Fibre connectors carry a standard **fibre count** (see
 # CONNECTOR_FIBERS) that pre-fills a front port's `positions`; copper is 1.
 FRONT_PORT_TYPE_CHOICES: GroupedChoices = [
-    ("Fibre — simplex/duplex", [
+    ("Fibre - simplex/duplex", [
         ("lc", "LC (simplex)"),
         ("lc-duplex", "LC Duplex"),
         ("lc-apc", "LC/APC (simplex)"),
@@ -486,7 +486,7 @@ FRONT_PORT_TYPE_CHOICES: GroupedChoices = [
         ("fc", "FC"),
         ("mtrj", "MTRJ (duplex)"),
     ]),
-    ("Fibre — array (MPO/MTP)", [
+    ("Fibre - array (MPO/MTP)", [
         ("mpo-8", "MPO-8 / MTP-8"),
         ("mpo-12", "MPO-12 / MTP-12"),
         ("mpo-16", "MPO-16 / MTP-16"),
@@ -508,7 +508,7 @@ FRONT_PORT_TYPE_CHOICES: GroupedChoices = [
     ]),
 ]
 
-# Fibre count per connector — used to pre-fill FrontPort.positions. Anything
+# Fibre count per connector - used to pre-fill FrontPort.positions. Anything
 # not listed (copper, other) defaults to 1. An industry spec, not tenant data.
 CONNECTOR_FIBERS: dict[str, int] = {
     "lc-duplex": 2, "lc-apc-duplex": 2, "sc-duplex": 2, "mtrj": 2,
@@ -560,7 +560,7 @@ from rest_framework.response import Response
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def dcim_choices_view(request):
-    """``GET /api/dcim/choices/`` — single source of truth for the interface /
+    """``GET /api/dcim/choices/`` - single source of truth for the interface /
     cable type dropdowns + speed suggestions (the frontend fetches this rather
     than duplicating the long lists). Each choice carries its ``group`` so the
     UI can render sub-categorised (optgroup-style) dropdowns."""

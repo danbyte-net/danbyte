@@ -25,7 +25,7 @@ import {
 /**
  * Author a DNS zone. DNS is Danbyte-authoritative for managed content (a push
  * to the DNS backend is a later phase), so this stores the zone locally as a
- * managed zone — sync will never prune it.
+ * managed zone - sync will never prune it.
  */
 export function DnsZoneDialog({
   onOpenChange,

@@ -13,7 +13,7 @@ import {
 /**
  * The DatePicker's sibling for clock times: a trigger button opening scrollable
  * hour / minute columns (plus AM·PM under a 12-hour preference). The value is
- * always 24-hour `"HH:MM"` — only the presentation follows the user's
+ * always 24-hour `"HH:MM"` - only the presentation follows the user's
  * `time_style` setting, like every time Danbyte renders.
  */
 

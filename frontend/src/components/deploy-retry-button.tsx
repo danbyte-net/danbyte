@@ -22,7 +22,7 @@ export function DeployRetryButton({
     mutationFn: () =>
       api<DeployRun>(`/api/deploy-runs/${run.id}/retry/`, { method: "POST" }),
     onSuccess: (r) => {
-      toast.success(`Retrying — attempt ${r.attempt}`)
+      toast.success(`Retrying - attempt ${r.attempt}`)
       qc.invalidateQueries({ queryKey: ["deploy-runs"] })
     },
     onError: (err) => apiErrorToast(err),

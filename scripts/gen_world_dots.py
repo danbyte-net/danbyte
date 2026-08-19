@@ -2,7 +2,7 @@
 """One-off generator for the dashboard world-map widget's dot grid.
 
 Rasterizes a Natural Earth land GeoJSON onto an equirectangular grid and
-emits frontend/src/components/dashboard/world-dots.ts — a single SVG path
+emits frontend/src/components/dashboard/world-dots.ts - a single SVG path
 string (one dot per land cell), so the widget ships zero runtime geo deps.
 
 Usage:

@@ -299,7 +299,7 @@ function CircuitOverview({ circuit: c }: { circuit: Circuit }) {
   )
 }
 
-/** One side (A or Z) of the circuit — the endpoint and its cross-connect
+/** One side (A or Z) of the circuit - the endpoint and its cross-connect
  * details, or an empty state inviting the first termination. */
 function TerminationCard({
   side,

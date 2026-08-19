@@ -1,6 +1,6 @@
 // The advanced-filter expression engine: one AST, edited two ways (typed
 // grammar and visual builder), evaluated client-side over the rows a list has
-// already loaded — the same rows the facet rail filters.
+// already loaded - the same rows the facet rail filters.
 //
 // Grammar (case-insensitive keywords, `and` binds tighter than `or`):
 //
@@ -169,7 +169,7 @@ export function parse(src: string): Expr | null {
     if (tok.t !== "word") throw new ParseError("Expected a field name", tok.pos)
     const field = tok.v
     i++
-    // "field is [not] empty" — the wordy form the builder writes.
+    // "field is [not] empty" - the wordy form the builder writes.
     if (isWord("is")) {
       const save = i
       i++
@@ -216,7 +216,7 @@ export function parse(src: string): Expr | null {
   return result
 }
 
-// ─── Formatter (canonical text — what the builder writes) ───────────────
+// ─── Formatter (canonical text - what the builder writes) ───────────────
 
 function quoteIfNeeded(v: string): string {
   return /^[A-Za-z0-9_.@+/:-]+$/.test(v) && v !== "" ? v : `"${v}"`
@@ -229,7 +229,7 @@ export function format(expr: Expr | null, parent?: "and" | "or"): string {
   if (expr.kind === "empty")
     return `${expr.field} is ${expr.negated ? "not " : ""}empty`
   const inner = expr.terms.map((t) => format(t, expr.op)).join(` ${expr.op} `)
-  // Parenthesise an OR living inside an AND — the only precedence hazard.
+  // Parenthesise an OR living inside an AND - the only precedence hazard.
   return parent === "and" && expr.op === "or" ? `(${inner})` : inner
 }
 
@@ -344,7 +344,7 @@ const SKIP_KEYS = new Set([
 
 /** Derive the filterable field paths from the rows themselves (two levels
  * deep, name-bearing objects surfaced under their own key), so the builder
- * needs no per-model registry — like the facet rail, it describes exactly the
+ * needs no per-model registry - like the facet rail, it describes exactly the
  * list it sits on. */
 export function discoverFields(rows: unknown[]): FieldInfo[] {
   const found = new Map<
@@ -404,7 +404,7 @@ export interface BuilderRule {
 }
 
 /** A flat (single-combinator) view of the AST, or null when the expression
- * uses nesting the builder can't show — the text editor still can. */
+ * uses nesting the builder can't show - the text editor still can. */
 export function toBuilder(
   expr: Expr | null
 ): { op: "and" | "or"; rules: BuilderRule[] } | null {
@@ -450,7 +450,7 @@ export function fromBuilder(
   return terms.length === 1 ? terms[0] : { kind: "group", op, terms }
 }
 
-/** Group view of an expression: OR-separated groups of AND-ed rules — the
+/** Group view of an expression: OR-separated groups of AND-ed rules - the
  * shape "a or (b and c)" that the flat builder couldn't show. Null only for
  * genuinely deeper nesting (an `or` inside an `and` inside an `or`, …). */
 export function toGroups(expr: Expr | null): BuilderRule[][] | null {
@@ -485,7 +485,7 @@ export function toGroups(expr: Expr | null): BuilderRule[][] | null {
   return groups
 }
 
-/** The inverse of `toGroups` — incomplete rules (no field) are dropped. */
+/** The inverse of `toGroups` - incomplete rules (no field) are dropped. */
 export function fromGroups(groups: BuilderRule[][]): Expr | null {
   const terms: Expr[] = []
   for (const g of groups) {

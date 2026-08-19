@@ -22,7 +22,7 @@ const EMPTY: DcimChoices = {
 
 /**
  * Interface/cable type dropdown options + speed suggestions, served from
- * `/api/dcim/choices/` (single source of truth — the long lists live in the
+ * `/api/dcim/choices/` (single source of truth - the long lists live in the
  * backend `dcim_choices.py`). Cached for the session; the lists are static.
  */
 export function useDcimChoices(): DcimChoices {

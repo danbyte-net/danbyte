@@ -3,7 +3,7 @@ import { SortHeader } from "@/components/data-table"
 import { useDateFormat } from "@/lib/datetime"
 import { useUserPrefs } from "@/lib/use-user-prefs"
 
-// Relative-time helper. Pure — call anywhere.
+// Relative-time helper. Pure - call anywhere.
 export function timeAgo(iso: string): string {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
   if (s < 60) return `${s}s ago`
@@ -15,8 +15,8 @@ export function timeAgo(iso: string): string {
 }
 
 /** Timestamp cell honouring the user's `time_format` preference (relative vs
- * absolute). The absolute form — rendered per the effective date/time display
- * settings (format, 12/24h clock, timezone) — is always available on hover. */
+ * absolute). The absolute form - rendered per the effective date/time display
+ * settings (format, 12/24h clock, timezone) - is always available on hover. */
 export function TimeCell({
   iso,
   align,
@@ -63,7 +63,7 @@ export function timeAgoColumn<T>(
     header: ({ column }) => <SortHeader column={column} label={header} />,
     cell: ({ row }) => {
       const iso = opts.get(row.original)
-      if (!iso) return <span className="text-muted-foreground">—</span>
+      if (!iso) return <span className="text-muted-foreground">-</span>
       return <TimeCell iso={iso} align={opts.align} />
     },
   }

@@ -103,7 +103,7 @@ export function FloorTileTypeForm({
       />
       <FormIcon
         label="Icon"
-        hint="Optional — shown in the palette and lists"
+        hint="Optional - shown in the palette and lists"
         value={icon}
         onChange={setIcon}
         error={fieldErrors.icon}
@@ -132,7 +132,7 @@ export function FloorTileTypeForm({
       </FormRow>
       <FormCheckbox
         label="Background zone"
-        hint="Paints the grid background (hot/cold aisle, security area) — renders under normal tiles, which may sit on top of it"
+        hint="Paints the grid background (hot/cold aisle, security area) - renders under normal tiles, which may sit on top of it"
         checked={isZone}
         onChange={setIsZone}
       />
@@ -144,7 +144,7 @@ export function FloorTileTypeForm({
       />
       <FormCheckbox
         label="Perforated floor (3D)"
-        hint="Zone tiles of this type render as grate/supply tiles in the 3D room — the cold-aisle read"
+        hint="Zone tiles of this type render as grate/supply tiles in the 3D room - the cold-aisle read"
         checked={perforated}
         onChange={setPerforated}
       />

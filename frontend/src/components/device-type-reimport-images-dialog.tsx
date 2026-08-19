@@ -17,7 +17,7 @@ import { FormCheckbox } from "@/components/forms"
 import { SimpleTable } from "@/components/ui/simple-table"
 import type { SimpleColumn } from "@/components/ui/simple-table"
 
-/** Danbyte's fork of the devicetype-library — same layout, images under
+/** Danbyte's fork of the devicetype-library - same layout, images under
  * elevation-images/. Any owner/name, github.com URL, or https base works. */
 const DEFAULT_REPO = "https://github.com/danbyte-net/device-library"
 
@@ -75,7 +75,7 @@ const FACE_LABEL: Record<FaceState, string> = {
 }
 
 function faceCell(state?: FaceState) {
-  if (!state) return <span className="text-muted-foreground">—</span>
+  if (!state) return <span className="text-muted-foreground">-</span>
   const cls =
     state === "fetch_failed"
       ? "text-red-600 dark:text-red-400"
@@ -137,7 +137,7 @@ function totalsLine(t: Totals, applied: boolean): string {
  * Recovery tool: the media folder was lost or corrupted but the device types
  * survived in the database. Point Danbyte at a devicetype-library-layout
  * repository and it matches the EXISTING types and re-downloads their
- * elevation images — nothing else is created or changed. Fill-gaps by
+ * elevation images - nothing else is created or changed. Fill-gaps by
  * default: a face counts as a gap when the field is empty or its file is
  * missing from storage.
  */
@@ -161,7 +161,7 @@ export function DeviceTypeReimportImagesDialog({
     bgDone.current = false
   }
 
-  // Over the sync cap the server answers 202 with a background run instead —
+  // Over the sync cap the server answers 202 with a background run instead -
   // poll it exactly like the folder import does.
   const runQ = useQuery({
     queryKey: ["dt-reimport-run", runId],
@@ -182,7 +182,7 @@ export function DeviceTypeReimportImagesDialog({
     if (bg.status === "success") {
       const p = bg.progress
       if (bg.options.dry_run) {
-        toast.success(`Dry run complete — ${totalsLine(p, false)}`)
+        toast.success(`Dry run complete - ${totalsLine(p, false)}`)
       } else {
         qc.invalidateQueries({ queryKey: ["device-types"] })
         toast.success(
@@ -205,7 +205,7 @@ export function DeviceTypeReimportImagesDialog({
       ),
     onSuccess: (data) => {
       if ("run" in data) {
-        // Big catalog — the server queued a background run.
+        // Big catalog - the server queued a background run.
         setReport(null)
         bgDone.current = false
         setRunId(data.run.id)
@@ -219,7 +219,7 @@ export function DeviceTypeReimportImagesDialog({
           qc.invalidateQueries({ queryKey: ["device-types"] })
           toast.success(`Downloaded ${n} image${n === 1 ? "" : "s"}`)
         } else {
-          toast.info("No images were downloaded — see the report below.")
+          toast.info("No images were downloaded - see the report below.")
         }
       }
     },
@@ -246,7 +246,7 @@ export function DeviceTypeReimportImagesDialog({
           <DialogDescription>
             Re-download front/rear elevation images for your{" "}
             <span className="font-medium">existing</span> device types from a
-            devicetype-library-style repository — the recovery path when the
+            devicetype-library-style repository - the recovery path when the
             media folder was lost or corrupted. Types are matched by
             manufacturer and model; nothing is created or renamed.
           </DialogDescription>
@@ -280,7 +280,7 @@ export function DeviceTypeReimportImagesDialog({
             className="text-[12px] text-muted-foreground"
             label={
               <>
-                Overwrite existing images too. Off, only gaps are filled — a
+                Overwrite existing images too. Off, only gaps are filled - a
                 face whose field is empty <em>or</em> whose file is missing from
                 the media folder (the corrupt-media case).
               </>
@@ -327,7 +327,7 @@ export function DeviceTypeReimportImagesDialog({
                 <ul className="mt-2 max-h-32 space-y-0.5 overflow-auto text-[11px] text-muted-foreground">
                   {bg.failures.slice(0, 20).map((f, i) => (
                     <li key={i} className="truncate">
-                      <span className="font-mono">{f.name}</span> — {f.error}
+                      <span className="font-mono">{f.name}</span> - {f.error}
                     </li>
                   ))}
                 </ul>
@@ -338,7 +338,7 @@ export function DeviceTypeReimportImagesDialog({
           {report && (
             <div className="grid gap-2">
               <p className="text-[12px] text-muted-foreground">
-                {report.dry_run ? "Dry run — nothing written. " : ""}
+                {report.dry_run ? "Dry run - nothing written. " : ""}
                 {totalsLine(report.totals, !report.dry_run)}
               </p>
               <div className="max-h-64 overflow-auto">

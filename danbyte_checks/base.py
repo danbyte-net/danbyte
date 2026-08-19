@@ -6,7 +6,7 @@ result. Each kind (icmp, tcp, …) registers an implementation in
 
 Contract every checker must honour:
 
-* **Honour the timeout** — never run longer than ``timeout_ms`` for a single
+* **Honour the timeout** - never run longer than ``timeout_ms`` for a single
   attempt, and never block the event loop (all I/O is ``async``).
 * **``unknown`` ≠ ``down``.** Internal/config errors (bad params, missing
   privilege, unexpected exception) return ``unknown`` so misconfiguration never
@@ -62,7 +62,7 @@ CHECKER_REGISTRY: dict[str, Checker] = {}
 
 
 def register(cls: type) -> type:
-    """Class decorator — instantiate and register a checker by its ``kind``."""
+    """Class decorator - instantiate and register a checker by its ``kind``."""
     instance = cls()
     CHECKER_REGISTRY[instance.kind] = instance
     return cls

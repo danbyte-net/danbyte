@@ -1,7 +1,7 @@
 """Source-of-truth certificate expiry alerting.
 
 The endpoint sweep only sees certificates *observed* on the wire. A cert an
-operator uploaded and assigned to a device/VM/IP is intent — it must warn on
+operator uploaded and assigned to a device/VM/IP is intent - it must warn on
 expiry too, even if it was never scanned. These tests pin that behaviour and
 the not-null ``Alert.target_ip`` resolution rule (assigned object → its IP).
 """
@@ -305,7 +305,7 @@ class CertHealthEndpointTests(APITestCase):
         cert(self.tenant, 20, seed="c")               # warning (≤30)
         cert(self.tenant, 200, seed="d")              # healthy
         cert(self.tenant, 100, seed="e", self_signed=True)  # healthy + self-signed
-        cert(self.other, -1, seed="f")                # another tenant — must not leak
+        cert(self.other, -1, seed="f")                # another tenant - must not leak
 
         admin = User.objects.create_superuser("admin", "a@x.com", "x")
         self.client.force_login(admin)

@@ -30,7 +30,7 @@ export interface IpFilterRailProps {
   showAvailable: boolean
   onToggleShowAvailable: (v: boolean) => void
   canShowAvailable: boolean
-  /** Prefix has DHCP scope pools — offers the "Show DHCP pool" toggle. */
+  /** Prefix has DHCP scope pools - offers the "Show DHCP pool" toggle. */
   hasDhcpPool?: boolean
   showDhcpPool?: boolean
   onToggleShowDhcpPool?: (v: boolean) => void
@@ -96,7 +96,7 @@ function IpFilterRailImpl({
   )
 }
 
-// Memoised — same rationale as PrefixIpsTable. Parent toggles for
+// Memoised - same rationale as PrefixIpsTable. Parent toggles for
 // dialog state shouldn't recompute facets or re-render the rail.
 export const IpFilterRail = memo(IpFilterRailImpl)
 

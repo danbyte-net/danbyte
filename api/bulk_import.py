@@ -1,4 +1,4 @@
-"""Generic bulk import — create rows of any registered, tenant-scoped object
+"""Generic bulk import - create rows of any registered, tenant-scoped object
 type from CSV or JSON.
 
 Works directly off the Django model (no per-type wiring): scalar columns are
@@ -115,7 +115,7 @@ def _build(model, tenant, row, fields, user=None):
             continue
         field = fields.get(key)
         if field is None:
-            continue  # unknown column — ignored
+            continue  # unknown column - ignored
         val = _coerce(field, raw, tenant, user)
         if field.is_relation:
             fk_set[field.name] = val

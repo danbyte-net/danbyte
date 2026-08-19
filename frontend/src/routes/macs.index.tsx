@@ -79,7 +79,7 @@ function MacsPage() {
     >
       {filteredRows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No MAC addresses yet — set a MAC on an interface, or pair one with an
+          No MAC addresses yet - set a MAC on an interface, or pair one with an
           IP, and it shows up here.
         </p>
       ) : (
@@ -94,7 +94,7 @@ function MacsPage() {
   )
 }
 
-/** All distinct non-empty object descriptions, joined — so a row that matched a
+/** All distinct non-empty object descriptions, joined - so a row that matched a
  * search on any object's description always shows the matched text. */
 function allDescriptions(m: MacEntry): string {
   const seen = new Set<string>()
@@ -130,7 +130,7 @@ function buildColumns(): ColumnDef<MacEntry>[] {
       cell: ({ row }) => {
         const ifs = row.original.interfaces
         if (ifs.length === 0)
-          return <span className="text-muted-foreground">—</span>
+          return <span className="text-muted-foreground">-</span>
         return (
           <div className="flex flex-wrap items-center gap-1">
             {ifs.map((i) => (
@@ -163,7 +163,7 @@ function buildColumns(): ColumnDef<MacEntry>[] {
       cell: ({ row }) => {
         const ips = row.original.ips
         if (ips.length === 0)
-          return <span className="text-muted-foreground">—</span>
+          return <span className="text-muted-foreground">-</span>
         return (
           <div className="flex flex-wrap items-center gap-1">
             {ips.map((ip) => (
@@ -196,7 +196,7 @@ function buildColumns(): ColumnDef<MacEntry>[] {
       cell: ({ row }) => {
         const tags = unionTags(row.original)
         if (tags.length === 0)
-          return <span className="text-muted-foreground">—</span>
+          return <span className="text-muted-foreground">-</span>
         return <TagList tags={tags} inline />
       },
     },
@@ -209,7 +209,7 @@ function buildColumns(): ColumnDef<MacEntry>[] {
         return desc ? (
           <span className="text-[13px]">{desc}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         )
       },
       meta: {

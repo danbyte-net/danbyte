@@ -16,7 +16,7 @@ import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
 // The one source of truth for "a table of sites". Every surface that lists
-// sites — /sites, the compliance affected-objects table — builds its columns
+// sites - /sites, the compliance affected-objects table - builds its columns
 // here so a site row reads identically everywhere. Page-specific columns are
 // spliced around this factory's output; the shared cells are never re-authored
 // inline.
@@ -62,12 +62,12 @@ export interface SiteColumnOpts<T extends Site = Site> {
   include?: SiteColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
-  /** Columns whose header stays plain text instead of a sortable SortHeader —
+  /** Columns whose header stays plain text instead of a sortable SortHeader -
    * the read-only tables never offered sorting on them. */
   plainHeaders?: SiteColumnId[]
-  /** Count columns render `—` for zero (the list page) or print the 0
+  /** Count columns render `-` for zero (the list page) or print the 0
    * (read-only tables). */
   zeroCounts?: ZeroCounts
   /** Compliance violation badge next to the name. Pass a pre-resolved map to
@@ -156,7 +156,7 @@ export function buildSiteColumns<T extends Site = Site>(
           get: (r: T) => r.gateway_policy,
           // `v` is a raw facet value off the wire, so a policy this client
           // doesn't know about is possible even though the type says it isn't.
-          // Widening the lookup keeps the fallback honest — without it the cast
+          // Widening the lookup keeps the fallback honest - without it the cast
           // makes the `??` look dead and an unknown policy renders "undefined".
           formatValue: (v) => ({
             label: (POLICY_LABEL as Record<string, string | undefined>)[v] ?? v,
@@ -209,7 +209,7 @@ export function buildSiteColumns<T extends Site = Site>(
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     }),

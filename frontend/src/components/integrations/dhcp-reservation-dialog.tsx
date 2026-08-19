@@ -21,7 +21,7 @@ import {
 import { DhcpScopeDialog } from "@/components/integrations/dhcp-scope-dialog"
 
 /** Create or edit a DHCP reservation. Saving pushes to the Windows server
- * first — the row only exists once the server accepted it. Scope and IP are
+ * first - the row only exists once the server accepted it. Scope and IP are
  * fixed after creation (that's how Windows keys reservations). */
 export function DhcpReservationDialog({
   scopes,
@@ -103,7 +103,7 @@ export function DhcpReservationDialog({
                   onChange={(v) => setScope(v ?? "")}
                   options={scopes.map((s) => ({
                     value: s.id,
-                    label: `${s.scope_id}${s.name ? ` — ${s.name}` : ""}${
+                    label: `${s.scope_id}${s.name ? ` - ${s.name}` : ""}${
                       s.is_local ? " · local" : ""
                     }`,
                   }))}
@@ -159,7 +159,7 @@ export function DhcpReservationDialog({
           />
           <p className="text-[11px] text-muted-foreground">
             {selectedScope?.is_local
-              ? "Local scope — the reservation is stored in Danbyte only."
+              ? "Local scope - the reservation is stored in Danbyte only."
               : "Saving writes the reservation to the DHCP server immediately."}
           </p>
           <FormFooter

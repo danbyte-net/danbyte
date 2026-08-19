@@ -19,7 +19,7 @@ import {
 import { cn } from "@/lib/utils"
 
 /**
- * Saved views — a named search plus a set of rail filters, per list.
+ * Saved views - a named search plus a set of rail filters, per list.
  *
  * The filter rail is derived from the columns a list renders, so its selection
  * describes that list completely (see `useTableFilters`). A saved view is just
@@ -46,7 +46,7 @@ export interface SavedView {
 export interface SavedViewsProps {
   /** RBAC object slug of this list, e.g. "device". */
   objectType: string
-  /** Free-text search — part of the view, so it saves and restores with it. */
+  /** Free-text search - part of the view, so it saves and restores with it. */
   q: string
   onQ: (value: string) => void
   filters: {
@@ -154,7 +154,7 @@ export function SavedViews({ objectType, q, onQ, filters }: SavedViewsProps) {
 
   const anythingActive = filters.activeCount > 0 || q.trim() !== ""
   // "Edited" is the honest state when the rail no longer matches the view whose
-  // name is on the button — otherwise the label would lie about what you see.
+  // name is on the button - otherwise the label would lie about what you see.
   const edited = useMemo(() => {
     if (!applied) return false
     return (

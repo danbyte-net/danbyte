@@ -1,4 +1,4 @@
-"""Portable device-type bundles — the shareable half of the device library.
+"""Portable device-type bundles - the shareable half of the device library.
 
 Teaching Danbyte a piece of hardware is real work: stamp the component
 templates, draw the faceplate, place the photo-port markers on the rear image,
@@ -17,7 +17,7 @@ Design rules, in order of importance:
 3. **The type's name is its identity.** Re-importing updates in place; nothing
    duplicates. (Sensors inside a bundle key off their own slug.)
 4. **An imported sensor observes, it does not write.** ``apply_mode`` is forced
-   to ``drift`` on import — see :func:`import_bundle`.
+   to ``drift`` on import - see :func:`import_bundle`.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ BUNDLE_VERSION = 1
 BUNDLE_KEY = "danbyte_device_type"
 
 # The physical spec of the type itself. Deliberately excludes ids, tenant,
-# owning_site, timestamps and device_count — all local facts.
+# owning_site, timestamps and device_count - all local facts.
 # `name` is the identity (DeviceType has no slug); `model` is a separate
 # free-text field the catalog also carries.
 TYPE_FIELDS = (
@@ -37,8 +37,8 @@ TYPE_FIELDS = (
 )
 
 # Component templates: bundle key → (device-type relation, exported fields).
-# Order matters on import — rear ports before front ports, power ports before
-# outlets — because the second of each pair references the first BY NAME.
+# Order matters on import - rear ports before front ports, power ports before
+# outlets - because the second of each pair references the first BY NAME.
 COMPONENT_SPECS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("interfaces", "interface_templates",
      ("name", "description", "type", "enabled", "poe_mode", "poe_type",
@@ -63,7 +63,7 @@ COMPONENT_SPECS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
       "speed")),
 )
 
-# Sensor definition fields — the same set the sensor pack exports, so the two
+# Sensor definition fields - the same set the sensor pack exports, so the two
 # formats stay interchangeable.
 SENSOR_FIELDS = (
     "name", "slug", "description", "oid", "walk", "item_kind", "name_template",
@@ -105,7 +105,7 @@ def export_bundle(device_type) -> dict[str, Any]:
             components[key] = rows
     out["components"] = components
 
-    # The Danbyte-specific layers — the whole point of the format.
+    # The Danbyte-specific layers - the whole point of the format.
     out["faceplate"] = device_type.faceplate
     out["image_ports"] = device_type.image_ports
     out["sensors"] = [
@@ -114,7 +114,7 @@ def export_bundle(device_type) -> dict[str, Any]:
     ]
     # Images are referenced, not embedded: a bundle stays a text file you can
     # read and diff. The importer says which are missing so the user can upload
-    # them — the marker coordinates are useless without the photo they were
+    # them - the marker coordinates are useless without the photo they were
     # placed on.
     out["images"] = {
         "front": bool(device_type.front_image),
@@ -133,7 +133,7 @@ def _check_envelope(payload: Any) -> None:
     version = payload.get(BUNDLE_KEY)
     if version is None:
         raise BundleError(
-            f"Not a device bundle — the '{BUNDLE_KEY}' key is missing."
+            f"Not a device bundle - the '{BUNDLE_KEY}' key is missing."
         )
     if version != BUNDLE_VERSION:
         raise BundleError(
@@ -150,7 +150,7 @@ def import_bundle(
 ) -> dict[str, Any]:
     """Create or update a device type and everything the bundle carries.
 
-    ``dry_run`` reports exactly what would happen and writes nothing — the
+    ``dry_run`` reports exactly what would happen and writes nothing - the
     default for the UI's first pass, because "import this stranger's file" should
     never be a blind action.
 
@@ -204,7 +204,7 @@ def import_bundle(
         report["warnings"].append(
             "Photo-port markers reference a "
             + "/".join(report["missing_images"])
-            + " image this deployment doesn't have — upload it on the device "
+            + " image this deployment doesn't have - upload it on the device "
             "type and the markers will line up."
         )
 
@@ -297,7 +297,7 @@ def _import_components(dt, comps: dict, report: dict) -> None:
                     # FK), so this row is dropped loudly rather than crashing.
                     report["warnings"].append(
                         f"front_ports: {row['name']} names rear port "
-                        f"{row.get('rear_port')!r}, which isn't in the bundle — "
+                        f"{row.get('rear_port')!r}, which isn't in the bundle - "
                         "skipped."
                     )
                     continue
@@ -333,7 +333,7 @@ def _import_sensors(dt, tenant, sensors: list, report: dict, *, replace: bool) -
         slug = str(row.get("slug") or "").strip()
         if not slug:
             report["warnings"].append(
-                f"sensors: {row.get('name')!r} has no slug — skipped."
+                f"sensors: {row.get('name')!r} has no slug - skipped."
             )
             continue
         fields = {f: row[f] for f in SENSOR_FIELDS if f in row and f != "slug"}

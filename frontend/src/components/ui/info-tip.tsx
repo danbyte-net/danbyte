@@ -9,7 +9,7 @@ import {
 
 /**
  * A small (i) icon that reveals an explanation on hover/focus. Use this instead
- * of cramming a clarifying parenthetical into a label or select option — those
+ * of cramming a clarifying parenthetical into a label or select option - those
  * read as noise across a settings page. Keep the label clean; put the "why" here.
  */
 export function InfoTip({
@@ -26,7 +26,7 @@ export function InfoTip({
           type="button"
           aria-label="More information"
           // Out of the tab order: HoverCard also opens on keyboard focus, and
-          // a dialog auto-focuses its first tabbable element — when that's an
+          // a dialog auto-focuses its first tabbable element - when that's an
           // info icon the tip pops open before the user touches anything.
           tabIndex={-1}
           className={`inline-flex items-center text-muted-foreground/70 transition-colors hover:text-foreground ${className ?? ""}`}

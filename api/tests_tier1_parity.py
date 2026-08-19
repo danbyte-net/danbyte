@@ -91,7 +91,7 @@ class CircuitTerminationTests(_TenantAPITestCase):
         self.assertEqual(bad.status_code, 400, bad.content)
 
     def test_provider_network_and_region_filters(self):
-        # Circuit terminates on the provider network — issue #18: circuits are
+        # Circuit terminates on the provider network - issue #18: circuits are
         # listed on the provider and provider-network detail pages.
         CircuitTermination.objects.create(
             circuit=self.circuit, term_side="Z", provider_network=self.pn
@@ -104,7 +104,7 @@ class CircuitTerminationTests(_TenantAPITestCase):
             f"/api/circuits/?provider={self.provider.id}"
         ).json()["results"]
         self.assertEqual([c["cid"] for c in by_provider], ["CID-1"])
-        # Sites filter by region — issue #18: the region page's Sites tab.
+        # Sites filter by region - issue #18: the region page's Sites tab.
         from api.models import Region
         region = Region.objects.create(
             tenant=self.tenant, name="EU", slug="eu"
@@ -332,7 +332,7 @@ class ConsolePowerComponentTests(_TenantAPITestCase):
         (a,) = r.json()["a_terminations"]
         # The feed's "device" slot carries its panel, keeping one read shape.
         self.assertEqual(a["device"]["name"], "PP-1")
-        # ?power_feed= backs the feed detail page's Terminations tab — site
+        # ?power_feed= backs the feed detail page's Terminations tab - site
         # power has no device, so the ?device= filter can't reach it.
         listed = self.client.get(f"/api/cables/?power_feed={feed.id}").json()
         self.assertEqual(listed["count"], 1)

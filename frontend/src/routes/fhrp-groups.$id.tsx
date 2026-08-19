@@ -264,7 +264,7 @@ function Members({
               ? `${a.interface.device.name} : ${a.interface.name}`
               : a.vm_interface
                 ? `${a.vm_interface.vm.name} : ${a.vm_interface.name}`
-                : "—"
+                : "-"
             return (
               <li
                 key={a.id}

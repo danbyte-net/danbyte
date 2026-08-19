@@ -1,4 +1,4 @@
-"""Portable device-type bundles — export, import, and the rules that keep an
+"""Portable device-type bundles - export, import, and the rules that keep an
 imported bundle from doing something the importer didn't ask for.
 """
 from __future__ import annotations

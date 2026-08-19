@@ -53,7 +53,7 @@ IPAddress (tenant + vrf scoped)            │
 !!! note "Read-only derived API fields"
     The serialized `IPAddress.scope` (above) and `DeviceType.manufacturer` (the
     manufacturer's name, echoed on the nested device-type) are **read-only**
-    convenience fields — they back list filters (the IP *scope* facet, the
+    convenience fields - they back list filters (the IP *scope* facet, the
     device *manufacturer* facet) and carry no schema/migration of their own.
 
 ## Mixins, by which every domain model gets ...
@@ -98,6 +98,6 @@ on UUID values).
 
 ## Conventional VRF = NULL
 
-We don't seed a "Global" VRF row. `vrf=NULL` *is* the Global VRF — that's why
+We don't seed a "Global" VRF row. `vrf=NULL` *is* the Global VRF - that's why
 `nulls_distinct=False` is load-bearing. See [Tenant + VRF](tenant-vrf.md) for
 the full reasoning.

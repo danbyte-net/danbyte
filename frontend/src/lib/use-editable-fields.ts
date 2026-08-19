@@ -14,7 +14,7 @@ export interface EditableModel {
 /**
  * Narrow an untrusted server descriptor to the authored `BulkFieldSpec` union
  * so one `<FieldEditor/>` renders both. Returns null when the payload can't
- * satisfy its own `kind` — a `choice` without `choices` is a backend bug, and
+ * satisfy its own `kind` - a `choice` without `choices` is a backend bug, and
  * silently degrading it to a text box is how a typo becomes stored data.
  */
 export function toFieldSpec(f: EditableFieldSpec): BulkFieldSpec | null {

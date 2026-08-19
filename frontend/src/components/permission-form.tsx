@@ -283,13 +283,13 @@ export function PermissionForm({
           label="All object types"
           checked={allTypes}
           onChange={handleAllTypesChange}
-          hint="Wildcard — grants on every model"
+          hint="Wildcard - grants on every model"
           className="mb-2"
         />
         {allTypes ? (
           <p className="text-[13px] text-muted-foreground">
             Grants on every model. Enabling this clears any specific object-type
-            picks — turn it off to choose individual models again.
+            picks - turn it off to choose individual models again.
           </p>
         ) : (
           <CheckList

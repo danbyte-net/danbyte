@@ -8,7 +8,7 @@ import { DeployRetryButton } from "@/components/deploy-retry-button"
 
 // The one source of truth for "a table of deploy runs". The /deploy-runs list
 // and the Runs tab on an automation target both build their columns here, so a
-// run row reads identically in both places — the target page just omits the
+// run row reads identically in both places - the target page just omits the
 // "target" column it would otherwise repeat on every row.
 
 export type DeployRunColumnId =
@@ -97,7 +97,7 @@ export function buildDeployRunColumns(
       header: "Detail",
       cell: ({ row }) => (
         <span className="line-clamp-1 block font-mono text-[11px] text-muted-foreground">
-          {row.original.detail || "—"}
+          {row.original.detail || "-"}
         </span>
       ),
     }),

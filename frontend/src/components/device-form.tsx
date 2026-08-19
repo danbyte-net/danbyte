@@ -55,15 +55,15 @@ interface VirtualChassisOption {
 
 export interface DeviceFormProps {
   device?: Device
-  /** Pre-fill rack placement (create only) — e.g. "+ Add here" from an empty
+  /** Pre-fill rack placement (create only) - e.g. "+ Add here" from an empty
    * rack unit arrives with rack/position/face already chosen. */
   initial?: {
     rackId?: string
     position?: number
     face?: "" | "front" | "rear"
-    /** Pre-pick the hardware model — "Add device" from a device type's page. */
+    /** Pre-pick the hardware model - "Add device" from a device type's page. */
     deviceTypeId?: string
-    /** Pre-pick a 0U side mount — "+ side device" from a rack's side lane. */
+    /** Pre-pick a 0U side mount - "+ side device" from a rack's side lane. */
     mount?: "" | "side_left" | "side_right"
   }
   /** Clone seed (create only): the source's carried-over fields from
@@ -212,7 +212,7 @@ export function DeviceForm({
   })
   const sites = useSiteOptions()
   // Enhanced site separation: a single-site user's creates land in their own
-  // site — prefill and lock the picker (useSiteOptions already filtered it).
+  // site - prefill and lock the picker (useSiteOptions already filtered it).
   const siteLocked = !!sites.lockedId
   useEffect(() => {
     if (!isEdit && sites.lockedId && !siteId) setSiteId(sites.lockedId)
@@ -227,7 +227,7 @@ export function DeviceForm({
     queryFn: () => api<Paginated<RackOption>>("/api/racks/?picker=1"),
     staleTime: 10 * 60_000,
   })
-  // Devices already in the selected rack — drives the Position (U) dropdown
+  // Devices already in the selected rack - drives the Position (U) dropdown
   // (occupied units render disabled). Same key as RackElevation, so the
   // cache is shared.
   const rackDevices = useQuery({
@@ -295,7 +295,7 @@ export function DeviceForm({
     if (rackWidth === "full" && side !== "") setSide("")
   }, [rackWidth, side])
 
-  // Side mounting is a 0U-only concept, and it replaces U placement — the
+  // Side mounting is a 0U-only concept, and it replaces U placement - the
   // backend enforces both; the form just keeps the fields from fighting.
   const isZeroU = selectedType != null && selectedType.u_height === 0
   useEffect(() => {
@@ -316,7 +316,7 @@ export function DeviceForm({
 
   // One option per possible *lowest* unit, in the rack's visual order (top
   // first). Units where the device would collide render disabled with the
-  // blocking device as hint — mirrors the backend overlap validation.
+  // blocking device as hint - mirrors the backend overlap validation.
   const unitOptions = useMemo(() => {
     if (!selectedRack) return []
     const first = selectedRack.starting_unit
@@ -642,7 +642,7 @@ export function DeviceForm({
           label="Airflow"
           value={airflow === "" ? null : airflow}
           onChange={(v) => setAirflow(v ?? "")}
-          noneLabel="—"
+          noneLabel="-"
           options={AIRFLOW_OPTIONS}
           error={fieldErrors.airflow}
         />
@@ -738,7 +738,7 @@ export function DeviceForm({
             label="Face"
             value={face === "" ? null : face}
             onChange={(v) => setFace((v as "front" | "rear") ?? "")}
-            noneLabel="—"
+            noneLabel="-"
             options={[
               { value: "front", label: "Front" },
               { value: "rear", label: "Rear" },
@@ -778,7 +778,7 @@ export function DeviceForm({
               <>
                 <FormSelect
                   label="Channel"
-                  hint="Which face the strip is reachable from — blank shows it on both elevations"
+                  hint="Which face the strip is reachable from - blank shows it on both elevations"
                   value={face === "" ? null : face}
                   onChange={(v) =>
                     setFace(v === "front" || v === "rear" ? v : "")

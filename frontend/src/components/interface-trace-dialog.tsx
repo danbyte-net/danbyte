@@ -17,7 +17,7 @@ export interface TraceTarget {
   name: string
 }
 
-/** Quick cable trace for one interface — the flat path strip in a dialog,
+/** Quick cable trace for one interface - the flat path strip in a dialog,
  * launched from the interfaces table without leaving the page. */
 export function InterfaceTraceDialog({
   target,
@@ -27,7 +27,7 @@ export function InterfaceTraceDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const q = useQuery({
-    // Same key the interface page's Trace section uses — shared cache.
+    // Same key the interface page's Trace section uses - shared cache.
     queryKey: ["trace", "interface", target?.id],
     queryFn: () => api<TraceGraph>(`/api/interfaces/${target!.id}/trace/`),
     enabled: !!target,
@@ -48,7 +48,7 @@ export function InterfaceTraceDialog({
           <>
             {q.data && !q.data.complete && (
               <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                Incomplete — the run dead-ends before reaching a far port.
+                Incomplete - the run dead-ends before reaching a far port.
               </p>
             )}
             <div className="overflow-x-auto">
@@ -57,7 +57,7 @@ export function InterfaceTraceDialog({
           </>
         ) : target ? (
           // Breakout / looped / otherwise non-linear runs can't be a flat
-          // strip — render the full trace graph inline (shares this dialog's
+          // strip - render the full trace graph inline (shares this dialog's
           // trace cache) instead of sending the user off to the interface page.
           <TraceSection
             url={`/api/interfaces/${target.id}/trace/`}

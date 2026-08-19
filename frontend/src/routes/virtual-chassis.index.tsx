@@ -65,7 +65,7 @@ function VirtualChassisPage() {
           row.original.domain ? (
             <span className="font-mono text-xs">{row.original.domain}</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -82,7 +82,7 @@ function VirtualChassisPage() {
               {row.original.master.name}
             </Link>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -117,7 +117,7 @@ function VirtualChassisPage() {
               {row.original.primary_ip.ip_address}
             </Link>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -134,7 +134,7 @@ function VirtualChassisPage() {
               {row.original.oob_ip.ip_address}
             </Link>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       tagsColumn<VirtualChassis>({ getTags: (r) => r.tags ?? [] }),
@@ -144,7 +144,7 @@ function VirtualChassisPage() {
         header: "Description",
         cell: ({ row }) => (
           <span className="block whitespace-nowrap text-muted-foreground">
-            {row.original.description || "—"}
+            {row.original.description || "-"}
           </span>
         ),
       },

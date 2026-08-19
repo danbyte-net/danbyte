@@ -1,4 +1,4 @@
-"""Milestone 11 tests — reverse-DNS enrichment (PTR → dns_name)."""
+"""Milestone 11 tests - reverse-DNS enrichment (PTR → dns_name)."""
 from __future__ import annotations
 
 from unittest.mock import patch

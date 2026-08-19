@@ -14,7 +14,7 @@ import { useTableFilters } from "@/components/table-filters"
 import { buildDeviceTypeColumns } from "./device-type-columns"
 
 // A hardware catalog is the longest list in the product, so its rail is the one
-// that has to actually narrow. These pin what each facet buckets on — the parts
+// that has to actually narrow. These pin what each facet buckets on - the parts
 // that are derived rather than read off a foreign key (images, faceplate,
 // usage) and the two that hide themselves when the data doesn't split.
 
@@ -102,7 +102,7 @@ const photographed = dt({
   component_count: 0,
   tags: [tag("core"), tag("edge")],
 })
-// markers but the photo was removed — the panel falls back, so must the facet
+// markers but the photo was removed - the panel falls back, so must the facet
 const orphanMarkers = dt({
   name: "orphan-markers",
   image_ports: { front: [marker], rear: [] },

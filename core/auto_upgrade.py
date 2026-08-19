@@ -1,7 +1,7 @@
-"""Scheduled auto-upgrade — check the release repo for a newer version and, if
+"""Scheduled auto-upgrade - check the release repo for a newer version and, if
 auto-update is on and we're inside the maintenance window, upgrade to it.
 
-A **blank window** (no days, no start/end) means *anytime* — i.e. real-time:
+A **blank window** (no days, no start/end) means *anytime* - i.e. real-time:
 upgrade as soon as a newer release appears. Run on a timer (management command
 ``auto_upgrade``).
 """
@@ -68,7 +68,7 @@ def check_and_upgrade(now=None) -> dict:
     token = (s.secrets or {}).get("release_repo_token", "")
     try:
         rels = list_releases(repo, token)
-    except Exception:  # noqa: BLE001 — a repo hiccup shouldn't crash the timer
+    except Exception:  # noqa: BLE001 - a repo hiccup shouldn't crash the timer
         return {"skipped": "repo_unreachable"}
     if s.update_channel == "stable":
         rels = [r for r in rels if not r["prerelease"]]

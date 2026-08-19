@@ -24,7 +24,7 @@ export interface RackCellProps {
 
 export function RackCell({ rack, linked = true, className }: RackCellProps) {
   if (!rack) {
-    return <span className="text-muted-foreground">—</span>
+    return <span className="text-muted-foreground">-</span>
   }
   if (!linked) {
     return <span className={className}>{rack.name}</span>

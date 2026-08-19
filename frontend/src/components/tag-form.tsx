@@ -75,7 +75,7 @@ export function TagForm({ tag, onSaved, onCancel }: TagFormProps) {
       />
       <FormColor
         label="Color"
-        hint="Optional — leave empty for a neutral chip"
+        hint="Optional - leave empty for a neutral chip"
         value={color}
         onChange={setColor}
         error={fieldErrors.color}

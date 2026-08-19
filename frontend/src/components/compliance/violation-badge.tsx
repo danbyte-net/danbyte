@@ -29,7 +29,7 @@ const SEVERITY_TONE: Record<ComplianceSeverity, string> = {
   info: "text-zinc-400 dark:text-zinc-500",
 }
 
-// The `prominent` variant — a filled status pill for detail-page heroes, where a
+// The `prominent` variant - a filled status pill for detail-page heroes, where a
 // violation should be noticed (unlike the deliberately-quiet table marker).
 const SEVERITY_PILL: Record<ComplianceSeverity, string> = {
   critical:
@@ -41,7 +41,7 @@ const SEVERITY_PILL: Record<ComplianceSeverity, string> = {
 
 // One Map per violations array, cached by array identity. react-query hands
 // back a stable reference for cached data, so every <ViolationBadge> on the
-// page — even one per table row — reuses the same Map instead of rebuilding.
+// page - even one per table row - reuses the same Map instead of rebuilding.
 const _mapCache = new WeakMap<
   ComplianceViolation[],
   Map<string, ComplianceViolation[]>
@@ -105,7 +105,7 @@ export interface ViolationBadgeProps {
 /**
  * A deliberately quiet compliance-violation marker: a small triangle tinted by
  * the worst severity, with a tooltip naming the failing rules and a link to the
- * Compliance page. Renders nothing when the object is clean — so it can be
+ * Compliance page. Renders nothing when the object is clean - so it can be
  * dropped next to any name or title without disturbing compliant rows.
  */
 export function ViolationBadge({

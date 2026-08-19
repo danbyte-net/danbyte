@@ -94,7 +94,7 @@ class UserProvisioningTests(_AdminBase):
         write = self._grants_for(User.objects.get(username="sep")).filter(
             actions__contains=["add"]
         ).first()
-        # tag/devicetype/zone are catalog types — present only when separation on.
+        # tag/devicetype/zone are catalog types - present only when separation on.
         self.assertIn("zone", write.object_types)
         self.assertIn("tag", write.object_types)
 

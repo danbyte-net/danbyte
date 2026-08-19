@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils"
 // ─── who tells the legend what's on screen ───────────────────────────────────
 // A legend must key the pixels, and only the renderer knows which markers
 // resolved to something. So the renderers REPORT what they drew and the legend
-// keys that — rather than the legend re-deriving it from the device (which is
+// keys that - rather than the legend re-deriving it from the device (which is
 // how you end up advertising 400G under a shelf of disk bays).
 
 /** A panel reports its content under a stable key; `null` on unmount. */
@@ -45,7 +45,7 @@ export function useLegendCollector(): {
       }
       // Compared BY VALUE, never by identity. Identity would make this loop
       // (report → setState → render → new object → report) the moment a caller
-      // handed a renderer an array it rebuilt each render — which is most
+      // handed a renderer an array it rebuilt each render - which is most
       // callers, and froze the device page once.
       const cur = prev[key]
       if (cur && legendSignature(cur) === legendSignature(content)) return prev
@@ -62,7 +62,7 @@ export function useLegendCollector(): {
  *
  * Keyed on the content's VALUE, so an unmemoized (or imperfectly memoized)
  * `content` costs a signature comparison rather than an infinite loop. Callers
- * should still memoize — this is the floor, not the goal.
+ * should still memoize - this is the floor, not the goal.
  */
 export function useReportLegend(
   report: LegendReporter | undefined,
@@ -99,7 +99,7 @@ export function SpeedScale({
    * dots), so callers never stack a second wrapping line. */
   extras?: React.ReactNode
 }) {
-  // The ramp is STATIC — always all nine tiers, always the same width per
+  // The ramp is STATIC - always all nine tiers, always the same width per
   // segment. It was briefly filtered to only the tiers on screen, which sounds
   // right and looks wrong: the segments are `flex-1` inside a fixed `w-72`, so
   // a two-speed panel rendered two 144px slabs. A colour ramp is a scale, and a
@@ -195,7 +195,7 @@ export function ModuleBayKey({
   bays,
 }: {
   className?: string
-  /** Occupancies on this panel — "installed" / "empty". Empty set → nothing. */
+  /** Occupancies on this panel - "installed" / "empty". Empty set → nothing. */
   bays: Set<string>
 }) {
   if (bays.size === 0) return null
@@ -208,7 +208,7 @@ export function ModuleBayKey({
     >
       <span className="text-muted-foreground/70">Module bays</span>
       {bays.has("installed") && <Swatch hex={bayHex(true)} label="installed" />}
-      {/* Outlined, because that is exactly how an empty bay is drawn — the
+      {/* Outlined, because that is exactly how an empty bay is drawn - the
           dashed swatch means "not on this device", which is a different thing. */}
       {bays.has("empty") && (
         <Swatch hex={bayHex(false)} label="empty" outline />
@@ -220,14 +220,14 @@ export function ModuleBayKey({
 /**
  * Key for the 3D room's airflow cones. Renders only what the glyph layer
  * actually drew (both chips on a mixed-airflow room, one on a uniform one),
- * from the same hexes the cones use — the key can't disagree with the pixels.
+ * from the same hexes the cones use - the key can't disagree with the pixels.
  */
 export function AirflowKey({
   className,
   airflow,
 }: {
   className?: string
-  /** Kinds drawn — "intake" / "exhaust". Empty set → nothing. */
+  /** Kinds drawn - "intake" / "exhaust". Empty set → nothing. */
   airflow: Set<string>
 }) {
   if (airflow.size === 0) return null
@@ -259,9 +259,9 @@ function Swatch({
   hex: string
   label: string
   dim?: boolean
-  /** Dashed border, no fill — the "absent / not here" reading. */
+  /** Dashed border, no fill - the "absent / not here" reading. */
   dashed?: boolean
-  /** Solid border, no fill — the "present but unlit" reading (idle port, empty
+  /** Solid border, no fill - the "present but unlit" reading (idle port, empty
    * bay), matching how those are actually drawn on a panel. */
   outline?: boolean
 }) {

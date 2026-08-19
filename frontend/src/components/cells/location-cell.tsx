@@ -28,7 +28,7 @@ export function LocationCell({
   className,
 }: LocationCellProps) {
   if (!location) {
-    return <span className="text-muted-foreground">—</span>
+    return <span className="text-muted-foreground">-</span>
   }
   if (!linked) {
     return <span className={className}>{location.name}</span>

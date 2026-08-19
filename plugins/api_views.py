@@ -1,4 +1,4 @@
-"""Plugin framework API — the installed-plugin listing.
+"""Plugin framework API - the installed-plugin listing.
 
 Per-tenant enable/disable + config management land here in a later phase; for
 now this is a read-only inventory of what the deployment has installed.
@@ -39,7 +39,7 @@ def plugins_list(request):
     """Installed plugins and their load state (loaded / incompatible / error),
     each annotated with any unapplied migrations so the UI can offer "Apply".
 
-    Readable by any authenticated user — it's inventory, not a secret. It does
+    Readable by any authenticated user - it's inventory, not a secret. It does
     not expose per-tenant enablement (that arrives with the config endpoints).
     """
     from core.services import pending_migrations_by_app
@@ -71,7 +71,7 @@ def plugins_list(request):
                 "name": module,
                 "version": "",
                 "author": "",
-                "description": "Uploaded — Apply changes (restart) to load it.",
+                "description": "Uploaded - Apply changes (restart) to load it.",
                 "state": "pending",
                 "error": "",
                 "min_version": None,
@@ -87,7 +87,7 @@ def plugins_list(request):
             "plugins": report,
             # Any pending migration across the install (plugins or core).
             "has_pending_migrations": bool(pending),
-            # A plugin is uploaded but not yet loaded — Apply (restart) needed.
+            # A plugin is uploaded but not yet loaded - Apply (restart) needed.
             "pending_restart": pending_restart,
             # Single signal the UI keys the "Apply changes" prompt on.
             "needs_apply": bool(pending) or pending_restart,
@@ -114,8 +114,8 @@ def plugin_upload(request):
     """Install a plugin from an uploaded archive (superuser only).
 
     Offline/airgapped alternative to pip: extract a .tar.gz/.zip of the plugin
-    into the import path. Uploading a plugin runs its code on restart — remote
-    code execution by design — so this is superuser-gated. Activate with Apply
+    into the import path. Uploading a plugin runs its code on restart - remote
+    code execution by design - so this is superuser-gated. Activate with Apply
     (migrate + restart).
     """
     if not getattr(request.user, "is_superuser", False):

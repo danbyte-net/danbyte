@@ -35,7 +35,7 @@ function groupBy(
       key: k.id,
       title: k.name,
       color: tileFill(t),
-      // Device roles carry no icon — TileBadge falls back to a colour chip,
+      // Device roles carry no icon - TileBadge falls back to a colour chip,
       // exactly as the palette draws them.
       icon: k.icon ?? "",
       tiles: [],
@@ -64,7 +64,7 @@ const CHECK_TONE: Record<string, string> = {
  * What's placed on this plan, listed and grouped.
  *
  * A tile carries EITHER a `role_type` (placed from the device-role palette) or
- * a `tile_type` — never both — so these are two disjoint sections rather than
+ * a `tile_type` - never both - so these are two disjoint sections rather than
  * two ways of slicing one list.
  *
  * Reads the page's live `tiles` array, so it tracks unsaved edits with no fetch
@@ -86,7 +86,7 @@ export function ObjectsSidebar({
 
   const { roleGroups, typeGroups, total } = useMemo(() => {
     const needle = q.trim().toLowerCase()
-    // Zones are background paint, not placed objects — they'd drown the list.
+    // Zones are background paint, not placed objects - they'd drown the list.
     const placed = tiles.filter((t) => !tileIsZone(t))
     const match = needle
       ? placed.filter((t) =>

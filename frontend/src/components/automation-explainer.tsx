@@ -43,7 +43,7 @@ const FLOW = [
   {
     icon: Server,
     title: "Your runner",
-    sub: "touches the device — holds the credentials",
+    sub: "touches the device - holds the credentials",
   },
 ] as const
 
@@ -158,7 +158,7 @@ export function AutomationExplainer({
           />
           <span className="text-sm font-semibold">How automation works</span>
           <span className="truncate text-[11px] text-muted-foreground">
-            Danbyte hands off — it never touches your devices
+            Danbyte hands off - it never touches your devices
           </span>
         </button>
         <button
@@ -178,7 +178,7 @@ export function AutomationExplainer({
             Danbyte stores what each device's config{" "}
             <span className="text-foreground">should</span> be. To change a real
             device it hands the work to a runner{" "}
-            <span className="text-foreground">you</span> control — your own
+            <span className="text-foreground">you</span> control - your own
             Ansible/AWX, or any webhook. Three pieces:
           </p>
 
@@ -242,7 +242,7 @@ export function AutomationExplainer({
               Read the config-drift guide
             </a>
             <span className="text-[11px] text-muted-foreground">
-              or add a target manually — both end up in the same place.
+              or add a target manually - both end up in the same place.
             </span>
           </div>
         </div>

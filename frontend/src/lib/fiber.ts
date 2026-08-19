@@ -1,4 +1,4 @@
-// Fibre-strand colour derivation — the frontend twin of api/fiber_colors.py.
+// Fibre-strand colour derivation - the frontend twin of api/fiber_colors.py.
 // The 12-colour TIA-598-C sequence is the default; a tenant can reorder/recolour
 // it on the Fibre settings page (GET/POST /api/fiber-settings/). Beyond 12 the
 // sequence repeats and the repeat *group* is shown as a black tracer: a stripe

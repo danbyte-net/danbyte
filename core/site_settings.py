@@ -1,4 +1,4 @@
-"""Per-SITE settings overrides — SPA JSON endpoints (email group, v1).
+"""Per-SITE settings overrides - SPA JSON endpoints (email group, v1).
 
 The third settings layer: site → tenant → deployment. Editing a site's
 settings requires being a **site admin** of that site:
@@ -6,7 +6,7 @@ settings requires being a **site admin** of that site:
 * tenant admins (``can_manage_admin``) always qualify;
 * otherwise the tenant's ``allow_site_settings`` switch (separation group)
   must be ON, and the user must hold EITHER an explicit ``sitesettings``
-  change grant scoped to the site (grantable to users or groups — build your
+  change grant scoped to the site (grantable to users or groups - build your
   own "Site X admins" group) OR be a site editor there
   (``rbac.editable_sites``).
 
@@ -68,7 +68,7 @@ class SiteSettingsSerializer(serializers.ModelSerializer):
 
 
 def manageable_settings_sites(user, tenant):
-    """The sites whose settings ``user`` may edit — ``"all"`` | set of ids.
+    """The sites whose settings ``user`` may edit - ``"all"`` | set of ids.
 
     Union of the qualification arms; empty set when the allow switch is off
     (tenant admins bypass it).
@@ -157,7 +157,7 @@ def _parent_defaults(tenant) -> dict:
 @api_view(["GET", "PUT"])
 @permission_classes([IsAuthenticated])
 def site_settings(request, site_id):
-    """One site's settings overrides — site-admin gated (both verbs)."""
+    """One site's settings overrides - site-admin gated (both verbs)."""
     tenant, site, err = _site_or_403(request, site_id)
     if err:
         return err
@@ -212,7 +212,7 @@ def site_test_email(request, site_id):
             to=[to],
             connection=conn,
         ).send(fail_silently=False)
-    except Exception as exc:  # noqa: BLE001 — surface the SMTP error to the admin
+    except Exception as exc:  # noqa: BLE001 - surface the SMTP error to the admin
         from core.email import describe_smtp_error
 
         return Response(

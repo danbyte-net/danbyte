@@ -7,13 +7,13 @@ Runs resolved checks against a target inside a single asyncio event loop, with:
 * a bounded semaphore (``MONITORING_CONCURRENCY``) so a wide fan-out can't
   exhaust file descriptors.
 
-DB work happens *after* the loop finishes — outcomes are collected in memory and
-written synchronously — so no blocking ORM call ever runs on the event loop.
+DB work happens *after* the loop finishes - outcomes are collected in memory and
+written synchronously - so no blocking ORM call ever runs on the event loop.
 
 ``check_now(ip)`` is the user-facing "run this IP's checks now" entry point. It
 persists ``CheckResult`` rows (history) **and** folds each outcome into the
 ``CheckState`` through the same hysteresis state machine the scheduled worker
-uses — so a manual check moves the rolled-up status, logs ``StateTransition``s,
+uses - so a manual check moves the rolled-up status, logs ``StateTransition``s,
 and fires alerts just like an automatic scan.
 """
 from __future__ import annotations
@@ -93,7 +93,7 @@ async def _run_all(resolved: list[ResolvedCheck], target: str) -> list[RunItem]:
 def record_results(ip, items: list[RunItem]) -> list[CheckResult]:
     """Persist a CheckResult per run item (append-only history).
 
-    Synchronous — called after the event loop has finished. The CheckState
+    Synchronous - called after the event loop has finished. The CheckState
     rollup + StateTransition logging happen in ``_rollup_states`` (called by
     ``check_now`` right after this).
     """
@@ -149,7 +149,7 @@ def check_now(ip) -> list[dict]:
 
 def _rollup_states(ip, items: list[RunItem], now) -> None:
     """Fold check-now outcomes into ``CheckState`` (status, counters,
-    last_checked), log transitions, and fire alerts — the same rollup the
+    last_checked), log transitions, and fire alerts - the same rollup the
     scheduled worker's ``_finalise`` does, so a manual check is authoritative."""
     from .state import apply_outcome
     from .worker import _cfg, _load_settings

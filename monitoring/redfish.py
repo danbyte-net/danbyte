@@ -1,6 +1,6 @@
 """Redfish collector + inventory reconciler.
 
-Walks a BMC's Redfish tree (DMTF's management REST standard — iDRAC, iLO,
+Walks a BMC's Redfish tree (DMTF's management REST standard - iDRAC, iLO,
 XClarity, Supermicro, UCS all speak it) and reconciles the observed hardware
 into the device's inventory items:
 
@@ -10,7 +10,7 @@ into the device's inventory items:
   Chassis → Power → PowerSupplies → kind=psu
   Chassis → Thermal → Fans        → kind=fan
 
-Reconcile rules (deliberately narrow — observed facts must not stomp intent):
+Reconcile rules (deliberately narrow - observed facts must not stomp intent):
   * Match an existing item by SERIAL first, then by exact name. Matching by
     serial means a user's rename sticks across polls.
   * Create items the device doesn't have yet (named from the BMC).
@@ -20,7 +20,7 @@ Reconcile rules (deliberately narrow — observed facts must not stomp intent):
     (statuses stay user-editable catalog rows; flips are journaled on the
     device). Items the BMC no longer reports are LEFT ALONE.
 
-Plain httpx against the REST tree — no vendor SDK, so the collector stays
+Plain httpx against the REST tree - no vendor SDK, so the collector stays
 dependency-light and airgap-safe. Redirects are disabled and the request goes
 only to the admin-configured host (see RedfishEndpoint's security note).
 """
@@ -49,7 +49,7 @@ def _drive_media(media_type: str, protocol: str) -> str:
 
 
 def _host_allowed(host: str) -> tuple[bool, str]:
-    """Loopback/link-local are never a BMC — refuse them even though the
+    """Loopback/link-local are never a BMC - refuse them even though the
     endpoint is admin-configured. RFC1918 is expressly allowed here."""
     try:
         infos = socket.getaddrinfo(host, None)
@@ -58,7 +58,7 @@ def _host_allowed(host: str) -> tuple[bool, str]:
     for info in infos:
         addr = ipaddress.ip_address(info[4][0])
         if addr.is_loopback or addr.is_link_local or addr.is_unspecified:
-            return False, f"{addr} is loopback/link-local — not a BMC address"
+            return False, f"{addr} is loopback/link-local - not a BMC address"
     return True, ""
 
 
@@ -107,7 +107,7 @@ def _present(res: dict[str, Any]) -> bool:
 
 def collect(endpoint) -> dict[str, Any]:
     """Walk the BMC and return the observed hardware dict (see model help).
-    Raises httpx.HTTPError / OSError on failure — callers persist the error."""
+    Raises httpx.HTTPError / OSError on failure - callers persist the error."""
     ok, reason = _host_allowed(endpoint.host)
     if not ok:
         raise OSError(reason)
@@ -284,12 +284,12 @@ def reconcile(endpoint, observed: dict[str, Any]) -> dict[str, int]:
 
             changed = []
             for k, v in facts.items():
-                # Facts only — and never blank out a value the BMC didn't send.
+                # Facts only - and never blank out a value the BMC didn't send.
                 if v not in (None, "") and getattr(item, k) != v:
                     setattr(item, k, v)
                     changed.append(k)
             if status is not None and item.status_id != status.id:
-                old = item.status.name if item.status_id else "—"
+                old = item.status.name if item.status_id else "-"
                 item.status = status
                 changed.append("status")
                 flipped += 1
@@ -299,7 +299,7 @@ def reconcile(endpoint, observed: dict[str, Any]) -> dict[str, int]:
                 updated += 1
 
     if flips:
-        # Status flips are operationally significant — journal them on the
+        # Status flips are operationally significant - journal them on the
         # device so the Journal tab tells the story.
         from audit.models import JournalEntry
         from audit.site_capture import entry_site_id

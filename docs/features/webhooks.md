@@ -6,7 +6,7 @@ icon: lucide/webhook
 
 Webhooks let Danbyte notify an external system whenever your data changes. When an
 object you care about is created, updated, or deleted, Danbyte sends an HTTP
-request carrying the details to a URL you choose — so you can trigger automation,
+request carrying the details to a URL you choose - so you can trigger automation,
 sync to another tool, or feed an event pipeline.
 
 Webhooks live under **Integrations → Webhooks** in the sidebar.
@@ -21,11 +21,11 @@ Webhooks live under **Integrations → Webhooks** in the sidebar.
    | **Name** | A label for the webhook. |
    | **Enabled** | Turn delivery on or off without deleting the webhook. |
    | **Object types** | Which object types fire this webhook. Choose specific types or **All object types**. |
-   | **Triggers** | Which events fire it — **Create**, **Update**, **Delete** (any combination). |
+   | **Triggers** | Which events fire it - **Create**, **Update**, **Delete** (any combination). |
    | **Method** | The HTTP method to send: `POST`, `PUT`, or `PATCH`. |
    | **Payload URL** | The endpoint Danbyte sends the request to. |
    | **Content type** | The content type of the request body. |
-   | **Secret** | Optional signing key (see below). Write-only — once saved, the value is never shown again. |
+   | **Secret** | Optional signing key (see below). Write-only - once saved, the value is never shown again. |
    | **Additional headers** | Extra headers, one `Name: value` per line. |
    | **Verify TLS** | Whether to verify the server's TLS certificate. |
 
@@ -46,14 +46,14 @@ Every delivery also carries:
 !!! note "Deliveries are best-effort and off the request path"
     Webhooks are sent in the background, so saving an object is never slowed down
     or blocked by a webhook. If the destination is unreachable, the delivery
-    simply fails and is logged — it can never break the change that triggered it.
+    simply fails and is logged - it can never break the change that triggered it.
 
 ## Verify the payload with a secret
 
 If you set a **secret**, Danbyte signs each request body and sends the signature
 in the `X-Danbyte-Signature` header in the form `sha512=<hex>`. The receiving
 service can recompute an HMAC-SHA512 of the raw body using the same secret and
-compare — if they match, the request genuinely came from your Danbyte instance
+compare - if they match, the request genuinely came from your Danbyte instance
 and wasn't tampered with.
 
 !!! tip "Keep the secret safe"
@@ -63,8 +63,8 @@ and wasn't tampered with.
 ## Test a webhook
 
 Each webhook in the list has a **Send test** action. It fires a sample delivery
-right away and shows you the result — the response status code, or the error if it
-failed — so you can confirm the URL, headers, and TLS settings are correct before
+right away and shows you the result - the response status code, or the error if it
+failed - so you can confirm the URL, headers, and TLS settings are correct before
 relying on it.
 
 ## Permissions and audit

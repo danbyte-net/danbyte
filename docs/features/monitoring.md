@@ -5,19 +5,19 @@ icon: lucide/activity
 # Monitoring
 
 Monitoring watches your IPs and prefixes and tells you whether they're up,
-degraded, or down. You define **checks** — ICMP ping, TCP, UDP, HTTP(S), SNMP,
-SSH, Telnet, a TLS certificate read, or a script — attach them to an IP or a
+degraded, or down. You define **checks** - ICMP ping, TCP, UDP, HTTP(S), SNMP,
+SSH, Telnet, a TLS certificate read, or a script - attach them to an IP or a
 whole prefix, and Danbyte runs them on a schedule, keeps the history, and shows
 live status everywhere it matters: on detail pages, in list columns, and on a
 global Monitoring dashboard.
 
 This page is organised by task. Jump to:
 
-- [Set up a check](#set-up-a-check) — create one and attach it
-- [Check types](#check-types) — the protocols and what each measures
+- [Set up a check](#set-up-a-check) - create one and attach it
+- [Check types](#check-types) - the protocols and what each measures
 - [Where checks apply (prefixes and inheritance)](#where-checks-apply)
-- [Schedule modes](#schedule-modes) — when checks run
-- [Reading results](#reading-results) — status, sparklines, history, uptime
+- [Schedule modes](#schedule-modes) - when checks run
+- [Reading results](#reading-results) - status, sparklines, history, uptime
 - [Run a check now](#run-a-check-now)
 - [The Monitoring dashboard](#the-monitoring-dashboard)
 - [Alerts](#alerts) and [Notifications](#notifications)
@@ -36,9 +36,9 @@ works for both IPs and prefixes.
 1. Open the IP or prefix detail page and go to its **Monitoring** tab.
 2. Click **Add check** (on a prefix, **Add prefix check**).
 3. Choose either:
-   - **Use existing** — pick one of your saved check definitions, or
-   - **New check** — define one from scratch (it's also saved for reuse).
-4. Pick the **kind** (ICMP, TCP, HTTP, …). The form's fields change to match —
+   - **Use existing** - pick one of your saved check definitions, or
+   - **New check** - define one from scratch (it's also saved for reuse).
+4. Pick the **kind** (ICMP, TCP, HTTP, …). The form's fields change to match -
    for example a TCP check asks for a port, an ICMP check for a packet count.
 5. Set the timing and credentials as needed (see [Check types](#check-types) and
    [Schedule modes](#schedule-modes)).
@@ -50,48 +50,48 @@ works for both IPs and prefixes.
 A check definition (for example *HTTP health on :8080* or *SSH reachability*) can
 be attached to **many** IPs and prefixes. Edit the definition once and the change
 takes effect everywhere it's used. Manage your library from the **Templates** tab
-of the Monitoring dashboard — it lists each definition with its kind, interval,
+of the Monitoring dashboard - it lists each definition with its kind, interval,
 and how many places use it, and warns you before deleting one that's still in use.
 
 ## Check types
 
 Each check reports one of four states: **up**, **degraded** (reachable but
 impaired), **down** (genuinely unreachable), or **unknown** (a configuration or
-internal error — never treated as an outage).
+internal error - never treated as an outage).
 
 | Kind | Up when… | Degraded when… | Credentials |
 |---|---|---|---|
-| **ICMP** (ping) | The host replies | Latency or loss crosses your threshold | — |
-| **TCP** | The TCP connection succeeds | Connected, but the banner doesn't match | — |
-| **UDP** | The probe gets the expected reply | A reply arrives but doesn't match | — |
-| **HTTP(S)** | The status code (and optional body) match what you expect | Reachable, but the status or body is wrong | — |
+| **ICMP** (ping) | The host replies | Latency or loss crosses your threshold | - |
+| **TCP** | The TCP connection succeeds | Connected, but the banner doesn't match | - |
+| **UDP** | The probe gets the expected reply | A reply arrives but doesn't match | - |
+| **HTTP(S)** | The status code (and optional body) match what you expect | Reachable, but the status or body is wrong | - |
 | **SNMP** (v2c/v3) | The agent answers the requested value | The value fails your comparison | Community / v3 keys |
 | **SSH** | Connects and authenticates (plus optional command checks) | Auth rejected, or a command check fails | Username + password or key |
-| **Telnet** | Connects (and optional banner matches) | The banner doesn't match | — |
-| **Script / exec** | A local plugin exits `0` | The plugin exits `1` (warning) | — |
-| **TLS certificate** | The presented chain verifies and is inside its validity window | Reachable, but the certificate is untrusted, self-signed, or expired | — |
+| **Telnet** | Connects (and optional banner matches) | The banner doesn't match | - |
+| **Script / exec** | A local plugin exits `0` | The plugin exits `1` (warning) | - |
+| **TLS certificate** | The presented chain verifies and is inside its validity window | Reachable, but the certificate is untrusted, self-signed, or expired | - |
 
 !!! tip "`unknown` is not `down`"
-    If a check is misconfigured — bad parameters, missing privilege, an
-    unexpected error — it reports **unknown**, and that never flips a known-good
+    If a check is misconfigured - bad parameters, missing privilege, an
+    unexpected error - it reports **unknown**, and that never flips a known-good
     status to down. Misconfiguration won't masquerade as an outage.
 
 ### TLS certificate checks
 
 The **TLS certificate** kind reads the certificate chain an endpoint presents
-and files it in the [certificate inventory](../monitoring/certificates.md) —
+and files it in the [certificate inventory](../monitoring/certificates.md) -
 expiry, issuer, SANs, key strength, self-signed and trust flags. It stores
 **public certificate data only and never a private key**, and reads an
 untrusted certificate without weakening verification anywhere.
 
-Each read also records a **binding** — which endpoint served which certificate —
+Each read also records a **binding** - which endpoint served which certificate -
 so "what breaks when this expires" is answerable, and endpoints inside the
 warning window raise ordinary alerts through this same engine. See that page for
 the full field list, the trust rules, and the expiry thresholds.
 
 ### HTTP checks are pinned to the target
 
-An HTTP check always connects to the IP it's assigned to — you choose the scheme,
+An HTTP check always connects to the IP it's assigned to - you choose the scheme,
 port, and path, and optionally a `Host` header to set the virtual host, but it
 will never be redirected to dial some arbitrary hostname.
 
@@ -99,14 +99,14 @@ will never be redirected to dial some arbitrary hostname.
 
 SNMP communities, SSH passwords and keys, and SNMP v3 keys are stored encrypted
 at rest. You can set them, but they're **never** shown again or returned through
-the API — the UI only tells you whether a credential is saved.
+the API - the UI only tells you whether a credential is saved.
 
 ### Script and exec checks
 
 Two options let you monitor anything that can express its health as an exit
-code — handy when a plain port or HTTP probe can't capture the real condition.
+code - handy when a plain port or HTTP probe can't capture the real condition.
 
-**SSH script** — the SSH check can run a command (or a multi-line script) on the
+**SSH script** - the SSH check can run a command (or a multi-line script) on the
 target and judge it by exit code and/or an output pattern. For example, to alert
 when nginx isn't running on a host:
 
@@ -122,7 +122,7 @@ Exit `0` → **up**; nginx stopped → non-zero exit → **degraded** (the host 
 reachable, only the service is down); a refused or timed-out SSH connection →
 **down**.
 
-**Local exec (Nagios-plugin style)** — runs a vetted plugin on the worker and
+**Local exec (Nagios-plugin style)** - runs a vetted plugin on the worker and
 maps its exit code:
 
 | Exit code | Meaning | Status |
@@ -139,10 +139,10 @@ The plugin's first line of output becomes the result message (e.g. `OK - 12ms`).
     disabled out of the box. An administrator must place the approved plugins in a
     directory and enable the feature in the worker's environment (see
     [Settings](#settings)). Checks then reference a plugin by its bare name plus
-    arguments — use `{host}` where the target IP belongs. Arguments are passed
+    arguments - use `{host}` where the target IP belongs. Arguments are passed
     directly (no shell), and the plugin must live inside the approved directory.
 
-    *Example — HTTP health via the standard `check_http` plugin:*
+    *Example - HTTP health via the standard `check_http` plugin:*
 
     | Field | Value |
     |---|---|
@@ -167,18 +167,18 @@ individual hosts without touching the rest.
 ### Inherited checks on an IP
 
 On an IP's Monitoring tab, checks inherited from a parent prefix are marked as
-inherited and can't be edited or removed there — edit the parent prefix instead
+inherited and can't be edited or removed there - edit the parent prefix instead
 (the IP view links to it).
 
 ### Per-check overrides
 
 Without forking a shared definition, you can override individual settings on a
-single assignment — expand the check's row on the Monitoring tab to adjust:
+single assignment - expand the check's row on the Monitoring tab to adjust:
 
-- **Enabled** — keep the assignment but stop it running.
-- **Schedule mode** — Follow global / Always on / Off.
-- **Interval, rise, fall** — leave blank to inherit the definition's defaults.
-- **Exclusions** (prefix checks) — tick the IPs to exempt.
+- **Enabled** - keep the assignment but stop it running.
+- **Schedule mode** - Follow global / Always on / Off.
+- **Interval, rise, fall** - leave blank to inherit the definition's defaults.
+- **Exclusions** (prefix checks) - tick the IPs to exempt.
 
 ## Schedule modes
 
@@ -199,20 +199,20 @@ The global switch and default interval live in the Monitoring settings (see
 
 How often a policy-driven check runs resolves in two levels:
 
-1. **Global default** — the *Default check interval* in Monitoring settings.
+1. **Global default** - the *Default check interval* in Monitoring settings.
    Every policy-based check uses this unless something more specific overrides
    it.
-2. **Per-scope override** — on **Monitoring → Configuration**, each row
+2. **Per-scope override** - on **Monitoring → Configuration**, each row
    (prefix, device, device type, device role) has a **Frequency** picker in its
    policy menu. Pick *Follow global default* to inherit, or a concrete cadence
-   (1 min … daily) to override. The **most-specific** scope that sets one wins —
-   a prefix beats its VRF beats global — so you can make one busy subnet poll
+   (1 min … daily) to override. The **most-specific** scope that sets one wins -
+   a prefix beats its VRF beats global - so you can make one busy subnet poll
    every minute while everything else follows the default.
 
 The chosen cadence shows on the policy button (e.g. `2 items · 15m`). Overrides
 take effect on the next materialisation pass (within a minute or two), not
 instantly. Hand-attached checks (the *Add check* flow on an IP or prefix) keep
-their own per-check interval and schedule mode instead — see
+their own per-check interval and schedule mode instead - see
 [Per-check overrides](#per-check-overrides).
 
 ### Monitoring devices, types, and roles
@@ -235,11 +235,11 @@ device. The most-specific scope wins (a per-device policy beats the device's
 type/role).
 
 **Turning *Monitor* on with no profiles/templates selected monitors basic
-reachability** — the policy falls back to a default ICMP *Reachability (ping)*
+reachability** - the policy falls back to a default ICMP *Reachability (ping)*
 check (the policy button shows **Ping**), so the toggle always produces
 something. Attach profiles or templates to check more than reachability. A
-policy left on **Follow global** contributes nothing of its own — it just rides
-the broader-scope (global/VRF/prefix) policies — so it never adds a stray ping.
+policy left on **Follow global** contributes nothing of its own - it just rides
+the broader-scope (global/VRF/prefix) policies - so it never adds a stray ping.
 A device with no IPs (or no primary/OOB when that target is chosen) still has
 nothing to check. Matching checks ("services") are created on the next
 materialisation pass (within a minute or two) and appear on each IP's
@@ -247,18 +247,18 @@ materialisation pass (within a minute or two) and appear on each IP's
 
 ### Monitoring a service
 
-A **Service** (a device/VM's name + protocol + ports — e.g. "HTTPS · TCP 443")
+A **Service** (a device/VM's name + protocol + ports - e.g. "HTTPS · TCP 443")
 carries a **Monitored** flag. Turn it on from the device's **Services** tab and
 each port is watched by a TCP/UDP check against the service's target IP (its own
 IP, else the parent's primary IP). The row's **Monitoring** badge reflects the
-live state — *Monitored* (green) once checks are scheduled, *No IP* (amber) if
+live state - *Monitored* (green) once checks are scheduled, *No IP* (amber) if
 the flag is on but no target IP exists yet (it activates automatically when one
 appears).
 
 To watch a service across a whole fleet, define it once on the **device type**
 (Device type → Components → **Services**) and tick **Monitor**. Every device
 created from that type is then born with the service and, if monitored, starts
-checking as soon as it has an IP. This is the smart, low-maintenance path — no
+checking as soon as it has an IP. This is the smart, low-maintenance path - no
 per-device clicking. Full design: [service
 monitoring](../architecture/service-monitoring.md).
 
@@ -269,12 +269,12 @@ To avoid flapping on a single blip, status changes require a streak:
 - A check goes **up** only after a number of consecutive successes (the **rise**
   count), and **down** only after a number of consecutive failures (the **fall**
   count).
-- **Degraded** shows immediately when a host is reachable-but-impaired — it
+- **Degraded** shows immediately when a host is reachable-but-impaired - it
   doesn't wait out the rise count.
-- **Stale** — a check that's been down for a long time (a configurable number of
+- **Stale** - a check that's been down for a long time (a configurable number of
   consecutive failures, or a number of days) is escalated to *stale* to mark a
   chronic outage versus a fresh one.
-- **Skipped** — IPs whose status is on your skip list (for example *reserved*)
+- **Skipped** - IPs whose status is on your skip list (for example *reserved*)
   are never dialled; their checks are marked *skipped* and no result is recorded.
 
 Every status change is logged so you get a history timeline and can drive
@@ -286,15 +286,15 @@ notifications.
 
 The IP detail page has a **Monitoring** section with one row per check showing:
 
-- A status badge — up / down / degraded / unknown.
+- A status badge - up / down / degraded / unknown.
 - The check name and kind.
 - An inline **sparkline** of recent latency/status.
 - The last latency and last-run time.
 
 Expand a row to see its recent **history** table. When an IP has several checks
 with **different** results (one down while others are up), the badge becomes a
-**split badge** — coloured segments sized by how many checks are in each state,
-with a hover breakdown — rather than collapsing to just the worst one.
+**split badge** - coloured segments sized by how many checks are in each state,
+with a hover breakdown - rather than collapsing to just the worst one.
 
 ### On a prefix
 
@@ -308,7 +308,7 @@ The prefix Monitoring tab shows:
 
 ### On a device
 
-Checks attach to IPs, not to devices — but the device page rolls them up for
+Checks attach to IPs, not to devices - but the device page rolls them up for
 you in three places:
 
 - A **roll-up badge** in the device header, next to the status badge (the same
@@ -332,8 +332,8 @@ devices at a glance.
 ### Uptime / SLA
 
 The IP Monitoring tab includes an **Uptime (SLA)** card with a window selector
-(24h / 7d / 30d / 90d). Availability is **time-weighted** — measured from how long
-the IP spent in each state, not raw sample counts — so a slow check interval
+(24h / 7d / 30d / 90d). Availability is **time-weighted** - measured from how long
+the IP spent in each state, not raw sample counts - so a slow check interval
 doesn't skew the number. Time spent in *unknown* or *skipped* is excluded from the
 calculation and reported separately, so a check that simply wasn't running can't
 read as 100% uptime. The card also shows the number of **incidents** in the window
@@ -346,31 +346,31 @@ the schedule:
 
 - **Check now** on an IP or prefix runs its checks right away and refreshes in
   place.
-- The **Prefixes** and **IPs** list pages have a bulk **Check now** action — select
+- The **Prefixes** and **IPs** list pages have a bulk **Check now** action - select
   rows, and Danbyte re-checks every selected IP (and every IP in selected
   prefixes), with a live progress bar.
 
-A manual check rolls into the same state machine as a scheduled one — it advances
+A manual check rolls into the same state machine as a scheduled one - it advances
 the rise/fall counters, can move the status, logs the change, and fires alerts
 exactly like an automatic scan.
 
 !!! tip "Large prefixes are fast"
     Sweeping a very large prefix (a `/16` is ~65,000 hosts) completes in seconds,
-    not minutes — ICMP sweeps are batched and run with high concurrency, and big
+    not minutes - ICMP sweeps are batched and run with high concurrency, and big
     target sets are split across background workers that run in parallel.
 
 ## The Monitoring dashboard
 
 **Governance → Monitoring** is the global view. It has three tabs:
 
-- **Overview** — stat cards (total checks, monitored IPs, definitions, alert
+- **Overview** - stat cards (total checks, monitored IPs, definitions, alert
   channels), charts (status distribution, checks by type, results over the last
   24 hours), recent status changes, a **flapping** card (see below), and the
   monitoring settings.
-- **Checks** — a global list of every check with quick-filter tabs (All / Up /
+- **Checks** - a global list of every check with quick-filter tabs (All / Up /
   Degraded / Down / Stale / Skipped / Unknown, each with a count), search, and
   paging. Each row links to its IP.
-- **Templates** — your reusable check library.
+- **Templates** - your reusable check library.
 
 ### Settings on the dashboard
 
@@ -389,11 +389,11 @@ the per-tenant monitoring options:
 ### Flapping monitor
 
 The Overview tab has a **flapping** card that proactively surfaces IPs bouncing
-between states a lot — "this host is flapping, maybe go look at it" — ranked by how
+between states a lot - "this host is flapping, maybe go look at it" - ranked by how
 noisy each one is, regardless of whether it's currently up or down. To keep
 expected churn out of the list you can exclude whole IP statuses (the DHCP-scope
 escape hatch, in settings) or flip an **Ignore flapping** toggle on a single
-known-noisy IP. It only raises visibility — it doesn't page anyone.
+known-noisy IP. It only raises visibility - it doesn't page anyone.
 
 ### Reverse-DNS enrichment
 
@@ -405,7 +405,7 @@ name when a lookup returns nothing.
 
 ## Alerts
 
-Status changes are turned into stateful **alerts** — incidents you can see and act
+Status changes are turned into stateful **alerts** - incidents you can see and act
 on, not just a stream of changes. Manage them under **Governance → Alerts**.
 
 - A change into a bad state opens **one** firing alert per condition (down/stale →
@@ -427,14 +427,14 @@ degraded → warning), so alerting works out of the box.
 ### Acknowledge an alert
 
 You can **acknowledge** a firing alert so the team knows someone owns it (with an
-optional note). The alert keeps firing, but acknowledging it records who and when —
+optional note). The alert keeps firing, but acknowledging it records who and when -
 and **stops reminder notifications** (see below).
 
 ### Silences and maintenance windows
 
 A **silence** mutes notifications for matching alerts during a time window.
 Matchers mirror alert rules (kinds, statuses, IP tags, a prefix, plus an optional
-single IP — all empty means a blanket silence). While a silence is active, alerts
+single IP - all empty means a blanket silence). While a silence is active, alerts
 still open and are tracked, but no notification is sent. A silence scheduled for
 the future is effectively a **maintenance window**. Manage these under **Alerts →
 Silences**; silenced alerts are flagged in the list.
@@ -444,15 +444,15 @@ Silences**; silenced alerts are flagged in the list.
 These time-based policies are **per-tenant** and **off by default** (except
 grouping), and all of them respect acknowledgement and silences:
 
-- **Grouping** (on by default) — when one event opens many alerts at once (a switch
+- **Grouping** (on by default) - when one event opens many alerts at once (a switch
   dies, taking 50 IPs down), they're coalesced into a single digest per channel
   instead of a storm of messages.
-- **Renotify** — re-sends a reminder for an alert that's still firing, unacked, and
+- **Renotify** - re-sends a reminder for an alert that's still firing, unacked, and
   un-silenced after a configurable interval. Acknowledging or silencing stops the
   reminders.
-- **Escalation** — an alert left firing and unacknowledged past a deadline is
+- **Escalation** - an alert left firing and unacknowledged past a deadline is
   bumped to *critical* and re-notified.
-- **Flap dampening** — an alert whose condition keeps reopening is marked
+- **Flap dampening** - an alert whose condition keeps reopening is marked
   *flapping* and excluded from reminders until it settles, so a flapping host can't
   page on a loop.
 
@@ -465,8 +465,8 @@ When an alert opens, escalates, or resolves, Danbyte routes it to your enabled
 **notification channels**. Manage them under **Alerts → Channels**; each has a
 **Send test** action. Every channel applies two gates before it fires:
 
-- **Minimum severity** — alerts below the channel's threshold are skipped.
-- **On statuses** — an optional allow-list of check statuses; empty means any bad
+- **Minimum severity** - alerts below the channel's threshold are skipped.
+- **On statuses** - an optional allow-list of check statuses; empty means any bad
   status.
 
 Supported channels:
@@ -485,64 +485,64 @@ a clickable link straight back to the alert.
 ### Subscriptions and the Notifications page
 
 Beyond a channel's free-text recipient list, you can **subscribe** a user or a
-whole **group** to a channel — the channel then also emails that user, or every
+whole **group** to a channel - the channel then also emails that user, or every
 member of that group. Subscriptions are additive: they merge with the recipient
 list at send time.
 
 Two kinds:
 
-- **Mandatory** (admin- or group-assigned) — the subscriber **cannot** remove it
+- **Mandatory** (admin- or group-assigned) - the subscriber **cannot** remove it
   themselves. This is the "the NOC group is on DC-event notifications and members
   can't opt out" case. Group subscriptions are always mandatory for members.
-- **Self-assigned** — a user opted themselves in and can leave again.
+- **Self-assigned** - a user opted themselves in and can leave again.
 
 The top-level **Notifications** page has two views:
 
-- **For you** (every user): what you're subscribed to — your own, your groups',
-  and any channel that lists your address directly — each tagged with its source
+- **For you** (every user): what you're subscribed to - your own, your groups',
+  and any channel that lists your address directly - each tagged with its source
   (Self / Assigned / via *group* / Direct). Self-assigned rows have an
   **Unsubscribe** button; mandatory and group ones are read-only. Channels marked
   **self-subscribable** show up under "Available to join" with a **Subscribe**
   button.
-- **All channels** (admins): every subscription across channels — the groups and
-  users each one reaches — with add/remove.
+- **All channels** (admins): every subscription across channels - the groups and
+  users each one reaches - with add/remove.
 
-**The quickest path — "Notify me":** a prefix or IP **Monitoring** tab — and a
-device's Monitoring strip — has a **Notify me** button. One click emails you
-(your account address) whenever that prefix/IP/device changes status — no
+**The quickest path - "Notify me":** a prefix or IP **Monitoring** tab - and a
+device's Monitoring strip - has a **Notify me** button. One click emails you
+(your account address) whenever that prefix/IP/device changes status - no
 channel setup. Behind the scenes it reuses a shared, auto-created email channel
 scoped to that object and adds you as a self subscription (visible under
 Notifications → For you, where you can turn it off again). A scoped channel only
-ever fires for its own target — a device scope covers every IP assigned to the
-device — for both status changes and alerts. Manually-created channels can be
+ever fires for its own target - a device scope covers every IP assigned to the
+device - for both status changes and alerts. Manually-created channels can be
 scoped the same way in the channel form (Everything / a subnet / a device).
 
 Channel **Send test** now surfaces delivery errors instead of always reporting
-success — for an email channel that means the actual SMTP error, so a silent
+success - for an email channel that means the actual SMTP error, so a silent
 channel can be diagnosed from the UI.
 
 Self-service opt-in/opt-out is gated by the **`subscribe`** capability on
 notification channels; grant it to the users/groups who should manage their own
 subscriptions (like `reveal`/`connect`, it isn't in the default Administrator
-set — superusers always have it). Managing *other* people's subscriptions uses
+set - superusers always have it). Managing *other* people's subscriptions uses
 ordinary add/change/delete on notification subscriptions. Mark a channel
 **self-subscribable** in its form to let permitted users join it.
 
 ### Raw status-change notifications (no alert rules)
 
 A channel can also send **every status change** for the IPs it matches, without
-setting up any alert rule — for operators who just want "email me when something
+setting up any alert rule - for operators who just want "email me when something
 in this subnet goes down". Enable **Send raw status changes** on the channel and
 pick a delivery mode:
 
-- **Instant** — one message per check batch, carrying all of that batch's
+- **Instant** - one message per check batch, carrying all of that batch's
   matching changes (coalesced, so a big flap is one email, not fifty).
-- **Batched** — a periodic **mini-digest** every *N* minutes (default 30),
+- **Batched** - a periodic **mini-digest** every *N* minutes (default 30),
   summarising the window's changes as the same per-prefix status-badge chains the
   monitoring digest uses. Nothing is sent for an empty window.
 
 Scope it with the channel's existing **On statuses** filter (e.g. only `down`)
-and an optional **subnet** — only IPs inside that prefix notify. This rides the
+and an optional **subnet** - only IPs inside that prefix notify. This rides the
 same delivery gates and the same effective SMTP as everything else; instant fires
 from the check batch, batched from the minute beat, so neither needs a new timer.
 
@@ -568,8 +568,8 @@ or unreachable SMTP host fails fast (a bounded connection timeout,
 hanging the request.
 
 **Preview email templates.** A **Preview email templates** card sends a sample
-of any email Danbyte produces — monitoring digest, certificate digest, alert and
-grouped-alert notifications, the sign-in code, and the invite — filled with
+of any email Danbyte produces - monitoring digest, certificate digest, alert and
+grouped-alert notifications, the sign-in code, and the invite - filled with
 example data, to an address you choose (or **All templates** at once). Subjects
 are prefixed with `[Preview]` and delivery uses the same SMTP config, so you can
 see exactly how each email looks before it goes out for real. Every email shares
@@ -588,9 +588,9 @@ records the responders it finds as new IPs.
 
 - **What's enrolled:** either *every* prefix (a global "discover everything"
   switch), or each prefix you flag **Auto-discover** plus its descendant prefixes
-  in the same VRF — so flagging a parent subnet enrols all its children.
+  in the same VRF - so flagging a parent subnet enrols all its children.
 - **New IPs** are created with a tenant-specific **Auto-discovered** status (amber,
-  not "available") so a human has to review and promote them — discovery never
+  not "available") so a human has to review and promote them - discovery never
   silently marks hosts active. In keeping with zero-pre-filled-data, that status
   isn't seeded at install; it's created the first time a responder is found, as a
   normal editable status you own.
@@ -610,7 +610,7 @@ configurable number of days are deleted automatically.
 
 !!! warning "Only auto-discovered IPs are ever deleted"
     Cleanup only touches IPs that Danbyte discovered itself. IPs you created by
-    hand are **never** deleted by cleanup — the discovered flag is the safety
+    hand are **never** deleted by cleanup - the discovered flag is the safety
     boundary between "the tool made this" and "a person entered this".
 
 ## Settings
@@ -618,7 +618,7 @@ configurable number of days are deleted automatically.
 Most day-to-day options live in the per-tenant settings on the Monitoring
 dashboard. A few deployment-level options (concurrency limits, the secret key for
 credential encryption, default global interval and switch, exec-check enablement
-and plugin directory, retention windows) are set by an administrator — see
+and plugin directory, retention windows) are set by an administrator - see
 [Reference → Settings](../reference/settings.md#monitoring).
 
 Check history is high-volume (hundreds of thousands of raw results per day on a
@@ -630,7 +630,7 @@ need to cover the sparkline/history windows.
 
 ## Email digest
 
-A scheduled summary email of the monitoring picture — a lightweight status
+A scheduled summary email of the monitoring picture - a lightweight status
 report (like ping-monitor "digest" mails) delivered on your cadence rather than
 alert-by-alert. Each digest covers, per tenant: check counts by status (up /
 down / degraded / stale) with a reachable %, window activity counters (how many
@@ -638,15 +638,15 @@ IPs went down / came up / went stale), currently-firing alerts by severity, and
 a count of configuration changes.
 
 The **State changes** section lists every IP that changed state in the window,
-grouped by prefix. Each IP is drawn as a horizontal **chain of status badges** —
+grouped by prefix. Each IP is drawn as a horizontal **chain of status badges** -
 the status it entered the window with, then one coloured badge per transition
-(`Up → Down (Jul 20 03:01) → Up (Jul 20 03:07)`) — so a flapping host reads at a
+(`Up → Down (Jul 20 03:01) → Up (Jul 20 03:07)`) - so a flapping host reads at a
 glance. Badges use Danbyte's status palette (green up, red down/stale, amber
 degraded), and a heavily-flapping network is capped so the mail stays a
 reasonable size.
 
 Configure it under **Settings → Deployment → General → Email digest**
-(deployment-wide default) — enable it, choose **daily** or **weekly** (with a
+(deployment-wide default) - enable it, choose **daily** or **weekly** (with a
 weekday), and set the **recipients** (comma/newline-separated). A tenant can
 override the whole group (schedule + recipients) via its own settings, so an MSP
 sends each customer their own digest. Use **Send test digest** to email one
@@ -663,8 +663,8 @@ one by hand with:
 .venv/bin/python manage.py send_digest --tenant <slug> --force
 ```
 
-The digest also carries a compact **Certificates** strip — expired, expiring
-(critical / warning), and recently-changed counts — so the overall certificate
+The digest also carries a compact **Certificates** strip - expired, expiring
+(critical / warning), and recently-changed counts - so the overall certificate
 picture rides along with the status summary.
 
 ## Certificate digest
@@ -682,7 +682,7 @@ Each certificate digest covers, per tenant:
   served on the wire.
 - **Declared** certificates (uploaded and assigned, not yet observed) approaching
   expiry.
-- **Recent changes** — endpoints now serving a different certificate than before.
+- **Recent changes** - endpoints now serving a different certificate than before.
 
 Enable it under **Settings → Deployment → General → Email digest → Certificate
 digest**. It runs on the same cadence as the monitoring digest (the daily

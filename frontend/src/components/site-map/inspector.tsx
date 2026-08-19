@@ -39,7 +39,7 @@ import { DevicePathsList } from "@/components/device-paths-list"
 import { cn } from "@/lib/utils"
 import { KIND_COLOR } from "@/components/site-map/connections-layer"
 
-// The site map's right inspector — a direct clone of the floor planner's
+// The site map's right inspector - a direct clone of the floor planner's
 // TileInspector: w-72, uppercase header with coordinates, identity row with
 // the type badge, fields, and the destructive action pinned to the bottom.
 
@@ -152,7 +152,7 @@ export function DeviceInspector({
 }: {
   device: SiteMapDevice
   editing: boolean
-  /** FOV editor slot — rendered when the device's role has FOV. */
+  /** FOV editor slot - rendered when the device's role has FOV. */
   fovEditor?: React.ReactNode
   /** Highlight a run's cables on the map. */
   onTraceCables?: (cableIds: string[]) => void
@@ -208,7 +208,7 @@ export function DeviceInspector({
           deviceId={d.id}
           onTraceCables={onTraceCables}
           max={4}
-          emptyText="Nothing cabled yet — connect a port below."
+          emptyText="Nothing cabled yet - connect a port below."
         />
       </div>
 
@@ -251,7 +251,7 @@ export function MarkerInspector({
   editing: boolean
   /** Linked-device picker slot. */
   deviceLink?: React.ReactNode
-  /** FOV editor slot — rendered when the marker's type has FOV. */
+  /** FOV editor slot - rendered when the marker's type has FOV. */
   fovEditor?: React.ReactNode
   /** Highlight the linked device's cables on the map. */
   onTraceCables?: (cableIds: string[]) => void
@@ -316,7 +316,7 @@ export function MarkerInspector({
   )
 }
 
-/** Label + description — saved on blur or Enter, like tray fields. */
+/** Label + description - saved on blur or Enter, like tray fields. */
 function MarkerFields({
   marker: m,
   onUpdate,

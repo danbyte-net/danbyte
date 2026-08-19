@@ -4,7 +4,7 @@ import { ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /**
- * A foldable list group — header with an optional leading badge, name, count
+ * A foldable list group - header with an optional leading badge, name, count
  * and a chevron that rotates -90 when closed. Extracted from the floorplan
  * objects sidebar so the site map's sidebar folds look identical.
  */
@@ -16,7 +16,7 @@ export function FoldableGroup({
   children,
 }: {
   title: string
-  /** Leading swatch/icon — e.g. the floorplan's TileBadge, or a status dot. */
+  /** Leading swatch/icon - e.g. the floorplan's TileBadge, or a status dot. */
   badge?: React.ReactNode
   count: number
   defaultOpen?: boolean

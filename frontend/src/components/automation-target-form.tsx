@@ -178,7 +178,7 @@ export function AutomationTargetForm({
         label={kind === "awx" ? "Bearer token" : "Signing secret"}
         type="password"
         autoComplete="new-password"
-        placeholder={target?.token_set ? "Saved — leave blank to keep" : ""}
+        placeholder={target?.token_set ? "Saved - leave blank to keep" : ""}
         hint={
           kind === "awx"
             ? "AWX/AAP OAuth token (sent as Authorization: Bearer)"

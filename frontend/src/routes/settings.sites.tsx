@@ -56,7 +56,7 @@ function SeparationCard() {
   return (
     <SettingsCard
       title="Site separation"
-      description="Deployment default — tenants can override it under This tenant → General."
+      description="Deployment default - tenants can override it under This tenant → General."
       onSave={() =>
         save.mutate({
           key: "separation",
@@ -83,7 +83,7 @@ function SeparationCard() {
         label="Let site admins manage their site's settings"
         checked={siteSettings}
         onChange={setSiteSettings}
-        hint="Site editors (and holders of a sitesettings grant) get a Settings → This site section — e.g. their own email delivery."
+        hint="Site editors (and holders of a sitesettings grant) get a Settings → This site section - e.g. their own email delivery."
       />
     </SettingsCard>
   )
@@ -116,7 +116,7 @@ function DelegationCard() {
         label="Let site editors invite their own viewers"
         checked={delegate}
         onChange={setDelegate}
-        hint="A local site editor may grant read-only access to the site(s) they edit — never editors, never other sites."
+        hint="A local site editor may grant read-only access to the site(s) they edit - never editors, never other sites."
       />
     </SettingsCard>
   )

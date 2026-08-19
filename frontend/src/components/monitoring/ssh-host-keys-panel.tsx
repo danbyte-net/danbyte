@@ -52,7 +52,7 @@ interface RawAlert {
  * SSH host keys for one device: the keys it is **expected** to present
  * (uploaded), the keys actually **observed** on the wire, drift when the two
  * disagree (`ssh_host_key_mismatch`) with an Accept action, and paste-to-add.
- * Device-scoped — a host key belongs to its device, so there is no assignment
+ * Device-scoped - a host key belongs to its device, so there is no assignment
  * step (unlike certificates).
  */
 export function SSHHostKeysPanel({ deviceId }: { deviceId: string }) {
@@ -259,7 +259,7 @@ function UploadSSHHostKeyDialog({
     onSuccess: ({ status }) => {
       toast.success(
         status === 200
-          ? "Matched an already-observed key — now marked expected too"
+          ? "Matched an already-observed key - now marked expected too"
           : "Host key added"
       )
       onDone()
@@ -291,7 +291,7 @@ function UploadSSHHostKeyDialog({
           <DialogDescription>
             Paste the device's public host key (an OpenSSH line like{" "}
             <code>ssh-ed25519 AAAA… host</code>), or load a <code>.pub</code>{" "}
-            file. Only the public key is stored — never a private key.
+            file. Only the public key is stored - never a private key.
           </DialogDescription>
         </DialogHeader>
 

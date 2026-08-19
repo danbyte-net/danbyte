@@ -295,7 +295,7 @@ class SnmpDriftTests(APITestCase):
 
 
 class SnmpTopologyParseTests(APITestCase):
-    """Pure LLDP/ARP/nmap parsers (#84, Phase 4) — no SNMP/nmap needed."""
+    """Pure LLDP/ARP/nmap parsers (#84, Phase 4) - no SNMP/nmap needed."""
 
     def test_parse_lldp_joins_local_port_and_remote(self):
         from danbyte_checks.snmp_facts import parse_lldp
@@ -372,7 +372,7 @@ class SnmpFleetDriftTests(APITestCase):
         )
         for d in (self.drifted, self.synced, self.down, self.unknown):
             _bind(d)
-        # Polled (e.g. via a tenant fallback) but with NO SNMP binding/default —
+        # Polled (e.g. via a tenant fallback) but with NO SNMP binding/default -
         # not deliberately configured, so it must NOT appear in the list.
         self.unconfigured = Device.objects.create(tenant=self.tenant, name="stray")
         DeviceSnmp.objects.create(
@@ -411,7 +411,7 @@ class SnmpFleetDriftTests(APITestCase):
         self.assertEqual(d["interfaces_drifted"], 1)
         self.assertEqual(by_name["ok"]["status"], "in_sync")
         self.assertEqual(by_name["ok"]["drift_count"], 0)
-        # Unreachable (False) and unknown (None) are both their own bucket —
+        # Unreachable (False) and unknown (None) are both their own bucket -
         # never a misleading "in sync".
         self.assertEqual(by_name["down"]["status"], "unreachable")
         self.assertEqual(by_name["unknown"]["status"], "unreachable")
@@ -429,7 +429,7 @@ class SnmpFleetDriftTests(APITestCase):
 
     def test_default_response_shape_is_unchanged(self):
         # Every existing caller (the config-drift page, the devices-list drift
-        # marker) must keep the exact response it has today — the per-interface
+        # marker) must keep the exact response it has today - the per-interface
         # lookup is opt-in only.
         data = self._list()
         self.assertEqual(list(data), ["count", "results"])
@@ -659,7 +659,7 @@ class SnmpIpLoopTests(APITestCase):
 
     def test_accept_assigns_existing_unassigned_ip(self):
         from api.models import IPAddress
-        # An IP that already exists (e.g. a primary IP) but isn't assigned — accept
+        # An IP that already exists (e.g. a primary IP) but isn't assigned - accept
         # should bind it, not duplicate it.
         existing = IPAddress.objects.create(
             tenant=self.tenant, prefix=self.prefix, ip_address="10.0.0.5"
@@ -724,7 +724,7 @@ class SnmpIpLoopTests(APITestCase):
             f"/api/monitoring/devices/{self.device.id}/snmp/sync/", {}, format="json"
         )
         # Row-scoped write fetch: a device outside the caller's device.change
-        # scope 404s (non-leaking) — same contract as restrict_for_view.
+        # scope 404s (non-leaking) - same contract as restrict_for_view.
         self.assertEqual(r.status_code, 404)
 
 
@@ -941,7 +941,7 @@ class SnmpHardeningTests(APITestCase):
         )
 
     def test_reconcile_denied_without_device_change(self):
-        # Accepting drift writes the SoT, so it needs device.change — the write
+        # Accepting drift writes the SoT, so it needs device.change - the write
         # fetch is row-scoped to device.change, so a tenant member without it
         # 404s (non-leaking) rather than mutating the device.
         self._as_member_without_change()
@@ -991,7 +991,7 @@ class SnmpHardeningTests(APITestCase):
 
     def test_mac_drift_ignores_separator_format(self):
         from api.models import Interface
-        # Same physical address, Cisco dotted form — must NOT read as drift.
+        # Same physical address, Cisco dotted form - must NOT read as drift.
         Interface.objects.create(
             device=self.device, name="Gi0/1", mac_address="0011.2233.4455",
         )
@@ -1039,7 +1039,7 @@ class SnmpHardeningTests(APITestCase):
 
 
 class SnmpSiteLocationBindingTests(APITestCase):
-    """Site/location-scoped SNMP creds — an Outpost polls a site's devices with
+    """Site/location-scoped SNMP creds - an Outpost polls a site's devices with
     site-scoped credentials. Hierarchy: device → role → type → location
     (→ parents) → site → tenant default."""
 
@@ -1085,7 +1085,7 @@ class SnmpSiteLocationBindingTests(APITestCase):
 
     def test_parent_location_binding_wins_over_site(self):
         self._bind("site", self.site.id, self.p_site)
-        # Bound on the *parent* location — inherited by the device in the child.
+        # Bound on the *parent* location - inherited by the device in the child.
         self._bind("location", self.parent_loc.id, self.p_loc)
         profile, source = resolve_device_profile(self.device, self.tenant)
         self.assertEqual(profile, self.p_loc)

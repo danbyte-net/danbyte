@@ -222,7 +222,7 @@ export function WebhookForm({ webhook, onSaved, onCancel }: WebhookFormProps) {
         type="password"
         autoComplete="new-password"
         placeholder={
-          webhook?.secret_set ? "Saved — leave blank to keep" : "Optional"
+          webhook?.secret_set ? "Saved - leave blank to keep" : "Optional"
         }
         hint="HMAC-SHA512 signs the body in X-Danbyte-Signature"
         value={secret}

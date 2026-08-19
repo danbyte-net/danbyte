@@ -144,7 +144,7 @@ class HelperTests(APITestCase):
         self.assertTrue(is_github_dir(f"{base}/tree/master/device-types"))
         self.assertTrue(is_github_dir(f"{base}/tree/master/device-types/Cisco"))
         self.assertTrue(is_github_dir(f"{base}/tree/master"))
-        # /blob/ pointing at a folder (no extension) is still a folder — people
+        # /blob/ pointing at a folder (no extension) is still a folder - people
         # paste either form from the address bar.
         self.assertTrue(is_github_dir(f"{base}/blob/master/device-types/Cisco"))
         # /blob/ pointing at a file is NOT a folder.
@@ -193,7 +193,7 @@ class HelperTests(APITestCase):
 
     def test_expand_unquotes_pasted_urls_and_fails_loud_on_empty(self):
         """Address-bar URLs carry %20 where the trees API answers with real
-        spaces ("Palo Alto Networks") — the prefix must compare unquoted, and
+        spaces ("Palo Alto Networks") - the prefix must compare unquoted, and
         the built raw URLs must re-quote. An empty match is a raised error,
         not a silent 0-file success that looks stuck in the UI."""
 
@@ -319,7 +319,7 @@ class ImportEndpointTests(APITestCase):
         self.assertIn("TenGigabitEthernet{position}/1/1", names)
         # Mgmt 0/0 becomes the Juniper-style zero-based token.
         self.assertIn("GigabitEthernet{position:0}/0", names)
-        # Console con0 has no slot segment — untouched.
+        # Console con0 has no slot segment - untouched.
         self.assertEqual(dt.console_port_templates.filter(name="con0").count(), 1)
 
     def test_front_rear_port_mapping(self):
@@ -474,7 +474,7 @@ class FakeRepo:
     """In-memory raw.githubusercontent.com: ``{"Cisco/slug.front.png": b"…"}``.
     Lookup keys on the URL's trailing ``<Manufacturer>/<file>`` segments, so
     any normalised base works. Stands in for BOTH ``safe_request`` (HEAD
-    probes) and ``safe_get`` (downloads) — tests never touch the network."""
+    probes) and ``safe_get`` (downloads) - tests never touch the network."""
 
     def __init__(self, files: dict[str, bytes]):
         self.files = files
@@ -579,7 +579,7 @@ class ReimportImagesTests(APITestCase):
 
     def test_corrupt_media_counts_as_gap(self):
         # DB says the type has a front image; the file is GONE from storage
-        # (the lost-media case). It must classify as matched, not skipped —
+        # (the lost-media case). It must classify as matched, not skipped -
         # and the surviving filename is itself the matching signal.
         dt = DeviceType.objects.create(
             tenant=self.tenant, name="Nexus Something Odd",
@@ -848,7 +848,7 @@ class RepoInventoryTests(APITestCase):
             self.assertIsNone(repo_image_inventory(self.BASE))
 
     def test_missing_dir_is_an_honest_empty_set(self):
-        """A repo with no elevation-images dir yields set() — every type
+        """A repo with no elevation-images dir yields set() - every type
         reports no_match immediately instead of probing for an hour."""
         import json
         from unittest import mock

@@ -60,7 +60,7 @@ export function UserForm({ user, onSaved, onCancel }: UserFormProps) {
   )
 
   // ── one-click site scoping (create only) ──
-  // Defaults on when this tenant runs enhanced site separation — that's when
+  // Defaults on when this tenant runs enhanced site separation - that's when
   // "most new users are local IT" is the likely intent.
   const { siteSeparation } = useMe()
   const [siteScoped, setSiteScoped] = useState(siteSeparation)
@@ -122,7 +122,7 @@ export function UserForm({ user, onSaved, onCancel }: UserFormProps) {
         group_ids: groupIds,
         tenant_ids: tenantIds,
       }
-      // Invite mode (local accounts only): no password — backend emails a
+      // Invite mode (local accounts only): no password - backend emails a
       // set-your-own-password link. Manual mode / edit: send the typed password
       // if one was entered.
       const inviting = authSource === "local" && pwMode === "invite"
@@ -151,7 +151,7 @@ export function UserForm({ user, onSaved, onCancel }: UserFormProps) {
         isEdit
           ? `Updated ${saved.username}`
           : invited
-            ? `Invited ${saved.username} — set-password email sent`
+            ? `Invited ${saved.username} - set-password email sent`
             : `Created ${saved.username}`
       )
       onSaved(saved)
@@ -217,7 +217,7 @@ export function UserForm({ user, onSaved, onCancel }: UserFormProps) {
         ]}
         hint={
           authSource === "ldap"
-            ? "The directory holds the credential — no password is set here."
+            ? "The directory holds the credential - no password is set here."
             : undefined
         }
         error={fieldErrors.set_auth_source}
@@ -238,7 +238,7 @@ export function UserForm({ user, onSaved, onCancel }: UserFormProps) {
 
           {!isEdit && pwMode === "invite" ? (
             <p className="text-xs text-muted-foreground">
-              The user gets an email with a link to choose their own password —
+              The user gets an email with a link to choose their own password -
               you never set or see it. Requires an email address above.
             </p>
           ) : (
@@ -321,7 +321,7 @@ export function UserForm({ user, onSaved, onCancel }: UserFormProps) {
                   label="Can only see their own sites"
                   checked={siteSilo}
                   onChange={setSiteSilo}
-                  hint="Off (default) = read everything, edit only their sites — the usual local-IT model. On = a strict silo."
+                  hint="Off (default) = read everything, edit only their sites - the usual local-IT model. On = a strict silo."
                 />
               )}
             </div>
@@ -338,7 +338,7 @@ export function UserForm({ user, onSaved, onCancel }: UserFormProps) {
         />
       </Field>
 
-      <Field label="Tenants" hint="Outer scope — leave empty for all tenants">
+      <Field label="Tenants" hint="Outer scope - leave empty for all tenants">
         <CheckList
           options={tenantOptions}
           value={tenantIds}

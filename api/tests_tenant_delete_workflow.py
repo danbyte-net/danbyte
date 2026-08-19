@@ -2,7 +2,7 @@
 
 Tenant deletion touches nearly every model in the product: structural catalogs
 PROTECT their tenant, leaf data cascades, and 145 models are audited. That
-breadth is exactly why a narrow test misses things — the original suite deleted
+breadth is exactly why a narrow test misses things - the original suite deleted
 a tenant owning a Prefix and a Status, which happens to avoid the one ordering
 problem that mattered (#37: audit entries written *after* the tenant row is
 gone, failing the deferred foreign key at COMMIT).
@@ -12,7 +12,7 @@ So this module tests the *workflow* rather than a case:
 1. a seeded tenant with a realistic object graph deletes cleanly;
 2. every audited catalog the introspection can build is covered automatically,
    so a model added later is included without anyone remembering to;
-3. no change-log row is left pointing at a tenant that no longer exists —
+3. no change-log row is left pointing at a tenant that no longer exists -
    the invariant #37 actually violated;
 4. the audit suspension is scoped to the teardown and nothing wider.
 """
@@ -113,13 +113,13 @@ class TenantDeleteWorkflowTests(APITestCase):
             try:
                 model.objects.create(**kwargs)
             except Exception:
-                continue  # a constraint we can't satisfy blindly — fine
+                continue  # a constraint we can't satisfy blindly - fine
             built.append(model._meta.label)
 
         # A floor, not an exact count: it must not silently sweep nothing.
         self.assertGreaterEqual(
             len(built), 10,
-            f"introspection built only {len(built)} audited models — the sweep "
+            f"introspection built only {len(built)} audited models - the sweep "
             "has stopped covering anything meaningful",
         )
         self._delete(tenant)
@@ -130,7 +130,7 @@ class TenantDeleteWorkflowTests(APITestCase):
 
         org = Organization.objects.create(name="Orph", slug="orph")
         tenant = Tenant.objects.create(org=org, name="Orph", slug="orph")
-        # Reached only through the tenant's own cascade — the shape that broke.
+        # Reached only through the tenant's own cascade - the shape that broke.
         VirtualizationSource.objects.create(
             tenant=tenant, name="pve", host="192.0.2.30",
             credentials={"token_id": "x", "secret": "s"},

@@ -24,7 +24,7 @@ export function FormCheckbox({
     <label
       className={cn(
         "flex cursor-pointer items-start gap-2 text-xs",
-        // Dim the whole row, not just the box — the label has to read as
+        // Dim the whole row, not just the box - the label has to read as
         // unavailable too.
         disabled && "cursor-not-allowed opacity-50",
         className

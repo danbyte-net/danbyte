@@ -1,4 +1,4 @@
-"""Change log — an append-only audit trail of object create/update/delete.
+"""Change log - an append-only audit trail of object create/update/delete.
 
 Records are written by ``audit.signals`` (model signals) with the acting user
 captured by ``audit.middleware`` from the request. Each entry
@@ -17,11 +17,11 @@ class ChangeAction(models.TextChoices):
     UPDATE = "update", "Updated"
     DELETE = "delete", "Deleted"
     # A read that exposes secret material (e.g. a stored private key). Not a
-    # mutation, but it must leave a trail — who pulled the secret, and when.
+    # mutation, but it must leave a trail - who pulled the secret, and when.
     REVEAL = "reveal", "Secret revealed"
     # An interactive session was opened to a device (the in-browser SSH
     # terminal). Not a data mutation, but a high-trust access event that must
-    # leave a trail — who connected to which device, and when.
+    # leave a trail - who connected to which device, and when.
     CONNECT = "connect", "Connected"
 
 
@@ -65,7 +65,7 @@ class ChangeLogEntry(models.Model):
     # {field: {"old": ..., "new": ...}} for updates; "{}" for create/delete.
     changes = models.JSONField(default=dict, blank=True)
     # Full field snapshots: the whole row before the write
-    # (update/delete) and after it (create/update). Null when not applicable —
+    # (update/delete) and after it (create/update). Null when not applicable -
     # a create has no pre state, a delete no post state.
     pre_change = models.JSONField(null=True, blank=True)
     post_change = models.JSONField(null=True, blank=True)
@@ -123,7 +123,7 @@ class JournalEntry(models.Model):
         max_length=64, help_text="Model label, e.g. api.prefix."
     )
     object_id = models.CharField(max_length=64)
-    # Site of the target object at write time — row/site RBAC on notes without
+    # Site of the target object at write time - row/site RBAC on notes without
     # re-fetching the (possibly deleted) object. NULL = no site / unresolved.
     object_site_id = models.UUIDField(null=True, blank=True, db_index=True)
 

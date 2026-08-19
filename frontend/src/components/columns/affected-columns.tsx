@@ -102,7 +102,7 @@ export function siteColumns(): ColumnDef<Site>[] {
 }
 
 // The serialized objects arrive loosely typed (Record<string, unknown>), so the
-// dispatcher hands back columns typed to match — the per-type factories above
+// dispatcher hands back columns typed to match - the per-type factories above
 // are the real, typed source.
 type LooseColumns = ColumnDef<Record<string, unknown>>[]
 const loose = <T,>(c: ColumnDef<T>[]) => c as unknown as LooseColumns

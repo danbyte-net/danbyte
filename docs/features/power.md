@@ -4,7 +4,7 @@ icon: lucide/zap
 
 # Power
 
-Power is where you record how electricity reaches your racks — the
+Power is where you record how electricity reaches your racks - the
 **distribution panels** in a site and the **feeds** that run from those panels to
 individual racks.
 
@@ -29,7 +29,7 @@ specific rack.
 1. Open **Power → Power feeds** and click **Add power feed**.
 2. Choose the **panel** it comes from, and give the feed a **name** (unique
    within that panel).
-3. Optionally point it at a **rack** — the rack this feed powers.
+3. Optionally point it at a **rack** - the rack this feed powers.
 4. Set the electrical details (see below) and a **status**.
 5. Save.
 
@@ -43,7 +43,7 @@ specific rack.
 | **Phase** | single-phase or three-phase. |
 | **Voltage** | the supply voltage (volts). |
 | **Amperage** | the rated current (amps). |
-| **Max utilization** | a percentage ceiling — the most of this feed you plan to draw. |
+| **Max utilization** | a percentage ceiling - the most of this feed you plan to draw. |
 
 ### Open a feed or a panel
 
@@ -52,18 +52,18 @@ that object's detail page, the same way every other object in Danbyte works.
 
 A **power panel** page has:
 
-- **Overview** — its site, how many feeds draw from it, comments, and when it
+- **Overview** - its site, how many feeds draw from it, comments, and when it
   was created and last changed.
-- **Feeds** — every feed on the panel, the same row the feeds list draws.
-- **Journal** — your notes on this panel.
-- **History** — the change log: who changed which field, and when.
+- **Feeds** - every feed on the panel, the same row the feeds list draws.
+- **Journal** - your notes on this panel.
+- **History** - the change log: who changed which field, and when.
 
 A **power feed** page has:
 
-- **Overview** — the panel it draws from (a link), the rack it delivers to,
+- **Overview** - the panel it draws from (a link), the rack it delivers to,
   status and type, and the electrical details (supply, phase, voltage,
   amperage, max utilization).
-- **Terminations** — the cables landing on this feed, usually the PDU inlet it
+- **Terminations** - the cables landing on this feed, usually the PDU inlet it
   powers. Follow one to trace the whole power path.
 - **Journal** and **History**, as above.
 
@@ -81,7 +81,7 @@ A **power feed** page has:
 | **Failed** | Faulted or out of service unexpectedly. |
 
 !!! note "Nothing is pre-filled"
-    Danbyte ships no sample panels or feeds — you create exactly the ones your
+    Danbyte ships no sample panels or feeds - you create exactly the ones your
     sites have.
 
 !!! warning "Panels in use can't be deleted"
@@ -93,9 +93,9 @@ A **power feed** page has:
 Panels and feeds cover power *upstream of the rack*. At the device, two
 components complete the chain:
 
-- A **power port** is a device's power **inlet** — where it draws power. It can
+- A **power port** is a device's power **inlet** - where it draws power. It can
   carry the device's **maximum** and **allocated draw** (watts).
-- A **power outlet** is a socket on a device that feeds *other* devices — a rack
+- A **power outlet** is a socket on a device that feeds *other* devices - a rack
   PDU's outlets. Each outlet can name the **inlet** on the same device that
   feeds it (so per-inlet load rolls up) and, on three-phase gear, which
   **feed leg** (A/B/C) it's on.
@@ -108,6 +108,6 @@ other cabling. Manage them on the device's **Power** tab; connector types
 
 ## Tags & custom fields
 
-Need to track something extra — a breaker number, a UPS reference, a circuit
+Need to track something extra - a breaker number, a UPS reference, a circuit
 drawing? Add a **custom field** for panels or feeds and it appears on every
 form. See [Tags & custom fields](tags-and-custom-fields.md).

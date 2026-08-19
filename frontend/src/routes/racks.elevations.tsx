@@ -23,7 +23,7 @@ export const Route = createFileRoute("/racks/elevations")({
   }),
 })
 
-/** Elevations wall — every rack drawn side by side, so admins
+/** Elevations wall - every rack drawn side by side, so admins
  * see at a glance what lives where. Optionally scoped to one site via
  * ?site=<id> (the Sites / Locations pages link here). */
 function RackElevationsPage() {
@@ -87,7 +87,7 @@ function RackElevationsPage() {
     >
       {racks.length === 0 ? (
         <EmptyState title={`No racks${siteName ? ` at ${siteName}` : ""} yet.`}>
-          A rack gets an elevation as soon as it exists — add one from the Racks
+          A rack gets an elevation as soon as it exists - add one from the Racks
           page.
         </EmptyState>
       ) : (

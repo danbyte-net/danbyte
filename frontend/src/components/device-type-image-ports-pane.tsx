@@ -31,7 +31,7 @@ import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import { cn } from "@/lib/utils"
 
-// Placeable kinds — the port-ish component templates PLUS the physical things
+// Placeable kinds - the port-ish component templates PLUS the physical things
 // that aren't ports: inventory items (disk bays and other hardware, drawn
 // status-coloured) and module bays (line-card slots, drawn occupied/empty).
 // Neither is cable-able, and neither belongs on the schematic faceplate.
@@ -120,7 +120,7 @@ interface FillOpts {
   /** Y of the bottom row; middle rows interpolate between y1 and this. */
   row2y: number
   /** Optional per-row Y overrides (length = rows). When set, each row sits at
-   * its own Y instead of interpolating — for devices whose rows aren't evenly
+   * its own Y instead of interpolating - for devices whose rows aren't evenly
    * spaced. Undefined = even top-to-bottom spacing. */
   rowYs?: number[]
   w: number
@@ -137,7 +137,7 @@ function interpRowYs(top: number, bottom: number, rows: number): number[] {
 }
 
 /**
- * "Photo ports" builder — place port markers precisely on a device type's real
+ * "Photo ports" builder - place port markers precisely on a device type's real
  * front/rear photo. Drag one at a time, or use the **auto-fill** tool to lay a
  * whole run of ports at once (rows, spacing, belly-to-belly order). Positions
  * are normalized 0..1, so the 2D image faceplate and the 3D device face render
@@ -399,7 +399,7 @@ export function DeviceTypeImagePortsPane({
     // Column pitch comes from the first..last anchors (as if evenly spaced);
     // a bank gap then *pushes* each subsequent bank further right, so the run
     // visibly spreads (the last ports extend past the Last-X anchor by the
-    // accumulated gaps). Bank size is in PORTS — convert to columns for the
+    // accumulated gaps). Bank size is in PORTS - convert to columns for the
     // current row count so "every 24 ports" means what it says.
     const pitch = cols > 1 ? (fill.x2 - fill.x1) / (cols - 1) : 0
     const colsPerBank =
@@ -613,7 +613,7 @@ export function DeviceTypeImagePortsPane({
           </div>
         </div>
 
-        {/* Canvas — the photo with markers */}
+        {/* Canvas - the photo with markers */}
         <div className="min-w-0 space-y-3">
           {fill && (
             <FillPanel
@@ -651,7 +651,7 @@ export function DeviceTypeImagePortsPane({
                 className="pointer-events-none block w-full"
                 draggable={false}
               />
-              {/* Live fill preview — amber ghosts, not interactive. */}
+              {/* Live fill preview - amber ghosts, not interactive. */}
               {fill &&
                 fillPreview.map((m, i) => (
                   <div
@@ -698,7 +698,7 @@ export function DeviceTypeImagePortsPane({
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              No {side} image — switch sides or upload one on the device type.
+              No {side} image - switch sides or upload one on the device type.
             </p>
           )}
         </div>
@@ -734,7 +734,7 @@ export function DeviceTypeImagePortsPane({
   )
 }
 
-/** The auto-fill controls — pick a port run + geometry; the canvas shows a
+/** The auto-fill controls - pick a port run + geometry; the canvas shows a
  * live amber preview while it's open. */
 function FillPanel({
   fill,

@@ -1,10 +1,10 @@
 """Reusable form widgets.
 
-This module owns small, app-wide UI building blocks for Django forms — the
+This module owns small, app-wide UI building blocks for Django forms - the
 kind of thing every CRUD page will reach for once the next model is added.
 Currently:
 
-  * ``ColorPickerWidget`` — renders the hex input plus a 50-swatch grid and a
+  * ``ColorPickerWidget`` - renders the hex input plus a 50-swatch grid and a
     native color wheel. Any model field that stores a hex string can opt in
     by setting ``widget=ColorPickerWidget()`` in its form's ``widgets`` map.
 """
@@ -17,7 +17,7 @@ from django.utils.safestring import mark_safe
 from .templatetags.api_extras import lucide_html
 
 
-# A 50-colour curated palette — every preset has a friendly
+# A 50-colour curated palette - every preset has a friendly
 # name so the dropdown reads like a tag picker. Hex values are Tailwind
 # palette anchors so swatches click into place against the rest of the
 # design system. Order matters: this is the order the dropdown shows them
@@ -108,7 +108,7 @@ _INPUT_CLASSES = (
 class ColorPickerWidget(forms.TextInput):
     """Hex text input + 50-swatch palette + native color wheel.
 
-    The hex text field is the source of truth — swatches and the wheel just
+    The hex text field is the source of truth - swatches and the wheel just
     write into it. That keeps form validation, server-side cleaning and the
     existing ``_ColorMixin.clean_color`` validator working unchanged.
     """
@@ -125,7 +125,7 @@ class ColorPickerWidget(forms.TextInput):
         current_lc = current.lower()
         current_name = COLOR_NAME_BY_HEX.get(current_lc, "")
 
-        # Named-preset list. Lives inside a <details> popover —
+        # Named-preset list. Lives inside a <details> popover -
         # closed by default, anchored under the "Palette" trigger.
         items = []
         for label, hex_value in COLOR_PALETTE:
@@ -149,7 +149,7 @@ class ColorPickerWidget(forms.TextInput):
         preview_bg = current if current else "transparent"
         empty_class = "" if current else "color-picker-empty"
 
-        # Trigger label: "Red — #ef4444" when a named preset is active,
+        # Trigger label: "Red - #ef4444" when a named preset is active,
         # plain "Palette" otherwise. Keeps the dropdown discoverable without
         # screaming for attention.
         trigger_text = current_name if current_name else "Palette"
@@ -186,7 +186,7 @@ class ColorPickerWidget(forms.TextInput):
 </div>
 <script>
 (function () {{
-  // Idempotent — one initializer regardless of how many pickers are on the
+  // Idempotent - one initializer regardless of how many pickers are on the
   // page. All wiring uses event delegation so future pickers (e.g. inside a
   // bulk-edit modal) Just Work without a re-init.
   if (window.__danbyteColorPickerInit) return;
@@ -352,7 +352,7 @@ class MultiPickerWidget(forms.SelectMultiple):
         )
 
         # Stash the X icon HTML as a data attr so the JS chip-builder can
-        # re-use Lucide markup verbatim — keeps icons consistent.
+        # re-use Lucide markup verbatim - keeps icons consistent.
         x_icon_html = lucide_html("x", "h-3 w-3 opacity-60 group-hover:opacity-100")
         x_icon_attr = x_icon_html.replace('"', "&quot;")
 
@@ -380,7 +380,7 @@ class MultiPickerWidget(forms.SelectMultiple):
   </div>
   {select_html}
   <noscript>
-    <p class="mt-1 text-[11px] text-zinc-500">JavaScript is off — use the native multi-select above.</p>
+    <p class="mt-1 text-[11px] text-zinc-500">JavaScript is off - use the native multi-select above.</p>
     <style>.mp-fallback {{ position: static !important; width: 100% !important; height: auto !important; clip: auto !important; margin: 0.5rem 0 !important; }} .multi-picker [data-multi-picker] {{ display: none; }}</style>
   </noscript>
 </div>
@@ -433,7 +433,7 @@ class MultiPickerWidget(forms.SelectMultiple):
 
     @staticmethod
     def _init_script() -> str:
-        # Idempotent — one delegated handler for every picker on the page.
+        # Idempotent - one delegated handler for every picker on the page.
         return """
 <script>
 (function () {
@@ -558,7 +558,7 @@ class TagPickerWidget(MultiPickerWidget):
 
 
 class SearchableSelectWidget(forms.Select):
-    """Single-value searchable dropdown — modern button → popover with search.
+    """Single-value searchable dropdown - modern button → popover with search.
 
     Renders a button showing the current selection's label; clicking opens a
     popover with a search input and the filtered options. Picking sets the
@@ -567,7 +567,7 @@ class SearchableSelectWidget(forms.Select):
     """
 
     def __init__(self, attrs=None, *, placeholder: str = "Search…",
-                 empty_label: str = "— pick one —"):
+                 empty_label: str = "- pick one -"):
         super().__init__(attrs=attrs)
         self.placeholder = placeholder
         self.empty_label = empty_label
@@ -597,7 +597,7 @@ class SearchableSelectWidget(forms.Select):
             '<div class="px-3 py-3 text-center text-[12px] text-zinc-500">No options.</div>'
         )
 
-        # Container is the positioning context for the popover — `relative`
+        # Container is the positioning context for the popover - `relative`
         # on the box itself and `top-full left-0 right-0` on the popover
         # means it ALWAYS sits exactly under the trigger, exactly the same
         # width, no half-pixel drift, no intermediate wrapper.

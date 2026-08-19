@@ -6,7 +6,7 @@ import { cellToWorld, mm } from "./world"
 import type { ScenePayload, SceneRaisedFloor } from "./world"
 
 // Mostly render-only construction geometry (owner's rule: build in 2D, view
-// in 3D) — the one interaction is the VIEW action of lifting a floor: click
+// in 3D) - the one interaction is the VIEW action of lifting a floor: click
 // an area's edge skirt to peek into its plenum. Heights are small, so both
 // LOD tiers can afford the few boxes per area.
 
@@ -14,7 +14,7 @@ import type { ScenePayload, SceneRaisedFloor } from "./world"
 const TOP_Y = 0.006
 const TOP_THICKNESS = 0.012
 const SKIRT_T = 0.04
-/** Standard raised-floor tile pitch (m) — the grid every operator addresses. */
+/** Standard raised-floor tile pitch (m) - the grid every operator addresses. */
 const TILE_M = 0.6
 /** Finished-floor opacity at rest, and lifted for the plenum peek. */
 const OPACITY_SOLID = 0.92
@@ -25,7 +25,7 @@ const OPACITY_PEEK = 0.14
  * skirts dropping to the structural slab at −plenum, and a dark plenum bottom.
  * `peek` (global toggle, x-ray, or this area lifted by clicking its skirt)
  * fades the top over ~0.4 s so the underfloor trays and cable runs read
- * through the void they live in — the fade animates on the demand frameloop
+ * through the void they live in - the fade animates on the demand frameloop
  * by invalidating only while it is actually moving.
  */
 export function RaisedFloorMesh({
@@ -37,7 +37,7 @@ export function RaisedFloorMesh({
   plan: ScenePayload["plan"]
   area: SceneRaisedFloor
   peek: boolean
-  /** Click on the area's edge skirt — the per-area lift. */
+  /** Click on the area's edge skirt - the per-area lift. */
   onToggleLift?: (areaId: string) => void
 }) {
   const [x0, z0] = cellToWorld(plan, area.x, area.y)
@@ -49,7 +49,7 @@ export function RaisedFloorMesh({
   const depth = mm(area.plenum_mm)
   const tint = area.color || "#3f3f46"
 
-  // 600 mm tile grid on the finished floor, aligned to the area's origin —
+  // 600 mm tile grid on the finished floor, aligned to the area's origin -
   // tiles are how operators actually address floor positions.
   const grid = useMemo(() => {
     const pts: number[] = []
@@ -75,7 +75,7 @@ export function RaisedFloorMesh({
     if (Math.abs(diff) < 0.01) {
       if (m.opacity !== target) {
         m.opacity = target
-        // Solid floors write depth so the plenum is genuinely hidden —
+        // Solid floors write depth so the plenum is genuinely hidden -
         // the honest render of a closed floor.
         m.depthWrite = !peek
       }
@@ -108,12 +108,12 @@ export function RaisedFloorMesh({
       >
         <lineBasicMaterial color="#18181b" transparent opacity={0.4} />
       </lineSegments>
-      {/* Plenum bottom — the structural slab. */}
+      {/* Plenum bottom - the structural slab. */}
       <mesh position={[cx, -depth, cz]} raycast={() => null}>
         <boxGeometry args={[w, 0.01, d]} />
         <meshStandardMaterial color="#18181b" roughness={1} />
       </mesh>
-      {/* Skirts: the area's visible edge, and the lift's click target —
+      {/* Skirts: the area's visible edge, and the lift's click target -
           clicking the TOP would steal every deselect click on the pad. */}
       {(
         [

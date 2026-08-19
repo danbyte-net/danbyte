@@ -3,7 +3,7 @@
 A :class:`api.models.Service` with ``monitored=True`` gets one ``tcp``/``udp``
 :class:`~monitoring.models.CheckAssignment` per port against its *target IP*
 (the service's own IP, else the parent device/VM's primary IP). Toggling
-``monitored`` off — or a service that has no target IP / no ports yet — removes
+``monitored`` off - or a service that has no target IP / no ports yet - removes
 the assignments this service owns and leaves everything else alone.
 
 This is the single reconciliation path behind the Services-tab toggle, the

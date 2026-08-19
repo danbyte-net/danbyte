@@ -32,7 +32,7 @@ type EndpointKind = "vlan" | "device" | "vm"
 
 /**
  * Add or edit an L2VPN termination: pick the endpoint kind (VLAN, device
- * interface, or VM interface), then the endpoint itself — device/VM use
+ * interface, or VM interface), then the endpoint itself - device/VM use
  * cascading pickers. POSTs to `/api/l2vpn-terminations/` (or PATCHes the row
  * when `termination` is set) and invalidates the L2VPN detail query.
  */
@@ -58,7 +58,7 @@ export function L2vpnTerminationDialog({
   const [vmId, setVmId] = useState<string | null>(null)
   const [vmInterfaceId, setVmInterfaceId] = useState<string | null>(null)
 
-  // Reset the form every time the dialog opens — blank for create, prefilled
+  // Reset the form every time the dialog opens - blank for create, prefilled
   // from the row being edited.
   useEffect(() => {
     if (!open) return

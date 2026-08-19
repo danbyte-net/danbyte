@@ -68,7 +68,7 @@ const COLUMNS: ColumnDef<ChangeLogEntry>[] = [
 ]
 
 /**
- * Per-object change history — drop into a detail-page "History" tab. Renders
+ * Per-object change history - drop into a detail-page "History" tab. Renders
  * the same table look as the global Audit log (When / User / Action / Changes
  * with an expandable field-level diff) and offers a CSV export of the object's
  * full history. Reads /api/changelog filtered to one object.
@@ -86,7 +86,7 @@ export function ChangeLogPanel({
       api<Paginated<ChangeLogEntry>>(
         `/api/changelog/?object_type=${objectType}&object_id=${objectId}`
       ),
-    // History should always reflect the latest writes — refetch whenever the
+    // History should always reflect the latest writes - refetch whenever the
     // tab is opened rather than honouring the global 30s staleTime.
     staleTime: 0,
     refetchOnMount: "always",
@@ -127,13 +127,13 @@ export function ChangeLogPanel({
   )
 }
 
-/** Field-level diff, revealed in place from the "Changes" cell — the same
+/** Field-level diff, revealed in place from the "Changes" cell - the same
  * treatment the global Audit log uses. */
 function ChangesCell({ e }: { e: ChangeLogEntry }) {
   const [open, setOpen] = useState(false)
   const fields = Object.entries(e.changes)
   if (fields.length === 0)
-    return <span className="text-muted-foreground">—</span>
+    return <span className="text-muted-foreground">-</span>
   return (
     <div className="space-y-1.5">
       <button

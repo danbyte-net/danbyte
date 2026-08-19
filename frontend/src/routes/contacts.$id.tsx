@@ -138,7 +138,7 @@ function Body({ contact: c }: { contact: Contact }) {
               {c.title && (
                 <span className="text-sm text-muted-foreground">{c.title}</span>
               )}
-              {/* The group now has a page of its own — the badge is the way
+              {/* The group now has a page of its own - the badge is the way
                   back up to "who else is in this team". */}
               {c.group && (
                 <Link to="/contact-groups/$id" params={{ id: c.group.id }}>

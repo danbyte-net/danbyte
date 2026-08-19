@@ -182,7 +182,7 @@ function buildColumns({
             <span className="font-mono text-xs">{row.original.color}</span>
           </span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {

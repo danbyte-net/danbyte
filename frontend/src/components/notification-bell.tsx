@@ -92,7 +92,7 @@ export function NotificationBell() {
         <div className="max-h-96 overflow-y-auto">
           {rows.length === 0 && (
             <p className="px-3 py-8 text-center text-[12px] text-muted-foreground">
-              Nothing yet — task assignments, comments and @mentions land here.
+              Nothing yet - task assignments, comments and @mentions land here.
             </p>
           )}
           {rows.map((n) => (

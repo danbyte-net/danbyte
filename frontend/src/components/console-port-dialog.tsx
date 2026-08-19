@@ -49,7 +49,7 @@ export interface ConsolePortDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-// Add/edit dialog shared by the two console tables — same fields, different
+// Add/edit dialog shared by the two console tables - same fields, different
 // endpoint.
 export function ConsolePortDialog({
   kind,
@@ -99,7 +99,7 @@ export function ConsolePortDialog({
           id: port!.id,
           payload,
         }).then((saved) => ({ saved, count: 1 }))
-      // A [a-b] range in the name fans out — "console[0-3]" adds four ports.
+      // A [a-b] range in the name fans out - "console[0-3]" adds four ports.
       const names = expandNameRange(payload.name)
       if (names.length > 1 && isPlanning)
         return saveObject<ConsolePort>({ ...target, payload, names }).then(

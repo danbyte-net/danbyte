@@ -1,13 +1,13 @@
 """Import device types from NetBox's community devicetype-library.
 
-https://github.com/netbox-community/devicetype-library — public-domain YAML
+https://github.com/netbox-community/devicetype-library - public-domain YAML
 definitions (one file per hardware model) that NetBox and its ecosystem share.
 Danbyte's component templates use the same taxonomy slugs, so the mapping is
 nearly 1:1:
 
     manufacturer            → Manufacturer (get_or_create by name)
     model / part_number     → DeviceType.name / .model + .part_number
-    u_height                → DeviceType.u_height (ceil — we don't do 0.5U)
+    u_height                → DeviceType.u_height (ceil - we don't do 0.5U)
     interfaces              → InterfaceTemplate (type, mgmt_only, enabled)
     console-ports           → ConsolePortTemplate
     console-server-ports    → ConsoleServerPortTemplate
@@ -16,7 +16,7 @@ nearly 1:1:
     rear-ports              → RearPortTemplate (positions)
     front-ports             → FrontPortTemplate (rear_port name + position)
 
-Module-type files (``module-types/<Manufacturer>/*.yaml`` — line cards whose
+Module-type files (``module-types/<Manufacturer>/*.yaml`` - line cards whose
 port names carry ``{module}``) are auto-detected (no ``u_height``/``slug``)
 and import as :class:`ModuleType` + interface templates. Everything Danbyte
 doesn't model (device-bays, inventory-items) is *skipped and reported*, never
@@ -36,7 +36,7 @@ import yaml
 from django.utils.text import slugify
 
 from .models import (
-    AuxPortTemplate,  # noqa: F401 — future: library has no aux ports (yet)
+    AuxPortTemplate,  # noqa: F401 - future: library has no aux ports (yet)
     ConsolePortTemplate,
     ConsoleServerPortTemplate,
     DeviceBayTemplate,
@@ -53,8 +53,8 @@ from .models import (
     RearPortTemplate,
 )
 
-# Fields in the YAML we deliberately don't map — reported per import.
-# Device-type YAML keys we deliberately don't map — reported per import.
+# Fields in the YAML we deliberately don't map - reported per import.
+# Device-type YAML keys we deliberately don't map - reported per import.
 # ("modules" isn't part of the schema; kept defensively.)
 UNSUPPORTED_KEYS = ["modules"]
 
@@ -71,7 +71,7 @@ _IMAGE_BASE = (
     "master/elevation-images"
 )
 
-# Default repository for *re*-importing images (Danbyte's fork of the library —
+# Default repository for *re*-importing images (Danbyte's fork of the library -
 # same layout, images under elevation-images/). The YAML importer above keeps
 # pulling from netbox-community at the pinned ref, unchanged.
 DEFAULT_REIMPORT_REPO = "https://github.com/danbyte-net/device-library"
@@ -87,7 +87,7 @@ _GITHUB_BLOB_RE = re.compile(
     r"^https://github\.com/([^/]+)/([^/]+)/blob/(.+)$"
 )
 
-# github.com *directory* URLs — a whole folder of YAML to expand.
+# github.com *directory* URLs - a whole folder of YAML to expand.
 #   https://github.com/<owner>/<repo>/(tree|blob)/<ref>/<path…>
 # GitHub uses /tree/ for folders and /blob/ for files, but people paste either
 # from the address bar, so accept both and decide by the path: a trailing
@@ -121,7 +121,7 @@ def expand_github_dir(url: str, get, *, exts=(".yaml", ".yml")) -> list[str]:
         raise ValueError("Not a GitHub directory URL.")
     owner, repo, ref, path = m.group(1), m.group(2), m.group(3), (m.group(4) or "")
     # Address-bar URLs arrive percent-encoded ("Palo%20Alto%20Networks"), but
-    # the trees API returns REAL names with spaces — compare like with like,
+    # the trees API returns REAL names with spaces - compare like with like,
     # or a pasted manufacturer folder matches zero files and imports nothing.
     prefix = unquote(path).rstrip("/")
     api = (
@@ -135,7 +135,7 @@ def expand_github_dir(url: str, get, *, exts=(".yaml", ".yml")) -> list[str]:
         # The tree API caps at ~100k entries; the library is well under, but be
         # explicit rather than silently import a partial set.
         raise ValueError(
-            "GitHub returned a truncated tree — narrow to a sub-folder."
+            "GitHub returned a truncated tree - narrow to a sub-folder."
         )
     raw_base = f"https://raw.githubusercontent.com/{owner}/{repo}/{ref}/"
     out = []
@@ -149,12 +149,12 @@ def expand_github_dir(url: str, get, *, exts=(".yaml", ".yml")) -> list[str]:
         out.append(raw_base + quote(p))
     if not out:
         raise ValueError(
-            f"No YAML files found under {prefix or 'the repository root'!r} — "
+            f"No YAML files found under {prefix or 'the repository root'!r} - "
             "check the folder URL (the folder may be empty or renamed)."
         )
     return out
 
-# Leading slot digit of a slash-numbered component name. Only 0 or 1 qualify —
+# Leading slot digit of a slash-numbered component name. Only 0 or 1 qualify -
 # they're what standalone hardware ships as (Cisco counts from 1, Juniper 0).
 _SLOT_RE = re.compile(r"^([A-Za-z\-]*)([01])(/)")
 
@@ -177,13 +177,13 @@ def elevation_image_base(repo: str) -> str:
 
     - plain ``owner/name`` GitHub shorthand,
     - a ``https://github.com/owner/name`` page URL, optionally with
-      ``/tree/<ref>`` or ``/tree/<ref>/<path>`` (``/blob/`` too — address-bar
+      ``/tree/<ref>`` or ``/tree/<ref>/<path>`` (``/blob/`` too - address-bar
       paste), or
     - a full ``https://`` base (a raw.githubusercontent.com URL, or an
       internal mirror that serves the same layout).
 
-    GitHub forms without an explicit ref use ``HEAD`` — the repository's
-    default branch, whatever it's called — rather than guessing ``master`` vs
+    GitHub forms without an explicit ref use ``HEAD`` - the repository's
+    default branch, whatever it's called - rather than guessing ``master`` vs
     ``main``. ``elevation-images`` is appended unless the given path already
     ends with it (the library keeps images there and forks keep the layout).
     Raises :class:`ValueError` for anything that isn't https; the fetch itself
@@ -193,7 +193,7 @@ def elevation_image_base(repo: str) -> str:
 
     ref = (repo or "").strip().rstrip("/")
     if not ref:
-        raise ValueError("Provide a repository — owner/name or an https:// URL.")
+        raise ValueError("Provide a repository - owner/name or an https:// URL.")
     if _OWNER_NAME_RE.match(ref):
         return f"https://raw.githubusercontent.com/{ref}/HEAD/elevation-images"
     m = _GITHUB_REPO_RE.match(ref)
@@ -250,7 +250,7 @@ def import_devicetype_yaml(
 ) -> dict:
     """Create a DeviceType (+ templates) from one devicetype-library YAML doc.
 
-    Returns ``{"ok", "name", "created", "skipped", "error"}`` — ``created`` is
+    Returns ``{"ok", "name", "created", "skipped", "error"}`` - ``created`` is
     a per-kind count dict, ``skipped`` a list of human-readable notes. Never
     raises for content problems; the caller shows the report.
     """
@@ -286,16 +286,16 @@ def import_devicetype_yaml(
     part_number = str(data.get("part_number") or "").strip()
     airflow = str(data.get("airflow") or "").strip()
     if airflow and airflow not in VALID_AIRFLOW:
-        skipped.append(f"airflow {airflow!r} not recognised — dropped")
+        skipped.append(f"airflow {airflow!r} not recognised - dropped")
         airflow = ""
     weight = data.get("weight")
     weight_unit = str(data.get("weight_unit") or "").strip()
     if weight is not None and weight_unit not in VALID_WEIGHT_UNITS:
-        skipped.append(f"weight_unit {weight_unit!r} not recognised — weight dropped")
+        skipped.append(f"weight_unit {weight_unit!r} not recognised - weight dropped")
         weight, weight_unit = None, ""
     subdevice_role = str(data.get("subdevice_role") or "").strip()
     if subdevice_role and subdevice_role not in ("parent", "child"):
-        skipped.append(f"subdevice_role {subdevice_role!r} not recognised — dropped")
+        skipped.append(f"subdevice_role {subdevice_role!r} not recognised - dropped")
         subdevice_role = ""
     dt = DeviceType.objects.create(
         tenant=tenant,
@@ -314,7 +314,7 @@ def import_devicetype_yaml(
         description=str(data.get("comments") or "").strip(),
     )
 
-    # Best-effort elevation images — the library stores them per manufacturer
+    # Best-effort elevation images - the library stores them per manufacturer
     # + slug. Fetch failures degrade to a report note, never an error.
     slug = str(data.get("slug") or "").strip()
     for face in ("front", "rear"):
@@ -461,7 +461,7 @@ def import_devicetype_yaml(
             continue
         n = len(val) if isinstance(val, list) else None
         skipped.append(
-            f"{key}: {'%d entries ' % n if n else ''}not modelled in Danbyte — skipped"
+            f"{key}: {'%d entries ' % n if n else ''}not modelled in Danbyte - skipped"
         )
 
     return {
@@ -501,7 +501,7 @@ def import_yaml_auto(
 
 def import_moduletype_yaml(tenant, text: str, *, owning_site=None) -> dict:
     """Create a ModuleType (+ interface templates) from a module-types YAML
-    doc. Port names keep their ``{module}`` token — it resolves to the bay
+    doc. Port names keep their ``{module}`` token - it resolves to the bay
     position at install time. Same report shape as the device-type importer."""
     try:
         data = yaml.safe_load(text)
@@ -543,9 +543,9 @@ def import_moduletype_yaml(tenant, text: str, *, owning_site=None) -> dict:
     ]
     ModuleInterfaceTemplate.objects.bulk_create(made)
 
-    # M1: module types carry interfaces only — report the rest.
+    # M1: module types carry interfaces only - report the rest.
     skipped = [
-        f"{key}: not modelled on module types (M1) — skipped"
+        f"{key}: not modelled on module types (M1) - skipped"
         for key in ("console-ports", "console-server-ports", "power-ports",
                     "power-outlets", "front-ports", "rear-ports",
                     "module-bays")
@@ -579,7 +579,7 @@ def _pull_elevation_image(
 ) -> str:
     """Download one face's image and attach it. ``"saved"`` on success,
     ``"not_found"`` when the repo simply doesn't have it, ``"fetch_failed"``
-    when the network/SSRF layer refused — callers report the difference.
+    when the network/SSRF layer refused - callers report the difference.
 
     The attach goes through ``FieldFile.save(..., save=True)`` → a plain model
     ``.save()``, so the audit change-log signal fires for the image change."""
@@ -592,7 +592,7 @@ def _pull_elevation_image(
     exts: tuple[str, ...] = ("png", "jpg")
     if inventory is not None:
         # One-shot repo listing: fetch the KNOWN extension directly, and skip
-        # absent images without a single request — extension guessing was up
+        # absent images without a single request - extension guessing was up
         # to 4 sequential round-trips per type on the bulk import path.
         exts = tuple(
             ext for ext in exts
@@ -601,11 +601,11 @@ def _pull_elevation_image(
         if not exts:
             return "not_found"
     for ext in exts:
-        # Manufacturer dirs can contain spaces ("Palo Alto") — quote segments.
+        # Manufacturer dirs can contain spaces ("Palo Alto") - quote segments.
         url = f"{image_base}/{quote(manufacturer)}/{quote(slug)}.{face}.{ext}"
         try:
             resp = safe_get(url, timeout=5)
-        except Exception:  # noqa: BLE001 — network is best-effort here
+        except Exception:  # noqa: BLE001 - network is best-effort here
             return "fetch_failed"
         if resp.status_code == 200 and resp.content:
             field = dt.front_image if face == "front" else dt.rear_image
@@ -617,7 +617,7 @@ def _pull_elevation_image(
 # ─── Re-importing images for EXISTING device types ──────────────────────────
 # Recovery tool: the media folder was lost/corrupted (or types were created
 # without images) while the DeviceType rows survived. Match each type against
-# a devicetype-library-layout repo and re-download only the elevation images —
+# a devicetype-library-layout repo and re-download only the elevation images -
 # no types are created or modified beyond the two image fields.
 
 REIMPORT_FACES = ("front", "rear")
@@ -633,7 +633,7 @@ _MAX_SLUG_CANDIDATES = 5
 
 # The importer saves downloads as "<slug>.<face>.<ext>"; Django dedupes
 # collisions to "<slug>.<face>_<rand>.<ext>". Either way the basename still
-# carries the library slug — the strongest matching signal we have, since
+# carries the library slug - the strongest matching signal we have, since
 # DeviceType doesn't persist the library slug itself.
 _IMAGE_NAME_RE = re.compile(
     r"^(?P<slug>.+)\.(?:front|rear)(?:_\w+)?\.(?:png|jpe?g)$", re.IGNORECASE
@@ -646,14 +646,14 @@ AIRGAP_IMAGES_DETAIL = (
     "This deployment is airgapped (update checks are disabled), so images "
     "can't be re-downloaded from a repository. Recover offline instead: "
     "restore the media folder from a backup, or re-upload images on each "
-    "device type — offline device-type bundles carry definitions but "
+    "device type - offline device-type bundles carry definitions but "
     "reference images rather than embed them."
 )
 
 
 def airgap_refusal() -> str | None:
     """The refusal message when this deployment is airgapped
-    (``DeploymentSettings.disable_update_check`` — the same switch that stops
+    (``DeploymentSettings.disable_update_check`` - the same switch that stops
     release-repo checks), else ``None``. Checked BEFORE any outbound attempt
     so an airgapped install gets a clean error, not a hanging timeout."""
     from core.models import DeploymentSettings
@@ -679,7 +679,7 @@ def candidate_slugs(dt) -> list[str]:
     """Library slugs this type could be filed under, most-confident first.
 
     Order: slugs recovered from the stored image *filenames* (exactly what the
-    original import wrote — they survive in the DB even when the files are
+    original import wrote - they survive in the DB even when the files are
     gone), then derivations using the same ``django.utils.text.slugify`` the
     importer uses, following the library convention of vendor-prefixed slugs
     (``cisco-c9300-48p``) with unprefixed fallbacks."""
@@ -708,27 +708,27 @@ def candidate_slugs(dt) -> list[str]:
 def _face_missing(dt, face: str) -> bool:
     """True when this face needs an image: the field is empty, OR the field
     holds a path whose file no longer exists in storage. The latter is the
-    corrupt/lost-media case — the DB survived, the media folder didn't — and
+    corrupt/lost-media case - the DB survived, the media folder didn't - and
     counts as a gap for fill-gaps-only reimports."""
     field = dt.front_image if face == "front" else dt.rear_image
     if not field or not field.name:
         return True
     try:
         return not field.storage.exists(field.name)
-    except Exception:  # noqa: BLE001 — unreadable storage counts as missing
+    except Exception:  # noqa: BLE001 - unreadable storage counts as missing
         return True
 
 
 def repo_image_inventory(image_base: str) -> set[str] | None:
     """Every image path under the repo's elevation-images dir, fetched in TWO
-    requests via GitHub's git-trees API — so matching a 1000-type catalog is
+    requests via GitHub's git-trees API - so matching a 1000-type catalog is
     in-memory set lookups instead of ~20 sequential HEAD probes per type
     (which is the difference between sub-second and the better part of an
     hour).
 
     Returns ``{"<Manufacturer>/<slug>.<face>.<ext>", ...}`` with REAL (un-URL-
     quoted) names, or ``None`` when the base isn't a GitHub raw URL or the
-    listing fails (rate limit, private repo, network) — callers fall back to
+    listing fails (rate limit, private repo, network) - callers fall back to
     per-image probing, which stays correct for arbitrary https mirrors."""
     import json as _json
 
@@ -765,7 +765,7 @@ def repo_image_inventory(image_base: str) -> set[str] | None:
                 None,
             )
             if entry is None:
-                return set()  # repo simply has no such dir — honest empty
+                return set()  # repo simply has no such dir - honest empty
             sha = entry["sha"]
         # The subtree, recursive: every image path in one response. The
         # elevation-images subtree is far below GitHub's truncation limits
@@ -783,7 +783,7 @@ def repo_image_inventory(image_base: str) -> set[str] | None:
         return {
             e["path"] for e in body.get("tree", []) if e.get("type") == "blob"
         }
-    except Exception:  # noqa: BLE001 — any trouble → probe fallback
+    except Exception:  # noqa: BLE001 - any trouble → probe fallback
         return None
 
 
@@ -796,7 +796,7 @@ def _face_in_repo(
 ) -> str:
     """Does the repo have this face's image? ``"available"`` / ``"not_found"``
     / ``"fetch_failed"``. With an ``inventory`` (one-shot repo listing) this
-    is a set lookup; without one it degrades to HEAD probes — existence only,
+    is a set lookup; without one it degrades to HEAD probes - existence only,
     no body."""
     from urllib.parse import quote
 
@@ -811,7 +811,7 @@ def _face_in_repo(
         url = f"{image_base}/{quote(manufacturer)}/{quote(slug)}.{face}.{ext}"
         try:
             resp = safe_request("HEAD", url, timeout=5)
-        except Exception:  # noqa: BLE001 — SSRF refusal / network trouble
+        except Exception:  # noqa: BLE001 - SSRF refusal / network trouble
             return "fetch_failed"
         if resp.status_code == 200:
             return "available"
@@ -825,9 +825,9 @@ def reimport_images_for_type(dt, image_base: str, *, overwrite: bool = False,
     ``apply``, re-download its elevation images.
 
     Returns ``{"id", "name", "manufacturer", "slug", "status", "faces",
-    "downloaded"}``. ``status`` is ``matched`` (repo has images for it — on
+    "downloaded"}``. ``status`` is ``matched`` (repo has images for it - on
     apply, see per-face detail), ``no_match``, ``skipped_has_images`` (both
-    faces present *and their files exist on disk* — with ``overwrite`` off
+    faces present *and their files exist on disk* - with ``overwrite`` off
     there is nothing to do, so the repo isn't even probed), or
     ``fetch_failed``. ``faces`` maps front/rear to ``kept`` / ``available`` /
     ``downloaded`` / ``not_found`` / ``fetch_failed``.
@@ -835,7 +835,7 @@ def reimport_images_for_type(dt, image_base: str, *, overwrite: bool = False,
     Fill-gaps is the default: a face is written only when the field is empty
     or its file is missing from storage (``_face_missing``). ``overwrite``
     replaces intact images too. Network trouble on one face degrades to that
-    face's ``fetch_failed`` — never an exception out of here."""
+    face's ``fetch_failed`` - never an exception out of here."""
     faces: dict[str, str] = {}
     row = {
         "id": str(dt.id),
@@ -855,7 +855,7 @@ def reimport_images_for_type(dt, image_base: str, *, overwrite: bool = False,
     mfr = row["manufacturer"]
     candidates = candidate_slugs(dt)
     if not mfr or not candidates:
-        # Library images live under a <Manufacturer>/ dir — nothing to probe.
+        # Library images live under a <Manufacturer>/ dir - nothing to probe.
         row["status"] = "no_match"
         return row
 

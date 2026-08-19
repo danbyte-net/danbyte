@@ -1,4 +1,4 @@
-"""Milestone 9 tests — stale + skipped states, settings, stats."""
+"""Milestone 9 tests - stale + skipped states, settings, stats."""
 from __future__ import annotations
 
 import socket
@@ -93,7 +93,7 @@ class SkippedStateTests(M9Base):
 
             st = CheckState.objects.get(target_ip=self.ip, template=t)
             self.assertEqual(st.status, "skipped")
-            # Skipped means not dialed — no CheckResult written.
+            # Skipped means not dialed - no CheckResult written.
             self.assertEqual(CheckResult.objects.filter(target_ip=self.ip).count(), 0)
         finally:
             listener.close()

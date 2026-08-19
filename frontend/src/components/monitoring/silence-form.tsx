@@ -138,7 +138,7 @@ export function SilenceForm({
       }}
       className="grid max-w-2xl gap-5"
     >
-      <Field label="Reason" hint="Why alerts are muted — shown in the list.">
+      <Field label="Reason" hint="Why alerts are muted - shown in the list.">
         <Input
           value={reason}
           onChange={(e) => setReason(e.target.value)}
@@ -168,7 +168,7 @@ export function SilenceForm({
 
       <div className="rounded-md border border-dashed border-border p-3">
         <p className="mb-3 text-[11px] tracking-[0.08em] text-muted-foreground uppercase">
-          Matchers — leave everything empty for a blanket maintenance window
+          Matchers - leave everything empty for a blanket maintenance window
         </p>
         <div className="space-y-4">
           <Field label="Check kinds" hint="empty = any">

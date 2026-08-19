@@ -4,7 +4,7 @@ sources, plus the per-tenant Settings → Integrations toggles.
 Credentials are write-only everywhere; reads expose ``*_set`` booleans only.
 The connection viewsets sit behind :class:`IntegrationToggleMixin`, so a tenant
 with every toggle off sees plain 404s. The toggles endpoint itself is
-tenant-admin-only and always reachable — it's how you turn things on.
+tenant-admin-only and always reachable - it's how you turn things on.
 """
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ class IntegrationSettingsSerializer(serializers.ModelSerializer):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def integrations_enabled(request):
-    """Which integrations are on for the active tenant — read-only, any
+    """Which integrations are on for the active tenant - read-only, any
     member. The sidebar uses this to hide integration nav while it's off."""
     from api.views import _get_active_tenant
 
@@ -162,7 +162,7 @@ class WindowsServerConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet
 
     @action(detail=True, methods=["post"])
     def sync(self, request, pk=None):
-        """Sync now, synchronously — the button behind the sync log."""
+        """Sync now, synchronously - the button behind the sync log."""
         from .sync_tasks import run_windows_sync
 
         conn = self.get_object()
@@ -204,7 +204,7 @@ class VirtualizationSourceSerializer(
         secret = attrs.pop("secret", None)
         username = attrs.pop("username", None)
         password = attrs.pop("password", None)
-        # Kind may be omitted on update — fall back to the stored one.
+        # Kind may be omitted on update - fall back to the stored one.
         kind = attrs.get("kind") or (self.instance.kind if self.instance else "proxmox")
         existing = (self.instance.credentials or {}) if self.instance else {}
 
@@ -312,7 +312,7 @@ class VirtualizationSourceViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     def discovered(self, request, pk=None):
         """What this source actually contains, for authoring placement rules.
 
-        Typing a pattern by hand invites typos that fail silently — a rule that
+        Typing a pattern by hand invites typos that fail silently - a rule that
         matches nothing looks identical to no rule. So the rule editor offers
         the real datacenter / cluster / folder / host names, read live.
         """

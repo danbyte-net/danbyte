@@ -59,7 +59,7 @@ export function PrefixPolicyTable() {
     () => [
       ...buildPrefixColumns<Prefix>({
         // VRF renders as the group banner (hidden vrfName column); monitoring
-        // status has its own page — this tab is about configuration.
+        // status has its own page - this tab is about configuration.
         omit: ["vrf"],
         vrfGroupColumn: true,
       }),

@@ -72,7 +72,7 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
         typeof x.queryKey[0] === "string" &&
         x.queryKey[0].includes("interface"),
     })
-    // Photo/3D bay markers read occupancy from /face-ports/ — an emptied bay
+    // Photo/3D bay markers read occupancy from /face-ports/ - an emptied bay
     // has to go back to its faint outline.
     qc.invalidateQueries({ queryKey: ["device-face-ports", deviceId] })
   }
@@ -82,7 +82,7 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
       api<void>(`/api/modules/${moduleId}/`, { method: "DELETE" }),
     onSuccess: () => {
       invalidate()
-      toast.success("Module removed — its interfaces are gone too")
+      toast.success("Module removed - its interfaces are gone too")
       setRemoving(null)
     },
     onError: (err) => apiErrorToast(err),
@@ -114,7 +114,7 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
                 <TableRow key={b.id}>
                   <TableCell className="font-medium">{b.name}</TableCell>
                   <TableCell className="num font-mono text-xs">
-                    {b.position || "—"}
+                    {b.position || "-"}
                   </TableCell>
                   <TableCell>
                     {b.module ? (
@@ -130,10 +130,10 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
                     )}
                   </TableCell>
                   <TableCell className="font-mono text-xs">
-                    {b.module?.serial_number || "—"}
+                    {b.module?.serial_number || "-"}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    {b.description || "—"}
+                    {b.description || "-"}
                   </TableCell>
                   <TableCell>
                     {canWrite && (
@@ -208,7 +208,7 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
 }
 
 /** Install a module into a bay. Exported so the 2D photo faceplate and the 3D
- * room can open the same dialog from a clicked bay marker — one write path,
+ * room can open the same dialog from a clicked bay marker - one write path,
  * one set of cache invalidations, whichever surface the click came from. `bay`
  * needs only id + name (a marker doesn't know the bay's position). */
 export function InstallModuleDialog({
@@ -220,7 +220,7 @@ export function InstallModuleDialog({
   deviceId: string
   bay: { id: string; name: string; position?: string } | null
   onOpenChange: (open: boolean) => void
-  /** Extra refresh work for the host — the module/interface/face-port caches
+  /** Extra refresh work for the host - the module/interface/face-port caches
    * are already invalidated here. */
   onInstalled?: () => void
 }) {
@@ -260,8 +260,8 @@ export function InstallModuleDialog({
       })
     },
     onSuccess: (r) => {
-      // Everything a seated module changes, invalidated HERE so every host —
-      // the Modules pane, the 2D faceplate, the 3D room — refreshes the same
+      // Everything a seated module changes, invalidated HERE so every host -
+      // the Modules pane, the 2D faceplate, the 3D room - refreshes the same
       // way: the bay list, the composed faceplate, the stamped interfaces,
       // and the photo markers' occupancy.
       qc.invalidateQueries({ queryKey: ["device-module-bays", deviceId] })
@@ -277,7 +277,7 @@ export function InstallModuleDialog({
       qc.invalidateQueries({ queryKey: ["device-face-ports", deviceId] })
       const n = r.created_interfaces ?? 0
       toast.success(
-        `Module installed${n ? ` — ${n} interface${n === 1 ? "" : "s"} added` : ""}`
+        `Module installed${n ? ` - ${n} interface${n === 1 ? "" : "s"} added` : ""}`
       )
       onInstalled?.()
       onOpenChange(false)
@@ -294,7 +294,7 @@ export function InstallModuleDialog({
         <DialogHeader>
           <DialogTitle>Install a module in {bay?.name}</DialogTitle>
           <DialogDescription>
-            The module type's interfaces are stamped onto this device —{" "}
+            The module type's interfaces are stamped onto this device -{" "}
             <code className="font-mono">{"{module}"}</code> in their names
             resolves to “{bay?.position || "?"}”.
           </DialogDescription>
@@ -312,7 +312,7 @@ export function InstallModuleDialog({
             onChange={setModuleTypeId}
             placeholder="Pick a module type"
             searchPlaceholder="Search module types…"
-            emptyText="No module types — import or add them under DCIM → Module types."
+            emptyText="No module types - import or add them under DCIM → Module types."
             options={(types.data?.results ?? []).map((t) => ({
               value: t.id,
               label: t.part_number ? `${t.name} (${t.part_number})` : t.name,

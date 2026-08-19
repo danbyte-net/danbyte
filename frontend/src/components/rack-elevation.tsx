@@ -63,16 +63,16 @@ export function RackElevation({
   draggable = false,
 }: {
   rack: Rack
-  /** Controlled face — hides the internal Front/Rear toggle. */
+  /** Controlled face - hides the internal Front/Rear toggle. */
   face?: RackFace
-  /** Controlled display mode — hides the internal mode toggle. */
+  /** Controlled display mode - hides the internal mode toggle. */
   mode?: RackDisplayMode
-  /** Overlay names on image/render blocks (controlled — hides the tick). */
+  /** Overlay names on image/render blocks (controlled - hides the tick). */
   labels?: boolean
   /** Ring the matching device block (e.g. on its own detail page). */
   highlightDeviceId?: string
   showHeader?: boolean
-  /** px per mm — bump for hero contexts (rack detail page). Render mode
+  /** px per mm - bump for hero contexts (rack detail page). Render mode
    * never drops below its own minimum so ports stay legible. */
   scale?: number
   /** Rack page: drag device blocks between units to re-position them. */
@@ -139,11 +139,11 @@ export function RackElevation({
       : rack.starting_unit + rack.u_height - 1 - unit + 1
 
   const devices = q.data?.results ?? []
-  // Side-mounted 0U strips (vertical PDUs) — they live in the rail lanes
+  // Side-mounted 0U strips (vertical PDUs) - they live in the rail lanes
   // flanking the U grid, not in it. A strip's `face` says which CHANNEL it
   // bolts into, so it only shows on that elevation; blank means unspecified
   // and shows on both (how everything mounted before the field existed
-  // behaves, and honest — we don't know which channel it's in).
+  // behaves, and honest - we don't know which channel it's in).
   const onThisFace = (d: Device) => !d.face || d.face === face
   const mountedLeft = devices.filter(
     (d) => d.mount === "side_left" && onThisFace(d)
@@ -152,7 +152,7 @@ export function RackElevation({
     (d) => d.mount === "side_right" && onThisFace(d)
   )
   // Mounting semantics: a device mounts on ONE face (face "" ≈ front); when its
-  // type is full-depth it *occupies* the opposite face too — drawn hatched
+  // type is full-depth it *occupies* the opposite face too - drawn hatched
   // there, so the rear view shows what's blocking the space.
   const visible = useMemo(
     () =>
@@ -171,7 +171,7 @@ export function RackElevation({
 
   // Planned rack-elevation moves, drawn as ghosts: a device in THIS rack
   // whose open planned change touches position/face (and stays in this rack)
-  // shows a dashed outline at the planned spot — the graphic's version of the
+  // shows a dashed outline at the planned spot - the graphic's version of the
   // calendar-clock field mark.
   const plansQ = useQuery({
     queryKey: ["planned-changes-open"],
@@ -218,7 +218,7 @@ export function RackElevation({
   }, [plansQ.data, devices, rack.id])
 
   // Proportions: mm-true rows at widths that follow the rack's physical
-  // opening (a real 1U blade is ~10:1 — squeezing it into short rows is what
+  // opening (a real 1U blade is ~10:1 - squeezing it into short rows is what
   // made photos look mangled), so a 10″ rack reads narrower than a 23″ one
   // and switching display modes never resizes the rack.
   const openingMm = OPENING_MM[rack.width] ?? PANEL_MM.opening
@@ -244,7 +244,7 @@ export function RackElevation({
     const first = rack.starting_unit
     const last = rack.starting_unit + rack.u_height - 1
     if (position < first || position + h - 1 > last) {
-      toast.error("Doesn't fit there — runs past the rack.")
+      toast.error("Doesn't fit there - runs past the rack.")
       return
     }
     if (position === dev.position) return
@@ -352,7 +352,7 @@ export function RackElevation({
                   minWidth: gridMinWidth,
                 }}
               >
-                {/* Empty "available" bands — one per unit. Devices overlay on
+                {/* Empty "available" bands - one per unit. Devices overlay on
                 top, so these hover affordances only surface on free space. */}
                 {units.map((unit, i) => (
                   <UnitBand
@@ -499,11 +499,11 @@ export function RackElevation({
   )
 }
 
-/** One empty-unit band: hover Add/Assign affordances, and — when the
- * elevation is draggable — a drop target whose unit becomes the dragged
+/** One empty-unit band: hover Add/Assign affordances, and - when the
+ * elevation is draggable - a drop target whose unit becomes the dragged
  * device's top row. */
 /** One rail lane flanking the U grid: the side-mounted 0U strips (vertical
- * PDUs) that hang on that rail, plus "+" to hang a new one. Vertical text —
+ * PDUs) that hang on that rail, plus "+" to hang a new one. Vertical text -
  * the lane is a strip, and so is the gear on it. */
 function SideLane({
   side,
@@ -527,7 +527,7 @@ function SideLane({
           key={d.id}
           to="/devices/$id"
           params={{ id: d.id }}
-          title={`${d.name} — ${railName} rail (0U)`}
+          title={`${d.name} - ${railName} rail (0U)`}
           className="flex min-h-16 flex-1 items-center justify-center rounded border border-border bg-muted/60 hover:border-primary"
           style={{ writingMode: "vertical-rl" }}
         >
@@ -589,7 +589,7 @@ function UnitBand({
   )
 }
 
-/** Hang an existing 0U device on a rail — the "assign" affordance in the side
+/** Hang an existing 0U device on a rail - the "assign" affordance in the side
  * lane. PATCHes the device's rack + mount (clearing any U position), the
  * mirror of AssignDeviceDialog for the zero-U case. */
 function SideAssignDialog({
@@ -656,7 +656,7 @@ function SideAssignDialog({
   )
 }
 
-/** Put an existing device into a specific rack unit — the "Assign" hover
+/** Put an existing device into a specific rack unit - the "Assign" hover
  * action on an empty band. PATCHes the device's rack/position/face. */
 function AssignDeviceDialog({
   rack,
@@ -743,14 +743,14 @@ function DeviceBlock({
   mode: RackDisplayMode
   /** Rack page: this block can be dragged to another unit. */
   dragEnabled?: boolean
-  /** Occupied from the other face (full-depth) — striped, muted. */
+  /** Occupied from the other face (full-depth) - striped, muted. */
   hatched: boolean
   highlight: boolean
   /** Overlay position + name on image/render blocks (names mode: always). */
   showText: boolean
   startRow: number
   span: number
-  /** CSS grid-column — "1 / -1" full width, "1"/"2" for half-width halves. */
+  /** CSS grid-column - "1 / -1" full width, "1"/"2" for half-width halves. */
   column: string
   accent?: string
 }) {
@@ -758,7 +758,7 @@ function DeviceBlock({
   // Images mode: paint the type's rack-face image across the block with a
   // legibility scrim. Render mode: draw the type's faceplate at rack scale.
   // A non-hatched block is drawn on the device's OWN mounted face, so you're
-  // looking at its front — use front_image there, rear_image only on the
+  // looking at its front - use front_image there, rear_image only on the
   // opposite face. (Keying off the elevation `face` alone showed rear-mounted
   // devices' rear image on the rear elevation.)
   const image =
@@ -830,7 +830,7 @@ function DeviceBlock({
         </>
       )}
       {renderPanel && (
-        // Fills the block minus the position rail — TypeFaceplate scales down
+        // Fills the block minus the position rail - TypeFaceplate scales down
         // to the available width, so every port stays visible.
         <div className="pointer-events-none absolute inset-y-0 right-1 left-7 flex items-center">
           <TypeFaceplate

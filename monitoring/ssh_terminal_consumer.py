@@ -1,4 +1,4 @@
-"""The in-browser SSH terminal — a Channels consumer bridging a browser to a
+"""The in-browser SSH terminal - a Channels consumer bridging a browser to a
 device shell over asyncssh.
 
 Security model (every point re-checked here, never trusted from the URL):
@@ -7,7 +7,7 @@ Security model (every point re-checked here, never trusted from the URL):
   ``DeploymentSettings.ssh_terminal_enabled``.
 * **Authz at connect time.** The session user must be authenticated, have an
   active tenant, and hold the device ``connect`` verb *and* ``view`` on the
-  target device in that tenant — checked now, not at enqueue.
+  target device in that tenant - checked now, not at enqueue.
 * **Credential stays server-side.** The secret is fetched through the
   tenant-scoped, audited :meth:`DeviceCredential.resolve_secret` and used only to
   authenticate the outbound SSH; it is never sent to the browser.
@@ -16,7 +16,7 @@ Security model (every point re-checked here, never trusted from the URL):
 * **Host identity verified.** The device's recorded :class:`SSHHostKey` rows are
   handed to asyncssh as known-hosts, so a mismatched key aborts **before**
   authentication (no password reaches a spoofed host). A device with no recorded
-  key requires an explicit ``accept_new=1`` (the UI's "accept new host" — TOFU
+  key requires an explicit ``accept_new=1`` (the UI's "accept new host" - TOFU
   with human confirmation), mirroring a normal SSH client.
 * **Audited.** Opening a session writes a ``connect`` audit entry.
 
@@ -52,7 +52,7 @@ CLOSE_BADREQ = 4400
 
 
 class SshTerminalConsumer(AsyncWebsocketConsumer):
-    # This is a point-to-point bridge — it never uses groups or channel-layer
+    # This is a point-to-point bridge - it never uses groups or channel-layer
     # sends. Point at an unconfigured alias so ``get_channel_layer`` returns
     # None and Channels doesn't run the Redis ``receive`` loop, whose ~5s socket
     # timeout on an idle channel would otherwise kill the session.
@@ -107,7 +107,7 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
             await self._open_ssh(ctx, self._cols, self._rows, self._accept_new)
         except _HostKeyUnknown:
             await self._fail(
-                "First connection to this device — its SSH host key isn't on "
+                "First connection to this device - its SSH host key isn't on "
                 "record yet. Click “Accept new host & retry” to trust the "
                 "key it presents; it's recorded so future connections are "
                 "verified automatically.",
@@ -118,7 +118,7 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
             # PermissionDenied here is host-key verification failing before auth,
             # or auth itself; either way, do not leak which.
             await self._fail(
-                "Host key verification failed — the key the device presented does "
+                "Host key verification failed - the key the device presented does "
                 f"not match the recorded key. Possible interception. ({exc})",
                 code="hostkey_mismatch",
             )
@@ -158,7 +158,7 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
         )
         # Record the host key the device presented, so the next connect is
         # verified against it (TOFU on first accept) and it appears in the SSH
-        # host-key inventory. Best-effort — never break the session over it.
+        # host-key inventory. Best-effort - never break the session over it.
         try:
             key = self._conn.get_server_host_key()
             if key is not None:
@@ -188,7 +188,7 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
             code = getattr(self._proc, "returncode", None)
             try:
                 await self.send(json.dumps({"t": "exit", "code": code}))
-            except Exception:  # noqa: BLE001 — socket may already be gone
+            except Exception:  # noqa: BLE001 - socket may already be gone
                 pass
             await self.close()
 
@@ -218,7 +218,7 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
             return
         t = msg.get("t")
         # Interactive login: the operator's own username/password arrive once,
-        # here, and are used only for this session — never stored or audited.
+        # here, and are used only for this session - never stored or audited.
         if self._awaiting_auth and t == "auth":
             self._awaiting_auth = False
             username = (msg.get("username") or self._ctx.get("username") or "").strip()
@@ -290,8 +290,8 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
             user = User.objects.get(pk=user_id)
         except User.DoesNotExist:
             return {"error": "Not authorized."}
-        # Resolve the active tenant the same way the HTTP layer does — session
-        # choice, else the profile's home tenant, else the first allowed — so a
+        # Resolve the active tenant the same way the HTTP layer does - session
+        # choice, else the profile's home tenant, else the first allowed - so a
         # fresh login with no explicit tenant switch still resolves one.
         tenant = _get_active_tenant(_ShimRequest(user, session))
         if tenant is None:
@@ -312,7 +312,7 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
         if not host:
             return {"error": "This device has no management IP to connect to."}
 
-        # Everything except the auth material — shared by both modes.
+        # Everything except the auth material - shared by both modes.
         ctx = {
             "user_id": user.id,
             "user_name": user.get_username(),
@@ -454,7 +454,7 @@ def _int(value, default):
 
 
 def _device_host(device) -> str:
-    """The device's own recorded management IP — never client-supplied. Primary,
+    """The device's own recorded management IP - never client-supplied. Primary,
     then OOB. Returns the bare address (GenericIPAddressField has no mask)."""
     for ip in (device.primary_ip, device.oob_ip):
         if ip is not None and ip.ip_address:

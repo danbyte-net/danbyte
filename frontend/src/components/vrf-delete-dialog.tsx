@@ -46,7 +46,7 @@ export function VrfDeleteDialog({
           <AlertDialogTitle>Delete VRF {vrf?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {blocked
-              ? `This VRF still owns ${vrf?.prefix_count} prefix${vrf?.prefix_count === 1 ? "" : "es"}. Move or delete them first — the API will protect them anyway.`
+              ? `This VRF still owns ${vrf?.prefix_count} prefix${vrf?.prefix_count === 1 ? "" : "es"}. Move or delete them first - the API will protect them anyway.`
               : "This action can't be undone."}
           </AlertDialogDescription>
         </AlertDialogHeader>

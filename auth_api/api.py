@@ -2,7 +2,7 @@
 
 These are global (not tenant-scoped) objects; access is gated by
 `RBACObjectPermission` over the `user` / `group` / `objectpermission` object
-types — so only Administrators (or a custom grant) can manage them. Superusers
+types - so only Administrators (or a custom grant) can manage them. Superusers
 bypass, as everywhere.
 """
 from __future__ import annotations
@@ -36,7 +36,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     # When True (and no password is given), email the user a link to set their
-    # own password instead of the admin choosing one — GDPR-friendly: the admin
+    # own password instead of the admin choosing one - GDPR-friendly: the admin
     # never handles the credential.
     send_invite = serializers.BooleanField(write_only=True, required=False)
     group_ids = serializers.PrimaryKeyRelatedField(
@@ -202,7 +202,7 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         # Non-deployment admins may only see users who share one of their
-        # tenants — a tenant-scoped `view-user` grant must not enumerate every
+        # tenants - a tenant-scoped `view-user` grant must not enumerate every
         # username/email in the deployment (issue #59+ cross-tenant read).
         u = getattr(self.request, "user", None)
         if u is not None and not (u.is_superuser or can_manage_deployment(u)):
@@ -247,7 +247,7 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="send-reset")
     def send_reset(self, request, pk=None):
         """Email this user a set/reset-password link. Does **not** change or
-        clear their current password — it only sends the email; the password
+        clear their current password - it only sends the email; the password
         changes only when the user follows the link and chooses a new one.
         """
         user = self.get_object()
@@ -270,7 +270,7 @@ class GroupSerializer(serializers.ModelSerializer):
     user_count = serializers.SerializerMethodField()
     permission_count = serializers.SerializerMethodField()
     set_description = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    # Same one-click site scoping as the user serializer — scopes the whole
+    # Same one-click site scoping as the user serializer - scopes the whole
     # group to a site (everyone in it becomes site editors/viewers).
     site_role = serializers.JSONField(write_only=True, required=False)
 
@@ -422,7 +422,7 @@ class ObjectPermissionViewSet(viewsets.ModelViewSet):
     rbac_object_type = "objectpermission"
 
     def get_queryset(self):
-        # Scope to permissions that APPLY to the active tenant — an empty
+        # Scope to permissions that APPLY to the active tenant - an empty
         # ``tenants`` set means "all tenants" (global), otherwise the active
         # tenant must be in it. Without this the list exposed every tenant's
         # ObjectPermission rows (their names/constraints/site scoping).
@@ -491,7 +491,7 @@ def _apply_site_role(request, site_role, *, user_ids=None, group_ids=None):
         user_ids=user_ids, group_ids=group_ids,
         silo=bool(site_role.get("silo")), name=site_role.get("name"),
     )
-    # Land the user on the tenant their grants live in — a user with several
+    # Land the user on the tenant their grants live in - a user with several
     # tenants otherwise starts on the FIRST allowed one, which may be an empty
     # tenant where these grants don't apply (looks like "I can see nothing").
     if user_ids:
@@ -504,15 +504,15 @@ def assemble_site_role(tenant, role, sites, *, user_ids=None, group_ids=None,
                        silo=False, name=None):
     """Build the ObjectPermission combo for a site role and attach it to the
     given users/groups. The single source of truth for what a "site editor" or
-    "site viewer" gets — reused by the one-click endpoint AND by user/group
+    "site viewer" gets - reused by the one-click endpoint AND by user/group
     creation, so the grants never drift.
 
-    * ``editor`` — site-scoped write on every site-bound type, plus (unless
+    * ``editor`` - site-scoped write on every site-bound type, plus (unless
       ``silo``) an unscoped ``view`` grant so local IT can read the whole
       tenant. Catalog types (tags, device types, zones, …) join the write
       grant when the tenant runs enhanced site separation, so a site editor can
       manage their site-LOCAL catalog entries.
-    * ``viewer`` — site-scoped ``view`` only.
+    * ``viewer`` - site-scoped ``view`` only.
 
     Returns the created ObjectPermission rows. Callers own authorisation.
     """
@@ -549,17 +549,17 @@ def assemble_site_role(tenant, role, sites, *, user_ids=None, group_ids=None,
         created.append(p)
 
     if role == "editor":
-        make(f"{label} — site edit", types,
+        make(f"{label} - site edit", types,
              ["view", "add", "change", "delete"], scoped=True)
         if not silo:
-            make(f"{label} — read all", ["*"], ["view"], scoped=False)
+            make(f"{label} - read all", ["*"], ["view"], scoped=False)
     else:  # viewer
-        make(f"{label} — site view", types, ["view"], scoped=True)
+        make(f"{label} - site view", types, ["view"], scoped=True)
     return created
 
 
 @extend_schema(
-    summary="One-click site role — assemble the ObjectPermission combo for a "
+    summary="One-click site role - assemble the ObjectPermission combo for a "
     "site editor or viewer and attach it to users/groups",
     tags=["rbac"],
     request=inline_serializer(
@@ -589,15 +589,15 @@ def assemble_site_role(tenant, role, sites, *, user_ids=None, group_ids=None,
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def create_site_role(request):
-    """One-click site role — assembles the ObjectPermission combo for:
+    """One-click site role - assembles the ObjectPermission combo for:
 
-    * ``editor`` — edit *own site* (site-bound types scoped to the sites) **plus**
+    * ``editor`` - edit *own site* (site-bound types scoped to the sites) **plus**
       read everything (an unscoped view grant). The "local IT" recipe.
-    * ``viewer`` — read *own site* only (site-bound types scoped, nothing broader).
+    * ``viewer`` - read *own site* only (site-bound types scoped, nothing broader).
 
     Body: ``{role, site_ids[], name?, user_ids?[], group_ids?[]}``.
 
-    Gated to permission admins — **except** when the deployment enables
+    Gated to permission admins - **except** when the deployment enables
     ``allow_site_editor_delegation``: then a local site *editor* may also create
     a **viewer** role, but only for sites they themselves edit. They can never
     mint editors or reach a site outside their own scope.
@@ -653,7 +653,7 @@ def create_site_role(request):
     user_ids = data.get("user_ids") or []
     group_ids = data.get("group_ids") or []
     # A delegated (non-admin) site editor may only grant to members of the
-    # active tenant, and not to global groups — otherwise they could attach a
+    # active tenant, and not to global groups - otherwise they could attach a
     # permission to a user in another tenant (issue #59 delegation leak).
     if not is_admin:
         member_ids = set(

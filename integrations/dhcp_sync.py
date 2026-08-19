@@ -1,7 +1,7 @@
 """Windows DHCP sync engine (issue #23).
 
 Read direction: one WinRM round trip per connection pulls scopes, exclusion
-ranges, reservations, per-scope options, and (for opted-in scopes) leases —
+ranges, reservations, per-scope options, and (for opted-in scopes) leases -
 then reconciles them into IPAM:
 
 ====================  ============================================
@@ -16,7 +16,7 @@ Scope options         ``DhcpScope.options`` (kept structured)
 
 Rules of engagement:
 
-* IPAM rows an operator already has are **adopted, never clobbered** — the
+* IPAM rows an operator already has are **adopted, never clobbered** - the
   sync fills blanks (MAC, DNS name, description) and links, but does not
   overwrite non-empty operator data.
 * Reservations Danbyte manages (``managed=True``, i.e. created/edited here)
@@ -96,7 +96,7 @@ def _as_list(value):
 
 
 def _norm_mac(raw: str) -> str:
-    """Windows ClientIds look like ``aa-bb-cc-00-11-22`` — normalise to colons."""
+    """Windows ClientIds look like ``aa-bb-cc-00-11-22`` - normalise to colons."""
     hexed = re.sub(r"[^0-9a-fA-F]", "", raw or "")
     if len(hexed) == 12:
         return ":".join(hexed[i : i + 2] for i in range(0, 12, 2)).lower()
@@ -117,7 +117,7 @@ def _parse_when(iso: str | None):
 
 
 def _source_note(conn) -> str:
-    if conn is None:  # local (Danbyte-owned) scope — no server behind it
+    if conn is None:  # local (Danbyte-owned) scope - no server behind it
         return "Danbyte-local DHCP scope"
     return f"Synced from Windows DHCP «{conn.name}»"
 
@@ -169,11 +169,11 @@ def _apply(conn, data: dict, now) -> dict:
             counts["prefixes_created"] += 1
         if prefix is None and s.get("mask"):
             # The CIDR exists in more than one VRF, so linking it would be a
-            # guess. Say which scope is affected — the scope still syncs, it
+            # guess. Say which scope is affected - the scope still syncs, it
             # just carries no prefix until an operator names the VRF.
             warnings.append(
                 f"Scope {sid}/{s.get('mask')} matches prefixes in several VRFs "
-                f"— set this connection's VRF to choose one"
+                f"- set this connection's VRF to choose one"
             )
         scope, _ = DhcpScope.objects.update_or_create(
             connection=conn, scope_id=sid,
@@ -192,7 +192,7 @@ def _apply(conn, data: dict, now) -> dict:
         )
         scopes_by_id[sid] = scope
 
-    # Scopes deleted on the server: drop the link rows (the Prefix stays —
+    # Scopes deleted on the server: drop the link rows (the Prefix stays -
     # deleting IPAM data because a scope vanished is not our call).
     DhcpScope.objects.filter(connection=conn).exclude(
         scope_id__in=seen_scope_ids
@@ -324,7 +324,7 @@ def _prefix_for_scope(conn, scope_id: str, mask: str | None, *,
     the authoring API passes an explicit tenant/VRF plus a note for local scopes
     that have no connection to describe them.
 
-    This is the only place in the DHCP path that needs the policy — a scope's
+    This is the only place in the DHCP path that needs the policy - a scope's
     reservations, leases and exclusions all follow ``scope.prefix.vrf``.
     """
     from api.models import Prefix
@@ -338,7 +338,7 @@ def _prefix_for_scope(conn, scope_id: str, mask: str | None, *,
     existing = Prefix.objects.filter(tenant=tenant, vrf=vrf, cidr=cidr).first()
     if existing:
         return existing, False
-    # Not in the VRF we asked for — but never invent address space that already
+    # Not in the VRF we asked for - but never invent address space that already
     # exists elsewhere. An operator who moves a scope's prefix into a VRF would
     # otherwise get a second prefix with the same CIDR minted here, and the
     # scope silently re-pointed at the duplicate. One match elsewhere is
@@ -359,7 +359,7 @@ def _range_for_exclusion(conn, scope, start: str, end: str):
     from api.models import IPRange
 
     # An exclusion belongs to the scope's prefix, so it shares that prefix's
-    # routing context — look it up and create it there, not in the Global VRF.
+    # routing context - look it up and create it there, not in the Global VRF.
     vrf_id = scope.prefix.vrf_id if scope.prefix_id else None
     existing = IPRange.objects.filter(
         tenant=conn.tenant, vrf_id=vrf_id, start_address=start, end_address=end
@@ -369,7 +369,7 @@ def _range_for_exclusion(conn, scope, start: str, end: str):
     return IPRange.objects.create(
         tenant=conn.tenant, prefix=scope.prefix,
         start_address=start, end_address=end,
-        description=f"DHCP exclusion — {_source_note(conn)}",
+        description=f"DHCP exclusion - {_source_note(conn)}",
     )
 
 
@@ -379,7 +379,7 @@ def _adopt_ip(conn, scope, ip: str, mac: str, dns_name: str, note: str):
 
     # Local scopes (no connection) carry the tenant themselves.
     tenant = conn.tenant if conn is not None else scope.tenant
-    # A scope's addresses live wherever its prefix lives — the same for synced
+    # A scope's addresses live wherever its prefix lives - the same for synced
     # and local scopes. IPAddress.save() derives this anyway; matching it here
     # means the lookup finds the row it is about to create rather than missing
     # it and minting a duplicate.
@@ -389,7 +389,7 @@ def _adopt_ip(conn, scope, ip: str, mac: str, dns_name: str, note: str):
     ).first()
     created = False
     if row is None:
-        if scope.prefix_id is None:  # unparsable scope mask — nothing to attach to
+        if scope.prefix_id is None:  # unparsable scope mask - nothing to attach to
             return None, False
         row = IPAddress(
             tenant=tenant, ip_address=ip, prefix=scope.prefix,
@@ -409,11 +409,11 @@ def _adopt_ip(conn, scope, ip: str, mac: str, dns_name: str, note: str):
 def _ip_for_reservation(conn, scope, res):
     row, _created = _adopt_ip(
         conn, scope, res.ip, res.mac, "",
-        note=f"DHCP reservation «{res.name}» — {_source_note(conn)}",
+        note=f"DHCP reservation «{res.name}» - {_source_note(conn)}",
     )
     # `reservation_note` is the operator's own "I want to hold this address"
     # affordance (it raises the amber marker on the IP). A DHCP reservation is
-    # not that — it's surfaced by the DHCP badge instead — so we never set it,
+    # not that - it's surfaced by the DHCP badge instead - so we never set it,
     # and we retire the marker earlier syncs wrote here.
     if (
         conn is not None
@@ -428,7 +428,7 @@ def _ip_for_reservation(conn, scope, res):
 def _ip_for_lease(conn, scope, lease):
     return _adopt_ip(
         conn, scope, lease.ip, lease.mac, lease.hostname,
-        note=f"DHCP lease — {_source_note(conn)}",
+        note=f"DHCP lease - {_source_note(conn)}",
     )
 
 

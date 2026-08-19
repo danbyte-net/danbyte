@@ -175,7 +175,7 @@ class LoginFlowTests(TestCase):
     }
 )
 class BruteForceGuardTests(TestCase):
-    """#55 — login lockout + MFA attempt cap + resend cooldown."""
+    """#55 - login lockout + MFA attempt cap + resend cooldown."""
 
     def setUp(self):
         cache.clear()
@@ -191,7 +191,7 @@ class BruteForceGuardTests(TestCase):
         for _ in range(LOGIN_MAX_FAILURES):
             r = _post(self.c, "/api/auth/login/", username="bob", password="wrong")
             self.assertEqual(r.status_code, 400)
-        # Locked now — even the correct password is refused.
+        # Locked now - even the correct password is refused.
         r = _post(self.c, "/api/auth/login/", username="bob", password="pw12345!")
         self.assertEqual(r.status_code, 429)
 

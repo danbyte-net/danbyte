@@ -20,12 +20,12 @@ import { cn } from "@/lib/utils"
 export interface ComboboxOption {
   value: string
   label: string
-  /** Optional sub-category heading — options sharing a group render under it
+  /** Optional sub-category heading - options sharing a group render under it
    * (optgroup-style), in first-appearance order. Ungrouped options come first. */
   group?: string
-  /** Not selectable (still listed, dimmed) — e.g. an occupied rack unit. */
+  /** Not selectable (still listed, dimmed) - e.g. an occupied rack unit. */
   disabled?: boolean
-  /** Muted right-aligned annotation — e.g. the device occupying a unit. */
+  /** Muted right-aligned annotation - e.g. the device occupying a unit. */
   hint?: string
 }
 
@@ -44,7 +44,7 @@ export interface ComboboxProps {
 
 // Searchable single-select (shadcn Combobox pattern: Button + Popover +
 // Command). Drop-in for a Select when the option list is long enough to want
-// type-to-filter — used for the device pickers.
+// type-to-filter - used for the device pickers.
 export function Combobox({
   value,
   onChange,

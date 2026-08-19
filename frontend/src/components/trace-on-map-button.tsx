@@ -9,7 +9,7 @@ import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 
 /**
- * "Trace on map" — jumps to the floor plan that shows this cable, with its
+ * "Trace on map" - jumps to the floor plan that shows this cable, with its
  * A↔B route highlighted and the view fitted to it (no Cables-mode clicking).
  * Renders nothing when the cable isn't on any plan.
  */
@@ -40,7 +40,7 @@ export function TraceOnMapButton({ cableId }: { cableId: string }) {
 }
 
 /**
- * "Auto-route" — asks the server to compute the best tray path for this cable
+ * "Auto-route" - asks the server to compute the best tray path for this cable
  * on its floor plan, assign those trays, and estimate the length (run +
  * vertical drops + slack; an already-recorded length is kept). Renders nothing
  * when the cable's ends aren't on any plan or the user can't edit cables.
@@ -97,7 +97,7 @@ export function AutoRouteButton({ cableId }: { cableId: string }) {
 }
 
 /**
- * "Show on site map" — jumps to the geographic map with this cable drawn
+ * "Show on site map" - jumps to the geographic map with this cable drawn
  * along its assigned routes and highlighted. Renders nothing when the cable
  * isn't assigned to any route.
  */

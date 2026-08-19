@@ -6,7 +6,7 @@ class PluginsConfig(AppConfig):
 
     Appended to ``INSTALLED_APPS`` **last** (by ``danbyte/settings.py``) so this
     ``ready()`` runs after every plugin app has loaded. It autodiscovers each
-    plugin's ``danbyte_plugin`` module — the single conventional place a plugin
+    plugin's ``danbyte_plugin`` module - the single conventional place a plugin
     registers its contributions (object types, providers, checkers, nav/pages),
     mirroring ``api/apps.py``'s ``autodiscover_modules("io")``.
     """

@@ -1,4 +1,4 @@
-"""Dynamic audit registration — the one auditing hook a plugin can't self-join.
+"""Dynamic audit registration - the one auditing hook a plugin can't self-join.
 
 Change-log signals for the built-in ``AUDITED_MODELS`` are wired in
 ``AuditConfig.ready()``. A plugin's ``danbyte_plugin`` module runs *after* that

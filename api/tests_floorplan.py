@@ -40,7 +40,7 @@ class _Base(APITestCase):
             tenant=self.tenant, site=self.site, location=self.loc, name="R01"
         )
 
-        # A second tenant with its own rack — for isolation tests.
+        # A second tenant with its own rack - for isolation tests.
         self.other = Tenant.objects.create(org=self.org, name="Other", slug="other")
         other_site = Site.objects.create(tenant=self.other, name="LON")
         other_loc = Location.objects.create(
@@ -562,7 +562,7 @@ class TrayTests(_Base):
 
 
 class SceneTests(_Base):
-    """GET /api/floor-plans/{id}/scene/ — the 3D room view's one-fetch payload."""
+    """GET /api/floor-plans/{id}/scene/ - the 3D room view's one-fetch payload."""
 
     def setUp(self):
         super().setUp()
@@ -668,7 +668,7 @@ class SceneTests(_Base):
 
     def test_scene_device_airflow_is_effective_and_additive(self):
         """The scene carries EFFECTIVE airflow (device override beats the
-        type's default), added without disturbing the rest of device_geo —
+        type's default), added without disturbing the rest of device_geo -
         the 2D canvas and older consumers read the same keys they always did.
         """
         from .models import DeviceType
@@ -706,7 +706,7 @@ class SceneTests(_Base):
     def test_scene_carries_power_component_names(self):
         """power_ports / power_outlets ride device_geo so the 3D room can lay
         out synthetic port quads (and strip outlets) for power components no
-        photo marker covers — the same names cable terminations carry."""
+        photo marker covers - the same names cable terminations carry."""
         from .models import DeviceType, PowerOutlet, PowerPort
 
         dt = DeviceType.objects.create(
@@ -803,7 +803,7 @@ class CablePathTests(_Base):
 
 
 class CableRoutingTests(_Base):
-    """Reading and setting what a cable FOLLOWS on a plan — trays in a chosen
+    """Reading and setting what a cable FOLLOWS on a plan - trays in a chosen
     order, or point-to-point. Before this the assignment was only writable by
     auto-route, so an operator had no way to see or correct it."""
 

@@ -78,8 +78,8 @@ class DirectLinkTests(_Base):
 
 
 class PanelCollapseTests(_Base):
-    """server:eth0 —cable— panel-A.front1 (rear1) —trunk— panel-B (rear1)
-    front1 —cable— switch:gi1. Collapsed: ONE edge server↔switch via both
+    """server:eth0 -cable- panel-A.front1 (rear1) -trunk- panel-B (rear1)
+    front1 -cable- switch:gi1. Collapsed: ONE edge server↔switch via both
     panels. Raw: three hops with the panels as nodes."""
 
     def setUp(self):
@@ -105,7 +105,7 @@ class PanelCollapseTests(_Base):
 
     def test_collapsed_end_to_end(self):
         g = self._graph("collapse_panels=1")
-        # Fully-consumed panels drop off the collapsed map entirely — no
+        # Fully-consumed panels drop off the collapsed map entirely - no
         # portless husks floating around.
         names = {n["data"]["name"] for n in g["nodes"]}
         self.assertEqual(names, {"server", "switch"})
@@ -216,7 +216,7 @@ class FocusAndFilterTests(_Base):
         self.role = DeviceRole.objects.create(
             tenant=self.tenant, name="core", slug="core", color="#f00"
         )
-        # chain: a — b — c — d
+        # chain: a - b - c - d
         self.devs = []
         prev_if = None
         for name in ("a", "b", "c", "d"):
@@ -309,7 +309,7 @@ class PassThroughAndCrashTests(_Base):
 
     def test_device_paths_with_power_feed_termination_is_200(self):
         # Regression: a cable terminating on a PowerFeed (which lives on a
-        # PowerPanel, not a device) 500'd /paths/ — the topology cable prefetch
+        # PowerPanel, not a device) 500'd /paths/ - the topology cable prefetch
         # asked for the non-existent power_feed.device. Must be 200 now.
         from .models import PowerFeed, PowerPanel, PowerPort, Site
 
@@ -340,10 +340,10 @@ class PassThroughAndCrashTests(_Base):
         self.assertEqual(r.status_code, 200, r.content)
 
     def test_pdu_outlet_to_inlet_trace_walks_through(self):
-        # server:psu0 —cable— pdu.outlet1 (inlet=inlet0) ; pdu.inlet0 —cable—
+        # server:psu0 -cable- pdu.outlet1 (inlet=inlet0) ; pdu.inlet0 -cable-
         # ups:out1. Tracing the server PSU cable must reach the UPS *through*
         # the PDU (outlet→inlet is a walkable pass-through). The map keeps the
-        # PDU visible (see test_pdu_stays_visible_not_dropped) — only the
+        # PDU visible (see test_pdu_stays_visible_not_dropped) - only the
         # trace walks power.
         from .models import PowerPort, PowerOutlet
 
@@ -379,7 +379,7 @@ class PassThroughAndCrashTests(_Base):
 
 
 class TopologySplitterTests(_Base):
-    """Splitters are real nodes in the topology map — never collapsed like a
+    """Splitters are real nodes in the topology map - never collapsed like a
     patch panel, with the feeder and every drop as direct edges."""
 
     def _splitter(self, name="spl", outputs=2):
@@ -420,7 +420,7 @@ class TopologySplitterTests(_Base):
         self.assertIn(("ont-2", "spl"), pairs)
 
     def test_splitter_cascade_edge_survives_collapse(self):
-        # SPL1 out1 —cable— SPL2 in: both ends are splitter-side ports; the
+        # SPL1 out1 -cable- SPL2 in: both ends are splitter-side ports; the
         # old panel-panel skip would have dropped this edge entirely.
         s1, r1, f1s = self._splitter("spl-1", outputs=1)
         s2, r2, _ = self._splitter("spl-2", outputs=1)
@@ -429,7 +429,7 @@ class TopologySplitterTests(_Base):
         self.assertIn(("spl-1", "spl-2"), self._edge_pairs(g))
 
     def test_splitter_behind_panel_stops_walk(self):
-        # OLT — panel front1 (rear pos1) — cable — splitter in. Collapse
+        # OLT - panel front1 (rear pos1) - cable - splitter in. Collapse
         # walks THROUGH the panel but must stop AT the splitter.
         olt = Device.objects.create(tenant=self.tenant, name="olt")
         olt_if = Interface.objects.create(device=olt, name="pon1")

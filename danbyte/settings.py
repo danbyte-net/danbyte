@@ -35,7 +35,7 @@ if not DEBUG and SECRET_KEY == _DEV_SECRET_KEY:
 ALLOWED_HOSTS = os.getenv(
     "ALLOWED_HOSTS",
     # In DEBUG, allow loopback + every RFC1918 host on the LAN (phones / other
-    # boxes hitting the dev server). The `*` wildcard is dev-only — production
+    # boxes hitting the dev server). The `*` wildcard is dev-only - production
     # must set ALLOWED_HOSTS explicitly so it can't accept arbitrary Host headers.
     "localhost,127.0.0.1,*" if DEBUG else "localhost,127.0.0.1",
 ).split(",")
@@ -43,12 +43,12 @@ ALLOWED_HOSTS = os.getenv(
 INSTALLED_APPS = [
     # NOTE: `daphne` + `channels` are intentionally NOT enabled here. Putting
     # daphne first makes `runserver` serve everything over ASGI, which routes all
-    # sync Django/ORM work through asgiref's single thread-sensitive executor — a
+    # sync Django/ORM work through asgiref's single thread-sensitive executor - a
     # single slow/blocked request then wedges *all* HTTP (the dev server hung
     # repeatedly). The WebSocket presence layer (danbyte/asgi.py, the
     # PresenceConsumer, CHANNEL_LAYERS) stays in the tree but must run as a
     # SEPARATE daphne process for `/ws/` (behind nginx), with WSGI/gunicorn still
-    # serving HTTP — not by replacing runserver. Until that split exists, presence
+    # serving HTTP - not by replacing runserver. Until that split exists, presence
     # uses its polling fallback (usePresence degrades automatically). See P4 notes.
     "django.contrib.admin",
     "django.contrib.auth",
@@ -190,7 +190,7 @@ CACHES = {
     }
 }
 
-# Channels — the channel layer for real-time presence WebSockets. Redis-backed
+# Channels - the channel layer for real-time presence WebSockets. Redis-backed
 # (same Redis as RQ/cache). In-memory fallback keeps tests/single-process dev
 # working even if Redis is unreachable for the layer.
 CHANNEL_LAYERS = {
@@ -207,7 +207,7 @@ CHANNEL_LAYERS = {
     }
 }
 
-# RQ queue DB — separate from 0 lets a second instance on the same Redis run
+# RQ queue DB - separate from 0 lets a second instance on the same Redis run
 # its own worker pool without stealing the primary's jobs (a dev clone sets
 # RQ_REDIS_DB to a spare index).
 _RQ_DB = int(os.getenv("RQ_REDIS_DB", "0"))
@@ -240,7 +240,7 @@ REST_FRAMEWORK = {
         "auth_api.token_auth.ApiTokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
         # (No JWT: there's no obtain/refresh endpoint and no SIMPLE_JWT config,
-        # so the class was dead surface with weak defaults — removed.)
+        # so the class was dead surface with weak defaults - removed.)
     ],
     # Default-closed: a DRF view with no explicit permission_classes requires
     # auth, so the next forgotten one isn't world-open. Intentionally-public
@@ -257,7 +257,7 @@ REST_FRAMEWORK = {
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.SearchFilter",
     ],
-    # OpenAPI 3 schema generation (drf-spectacular) — powers /api/schema/ and the
+    # OpenAPI 3 schema generation (drf-spectacular) - powers /api/schema/ and the
     # interactive reference at /api/docs/.
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
@@ -265,12 +265,12 @@ REST_FRAMEWORK = {
 # ── OpenAPI / API reference (drf-spectacular) ────────────────────────────────
 # Assets are served from drf-spectacular-sidecar (bundled locally), so the
 # interactive docs work on airgapped installs with no CDN access.
-from danbyte import __version__  # noqa: E402 — version string for the schema
+from danbyte import __version__  # noqa: E402 - version string for the schema
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "Danbyte API",
     "DESCRIPTION": (
-        "REST API for Danbyte — IPAM / DCIM and network operations. "
+        "REST API for Danbyte - IPAM / DCIM and network operations. "
         "Authenticate with a scoped **API token** (`Authorization: Token <key>`) "
         "or, from a browser session, the logged-in session cookie. Every request "
         "is scoped to your active tenant and enforced by RBAC."
@@ -324,7 +324,7 @@ if DEBUG:
     import ipaddress as _ip
     import socket as _s
     _addrs = {"127.0.0.1"}
-    # Trick: open a UDP socket "towards" a public IP — Linux fills in the
+    # Trick: open a UDP socket "towards" a public IP - Linux fills in the
     # outbound source IP without sending a packet. Catches the LAN
     # interface(s) instead of the loopback-only hostname mapping.
     try:
@@ -383,13 +383,13 @@ X_FRAME_OPTIONS = "DENY"
 # means changing the DEBUG default silently changes transport requirements for
 # every install that never set DEBUG. When it flipped, those installs started
 # 301-redirecting every request to https and marking the session cookie
-# `Secure` — so on a plain-http server the browser silently DROPS the session
+# `Secure` - so on a plain-http server the browser silently DROPS the session
 # cookie and login just bounces back to the form with no error.
 #
 # So: explicit opt-in, default off. Turning it on when you are NOT behind TLS
 # locks you out; leaving it off when you ARE behind TLS only forgoes the
 # app-level backstop (nginx already sets HSTS + the redirect at the edge, and
-# scripts/install.sh — which configures nginx+TLS — writes DANBYTE_HTTPS=True).
+# scripts/install.sh - which configures nginx+TLS - writes DANBYTE_HTTPS=True).
 HTTPS_DEPLOYMENT = os.getenv("DANBYTE_HTTPS", "False") == "True"
 if HTTPS_DEPLOYMENT:
     SESSION_COOKIE_SECURE = True
@@ -431,14 +431,14 @@ LOGGING = {
         },
     },
     # propagate=False on every logger so a record is emitted once per logger
-    # (no bubbling to a parent that also has a handler — otherwise the file
+    # (no bubbling to a parent that also has a handler - otherwise the file
     # handler injected below would double every line).
     "loggers": {
         "django": {"handlers": ["console"], "level": "INFO", "propagate": False},
         "rq.worker": {
             "handlers": ["console"], "level": "INFO", "propagate": False,
         },
-        # The app's own namespaces — parents so monitoring.* / danbyte.* land
+        # The app's own namespaces - parents so monitoring.* / danbyte.* land
         # here (and, in production, in the file below).
         "monitoring": {
             "handlers": ["console"], "level": "INFO", "propagate": False,
@@ -446,7 +446,7 @@ LOGGING = {
         "danbyte": {
             "handlers": ["console"], "level": "INFO", "propagate": False,
         },
-        # LDAP failures must be visible — a directory login that dies inside
+        # LDAP failures must be visible - a directory login that dies inside
         # django-auth-ldap otherwise surfaces only as a generic "Invalid
         # username or password" with nothing logged (issue #152).
         "danbyte.ldap": {
@@ -462,7 +462,7 @@ LOGGING = {
 
 # Production file logging: when DANBYTE_LOG_DIR is set and writable (the
 # installer points it at /var/log/danbyte), mirror every logger to a rotating
-# danbyte.log there — in addition to the console, which systemd still captures
+# danbyte.log there - in addition to the console, which systemd still captures
 # in the journal. Silently skipped in dev, where the directory doesn't exist.
 _log_dir = os.getenv("DANBYTE_LOG_DIR", "").strip()
 if _log_dir and os.path.isdir(_log_dir) and os.access(_log_dir, os.W_OK):
@@ -483,13 +483,13 @@ USE_TZ = True
 
 # Auth flow targets the Django admin login (the templates for the legacy
 # auth_api login page are archived in reference/). The React SPA is the
-# only user-facing surface — admin login → cookie set on the shared host
+# only user-facing surface - admin login → cookie set on the shared host
 # → React proxies /api calls and uses that cookie.
 LOGIN_URL = "/admin/login/"
-LOGIN_REDIRECT_URL = "/prefixes"   # the React route — Vite serves it after admin login
+LOGIN_REDIRECT_URL = "/prefixes"   # the React route - Vite serves it after admin login
 LOGOUT_REDIRECT_URL = "/admin/login/"
 
-# Auth backends: try the (optional, DB-driven) LDAP façade first — it returns
+# Auth backends: try the (optional, DB-driven) LDAP façade first - it returns
 # None when ldap_enabled is off or the directory doesn't know the user, so local
 # accounts fall through to ModelBackend. Configuration lives on
 # DeploymentSettings, not here; see auth_api/ldap.py.
@@ -501,7 +501,7 @@ AUTHENTICATION_BACKENDS = [
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 # The repo-root design/ mockups moved into docs/reference/design/, so there is
-# no extra static dir to collect — Django's app static/ + collectstatic cover
+# no extra static dir to collect - Django's app static/ + collectstatic cover
 # admin + DRF. (An entry pointing at a missing dir raises staticfiles.W004.)
 STATICFILES_DIRS: list = []
 
@@ -526,7 +526,7 @@ MONITORING_SECRETS_BACKEND = os.getenv("MONITORING_SECRETS_BACKEND", "")
 
 # SSRF policy for the CENTRAL check runner. When True, a check target that
 # resolves to loopback / RFC1918 / reserved is refused (a tenant-defined target
-# would otherwise probe the server's own internal services — set this on a
+# would otherwise probe the server's own internal services - set this on a
 # cloud, multi-tenant deployment). Default False keeps self-hosted deployments
 # that monitor their own LAN from the central box working. The cloud-metadata
 # endpoint is refused regardless. DANBYTE_SSRF_ALLOWLIST (shared with the
@@ -550,7 +550,7 @@ MONITORING_GENERIC_SHARD_SIZE = int(os.getenv("MONITORING_GENERIC_SHARD_SIZE", "
 # ICMP sweeps fire cheap echo probes, so they run at much higher concurrency
 # than the generic-check limit (MONITORING_CONCURRENCY=100, which protects
 # heavier TCP/HTTP/SSH connections). At 2000 a full 2000-host shard pings in
-# ~1s instead of ~20s — a /16 sweep drops from ~11min to ~35s.
+# ~1s instead of ~20s - a /16 sweep drops from ~11min to ~35s.
 MONITORING_SWEEP_CONCURRENCY = int(os.getenv("MONITORING_SWEEP_CONCURRENCY", "2000"))
 # Manual "Discover now": prefixes with at most this many host addresses sweep
 # synchronously (instant summary, ~2-3s at the sweep concurrency above); larger
@@ -571,7 +571,7 @@ MONITORING_WEBHOOK_TIMEOUT = int(os.getenv("MONITORING_WEBHOOK_TIMEOUT", "5"))
 
 # Retention: the pruning job deletes CheckResult rows older than this many days
 # (time-series, high volume) and StateTransition rows older than the second
-# value (kept longer — they're the audit timeline). Run by danbyte-prune.timer.
+# value (kept longer - they're the audit timeline). Run by danbyte-prune.timer.
 # Default 30d: raw results run ~600k rows/day in production (issue #155); the
 # rolled-up CheckState + StateTransition carry the long-term story.
 MONITORING_RESULT_RETENTION_DAYS = int(
@@ -580,7 +580,7 @@ MONITORING_RESULT_RETENTION_DAYS = int(
 MONITORING_TRANSITION_RETENTION_DAYS = int(
     os.getenv("MONITORING_TRANSITION_RETENTION_DAYS", "365")
 )
-# Change-log (audit) retention — kept long by default; 0 disables pruning.
+# Change-log (audit) retention - kept long by default; 0 disables pruning.
 CHANGELOG_RETENTION_DAYS = int(os.getenv("CHANGELOG_RETENTION_DAYS", "730"))
 
 # Prefix-utilization alerts: warn (via notification channels) when a prefix
@@ -589,10 +589,10 @@ MONITORING_UTIL_ALERT_THRESHOLD = int(os.getenv("MONITORING_UTIL_ALERT_THRESHOLD
 MONITORING_UTIL_ALERT_CLEAR = int(os.getenv("MONITORING_UTIL_ALERT_CLEAR", "80"))
 
 # Script / exec checks (Nagios-plugin style). These run a local command on the
-# worker host, so they are a privileged capability — DISABLED by default. To use
+# worker host, so they are a privileged capability - DISABLED by default. To use
 # them, set MONITORING_EXEC_ENABLED=True *and* point MONITORING_PLUGIN_DIR at a
 # directory of trusted plugins. Only plugins inside that dir can be run (by bare
-# name, no path traversal), and arguments are passed without a shell — so the
+# name, no path traversal), and arguments are passed without a shell - so the
 # web UI can pick a plugin + args but can't execute arbitrary system commands.
 MONITORING_EXEC_ENABLED = os.getenv("MONITORING_EXEC_ENABLED", "False") == "True"
 MONITORING_PLUGIN_DIR = os.getenv("MONITORING_PLUGIN_DIR", "")

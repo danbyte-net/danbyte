@@ -40,7 +40,7 @@ const TYPE_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
   PTR: "secondary",
 }
 
-/** Column factory for stored DNS records — reused by the zone page, the prefix
+/** Column factory for stored DNS records - reused by the zone page, the prefix
  * DNS tab, and the IP DNS section. `showZone` adds the zone column (off when a
  * table already scopes to one zone). */
 export function dnsRecordColumns(showZone: boolean): ColumnDef<DnsRecord>[] {

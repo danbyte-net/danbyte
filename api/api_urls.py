@@ -1,6 +1,6 @@
-"""REST API URLs — mounted under /api/.
+"""REST API URLs - mounted under /api/.
 
-Separate from api/urls.py (which routes the legacy HTML pages — now in
+Separate from api/urls.py (which routes the legacy HTML pages - now in
 reference/) so the JSON endpoints have a clean namespace. New endpoints
 just register a viewset on the router.
 """
@@ -288,7 +288,7 @@ router.register(r"tunnels",       TunnelViewSet,      basename="tunnel")
 router.register(r"tags",          TagViewSet,         basename="tag")
 router.register(r"site-markers",  SiteMarkerViewSet, basename="site-marker")
 router.register(r"statuses",      StatusViewSet,    basename="status")
-# Legacy alias — the page/API were renamed "statuses" (they cover every model,
+# Legacy alias - the page/API were renamed "statuses" (they cover every model,
 # not just IPs); old integrations keep working.
 router.register(r"ip-statuses",   StatusViewSet,    basename="ip-status")
 router.register(r"ip-roles",      IPRoleViewSet,      basename="ip-role")
@@ -445,11 +445,11 @@ urlpatterns = [
     path("monitoring/", include("monitoring.api_urls")),
     path("planning/", include("planning.api_urls")),
     path("outpost/", include("monitoring.outpost_urls")),
-    # Background job queue admin (RQ introspection) — gated on jobs.manage.
+    # Background job queue admin (RQ introspection) - gated on jobs.manage.
     path("jobs/", include("jobs.api_urls")),
     # Plugin framework: installed-plugin inventory + each plugin's own API.
     path("plugins/", include("plugins.api_urls")),
-    # Service control (restart units, apply plugins) — superuser only.
+    # Service control (restart units, apply plugins) - superuser only.
     path("services/", service_api.services_list, name="services-list"),
     path("services/workers/", service_api.set_workers, name="services-workers"),
     path("services/restart-all/", service_api.restart_danbyte,
@@ -491,16 +491,16 @@ urlpatterns = [
          name="deployment-email-templates"),
     path("deployment/email/preview/", deployment.email_send_preview,
          name="deployment-email-preview"),
-    # Emergency "sign everyone out" — deletes all sessions (users.manage).
+    # Emergency "sign everyone out" - deletes all sessions (users.manage).
     path("deployment/end-all-sessions/", deployment.deployment_end_all_sessions,
          name="deployment-end-all-sessions"),
-    # Custom browser-tab favicon (upload / clear) — users.manage only.
+    # Custom browser-tab favicon (upload / clear) - users.manage only.
     path("deployment/favicon/", deployment.deployment_favicon,
          name="deployment-favicon"),
-    # Optional built-in device fields — admin-controlled visibility.
+    # Optional built-in device fields - admin-controlled visibility.
     path("deployment/device-fields/", deployment.device_field_visibility,
          name="deployment-device-fields"),
-    # Floor-plan tile popover — deployment default (the tenant override rides
+    # Floor-plan tile popover - deployment default (the tenant override rides
     # tenant-settings/, like device fields).
     path("deployment/floorplan-popover/", deployment.floorplan_popover,
          name="deployment-floorplan-popover"),
@@ -517,7 +517,7 @@ urlpatterns = [
          name="tenant-settings-digest-test"),
     # First-run onboarding wizard state (any tenant member; core/tenant_settings).
     path("onboarding/", tenant_settings_mod.onboarding_state, name="onboarding"),
-    # Per-SITE settings (email v1) — site-admin gated, see core.site_settings.
+    # Per-SITE settings (email v1) - site-admin gated, see core.site_settings.
     path("sites/<uuid:site_id>/settings/", site_settings_mod.site_settings,
          name="site-settings"),
     path("sites/<uuid:site_id>/settings/email/test/",
@@ -526,17 +526,17 @@ urlpatterns = [
     path("tenant-settings/floorplan-popover/",
          tenant_settings_mod.tenant_floorplan_popover,
          name="tenant-floorplan-popover"),
-    # Effective device-field visibility — readable by any member.
+    # Effective device-field visibility - readable by any member.
     path("device-fields/", tenant_settings_mod.device_fields_view,
          name="device-fields"),
-    # Effective floor-plan popover config — readable by any member (the canvas
+    # Effective floor-plan popover config - readable by any member (the canvas
     # needs it to render a popover at all).
     path("floorplan-popover/", tenant_settings_mod.floorplan_popover_view,
          name="floorplan-popover"),
     # The default prefix for the caller's own site, if they have exactly one.
     path("my-default-prefix/", tenant_settings_mod.my_default_prefix,
          name="my-default-prefix"),
-    # In-app updates — current version + available releases (users.manage).
+    # In-app updates - current version + available releases (users.manage).
     path("health/", deployment.health, name="health"),
     path("system/info/", deployment.system_info, name="system-info"),
     path("system/updates/", deployment.system_updates, name="system-updates"),

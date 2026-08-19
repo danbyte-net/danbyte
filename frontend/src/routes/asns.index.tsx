@@ -62,7 +62,7 @@ function AsnsPage() {
     > = {}
     for (const a of allRows) {
       const rk = a.rir?.id ?? "__none__"
-      if (!rirs[rk]) rirs[rk] = { name: a.rir?.name ?? "—", count: 0 }
+      if (!rirs[rk]) rirs[rk] = { name: a.rir?.name ?? "-", count: 0 }
       rirs[rk].count++
       for (const t of a.tags) {
         if (!tags[t.slug])
@@ -189,7 +189,7 @@ function buildColumns({
         row.original.rir ? (
           <span className="text-xs">{row.original.rir.name}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -199,7 +199,7 @@ function buildColumns({
       cell: ({ row }) => {
         const sites = row.original.sites
         if (sites.length === 0)
-          return <span className="text-muted-foreground">—</span>
+          return <span className="text-muted-foreground">-</span>
         return (
           <span className="text-xs text-muted-foreground">
             {sites.map((s) => s.name).join(", ")}
@@ -213,7 +213,7 @@ function buildColumns({
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     },

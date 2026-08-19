@@ -40,12 +40,12 @@ const VM_GAP = 18
 const COL_PITCH = VM_W + VM_GAP
 const BAND_PAD = 18 // space above/below a VM row (room for leg labels)
 const BAND_H = VM_H + 2 * BAND_PAD
-const LABEL_RESERVE = 216 // rail label zone — VM columns start after it
+const LABEL_RESERVE = 216 // rail label zone - VM columns start after it
 const ADP_W = 116
 const ADP_H = 34
 const ADP_GAP = 8
 
-// Deterministic rail palette — shades of the Danbyte blue, used when the
+// Deterministic rail palette - shades of the Danbyte blue, used when the
 // network's VLAN has no zone colour. A zone colour (zones carry firewall
 // semantics: inside/outside/prod/admin…) overrides it; a zone is never
 // required just to get a colour.
@@ -167,7 +167,7 @@ function layout(
     return ra !== rb ? ra - rb : a[1].name.localeCompare(b[1].name)
   })
 
-  // 3. Column allocation — a VM occupies its column in every band its
+  // 3. Column allocation - a VM occupies its column in every band its
   //    connector passes through, so nothing ever overlaps.
   const bandCols: Set<number>[] = rails.map(() => new Set())
   const placed: {
@@ -182,7 +182,7 @@ function layout(
   for (const [id, v] of vmsSorted) {
     const first = v.railIdxs[0]
     const last = v.railIdxs[v.railIdxs.length - 1]
-    // Reserve the column through the leg's LAST band too — otherwise a VM in
+    // Reserve the column through the leg's LAST band too - otherwise a VM in
     // the terminal band sits directly under the leg and looks attached to it.
     const span: number[] = []
     for (let b = first; b <= last; b++) span.push(b)
@@ -256,7 +256,7 @@ function layout(
     const firstRail = p.railIdxs[0]
     // One full leg per attachment, box → rail, fanned into parallel lanes a
     // few px apart (ribbon-cable style) so every colour stays trackable and
-    // visibly plugs into the VM — sequential segments read as disconnected.
+    // visibly plugs into the VM - sequential segments read as disconnected.
     const n = p.railIdxs.length
     p.railIdxs.forEach((r, k) => {
       const lx = x + (k - (n - 1) / 2) * 6
@@ -265,7 +265,7 @@ function layout(
         lines.push({
           key: `u-${p.id}`,
           x: lx,
-          y1: railY[r] + RAIL_H / 2, // under the bar — rails draw on top
+          y1: railY[r] + RAIL_H / 2, // under the bar - rails draw on top
           y2: boxY,
           color: laidRails[r].color,
           label: p.ifaces.get(r),
@@ -321,7 +321,7 @@ function VirtualTopologyPage() {
   const groups = useMemo(() => {
     const by = new Map<string, VirtNetwork[]>()
     for (const n of networks.data?.results ?? []) {
-      const k = n.vswitch ?? "—"
+      const k = n.vswitch ?? "-"
       const l = by.get(k)
       if (l) l.push(n)
       else by.set(k, [n])
@@ -362,7 +362,7 @@ function VirtualTopologyPage() {
           <span className="font-medium">
             Sync virtual switches &amp; networks
           </span>{" "}
-          on a virtualization source and re-sync — its switches, networks
+          on a virtualization source and re-sync - its switches, networks
           (VLANs) and the VMs on them are drawn here.
         </EmptyState>
       ) : loading ? (
@@ -395,7 +395,7 @@ function VirtualTopologyPage() {
               External network
             </text>
 
-            {/* connectors (behind boxes) — solid, in the network's colour */}
+            {/* connectors (behind boxes) - solid, in the network's colour */}
             {laid.lines.map((l) => (
               <line
                 key={l.key}
@@ -494,7 +494,7 @@ function VirtualTopologyPage() {
               </g>
             ))}
 
-            {/* network rails — full-width coloured bars */}
+            {/* network rails - full-width coloured bars */}
             {laid.rails.map((r) => (
               <g
                 key={r.id}
@@ -524,7 +524,7 @@ function VirtualTopologyPage() {
               </g>
             ))}
 
-            {/* VM boxes — one per VM, neutral card with a corner status pill */}
+            {/* VM boxes - one per VM, neutral card with a corner status pill */}
             {laid.vms.map((vm) => {
               const pill = statusPill(vm.status)
               const label = fit(vm.status || "", 14)

@@ -66,8 +66,8 @@ class PrefixForm(forms.ModelForm):
         self.fields["site"].required = False
         self.fields["vlan"].required = False
         self.fields["vrf"].required = False
-        self.fields["site"].empty_label = "— no site —"
-        self.fields["vlan"].empty_label = "— no VLAN —"
+        self.fields["site"].empty_label = "- no site -"
+        self.fields["vlan"].empty_label = "- no VLAN -"
         self.fields["vrf"].empty_label = "Global"
         apply_tag_picker(self, self.instance)
 
@@ -128,7 +128,7 @@ class IPAddressForm(forms.ModelForm):
             ),
             "description": forms.Textarea(attrs={"class": _TEXTAREA, "rows": 2}),
             "assigned_device": SearchableSelectWidget(
-                placeholder="Search devices…", empty_label="— unassigned —",
+                placeholder="Search devices…", empty_label="- unassigned -",
             ),
         }
 
@@ -145,9 +145,9 @@ class IPAddressForm(forms.ModelForm):
             )
             self.fields["status"].queryset = ip_statuses
             self.fields["role"].queryset = IPRole.objects.filter(tenant=tenant)
-            self.fields["role"].empty_label = "—"
+            self.fields["role"].empty_label = "-"
             self.fields["assigned_device"].queryset = Device.objects.filter(tenant=tenant)
-            self.fields["assigned_device"].empty_label = "— unassigned —"
+            self.fields["assigned_device"].empty_label = "- unassigned -"
             # Default status on new records: the row flagged default_for ipaddress,
             # else the first IP-available row by weight.
             if not (self.instance and self.instance.pk) and not self.initial.get("status"):
@@ -168,7 +168,7 @@ class IPAddressForm(forms.ModelForm):
         if status and getattr(status, "requires_note", False) and not note:
             self.add_error(
                 "reservation_note",
-                f"'{status.name}' requires a short note — who's holding it / why?",
+                f"'{status.name}' requires a short note - who's holding it / why?",
             )
         cleaned["reservation_note"] = note
         return cleaned
@@ -387,7 +387,7 @@ class VRFForm(_ColorMixin, forms.ModelForm):
         self.fields["export_targets"].required = False
         self.fields["import_targets"].help_text = (
             "Route targets this VRF accepts routes from. Pick from the catalog "
-            "— add new ones on the Route targets page."
+            "- add new ones on the Route targets page."
         )
         self.fields["export_targets"].help_text = (
             "Route targets this VRF tags its own routes with. Other VRFs "
@@ -415,7 +415,7 @@ class SiteForm(forms.ModelForm):
         fields = ["name", "location", "description", "gateway_policy", "vrfs"]
         widgets = {
             "name":           forms.TextInput(attrs={"class": _TEXT, "placeholder": "dc-fra-01"}),
-            "location":       forms.TextInput(attrs={"class": _TEXT, "placeholder": "Frankfurt — Equinix FR4"}),
+            "location":       forms.TextInput(attrs={"class": _TEXT, "placeholder": "Frankfurt - Equinix FR4"}),
             "description":    forms.Textarea(attrs={"class": _TEXTAREA, "rows": 3}),
             "gateway_policy": forms.Select(attrs={"class": _SELECT}),
             "vrfs":           forms.SelectMultiple(attrs={"class": _SELECT, "size": 5}),
@@ -428,7 +428,7 @@ class SiteForm(forms.ModelForm):
             self.fields["vrfs"].queryset = VRF.objects.filter(tenant=tenant)
         self.fields["vrfs"].required = False
         self.fields["vrfs"].help_text = (
-            "Documentation only — which VRFs operate at this site. Not enforced."
+            "Documentation only - which VRFs operate at this site. Not enforced."
         )
 
     def clean_name(self):
@@ -463,7 +463,7 @@ class VLANForm(forms.ModelForm):
         if tenant is not None:
             self.fields["site"].queryset = Site.objects.filter(tenant=tenant)
         self.fields["site"].required = False
-        self.fields["site"].empty_label = "— no site —"
+        self.fields["site"].empty_label = "- no site -"
 
     def clean_vlan_id(self):
         v = self.cleaned_data.get("vlan_id")
@@ -569,7 +569,7 @@ class IPRoleForm(_LabeledChoiceForm):
         self.fields["icon"] = forms.ChoiceField(
             label="Icon",
             required=False,
-            choices=[("", "— none —")] + [(n, n) for n in ROLE_ICON_CHOICES],
+            choices=[("", "- none -")] + [(n, n) for n in ROLE_ICON_CHOICES],
             widget=forms.Select(attrs={"class": _SELECT}),
             help_text=("Lucide icon shown inside the role chip. "
                        "crown = active master, crown-off = standby, "
@@ -630,7 +630,7 @@ class DeviceTypeForm(forms.ModelForm):
         if tenant is not None:
             self.fields["manufacturer"].queryset = Manufacturer.objects.filter(tenant=tenant)
         self.fields["manufacturer"].required = False
-        self.fields["manufacturer"].empty_label = "— pick a manufacturer —"
+        self.fields["manufacturer"].empty_label = "- pick a manufacturer -"
         apply_tag_picker(self, self.instance)
 
 
@@ -641,12 +641,12 @@ class DeviceForm(forms.ModelForm):
                   "asset_tag", "primary_ip", "description"]
         widgets = {
             "name":          forms.TextInput(attrs={"class": _TEXT, "placeholder": "core-sw-01"}),
-            "device_type":   SearchableSelectWidget(placeholder="Search device types…", empty_label="— pick a device type —"),
-            "site":          SearchableSelectWidget(placeholder="Search sites…", empty_label="— no site —"),
+            "device_type":   SearchableSelectWidget(placeholder="Search device types…", empty_label="- pick a device type -"),
+            "site":          SearchableSelectWidget(placeholder="Search sites…", empty_label="- no site -"),
             "status":        forms.Select(attrs={"class": _SELECT}),
             "serial_number": forms.TextInput(attrs={"class": _TEXT}),
             "asset_tag":     forms.TextInput(attrs={"class": _TEXT}),
-            "primary_ip":    SearchableSelectWidget(placeholder="Search assigned IPs…", empty_label="— not set —"),
+            "primary_ip":    SearchableSelectWidget(placeholder="Search assigned IPs…", empty_label="- not set -"),
             "description":   forms.Textarea(attrs={"class": _TEXTAREA, "rows": 3}),
         }
 
@@ -665,9 +665,9 @@ class DeviceForm(forms.ModelForm):
             else:
                 self.fields["primary_ip"].queryset = IPAddress.objects.none()
         self.fields["device_type"].required = False
-        self.fields["device_type"].empty_label = "— pick a device type —"
+        self.fields["device_type"].empty_label = "- pick a device type -"
         self.fields["site"].required = False
-        self.fields["site"].empty_label = "— no site —"
+        self.fields["site"].empty_label = "- no site -"
         self.fields["primary_ip"].required = False
-        self.fields["primary_ip"].empty_label = "— not set —"
+        self.fields["primary_ip"].empty_label = "- not set -"
         apply_tag_picker(self, self.instance)

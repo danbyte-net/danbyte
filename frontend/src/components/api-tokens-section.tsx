@@ -135,7 +135,7 @@ export function ApiTokensSection() {
       {created && (
         <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 dark:border-emerald-900 dark:bg-emerald-950/40">
           <p className="text-xs font-medium text-emerald-800 dark:text-emerald-200">
-            Copy your new token now — it won't be shown again.
+            Copy your new token now - it won't be shown again.
           </p>
           <div className="mt-2 flex items-center gap-2">
             <code className="flex-1 truncate rounded bg-background px-2 py-1.5 font-mono text-xs">

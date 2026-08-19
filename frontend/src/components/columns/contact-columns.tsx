@@ -46,7 +46,7 @@ export interface ContactColumnOpts<T extends Contact = Contact> {
   include?: ContactColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
   tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }
@@ -90,7 +90,7 @@ export function buildContactColumns<T extends Contact = Contact>(
       header: "Title",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.title || "—"}
+          {row.original.title || "-"}
         </span>
       ),
     }),

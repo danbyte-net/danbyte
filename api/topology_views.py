@@ -8,11 +8,11 @@ and a ``panel`` flag (pass-through-only device).
 
 Edges are cables. Two modes:
 
-* ``collapse_panels=1`` (default) — patch panels are walked *through*
+* ``collapse_panels=1`` (default) - patch panels are walked *through*
   (front→rear strand→cable→…) so an edge runs interface-to-interface
   end-to-end, annotated with the panels it passed (``via``). Panel-only
   devices drop off the map.
-* ``collapse_panels=0`` — raw physical hops; panels appear as nodes.
+* ``collapse_panels=0`` - raw physical hops; panels appear as nodes.
 
 Filters: ``site`` ``location`` ``role`` ``status`` ``tag`` narrow the device
 set. ``device=<id>&depth=N`` focuses the graph on one device's neighbourhood
@@ -56,7 +56,7 @@ def _devices_qs(tenant):
 
 def _device_node(d, ports, panel=False):
     """``ports`` = ordered [{name, kind, pair?}] of this device's cabled ends
-    — ``pair`` names the rear port sharing the row (front ⇄ rear strand)."""
+    - ``pair`` names the rear port sharing the row (front ⇄ rear strand)."""
     return {
         "id": f"dev:{d.id}",
         "type": "device",
@@ -84,7 +84,7 @@ def _device_node(d, ports, panel=False):
 # ─── Cable endpoints ─────────────────────────────────────────────────────────
 
 # Point classification + the pass-through walk live in the shared module so
-# this builder and api/trace.py can't drift (they did once — see plan A1).
+# this builder and api/trace.py can't drift (they did once - see plan A1).
 from .cable_points import (  # noqa: E402
     KIND_OF as _KIND_OF,
     POINT_ATTRS as _POINT_ATTRS,
@@ -93,7 +93,7 @@ from .cable_points import (  # noqa: E402
 )
 
 
-# A power feed terminates on a PowerPanel, not a device — it has no `device`
+# A power feed terminates on a PowerPanel, not a device - it has no `device`
 # relation to prefetch and no place in device↔device topology. Prefetch the
 # device chain only for the device-bearing points; pull the power feed itself
 # without a device lookup (an invalid `power_feed__device` prefetch 500s the
@@ -140,7 +140,7 @@ def _physical_links(tenant):
 
 def _strand_of(port, kind, position=1):
     """The opposite side of an internal pass-through, or None for a leaf.
-    Front↔rear (patch panel) and outlet→inlet (PDU) — see cable_points.
+    Front↔rear (patch panel) and outlet→inlet (PDU) - see cable_points.
     A returned partner with ``obj is None`` means the mapping exists but the
     far port is missing (dangling strand); the collapse walk treats that as
     "stop here, keep the node"."""
@@ -153,7 +153,7 @@ def _strand_of(port, kind, position=1):
 
 def _is_splitter_side(kind, port):
     """True when the port belongs to a splitter (the rear input or any front
-    output). Splitters are real endpoints in every linear walk — one input
+    output). Splitters are real endpoints in every linear walk - one input
     fans out to N outputs, so 'walking through' with a single partner would
     silently pick one branch and fabricate a path."""
     if kind == "rear_port":
@@ -181,7 +181,7 @@ def _collapse(links):
         vias = []
         while kind in ("front_port", "rear_port"):
             if _is_splitter_side(kind, port):
-                # A splitter reached through panels is the walk's endpoint —
+                # A splitter reached through panels is the walk's endpoint -
                 # its fan-out is drawn as its own edges, never collapsed.
                 return (device, port, kind, vias)
             if port.id in seen:
@@ -195,7 +195,7 @@ def _collapse(links):
             hops = by_port.get((skind, sport.id), [])
             if not hops:
                 # Pass-through wired but the far side of the panel is uncabled
-                # — the path ends *at the panel*.
+                # - the path ends *at the panel*.
                 return (device, sport, skind, vias[:-1])
             _, device, port, kind = hops[0]
             position = spos
@@ -212,7 +212,7 @@ def _collapse(links):
             continue
         if a_panel and b_panel:
             continue  # panel-to-panel mid-segments are covered by the walks
-        # One end is a real component, the other a panel — walk through.
+        # One end is a real component, the other a panel - walk through.
         if a_panel:
             da, pa, ka, db, pb, kb = db, pb, kb, da, pa, ka
         res = walk(kb, pb, db)
@@ -340,7 +340,7 @@ def _build_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
     base = _devices_qs(tenant)
     if device_filter_q is not None:
         base = base.filter(device_filter_q)
-    # RBAC row/site scope — a Site-A viewer's graph must contain only devices
+    # RBAC row/site scope - a Site-A viewer's graph must contain only devices
     # they may view (applied to *both* the filtered and focus paths).
     if scope_q is not None:
         base = base.filter(scope_q)
@@ -364,7 +364,7 @@ def _build_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
                     keep.add(nb)
                     frontier.append((nb, d + 1))
         focus_qs = _devices_qs(tenant).filter(id__in=keep)
-        # The focus path rebuilds the device set from the BFS neighbourhood —
+        # The focus path rebuilds the device set from the BFS neighbourhood -
         # re-apply the RBAC row/site scope here too, or a Site-A viewer could
         # focus a known Site-B UUID and pull it + its neighbours.
         if scope_q is not None:
@@ -379,7 +379,7 @@ def _build_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
     # Panel flag: a device is a "panel" when every cabled end on it is a
     # front/rear port (pure pass-through). Uncabled devices aren't panels.
     # In collapse mode, panels whose runs were fully walked through carry no
-    # ports anymore — drop them instead of showing disconnected husks
+    # ports anymore - drop them instead of showing disconnected husks
     # (panels that remain endpoints of dangling runs keep their node).
     nodes = []
     for did, d in in_scope.items():
@@ -490,7 +490,7 @@ def _filter_q(params):
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
         description=(
-            "`{nodes, edges}` for the React Flow map — device stencil-card nodes "
+            "`{nodes, edges}` for the React Flow map - device stencil-card nodes "
             "with cabled ports and cable edges (port-to-port pairs, via panels), "
             "scoped to the caller's device.view grant."
         ),
@@ -529,13 +529,13 @@ def topology_view(request):
 
 
 def device_paths(device, viewable_ids=None):
-    """Flat end-to-end runs for every cabled port on a device — the cable
+    """Flat end-to-end runs for every cabled port on a device - the cable
     page's path-strip design, one strip per port. Each run alternates
     ``seg`` (a cable) and ``chip`` (a device + the ports the run used on it);
     panels are crossed front⇄rear like the topology collapse.
 
     ``viewable_ids`` (a set of device pks, or None = unrestricted) bounds which
-    devices' names/ids are revealed — a run that crosses into a device the
+    devices' names/ids are revealed - a run that crosses into a device the
     caller can't view renders a redacted ``(restricted)`` chip instead of
     leaking its name/ports (site-scope safe)."""
     from .fiber_colors import fiber_color, is_fiber_type
@@ -560,7 +560,7 @@ def device_paths(device, viewable_ids=None):
             "fiber_count": cab.fiber_count or None,
         }
         # On a strand-bearing fibre trunk, tag which strand this run threads
-        # through (its colour). Skip 2-strand duplex patch cords — the strand
+        # through (its colour). Skip 2-strand duplex patch cords - the strand
         # there is just TX/RX, not informative on the path.
         if strand and is_fiber_type(cab.type) and (cab.fiber_count or 0) > 2:
             col = fiber_color(strand, palette)
@@ -569,9 +569,9 @@ def device_paths(device, viewable_ids=None):
         return s
 
     def chip(dev, port_pairs, panel):
-        """``port_pairs`` = [(port_obj, kind)] — interface ports carry their
+        """``port_pairs`` = [(port_obj, kind)] - interface ports carry their
         id so the frontend can make the name itself a click target."""
-        # Redact devices outside the caller's view scope — a physical run can
+        # Redact devices outside the caller's view scope - a physical run can
         # cross into another site's device; show that a hop exists without
         # leaking its identity.
         if viewable_ids is not None and dev.id not in viewable_ids:
@@ -593,7 +593,7 @@ def device_paths(device, viewable_ids=None):
 
     def trace_outward(dev, port, kind, position, seen):
         """Follow front⇄rear pass-throughs outward from a cabled hop until a real
-        endpoint (or a dead-end). Returns ``(steps, complete)`` — steps starts
+        endpoint (or a dead-end). Returns ``(steps, complete)`` - steps starts
         with a chip and alternates chip/seg, always ending on a chip."""
         steps = []
         complete = True
@@ -602,7 +602,7 @@ def device_paths(device, viewable_ids=None):
                 steps.append(chip(dev, [(port, kind)], False))
                 break
             if _is_splitter_side(kind, port):
-                # A splitter legitimately ends the run — its N outputs are
+                # A splitter legitimately ends the run - its N outputs are
                 # separate runs, not a continuation.
                 steps.append(chip(dev, [(port, kind)], False))
                 break
@@ -645,9 +645,9 @@ def device_paths(device, viewable_ids=None):
             seen = {oport.id}
 
             if is_panel:
-                # This device IS a patch panel: draw the whole run *through* it —
+                # This device IS a patch panel: draw the whole run *through* it -
                 # the panel sits mid-path (highlighted), with the far endpoints on
-                # each side — instead of a fragment that starts at the panel.
+                # each side - instead of a fragment that starts at the panel.
                 right, a_complete = trace_outward(fdev, fport, fkind, 1, seen)
                 left = []
                 b_complete = True
@@ -678,7 +678,7 @@ def device_paths(device, viewable_ids=None):
                 steps = [origin_chip, seg(cab), *right]
 
             # A panel's run is discovered from both its front and rear port (and
-            # both cable orientations) — collapse those to one by cable set.
+            # both cable orientations) - collapse those to one by cable set.
             cable_ids = frozenset(
                 s["cable_id"] for s in steps if s["t"] == "seg" and s.get("cable_id")
             )
@@ -759,7 +759,7 @@ def cable_strand_path(cable, strand):
                 steps.append(dev_chip(dev, port, kind))
                 return steps, True
             if _is_splitter_side(kind, port):
-                # The cable's far end is a splitter — a real endpoint.
+                # The cable's far end is a splitter - a real endpoint.
                 steps.append(dev_chip(dev, port, kind))
                 return steps, True
             if port.id in seen:
@@ -767,7 +767,7 @@ def cable_strand_path(cable, strand):
                 return steps, False
             seen.add(port.id)
             s = _strand_of(port, kind, position)
-            if s is None:  # dangling strand — ends at the panel
+            if s is None:  # dangling strand - ends at the panel
                 steps.append(panel_chip(dev, port, None))
                 return steps, False
             skind, sport, spos = s

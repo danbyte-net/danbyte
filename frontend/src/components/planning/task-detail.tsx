@@ -46,8 +46,8 @@ import { UserPicker } from "./user-picker"
  * The task, not a form for the task.
  *
  * Title reads as the heading it is, the properties are chips you click, and the
- * description is prose until you click into it. Every property writes on pick —
- * the same one-small-PATCH behaviour as dragging a card between columns — so
+ * description is prose until you click into it. Every property writes on pick -
+ * the same one-small-PATCH behaviour as dragging a card between columns - so
  * there is no Save button and nothing to forget to press. Title and description
  * are the two free-text fields, and they commit on blur.
  */
@@ -59,7 +59,7 @@ export function TaskView({
 }: {
   task: PlanningTask
   statuses: PlanningStatus[]
-  /** `panel` is the board's side sheet — one narrow column. `page` is the
+  /** `panel` is the board's side sheet - one narrow column. `page` is the
    *  task's own route, where the content is centred and the properties sit in
    *  a rail beside it rather than under it. */
   layout: "panel" | "page"
@@ -260,7 +260,7 @@ export function TaskView({
     />
   )
 
-  /* The full page lays the same cells out as a strip under the title — the
+  /* The full page lays the same cells out as a strip under the title - the
      state of the task on one line, before the content starts. */
   const propertyBar = (
     <div className="flex flex-wrap items-start gap-x-8 gap-y-3 border-y border-border py-3">
@@ -458,7 +458,7 @@ function BarItem({
 
 /**
  * The board's side sheet: a quick look at a task without leaving the board.
- * Anything more than a glance belongs on the task's own page — the sheet's
+ * Anything more than a glance belongs on the task's own page - the sheet's
  * expand button goes there rather than growing a panel to fill the screen.
  */
 export function TaskDetailSheet({

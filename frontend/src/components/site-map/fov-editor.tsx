@@ -4,7 +4,7 @@ import type { SiteMapFov } from "@/lib/api"
 import { Slider } from "@/components/ui/slider"
 import { FormCheckbox } from "@/components/forms"
 
-// The map's FOV editor — a direct port of the floorplan TileInspector's
+// The map's FOV editor - a direct port of the floorplan TileInspector's
 // cone block (PTZ toggle + Direction / Angle / Reach sliders), with reach in
 // meters. Drags feed `onDraft` for live cone preview; releasing a slider
 // (onValueCommit) or toggling PTZ calls `onCommit` to persist.

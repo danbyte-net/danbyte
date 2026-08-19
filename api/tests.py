@@ -168,7 +168,7 @@ class ServiceTemplateTests(APITestCase):
             tenant=self.tenant, name="DNS", slug="dns",
             protocol="udp", ports=[53],
         )
-        # Belongs to another tenant — must not appear.
+        # Belongs to another tenant - must not appear.
         ServiceTemplate.objects.create(
             tenant=self.other_tenant, name="SSH", slug="ssh",
             protocol="tcp", ports=[22],
@@ -486,7 +486,7 @@ class CatalogCustomFieldsTests(APITestCase):
 
 
 class DcimChoicesEndpointTests(APITestCase):
-    """/api/dcim/choices/ — grouped media taxonomies for the type dropdowns."""
+    """/api/dcim/choices/ - grouped media taxonomies for the type dropdowns."""
 
     def setUp(self):
         org = Organization.objects.create(name="Acme", slug="acme")
@@ -504,7 +504,7 @@ class DcimChoicesEndpointTests(APITestCase):
         self.assertIn("Virtual", iface_groups)
         self.assertIn("Ethernet (pluggable transceivers)", iface_groups)
         cable_groups = {r["group"] for r in body["cable_types"]}
-        self.assertIn("Fiber — single-mode", cable_groups)
+        self.assertIn("Fiber - single-mode", cable_groups)
 
     def test_grouped_choices_validate_and_display(self):
         # Grouped (optgroup) choices still validate on the model field and
@@ -520,7 +520,7 @@ class DcimChoicesEndpointTests(APITestCase):
         self.assertEqual(r.json()["type_display"], "10GBASE-LR (10GE)")
 
     def test_legacy_slugs_survive(self):
-        # Every slug shipped before the 2026-07 expansion must still exist —
+        # Every slug shipped before the 2026-07 expansion must still exist -
         # rows in existing databases keep resolving to a label.
         body = self.client.get("/api/dcim/choices/").json()
         iface = {r["value"] for r in body["interface_types"]}
@@ -632,7 +632,7 @@ class RackPlacementTests(APITestCase):
 
 
 class PrefixPopulatePoolTests(APITestCase):
-    """POST /api/prefixes/<id>/populate/ — bulk-add a pool of host IPs."""
+    """POST /api/prefixes/<id>/populate/ - bulk-add a pool of host IPs."""
 
     def setUp(self):
         org = Organization.objects.create(name="Acme", slug="acme")
@@ -713,7 +713,7 @@ class PrefixPopulatePoolTests(APITestCase):
         self.assertEqual(r.status_code, 400, r.content)
 
     def test_rejects_over_cap(self):
-        # /23 usable is 510 hosts — but a range of >1024 trips the cap. Use a
+        # /23 usable is 510 hosts - but a range of >1024 trips the cap. Use a
         # wide contiguous span inside a large prefix.
         big = Prefix.objects.create(
             tenant=self.tenant, cidr="10.20.0.0/16", status=status_for(self.tenant)

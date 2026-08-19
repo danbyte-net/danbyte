@@ -8,7 +8,7 @@ Both are **opt-in** and conservative:
   tell auto-created rows from user-entered ones. Bounded by
   ``discovery_min_prefix_length`` so nobody accidentally sweeps a /8.
 * **Cleanup** deletes **discovered** IPs that have been unreachable longer than
-  ``cleanup_after_days`` — user-created IPs are never touched.
+  ``cleanup_after_days`` - user-created IPs are never touched.
 
 IPv4 only: a meaningful ICMP sweep of a large IPv6 range is infeasible.
 """
@@ -38,7 +38,7 @@ def auto_discovered_status(tenant):
     Not seeded at install (zero-pre-filled-data): it's a normal, fully editable
     Status row, created the first time discovery finds a new responder. New
     discovered IPs get this status so a human must review and promote them to a
-    real status (Active, etc.) — discovery never silently marks hosts active.
+    real status (Active, etc.) - discovery never silently marks hosts active.
     """
     from api.models import Status
 
@@ -47,10 +47,10 @@ def auto_discovered_status(tenant):
         slug="auto-discovered",
         defaults={
             "name": "Auto-discovered",
-            "color": "#f59e0b",  # amber — "needs review"
+            "color": "#f59e0b",  # amber - "needs review"
             "is_available": False,
             "available_to": ["ipaddress"],
-            "description": "Found by subnet discovery — review and set a real "
+            "description": "Found by subnet discovery - review and set a real "
             "status (e.g. Active).",
         },
     )
@@ -66,7 +66,7 @@ def _sweep_hosts(hosts: list[str], cidr: str = "") -> list[str]:
         shard = hosts[i : i + _shard_size()]
         try:
             results = asyncio.run(_multiping(shard, count=1, timeout_ms=1000))
-        except Exception as e:  # noqa: BLE001 — a failed shard mustn't abort the rest
+        except Exception as e:  # noqa: BLE001 - a failed shard mustn't abort the rest
             log.warning("discovery sweep failed for %s: %s", cidr or "shard", e)
             continue
         alive.extend(h.address for h in results if h.is_alive)
@@ -75,7 +75,7 @@ def _sweep_hosts(hosts: list[str], cidr: str = "") -> list[str]:
 
 def _create_for_alive(prefix, alive: list[str], now) -> int:
     """Create auto-discovered IPs for responders not already recorded. Safe to
-    run concurrently across shard jobs — disjoint host sets, and the unique
+    run concurrently across shard jobs - disjoint host sets, and the unique
     constraint + IntegrityError guard cover any race with a user-created row."""
     from api.models import IPAddress
 
@@ -164,7 +164,7 @@ def _run_conn():
 
 
 def _bump_run(run_id, *, hosts: int, responders: int, created: int) -> None:
-    """One shard finished — atomically advance the run's counters and flip
+    """One shard finished - atomically advance the run's counters and flip
     ``done`` once every shard has reported. Never raises into the job."""
     try:
         conn = _run_conn()
@@ -179,7 +179,7 @@ def _bump_run(run_id, *, hosts: int, responders: int, created: int) -> None:
         if total and shards_done >= total:
             conn.hset(key, "done", 1)
         conn.expire(key, _RUN_TTL)
-    except Exception as e:  # noqa: BLE001 — progress is best-effort
+    except Exception as e:  # noqa: BLE001 - progress is best-effort
         log.warning("discovery progress update failed for run %s: %s", run_id, e)
 
 
@@ -337,7 +337,7 @@ def enqueue_bulk_discovery(prefixes, settings, owner_id=None) -> dict:
             _run_key(run_id),
             mapping={
                 "cidr": f"{len(plan)} prefix{'es' if len(plan) != 1 else ''}",
-                # All prefixes came from one tenant's scoped queryset — bind it.
+                # All prefixes came from one tenant's scoped queryset - bind it.
                 "tenant": str(plan[0][0].tenant_id),
                 "owner": str(owner_id) if owner_id is not None else "",
                 "shards_total": shards_total,
@@ -374,7 +374,7 @@ def discovery_candidates(tenant, settings):
 
     * Global switch ``discovery_all_prefixes`` → every prefix.
     * Otherwise, each prefix flagged ``auto_discover`` (a "master") **plus its
-      descendant prefixes** (containment within the same VRF) — so marking a
+      descendant prefixes** (containment within the same VRF) - so marking a
       parent subnet enrols all its children.
 
     Containment is matched in python over the tenant's prefixes (modest counts);
@@ -459,7 +459,7 @@ def _prefix_due(prefix, settings, now) -> bool:
 
 
 def sweep_work_for_engine(engine, now=None) -> list[dict]:
-    """The discovery prefixes a remote Outpost should sweep — those resolving to
+    """The discovery prefixes a remote Outpost should sweep - those resolving to
     this engine, due, and small enough. Returns ``[{prefix_id, cidr}]``; the
     agent sweeps each locally and posts back live IPs to ``ingest_discovered``."""
     from .engines import engine_for_prefix
@@ -485,7 +485,7 @@ def sweep_work_for_engine(engine, now=None) -> list[dict]:
 
 
 def ingest_discovered(prefix_id, alive, tenant, now=None) -> int:
-    """Persist an Outpost's sweep result — create IPs for new responders (the
+    """Persist an Outpost's sweep result - create IPs for new responders (the
     same path a local sweep uses) and stamp the sweep time."""
     from api.models import Prefix
 

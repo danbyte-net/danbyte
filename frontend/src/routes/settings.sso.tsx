@@ -65,7 +65,7 @@ function protocolLabel(p: SsoProtocol): string {
   return p === "saml" ? "SAML" : "OIDC"
 }
 
-/** A read-only URL row with a copy button — the values to register at the IdP. */
+/** A read-only URL row with a copy button - the values to register at the IdP. */
 function ReadonlyUrl({
   label,
   hint,
@@ -91,7 +91,7 @@ function ReadonlyUrl({
 }
 
 function SsoSettingsPage() {
-  // Deployment-wide auth config — gate here (the backend also enforces it; the
+  // Deployment-wide auth config - gate here (the backend also enforces it; the
   // hidden nav link is only a UI convenience).
   const { canManageDeployment, isLoading } = useMe()
   if (isLoading)
@@ -372,7 +372,7 @@ function ProviderDialog({
         claim_groups: claimGroups.trim(),
         jit_provisioning: jit,
       }
-      // Only send the secret when the admin actually typed one — a blank field
+      // Only send the secret when the admin actually typed one - a blank field
       // on edit means "keep the stored secret".
       if (clientSecret) payload.client_secret = clientSecret
       if (isEdit)
@@ -516,7 +516,7 @@ function ProviderDialog({
                 onChange={setSamlMetadataUrl}
                 placeholder="https://login.microsoftonline.com/<tenant>/federationmetadata/2007-06/federationmetadata.xml?appid=<app-id>"
                 error={fieldErrors.saml_idp_metadata_url}
-                hint="Recommended. On save, Danbyte fills the entity ID, SSO URL, and signing cert(s) below from this — and re-reads them so cert rotation just works. Leave blank on fully offline installs and fill the three fields by hand."
+                hint="Recommended. On save, Danbyte fills the entity ID, SSO URL, and signing cert(s) below from this - and re-reads them so cert rotation just works. Leave blank on fully offline installs and fill the three fields by hand."
               />
               <FormText
                 label="IdP entity ID"
@@ -543,7 +543,7 @@ function ProviderDialog({
             </div>
           )}
 
-          {/* Read-only URLs to register at the IdP — differ by protocol. */}
+          {/* Read-only URLs to register at the IdP - differ by protocol. */}
           {isEdit && protocol === "oidc" && provider.callback_url && (
             <ReadonlyUrl
               label="Callback URL"
@@ -577,7 +577,7 @@ function ProviderDialog({
               />
               <ReadonlyUrl
                 label="SP metadata URL"
-                hint="Optional — some IdPs import SP config from this URL"
+                hint="Optional - some IdPs import SP config from this URL"
                 value={provider.metadata_url}
               />
             </div>

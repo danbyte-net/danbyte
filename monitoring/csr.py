@@ -1,4 +1,4 @@
-"""Certificate signing requests — key + CSR generation and issued-cert import.
+"""Certificate signing requests - key + CSR generation and issued-cert import.
 
 Danbyte generates the key pair and the CSR. The **private key** is written to
 the opt-in secret store (fail closed when none is enabled) and never persisted
@@ -93,7 +93,7 @@ def generate(
     """Generate a key pair + CSR. Returns ``(request, private_key_pem)``.
 
     The private key is stored in the secret store and also returned once here so
-    the operator can save it — it is the caller's only chance to receive it in
+    the operator can save it - it is the caller's only chance to receive it in
     the response body. Fail-closed: no secret store → :class:`SecretStoreDisabled`.
     """
     if not (common_name or "").strip():
@@ -182,12 +182,12 @@ def import_issued(req: CertificateRequest, pem_text: str):
             )
             if want != got:
                 raise CsrError(
-                    "This certificate's public key does not match the request — "
+                    "This certificate's public key does not match the request - "
                     "it was signed for a different key."
                 )
         except CsrError:
             raise
-        except Exception:  # noqa: BLE001 — a parse hiccup shouldn't block import
+        except Exception:  # noqa: BLE001 - a parse hiccup shouldn't block import
             pass
 
     try:
@@ -214,5 +214,5 @@ def delete_key(req: CertificateRequest) -> None:
         return
     try:
         require_secret_store().delete(req.tenant_id, req.key_ref)
-    except Exception:  # noqa: BLE001 — store disabled/unreachable: nothing to do
+    except Exception:  # noqa: BLE001 - store disabled/unreachable: nothing to do
         pass

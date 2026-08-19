@@ -368,7 +368,7 @@ function AcmeTab({
       }),
     onSuccess: () => {
       toast.success(
-        "Issuing — the record is published and the order finalizes."
+        "Issuing - the record is published and the order finalizes."
       )
       invalidate()
     },
@@ -384,7 +384,7 @@ function AcmeTab({
         }),
       }),
     onSuccess: () => {
-      toast.success("Order opened — publish the record below, then finalize.")
+      toast.success("Order opened - publish the record below, then finalize.")
       invalidate()
     },
     onError: (e) => apiErrorToast(e),
@@ -514,7 +514,7 @@ function OrderCard({
       }),
     onSuccess: () => {
       toast.success(
-        "Finalizing — checking the challenge and downloading the cert."
+        "Finalizing - checking the challenge and downloading the cert."
       )
       onChanged()
     },

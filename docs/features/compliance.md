@@ -4,8 +4,8 @@ icon: lucide/shield-check
 
 # Compliance
 
-Compliance lets you write **rules** about your own data — "every prefix must have
-a description", "active IPs need a DNS name", "devices need a serial number" — and
+Compliance lets you write **rules** about your own data - "every prefix must have
+a description", "active IPs need a DNS name", "devices need a serial number" - and
 then see every object that breaks them, on demand.
 
 Danbyte ships **zero rules**. The policy is entirely yours to define, so the
@@ -17,7 +17,7 @@ checks match how your organisation actually works. You'll find everything under
 A rule is a single assertion of the form: *objects of type **X** must (or must
 not) have property **Y***. When you open the Compliance page, Danbyte evaluates
 every enabled rule against your live data and lists the rows that fail. Nothing
-is stored — results are always computed fresh from the current data.
+is stored - results are always computed fresh from the current data.
 
 ## Create a rule
 
@@ -29,9 +29,9 @@ is stored — results are always computed fresh from the current data.
    |---|---|
    | **Name** | A short label for the rule. |
    | **Description** | Optional note explaining the rationale. |
-   | **How to fix** | Optional **Markdown remediation guide** — step-by-step instructions rendered wherever the rule's violations appear (see below). |
+   | **How to fix** | Optional **Markdown remediation guide** - step-by-step instructions rendered wherever the rule's violations appear (see below). |
    | **Enabled** | Turn the rule off to skip it during evaluation without deleting it. |
-   | **Severity** | `Critical`, `Warning`, or `Info`. Used for sorting and triage — it does not block or enforce anything. |
+   | **Severity** | `Critical`, `Warning`, or `Info`. Used for sorting and triage - it does not block or enforce anything. |
    | **Object type** | What the rule applies to: prefix, IP address, device, VLAN, VRF, or site. |
    | **Check type** | The kind of assertion (see below). |
    | **Parameters** | The field, pattern, tag, or custom-field key the check needs. Only the relevant inputs appear once you pick a check type. |
@@ -49,7 +49,7 @@ is stored — results are always computed fresh from the current data.
 | **Required custom field** | A given custom-field key is set. | The custom-field key |
 
 !!! note "Regex ignores empty values"
-    A **Regex** check passes for objects where the field is blank — it only
+    A **Regex** check passes for objects where the field is blank - it only
     judges values that are actually present. If you want a field to be both set
     *and* well-formed, write two rules: one **Required** and one **Regex**. That
     keeps blanks from being reported twice. (Empty means `null`, `""`, an empty
@@ -82,8 +82,8 @@ For example:
 | `q` | Free-text search over object and rule name (the search box). |
 | `severity` | Comma-separated severities (`critical`, `warning`, `info`). |
 | `type` | Comma-separated object types (`device`, `prefix`, …). |
-| `rule` | A single rule id — only that rule's violations. |
-| `device` | A single object id — only that object's violations. |
+| `rule` | A single rule id - only that rule's violations. |
+| `device` | A single object id - only that object's violations. |
 
 `rule` and `device` are deep-link filters: when present they appear as
 dismissible chips next to the search box. The same parameters are accepted by
@@ -99,7 +99,7 @@ total unfiltered.
 ### Rule detail page
 
 Click a rule name to open its detail page. It shows the rule's configuration plus
-an **affected objects** table — the rows it currently fails, rendered with the
+an **affected objects** table - the rows it currently fails, rendered with the
 same columns you'd see on that object type's normal list. A **Re-evaluate**
 button refreshes it on demand. If the rule has a **How to fix** guide, it is
 rendered above the affected-objects table.
@@ -115,13 +115,13 @@ bold/italic, and `https://` links, and is rendered:
 - on the per-device compliance page, expandable per failing rule via
   **How to fix**.
 
-The renderer never interprets raw HTML — markup in the guide is shown as plain
+The renderer never interprets raw HTML - markup in the guide is shown as plain
 text.
 
 ### Per-device compliance page
 
 Every device has a dedicated compliance status page at
-`/devices/<id>/compliance`. It shows either **"All green — no violations"**
+`/devices/<id>/compliance`. It shows either **"All green - no violations"**
 when the device passes every enabled rule, or one card per failing rule with
 its severity, what the rule asserts, and the expandable remediation guide.
 Config drift (from IaC integrations) appears here too, linking to the
@@ -133,8 +133,8 @@ the device itself.
 
 ### Violation markers on objects
 
-Wherever a compliance object appears — its detail page header and its row in list
-pages — a small warning marker shows up if that object is failing any rule. The
+Wherever a compliance object appears - its detail page header and its row in list
+pages - a small warning marker shows up if that object is failing any rule. The
 marker is tinted by the worst severity (critical = red, warning = amber,
 info = neutral) and its tooltip names the failing rules. For **devices** the
 marker links to that device's compliance page; for other object types it links

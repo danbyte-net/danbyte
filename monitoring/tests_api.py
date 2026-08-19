@@ -1,4 +1,4 @@
-"""Milestone 6/8 tests — the monitoring REST slice the IP Monitoring tab uses."""
+"""Milestone 6/8 tests - the monitoring REST slice the IP Monitoring tab uses."""
 from __future__ import annotations
 
 import socket
@@ -238,7 +238,7 @@ class MonitoringApiTests(APITestCase):
 
 
 class BulkStatusPostTests(MonitoringApiTests):
-    """POST body variant of the bulk status endpoint — a page of ~110 UUIDs
+    """POST body variant of the bulk status endpoint - a page of ~110 UUIDs
     makes a GET URL longer than gunicorn's request-line limit, so the SPA
     POSTs the id lists instead."""
 

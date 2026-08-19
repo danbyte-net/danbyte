@@ -1,6 +1,6 @@
 """Placement: which Site a synced host or VM lands in (#34).
 
-The evaluator is pure — no queries — so these are fast unit tests over the
+The evaluator is pure - no queries - so these are fast unit tests over the
 resolution rules themselves. Wiring into the sync engines is covered in
 tests_virt_sync.
 """
@@ -144,7 +144,7 @@ class ResolveTests(TestCase):
                          self.dr)
 
     def test_an_unknown_name_places_nothing_and_explains(self):
-        """A Site is a physical fact — the sync never invents one."""
+        """A Site is a physical fact - the sync never invents one."""
         got = self._resolve(PlacementPath(datacenter="Nowhere"))
         self.assertIsNone(got.site)
         self.assertEqual(Site.objects.count(), 3)

@@ -42,7 +42,7 @@ VALID_KINDS = {
 
 class RegistryDerivationTests(APITestCase):
     def test_every_declared_field_exists_on_its_model(self):
-        """A typo in a bulk_*/editable_* tuple is otherwise unguarded — it only
+        """A typo in a bulk_*/editable_* tuple is otherwise unguarded - it only
         surfaces as a 500 inside bulk_update's flatchoices lookup."""
         missing = []
         for model, spec in covered_models():
@@ -60,7 +60,7 @@ class RegistryDerivationTests(APITestCase):
 
     def test_every_declared_field_gets_a_descriptor(self):
         """If a declared field yields no descriptor, the endpoint silently drops
-        it and it becomes unplannable — worth failing loudly instead."""
+        it and it becomes unplannable - worth failing loudly instead."""
         dropped = []
         for model, spec in covered_models():
             declared = {
@@ -222,7 +222,7 @@ class BulkAgreementTests(_Base):
         advertised = {d.key for d in fields_for(Interface)}
         self.assertTrue(
             advertised <= set(samples),
-            f"No sample value for {sorted(advertised - set(samples))} — extend "
+            f"No sample value for {sorted(advertised - set(samples))} - extend "
             f"this test when the allow-list grows.",
         )
         for key in sorted(advertised):

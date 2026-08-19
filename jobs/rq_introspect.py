@@ -1,6 +1,6 @@
 """Read-only introspection of RQ queues, jobs and workers.
 
-RQ already stores everything we need in Redis — queued job ids live on the queue,
+RQ already stores everything we need in Redis - queued job ids live on the queue,
 and the started/finished/failed/deferred/scheduled job ids live in per-queue
 registries. This module turns that raw state into plain dicts the SPA can render,
 and provides the few mutating helpers the Jobs detail page needs (requeue/cancel).
@@ -86,7 +86,7 @@ def _state_count(queue: Queue, state: str) -> int:
             return queue.count
         reg = _REGISTRIES[state](queue=queue)
         return reg.count
-    except Exception:  # noqa: BLE001 — a missing registry just means zero
+    except Exception:  # noqa: BLE001 - a missing registry just means zero
         return 0
 
 
@@ -123,7 +123,7 @@ def _safe_func_name(job: Job):
     in the hash and survive, so degrade to those instead of raising."""
     try:
         return job.func_name or "", False
-    except Exception:  # noqa: BLE001 — DeserializationError, ModuleNotFoundError, …
+    except Exception:  # noqa: BLE001 - DeserializationError, ModuleNotFoundError, …
         return None, True
 
 
@@ -161,9 +161,9 @@ def job_detail(job: Job, state: str) -> dict:
     base = job_brief(job, state)
     try:
         result = job.return_value()
-    except Exception:  # noqa: BLE001 — result hash may have expired
+    except Exception:  # noqa: BLE001 - result hash may have expired
         result = None
-    # args/kwargs also deserialise the payload — guard like func_name.
+    # args/kwargs also deserialise the payload - guard like func_name.
     try:
         args = [_truncate(a, 500) for a in (job.args or ())]
         kwargs = {k: _truncate(v, 500) for k, v in (job.kwargs or {}).items()}
@@ -268,7 +268,7 @@ def list_jobs(state: str = "all", queue: str = "all", limit: int = 50, offset: i
 def fetch_one(job_id: str):
     try:
         job = Job.fetch(job_id, connection=_conn())
-    except Exception:  # noqa: BLE001 — NoSuchJobError or expired hash
+    except Exception:  # noqa: BLE001 - NoSuchJobError or expired hash
         return None
     try:
         state = job.get_status()
@@ -289,7 +289,7 @@ def requeue_job(job_id: str) -> bool:
     try:
         job.requeue()
         return True
-    except Exception:  # noqa: BLE001 — only failed jobs can be requeued
+    except Exception:  # noqa: BLE001 - only failed jobs can be requeued
         return False
 
 
@@ -301,7 +301,7 @@ def cancel_job(job_id: str) -> bool:
     job, _ = res
     try:
         job.cancel()
-    except Exception:  # noqa: BLE001 — already finished/cancelled is fine
+    except Exception:  # noqa: BLE001 - already finished/cancelled is fine
         pass
     try:
         job.delete()

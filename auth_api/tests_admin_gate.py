@@ -1,8 +1,8 @@
 """Admin-settings gating (#87).
 
 `auth_api.permissions.can_manage_admin` is the single gate the deployment
-(Email), LDAP, and Monitoring settings endpoints — plus `me_json`'s
-`can_manage_users` — all share. These tests pin its branches and assert the
+(Email), LDAP, and Monitoring settings endpoints - plus `me_json`'s
+`can_manage_users` - all share. These tests pin its branches and assert the
 three write endpoints actually enforce it, so the unification can't silently
 regress (e.g. an endpoint reverting to a bespoke check).
 """
@@ -45,7 +45,7 @@ class CanManageAdminUnitTests(TestCase):
         self.assertTrue(can_manage_admin(u, self.tenant))
 
     def test_rbac_change_on_user_allowed_without_legacy_role(self):
-        # Administrator provisioned purely via an (unscoped) RBAC grant — no
+        # Administrator provisioned purely via an (unscoped) RBAC grant - no
         # legacy `users.manage` slug. This is the case the helper exists to fix.
         u = self._user("rbacadmin")
         perm = ObjectPermission.objects.create(
@@ -74,7 +74,7 @@ class CanManageAdminUnitTests(TestCase):
 
 
 class AdminSettingsEndpointGateTests(APITestCase):
-    """Every admin-settings write must 403 a non-admin and admit a superuser —
+    """Every admin-settings write must 403 a non-admin and admit a superuser -
     proving each endpoint routes through `can_manage_admin`."""
 
     # (url, method) for each gated write.

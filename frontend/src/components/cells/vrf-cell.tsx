@@ -5,7 +5,7 @@ import { ColorBadge } from "@/components/cells/color-badge"
 import { SortHeader } from "@/components/data-table"
 
 // Canonical "render a VRF" + "VRF column" pair. Every list page that
-// surfaces a VRF MUST go through here — never inline a chip.
+// surfaces a VRF MUST go through here - never inline a chip.
 //
 // Anatomy:
 //   <VrfCell vrf={...} linked />       single inline render

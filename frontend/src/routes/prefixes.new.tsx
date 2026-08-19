@@ -8,7 +8,7 @@ import { useCloneSeed } from "@/lib/use-clone"
 import { planSearch } from "@/lib/save-object"
 
 export const Route = createFileRoute("/prefixes/new")({
-  // `clone` is spread in so it stays an OPTIONAL search key — the other four are
+  // `clone` is spread in so it stays an OPTIONAL search key - the other four are
   // long-standing required-but-nullable keys that every existing
   // `<Link to="/prefixes/new">` already spells out, and making clone required
   // would force all of them to pass `clone: undefined`.
@@ -38,7 +38,7 @@ function NewPrefixPage() {
       title={cloning ? "Clone prefix" : "Add prefix"}
       subtitle={
         cloning
-          ? "Pre-filled from an existing prefix — enter the new CIDR."
+          ? "Pre-filled from an existing prefix - enter the new CIDR."
           : "Register a new IP prefix in the active tenant."
       }
     >

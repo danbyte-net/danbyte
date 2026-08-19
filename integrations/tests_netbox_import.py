@@ -1,4 +1,4 @@
-"""NetBox importer — driven by a fake client returning canned NetBox JSON.
+"""NetBox importer - driven by a fake client returning canned NetBox JSON.
 
 The importer had zero tests, which is how the tag-tenancy regression (tags
 became tenant-scoped; the importer still created them global) shipped
@@ -298,7 +298,7 @@ class ApiTests(ImporterBase):
         self.assertNotIn("token", body)
 
     def test_run_clears_the_token_when_finished(self):
-        # The worker entry point wipes the credential on any terminal state —
+        # The worker entry point wipes the credential on any terminal state -
         # a migration token must not outlive the migration.
         from unittest import mock
 
@@ -328,7 +328,7 @@ class ApiTests(ImporterBase):
 
 
 class InsecureFlagTests(ImporterBase):
-    """'Allow self-signed certificate' must reach the RUN, not just the test —
+    """'Allow self-signed certificate' must reach the RUN, not just the test -
     the bug was verify=True hardcoded in the worker while the connection test
     honored the flag, so testing succeeded and every fetch then failed."""
 
@@ -456,7 +456,7 @@ class DryRunReportTests(ImporterBase):
              "tags": [{"name": "prod", "slug": "prod"}]},
         ],
         "dcim/cables": [
-            # planned cable, no endpoints yet — a skip, not a failure
+            # planned cable, no endpoints yet - a skip, not a failure
             {"id": 70, "a_terminations": [], "b_terminations": []},
             {"id": 71,
              "a_terminations": [
@@ -491,7 +491,7 @@ class DryRunReportTests(ImporterBase):
         self.assertEqual(fp["skipped"], 1)
         self.assertEqual(fp["fetched"], 2)  # skips still count as fetched
         self.assertTrue(
-            any("front_ports: 1 skipped — rear port not imported" in n
+            any("front_ports: 1 skipped - rear port not imported" in n
                 for n in report["notes"]),
             report["notes"],
         )
@@ -662,7 +662,7 @@ class FloorplanImportTests(ImporterBase):
         self.assertEqual(imp.stats["floor_plans"]["failed"], 0)
         self.assertFalse(any("floor_plans" in f for f in imp.failures))
         self.assertTrue(
-            any("floor_plans: not imported — optional endpoint" in n
+            any("floor_plans: not imported - optional endpoint" in n
                 for n in imp.notes),
             imp.notes,
         )

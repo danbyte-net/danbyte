@@ -46,7 +46,7 @@ export function DeviceTypeDeleteDialog({
           <AlertDialogTitle>Delete {deviceType?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {n > 0
-              ? `${n} device${n === 1 ? "" : "s"} use this type — they'll keep working but lose their type reference.`
+              ? `${n} device${n === 1 ? "" : "s"} use this type - they'll keep working but lose their type reference.`
               : "This action can't be undone."}
           </AlertDialogDescription>
         </AlertDialogHeader>

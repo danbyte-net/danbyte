@@ -116,7 +116,7 @@ function DhcpScopesPage() {
           ) : (
             <span
               className="text-xs text-muted-foreground"
-              title="Danbyte-owned scope — no DHCP server behind it"
+              title="Danbyte-owned scope - no DHCP server behind it"
             >
               Local
             </span>

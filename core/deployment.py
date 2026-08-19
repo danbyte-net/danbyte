@@ -1,4 +1,4 @@
-"""Deployment-wide Email & Delivery settings — SPA JSON endpoints.
+"""Deployment-wide Email & Delivery settings - SPA JSON endpoints.
 
 A singleton (``DeploymentSettings``) edited only by users with ``users.manage``.
 The SMTP password is write-only and stored Fernet-encrypted; reads expose
@@ -130,7 +130,7 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
         return request.build_absolute_uri(url) if request else url
 
     def validate_ssrf_allowlist(self, value):
-        """Each entry must parse as an address/CIDR — a typo that silently
+        """Each entry must parse as an address/CIDR - a typo that silently
         never matches would look like the setting is broken."""
         import ipaddress
 
@@ -201,7 +201,7 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
 
 
 def _require_manage(request):
-    # Deployment-wide settings: a tenant-narrowed admin grant does NOT pass —
+    # Deployment-wide settings: a tenant-narrowed admin grant does NOT pass -
     # only superusers / global users.manage / unscoped user-change grants.
     # Tenant admins get /api/tenant-settings/ instead.
     return can_manage_deployment(request.user)
@@ -233,7 +233,7 @@ def deployment_settings(request):
         ser.is_valid(raise_exception=True)
         ser.save()
         # A changed idle timeout must take effect promptly, not after the cache
-        # TTL — drop the cached value so the next request re-reads it.
+        # TTL - drop the cached value so the next request re-reads it.
         from core.middleware import clear_idle_timeout_cache
 
         clear_idle_timeout_cache()
@@ -253,7 +253,7 @@ def deployment_settings(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def deployment_end_all_sessions(request):
-    """Delete all active sessions — an emergency "log everyone out" switch (e.g.
+    """Delete all active sessions - an emergency "log everyone out" switch (e.g.
     after a suspected compromise or a permissions overhaul). This signs out the
     caller too. API tokens are unaffected. Deployment admins only."""
     if not _require_manage(request):
@@ -264,13 +264,13 @@ def deployment_end_all_sessions(request):
     Session.objects.all().delete()
     # Flush the caller's own session too. Without this, SessionMiddleware
     # re-saves it at response time (the idle-timeout middleware marks it
-    # modified), resurrecting the very session we just deleted — so the admin
+    # modified), resurrecting the very session we just deleted - so the admin
     # who hit this button would stay logged in.
     request.session.flush()
     return Response({"ended": count})
 
 
-# Upload cap — a favicon is tiny; anything larger is a mistake or abuse.
+# Upload cap - a favicon is tiny; anything larger is a mistake or abuse.
 FAVICON_MAX_BYTES = 1024 * 1024
 FAVICON_MAX_DIM = 1024
 
@@ -298,7 +298,7 @@ FAVICON_MAX_DIM = 1024
 def deployment_favicon(request):
     """Set (POST multipart ``favicon``) or clear (DELETE) the custom browser-tab
     icon. Deployment-wide branding, so ``users.manage`` only. Rejects anything
-    Pillow can't open as a raster image — which also rules out SVG, keeping a
+    Pillow can't open as a raster image - which also rules out SVG, keeping a
     script-carrying SVG off the same-origin media path."""
     if not _require_manage(request):
         return Response({"detail": "users.manage required."}, status=403)
@@ -319,8 +319,8 @@ def deployment_favicon(request):
         return Response(
             {"detail": "Favicon too large (max 1 MB)."}, status=400
         )
-    # Validate it's a real raster image (also rejects SVG — Pillow can't open
-    # it — so no active content lands on the media origin).
+    # Validate it's a real raster image (also rejects SVG - Pillow can't open
+    # it - so no active content lands on the media origin).
     try:
         from PIL import Image
 
@@ -344,14 +344,14 @@ def deployment_favicon(request):
     return Response(DeploymentSettingsSerializer(obj, context=ctx).data)
 
 
-# ── optional built-in device fields — admin-controlled visibility ────────
+# ── optional built-in device fields - admin-controlled visibility ────────
 # Server-side defaults applied when a key is absent from the stored dict.
 DEVICE_FIELD_VISIBILITY_DEFAULTS = {
     "comments": True,
     "location": True,
     "cluster": False,
     "airflow": False,
-    # The site map is a first-class surface — coordinates default to visible
+    # The site map is a first-class surface - coordinates default to visible
     # so a device can be placed without a settings hunt. (Deployments that
     # stored an explicit False keep their choice; stored values win.)
     "latitude": True,
@@ -361,7 +361,7 @@ DEVICE_FIELD_VISIBILITY_DEFAULTS = {
 
 # ── floor-plan tile popover ─────────────────────────────────────────────────
 # The field vocabulary the popover can render. Must stay in step with the
-# registry in frontend/src/components/floorplan/tile-popover.tsx — this list is
+# registry in frontend/src/components/floorplan/tile-popover.tsx - this list is
 # what the settings UI offers and what the API will persist.
 #
 # Custom fields are NOT listed: they're user-defined, so they're accepted
@@ -400,7 +400,7 @@ FLOORPLAN_POPOVER_FIELDS = [
 ]
 
 # Custom fields ride a generic `cf_<key>` convention rather than being enumerated
-# — the key set is whatever the tenant defined.
+# - the key set is whatever the tenant defined.
 CF_FIELD_RE = re.compile(r"^cf_[A-Za-z0-9_-]{1,64}$")
 
 # Scope keys for per-type overrides: "tt:<tile-type-slug>" / "role:<role-slug>".
@@ -488,7 +488,7 @@ def clean_popover_fields(value) -> list:
     """Keep only usable field keys, in the given order, deduped.
 
     A key is usable if it's in the built-in vocabulary OR is a `cf_<key>` custom
-    field. Custom fields are matched by shape, not by an enumerated list — the
+    field. Custom fields are matched by shape, not by an enumerated list - the
     tenant defines them, so anything else would mean shipping their data.
     """
     if not isinstance(value, list):
@@ -506,7 +506,7 @@ def clean_popover_fields(value) -> list:
 def clean_popover_overrides(value) -> dict:
     """Per-scope field lists, keyed "tt:<slug>" / "role:<slug>".
 
-    Drops unknown scope shapes and empty lists — an absent scope inherits the
+    Drops unknown scope shapes and empty lists - an absent scope inherits the
     global list, so storing an empty one would be a silent "show nothing".
     """
     if not isinstance(value, dict):
@@ -530,7 +530,7 @@ class FloorplanPopoverSerializer(serializers.Serializer):
     list, so the two never drift apart (unlike copying the list onto every type).
 
     Unknown keys are dropped on read *and* write, so removing a field from the
-    registry can't leave stale config behind. (Not named ``fields`` — that
+    registry can't leave stale config behind. (Not named ``fields`` - that
     collides with ``Serializer.fields``.)
     """
 
@@ -556,7 +556,7 @@ class FloorplanPopoverSerializer(serializers.Serializer):
             ),
             # The vocabulary the UI renders its checklist from, so the field list
             # lives in one place (here) rather than being duplicated client-side.
-            # `cf_*` keys aren't listed — the UI adds those from the tenant's own
+            # `cf_*` keys aren't listed - the UI adds those from the tenant's own
             # custom-field definitions.
             "available": list(FLOORPLAN_POPOVER_FIELDS),
             "defaults": list(FLOORPLAN_POPOVER_FIELD_DEFAULTS),
@@ -596,7 +596,7 @@ class FloorplanPopoverSerializer(serializers.Serializer):
 @api_view(["GET", "PUT"])
 @permission_classes([IsAuthenticated])
 def floorplan_popover(request):
-    """Deployment-wide popover config — the default every tenant inherits."""
+    """Deployment-wide popover config - the default every tenant inherits."""
     if not _require_manage(request):
         return Response({"detail": "users.manage required."}, status=403)
     obj = DeploymentSettings.load()
@@ -607,7 +607,7 @@ def floorplan_popover(request):
     return Response(FloorplanPopoverSerializer(obj).data)
 
 
-# The faceplate component-popover vocabulary — what a port's hover card can
+# The faceplate component-popover vocabulary - what a port's hover card can
 # show. Same idea as the tile popover: an ordered, curated key list; unknown
 # keys are dropped on read AND write so removed fields never linger in config.
 COMPONENT_POPOVER_FIELDS = [
@@ -672,7 +672,7 @@ def component_popover(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def component_popover_effective(request):
-    """What the faceplate should render — readable by anyone signed in."""
+    """What the faceplate should render - readable by anyone signed in."""
     stored = clean_component_popover_fields(
         DeploymentSettings.load().component_popover_fields
     )
@@ -695,7 +695,7 @@ def component_popover_effective(request):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def health(request):
-    """Liveness/readiness probe — unauthenticated, cheap. Confirms the app is
+    """Liveness/readiness probe - unauthenticated, cheap. Confirms the app is
     up and the DB answers, and reports the running version. Used by the release
     install-smoke and handy for nginx / a load balancer."""
     from django.db import connection
@@ -707,7 +707,7 @@ def health(request):
             cur.execute("SELECT 1")
             cur.fetchone()
         db_ok = True
-    except Exception:  # noqa: BLE001 — any DB error → not ready
+    except Exception:  # noqa: BLE001 - any DB error → not ready
         db_ok = False
     return Response(
         {"status": "ok" if db_ok else "degraded",
@@ -774,7 +774,7 @@ def system_updates(request):
         })
     try:
         releases = list_releases(repo, token)
-    except Exception as e:  # noqa: BLE001 — surface a friendly reason
+    except Exception as e:  # noqa: BLE001 - surface a friendly reason
         return Response({
             "current": cur, "repo_url": repo, "releases": [],
             "update_available": False, "error": str(e),
@@ -826,7 +826,7 @@ def deployment_test_email(request):
             to=[to],
             connection=conn,
         ).send(fail_silently=False)
-    except Exception as exc:  # noqa: BLE001 — surface the SMTP error to the admin
+    except Exception as exc:  # noqa: BLE001 - surface the SMTP error to the admin
         from core.email import describe_smtp_error
 
         return Response(
@@ -899,9 +899,9 @@ def email_send_preview(request):
                 fail_silently=False,
             )
             sent.append(key)
-        except Exception as exc:  # noqa: BLE001 — report per-template
+        except Exception as exc:  # noqa: BLE001 - report per-template
             errors[key] = describe_smtp_error(exc)
-            # An SMTP-level failure will fail every template the same way —
+            # An SMTP-level failure will fail every template the same way -
             # stop instead of hammering the relay (repeated failed attempts
             # can get this server's IP temporarily blocked).
             break

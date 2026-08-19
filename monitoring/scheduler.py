@@ -1,7 +1,7 @@
 """Materialisation + dispatch.
 
 **Materialisation** (``materialise_states``) turns assignments into concrete
-``CheckState`` rows — one per (target IP, template) effective check — by running
+``CheckState`` rows - one per (target IP, template) effective check - by running
 the resolver over each candidate IP. It runs *periodically*, not per tick, so
 the minute-resolution dispatcher never has to re-walk the CIDR tree: for a huge
 prefix the expensive resolution is amortised here, and the dispatcher just reads
@@ -10,7 +10,7 @@ flat ``CheckState`` rows by ``next_run``.
 **Dispatch** (``dispatch``) selects due states and enqueues worker jobs. ICMP
 states are grouped by (timeout, count) and sharded into large multiping batches;
 everything else is sharded into smaller generic batches. Each shard is one RQ
-job, so fan-out parallelises across worker processes — the second half of the
+job, so fan-out parallelises across worker processes - the second half of the
 large-prefix performance story (multiping being the first).
 """
 from __future__ import annotations
@@ -149,7 +149,7 @@ def reap_stale_in_flight(now=None) -> dict:
 
     A worker only clears ``in_flight`` when a job finishes; if it dies mid-run,
     the flag is stuck True forever and the dispatcher (which skips
-    ``in_flight=True``) never retries — the check stays ``unknown``. This resets
+    ``in_flight=True``) never retries - the check stays ``unknown``. This resets
     those rows so the next dispatch picks them up. Rows with a NULL
     ``in_flight_since`` (claimed before this field existed) are always reclaimed.
     """
@@ -176,7 +176,7 @@ def check_engine_health(now=None) -> dict:
     clears the stamp and notifies again. Engines with no assigned checks are
     ignored (a freshly-created, never-enrolled Outpost shouldn't page anyone).
 
-    Runs on every dispatcher tick — cheap: one query over the handful of
+    Runs on every dispatcher tick - cheap: one query over the handful of
     remote engines + one count over their states.
     """
     from .notify import notify_event
@@ -189,7 +189,7 @@ def check_engine_health(now=None) -> dict:
     for eng in engines:
         assigned = CheckState.objects.filter(engine=eng).count()
         if assigned == 0:
-            # Nothing depends on it — quietly clear any leftover flag.
+            # Nothing depends on it - quietly clear any leftover flag.
             if eng.stale_since:
                 eng.stale_since = None
                 eng.save(update_fields=["stale_since"])
@@ -209,13 +209,13 @@ def check_engine_health(now=None) -> dict:
                 engine=eng, next_run__lte=now
             ).count()
             log.warning(
-                "engine %s unreachable — %s checks stalled", eng.name, stalled
+                "engine %s unreachable - %s checks stalled", eng.name, stalled
             )
             when = f"{basis:%Y-%m-%d %H:%M} UTC" if basis else "enrollment"
             notify_event(
                 eng.tenant_id,
                 f"Monitoring engine '{eng.name}' unreachable",
-                f"No contact since {when} — {stalled} check(s) are overdue "
+                f"No contact since {when} - {stalled} check(s) are overdue "
                 "and will not run until the engine reconnects.",
                 {
                     "type": "engine_stale",
@@ -253,7 +253,7 @@ def dispatch(now=None, sync: bool = False) -> dict:
     """Enqueue worker jobs for every due check. ``sync=True`` runs them inline
     (for tests / a no-worker box) instead of via RQ."""
     now = now or timezone.now()
-    # Engine health first — if an Outpost died, flag it and notify instead of
+    # Engine health first - if an Outpost died, flag it and notify instead of
     # quietly dispatching zero of its checks for the Nth tick (issue #154).
     check_engine_health(now)
     # Reclaim anything a crashed worker left claimed, then dispatch as usual.

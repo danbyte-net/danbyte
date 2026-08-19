@@ -214,7 +214,7 @@ function GroupPlatforms({ groupId }: { groupId: string }) {
   if (!rows.length)
     return (
       <EmptyState title="No platforms">
-        No platforms belong to this group yet — set the group on a platform.
+        No platforms belong to this group yet - set the group on a platform.
       </EmptyState>
     )
   return (

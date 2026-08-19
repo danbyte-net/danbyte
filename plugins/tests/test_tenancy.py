@@ -1,4 +1,4 @@
-"""Per-tenant plugin enable/disable — cascade, config API, and viewset gating."""
+"""Per-tenant plugin enable/disable - cascade, config API, and viewset gating."""
 from __future__ import annotations
 
 from django.contrib.auth.models import User

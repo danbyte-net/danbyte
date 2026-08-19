@@ -9,14 +9,14 @@
  */
 export const NAME_RANGE_RE = /\[(\d+)-(\d+)\]/
 
-/** Refuse to fan out beyond this in one submit — a typo like [1-99999]
+/** Refuse to fan out beyond this in one submit - a typo like [1-99999]
  * shouldn't try to create 99k rows. */
 export const RANGE_CAP = 128
 
 /**
  * "Disk[1-5]" → ["Disk1", …, "Disk5"]. Returns `[name]` unchanged when there
  * is no range, the bounds are reversed or unparseable, or the span exceeds
- * {@link RANGE_CAP} — callers can then treat it as a plain single name.
+ * {@link RANGE_CAP} - callers can then treat it as a plain single name.
  */
 export function expandNameRange(name: string): string[] {
   const m = name.match(NAME_RANGE_RE)
@@ -32,7 +32,7 @@ export function expandNameRange(name: string): string[] {
 }
 
 /** True when the name carries a range that {@link expandNameRange} will act
- * on — for showing a "creates N" hint before the user submits. */
+ * on - for showing a "creates N" hint before the user submits. */
 export function hasNameRange(name: string): boolean {
   return expandNameRange(name).length > 1
 }

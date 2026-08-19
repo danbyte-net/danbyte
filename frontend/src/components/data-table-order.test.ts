@@ -22,7 +22,7 @@ describe("applyManageableOrder", () => {
   })
 
   it("inserts a column the saved order predates at its designed position", () => {
-    // Saved before "dhcp" existed — it must appear after "status" (its
+    // Saved before "dhcp" existed - it must appear after "status" (its
     // definition-order neighbour), not after "updated".
     const saved = ["ip", "status", "role", "updated"]
     expect(applyManageableOrder(allIds, manageable, saved)).toEqual([
@@ -36,7 +36,7 @@ describe("applyManageableOrder", () => {
   })
 
   it("respects a user having moved the designed neighbour", () => {
-    // "status" moved to the end — the unseen "dhcp" follows its neighbour.
+    // "status" moved to the end - the unseen "dhcp" follows its neighbour.
     const saved = ["ip", "role", "updated", "status"]
     expect(applyManageableOrder(allIds, manageable, saved)).toEqual([
       "select",

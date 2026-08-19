@@ -16,14 +16,14 @@ import { FormCheckbox, FormText } from "@/components/forms"
 import { apiErrorToast } from "@/lib/api-toast"
 import { cn } from "@/lib/utils"
 
-/** Bases worth trying first — the standard tables every agent has, then the
+/** Bases worth trying first - the standard tables every agent has, then the
  * root of the vendor space, so the field is never a blank prompt. */
 const COMMON_BASES = [
-  "1.3.6.1.2.1.25.3.2.1", // hrDeviceTable — kind/status/descr per device
-  "1.3.6.1.2.1.25.2.3.1", // hrStorageTable — size/used per volume
-  "1.3.6.1.2.1.99.1.1.1", // entPhySensorTable — value/type/status
-  "1.3.6.1.2.1.47.1.1.1.1", // entPhysicalTable — names/serials/models
-  "1.3.6.1.4.1", // enterprises — browse down into the vendor's own tree
+  "1.3.6.1.2.1.25.3.2.1", // hrDeviceTable - kind/status/descr per device
+  "1.3.6.1.2.1.25.2.3.1", // hrStorageTable - size/used per volume
+  "1.3.6.1.2.1.99.1.1.1", // entPhySensorTable - value/type/status
+  "1.3.6.1.2.1.47.1.1.1.1", // entPhysicalTable - names/serials/models
+  "1.3.6.1.4.1", // enterprises - browse down into the vendor's own tree
 ]
 
 /**
@@ -31,7 +31,7 @@ const COMMON_BASES = [
  *
  * SNMP has no standard hardware-health MIB, so a sensor's OID normally comes
  * from reading a vendor MIB file. This replaces that: descend the tree a level
- * at a time, and when you reach a table it's shown transposed — the column
+ * at a time, and when you reach a table it's shown transposed - the column
  * reading "Normal" beside the column reading "Power Supply 1" is the health
  * column, and the values it returned are the value map to write.
  */
@@ -148,7 +148,7 @@ export function OidExplorer({
               />
             ) : (
               <p className="text-[13px] text-muted-foreground">
-                Nothing under that OID — the agent has no such table, or the
+                Nothing under that OID - the agent has no such table, or the
                 community can't see it.
               </p>
             )}
@@ -173,7 +173,7 @@ function BranchList({
   return (
     <div className="flex flex-col gap-2">
       <p className="text-[11px] text-muted-foreground">
-        {children_.length} branch{children_.length === 1 ? "" : "es"} — open one
+        {children_.length} branch{children_.length === 1 ? "" : "es"} - open one
         to go deeper. A table shows itself as a grid when you reach it.
       </p>
       <div className="max-h-72 overflow-y-auto rounded-md border border-border">
@@ -220,14 +220,14 @@ function WalkTable({
         </span>
         {result.truncated && (
           <Badge variant="warning" className="h-4 px-1.5 text-[10px]">
-            truncated — narrow the OID
+            truncated - narrow the OID
           </Badge>
         )}
         <span className="ml-auto">Click a column to use it</span>
       </div>
 
       {/* Wide tables scroll inside their own box rather than stretching the
-          dialog — a 20-column entPhysicalTable is normal. */}
+          dialog - a 20-column entPhysicalTable is normal. */}
       <div className="overflow-x-auto rounded-md border border-border">
         <table className="w-full text-[12px]">
           <thead>
@@ -272,7 +272,7 @@ function WalkTable({
                       picked === c.column && "bg-primary/10"
                     )}
                   >
-                    {r.values[c.column] ?? "—"}
+                    {r.values[c.column] ?? "-"}
                   </td>
                 ))}
               </tr>

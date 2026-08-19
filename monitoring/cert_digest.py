@@ -1,4 +1,4 @@
-"""Certificate digest — a periodic, certificate-focused summary email.
+"""Certificate digest - a periodic, certificate-focused summary email.
 
 This is deliberately *separate* from the monitoring digest. Certificate expiry
 is the one class of problem where "you find out when it breaks" is a paged
@@ -11,10 +11,10 @@ recurring "here is everything approaching expiry, at a glance" companion.
 What it reports, per tenant:
 
 * **Expired** and **expiring** leaf certificates actually served on the wire
-  (from the newest binding per endpoint — what each endpoint serves *now*).
+  (from the newest binding per endpoint - what each endpoint serves *now*).
 * **Declared** (uploaded + assigned, not-yet-observed) certificates approaching
-  expiry — the source-of-truth certs :mod:`monitoring.cert_expiry` also covers.
-* **Recent renewals/changes** — endpoints now serving a different certificate
+  expiry - the source-of-truth certs :mod:`monitoring.cert_expiry` also covers.
+* **Recent renewals/changes** - endpoints now serving a different certificate
   than before, inside the window.
 
 :func:`cert_summary` returns just the headline counts so the general monitoring
@@ -24,7 +24,7 @@ whole report.
 Scheduling reuses the digest cadence (:func:`run_scheduled_cert_digests`, run by
 the same daily timer as the monitoring digest) but is gated by its own
 ``cert_digest_enabled`` flag and tracked by its own ``cert_digest_last_run`` so
-the two emails are independent — a tenant can run one, both, or neither.
+the two emails are independent - a tenant can run one, both, or neither.
 """
 from __future__ import annotations
 
@@ -73,14 +73,14 @@ def _classified_bindings(tenant, now):
     buckets = {EXPIRED: [], EXPIRING_CRITICAL: [], EXPIRING_WARNING: []}
     for b in current_bindings(tenant_ids=[tenant.id]):
         if b.last_seen < stale_after:
-            continue  # nobody serves this any more — the alert engine ignores it too
+            continue  # nobody serves this any more - the alert engine ignores it too
         state = classify(b.certificate, limits, now)
         if state in buckets:
             days = round((b.certificate.not_after - now).total_seconds() / 86400, 1)
             buckets[state].append(
                 {
                     "endpoint": b.endpoint_label,
-                    "subject_cn": b.certificate.subject_cn or "—",
+                    "subject_cn": b.certificate.subject_cn or "-",
                     "fingerprint": b.certificate.fingerprint_sha256,
                     "not_after": b.certificate.not_after,
                     "days": days,
@@ -113,7 +113,7 @@ def _declared_expiring(tenant, now, limits):
             days = round((cert.not_after - now).total_seconds() / 86400, 1)
             out.append(
                 {
-                    "subject_cn": cert.subject_cn or cert.name or "—",
+                    "subject_cn": cert.subject_cn or cert.name or "-",
                     "fingerprint": cert.fingerprint_sha256,
                     "not_after": cert.not_after,
                     "days": days,
@@ -129,7 +129,7 @@ def _recent_changes(tenant, since):
 
     A renewal is a new certificate row (new fingerprint). An endpoint whose
     current leaf certificate first appeared inside the window, and which also has
-    an older binding on file, has rotated its certificate — worth surfacing.
+    an older binding on file, has rotated its certificate - worth surfacing.
     """
     from .cert_expiry import current_bindings
     from .models import CertificateBinding
@@ -147,7 +147,7 @@ def _recent_changes(tenant, since):
             changes.append(
                 {
                     "endpoint": b.endpoint_label,
-                    "subject_cn": b.certificate.subject_cn or "—",
+                    "subject_cn": b.certificate.subject_cn or "-",
                     "fingerprint": b.certificate.fingerprint_sha256,
                     "at": b.first_seen,
                 }
@@ -157,7 +157,7 @@ def _recent_changes(tenant, since):
 
 
 def cert_summary(tenant, now=None, *, window_days=DEFAULT_CHANGE_WINDOW_DAYS) -> dict:
-    """Headline certificate counts for a tenant — used by both this digest and
+    """Headline certificate counts for a tenant - used by both this digest and
     the general monitoring digest's overall certificate strip."""
     from .cert_expiry import EXPIRED, EXPIRING_CRITICAL, EXPIRING_WARNING
 
@@ -204,7 +204,7 @@ def render_text(summary: dict, tenant_name: str) -> str:
 
     d = summary
     lines = [
-        f"Certificate digest — {tenant_name}",
+        f"Certificate digest - {tenant_name}",
         f"As of {d['now']:%Y-%m-%d %H:%M}",
         "",
         f"Expired: {d['expired']}   Critical: {d['expiring_critical']}   "
@@ -213,8 +213,8 @@ def render_text(summary: dict, tenant_name: str) -> str:
     ]
     labels = [
         (EXPIRED, "Expired (served)"),
-        (EXPIRING_CRITICAL, "Expiring — critical"),
-        (EXPIRING_WARNING, "Expiring — warning"),
+        (EXPIRING_CRITICAL, "Expiring - critical"),
+        (EXPIRING_WARNING, "Expiring - warning"),
     ]
     for state, heading in labels:
         rows = d["buckets"][state][:_MAX_ROWS]
@@ -223,7 +223,7 @@ def render_text(summary: dict, tenant_name: str) -> str:
         lines += ["", f"{heading}:"]
         for r in rows:
             lines.append(
-                f"  {r['endpoint']} — {r['subject_cn']} "
+                f"  {r['endpoint']} - {r['subject_cn']} "
                 f"({_fmt_days(r['days'])}, {r['not_after']:%Y-%m-%d})"
             )
     if d["declared"]:
@@ -236,7 +236,7 @@ def render_text(summary: dict, tenant_name: str) -> str:
     if d["recent_changes"]:
         lines += ["", "Recent certificate changes:"]
         for r in d["recent_changes"][:_MAX_ROWS]:
-            lines.append(f"  {r['endpoint']} — now {r['subject_cn']} ({r['at']:%b %d})")
+            lines.append(f"  {r['endpoint']} - now {r['subject_cn']} ({r['at']:%b %d})")
     return "\n".join(lines) + "\n"
 
 
@@ -274,9 +274,9 @@ def render_html(summary: dict, tenant_name: str, deployment_name: str) -> str:
     ]
 
     blocks = [
-        (EXPIRED, "Expired — still served", d["buckets"][EXPIRED]),
-        (EXPIRING_CRITICAL, "Expiring — critical", d["buckets"][EXPIRING_CRITICAL]),
-        (EXPIRING_WARNING, "Expiring — warning", d["buckets"][EXPIRING_WARNING]),
+        (EXPIRED, "Expired - still served", d["buckets"][EXPIRED]),
+        (EXPIRING_CRITICAL, "Expiring - critical", d["buckets"][EXPIRING_CRITICAL]),
+        (EXPIRING_WARNING, "Expiring - warning", d["buckets"][EXPIRING_WARNING]),
     ]
     for state, heading, rows in blocks:
         if rows:
@@ -284,7 +284,7 @@ def render_html(summary: dict, tenant_name: str, deployment_name: str) -> str:
             parts.append(_rows_table(rows, state))
 
     if d["declared"]:
-        parts.append(ek.section("Declared — assigned, not observed"))
+        parts.append(ek.section("Declared - assigned, not observed"))
         cells = [
             [
                 ek.escape(r["subject_cn"]),
@@ -320,7 +320,7 @@ def render_html(summary: dict, tenant_name: str, deployment_name: str) -> str:
                                      "Open certificate inventory"))
 
     return ek.render_layout(
-        f"Certificate digest — {tenant_name}",
+        f"Certificate digest - {tenant_name}",
         "".join(parts),
         deployment_name=deployment_name,
         kicker="Certificates",
@@ -337,7 +337,7 @@ def send_cert_digest(tenant, *, force: bool = False, recipients=None) -> bool:
     """Build + email one tenant's certificate digest.
 
     ``force`` ignores the enabled/empty gates (the test/send-now path). Without
-    ``force`` an empty digest is skipped — no point mailing "nothing to report"
+    ``force`` an empty digest is skipped - no point mailing "nothing to report"
     on a schedule.
     """
     from core.effective_settings import effective_digest
@@ -357,7 +357,7 @@ def send_cert_digest(tenant, *, force: bool = False, recipients=None) -> bool:
         return False
 
     name = _deployment_name()
-    subject = f"{name} certificate digest — {tenant.name}"
+    subject = f"{name} certificate digest - {tenant.name}"
     return send_html_email(
         subject,
         to,

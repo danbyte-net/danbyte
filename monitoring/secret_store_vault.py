@@ -1,9 +1,9 @@
-"""The ``vault`` secret-store provider — HashiCorp Vault / OpenBao KV v2.
+"""The ``vault`` secret-store provider - HashiCorp Vault / OpenBao KV v2.
 
 Secrets live under ``{mount}/{tenant_id}/{ref}`` in a KV-v2 mount, so Danbyte
 holds only the reference and the key material never touches the database. The
-Vault address is **deployment-admin-configured** — the same trust tier as the
-SSRF allowlist — and a Vault agent commonly listens on loopback/RFC1918, so this
+Vault address is **deployment-admin-configured** - the same trust tier as the
+SSRF allowlist - and a Vault agent commonly listens on loopback/RFC1918, so this
 talks to it directly (TLS-verified, redirects disabled, short timeout) rather
 than through the tenant-facing SSRF guard, exactly as the Redfish collector
 reaches admin-configured BMCs.
@@ -28,7 +28,7 @@ class VaultSecretStore:
     @classmethod
     def from_deployment(cls):
         """Build from the deployment settings, or ``None`` if unconfigured
-        (missing address or token) — the caller then treats it as disabled."""
+        (missing address or token) - the caller then treats it as disabled."""
         from core.models import DeploymentSettings
 
         dep = DeploymentSettings.load()
@@ -79,12 +79,12 @@ class VaultSecretStore:
 
     def get_at_path(self, tenant_id, path: str) -> dict | None:
         """Read an operator-chosen KV path directly, outside Danbyte's
-        ``{mount}/{tenant}/{ref}`` namespace — the caller supplies the full
+        ``{mount}/{tenant}/{ref}`` namespace - the caller supplies the full
         logical path after ``/v1/`` (e.g. ``kv/data/team/ssh`` for a KV-v2
         mount). ``tenant_id`` is unused here: Vault addresses the operator's
         external path directly, and cross-tenant isolation is the operator's to
         enforce via Vault policy on that path. KV v2 nests the value under
-        ``data.data``; KV v1 returns it flat under ``data`` — both are
+        ``data.data``; KV v1 returns it flat under ``data`` - both are
         unwrapped. Missing path → ``None``."""
         r = self._req("GET", f"{self.addr}/v1/{path.strip('/')}")
         if r.status_code == 404:
@@ -97,7 +97,7 @@ class VaultSecretStore:
         return inner if isinstance(inner, dict) else data
 
     def delete(self, tenant_id, ref: str) -> None:
-        # metadata delete removes all versions permanently — the request's key is
+        # metadata delete removes all versions permanently - the request's key is
         # gone for good, which is what deleting the request should mean.
         r = self._req("DELETE", self._url("metadata", tenant_id, ref))
         if r.status_code not in (200, 204, 404):

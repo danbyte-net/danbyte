@@ -3,7 +3,7 @@
 Every entry in the registry is a promise that `resolve_labels()` can scope that
 model to a tenant and render a label for it. Nothing validated that promise, so
 `interface` shipped registered with the default `tenant_field="tenant"` while
-`api.Interface` has no tenant FK (its tenancy runs through `device.tenant`) —
+`api.Interface` has no tenant FK (its tenancy runs through `device.tenant`) -
 `filter(tenant=…)` raised FieldError, the endpoint 500'd, and every linked
 interface in the UI read "Unavailable".
 
@@ -57,7 +57,7 @@ class _Base(APITestCase):
 class RegistryIntegrityTests(_Base):
     def test_every_reference_model_tenant_filter_is_valid(self):
         """The walk. Django resolves a lookup path at filter() time, before any
-        SQL, so an unresolvable `tenant_field` raises here — cheaply, for every
+        SQL, so an unresolvable `tenant_field` raises here - cheaply, for every
         entry including ones added later."""
         broken = []
         for slug, ref in reference_models().items():

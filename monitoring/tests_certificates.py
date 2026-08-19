@@ -1,7 +1,7 @@
 """Certificate inventory: collector, reconciliation, bindings, expiry alerting,
 and the rule that no private key may ever be stored.
 
-Every certificate here is generated in-process with ``cryptography`` — the tests
+Every certificate here is generated in-process with ``cryptography`` - the tests
 never touch the network. The collector's socket layer is exercised by swapping
 :func:`danbyte_checks.tls_cert._handshake`, so the parse, trust and expiry logic
 runs for real against real DER.
@@ -120,7 +120,7 @@ def fake_handshake(chain_der, tls_version="TLSv1.3", cipher="TLS_AES_256_GCM_SHA
 
 
 def allow_target():
-    """Skip address resolution — the policy itself is tested separately."""
+    """Skip address resolution - the policy itself is tested separately."""
     return mock.patch.object(tls_cert, "target_allowed", return_value=(True, ""))
 
 
@@ -174,7 +174,7 @@ class CollectorTests(TestCase):
     def test_verification_failure_still_reads_the_cert(self):
         """The whole point: an untrusted cert is what we most need to record.
         The verifying pass fails; the chain is read by an explicitly unverified
-        second pass and tagged as such — never silently 'verified'."""
+        second pass and tagged as such - never silently 'verified'."""
         der, _ = make_cert("selfsigned.example.internal")
         error = ssl.SSLCertVerificationError("self-signed certificate")
         error.verify_message = "self-signed certificate"
@@ -295,7 +295,7 @@ class _TenantBase(TestCase):
         )
 
     def observe(self, chain_der, tenant=None, host="svc.example.internal"):
-        """An anonymous read — no monitored IP, so no binding."""
+        """An anonymous read - no monitored IP, so no binding."""
         with allow_target(), fake_handshake(list(chain_der)):
             obs, rows = observe_endpoint(tenant or self.tenant, host, 443)
         return obs, rows
@@ -312,7 +312,7 @@ class _TenantBase(TestCase):
 
     def observe_at(self, chain_der, ip, *, tenant=None, host=None, port=443,
                    server_name=None):
-        """A read tied to a monitored IP — this is what produces bindings."""
+        """A read tied to a monitored IP - this is what produces bindings."""
         with allow_target(), fake_handshake(list(chain_der)):
             return observe_endpoint(
                 tenant or self.tenant,
@@ -455,7 +455,7 @@ class TenantIsolationTests(_TenantBase):
 class NoPrivateKeyTests(_TenantBase):
     def test_the_model_has_no_key_bearing_field(self):
         """S0 adds a ``pem`` column for the **public** certificate (broadcast to
-        every client — not a secret) and free-text ``name``/``notes``, but still
+        every client - not a secret) and free-text ``name``/``notes``, but still
         has no field named for a key or an opaque blob, and the ``save`` guard
         below rejects key material in any field regardless."""
         names = {f.name for f in Certificate._meta.get_fields()}
@@ -553,7 +553,7 @@ class CertificateApiTests(APITestCase):
         self.assertEqual(resp.status_code, 404)
 
     def test_observed_facts_are_read_only_on_patch(self):
-        """PATCH may touch authored metadata only — never an intrinsic fact.
+        """PATCH may touch authored metadata only - never an intrinsic fact.
 
         A payload trying to overwrite subject/fingerprint (or smuggle a key into
         one) is silently ignored for the facts and accepted for name/notes."""
@@ -667,7 +667,7 @@ class BindingTests(_TenantBase):
         self.assertEqual(binding.last_seen, seen)
 
     def test_a_renewal_leaves_the_old_binding_as_history(self):
-        """Bindings are never deleted — that is the record of what an endpoint
+        """Bindings are never deleted - that is the record of what an endpoint
         *used* to serve, and the reason a stale last_seen is the signal."""
         old, _ = make_cert("svc.example.com", days_after=20)
         ip = self.make_ip()
@@ -765,7 +765,7 @@ class BindingTenantIsolationTests(_TenantBase):
 
 
 class ExpiryAlertTests(_TenantBase):
-    """The alert is about the *endpoint*, not the certificate row — which is
+    """The alert is about the *endpoint*, not the certificate row - which is
     what makes a renewal resolve it instead of orphaning it."""
 
     def setUp(self):
@@ -863,7 +863,7 @@ class ExpiryAlertTests(_TenantBase):
         resolved = Alert.objects.get()
         self.assertEqual(resolved.status, AlertStatus.RESOLVED)
         self.assertIn("no longer observed", resolved.detail["resolution"])
-        # History survives — the binding is not deleted, only stale.
+        # History survives - the binding is not deleted, only stale.
         self.assertEqual(CertificateBinding.objects.count(), 1)
 
     def test_a_stale_binding_never_opens_an_alert_in_the_first_place(self):
@@ -1074,7 +1074,7 @@ class CertificateBindingApiTests(APITestCase):
 
 class CheckResultSeamTests(_TenantBase):
     """The production path: a ``tls_cert`` CheckResult lands, and the inventory
-    plus its alert follow — for both persistence seams (check-now and the
+    plus its alert follow - for both persistence seams (check-now and the
     scheduled worker), which share ``record_check_results``."""
 
     def test_a_check_result_produces_a_binding_and_an_alert(self):

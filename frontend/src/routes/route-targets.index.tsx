@@ -214,7 +214,7 @@ function buildColumns({
             {row.original.import_vrf_count === 1 ? "" : "s"}
           </span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -230,7 +230,7 @@ function buildColumns({
             {row.original.export_vrf_count === 1 ? "" : "s"}
           </span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -239,7 +239,7 @@ function buildColumns({
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     },

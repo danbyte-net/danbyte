@@ -48,7 +48,7 @@ export function ClusterTypeDeleteDialog({
           <AlertDialogTitle>Delete {clusterType?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {inUse
-              ? `${clusterType?.cluster_count} cluster(s) reference this type — reassign or delete them first.`
+              ? `${clusterType?.cluster_count} cluster(s) reference this type - reassign or delete them first.`
               : "This action can't be undone."}
           </AlertDialogDescription>
         </AlertDialogHeader>

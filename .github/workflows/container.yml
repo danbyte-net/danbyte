@@ -4,7 +4,7 @@ name: Container images
 # (ghcr.io) on a version tag, plus a manual trigger. Three images come out of
 # the one Dockerfile via its build targets:
 #
-#   ghcr.io/<owner>/danbyte-app       (runtime — gunicorn / daphne / workers)
+#   ghcr.io/<owner>/danbyte-app       (runtime - gunicorn / daphne / workers)
 #   ghcr.io/<owner>/danbyte-web       (nginx reverse proxy + TLS)
 #   ghcr.io/<owner>/danbyte-frontend  (vite preview SSR server)
 #
@@ -68,7 +68,7 @@ jobs:
           ver="${ref#v}"
           base="ghcr.io/${owner}/${{ matrix.image }}"
           tags="${base}:${ver}"
-          # Only a real version-tag push moves :latest — a manual/RC dispatch
+          # Only a real version-tag push moves :latest - a manual/RC dispatch
           # must not clobber the tag operators track.
           if [ "${{ github.event_name }}" = "push" ]; then
             tags="${tags},${base}:latest"
@@ -89,6 +89,6 @@ jobs:
           # Attach a full build-provenance attestation + SBOM to each image so
           # consumers can verify what produced it (defends against a tampered
           # or rogue image slipping in). Pushing is still gated by org package
-          # write access — this makes authenticity checkable on top of that.
+          # write access - this makes authenticity checkable on top of that.
           provenance: mode=max
           sbom: true

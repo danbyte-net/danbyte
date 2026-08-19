@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Danbyte one-shot installer — turns a fully-offline release bundle into a
+# Danbyte one-shot installer - turns a fully-offline release bundle into a
 # running production install. Run as root from inside the unpacked bundle:
 #
 #   tar xzf danbyte-<version>-linux-x86_64.tar.gz
@@ -13,7 +13,7 @@
 # /var/log/danbyte, and puts nginx/TLS in front.
 #
 # Offline scope: no PyPI/npm/python.org access needed (all bundled). OS packages
-# (postgresql, redis-server, nginx) still come from your distro — on an airgapped
+# (postgresql, redis-server, nginx) still come from your distro - on an airgapped
 # box, point apt at your local mirror first, or pre-install them.
 set -euo pipefail
 
@@ -80,7 +80,7 @@ if [ "$DO_NGINX" -eq 1 ]; then
   PKGS="postgresql redis-server nginx make"
   CHECK_BINS="psql redis-server nginx make"
 else
-  step "OS packages (postgresql, redis-server, make) — skipping nginx (--no-nginx)"
+  step "OS packages (postgresql, redis-server, make) - skipping nginx (--no-nginx)"
   PKGS="postgresql redis-server make"
   CHECK_BINS="psql redis-server make"
 fi
@@ -89,28 +89,28 @@ for b in $CHECK_BINS; do command -v "$b" >/dev/null 2>&1 || need_pkg=1; done
 if [ "$need_pkg" -eq 1 ]; then
   if command -v apt-get >/dev/null 2>&1; then
     DEBIAN_FRONTEND=noninteractive apt-get install -y $PKGS \
-      || die "apt could not install $PKGS — install them, then re-run."
+      || die "apt could not install $PKGS - install them, then re-run."
   else
-    die "$PKGS missing and apt-get not found — pre-install them."
+    die "$PKGS missing and apt-get not found - pre-install them."
   fi
 fi
 systemctl enable --now postgresql redis-server >/dev/null 2>&1 || true
 
 # WeasyPrint (label-template PDFs) renders via Pango/cairo/GDK-PixBuf shared
-# libraries — pip can't provide them. Install idempotently when apt is present so
+# libraries - pip can't provide them. Install idempotently when apt is present so
 # label printing works on fresh installs and existing upgrades alike.
 if command -v apt-get >/dev/null 2>&1; then
   step "PDF rendering libraries (WeasyPrint: pango/cairo/gdk-pixbuf)"
   DEBIAN_FRONTEND=noninteractive apt-get install -y \
     libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 \
     libffi8 fonts-dejavu-core \
-    || warn "Could not install WeasyPrint libraries — label PDF printing may fail until they're present."
+    || warn "Could not install WeasyPrint libraries - label PDF printing may fail until they're present."
 fi
 
 # ── 2. Node runtime (bundled → /usr/bin/node if the host's is missing/too old) ─
 # rolldown-vite's native binding is engine-gated to Node ≥ 20.19; a stale system
 # node makes `vite preview` (the frontend unit) crash at boot. So don't accept
-# just any existing node — install the bundled runtime whenever the host's is
+# just any existing node - install the bundled runtime whenever the host's is
 # absent OR below the floor.
 step "Node runtime"
 NODE_MIN_MAJOR=20
@@ -123,7 +123,7 @@ install_bundled_node() {
   echo "  installed bundled node → /usr/bin/node ($(/usr/bin/node -v))"
 }
 # Check the EXACT binary the systemd units call (/usr/bin/node), not whatever
-# `node` resolves to on PATH — a new node at /usr/local/bin won't help a unit
+# `node` resolves to on PATH - a new node at /usr/local/bin won't help a unit
 # hardcoded to /usr/bin/node.
 NODE_BIN=/usr/bin/node
 node_ok() {
@@ -140,7 +140,7 @@ if node_ok; then
   echo "  using existing $NODE_BIN ($("$NODE_BIN" -v))"
 else
   if [ -e "$NODE_BIN" ]; then
-    echo "  $NODE_BIN ($("$NODE_BIN" -v 2>/dev/null || echo unknown)) is below the ${NODE_MIN_MAJOR}.${NODE_MIN_MINOR} floor — installing bundled node"
+    echo "  $NODE_BIN ($("$NODE_BIN" -v 2>/dev/null || echo unknown)) is below the ${NODE_MIN_MAJOR}.${NODE_MIN_MINOR} floor - installing bundled node"
   fi
   install_bundled_node
 fi
@@ -158,7 +158,7 @@ loginctl enable-linger "$SERVICE_USER"
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 755 "$SERVICE_HOME"
 SVC_UID="$(id -u "$SERVICE_USER")"
 
-# Log directory — the app (running as the service user) writes danbyte.log +
+# Log directory - the app (running as the service user) writes danbyte.log +
 # gunicorn logs here; see settings.LOGGING / deploy/gunicorn.conf.py.
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 755 "$LOG_DIR"
 
@@ -205,7 +205,7 @@ if [ -f "$APP/.env" ]; then
   grep -qE '^DANBYTE_LOG_DIR=' "$APP/.env" \
     || printf '\nDANBYTE_LOG_DIR=%s\n' "$LOG_DIR" >> "$APP/.env"
   # Backfill MONITORING_SECRET_KEY (now required when DEBUG=False) for installs
-  # that predate it — a fresh random key; existing secrets were encrypted under
+  # that predate it - a fresh random key; existing secrets were encrypted under
   # the SECRET_KEY-derived key, so preserve behaviour by seeding it FROM the
   # current SECRET_KEY (keeps existing SNMP/SMTP/LDAP secrets decryptable).
   grep -qE '^MONITORING_SECRET_KEY=' "$APP/.env" \
@@ -233,7 +233,7 @@ ALLOWED_HOSTS=$HOST,127.0.0.1,localhost
 DANBYTE_HTTPS=$HTTPS_VAL
 
 # Encrypts stored SNMP/SSH/SMTP/LDAP credentials; required when DEBUG=False.
-# Do NOT change once credentials are stored — old ciphertext becomes unreadable.
+# Do NOT change once credentials are stored - old ciphertext becomes unreadable.
 MONITORING_SECRET_KEY=$MONITORING_SECRET_KEY
 
 DB_NAME=danbyte
@@ -270,14 +270,14 @@ as_user bash -lc "cd '$APP' && .venv/bin/python manage.py migrate --noinput \
 # ── 9. systemd units ─────────────────────────────────────────────────────────
 step "Installing + (re)starting services"
 # ONLY the production unit set. This used to also run `install-services`, which
-# links the dev units — including danbyte-infra, the docker-compose Postgres +
+# links the dev units - including danbyte-infra, the docker-compose Postgres +
 # Redis stack. On a host that already ran Postgres that left an idle, empty
 # container competing for 5432 (issue #14).
 as_user bash -lc "cd '$APP' && make install-prod-services >/dev/null"
 DANBYTE_UNITS="danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-docs"
 # enable = start at boot; restart = pick up freshly-deployed code (a plain
 # `enable --now` is a no-op on already-running units, so a re-install/upgrade
-# would keep serving the OLD code — restart is what makes the update take).
+# would keep serving the OLD code - restart is what makes the update take).
 as_user systemctl --user enable $DANBYTE_UNITS >/dev/null 2>&1 || true
 as_user systemctl --user restart $DANBYTE_UNITS
 
@@ -293,7 +293,7 @@ fi
 if [ "$DO_NGINX" -eq 1 ]; then
   URL="https://$HOST/"
 else
-  # No managed terminator — the app serves plain HTTP on the frontend port.
+  # No managed terminator - the app serves plain HTTP on the frontend port.
   URL="http://$HOST:3000/  (no nginx; put your own TLS in front, then set DANBYTE_HTTPS=True)"
 fi
 cat <<EOF

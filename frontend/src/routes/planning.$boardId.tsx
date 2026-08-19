@@ -31,7 +31,7 @@ import { MilestoneManagerDialog } from "@/components/planning/milestone-manager"
 import { TaskDetailSheet } from "@/components/planning/task-detail"
 
 export const Route = createFileRoute("/planning/$boardId")({
-  // ?task=<id> opens that task's sheet — how a staged planned change returns
+  // ?task=<id> opens that task's sheet - how a staged planned change returns
   // you to the task you were planning for, and a linkable task in general.
   validateSearch: (s: Record<string, unknown>): { task?: string } =>
     typeof s.task === "string" ? { task: s.task } : {},
@@ -81,7 +81,7 @@ function BoardPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Same shape as every other page header: back link, title, count chip —
+      {/* Same shape as every other page header: back link, title, count chip -
           then the people, separated so they read as a control rather than more
           header text. */}
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6">
@@ -120,7 +120,7 @@ function BoardPage() {
           value={assignee}
           onChange={setAssignee}
         />
-        {/* The calendar is one view, filtered to this board — not a second
+        {/* The calendar is one view, filtered to this board - not a second
             implementation living inside the board page. */}
         <Button size="sm" variant="ghost" className="ml-auto" asChild>
           <Link to="/planning/calendar" search={{ board: boardId }}>
@@ -170,7 +170,7 @@ function BoardPage() {
             if (o) return
             setOpenTask(null)
             // A ?task= deep link holds the sheet open independently of local
-            // state — closing must clear it too, or the close button is inert.
+            // state - closing must clear it too, or the close button is inert.
             if (deepLinkTask)
               navigate({
                 search: (s) => ({ ...s, task: undefined }),

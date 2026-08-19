@@ -125,7 +125,7 @@ export function ComplianceRuleForm({
         />
       </div>
 
-      <Field label="Description" hint="Optional — why this rule exists">
+      <Field label="Description" hint="Optional - why this rule exists">
         <Textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
@@ -135,7 +135,7 @@ export function ComplianceRuleForm({
 
       <Field
         label="How to fix"
-        hint="Optional — Markdown remediation guide shown with this rule's violations (headings, lists, `code`, **bold**, links)"
+        hint="Optional - Markdown remediation guide shown with this rule's violations (headings, lists, `code`, **bold**, links)"
       >
         <Textarea
           value={remediation}

@@ -11,7 +11,7 @@ Everyday commands. All driven by the project `Makefile`; under the hood they cal
 | Service | Port | Notes |
 |---|---|---|
 | `danbyte-backend` | `:8000` | Django dev server |
-| `danbyte-workers` | — | RQ worker (default + high + low queues) |
+| `danbyte-workers` | - | RQ worker (default + high + low queues) |
 | `danbyte-mockups` | `:8080` | Static design mockup server (`design/`) |
 | `danbyte-docs` | `:8001` | This documentation site (Zensical) |
 | `danbyte-infra` | `:5432`/`:6379` | Postgres + Redis via `docker compose` (no-op if Docker isn't installed) |

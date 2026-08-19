@@ -22,7 +22,7 @@ import {
 import type { IPRoleMini } from "@/lib/api"
 import { readableText } from "@/components/cells/color-badge"
 
-// Closed registry — mirrors api/templatetags/api_extras.py:ROLE_ICONS.
+// Closed registry - mirrors api/templatetags/api_extras.py:ROLE_ICONS.
 // CrownOff and Broadcast aren't in lucide-react so they fall back to
 // their nearest semantic neighbour (Crown stays for the master, Radio for
 // the broadcast role).
@@ -54,7 +54,7 @@ interface RoleChipProps {
 }
 
 export function RoleChip({ role, showVirtualTag, isVirtual }: RoleChipProps) {
-  if (!role) return <span className="text-muted-foreground">—</span>
+  if (!role) return <span className="text-muted-foreground">-</span>
   const Icon = ICONS[(role.icon || "").trim().toLowerCase()]
   const style = role.color
     ? {

@@ -1,4 +1,4 @@
-"""Deploy dispatch tests — webhook signing, AWX path, run records."""
+"""Deploy dispatch tests - webhook signing, AWX path, run records."""
 from __future__ import annotations
 
 import hashlib
@@ -97,7 +97,7 @@ class DeployDispatchTests(TestCase):
 
 
 class AutoDispatchTests(TestCase):
-    """P2.5 — a device save fires auto_on_change targets, and nothing else."""
+    """P2.5 - a device save fires auto_on_change targets, and nothing else."""
 
     def setUp(self):
         from api.models import Device, DeviceType, Manufacturer, Site
@@ -139,7 +139,7 @@ class AutoDispatchTests(TestCase):
         enq.assert_not_called()
 
     def test_object_type_scope_respected(self):
-        # Target scoped to interfaces only — a device save must not fire it.
+        # Target scoped to interfaces only - a device save must not fire it.
         self._target(auto_on_change=True, object_types=["interface"])
         with mock.patch.object(D, "enqueue_deploy") as enq:
             self.dev.save()
@@ -186,7 +186,7 @@ class _DeployEndpointBase(APITestCase):
 
 
 class BulkDeployEndpointTests(_DeployEndpointBase):
-    """POST /api/automation-targets/<id>/deploy/ — the bulk deploy action."""
+    """POST /api/automation-targets/<id>/deploy/ - the bulk deploy action."""
 
     def _url(self, target=None):
         return f"/api/automation-targets/{(target or self.target).id}/deploy/"
@@ -240,7 +240,7 @@ class BulkDeployEndpointTests(_DeployEndpointBase):
 
 
 class RetryDeployEndpointTests(_DeployEndpointBase):
-    """POST /api/deploy-runs/<id>/retry/ — re-fire a failed run."""
+    """POST /api/deploy-runs/<id>/retry/ - re-fire a failed run."""
 
     def _failed_run(self):
         return DeployRun.objects.create(
@@ -294,7 +294,7 @@ class RetryDeployEndpointTests(_DeployEndpointBase):
 
 
 class DeployRunTargetFilterTests(_DeployEndpointBase):
-    """GET /api/deploy-runs/?target=<id> — the Runs tab on a target's page."""
+    """GET /api/deploy-runs/?target=<id> - the Runs tab on a target's page."""
 
     def _run(self, target, status="launched"):
         return DeployRun.objects.create(

@@ -1,4 +1,4 @@
-"""Audit + journal reads respect the caller's per-type view grants — a member
+"""Audit + journal reads respect the caller's per-type view grants - a member
 who can't view devices must not read device change history. (Secops #5.)"""
 from django.contrib.auth.models import User
 from rest_framework.test import APITestCase
@@ -105,7 +105,7 @@ class CanActOnObjectVerbTests(APITestCase):
         )
 
     def test_tenant_less_target_in_a_foreign_tenant_is_denied(self):
-        """Interfaces have no tenant FK — they bind through their site path. An
+        """Interfaces have no tenant FK - they bind through their site path. An
         unscoped grant must not reach another tenant's port."""
         from api.models import Interface
         from audit.api import _can_act_on_object

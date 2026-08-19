@@ -1,4 +1,4 @@
-"""Date/time display settings — cascade resolution, /api/me/, validation.
+"""Date/time display settings - cascade resolution, /api/me/, validation.
 
 Three layers, most specific wins:
 
@@ -201,7 +201,7 @@ class LegacyTimezoneNameTests(APITestCase):
     def test_canonicalises_even_where_the_tz_database_resolves_legacy(self):
         """Some builds ship the tzdata "backward" links and resolve
         Europe/Kiev natively; others don't. Canonicalise regardless, so the
-        stored string doesn't depend on the host — a value written on one
+        stored string doesn't depend on the host - a value written on one
         would otherwise fail to load on the other."""
         from unittest import mock
 
@@ -256,11 +256,11 @@ class LegacyTimezoneNameTests(APITestCase):
         self.assertIn("Europe/Copenhagen", zones)
         self.assertIn("Europe/Kyiv", zones)
         # Legacy spellings never appear, even on hosts whose tz database still
-        # resolves them — otherwise the picker offers a name it rewrites.
+        # resolves them - otherwise the picker offers a name it rewrites.
         self.assertNotIn("Europe/Kiev", zones)
         self.assertNotIn("US/Eastern", zones)
         self.assertEqual(zones, sorted(zones))
-        # Every offered zone must actually save — that was the whole bug.
+        # Every offered zone must actually save - that was the whole bug.
         from core.deployment import clean_display_timezone
 
         for z in zones:

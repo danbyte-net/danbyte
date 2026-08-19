@@ -1,4 +1,4 @@
-"""Assignment drift (S1) — the endpoint serves a certificate other than the one
+"""Assignment drift (S1) - the endpoint serves a certificate other than the one
 its object was declared to present.
 
 This is the source-of-truth half of the certificate feature: an operator
@@ -7,7 +7,7 @@ becomes drift against that intent. It folds into the **same endpoint alert path*
 as expiry (X1/X2): :func:`monitoring.cert_expiry.evaluate_endpoints` calls
 :func:`evaluate_mismatch` on every reactive pass (after an observation) and on
 the nightly sweep, so ``cert_mismatch`` opens/resolves ordinary :class:`Alert`
-rows through the alert engine — ack, silence, renotify and every channel come for
+rows through the alert engine - ack, silence, renotify and every channel come for
 free, and there is no parallel mechanism.
 
 What fires
@@ -26,8 +26,8 @@ Endpoint → object → assignment
 The binding names an ``(IPAddress, port, SNI)`` endpoint. An assignment is
 resolved by walking the IP outward:
 
-* **direct** — an assignment to that IP (``object_type="api.ipaddress"``);
-* **inherited** — an assignment to the Device the IP is on
+* **direct** - an assignment to that IP (``object_type="api.ipaddress"``);
+* **inherited** - an assignment to the Device the IP is on
   (``ip.assigned_device`` → ``object_type="api.device"``) or the VM
   (``ip.assigned_vm`` → ``object_type="api.virtualmachine"``); a device-level
   declaration applies to every endpoint of that device.
@@ -147,7 +147,7 @@ def _resolve(tenant_id, endpoint_key: str, reason: str, now) -> int:
         )
         try:
             notify_alert(alert, "resolved")
-        except Exception:  # noqa: BLE001 — notification must not break the engine
+        except Exception:  # noqa: BLE001 - notification must not break the engine
             log.exception("mismatch resolve notify failed for %s", alert.dedup_key)
     return len(firing)
 
@@ -164,7 +164,7 @@ def _open_or_update(binding, declared, now) -> str:
         defaults={
             "target_ip_id": binding.target_ip_id,
             "template_id": None,
-            # A mismatch is an endpoint TLS condition, like expiry — reuse the
+            # A mismatch is an endpoint TLS condition, like expiry - reuse the
             # tls_cert kind rather than minting a new one; the drift marker in
             # ``detail`` and the dedup namespace distinguish it.
             "kind": "tls_cert",
@@ -186,7 +186,7 @@ def _open_or_update(binding, declared, now) -> str:
             log.exception("mismatch open notify failed for %s", alert.dedup_key)
         return "opened"
 
-    # Already firing — refresh the payload silently (a renewal to another wrong
+    # Already firing - refresh the payload silently (a renewal to another wrong
     # cert keeps it firing but must stop naming the retired one) without paging.
     if alert.detail != detail:
         alert.detail = detail
@@ -199,7 +199,7 @@ def evaluate_mismatch(*, tenant_ids=None, endpoint_keys=None, now=None) -> dict:
 
     Called from :func:`monitoring.cert_expiry.evaluate_endpoints`, so it runs on
     the same reactive pass (scoped to the endpoints just observed) and the
-    nightly sweep (no scope). Read-only w.r.t. intent — it only opens/resolves
+    nightly sweep (no scope). Read-only w.r.t. intent - it only opens/resolves
     alerts, never writes an assignment.
     """
     now = now or timezone.now()
@@ -218,7 +218,7 @@ def evaluate_mismatch(*, tenant_ids=None, endpoint_keys=None, now=None) -> dict:
     for binding in bindings:
         limits = thresholds(settings_by_tenant.get(binding.tenant_id))
         # A mismatch on an endpoint we can no longer see is noise, exactly as for
-        # expiry — the endpoint's own check owns "unreachable".
+        # expiry - the endpoint's own check owns "unreachable".
         stale_after = now - timedelta(days=limits["stale_days"])
         if binding.last_seen < stale_after:
             counts["resolved"] += _resolve(
@@ -281,7 +281,7 @@ def sweep_orphans(now=None) -> int:
 def accept_cert_mismatch(tenant, binding, *, notes="") -> CertificateAssignment:
     """Accept the drift: declare the **served** certificate on the endpoint's IP.
 
-    Mirrors ``snmp_drift.apply_drift_action``'s accept semantics — reality flows
+    Mirrors ``snmp_drift.apply_drift_action``'s accept semantics - reality flows
     into intent only on an explicit accept. We create/replace the *most specific*
     assignment (an IP-level one on the binding's IP) to point at what is actually
     served, so the mismatch resolves; broader device/VM assignments are left

@@ -199,7 +199,7 @@ function MilestoneRow({
             onPatch({ weight: v })
         }}
         className="h-8 w-20 font-mono text-[13px]"
-        title="Weight — lower sorts first"
+        title="Weight - lower sorts first"
       />
       <span className="text-[12px] text-muted-foreground">
         {milestone.task_count} task{milestone.task_count === 1 ? "" : "s"}

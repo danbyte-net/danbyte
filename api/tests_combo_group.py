@@ -48,7 +48,7 @@ class ComboGroupTests(TestCase):
         a = self._iface("mgmt0", combo="mgmt", enabled=True)
         other = self._iface("Gi0/1", combo="uplink", enabled=True)
         plain = self._iface("Gi0/2", combo="", enabled=True)
-        # Different device, same group name — must be untouched.
+        # Different device, same group name - must be untouched.
         d2 = Device.objects.create(
             tenant=self.tenant, name="sw2", device_type=self.dt
         )

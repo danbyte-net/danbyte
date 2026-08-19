@@ -16,7 +16,7 @@ from .models import ChangeLogEntry, JournalEntry
 
 
 def _viewable_types(request):
-    """The set of object-type labels (``app.model`` lower — matching the stored
+    """The set of object-type labels (``app.model`` lower - matching the stored
     ``object_type``) the caller may ``view``, or ``None`` for "all" (superuser).
     Built-in groups hold the ``*`` wildcard so their effective_actions expands
     to every registered slug; a narrow custom role sees only its granted types.
@@ -42,21 +42,21 @@ def _viewable_types(request):
 
 def _can_act_on_object(request, object_type_label, object_id, action="view") -> bool:
     """True if the caller may perform ``action`` on the specific
-    (object_type, object_id) — row/site-scoped, not just type-level. Resolves
+    (object_type, object_id) - row/site-scoped, not just type-level. Resolves
     the stored ``app.model`` label to its model and runs the exact row through
     restrict_queryset, so a Site-A-scoped user can't read a Site-B object's
     history/notes, attach a journal note to it, or apply a planned change to it.
 
     ``action`` is an RBAC verb: ``"view"`` for read-ish surfaces (journal notes,
     generic links), ``"change"`` before writing the target (planned-change
-    apply). The verb is the only difference — the tenant clamp, the tenant-less
+    apply). The verb is the only difference - the tenant clamp, the tenant-less
     site binding and the fail-closed rules are identical, which is exactly why
     they live in one function.
 
     Fail **closed**: superuser → allowed; a non-model type, an unregistered
     slug, or an object that no longer exists → denied (you can't act on
     something the RBAC engine can't vouch for). Reading *history* of a
-    deleted object is handled separately by the stored ``object_site_id`` — this
+    deleted object is handled separately by the stored ``object_site_id`` - this
     guard is for "act on the live object"."""
     from auth_api import rbac
     from auth_api.object_types import is_registered
@@ -66,7 +66,7 @@ def _can_act_on_object(request, object_type_label, object_id, action="view") -> 
     try:
         model = django_apps.get_model(object_type_label)
     except (LookupError, ValueError):
-        return False  # non-model type — can't verify → deny
+        return False  # non-model type - can't verify → deny
     slug = model._meta.model_name
     if not is_registered(slug):
         return False  # not under RBAC → deny
@@ -103,7 +103,7 @@ def _can_act_on_object(request, object_type_label, object_id, action="view") -> 
 
 
 def _can_view_object(request, object_type_label, object_id) -> bool:
-    """``_can_act_on_object`` with the ``view`` verb — the long-standing name,
+    """``_can_act_on_object`` with the ``view`` verb - the long-standing name,
     kept because four call sites and their tests read better this way."""
     return _can_act_on_object(request, object_type_label, object_id, "view")
 
@@ -123,7 +123,7 @@ def _object_site_id(object_type_label, object_id):
 
 
 def _tenant_gate(tenant):
-    """Q selecting audit rows that belong to the active tenant — safe for
+    """Q selecting audit rows that belong to the active tenant - safe for
     tenant-LESS models (Interface, ports, Module, VMInterface, MAC, floor plans,
     component templates), which stamp tenant_id=NULL. Those are admitted only
     when their stored ``object_site_id`` is a Site in this tenant, so a foreign
@@ -146,7 +146,7 @@ def _tenant_gate(tenant):
 
 
 def _visibility_q(request):
-    """A ``Q`` selecting only the audit rows the caller may view — row/site
+    """A ``Q`` selecting only the audit rows the caller may view - row/site
     aware via the stored ``object_site_id`` (so it still works after the object
     is deleted, unlike re-fetching the object). Returns ``Q(pk__in=[])`` when
     the caller may view nothing. Superusers remain unrestricted except that
@@ -299,7 +299,7 @@ class ChangeLogSerializer(serializers.ModelSerializer):
 
 
 class ChangeLogDetailSerializer(ChangeLogSerializer):
-    """Detail adds the full pre/post snapshots (kept off the list payload —
+    """Detail adds the full pre/post snapshots (kept off the list payload -
     they're whole-row dumps and the list can run hundreds of entries)."""
 
     related_labels = serializers.SerializerMethodField()
@@ -311,7 +311,7 @@ class ChangeLogDetailSerializer(ChangeLogSerializer):
 
     def get_related_labels(self, obj) -> dict:
         """Flat ``{uuid: human label}`` for every resolvable FK value anywhere
-        in this entry — the compact diff *and* both full snapshots. A UUID is
+        in this entry - the compact diff *and* both full snapshots. A UUID is
         globally unique, so one map lets the UI swap in the site / device /
         interface name wherever that UUID appears, without caring which field
         or snapshot it came from. Unresolvable ids (deleted rows) are omitted;
@@ -356,7 +356,7 @@ class ChangeLogViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         # One row/site visibility gate for every branch, driven by the stored
-        # object_site_id — so it holds even for DELETE entries whose object is
+        # object_site_id - so it holds even for DELETE entries whose object is
         # gone (re-fetching the object, as before, made deleted-object history
         # unreadable and leaked cross-site rows the type filter let through).
         vis = _visibility_q(self.request)
@@ -428,7 +428,7 @@ class JournalEntryViewSet(viewsets.ModelViewSet):
         p = self.request.query_params
         otype, oid = p.get("object_type"), p.get("object_id")
         tenant = _get_active_tenant(self.request)
-        # Row/site visibility via the stored object_site_id — consistent with the
+        # Row/site visibility via the stored object_site_id - consistent with the
         # change log, and (unlike re-fetching the object) it doesn't leak
         # cross-site notes the type filter would let through.
         vis = _visibility_q(self.request)
@@ -445,7 +445,7 @@ class JournalEntryViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         # A journal note may only be attached to an object the caller can view
-        # (row/site-scoped) — otherwise object_type+object_id are attacker-set.
+        # (row/site-scoped) - otherwise object_type+object_id are attacker-set.
         otype = serializer.validated_data.get("object_type")
         oid = serializer.validated_data.get("object_id")
         if not _can_view_object(self.request, otype, oid):
@@ -460,7 +460,7 @@ class JournalEntryViewSet(viewsets.ModelViewSet):
             object_site_id=_object_site_id(otype, oid),
         )
         # Task comments carry personal notifications (assignees, creator,
-        # earlier commenters, @mentions). Best-effort — a note always saves.
+        # earlier commenters, @mentions). Best-effort - a note always saves.
         if otype == "planning.task":
             from planning import notifications
             from planning.models import Task
@@ -484,7 +484,7 @@ class JournalEntryViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         self._guard_owner(serializer.instance)
-        # A note is bound to the object it was created on — retargeting it
+        # A note is bound to the object it was created on - retargeting it
         # (changing object_type/object_id) would let an owner move a note onto
         # an object they can't view, bypassing the create-time gate. Reject any
         # such change rather than re-authorizing a new target.

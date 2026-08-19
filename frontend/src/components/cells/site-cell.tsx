@@ -30,7 +30,7 @@ export interface SiteCellProps {
 
 export function SiteCell({ site, linked = true, className }: SiteCellProps) {
   if (!site) {
-    return <span className="text-muted-foreground">—</span>
+    return <span className="text-muted-foreground">-</span>
   }
   if (!linked) {
     return <span className={className}>{site.name}</span>

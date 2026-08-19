@@ -40,7 +40,7 @@ export const Route = createFileRoute("/prefixes/")({
 })
 
 // Stable empty fallback so `columns` (which depends on `monitoring`) keeps a
-// constant identity while the status query loads — otherwise facets/filteredRows
+// constant identity while the status query loads - otherwise facets/filteredRows
 // churn every render and DataTable's selection effect loops (see useTableFilters).
 const EMPTY_MON: Record<string, BulkStatusEntry> = {}
 
@@ -67,7 +67,7 @@ function PrefixesPage() {
 
   // The filter rail derives from the factory's facet metadata (status, VLAN,
   // site, VRF, utilisation, tags + one facet per tenant custom field), so a
-  // new facetable column — or a new custom field — shows up automatically.
+  // new facetable column - or a new custom field - shows up automatically.
   // These facet-source columns are never rendered; the render columns below
   // add the interactive extras (selection, tag-chip wiring, actions).
   const facetColumns = useMemo<ColumnDef<Prefix>[]>(
@@ -110,7 +110,7 @@ function PrefixesPage() {
       const an = a.vrf?.name ?? ""
       const bn = b.vrf?.name ?? ""
       if (an !== bn) return an.localeCompare(bn) // then VRF alpha
-      // Don't re-sort by CIDR — annotateNesting already laid out a stable
+      // Don't re-sort by CIDR - annotateNesting already laid out a stable
       // depth-first parent→child order within each VRF.
       return 0
     })
@@ -122,7 +122,7 @@ function PrefixesPage() {
   const prefixIds = useMemo(() => rows.map((r) => r.id), [rows])
   const monQuery = useQuery({
     queryKey: ["prefix-mon-status", prefixIds],
-    // POST — a page of UUIDs makes a URL longer than proxy request-line
+    // POST - a page of UUIDs makes a URL longer than proxy request-line
     // limits (gunicorn 400s at ~110 ids), which blanked the whole column.
     queryFn: () =>
       api<BulkStatusResponse>("/api/monitoring/status/", {
@@ -176,7 +176,7 @@ function PrefixesPage() {
       <ListPageShell
         title="Prefixes"
         count={query.data ? rows.length : undefined}
-        /* Filter rail — derived from the columns' facet metadata. */
+        /* Filter rail - derived from the columns' facet metadata. */
         rail={rail}
         savedViews={{
           objectType: "prefix",
@@ -235,7 +235,7 @@ function PrefixesPage() {
   )
 }
 
-// ─── Group header — VRF colour dot · name · RD · row count ──────────────
+// ─── Group header - VRF colour dot · name · RD · row count ──────────────
 
 function renderVrfGroupHeader({
   value,

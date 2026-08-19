@@ -4,7 +4,7 @@ icon: lucide/box
 
 # Danbyte
 
-**Danbyte is a customizable IPAM / DCIM platform** — one place to track your IP
+**Danbyte is a customizable IPAM / DCIM platform** - one place to track your IP
 address space, your physical gear, and how it all connects.
 
 Its guiding idea is **zero pre-filled data**: Danbyte ships the *models*, never
@@ -94,5 +94,5 @@ else's defaults.
 4. Make it yours with **[tags & custom fields](features/tags-and-custom-fields.md)**.
 
 !!! tip "Can't find something?"
-    Use the **search box** at the top of any page — it searches every page in
+    Use the **search box** at the top of any page - it searches every page in
     these docs.

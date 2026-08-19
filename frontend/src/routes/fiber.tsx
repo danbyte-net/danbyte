@@ -20,7 +20,7 @@ const MODELLING: { value: StrandModelling; label: string; blurb: string }[] = [
   {
     value: "off",
     label: "Off",
-    blurb: "A cable is just a cable — no fibre UI.",
+    blurb: "A cable is just a cable - no fibre UI.",
   },
   {
     value: "count",
@@ -136,7 +136,7 @@ function FiberSettingsPage() {
                 <p className="mt-1 mb-3 text-xs text-muted-foreground">
                   The colour of each fibre position, in order. Default is the
                   TIA-598-C standard. Position 13+ repeats these colours with a
-                  diagonal tracer — one stripe per wrap (13–24 = 1, 25–36 = 2,
+                  diagonal tracer - one stripe per wrap (13–24 = 1, 25–36 = 2,
                   …).
                 </p>
                 <div className="divide-y rounded-lg border border-border">

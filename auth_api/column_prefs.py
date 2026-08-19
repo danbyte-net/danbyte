@@ -3,15 +3,15 @@
 Three operations live here, all scoped to ``(tenant, table_id)`` for the
 currently-signed-in user:
 
-  * ``GET  /auth/prefs/columns/<table_id>/`` — returns the effective pref
+  * ``GET  /auth/prefs/columns/<table_id>/`` - returns the effective pref
     (user's own row → tenant default → ``null``).
-  * ``PUT  /auth/prefs/columns/<table_id>/`` — saves the user's row.
-  * ``DELETE /auth/prefs/columns/<table_id>/`` — wipes the user's row (the
+  * ``PUT  /auth/prefs/columns/<table_id>/`` - saves the user's row.
+  * ``DELETE /auth/prefs/columns/<table_id>/`` - wipes the user's row (the
     next read falls back to the tenant default).
 
 Plus an admin-only flavour:
 
-  * ``PUT /auth/prefs/columns/<table_id>/default/`` — saves the tenant's
+  * ``PUT /auth/prefs/columns/<table_id>/default/`` - saves the tenant's
     default (the ``user=NULL`` row); needs the ``users.manage`` perm.
 """
 from __future__ import annotations
@@ -29,7 +29,7 @@ from .models import UserPreference
 @login_required
 @require_http_methods(["GET"])
 def column_prefs_bulk(request):
-    """Per-table pref *summary* for every table the user/tenant has a row for —
+    """Per-table pref *summary* for every table the user/tenant has a row for -
     one response instead of N per-table requests (the Preferences page only
     needs source/forced/has-own-row, not the full layout). Two queries total.
     """
@@ -81,13 +81,13 @@ def _effective_pref(user, tenant, table_id):
 
     Resolution order (highest wins):
 
-      1. A *forced* tenant default (``user=NULL`` + ``forced=True``) — locks
+      1. A *forced* tenant default (``user=NULL`` + ``forced=True``) - locks
          everyone; the user's own row is ignored while it's forced.
       2. The user's own row.
       3. An ordinary (unforced) tenant default.
       4. ``None`` so the client uses its discovered order.
 
-    Returns ``(data, source, is_forced)`` — ``data`` is ``None`` only for
+    Returns ``(data, source, is_forced)`` - ``data`` is ``None`` only for
     the ``"none"`` source.
     """
     if tenant is None:
@@ -115,18 +115,18 @@ def column_pref(request, table_id):
     if request.method == "GET":
         # Every list page fetches its column prefs on load, including before a
         # tenant is selected (e.g. first login). Return the empty default with
-        # 200 rather than 400 so first-load is clean — there are simply no
+        # 200 rather than 400 so first-load is clean - there are simply no
         # stored prefs yet.
         if tenant is None:
             return JsonResponse({"source": "none", "data": None, "is_forced": False})
         data, source, is_forced = _effective_pref(request.user, tenant, table_id)
         return JsonResponse({"source": source, "data": data, "is_forced": is_forced})
 
-    # Mutations still require an active tenant — there's nowhere to store them.
+    # Mutations still require an active tenant - there's nowhere to store them.
     if tenant is None:
         return JsonResponse({"error": "no active tenant"}, status=400)
 
-    # Both PUT and DELETE mutate the user's own row — refuse while a forced
+    # Both PUT and DELETE mutate the user's own row - refuse while a forced
     # tenant default is in effect so the admin lock can't be worked around.
     forced_default = UserPreference.objects.filter(
         user__isnull=True, tenant=tenant, table_id=table_id, forced=True
@@ -138,7 +138,7 @@ def column_pref(request, table_id):
         ).delete()
         return JsonResponse({"ok": True, "deleted": True})
 
-    # PUT — save the user's row.
+    # PUT - save the user's row.
     if forced_default is not None:
         return JsonResponse(
             {"error": "layout is locked by a tenant administrator",

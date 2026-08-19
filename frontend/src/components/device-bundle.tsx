@@ -16,13 +16,13 @@ import { FormCheckbox } from "@/components/forms"
 import { apiErrorToast } from "@/lib/api-toast"
 
 /**
- * Device-type **bundles** — one file carrying everything that makes a hardware
+ * Device-type **bundles** - one file carrying everything that makes a hardware
  * model work in Danbyte: component templates, the faceplate layout, the
  * photo-port markers, inventory templates, and the vendor SNMP sensors that read
  * its health. Export what you built; someone else imports it and gets your
  * result instead of redoing the work.
  *
- * Bundles carry **no credentials** — sensors poll with the importing
+ * Bundles carry **no credentials** - sensors poll with the importing
  * deployment's own SNMP profile.
  */
 
@@ -126,7 +126,7 @@ export function ImportBundleDialog({
       qc.invalidateQueries({ queryKey: ["snmp-sensors"] })
       toast.success(
         r.action === "skipped"
-          ? "Nothing imported — the type already exists"
+          ? "Nothing imported - the type already exists"
           : `${r.device_type} ${r.action === "update" ? "updated" : "imported"}`
       )
     },
@@ -204,7 +204,7 @@ export function ImportBundleDialog({
             <span className="font-medium">
               {report.device_type} ·{" "}
               {report.action === "skipped"
-                ? "already exists — nothing to do"
+                ? "already exists - nothing to do"
                 : report.action === "update"
                   ? done
                     ? "updated"

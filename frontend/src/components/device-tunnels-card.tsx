@@ -5,7 +5,7 @@ import { Waypoints } from "lucide-react"
 import { api, type Paginated, type Tunnel } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 
-// The tunnels (VPN overlays) terminating on this device — the "show them in
+// The tunnels (VPN overlays) terminating on this device - the "show them in
 // general" surface beyond the map. Each row: the tunnel, its encapsulation,
 // this device's role in it, and the far ends, linking to the tunnel page.
 export function DeviceTunnelsCard({ deviceId }: { deviceId: string }) {

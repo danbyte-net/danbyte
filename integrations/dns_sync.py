@@ -7,7 +7,7 @@ reconciliation is opt-in per zone. For synced zones, A/AAAA (forward) and PTR
 * IP found, ``dns_name`` blank → the name is **filled in** (blank-fill only).
 * IP found, names agree → in sync.
 * IP found, names differ → a ``mismatch`` :class:`~integrations.models.DnsDrift`
-  row for the operator to settle — accept the server's name, or push Danbyte's.
+  row for the operator to settle - accept the server's name, or push Danbyte's.
 * IP carries a name inside a synced forward zone but the zone has no record →
   a ``missing_record`` drift (accept = clear the name / push = create the record).
 * Record with no matching IP in Danbyte → ignored (view it live on the zone).
@@ -15,7 +15,7 @@ reconciliation is opt-in per zone. For synced zones, A/AAAA (forward) and PTR
 Nothing is ever auto-applied in either direction beyond blank-fill.
 
 Push helpers rewrite records with ``Remove-DnsServerResourceRecord`` +
-``Add-DnsServerResourceRecordA/AAAA/Ptr`` — Windows' Set- cmdlet needs full
+``Add-DnsServerResourceRecordA/AAAA/Ptr`` - Windows' Set- cmdlet needs full
 record objects, so remove+add is the reliable shell-exec path.
 """
 from __future__ import annotations
@@ -35,7 +35,7 @@ logger = logging.getLogger("danbyte.dns_sync")
 #: AD/system zones nobody wants reconciled or even listed.
 SKIP_ZONES = {"trustanchors"}
 
-#: AD helper host labels that alias a DC's IP — real records, but never the
+#: AD helper host labels that alias a DC's IP - real records, but never the
 #: name a human means by that address, so they're chosen last when filling.
 _AD_HELPER_HOSTS = {"forestdnszones", "domaindnszones", "gc"}
 
@@ -48,7 +48,7 @@ def containing_prefix(tenant, ip: str, *, placement=None):
     """The smallest prefix that contains ``ip``, or None.
 
     Which VRF's prefixes are eligible is the connection's placement policy;
-    ``placement=None`` means the default — the Global VRF alone, which is what
+    ``placement=None`` means the default - the Global VRF alone, which is what
     this did before placement existed.
     """
     placement = placement or vrf_placement.Placement()
@@ -56,7 +56,7 @@ def containing_prefix(tenant, ip: str, *, placement=None):
 
 
 def suggested_prefix_cidr(ip: str) -> str:
-    """A sensible containing CIDR to offer when no prefix exists yet — a /64 for
+    """A sensible containing CIDR to offer when no prefix exists yet - a /64 for
     IPv6, a /24 for IPv4 (the address's network at that length)."""
     addr = ipaddress.ip_address(ip)
     plen = 64 if addr.version == 6 else 24
@@ -81,7 +81,7 @@ def import_record(record):
         if not placed.ok:
             where = vrf_placement.vrf_label(placement.preferred)
             raise DnsImportError(
-                f"No prefix contains {record.ip} in {where} — create the "
+                f"No prefix contains {record.ip} in {where} - create the "
                 "prefix first, then import."
             )
         prefix = placed.prefix
@@ -104,7 +104,7 @@ def _preferred_name(server_names: set, zone_name: str) -> str:
     """Pick the name to fill a blank ``dns_name`` from an IP's server records.
 
     Prefer an ordinary host name over the zone apex, AD helper records
-    (ForestDnsZones/DomainDnsZones), and underscore service labels — those
+    (ForestDnsZones/DomainDnsZones), and underscore service labels - those
     alias the address but aren't what an operator means by it.
     """
     zn = zone_name.lower()
@@ -210,13 +210,13 @@ def sync_dns(conn) -> dict:
                     "last_seen_at": now,
                 },
             )
-        # Prune zones that vanished from the server — but never Danbyte-authored
+        # Prune zones that vanished from the server - but never Danbyte-authored
         # (managed) zones, which Danbyte owns and the server may not carry.
         DnsZone.objects.filter(connection=conn, managed=False).exclude(
             name__in=seen
         ).delete()
 
-    # Records/drift only make sense for reconciled zones — drop any left behind
+    # Records/drift only make sense for reconciled zones - drop any left behind
     # by a zone whose reconcile was switched off (or that vanished).
     from .models import DnsDrift, DnsRecord
 
@@ -259,13 +259,13 @@ def _reconcile(conn, synced_zones, data, now, counts) -> None:
 
     fresh: set = set()  # (zone_id, ip, rtype) drift keys seen this pass
     fresh_records: set = set()  # (zone_id, name, rtype, data) stored this pass
-    # (zone, ip) pairs that have a record — for missing_record detection.
+    # (zone, ip) pairs that have a record - for missing_record detection.
     recorded: dict[str, set] = {z: set() for z in zones}
 
     # One IP legitimately carries many names (an AD zone's apex + ForestDnsZones
     # / DomainDnsZones helper records all point at the DC; round-robin, aliases).
     # So gather every server name per (zone, ip, rtype) first, then compare the
-    # IP's dns_name against the whole set — a match to ANY of them is in sync.
+    # IP's dns_name against the whole set - a match to ANY of them is in sync.
     # names_by[(zone_name, ip, rtype)] = {server_name, …}
     names_by: dict[tuple, set] = {}
     for r in _as_list(data.get("records")):
@@ -287,7 +287,7 @@ def _reconcile(conn, synced_zones, data, now, counts) -> None:
         names_by.setdefault((zone.name, ip, rtype), set()).add(server_name)
 
         # Persist the address record itself so it's queryable from IPAM and a
-        # real table — name/data are direction-specific.
+        # real table - name/data are direction-specific.
         rec_name = server_name if rtype in ("A", "AAAA") else _fqdn(host, zone.name)
         rec_data = raw
         linked = ip_row(ip)
@@ -314,7 +314,7 @@ def _reconcile(conn, synced_zones, data, now, counts) -> None:
         zone = zones[zone_name]
         row = ip_row(ip)
         if row is None:
-            continue  # record with no IPAM presence — live view only
+            continue  # record with no IPAM presence - live view only
         ours = (row.dns_name or "").rstrip(".")
         lowered = {n.lower() for n in server_names}
         if not ours:
@@ -342,7 +342,7 @@ def _reconcile(conn, synced_zones, data, now, counts) -> None:
         suffix = "." + zone.name.lower()
         scoped = IPAddress.objects.filter(tenant=conn.tenant)
         # Only addresses this connection is responsible for can be "missing" a
-        # record here — one in another VRF is another routing domain's business.
+        # record here - one in another VRF is another routing domain's business.
         if not placement.allow_other_vrfs:
             scoped = scoped.filter(vrf=placement.preferred)
         candidates = scoped.filter(
@@ -364,12 +364,12 @@ def _reconcile(conn, synced_zones, data, now, counts) -> None:
             fresh.add((zone.id, row.ip_address, rtype))
             counts["drift"] += 1
 
-    # Drift that no longer reproduces is settled — drop stale rows.
+    # Drift that no longer reproduces is settled - drop stale rows.
     for stale in DnsDrift.objects.filter(zone__in=synced_zones):
         if (stale.zone_id, stale.ip, stale.record_type) not in fresh:
             stale.delete()
 
-    # Records removed from the zone since last sync go too — but never the
+    # Records removed from the zone since last sync go too - but never the
     # ones authored in Danbyte (managed).
     for stale in DnsRecord.objects.filter(zone__in=synced_zones, managed=False):
         key = (stale.zone_id, stale.name, stale.record_type, stale.data)
@@ -387,7 +387,7 @@ def _split_in_zone(fqdn: str, zone_name: str) -> str:
         return "@"
     if not f.endswith("." + z):
         raise ValueError(
-            f"'{fqdn}' is outside zone '{zone_name}' — rename the IP's DNS "
+            f"'{fqdn}' is outside zone '{zone_name}' - rename the IP's DNS "
             "name into the zone, or sync the zone that owns it."
         )
     return fqdn.rstrip(".")[: -(len(z) + 1)]
@@ -398,7 +398,7 @@ def push_record(conn, zone, drift) -> None:
     name = drift.danbyte_name
     ip = drift.ip
     if drift.record_type == "PTR":
-        # The record name is the IP's reverse pointer relative to this zone —
+        # The record name is the IP's reverse pointer relative to this zone -
         # works for any zone cut (/24, /16, …), not just the conventional one.
         rec_host = _split_in_zone(ipaddress.ip_address(ip).reverse_pointer, zone.name)
         script = (

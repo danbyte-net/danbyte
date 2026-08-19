@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
 import { TaskView } from "@/components/planning/task-detail"
 
-// `$boardId_` — the trailing underscore keeps this out of the board route's
+// `$boardId_` - the trailing underscore keeps this out of the board route's
 // component. Without it the flat file convention nests the task *inside*
 // /planning/$boardId, which renders no <Outlet/>, so opening a task showed the
 // board again.

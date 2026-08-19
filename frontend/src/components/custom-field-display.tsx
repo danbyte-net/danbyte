@@ -36,7 +36,7 @@ export function formatCustomValue(
   v: unknown
 ): React.ReactNode {
   if (!hasCustomValue(v))
-    return <span className="text-muted-foreground">—</span>
+    return <span className="text-muted-foreground">-</span>
   const type = def?.type
   if (type === "boolean" || typeof v === "boolean") {
     return <Badge variant="secondary">{v ? "Yes" : "No"}</Badge>
@@ -67,7 +67,7 @@ export function formatCustomValue(
     return <span className="num">{String(v)}</span>
   }
   if (type === "object" && def?.related_model) {
-    // The stored value may be a bare id OR a serialized object dict — pull the
+    // The stored value may be a bare id OR a serialized object dict - pull the
     // id out either way so we never pass "[object Object]" to ObjectValue.
     const id =
       v && typeof v === "object"
@@ -76,7 +76,7 @@ export function formatCustomValue(
     if (id) return <ObjectValue slug={def.related_model} id={id} />
   }
   // Any object value (e.g. a MAC/related dict on a field whose def we couldn't
-  // resolve) — show a sensible label instead of "[object Object]".
+  // resolve) - show a sensible label instead of "[object Object]".
   if (v && typeof v === "object") {
     const o = v as Record<string, unknown>
     const label =

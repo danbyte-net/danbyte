@@ -1,4 +1,4 @@
-"""Webhooks admin API — tenant-scoped CRUD + a synchronous test-fire."""
+"""Webhooks admin API - tenant-scoped CRUD + a synchronous test-fire."""
 from __future__ import annotations
 
 import uuid as _uuid_mod
@@ -126,7 +126,7 @@ class AutomationTargetViewSet(TenantScopedViewSet):
 
     @action(detail=True, methods=["post"])
     def test(self, request, pk=None):
-        """Reachability check — AWX /api/v2/ping/, or a HEAD to the webhook URL."""
+        """Reachability check - AWX /api/v2/ping/, or a HEAD to the webhook URL."""
         from core.ssrf import safe_get, safe_request
 
         t = self.get_object()
@@ -151,7 +151,7 @@ class AutomationTargetViewSet(TenantScopedViewSet):
 
         Body: {"device_ids": ["<uuid>", ...]}. Device ids are validated against
         the caller's row/site view scope for `device` (not just the target's
-        tenant) — otherwise a Site-A operator could enqueue a deploy / AWX job
+        tenant) - otherwise a Site-A operator could enqueue a deploy / AWX job
         against Site-B devices they can't see.
         """
         from api.models import Device
@@ -207,7 +207,7 @@ class DeployRunSerializer(serializers.ModelSerializer):
 class DeployRunViewSet(TenantScopedViewSet):
     queryset = DeployRun.objects.select_related("target").order_by("-created_at")
     serializer_class = DeployRunSerializer
-    # POST is enabled only for the `retry` detail action — the collection stays
+    # POST is enabled only for the `retry` detail action - the collection stays
     # read-only (create() below 405s so the generic ModelViewSet write that
     # enabling "post" would otherwise expose can't mint blank runs).
     http_method_names = ["get", "post"]
@@ -243,7 +243,7 @@ class DeployRunViewSet(TenantScopedViewSet):
         linked back via ``retry_of`` and ``attempt``."""
         run = self.get_object()
         # Re-firing a deploy needs the same authority as launching one. DeployRun
-        # isn't an RBAC-registered type (so it'd default open) — gate on the
+        # isn't an RBAC-registered type (so it'd default open) - gate on the
         # automation target's `change` permission instead.
         from auth_api import rbac
 
@@ -306,7 +306,7 @@ class DeviceConfigStateSerializer(serializers.ModelSerializer):
 
 
 class DeviceConfigStateListSerializer(serializers.ModelSerializer):
-    """Light row for the tenant-wide drift list — omits the big config blobs,
+    """Light row for the tenant-wide drift list - omits the big config blobs,
     keeps just what a table needs (device name/id + status + when)."""
 
     device_name = serializers.CharField(source="device.name", read_only=True)

@@ -17,7 +17,7 @@ import { UserDeleteDialog } from "@/components/user-delete-dialog"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
-// One-click "email a password-reset link" for a row. Sends the email only —
+// One-click "email a password-reset link" for a row. Sends the email only -
 // the user's current password is untouched; it changes only when they follow
 // the link and choose a new one.
 function ResetButton({ user }: { user: RBACUser }) {
@@ -153,7 +153,7 @@ function buildColumns({
         return name ? (
           <span className="text-xs">{name}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         )
       },
     },
@@ -167,7 +167,7 @@ function buildColumns({
             {row.original.email}
           </span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -180,7 +180,7 @@ function buildColumns({
             {row.original.groups.map((g) => g.name).join(", ")}
           </span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {

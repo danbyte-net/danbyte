@@ -12,7 +12,7 @@ import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
 // The one source of truth for "a table of services". Every surface that lists
-// services — /services, the device / VM Services pane — builds its columns here
+// services - /services, the device / VM Services pane - builds its columns here
 // so a service row reads identically everywhere. Page-specific columns (the
 // pane's Monitor toggle + dialog editor) are spliced around this factory's
 // output; the shared cells are never re-authored inline.
@@ -20,7 +20,7 @@ import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 // Facet meta (useTableFilters) is attached where it makes sense; panes that
 // don't render a facet rail simply ignore it.
 
-/** "TCP 443, 8443" — protocol uppercase + comma-joined ports. */
+/** "TCP 443, 8443" - protocol uppercase + comma-joined ports. */
 function formatProtocolPorts(svc: Service): string {
   return `${svc.protocol.toUpperCase()} ${svc.ports.join(", ")}`
 }
@@ -53,10 +53,10 @@ export interface ServiceColumnOpts<T extends Service = Service> {
   include?: ServiceColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
   /** Link the name and IP to their detail pages. Default true; the pane on a
-   * device / VM renders them as plain text — the row's own edit dialog is the
+   * device / VM renders them as plain text - the row's own edit dialog is the
    * way in from there. */
   linked?: boolean
   /** Trailing RowActions column. */
@@ -177,7 +177,7 @@ export function buildServiceColumns<T extends Service = Service>(
         ) : (
           <Badge
             variant="warning"
-            title="Monitored, but no target IP yet — set an IP on the service or a primary IP on its device/VM."
+            title="Monitored, but no target IP yet - set an IP on the service or a primary IP on its device/VM."
           >
             No IP
           </Badge>
@@ -190,7 +190,7 @@ export function buildServiceColumns<T extends Service = Service>(
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     }),

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { useBookmarks, labelForPath } from "@/lib/use-bookmarks"
 
 /**
- * Topbar star — bookmarks the current page (path + query string) for the
+ * Topbar star - bookmarks the current page (path + query string) for the
  * signed-in user, or removes it if already bookmarked. Bookmarks surface in the
  * dashboard's Bookmarks widget.
  */

@@ -1,6 +1,6 @@
 """Opt-in: give a cluster's site to the VMs on it.
 
-A cluster's site describes the cluster, so it is deliberately NOT inherited —
+A cluster's site describes the cluster, so it is deliberately NOT inherited -
 central compute often runs branch-office workloads (#34). Ticking
 ``apply_site_to_vms`` blank-fills it instead, and a site an operator set on a VM
 is never overwritten.

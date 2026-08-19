@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { apiErrorToast } from "@/lib/api-toast"
 
-// Floating action bar for /device-types — appears when rows are ticked. No
+// Floating action bar for /device-types - appears when rows are ticked. No
 // Edit link: there is no /device-types/bulk-edit route (unlike sites, IPs,
 // prefixes and VLANs), and a bar that links to a 404 is worse than one that
 // doesn't offer the action.
@@ -86,7 +86,7 @@ function BulkDeleteConfirm({
 }: {
   ids: string[]
   sample: string[]
-  /** Devices across the whole selection — see the warning copy below. */
+  /** Devices across the whole selection - see the warning copy below. */
   deviceCount: number
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -121,11 +121,11 @@ function BulkDeleteConfirm({
           </AlertDialogTitle>
           {/* Same warning the single-row dialog gives, summed over the
               selection: Device.device_type is SET_NULL, so the devices keep
-              running — they just stop knowing what they are. Detyping 40 live
+              running - they just stop knowing what they are. Detyping 40 live
               devices must never be a surprise. */}
           <AlertDialogDescription>
             {deviceCount > 0
-              ? `${deviceCount} device${deviceCount === 1 ? "" : "s"} use these types — they'll keep working but lose their type reference.`
+              ? `${deviceCount} device${deviceCount === 1 ? "" : "s"} use these types - they'll keep working but lose their type reference.`
               : "This action can't be undone."}{" "}
             The following will be removed:
           </AlertDialogDescription>

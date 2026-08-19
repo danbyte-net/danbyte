@@ -22,7 +22,7 @@ export const BarSlotContext = createContext<HTMLElement | null>(null)
  * parent (`DeviceComponents`) collects every mounted pane's actions and renders
  * them as a single contextual "Add" control.
  *
- * `key` must be stable per pane; `actions` may change identity each render —
+ * `key` must be stable per pane; `actions` may change identity each render -
  * only their labels/disabled flags drive re-registration, and the latest
  * click handlers are always invoked.
  */

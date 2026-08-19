@@ -117,7 +117,7 @@ function DhcpReservationsPage() {
         id: "scope",
         accessorKey: "scope_display",
         header: ({ column }) => <SortHeader column={column} label="Scope" />,
-        // Scopes have no detail page — the informative destination is the
+        // Scopes have no detail page - the informative destination is the
         // prefix the scope backs in IPAM.
         cell: ({ row }) =>
           row.original.scope_prefix ? (
@@ -179,7 +179,7 @@ function DhcpReservationsPage() {
               {row.original.drift === "missing" ? "missing" : "modified"}
             </Badge>
           ) : (
-            <span className="text-xs text-muted-foreground">—</span>
+            <span className="text-xs text-muted-foreground">-</span>
           ),
       },
       ...(canChange || canDelete
@@ -258,8 +258,8 @@ function DhcpReservationsPage() {
       )}
       {rows.length === 0 && query.data && !q && !scope ? (
         <EmptyState title="No DHCP reservations synced.">
-          Reservations from your Windows DHCP servers — and any you create on a
-          server's page — appear here.
+          Reservations from your Windows DHCP servers - and any you create on a
+          server's page - appear here.
         </EmptyState>
       ) : (
         <DataTable

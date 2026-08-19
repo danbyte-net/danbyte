@@ -89,7 +89,7 @@ export function ServicesPane({
   const invalidate = () =>
     qc.invalidateQueries({ queryKey: ["services", parent.kind, parent.id] })
 
-  // Monitoring is a flag on the service — toggling PATCHes `monitored` and the
+  // Monitoring is a flag on the service - toggling PATCHes `monitored` and the
   // backend reconciles the per-port checks (monitoring/service_checks.py).
   const toggle = useMutation({
     mutationFn: (svc: Service) =>
@@ -100,7 +100,7 @@ export function ServicesPane({
     onSuccess: (saved) => {
       if (saved.monitored && saved.check_count === 0)
         toast.warning(
-          `${saved.name} is monitored, but has no target IP yet — set an IP on the service or a primary IP on its device/VM.`
+          `${saved.name} is monitored, but has no target IP yet - set an IP on the service or a primary IP on its device/VM.`
         )
       else if (saved.monitored)
         toast.success(
@@ -135,7 +135,7 @@ export function ServicesPane({
           const svc = row.original
           // The backend resolves a target from the service's own IP, falling
           // back to the parent device/VM's primary IP. When neither exists we
-          // still allow enabling — it parks as "No IP" until one appears — but
+          // still allow enabling - it parks as "No IP" until one appears - but
           // hint that in the tooltip.
           const hasTarget = !!svc.ip_address || parentHasPrimaryIp !== false
           return (
@@ -149,7 +149,7 @@ export function ServicesPane({
                     ? "Stop monitoring this service"
                     : hasTarget
                       ? "Monitor each port of this service"
-                      : "Enable monitoring — activates once the service or its device/VM has an IP"
+                      : "Enable monitoring - activates once the service or its device/VM has an IP"
                 }
                 disabled={toggle.isPending}
                 onClick={() => toggle.mutate(svc)}
@@ -237,7 +237,7 @@ export function ServicesPane({
 }
 
 /** Create/edit form for one service, in a dialog. Shared by the device/VM
- * Services tab (create + edit) and the service detail page's Edit action —
+ * Services tab (create + edit) and the service detail page's Edit action -
  * services have no `/services/$id/edit` route, this dialog *is* the editor. */
 export function ServiceFormDialog({
   parent,
@@ -302,9 +302,9 @@ function ServiceForm({
   const [monitored, setMonitored] = useState(service?.monitored ?? false)
   const [templateId, setTemplateId] = useState<string | null>(null)
 
-  // "From template" (create only) — pick a saved ServiceTemplate and stamp its
+  // "From template" (create only) - pick a saved ServiceTemplate and stamp its
   // name / protocol / ports / description into the form. A reusable definition
-  // ("HTTPS — TCP 443") you apply on a device.
+  // ("HTTPS - TCP 443") you apply on a device.
   const templates = useQuery({
     queryKey: ["service-templates", "all"],
     queryFn: () =>
@@ -372,7 +372,7 @@ function ServiceForm({
       {!isEdit && templateOptions.length > 0 && (
         <FormCombobox
           label="From template"
-          hint="optional — prefills the fields below"
+          hint="optional - prefills the fields below"
           value={templateId}
           onChange={applyTemplate}
           options={templateOptions}
@@ -418,7 +418,7 @@ function ServiceForm({
         value={ipId}
         onChange={setIpId}
         noneLabel="No IP"
-        placeholder="No IP — uses device/VM primary"
+        placeholder="No IP - uses device/VM primary"
         error={fieldErrors.ip_address_id}
       />
       <FormCheckbox

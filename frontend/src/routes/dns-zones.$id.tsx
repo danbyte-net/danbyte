@@ -75,7 +75,7 @@ function Body({ zone }: { zone: DnsZone }) {
     onSuccess: (r) => {
       toast.success(
         `Imported ${r.created} record${r.created === 1 ? "" : "s"}` +
-          (r.skipped ? ` — ${r.skipped} skipped (no prefix)` : "")
+          (r.skipped ? ` - ${r.skipped} skipped (no prefix)` : "")
       )
       qc.invalidateQueries({ queryKey: ["dns-records"] })
     },
@@ -223,7 +223,7 @@ function Body({ zone }: { zone: DnsZone }) {
                 <InfoTip>
                   Address records (A/AAAA/PTR) synced from this zone, linked to
                   their IP addresses. Other types (CNAME, MX, TXT…) aren't
-                  stored — see the Live records tab for the full dump.
+                  stored - see the Live records tab for the full dump.
                 </InfoTip>
               </h3>
               {canImport && (

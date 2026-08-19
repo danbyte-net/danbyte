@@ -2,18 +2,18 @@
 
 This is distinct from :class:`monitoring.secrets.EncryptedJSONField`, which
 encrypts a *model field in place*. Here the app stores private-key material under
-an opaque ``ref`` and holds only that reference — the secret bytes live in a
+an opaque ``ref`` and holds only that reference - the secret bytes live in a
 backend an operator chooses:
 
-* ``local`` — an encrypted table (:class:`monitoring.models.StoredSecret`),
+* ``local`` - an encrypted table (:class:`monitoring.models.StoredSecret`),
   reusing the same Fernet-at-rest machinery as every other credential. Works out
   of the box, airgap-friendly, no external dependency.
-* ``vault`` — an external HashiCorp Vault / OpenBao (added by the Vault backend).
+* ``vault`` - an external HashiCorp Vault / OpenBao (added by the Vault backend).
 
 It is **opt-in and deployment-tier**: choosing where the org's private keys live
 is a deployment-admin decision (like the SSRF allowlist), never a tenant one.
 Until a provider is enabled, :func:`secret_store_enabled` is ``False`` and every
-key-bearing feature (CSR, ACME) must stay **fail-closed** — call
+key-bearing feature (CSR, ACME) must stay **fail-closed** - call
 :func:`require_secret_store`, which raises :class:`SecretStoreDisabled`.
 """
 from __future__ import annotations
@@ -28,7 +28,7 @@ class SecretStoreError(RuntimeError):
 
 
 class SecretStoreDisabled(SecretStoreError):
-    """No secret store is enabled — a key-bearing feature refused to proceed."""
+    """No secret store is enabled - a key-bearing feature refused to proceed."""
 
 
 class SecretStore(Protocol):
@@ -42,7 +42,7 @@ class SecretStore(Protocol):
     def delete(self, tenant_id, ref: str) -> None: ...
 
     def get_at_path(self, tenant_id, path: str) -> dict | None:
-        """Read an operator-chosen *external* path — a secret authored outside
+        """Read an operator-chosen *external* path - a secret authored outside
         Danbyte's ``{tenant}/{ref}`` namespace. ``tenant_id`` scopes the lookup
         for stores that keep secrets in Danbyte's own DB (the local provider);
         external stores (Vault) address the operator's path directly. Used by
@@ -53,7 +53,7 @@ class SecretStore(Protocol):
 
 
 class LocalFernetSecretStore:
-    """The ``local`` provider — secrets in the encrypted ``StoredSecret`` table.
+    """The ``local`` provider - secrets in the encrypted ``StoredSecret`` table.
 
     Reuses ``EncryptedJSONField`` on the row, so the value is Fernet-encrypted at
     rest under the deployment's ``MONITORING_SECRET_KEY`` exactly like every
@@ -80,7 +80,7 @@ class LocalFernetSecretStore:
 
     def get_at_path(self, tenant_id, path: str) -> dict | None:
         """A ``StoredSecret`` whose ``ref`` equals ``path`` **within this
-        tenant** — for the local provider an operator seeds a secret by creating
+        tenant** - for the local provider an operator seeds a secret by creating
         a ``StoredSecret`` with that ref. Tenant-scoped so one tenant's path can
         never resolve another tenant's secret. ``None`` when nothing matches."""
         from .models import StoredSecret
@@ -96,7 +96,7 @@ def _provider() -> str:
 
 
 def secret_store_enabled() -> bool:
-    """True when a usable secret store is configured — the gate CSR/ACME check
+    """True when a usable secret store is configured - the gate CSR/ACME check
     before touching a private key. A provider that is selected but unconfigured
     (e.g. ``vault`` with no address/token) counts as disabled: fail closed."""
     return active_secret_store() is not None

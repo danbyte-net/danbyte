@@ -1,4 +1,4 @@
-"""SNMP polling for virtual machines (virtual routers / appliances) — #13.
+"""SNMP polling for virtual machines (virtual routers / appliances) - #13.
 
 Mirrors the device SNMP flow: poll by the VM's primary IP, store observed facts
 + interfaces on the shared DeviceSnmp store (keyed by vm), read them back.

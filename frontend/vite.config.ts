@@ -7,7 +7,7 @@ import tailwindcss from "@tailwindcss/vite"
 // Dev: proxy /api/* and /auth/* to the Django backend so the React app hits
 // DRF directly and reuses Django's session cookie + CSRF. DJANGO_URL overrides
 // the target (default :8000) so a second instance on this box (e.g. a feature
-// branch on its own DB/ports) proxies to ITS backend, not the primary one —
+// branch on its own DB/ports) proxies to ITS backend, not the primary one -
 // `vite preview` inherits this proxy too.
 const django = process.env.DJANGO_URL ?? "http://localhost:8000"
 const djangoWs = django.replace(/^http/, "ws")
@@ -38,7 +38,7 @@ const config = defineConfig({
     },
   },
   // Production: `vite preview` serves the built SSR app (danbyte-frontend-prod).
-  // Behind nginx the Host header is the public domain, so accept any host here —
+  // Behind nginx the Host header is the public domain, so accept any host here -
   // real host allow-listing lives in Django's ALLOWED_HOSTS. nginx routes
   // /api, /ws, /static, /admin to Django; only app routes reach this server.
   preview: {

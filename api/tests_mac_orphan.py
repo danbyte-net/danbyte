@@ -2,7 +2,7 @@
 
 ``MACAddress.assigned_interface`` is SET_NULL so a MAC survives the port that
 bore it, but ``uniq_macaddress_tenant_addr_iface`` is ``nulls_distinct=False``
-— only one unassigned row per (tenant, address). Orphaning a MAC that already
+- only one unassigned row per (tenant, address). Orphaning a MAC that already
 exists unassigned used to raise IntegrityError, surfacing as a 409 the user
 could never get past.
 """
@@ -62,7 +62,7 @@ class MacOrphanOnInterfaceDeleteTests(APITestCase):
         self.assertIsNone(remaining.get().assigned_interface_id)
 
     def test_delete_keeps_a_mac_with_no_unassigned_twin(self):
-        """SET_NULL semantics still hold — the MAC outlives its port."""
+        """SET_NULL semantics still hold - the MAC outlives its port."""
         iface = self._iface("eth0")
         MACAddress.objects.create(
             tenant=self.tenant, mac_address=MAC, assigned_interface=iface

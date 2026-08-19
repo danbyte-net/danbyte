@@ -22,7 +22,7 @@ import {
 } from "@/components/columns/actions-column"
 
 // The one source of truth for "a table of IP addresses". Every surface that
-// lists IPs — the prefix IPs pane, the device IPs pane, embedded IP tables —
+// lists IPs - the prefix IPs pane, the device IPs pane, embedded IP tables -
 // builds its shared columns here so an IP row reads identically everywhere.
 // Page-specific columns (designation, monitoring, range, …) are spliced
 // around this factory's output.
@@ -177,7 +177,7 @@ export function buildIpColumns<T = IPAddress>(
                   ? "DHCP scope"
                   : v === "exclusion"
                     ? "DHCP exclusion"
-                    : "—",
+                    : "-",
           }),
         },
       },
@@ -313,7 +313,7 @@ export function buildIpColumns<T = IPAddress>(
           label: "Scope",
           get: (r: T) => getIp(r)?.scope ?? "__none__",
           formatValue: (v) => ({
-            label: v ? v[0].toUpperCase() + v.slice(1) : "—",
+            label: v ? v[0].toUpperCase() + v.slice(1) : "-",
           }),
         },
       },
@@ -403,7 +403,7 @@ export function buildIpColumns<T = IPAddress>(
             className="block whitespace-nowrap text-muted-foreground"
             title={ip.description}
           >
-            {ip.description || "—"}
+            {ip.description || "-"}
           </span>
         )
       },
@@ -427,7 +427,7 @@ export function buildIpColumns<T = IPAddress>(
   if (opts.selection) cols.push(selectionColumn<T>())
   for (const id of CANONICAL_ORDER) if (keep(id)) cols.push(byId[id]())
 
-  // One column per tenant IP custom field — hidden by default, toggleable.
+  // One column per tenant IP custom field - hidden by default, toggleable.
   // Each carries an enum facet over its observed values so any facet rail
   // built from these columns adapts to the tenant's custom fields.
   for (const d of opts.cfDefs ?? []) {

@@ -1,6 +1,6 @@
 """User-declared customization objects.
 
-Today this is the ``CustomField`` definition — the schema that gives the
+Today this is the ``CustomField`` definition - the schema that gives the
 otherwise free-form ``custom_fields`` JSONB blob (on every domain model) a
 label, a type, and validation. Definitions are **tenant-scoped**: each tenant
 declares its own fields, in keeping with the platform's zero-pre-filled-data
@@ -16,7 +16,7 @@ from django.db import models
 from core.models import TimestampedModel
 
 
-# Field data types. The frontend mirrors this list in lib/custom-fields.ts —
+# Field data types. The frontend mirrors this list in lib/custom-fields.ts -
 # keep the two in sync.
 CUSTOM_FIELD_TYPES = [
     ("text", "Text"),
@@ -33,7 +33,7 @@ CUSTOM_FIELD_TYPES = [
 CUSTOM_FIELD_TYPE_VALUES = {t[0] for t in CUSTOM_FIELD_TYPES}
 _CHOICE_TYPES = {"select", "multiselect"}
 
-# What a custom field can attach to is no longer a hand-kept list — it's
+# What a custom field can attach to is no longer a hand-kept list - it's
 # auto-derived from every model carrying ``CustomFieldsMixin`` (plus plugin
 # registrations). See customization/object_registry.py.
 from .object_registry import (  # noqa: E402

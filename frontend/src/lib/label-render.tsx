@@ -24,7 +24,7 @@ function injectQr(html: string, qr: string, sizeMm: number): string {
   return qr ? `${html}${box}` : html
 }
 
-/** Full standalone HTML document for one label — the editor's live preview
+/** Full standalone HTML document for one label - the editor's live preview
  * (iframe srcdoc). Sized in mm so the preview matches the printed proportions.
  * Printing goes through the server PDF endpoint (exact physical size); this is
  * screen-only, so it deliberately does not carry `@page`. */

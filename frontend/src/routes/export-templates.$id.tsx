@@ -29,7 +29,7 @@ const OBJECT_TYPE = "api.exporttemplate"
 
 // An export template has no reverse relations: nothing in the model points back
 // at it, and a render is produced on demand rather than stored. So the honest
-// page is Overview + Journal + History — with the template body treated as the
+// page is Overview + Journal + History - with the template body treated as the
 // content, not as one more attribute row.
 type Tab = "overview" | "journal" | "history"
 const TABS: readonly Tab[] = ["overview", "journal", "history"]
@@ -57,7 +57,7 @@ function ExportTemplateDetail() {
 }
 
 /** Render + download the template's output. Fetches the file first so a render
- * error surfaces as a toast rather than downloading an error page — the same
+ * error surfaces as a toast rather than downloading an error page - the same
  * treatment the list page's row button gives it. */
 function RenderButton({ template }: { template: ExportTemplate }) {
   const m = useMutation({
@@ -270,7 +270,7 @@ function TemplateOverview({ template: t }: { template: ExportTemplate }) {
           </pre>
         ) : (
           <p className="text-sm text-muted-foreground">
-            This template has no body — rendering it produces an empty file.
+            This template has no body - rendering it produces an empty file.
           </p>
         )}
       </section>

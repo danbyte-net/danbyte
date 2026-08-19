@@ -89,7 +89,7 @@ def parse_carrierone(msg: email.message.Message) -> dict | None:
         Start:       2026-08-19 22:00 UTC
         End:         2026-08-20 04:00 UTC
         Circuit ID:  DK-31-0042
-        Summary:     Fiber splice work — metro ring west
+        Summary:     Fiber splice work - metro ring west
     """
     subject = msg.get("Subject", "")
     m = re.search(r"\[(CARR1-[A-Z0-9-]+)\]", subject)
@@ -97,7 +97,7 @@ def parse_carrierone(msg: email.message.Message) -> dict | None:
         return None
     body = msg.get_body(preferencelist=("plain",))
     text = body.get_content() if body else ""
-    field = lambda name: (  # noqa: E731 — tiny, local
+    field = lambda name: (  # noqa: E731 - tiny, local
         re.search(rf"^{name}:\s*(.+)$", text, re.M | re.I) or [None, ""]
     )[1].strip()
 
@@ -143,7 +143,7 @@ def ingest(msg: email.message.Message) -> bool:
         )
         verb = {200: "updated", 201: "created"}.get(code, f"HTTP {code}")
         print(f"[{name}] {payload['external_ref']}: {verb}"
-              + ("" if code in (200, 201) else f" — {data}"))
+              + ("" if code in (200, 201) else f" - {data}"))
         return code in (200, 201)
     print(f"skipped (no parser matched): {msg.get('Subject', '')!r}")
     return False

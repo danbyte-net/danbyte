@@ -1,4 +1,4 @@
-"""SSO HTTP endpoints — OIDC login initiation, callback, and a public list of
+"""SSO HTTP endpoints - OIDC login initiation, callback, and a public list of
 enabled providers for the login page.
 
 The browser hits ``/api/auth/sso/<slug>/login/`` (from a login-page button),
@@ -44,7 +44,7 @@ def _login_redirect(error: str = "") -> HttpResponseRedirect:
 
 
 def _callback_uri(request, slug: str) -> str:
-    # Absolute, honouring the X-Forwarded-Proto nginx sets — must match the
+    # Absolute, honouring the X-Forwarded-Proto nginx sets - must match the
     # redirect URI registered at the IdP.
     return request.build_absolute_uri(f"/api/auth/sso/{slug}/callback/")
 
@@ -66,7 +66,7 @@ def sso_providers(request):
 
 @require_GET
 def sso_login(request, slug):
-    """Kick off SSO — OIDC authorize redirect, or SAML AuthnRequest redirect."""
+    """Kick off SSO - OIDC authorize redirect, or SAML AuthnRequest redirect."""
     import secrets as pysecrets
 
     provider = IdentityProvider.objects.filter(slug=slug, enabled=True).first()
@@ -83,7 +83,7 @@ def sso_login(request, slug):
             )
         except SamlError as exc:
             return _login_redirect(str(exc))
-        # Record the outstanding request in the DB (not the session) — the IdP's
+        # Record the outstanding request in the DB (not the session) - the IdP's
         # ACS POST is cross-site and the SameSite=Lax session cookie won't ride
         # along, so the ACS matches the response by InResponseTo against this row.
         SamlLoginState.objects.create(request_id=request_id, provider=provider)
@@ -106,7 +106,7 @@ def sso_login(request, slug):
 
 @require_GET
 def sso_metadata(request, slug):
-    """SP metadata XML for a SAML provider — hand this to the IdP."""
+    """SP metadata XML for a SAML provider - hand this to the IdP."""
     provider = IdentityProvider.objects.filter(
         slug=slug, protocol=IdentityProvider.Protocol.SAML
     ).first()
@@ -121,7 +121,7 @@ def sso_metadata(request, slug):
 @csrf_exempt
 @require_POST
 def sso_acs(request, slug):
-    """SAML assertion consumer — the IdP POSTs the signed Response here. CSRF-
+    """SAML assertion consumer - the IdP POSTs the signed Response here. CSRF-
     exempt (cross-site POST); security is the signed, audience/recipient/
     InResponseTo-checked assertion, not a CSRF token."""
     provider = IdentityProvider.objects.filter(
@@ -184,14 +184,14 @@ def sso_callback(request, slug):
 
     code = request.GET.get("code")
     state = request.GET.get("state")
-    # state must match this session's, and belong to this provider — CSRF guard.
+    # state must match this session's, and belong to this provider - CSRF guard.
     if (
         not code
         or not state
         or state != request.session.get("sso_state")
         or slug != request.session.get("sso_slug")
     ):
-        return _login_redirect("SSO state check failed — please try again.")
+        return _login_redirect("SSO state check failed - please try again.")
     nonce = request.session.get("sso_nonce")
 
     try:
@@ -206,6 +206,6 @@ def sso_callback(request, slug):
     if not user.is_active:
         return _login_redirect("This account is disabled.")
     # The IdP performed authentication; establish the session directly (no
-    # password / local MFA — that's the IdP's job).
+    # password / local MFA - that's the IdP's job).
     auth_login(request, user, backend=MODEL_BACKEND)
     return HttpResponseRedirect("/")

@@ -1,7 +1,7 @@
 #!/bin/sh
 # One-time (sudo): wire the "Danbyte is updating" page into nginx, safely.
 # Backs up the config, injects the include, runs `nginx -t`, and RESTORES the
-# backup if the test fails — so it can't leave your site broken.
+# backup if the test fails - so it can't leave your site broken.
 #
 #   sudo sh deploy/setup-maintenance.sh [path-to-your-nginx-site-conf]
 #
@@ -22,7 +22,7 @@ if [ -z "$CONF" ]; then
     /etc/nginx/conf.d /etc/nginx/nginx.conf 2>/dev/null | head -1)
 fi
 [ -n "$CONF" ] && [ -f "$CONF" ] || {
-  echo "Couldn't find your nginx site conf — pass it: sudo sh $0 /etc/nginx/sites-enabled/danbyte" >&2
+  echo "Couldn't find your nginx site conf - pass it: sudo sh $0 /etc/nginx/sites-enabled/danbyte" >&2
   exit 1
 }
 echo "nginx conf: $CONF"
@@ -42,7 +42,7 @@ EOF
 
 # 2. Inject an include into the server block (idempotent).
 if grep -q "danbyte-maintenance.conf" "$CONF"; then
-  echo "include already present — snippet refreshed."
+  echo "include already present - snippet refreshed."
 else
   BK="$CONF.danbyte-bak-$(date +%s)"
   cp "$CONF" "$BK"
@@ -62,10 +62,10 @@ PY
   if nginx -t 2>&1; then
     echo "nginx -t OK"
   else
-    echo "nginx -t FAILED — restoring $BK"; cp "$BK" "$CONF"; exit 1
+    echo "nginx -t FAILED - restoring $BK"; cp "$BK" "$CONF"; exit 1
   fi
 fi
 
 nginx -t && systemctl reload nginx && \
-  echo "Done — the updating page is live. It shows automatically whenever the
+  echo "Done - the updating page is live. It shows automatically whenever the
 backend is down (e.g. during an in-app upgrade)."

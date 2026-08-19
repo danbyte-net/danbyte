@@ -14,7 +14,7 @@ export function DevicePathsList({
   deviceId,
   onTraceCables,
   max = 5,
-  emptyText = "Nothing cabled yet — connect a port and its run shows up here.",
+  emptyText = "Nothing cabled yet - connect a port and its run shows up here.",
 }: {
   deviceId: string
   onTraceCables?: (cableIds: string[]) => void
@@ -62,7 +62,7 @@ export function DevicePathsList({
   )
 }
 
-/** Every cable id across all of a device's runs — for a one-shot "trace
+/** Every cable id across all of a device's runs - for a one-shot "trace
  * everything" action. */
 export function runCableIds(runs: DevicePathRun[]): string[] {
   const ids = new Set<string>()

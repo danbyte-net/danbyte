@@ -1,4 +1,4 @@
-"""Script / exec checker — Nagios-plugin style.
+"""Script / exec checker - Nagios-plugin style.
 
 Runs a **local plugin** on the worker host and maps its exit code to a status,
 following the Nagios plugin convention:
@@ -16,9 +16,9 @@ execution footgun, so this checker is locked down:
 
 * It is **disabled** unless ``settings.MONITORING_EXEC_ENABLED`` is true.
 * The command must be a **bare plugin name** (no ``/`` or ``..``) resolved inside
-  ``settings.MONITORING_PLUGIN_DIR`` — you can only run vetted plugins you've
+  ``settings.MONITORING_PLUGIN_DIR`` - you can only run vetted plugins you've
   placed there, never arbitrary system binaries.
-* Arguments are passed as a real argv list to ``create_subprocess_exec`` —
+* Arguments are passed as a real argv list to ``create_subprocess_exec`` -
   **no shell**, so there is no shell-injection surface. ``{host}`` in any
   argument is replaced with the target IP as a single argv element.
 """

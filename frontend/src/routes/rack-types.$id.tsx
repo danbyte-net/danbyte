@@ -188,7 +188,7 @@ function Body({ rackType: rt }: { rackType: RackType }) {
   )
 }
 
-/** The factory-fitted 0U strips this model ships with — one side-mounted
+/** The factory-fitted 0U strips this model ships with - one side-mounted
  * device each when a new rack opts into stamping. */
 function AccessoriesPane({ rackTypeId }: { rackTypeId: string }) {
   const { canDo } = useMe()
@@ -233,8 +233,8 @@ function AccessoriesPane({ rackTypeId }: { rackTypeId: string }) {
         <QueryError error={q.error} />
       ) : rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No accessories. Add the strips this cabinet ships with — e.g. two
-          vertical PDUs — and new racks of this type can stamp them as
+          No accessories. Add the strips this cabinet ships with - e.g. two
+          vertical PDUs - and new racks of this type can stamp them as
           side-mounted devices automatically.
         </p>
       ) : (
@@ -267,7 +267,7 @@ function AccessoriesPane({ rackTypeId }: { rackTypeId: string }) {
                   <TableCell className="num text-xs">
                     {a.mount_offset_mm != null
                       ? `${a.mount_offset_mm} mm`
-                      : "—"}
+                      : "-"}
                   </TableCell>
                   <TableCell className="num text-xs">
                     {a.mount_span_u != null ? `${a.mount_span_u}U` : "auto"}
@@ -436,7 +436,7 @@ function AccessoryDialog({
                 : "Pick a 0U device type"
             }
             searchPlaceholder="Search device types…"
-            emptyText="No 0U device types — vertical strips need a 0U type."
+            emptyText="No 0U device types - vertical strips need a 0U type."
             options={zeroU.map((dt) => ({ value: dt.id, label: dt.name }))}
             error={fieldErrors.device_type_id}
           />
@@ -462,7 +462,7 @@ function AccessoryDialog({
             />
             <FormText
               label="Offset (mm)"
-              hint="optional — above the base"
+              hint="optional - above the base"
               type="number"
               min={0}
               value={offset}
@@ -471,7 +471,7 @@ function AccessoryDialog({
             />
             <FormText
               label="Span (U)"
-              hint="optional — blank ≈ ¾ rack"
+              hint="optional - blank ≈ ¾ rack"
               type="number"
               min={1}
               max={60}
@@ -530,7 +530,7 @@ function RacksOfTypePane({ rackTypeId }: { rackTypeId: string }) {
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No racks use this type yet — add one here, or pick the type on any
+          No racks use this type yet - add one here, or pick the type on any
           rack's form.
         </p>
       ) : (

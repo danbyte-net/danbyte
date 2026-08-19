@@ -55,7 +55,7 @@ function slugify(s: string): string {
     .slice(0, 50)
 }
 
-/** "Tenant groups" management block rendered below the tenants table —
+/** "Tenant groups" management block rendered below the tenants table -
  * a small bordered table plus a dialog-based add/edit form. Groups are
  * navigation metadata over tenants, so they live on the same page rather
  * than a separate route. */
@@ -81,7 +81,7 @@ export function TenantGroupsSection() {
     onSuccess: () => {
       toast.success(`Deleted ${deleting!.name}`)
       qc.invalidateQueries({ queryKey: ["tenant-groups"] })
-      // Members and children are SET_NULL'd server-side — refresh both.
+      // Members and children are SET_NULL'd server-side - refresh both.
       qc.invalidateQueries({ queryKey: ["tenants"] })
       setDeleting(null)
     },
@@ -116,7 +116,7 @@ export function TenantGroupsSection() {
       {query.data &&
         (groups.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No tenant groups yet. Groups organise tenants into a tree — they
+            No tenant groups yet. Groups organise tenants into a tree - they
             never gate access.
           </p>
         ) : (
@@ -137,7 +137,7 @@ export function TenantGroupsSection() {
                   <TableRow key={g.id}>
                     <TableCell className="py-2 font-medium">{g.name}</TableCell>
                     <TableCell className="py-2 text-muted-foreground">
-                      {g.parent?.name ?? "—"}
+                      {g.parent?.name ?? "-"}
                     </TableCell>
                     <TableCell className="num py-2 text-xs">
                       {g.tenant_count}
@@ -147,7 +147,7 @@ export function TenantGroupsSection() {
                     </TableCell>
                     <TableCell className="py-2">
                       <span className="line-clamp-1 block text-muted-foreground">
-                        {g.description || "—"}
+                        {g.description || "-"}
                       </span>
                     </TableCell>
                     {(canEdit || canDelete) && (
@@ -204,7 +204,7 @@ export function TenantGroupsSection() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete group {deleting?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              No tenants are deleted — the {deleting?.tenant_count ?? 0} tenant
+              No tenants are deleted - the {deleting?.tenant_count ?? 0} tenant
               {(deleting?.tenant_count ?? 0) === 1 ? "" : "s"} in this group
               become ungrouped, and its {deleting?.child_count ?? 0} child group
               {(deleting?.child_count ?? 0) === 1 ? "" : "s"} move to the top

@@ -170,7 +170,7 @@ function RoleOverview({ role: r }: { role: ContactRole }) {
   )
 }
 
-/** Every contact attached to something *in this role* — the impact analysis
+/** Every contact attached to something *in this role* - the impact analysis
  * you want before renaming or deleting a role. */
 function RoleAssignmentsTable({ roleId }: { roleId: string }) {
   const q = useQuery({

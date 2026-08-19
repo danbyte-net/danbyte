@@ -17,9 +17,9 @@ import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 // (useTableFilters) is attached where it makes sense; panes that don't draw a
 // facet rail simply ignore it.
 
-/** "230V / 32A" — the electrical rating, em dash when neither is recorded. */
+/** "230V / 32A" - the electrical rating, em dash when neither is recorded. */
 export function fmtPower(f: PowerFeed): string {
-  if (f.voltage == null && f.amperage == null) return "—"
+  if (f.voltage == null && f.amperage == null) return "-"
   const v = f.voltage != null ? `${f.voltage}V` : ""
   const a = f.amperage != null ? `${f.amperage}A` : ""
   return [v, a].filter(Boolean).join(" / ")
@@ -59,7 +59,7 @@ export interface PowerFeedColumnOpts<T extends PowerFeed = PowerFeed> {
   include?: PowerFeedColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
   tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }

@@ -55,7 +55,7 @@ export function LocationForm({
     location?.status?.id ?? null
   )
   const [description, setDescription] = useState(location?.description ?? "")
-  // Site is a required FK — surface that client-side instead of leaning on the
+  // Site is a required FK - surface that client-side instead of leaning on the
   // server 400. Cleared once a site is chosen or the form re-seeds.
   const [siteError, setSiteError] = useState<string | null>(null)
 

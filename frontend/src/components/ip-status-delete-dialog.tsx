@@ -46,7 +46,7 @@ export function IpStatusDeleteDialog({
           <AlertDialogTitle>Delete status {status?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {usage > 0
-              ? `${usage} IP${usage === 1 ? "" : "s"} currently use this status — they'll be left without one.`
+              ? `${usage} IP${usage === 1 ? "" : "s"} currently use this status - they'll be left without one.`
               : "This action can't be undone."}
           </AlertDialogDescription>
         </AlertDialogHeader>

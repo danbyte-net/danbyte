@@ -9,7 +9,7 @@ const SECURITY: { value: SmtpSecurity; label: string }[] = [
   { value: "none", label: "None (25)" },
 ]
 
-/** The SMTP subset shared by DeploymentSettings and TenantSettings — both
+/** The SMTP subset shared by DeploymentSettings and TenantSettings - both
  * satisfy this structurally (mirrored field names). */
 export interface SmtpValues {
   email_enabled: boolean
@@ -21,7 +21,7 @@ export interface SmtpValues {
   email_from: string
 }
 
-/** Controlled SMTP fieldset — used by both the deployment Email page and the
+/** Controlled SMTP fieldset - used by both the deployment Email page and the
  * tenant Email override card. The password is write-only state owned by the
  * parent (blank = keep the stored one). */
 export function SmtpFields({
@@ -86,7 +86,7 @@ export function SmtpFields({
         <Field
           label="Password"
           hint={
-            value.smtp_password_set ? "saved — leave blank to keep" : undefined
+            value.smtp_password_set ? "saved - leave blank to keep" : undefined
           }
         >
           <Input

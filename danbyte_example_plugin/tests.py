@@ -1,4 +1,4 @@
-"""Example-plugin tests — proves the framework loads a real standalone plugin.
+"""Example-plugin tests - proves the framework loads a real standalone plugin.
 
 The plugin is loaded in the test environment via ``danbyte/settings.py`` (only),
 so these run as part of the normal suite.

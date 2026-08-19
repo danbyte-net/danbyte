@@ -36,7 +36,7 @@ const PRIORITIES: { value: ContactPriority; label: string }[] = [
 ]
 
 /**
- * Per-object contacts — lists the contacts attached to one object (by the
+ * Per-object contacts - lists the contacts attached to one object (by the
  * `object_type` label + `object_id` convention) and lets the user attach a
  * contact in a role at a priority, or detach one. Drop into any detail page.
  */
@@ -144,7 +144,7 @@ export function ContactsPanel({
             {a.contact.email}
           </a>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {
@@ -154,7 +154,7 @@ export function ContactsPanel({
         a.role ? (
           <span className="text-xs">{a.role.name}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
     {

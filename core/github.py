@@ -1,4 +1,4 @@
-"""Minimal GitHub release helpers — shared by the Outpost package store and the
+"""Minimal GitHub release helpers - shared by the Outpost package store and the
 Danbyte self-update. Neutral home (``core``) so both apps import in the right
 direction.
 """

@@ -5,7 +5,7 @@ icon: lucide/boxes
 # Clusters, types & groups
 
 A **cluster** is the compute that [virtual machines](virtual-machines.md) run
-on — a vSphere cluster, a Proxmox cluster, or however you group your
+on - a vSphere cluster, a Proxmox cluster, or however you group your
 hypervisors. It's also where a VM's location comes from, so it's usually the
 only place you need to set a site.
 
@@ -30,7 +30,7 @@ A cluster's site describes **the cluster**. By default it is **not** inherited:
 a VM's site is its own field, and a VM with none simply has none even when its
 cluster has one.
 
-That default is deliberate — the compute often lives in one datacentre while
+That default is deliberate - the compute often lives in one datacentre while
 the workloads belong to the branch or department they serve, and that is what
 you want recorded.
 
@@ -38,7 +38,7 @@ Where the two really are the same place, tick **Give VMs on this cluster its
 site**:
 
 - Saving the cluster **backfills** VMs on it that have no site.
-- New VMs added to it — by hand or by a [sync](external-sync.md) — get the site
+- New VMs added to it - by hand or by a [sync](external-sync.md) - get the site
   as they arrive.
 - It is **blank-fill only**: a site you set on a VM is never overwritten, and
   clearing the cluster's site later never clears the VMs'.
@@ -52,7 +52,7 @@ site of their own).
 ## Cluster types
 
 A **cluster type** records the platform: *VMware vCenter*, *Proxmox VE*,
-*Hyper-V*, *KVM* — whatever you run. It's an ordinary catalog with a name, slug
+*Hyper-V*, *KVM* - whatever you run. It's an ordinary catalog with a name, slug
 and description, and it's yours to define: following the **zero pre-filled
 data** rule, none ship with the product.
 
@@ -62,7 +62,7 @@ afterwards.
 
 ## Cluster groups
 
-A **cluster group** organises clusters into a tree — by region, environment or
+A **cluster group** organises clusters into a tree - by region, environment or
 tenant of the platform, for example *Production*, *Lab*, *DR*. Like cluster
 types it's a name, slug and description, and it never gates access; it's
 navigation and reporting metadata only.
@@ -73,6 +73,6 @@ navigation and reporting metadata only.
 
 ## See also
 
-- [Virtual machines](virtual-machines.md) — what runs on a cluster.
-- [Virtual switches & topology](virtual-switches.md) — a cluster's networking.
-- [Sites](../dcim/index.md) — the physical location a cluster points at.
+- [Virtual machines](virtual-machines.md) - what runs on a cluster.
+- [Virtual switches & topology](virtual-switches.md) - a cluster's networking.
+- [Sites](../dcim/index.md) - the physical location a cluster points at.

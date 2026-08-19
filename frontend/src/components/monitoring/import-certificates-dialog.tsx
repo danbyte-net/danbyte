@@ -24,8 +24,8 @@ interface BundleResult {
 }
 
 /**
- * Import a PEM **bundle** — a whole chain (leaf + intermediates + root) or a
- * batch of concatenated certificates — as separate rows, so the chain graph
+ * Import a PEM **bundle** - a whole chain (leaf + intermediates + root) or a
+ * batch of concatenated certificates - as separate rows, so the chain graph
  * links up. Unlike the single-cert upload (which keeps only the leaf), every
  * block lands. Still public-only: a private-key block anywhere is refused. Shows
  * a per-import summary so a partial import (one bad block) is honest.
@@ -91,7 +91,7 @@ export function ImportCertificatesDialog({
           <DialogDescription>
             Paste a full chain (leaf + intermediates + root) or several
             certificates at once, or load a <code>.pem</code> bundle. Every
-            certificate is stored as its own row and linked into its chain —
+            certificate is stored as its own row and linked into its chain -
             only public certificates, never a private key.
           </DialogDescription>
         </DialogHeader>

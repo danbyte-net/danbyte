@@ -97,7 +97,7 @@ function CalendarPage() {
   const { canDo } = useMe()
   const qc = useQueryClient()
 
-  // Anchor on the viewer's today, not the browser's — the same resolution the
+  // Anchor on the viewer's today, not the browser's - the same resolution the
   // rest of Danbyte uses, so "this month" means their month.
   const [y0, m0] = today.split("-").map(Number)
   const anchor = useMemo(() => {
@@ -129,7 +129,7 @@ function CalendarPage() {
     })
 
   // Fetch exactly what the view draws: the month view includes the days either
-  // side that fill its first and last weeks — work on them is real work.
+  // side that fill its first and last weeks - work on them is real work.
   const weekDays = useMemo(() => {
     const monday = mondayOf(anchorDay)
     return Array.from({ length: 7 }, (_, i) => parseDay(addDays(monday, i)))
@@ -246,7 +246,7 @@ function CalendarPage() {
                   </span>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" variant="panel">
-                  Tasks with dates in this view — drawn as bars across the days
+                  Tasks with dates in this view - drawn as bars across the days
                   they cover. Drag a bar to another day to reschedule it.
                 </TooltipContent>
               </Tooltip>
@@ -259,7 +259,7 @@ function CalendarPage() {
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" variant="panel">
-                    Planned changes — edits recorded on tasks, landing on the
+                    Planned changes - edits recorded on tasks, landing on the
                     day the object is meant to change.
                   </TooltipContent>
                 </Tooltip>
@@ -286,7 +286,7 @@ function CalendarPage() {
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" variant="panel">
-                    Maintenance windows and outages — managed under Organization
+                    Maintenance windows and outages - managed under Organization
                     → Maintenance.
                   </TooltipContent>
                 </Tooltip>

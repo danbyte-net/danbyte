@@ -25,7 +25,7 @@ const LEVEL_LABEL: Record<string, string> = {
  * The connect flow asks ducts-vs-point-to-point once, at creation, and until
  * now that answer was write-only: nothing on the cable said which it was, so a
  * run ignoring an obvious tray looked like a rendering bug. Auto-route picks a
- * path for you; this is the manual twin — pick the exact ducts, in order.
+ * path for you; this is the manual twin - pick the exact ducts, in order.
  */
 export function CableRoutingCard({ cableId }: { cableId: string }) {
   const qc = useQueryClient()
@@ -126,7 +126,7 @@ export function CableRoutingCard({ cableId }: { cableId: string }) {
         <p className="mt-3 text-sm text-muted-foreground">Loading routing…</p>
       ) : mode === "point-to-point" ? (
         <p className="mt-3 text-sm text-muted-foreground">
-          Drawn as a direct A↔B run — this cable follows no tray.
+          Drawn as a direct A↔B run - this cable follows no tray.
         </p>
       ) : (
         <div className="mt-3 space-y-2">

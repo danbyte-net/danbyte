@@ -17,7 +17,7 @@ import { useSaveObject } from "@/lib/save-object"
 export interface VcAddMemberDialogProps {
   /** The chassis the picked device joins. */
   chassisId: string
-  /** Member device ids already in the stack — hidden from the picker. */
+  /** Member device ids already in the stack - hidden from the picker. */
   memberIds: string[]
   /** Suggested position for the new member (next free slot). */
   suggestedPosition?: number
@@ -80,7 +80,7 @@ export function VcAddMemberDialog({
         .vc_renamed_interfaces
       toast.success(
         `${saved.name} added to stack` +
-          (renamed ? ` — ${renamed} interfaces renamed to match` : "")
+          (renamed ? ` - ${renamed} interfaces renamed to match` : "")
       )
       onOpenChange(false)
     },
@@ -97,7 +97,7 @@ export function VcAddMemberDialog({
           <DialogTitle>Add member</DialogTitle>
           <DialogDescription>
             Search for a device and give it a slot in this stack. Devices
-            already in a stack are greyed out — reassign those from the device's
+            already in a stack are greyed out - reassign those from the device's
             own edit form.
           </DialogDescription>
         </DialogHeader>

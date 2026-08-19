@@ -34,14 +34,14 @@ export function MixedStatusBadge({
     return status ? (
       <CheckStatusBadge status={status} />
     ) : (
-      <span className="text-muted-foreground">—</span>
+      <span className="text-muted-foreground">-</span>
     )
   }
   if (entries.length === 1) {
     return <CheckStatusBadge status={entries[0][0]} />
   }
 
-  // Equal bands per distinct status (50/50 for two, thirds for three, …) — the
+  // Equal bands per distinct status (50/50 for two, thirds for three, …) - the
   // badge shows *which* statuses are present, not the ratio. Angled hard stops
   // make them diagonal triangles like a racing flag.
   const slice = 100 / entries.length

@@ -26,7 +26,7 @@ export const Route = createFileRoute("/locations/")({
 type NestedLocation = Location & { _depth: number }
 
 // Order depth-first (parents before their children, siblings by name) and
-// stamp each row's depth so the Name cell can indent — same tree treatment
+// stamp each row's depth so the Name cell can indent - same tree treatment
 // as the prefix list. Orphans (parent filtered out or not loaded) surface
 // at the root rather than disappearing.
 function nestLocations(rows: Location[]): NestedLocation[] {
@@ -151,7 +151,7 @@ function LocationsPage() {
     [onDelete, humanIds]
   )
 
-  // Rail derives from the columns' facet metadata (Status, Site) — filter
+  // Rail derives from the columns' facet metadata (Status, Site) - filter
   // first, then nest, so children of a hidden parent surface at the root
   // instead of dangling indented under nothing.
   const { rail, filteredRows, snapshot, restore, activeCount } =

@@ -110,7 +110,7 @@ export function EngineDetailDialog({
 
         {/* Live facts */}
         <div className="grid grid-cols-2 gap-3 text-[13px] sm:grid-cols-4">
-          <Fact label="Checks" value={stats.data?.total_checks ?? "—"} />
+          <Fact label="Checks" value={stats.data?.total_checks ?? "-"} />
           <Fact
             label="Last seen"
             value={
@@ -119,10 +119,10 @@ export function EngineDetailDialog({
                 : "never"
             }
           />
-          <Fact label="Version" value={engine?.agent_version || "—"} mono />
+          <Fact label="Version" value={engine?.agent_version || "-"} mono />
           <Fact
             label="Host"
-            value={engine?.agent_hostname || engine?.agent_ip || "—"}
+            value={engine?.agent_hostname || engine?.agent_ip || "-"}
             mono
           />
         </div>
@@ -133,7 +133,7 @@ export function EngineDetailDialog({
           (stats.data?.total_checks ?? 0) > 0 && (
             <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
               <b>{stats.data?.total_checks} checks are assigned</b> to this
-              Outpost, but it has <b>never connected</b> — so they aren&apos;t
+              Outpost, but it has <b>never connected</b> - so they aren&apos;t
               running (they go stale). Install the agent on a host at the site,
               or set the default engine back to <b>Local</b>.
             </div>
@@ -168,7 +168,7 @@ export function EngineDetailDialog({
               (stats.data?.locations.length ?? 0) ===
             0 ? (
             <span className="text-muted-foreground">
-              nothing yet — assign it on a site or location form
+              nothing yet - assign it on a site or location form
             </span>
           ) : (
             <span className="inline-flex flex-wrap gap-1">
@@ -249,7 +249,7 @@ export function EngineDetailDialog({
               <>
                 Auto-update to the golden release{" "}
                 <span className="text-[11px] text-muted-foreground">
-                  — the agent self-updates to the default version in Outpost
+                  - the agent self-updates to the default version in Outpost
                   versions
                 </span>
               </>
@@ -316,7 +316,7 @@ export function EngineDetailDialog({
                 />
               </label>
               <label className="space-y-1 text-[11px] text-muted-foreground">
-                Host key — pins the server (blank = trust on first use)
+                Host key - pins the server (blank = trust on first use)
                 <textarea
                   value={sshHostKey}
                   onChange={(e) => setSshHostKey(e.target.value)}

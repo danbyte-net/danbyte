@@ -38,7 +38,7 @@ def _on_calendar(unit: str) -> str:
 def _schedule_from_calendar(spec: str) -> ScheduledTask:
     """Parse the two OnCalendar shapes Danbyte uses into table terms.
 
-    Anything else fails loudly rather than being waved through — a new shape
+    Anything else fails loudly rather than being waved through - a new shape
     means this parser (and the container scheduler) needs to learn it.
     """
     minutes = re.fullmatch(r"\*:0/(\d+)", spec)
@@ -73,7 +73,7 @@ class ScheduleParityTests(SimpleTestCase):
 
     def test_containers_skip_only_the_upgrade_beat(self):
         """A container upgrades by replacing its image, so it must not run the
-        upgrader — but it has to run everything else the timers do."""
+        upgrader - but it has to run everything else the timers do."""
         skipped = {t.unit for t in SCHEDULE} - {t.unit for t in container_schedule()}
         self.assertEqual(skipped, {"danbyte-auto-upgrade"})
 
@@ -87,7 +87,7 @@ class ScheduleParityTests(SimpleTestCase):
 
 
 class SlotTests(SimpleTestCase):
-    """Due-ness is a slot comparison — the property that makes a restarted or
+    """Due-ness is a slot comparison - the property that makes a restarted or
     late scheduler run each occurrence exactly once."""
 
     def test_interval_slot_changes_once_per_interval(self):
@@ -173,7 +173,7 @@ class SchedulerPassTests(SimpleTestCase):
         self.assertEqual(
             self._run(self._scheduler(redis), task, morning), ["send_digest"]
         )
-        # A brand-new process — same Redis.
+        # A brand-new process - same Redis.
         self.assertEqual(
             self._run(self._scheduler(redis), task, datetime(2026, 8, 13, 9, 30)), []
         )

@@ -1,7 +1,7 @@
-"""Benchmark the ICMP fan-out — prove a large prefix sweeps fast.
+"""Benchmark the ICMP fan-out - prove a large prefix sweeps fast.
 
 Pings a synthetic block of addresses (default the reserved, non-responsive
-240.0.0.0/24 so nothing actually replies — the worst case, every host timing
+240.0.0.0/24 so nothing actually replies - the worst case, every host timing
 out) with one async_multiping call, and reports throughput. Use it to size
 MONITORING_CONCURRENCY / shard count for a real /15.
 

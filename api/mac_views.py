@@ -36,7 +36,7 @@ def _hexkey(mac: str) -> str:
 
 
 def _snmp_sightings(tenant, mac: str) -> list[dict]:
-    """Where polling has *observed* this MAC — the ARP/FDB rows on each
+    """Where polling has *observed* this MAC - the ARP/FDB rows on each
     device's SNMP state. A MAC clicked on a monitoring card often exists only
     here (a neighbour's address learned on a port), so the detail page must
     be able to say "seen on sw1 port eth2" instead of pretending the address
@@ -146,7 +146,7 @@ def mac_list_view(request):
             }
         )
 
-    # First-class MAC objects — surface even when no interface/IP string carries
+    # First-class MAC objects - surface even when no interface/IP string carries
     # the address yet, so a standalone object is still listed and its
     # description / tags show on the row.
     objects = (

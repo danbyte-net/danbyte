@@ -1,4 +1,4 @@
-"""Per-site settings (email v1) — resolution chain + site-admin gating."""
+"""Per-site settings (email v1) - resolution chain + site-admin gating."""
 from __future__ import annotations
 
 from django.contrib.auth.models import Group, User

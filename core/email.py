@@ -1,4 +1,4 @@
-"""HTML email — the shared, good-looking way Danbyte sends a formatted email.
+"""HTML email - the shared, good-looking way Danbyte sends a formatted email.
 
 Every email Danbyte sends (monitoring digest, certificate digest, alert
 notifications, sign-in codes, invites, connectivity tests) is built from the
@@ -10,7 +10,7 @@ Design constraints (why it looks the way it does):
 
 * **Tables + inline CSS only.** Outlook/Gmail/Apple Mail ignore ``<style>``
   blocks, flexbox, and CSS variables, so every rule is inline and layout is
-  table-based — the lowest common denominator that renders everywhere.
+  table-based - the lowest common denominator that renders everywhere.
 * **A hidden preheader.** The one line an inbox shows next to the subject.
 * **One palette.** :data:`PALETTE` and :data:`STATUS_BG` mirror the SPA tokens
   (``frontend/src/styles.css`` + the monitoring charts) so an email reads as the
@@ -19,7 +19,7 @@ Design constraints (why it looks the way it does):
 Build a body from the component helpers (:func:`section`, :func:`stat_grid`,
 :func:`pill`, :func:`kv_table`, :func:`callout`, :func:`email_button`, …), wrap
 it with :func:`render_layout`, and send it with :func:`send_html_email`. All
-values passed to the helpers are escaped here — callers pass plain strings.
+values passed to the helpers are escaped here - callers pass plain strings.
 """
 from __future__ import annotations
 
@@ -31,26 +31,26 @@ from django.utils.html import escape
 logger = logging.getLogger("danbyte.email")
 
 # ── palette (resolved from the SPA's zinc/blue design tokens in styles.css) ───
-# White ground, zinc structure, one restrained blue accent — the app's actual
+# White ground, zinc structure, one restrained blue accent - the app's actual
 # look, not a coloured-hero email template.
 PALETTE = {
     "brand": "#2563c9",       # --primary (medium, desaturated blue)
     "brand_dark": "#1e50a8",
-    "ink": "#18181b",         # zinc-900 — body text
-    "muted": "#71717a",       # zinc-500 — secondary text
+    "ink": "#18181b",         # zinc-900 - body text
+    "muted": "#71717a",       # zinc-500 - secondary text
     "faint": "#a1a1aa",       # zinc-400
-    "line": "#e4e4e7",        # zinc-200 — borders
-    "hair": "#f1f1f3",        # zinc-100 — row separators
-    "panel": "#fafafa",       # zinc-50 — footer / stat fill
+    "line": "#e4e4e7",        # zinc-200 - borders
+    "hair": "#f1f1f3",        # zinc-100 - row separators
+    "panel": "#fafafa",       # zinc-50 - footer / stat fill
     "page": "#f4f4f5",        # zinc-100 page backdrop
     "card": "#ffffff",
 }
 
-# Danbyte badges are TINTED, not solid — a ~15%-opacity status colour behind
+# Danbyte badges are TINTED, not solid - a ~15%-opacity status colour behind
 # darker text (the app's Badge success/warning/info families + destructive).
 # These hexes are those tints flattened over white, so they render the same in
 # every email client. STATUS_BG is the *strong* status colour, used only for a
-# meaningful accent (a red number, a callout rule) — never a saturated fill.
+# meaningful accent (a red number, a callout rule) - never a saturated fill.
 STATUS_TINT = {
     "up": "#e8f8f1", "ok": "#e8f8f1", "success": "#e8f8f1",
     "down": "#fdecec", "critical": "#fdecec", "expired": "#fdecec",
@@ -86,7 +86,7 @@ _FONT = ("-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,"
 # fragments, then pass the result to render_layout().
 
 def section(title: str) -> str:
-    """A section heading — a small, tracked-out label above a block."""
+    """A section heading - a small, tracked-out label above a block."""
     return (
         f'<h2 style="margin:26px 0 10px;font-size:13px;font-weight:600;'
         f'letter-spacing:.04em;text-transform:uppercase;color:{PALETTE["muted"]};">'
@@ -118,7 +118,7 @@ def muted(text: str) -> str:
 
 def pill(text: str, kind: str = "unknown") -> str:
     """A status badge matching the app's StatusBadge: a tinted background with
-    darker text and the app's ~5px radius — never a solid or fully-round pill."""
+    darker text and the app's ~5px radius - never a solid or fully-round pill."""
     bg = STATUS_TINT.get(kind, STATUS_TINT["unknown"])
     fg = STATUS_TEXT.get(kind, STATUS_TEXT["unknown"])
     return (
@@ -129,7 +129,7 @@ def pill(text: str, kind: str = "unknown") -> str:
 
 
 def stat_grid(cells: list) -> str:
-    """A single metric strip — one rounded card, values divided by hairlines.
+    """A single metric strip - one rounded card, values divided by hairlines.
 
     ``cells`` = ``[(value, label)]`` or ``[(value, label, accent_hex)]``. Reads
     like the app's summary bars: a big tabular number over a small tracked label,
@@ -165,7 +165,7 @@ def stat_grid(cells: list) -> str:
 
 
 def progress_bar(pct: int, label: str = "", *, accent: str = "") -> str:
-    """A slim track with a filled portion — for a single headline ratio
+    """A slim track with a filled portion - for a single headline ratio
     (reachability, coverage). ``pct`` is 0–100; ``accent`` overrides the fill."""
     pct = max(0, min(100, int(pct)))
     fill = accent or (
@@ -193,7 +193,7 @@ def progress_bar(pct: int, label: str = "", *, accent: str = "") -> str:
 
 
 def kv_table(rows: list) -> str:
-    """A two-column label/value table. ``rows`` = ``[(label, value_html)]`` —
+    """A two-column label/value table. ``rows`` = ``[(label, value_html)]`` -
     values are treated as pre-built HTML (use :func:`pill` etc.), labels are
     escaped."""
     if not rows:
@@ -216,7 +216,7 @@ def kv_table(rows: list) -> str:
 
 def data_table(headers: list, rows: list) -> str:
     """A bordered data table. ``headers`` = ``[str]``; ``rows`` =
-    ``[[cell_html, …]]`` — cells are pre-built HTML, headers escaped."""
+    ``[[cell_html, …]]`` - cells are pre-built HTML, headers escaped."""
     ths = "".join(
         f'<th style="text-align:left;padding:10px 14px;font-size:10.5px;'
         f'font-weight:600;letter-spacing:.06em;text-transform:uppercase;'
@@ -250,7 +250,7 @@ _CALLOUT = {
 
 
 def callout(text: str, kind: str = "info", *, label: str = "") -> str:
-    """A tinted panel with a small coloured label — the headline fact.
+    """A tinted panel with a small coloured label - the headline fact.
 
     Softer than a heavy left-rule box: a rounded tinted card with a tiny
     uppercase status label above the message.
@@ -302,7 +302,7 @@ def divider() -> str:
 
 
 def code_line(text: str) -> str:
-    """A monospace value block — for a one-time code or a fingerprint."""
+    """A monospace value block - for a one-time code or a fingerprint."""
     return (
         f'<div style="display:inline-block;font-family:ui-monospace,SFMono-Regular,'
         f'Menlo,Consolas,monospace;font-size:22px;font-weight:700;letter-spacing:.18em;'
@@ -400,7 +400,7 @@ def send_html_email(
     """Send a multipart HTML+text email via the effective SMTP for the tenant/
     site. Returns True if a send was attempted with at least one recipient.
 
-    Does NOT check ``email_enabled`` — callers decide whether the feature is on;
+    Does NOT check ``email_enabled`` - callers decide whether the feature is on;
     the connection falls back to Django's configured backend when no SMTP host
     is set (console in dev, locmem in tests).
     """
@@ -423,7 +423,7 @@ def send_html_email(
         msg.attach_alternative(html_body, "text/html")
         msg.send(fail_silently=False)
         return True
-    except Exception as exc:  # noqa: BLE001 — best-effort by default
+    except Exception as exc:  # noqa: BLE001 - best-effort by default
         if not fail_silently:
             raise
         logger.warning("send_html_email failed (%s): %s", subject, exc)
@@ -431,7 +431,7 @@ def send_html_email(
 
 
 def describe_smtp_error(exc: Exception) -> str:
-    """A human sentence for an SMTP failure — what went wrong and what to do.
+    """A human sentence for an SMTP failure - what went wrong and what to do.
 
     The raw exceptions ("(421, b'Service not available')") are useless in a
     toast; every test/preview endpoint routes its error through here so the UI
@@ -449,7 +449,7 @@ def describe_smtp_error(exc: Exception) -> str:
         return (
             "The mail server refused the connection (421 Service not "
             "available). This usually means the server has temporarily "
-            "blocked this machine's IP — often after repeated failed logins. "
+            "blocked this machine's IP - often after repeated failed logins. "
             "Wait a while before retrying; more attempts extend the block."
         )
     if code in (534, 535):

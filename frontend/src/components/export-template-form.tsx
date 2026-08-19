@@ -34,7 +34,7 @@ export interface ExportTemplateFormProps {
 }
 
 // Sentinel thrown from mutationFn when a client-side required-field check
-// fails — onError swallows it so we don't fire a toast on top of the
+// fails - onError swallows it so we don't fire a toast on top of the
 // inline field errors.
 const CLIENT_VALIDATION = "__client_validation__"
 
@@ -107,7 +107,7 @@ export function ExportTemplateForm({
     [types.data]
   )
 
-  // Sample-object picker — only for per-object (device / VM) templates.
+  // Sample-object picker - only for per-object (device / VM) templates.
   const samples = useQuery({
     queryKey: ["export-template-samples", perObjectEndpoint],
     queryFn: () =>

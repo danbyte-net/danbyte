@@ -2,7 +2,7 @@
 
 The React app loads a full result set per list view and does its own
 client-side filtering, faceting, sorting and grouping (see the facet rails in
-the list routes). A small server page size therefore silently hides data — the
+the list routes). A small server page size therefore silently hides data - the
 table only ever sees page 1. So default to a high page size while still exposing
 ``?limit=``/``?page=`` for callers (and future server-side paging) that want it.
 """

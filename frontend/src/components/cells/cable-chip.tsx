@@ -4,12 +4,12 @@ import type { CableMini } from "@/lib/api"
 import { cssColor } from "@/lib/utils"
 
 /**
- * CableMini chip — the one place a cable color is allowed to show (it's the
- * physical cable). Plain "—" when the port isn't cabled. Mirrors the cell used
+ * CableMini chip - the one place a cable color is allowed to show (it's the
+ * physical cable). Plain "-" when the port isn't cabled. Mirrors the cell used
  * by the pass-through ports pane.
  */
 export function CableChip({ cable }: { cable: CableMini | null }) {
-  if (!cable) return <span className="text-muted-foreground">—</span>
+  if (!cable) return <span className="text-muted-foreground">-</span>
   return (
     <Link
       to="/cables/$id"

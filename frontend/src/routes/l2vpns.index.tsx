@@ -21,7 +21,7 @@ export const Route = createFileRoute("/l2vpns/")({ component: L2vpnsPage })
 
 /** Import/export route-target names as muted text, or a dash. */
 function RtCell({ rts }: { rts: { id: string; name: string }[] }) {
-  if (rts.length === 0) return <span className="text-muted-foreground">—</span>
+  if (rts.length === 0) return <span className="text-muted-foreground">-</span>
   return (
     <span className="font-mono text-[11px] text-muted-foreground">
       {rts.map((rt) => rt.name).join(", ")}
@@ -90,7 +90,7 @@ function L2vpnsPage() {
               {row.original.identifier}
             </span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -105,7 +105,7 @@ function L2vpnsPage() {
               {row.original.termination_count}
             </span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -126,7 +126,7 @@ function L2vpnsPage() {
         header: "Description",
         cell: ({ row }) => (
           <span className="line-clamp-1 block text-muted-foreground">
-            {row.original.description || "—"}
+            {row.original.description || "-"}
           </span>
         ),
       },

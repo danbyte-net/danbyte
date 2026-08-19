@@ -79,7 +79,7 @@ function SecretStoreCard() {
   return (
     <SettingsCard
       title="Secret store"
-      description="Where private keys for certificate requests (CSR) and ACME are kept — the certificate inventory itself never stores keys either way."
+      description="Where private keys for certificate requests (CSR) and ACME are kept - the certificate inventory itself never stores keys either way."
       onSave={() =>
         save.mutate({
           key: "secrets",
@@ -110,7 +110,7 @@ function SecretStoreCard() {
         info={
           <>
             Where CSR / ACME private keys are stored. Deployment-wide on purpose
-            — it decides where the organisation&apos;s keys live.
+            - it decides where the organisation&apos;s keys live.
             <br />
             <b>Local</b> encrypts them at rest under{" "}
             <code>MONITORING_SECRET_KEY</code>. <b>Vault</b> keeps them in an
@@ -143,7 +143,7 @@ function SecretStoreCard() {
             onChange={setToken}
             type="password"
             hint={
-              data.vault_token_set ? "set — blank keeps current" : undefined
+              data.vault_token_set ? "set - blank keeps current" : undefined
             }
             placeholder={data.vault_token_set ? "••••••" : "hvs.…"}
           />
@@ -171,7 +171,7 @@ function OutboundCard() {
   return (
     <SettingsCard
       title="Outbound connections"
-      description="Internal hosts the server may reach despite the SSRF guard — e.g. an internal NetBox for the importer, or an internal SMTP relay."
+      description="Internal hosts the server may reach despite the SSRF guard - e.g. an internal NetBox for the importer, or an internal SMTP relay."
       onSave={() =>
         save.mutate({
           key: "ssrf",
@@ -203,7 +203,7 @@ function OutboundCard() {
       <p className="text-[11px] text-muted-foreground">
         The guard stops tenant-supplied URLs (NetBox imports, webhooks, SMTP
         relays) from reaching loopback, cloud-metadata, and private ranges.
-        Entries here punch specific holes — keep it as narrow as possible.
+        Entries here punch specific holes - keep it as narrow as possible.
       </p>
     </SettingsCard>
   )
@@ -225,7 +225,7 @@ function SessionsCard() {
       }),
     onSuccess: (r) => {
       toast.success(
-        `Signed out ${r.ended} session${r.ended === 1 ? "" : "s"} — you'll be asked to sign in again.`
+        `Signed out ${r.ended} session${r.ended === 1 ? "" : "s"} - you'll be asked to sign in again.`
       )
       // The caller's own session is gone now; bounce to a clean login.
       setTimeout(() => {
@@ -262,7 +262,7 @@ function SessionsCard() {
             <AlertDialogHeader>
               <AlertDialogTitle>End all sessions?</AlertDialogTitle>
               <AlertDialogDescription>
-                Every signed-in user — including you — will be logged out and must
+                Every signed-in user - including you - will be logged out and must
                 sign in again. API tokens keep working. Use this after a suspected
                 compromise or a permissions change.
               </AlertDialogDescription>

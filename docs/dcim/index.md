@@ -1,4 +1,4 @@
-# DCIM — physical infrastructure
+# DCIM - physical infrastructure
 
 DCIM (Data Center Infrastructure Management) is where you record the **physical
 world**: the gear in your racks, the ports on that gear, and the cables between
@@ -33,17 +33,17 @@ Manufacturer  →  Device type  →  Device  →  Interfaces  →  Cables
 
 - A **device** is one physical box. It always has a **name** and usually a
   **device type** (which says what model it is) and a **site** (where it lives).
-- A **device type** is the reusable template — "Cisco Catalyst 9300, 1U, these
+- A **device type** is the reusable template - "Cisco Catalyst 9300, 1U, these
   rack images." You create it once; every device of that model points at it.
 - **Interfaces** are the ports on a device. They can hold IP addresses and
   terminate cables.
-- **Racks** give devices a physical home — a position and a front/rear face — and
+- **Racks** give devices a physical home - a position and a front/rear face - and
   draw an elevation so you can see what's mounted where.
 - **Cables** connect ports together and can be traced end-to-end, even through
   patch panels.
 
 !!! tip "Nothing is pre-filled"
-    Danbyte ships **no** sample manufacturers, device types, or statuses — you
+    Danbyte ships **no** sample manufacturers, device types, or statuses - you
     define exactly the ones your network uses. That keeps the catalog clean and
     specific to you. See [Tags & custom fields](../features/tags-and-custom-fields.md)
     for adding your own fields to any of these objects.

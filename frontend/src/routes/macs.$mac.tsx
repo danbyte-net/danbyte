@@ -69,14 +69,14 @@ const seenColumns: ColumnDef<MacSighting>[] = [
         return s.ip ? (
           <span className="font-mono">{s.ip}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         )
       return s.port ? (
         <span>
           port <span className="font-mono">{s.port}</span>
         </span>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       )
     },
   },
@@ -114,7 +114,7 @@ function Body({ data }: { data: MacDetail }) {
   async function copy() {
     const ok = await copyText(data.mac)
     if (ok) toast.success(`Copied ${data.mac}`)
-    else toast.error("Couldn't copy — clipboard blocked by the browser")
+    else toast.error("Couldn't copy - clipboard blocked by the browser")
   }
 
   const interfaceColumns = useMemo<ColumnDef<MacInterface>[]>(
@@ -186,7 +186,7 @@ function Body({ data }: { data: MacDetail }) {
           </h2>
           {data.objects.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No MAC object yet — this address is only known from a recorded
+              No MAC object yet - this address is only known from a recorded
               interface or IP.{" "}
               {canAdd && (
                 <button
@@ -257,7 +257,7 @@ function Body({ data }: { data: MacDetail }) {
               Observed via SNMP
             </h2>
             <p className="text-sm text-muted-foreground">
-              Polling saw this address on these devices — observations, not
+              Polling saw this address on these devices - observations, not
               records. Every switch on the L2 path learns a host's MAC, so one
               address on several devices is normal.
             </p>
@@ -493,7 +493,7 @@ function buildIpColumns(): ColumnDef<MacIp>[] {
             {device.name}
           </Link>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         )
       },
     },
@@ -512,7 +512,7 @@ function buildIpColumns(): ColumnDef<MacIp>[] {
             {iface.name}
           </Link>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         )
       },
     },

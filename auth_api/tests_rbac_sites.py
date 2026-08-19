@@ -1,4 +1,4 @@
-"""Site-scoped ObjectPermissions — restrict_queryset narrows by site."""
+"""Site-scoped ObjectPermissions - restrict_queryset narrows by site."""
 from __future__ import annotations
 
 from django.contrib.auth.models import User
@@ -88,7 +88,7 @@ class SiteScopedRBACTests(TestCase):
         qs = rbac.restrict_queryset(
             VLAN.objects.all(), self.user, self.tenant, "vlan", "view"
         )
-        self.assertEqual(qs.count(), 2)  # site scope ignored — no vlan.site
+        self.assertEqual(qs.count(), 2)  # site scope ignored - no vlan.site
 
     def test_not_granted_is_empty(self):
         self.assertEqual(self._devices("delete"), set())  # no delete grant
@@ -285,7 +285,7 @@ class PerObjectSiteFlagTests(APITestCase):
         self.assertTrue(self._perms(self.ams_dev)["change"])
 
     def test_other_site_object_not_editable_in_flag(self):
-        # Visible (view-all) but the change flag is False — no misleading button.
+        # Visible (view-all) but the change flag is False - no misleading button.
         self.assertFalse(self._perms(self.lon_dev)["change"])
 
 
@@ -475,7 +475,7 @@ class SiteDelegationTests(APITestCase):
 
 class NullSiteVisibilityTests(TestCase):
     """The NULL-site rule: a site-scoped grant can VIEW shared (site=None)
-    rows — they're context everyone needs — but never write them. VLANs are
+    rows - they're context everyone needs - but never write them. VLANs are
     site-scoped now (``vlan`` joined SITE_PATHS)."""
 
     def setUp(self):
@@ -520,7 +520,7 @@ class NullSiteVisibilityTests(TestCase):
         self.assertEqual(self._vals(VLAN, "vlan", "change", "name"), {"v-ams"})
 
     def test_site_slug_itself_has_no_null_arm(self):
-        # The `site` slug's path is `id` (never NULL) — a scoped view grant on
+        # The `site` slug's path is `id` (never NULL) - a scoped view grant on
         # sites must not open every site via a vacuous isnull clause.
         p = ObjectPermission.objects.create(
             name="site-view", object_types=["site"], actions=["view"]

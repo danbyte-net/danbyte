@@ -68,7 +68,7 @@ class ComplianceTests(TestCase):
         self.assertIn("10.0.2.0/24", reprs)
 
     def test_uncompilable_regex_rejected_at_save(self):
-        # An invalid pattern must 400 at write time — otherwise the engine
+        # An invalid pattern must 400 at write time - otherwise the engine
         # silently swallows re.error and reports "no violation" for every row.
         ser = ComplianceRuleSerializer(data={
             "name": "bad", "object_type": "prefix",
@@ -233,7 +233,7 @@ class ComplianceApiTests(APITestCase):
         by_sev = self.client.get(base + "?severity=critical").json()
         self.assertEqual({v["severity"] for v in by_sev["violations"]}, {"critical"})
         self.assertEqual(len(by_sev["violations"]), 2)
-        # Summary stays unfiltered — badges rely on the true total.
+        # Summary stays unfiltered - badges rely on the true total.
         self.assertEqual(by_sev["total_violations"], 4)
 
         by_rule = self.client.get(base + f"?rule={rule2.id}").json()

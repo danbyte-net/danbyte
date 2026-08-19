@@ -8,7 +8,7 @@ finalises the session. TOTP enrolment (``/api/auth/mfa/totp/...``) is for an
 already-signed-in user from the preferences page.
 
 Sessions are server-side (DB-backed), so the email OTP and the pending-user
-marker live safely in ``request.session`` — the client only holds the signed
+marker live safely in ``request.session`` - the client only holds the signed
 cookie, never the code. Superusers can still use ``/admin/login/`` directly.
 """
 from __future__ import annotations
@@ -41,7 +41,7 @@ LOGIN_WINDOW = 900  # seconds the failure counter + lockout live
 # MFA: cap wrong codes per pending login (the 6-digit OTP is otherwise brute-
 # forceable within its TTL), and rate-limit email resends.
 MAX_MFA_ATTEMPTS = 5
-# Per-ACCOUNT MFA lockout — survives across pending-login blobs, so an attacker
+# Per-ACCOUNT MFA lockout - survives across pending-login blobs, so an attacker
 # who holds the password can't reset the per-pending cap by re-authenticating.
 MFA_MAX_ACCOUNT_FAILURES = 15
 MFA_WINDOW = 900
@@ -66,7 +66,7 @@ RESEND_COOLDOWN = 30  # seconds between email-OTP resends
 
 def _client_ip(request) -> str:
     """Client IP for rate-limiting, taken from a TRUSTED position in the
-    X-Forwarded-For chain — NOT the leftmost hop (which the client controls and
+    X-Forwarded-For chain - NOT the leftmost hop (which the client controls and
     could spoof to dodge the lockout). nginx appends the real peer to the right,
     so we take the entry ``DANBYTE_TRUSTED_PROXY_DEPTH`` from the right (default
     1 = just nginx; set 2 if a cloud LB also fronts it). Falls back to
@@ -158,7 +158,7 @@ def _send_email_code(user, code: str) -> None:
         kicker="Sign-in",
         preheader=f"Your {name} verification code",
     )
-    # No active tenant at login time — best-effort: the user's last tenant's
+    # No active tenant at login time - best-effort: the user's last tenant's
     # SMTP override, else the deployment relay. (No-tenant users → deployment.)
     profile = getattr(user, "profile", None)
     ek.send_html_email(
@@ -208,14 +208,14 @@ def login_api(request):
     profile = _profile(user)
     methods = _methods(profile, user)
     # require_mfa with no usable factor can't be enforced (e.g. no email, no
-    # authenticator yet) — log in rather than lock the user out.
+    # authenticator yet) - log in rather than lock the user out.
     if profile.require_mfa and methods:
         request.session[SESSION_KEY] = {
             "user_id": user.id,
             "exp": time.time() + MFA_PENDING_TTL,
             "methods": methods,
             # Remember which backend authenticated so the post-MFA login() can
-            # name it — required once >1 AUTHENTICATION_BACKENDS exist (LDAP).
+            # name it - required once >1 AUTHENTICATION_BACKENDS exist (LDAP).
             "backend": getattr(user, "backend", None),
         }
         request.session.modified = True
@@ -241,7 +241,7 @@ def mfa_verify_api(request):
     if not pending or pending.get("exp", 0) < time.time():
         request.session.pop(SESSION_KEY, None)
         return JsonResponse(
-            {"detail": "Your sign-in session expired — start again."}, status=400
+            {"detail": "Your sign-in session expired - start again."}, status=400
         )
     data = _json(request) or {}
     method = data.get("method")
@@ -255,12 +255,12 @@ def mfa_verify_api(request):
         request.session.pop(SESSION_KEY, None)
         return JsonResponse({"detail": "Account not available."}, status=400)
 
-    # Per-account lockout — independent of the pending blob, so re-authing with
+    # Per-account lockout - independent of the pending blob, so re-authing with
     # the (known) password doesn't hand out a fresh batch of guesses.
     if _mfa_locked(user):
         request.session.pop(SESSION_KEY, None)
         return JsonResponse(
-            {"detail": "Too many incorrect codes — try again later."}, status=429
+            {"detail": "Too many incorrect codes - try again later."}, status=429
         )
 
     ok = False
@@ -280,12 +280,12 @@ def mfa_verify_api(request):
         _record_mfa_failure(user)
         # Cap guesses per pending login so the 6-digit OTP / TOTP window can't be
         # brute-forced by someone who already has the password. Burn the pending
-        # blob on lockout — they must restart (and re-enter the password).
+        # blob on lockout - they must restart (and re-enter the password).
         attempts = pending.get("attempts", 0) + 1
         if attempts >= MAX_MFA_ATTEMPTS:
             request.session.pop(SESSION_KEY, None)
             return JsonResponse(
-                {"detail": "Too many incorrect codes — please sign in again."},
+                {"detail": "Too many incorrect codes - please sign in again."},
                 status=429,
             )
         pending["attempts"] = attempts
@@ -350,14 +350,14 @@ def build_set_password_url(request, user) -> str:
 
 def send_invite_email(request, user) -> None:
     """Email a new user a link to choose their own password. The admin never
-    sets or sees a credential — the account stays login-disabled until the user
+    sets or sees a credential - the account stays login-disabled until the user
     follows the link."""
     from core import email as ek
     from core.models import DeploymentSettings
 
     dep = DeploymentSettings.load()
     name = dep.deployment_name or "Danbyte"
-    # The inviting admin acts inside a tenant — use its SMTP override if any.
+    # The inviting admin acts inside a tenant - use its SMTP override if any.
     from api.views import _get_active_tenant
 
     url = build_set_password_url(request, user)
@@ -391,7 +391,7 @@ def send_invite_email(request, user) -> None:
 @require_POST
 def set_password_api(request):
     """Finish an invite (or a reset): validate the signed token and set the
-    user's chosen password. Not authenticated — the token *is* the auth."""
+    user's chosen password. Not authenticated - the token *is* the auth."""
     from django.contrib.auth.password_validation import validate_password
     from django.contrib.auth.tokens import default_token_generator
     from django.core.exceptions import ValidationError
@@ -459,7 +459,7 @@ def totp_confirm_api(request):
         return JsonResponse({"detail": "Start TOTP setup first."}, status=400)
     if not pyotp.TOTP(pending).verify(code, valid_window=1):
         return JsonResponse(
-            {"detail": "Incorrect code — check your authenticator."}, status=400
+            {"detail": "Incorrect code - check your authenticator."}, status=400
         )
     sec = dict(profile.secrets or {})
     sec["totp"] = pending

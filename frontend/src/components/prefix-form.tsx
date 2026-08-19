@@ -30,7 +30,7 @@ import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useFieldErrors, FormCheckbox } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
 
-// Pure form body — no dialog chrome. Rendered by /prefixes/new and
+// Pure form body - no dialog chrome. Rendered by /prefixes/new and
 // /prefixes/$id/edit routes. Replaces PrefixFormDialog.
 
 export interface PrefixFormInitial {
@@ -125,12 +125,12 @@ export function PrefixForm({
   })
   const sites = useSiteOptions()
   // Enhanced site separation: a single-site user's creates land in their own
-  // site — prefill and lock the picker (useSiteOptions already filtered it).
+  // site - prefill and lock the picker (useSiteOptions already filtered it).
   const siteLocked = !!sites.lockedId
   useEffect(() => {
     if (!isEdit && sites.lockedId && !siteId) setSiteId(sites.lockedId)
   }, [isEdit, sites.lockedId, siteId])
-  // Locations belong to a site — only offer ones in the selected site.
+  // Locations belong to a site - only offer ones in the selected site.
   const locations = useQuery({
     queryKey: ["locations-picker", siteId],
     queryFn: () =>
@@ -291,7 +291,7 @@ export function PrefixForm({
       <Field
         label="Location"
         hint={
-          siteId ? "Optional — a range within the site" : "Pick a site first"
+          siteId ? "Optional - a range within the site" : "Pick a site first"
         }
         error={fieldErrors.location_id}
       >
@@ -335,7 +335,7 @@ export function PrefixForm({
           rows={3}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="e.g. Prod East — application servers"
+          placeholder="e.g. Prod East - application servers"
         />
       </Field>
 

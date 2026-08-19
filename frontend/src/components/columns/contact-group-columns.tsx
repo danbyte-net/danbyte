@@ -15,7 +15,7 @@ import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 // columns here, so a group row reads identically in both places.
 //
 // ContactGroup self-nests, so the "parent" column is what makes the hierarchy
-// legible on the flat list — and exactly the column a parent's own page omits.
+// legible on the flat list - and exactly the column a parent's own page omits.
 
 export type ContactGroupColumnId =
   | "numid"
@@ -43,7 +43,7 @@ export interface ContactGroupColumnOpts<T extends ContactGroup = ContactGroup> {
   include?: ContactGroupColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
   /** Trailing RowActions column. */
   actions?: ActionsColumnOpts<T>
@@ -102,7 +102,7 @@ export function buildContactGroupColumns<T extends ContactGroup = ContactGroup>(
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     }),

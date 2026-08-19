@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
  * as a quieter, outlined companion rather than a second coloured status pill
  * competing with it.
  *
- * Renders nothing for a VM no sync tracks — an em dash there would imply the
+ * Renders nothing for a VM no sync tracks - an em dash there would imply the
  * answer is "unknown" when the real answer is "not applicable". */
 export function PowerBadge({
   state,

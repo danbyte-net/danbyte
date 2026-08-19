@@ -88,17 +88,17 @@ export function DetailShell({
   backTo: LinkProps["to"]
   backLabel: string
   /** Optional intermediate breadcrumb segment(s) between the back link and the
-   * title — e.g. the parent prefix on an IP page. Rendered with a trailing
+   * title - e.g. the parent prefix on an IP page. Rendered with a trailing
    * chevron. */
   crumbs?: ReactNode
   /** Current-page name shown in the breadcrumb (wrap in a span for mono, etc). */
   title: ReactNode
-  /** Registers "viewing" presence — every detail page should pass this. */
+  /** Registers "viewing" presence - every detail page should pass this. */
   presence?: { type: string; id: string }
   /** Page-specific action buttons (Edit/Delete/…). Import/Export/Share is
    * added automatically via DetailActions (route-derived). */
   actions?: ReactNode
-  /** The title/stat strip under the header — page-specific. */
+  /** The title/stat strip under the header - page-specific. */
   hero?: ReactNode
   tabs: DetailTabItem[]
   tab: string
@@ -106,7 +106,7 @@ export function DetailShell({
   /** `<DetailTab value=…>` panes. */
   children: ReactNode
 }) {
-  // Safe when presence is omitted — the hook no-ops on an undefined id.
+  // Safe when presence is omitted - the hook no-ops on an undefined id.
   useRegisterPresence(presence?.type ?? "", presence?.id, "viewing")
 
   return (
@@ -141,7 +141,7 @@ export function DetailShell({
 
       {hero}
 
-      {/* gap-0 kills the Tabs primitive's default gap-2 — it added an 8px dead
+      {/* gap-0 kills the Tabs primitive's default gap-2 - it added an 8px dead
           zone between the tab strip and every pane (glaring on bare panes that
           draw their own sub-bar flush under the strip). */}
       <Tabs
@@ -159,7 +159,7 @@ export function DetailShell({
   )
 }
 
-/** One tab pane inside DetailShell — the canonical scrollable, padded body.
+/** One tab pane inside DetailShell - the canonical scrollable, padded body.
  * Pass `bare` for full-bleed content that lays out its own rail/table. */
 export function DetailTab({
   value,
@@ -198,20 +198,20 @@ const STAT_COLS: Record<DetailStatCols, string> = {
 }
 
 /**
- * The hero strip under the breadcrumb header — pass it to `DetailShell`'s
+ * The hero strip under the breadcrumb header - pass it to `DetailShell`'s
  * `hero`. It owns the section wrapper, the page's single `<h1>` and its size,
  * and the stat rail, so a detail page only supplies content.
  *
  * The title is **always** an `<h1>` at `text-2xl font-semibold tracking-tight`.
  * This was hand-rolled 42× and had drifted to four sizes (`text-lg` …
  * `text-3xl`) and three elements (`div`/`span`/`h1`) for the same role; one
- * page had no title at all. Don't reintroduce a size override — if a title
+ * page had no title at all. Don't reintroduce a size override - if a title
  * needs the mono face (IP, CIDR, ASN, interface, circuit ID) pass `mono`, and
  * if it needs to *be* a coloured catalog badge pass the `ColorBadge` as
  * `title`: the badge sizes itself, and the `<h1>` still lands in the outline.
  *
- * Slots render top-to-bottom in the left column — title row (title + inline
- * `badges`), `subtitle`, `tags`, `description`, `children` — with `stats` in
+ * Slots render top-to-bottom in the left column - title row (title + inline
+ * `badges`), `subtitle`, `tags`, `description`, `children` - with `stats` in
  * the right-hand rail.
  */
 export function DetailHero({
@@ -227,19 +227,19 @@ export function DetailHero({
 }: {
   /** The object's identity. Rendered as the page's `<h1>`. */
   title: ReactNode
-  /** Mono face for the title — identifiers, not names. */
+  /** Mono face for the title - identifiers, not names. */
   mono?: boolean
   /** Status/state chips inline after the title (they wrap with it). */
   badges?: ReactNode
   /** One secondary line under the title: a parent link, a facility ID, ports,
-   * a second row of chips. Muted 13px — wrap in your own span/Link to override
+   * a second row of chips. Muted 13px - wrap in your own span/Link to override
    * the face or colour. */
   subtitle?: ReactNode
   /** `<TagList tags={…} />`. */
   tags?: ReactNode
   /** Free-text description. Falsy (including `""`) renders nothing. */
   description?: ReactNode
-  /** `<DetailStat/>`s for the rail — the `<dl>` is the primitive's. */
+  /** `<DetailStat/>`s for the rail - the `<dl>` is the primitive's. */
   stats?: ReactNode
   /** Rail column count. Defaults to 2. */
   statCols?: DetailStatCols
@@ -264,7 +264,7 @@ export function DetailHero({
           {badges}
         </div>
         {/* Subtitle chips and tags share one row (a hairline between them
-            when both are present) — stacking them one per line made a device
+            when both are present) - stacking them one per line made a device
             hero four rows tall before any content. `empty:hidden` because a
             slot often holds a component that decides for itself whether it
             has anything to draw. */}
@@ -343,7 +343,7 @@ function DefaultTabPin({ current }: { current: string }) {
       </TooltipTrigger>
       <TooltipContent variant="panel">
         {isPinned
-          ? "This tab opens by default — click to unpin"
+          ? "This tab opens by default - click to unpin"
           : "Open this tab by default on this kind of page"}
       </TooltipContent>
     </Tooltip>

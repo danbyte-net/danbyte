@@ -12,7 +12,7 @@ Both nest into trees, so you can model exactly as deep as you need.
 
 ## Add a region
 
-A region groups sites geographically or organizationally — and regions can nest
+A region groups sites geographically or organizationally - and regions can nest
 inside other regions.
 
 1. Open **Organization → Regions** in the sidebar and click **Add region**.
@@ -22,7 +22,7 @@ inside other regions.
 
 To put a site in a region, open the site's form and pick the **region** there.
 
-Click a region's name to open its **detail page** — the pencil in the header
+Click a region's name to open its **detail page** - the pencil in the header
 edits it. It shows the parent region plus a **Sites** tab (the sites that sit
 directly in the region) and a **Sub-regions** tab, each with counts, backed by
 `GET /api/sites/?region=<id>` and `?parent=<id>` on regions.
@@ -30,14 +30,14 @@ directly in the region) and a **Sub-regions** tab, each with counts, backed by
 The chain continues on the objects themselves: a **site** page has a
 **Locations** tab listing the locations inside it (`GET /api/locations/?site=<id>`);
 a **location** links back to its site and parent location and lists its racks;
-and a **rack** links back to its location and site — so you can walk
+and a **rack** links back to its location and site - so you can walk
 region → site → location → rack (and back) entirely through links.
 
 ## Add a location
 
-A location is a place inside a single site — a building, a floor, a room — and
+A location is a place inside a single site - a building, a floor, a room - and
 locations can nest inside other locations. A location's physical layout can be
-drawn as a [floor plan](floor-plans.md) — a grid of tiles linked to the racks
+drawn as a [floor plan](floor-plans.md) - a grid of tiles linked to the racks
 and devices that live there.
 
 1. Open **Organization → Locations** and click **Add location**.
@@ -61,7 +61,7 @@ and devices that live there.
 | **Retired** | No longer in use. |
 
 !!! note "Nothing is pre-filled"
-    Danbyte ships no sample regions or locations — you create exactly the ones
+    Danbyte ships no sample regions or locations - you create exactly the ones
     your organization uses.
 
 !!! warning "Nodes with children can't be deleted"
@@ -74,13 +74,13 @@ and devices that live there.
 
 ## Floor plans
 
-A location can be drawn as a **[floor plan](floor-plans.md)** — a grid canvas
+A location can be drawn as a **[floor plan](floor-plans.md)** - a grid canvas
 of tiles (racks, walls, cooling…) linked to real objects. The Location page's
 **Floor plan** button opens the location's plan, or creates one if none
 exists yet.
 
 ## Tags & custom fields
 
-Need to track something extra on a location — a square footage, an access
+Need to track something extra on a location - a square footage, an access
 note? Add a **custom field** for locations and it appears on every form. See
 [Tags & custom fields](tags-and-custom-fields.md).

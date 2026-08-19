@@ -210,7 +210,7 @@ export function WindowsConnectionDialog({
             />
             <FormSelect
               label="If nothing there contains it"
-              hint="Searching other VRFs only ever places addresses that would otherwise be skipped — it never moves one that already fits."
+              hint="Searching other VRFs only ever places addresses that would otherwise be skipped - it never moves one that already fits."
               value={vrfMode}
               onChange={(v) => setVrfMode(v === "search" ? "search" : "pinned")}
               options={[

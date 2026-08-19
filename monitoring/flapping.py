@@ -1,6 +1,6 @@
 """Flapping-IP monitor (M22).
 
-A *proactive* surface — "hey, this IP is flapping a lot, maybe go check on it" —
+A *proactive* surface - "hey, this IP is flapping a lot, maybe go check on it" -
 distinct from A5 flap **dampening** (which only quiets renotify for a currently
 firing alert). Here we look at the raw ``StateTransition`` history per
 (IP, check) over the configured flap window and rank the noisiest, regardless of

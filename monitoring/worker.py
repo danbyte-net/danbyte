@@ -1,13 +1,13 @@
-"""RQ worker jobs — run a batch of checks and roll up state.
+"""RQ worker jobs - run a batch of checks and roll up state.
 
 Two entry points, both designed so a single job runs entirely in one asyncio
 event loop and all ORM writes happen *after* the loop:
 
-* ``run_icmp_sweep`` — the fast path for large prefixes. Pings every target in
+* ``run_icmp_sweep`` - the fast path for large prefixes. Pings every target in
   the shard with **one** ``icmplib.async_multiping`` call, internally bounded by
   ``MONITORING_CONCURRENCY``. This is what lets a `/15` complete in seconds
   rather than minutes.
-* ``run_generic`` — TCP/HTTP/SNMP/… checks run concurrently under a semaphore.
+* ``run_generic`` - TCP/HTTP/SNMP/… checks run concurrently under a semaphore.
 
 Both honour per-tenant ``MonitoringSettings``: IPs whose status is in the skip
 list are marked ``skipped`` (never dialed); the hysteresis state machine gets
@@ -47,13 +47,13 @@ def _concurrency() -> int:
 
 
 def _sweep_concurrency() -> int:
-    """ICMP sweeps fire many cheap echo probes — far higher concurrency than the
+    """ICMP sweeps fire many cheap echo probes - far higher concurrency than the
     generic-check limit (which guards heavier TCP/HTTP/SSH connections). At 100
     a 2000-host shard takes ~20s; at 2000 it's ~1s.
 
     Hard-capped to the process's file-descriptor limit: icmplib opens one socket
     per concurrent probe, so asking for more than the fd ceiling raises EMFILE
-    ("Too many open files") on every probe — and icmplib's unretrieved asyncio
+    ("Too many open files") on every probe - and icmplib's unretrieved asyncio
     task exceptions then flood stderr→syslog (this once wrote a 400 GB syslog and
     filled the disk). We leave headroom for the DB/Redis/file descriptors the
     process also needs, so discovery degrades to slower-but-safe instead of
@@ -66,7 +66,7 @@ def _sweep_concurrency() -> int:
         soft, _hard = resource.getrlimit(resource.RLIMIT_NOFILE)
         if soft and soft > 0:
             return max(min(configured, soft - 128), 1)
-    except Exception:  # noqa: BLE001 — getrlimit unavailable → trust the config
+    except Exception:  # noqa: BLE001 - getrlimit unavailable → trust the config
         pass
     return configured
 
@@ -363,13 +363,13 @@ def _finalise(states: list[CheckState], outcomes: list[CheckOutcome], settings_m
 
 
 def ingest_results(outcome_by_id: dict, *, engine_id=None, tenant_id=None) -> int:
-    """Fold externally-run check outcomes into state — the single seam a remote
+    """Fold externally-run check outcomes into state - the single seam a remote
     **Outpost** reports through, reusing the exact local finalise path
     (hysteresis, CheckResult/StateTransition, alerts, DNS, last_seen).
 
     ``outcome_by_id`` maps ``CheckState`` id (str) → ``CheckOutcome``. Only
-    **claimed** (``in_flight``) states are accepted — a report for a state the
-    engine wasn't handed is ignored — optionally scoped to ``engine_id`` /
+    **claimed** (``in_flight``) states are accepted - a report for a state the
+    engine wasn't handed is ignored - optionally scoped to ``engine_id`` /
     ``tenant_id``. Returns the number ingested.
     """
     if not outcome_by_id:
@@ -435,7 +435,7 @@ def _sync_dns(states: list[CheckState], settings_map: dict) -> None:
     addresses = [ip.ip_address for ip, _ in targets.values()]
     try:
         resolved = asyncio.run(_resolve_ptrs(addresses))
-    except Exception as e:  # noqa: BLE001 — DNS must never fail the check run
+    except Exception as e:  # noqa: BLE001 - DNS must never fail the check run
         log.warning("dns sync failed: %s", e)
         return
 
@@ -446,7 +446,7 @@ def _sync_dns(states: list[CheckState], settings_map: dict) -> None:
         if host:
             target = host
         elif cfg["dns_preserve_if_alive"] and reachable.get(ip_id):
-            continue  # transient lookup failure on a live host — keep the name
+            continue  # transient lookup failure on a live host - keep the name
         else:
             target = "" if cfg["dns_clear_on_missing"] else current
         if target != current:

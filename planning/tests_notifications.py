@@ -145,7 +145,7 @@ class MentionTests(_NotifyBase):
         )
         self.assertEqual(r.status_code, 201, r.content)
         # The hook enqueues; with the queue unavailable in tests it may run
-        # inline — call the sender directly for a deterministic assert.
+        # inline - call the sender directly for a deterministic assert.
         mail.outbox.clear()
         entry_id = r.json()["id"]
         notifications.send_commented(

@@ -1,4 +1,4 @@
-"""Deploy dispatch — launch an AWX/AAP job template, or POST a signed payload to
+"""Deploy dispatch - launch an AWX/AAP job template, or POST a signed payload to
 a generic webhook. Runs on the RQ low queue; records a DeployRun. All failures
 are contained so a deploy problem never breaks the originating request/save.
 """
@@ -143,7 +143,7 @@ def enqueue_deploy(target, device_ids, *, event="manual", attempt=1, retry_of=No
             event=event, run_id=str(run.id),
         )
     except Exception:  # noqa: BLE001
-        # Redis down etc. — run dispatch inline so the deploy still happens.
+        # Redis down etc. - run dispatch inline so the deploy still happens.
         try:
             dispatch_deploy(str(target.id), [str(d) for d in device_ids],
                             event=event, run_id=str(run.id))
@@ -154,7 +154,7 @@ def enqueue_deploy(target, device_ids, *, event="manual", attempt=1, retry_of=No
 
 # ─── auto-dispatch on change (P2.5) ──────────────────────────────────────────
 # Opt-in: an AutomationTarget with auto_on_change=True fires a deploy whenever a
-# matching object in its tenant is saved. Best-effort — wrapped so a deploy (or a
+# matching object in its tenant is saved. Best-effort - wrapped so a deploy (or a
 # down Redis) can never break the originating save, exactly like webhooks.
 
 
@@ -199,7 +199,7 @@ def auto_fire(instance, slug: str | None = None) -> None:
             return
         for t in targets:
             enqueue_deploy(t, [object_id], event="auto")
-    except Exception:  # noqa: BLE001 — never break the originating save
+    except Exception:  # noqa: BLE001 - never break the originating save
         logger.exception("auto-deploy dispatch failed")
 
 

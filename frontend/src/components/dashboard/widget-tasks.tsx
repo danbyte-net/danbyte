@@ -10,7 +10,7 @@ import { PriorityBadge, scheduleLabel } from "@/components/planning/task-card"
 import { ColorBadge } from "@/components/cells/color-badge"
 
 // Dashboard widget: the signed-in user's open tasks, most urgent first.
-// `assignee=me&open=1` keeps the query server-side — "open" is the status
+// `assignee=me&open=1` keeps the query server-side - "open" is the status
 // row's semantic group, so renamed columns still count correctly.
 
 function useMyTasks() {
@@ -37,7 +37,7 @@ export function MyTasksWidget() {
   const { formatDate, today } = useDateFormat()
 
   const rows = [...(q.data?.results ?? [])].sort((a, b) => {
-    // Overdue first, then by due date, then priority — the answer to "what
+    // Overdue first, then by due date, then priority - the answer to "what
     // should I look at" without opening a board.
     const dueA = a.due_date ?? "9999"
     const dueB = b.due_date ?? "9999"
@@ -70,7 +70,7 @@ export function MyTasksWidget() {
       header: "Priority",
       cell: (t) =>
         t.priority === "none" ? (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ) : (
           <PriorityBadge priority={t.priority} />
         ),
@@ -84,7 +84,7 @@ export function MyTasksWidget() {
         return s ? (
           <span className={`text-[11px] ${s.tone}`}>{s.text}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         )
       },
     },

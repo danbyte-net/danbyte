@@ -167,20 +167,20 @@ export function IpRangeForm({ range, onSaved, onCancel }: IpRangeFormProps) {
 
       <PrefixPicker
         label="Parent prefix"
-        hint="optional — sets the VRF"
+        hint="optional - sets the VRF"
         value={prefixId}
         onChange={(v) => {
           setPrefixId(v)
           if (!v) return
           // Fetch the picked prefix (works for modal picks beyond the
-          // combobox page too — the old find-in-first-page lookup didn't).
+          // combobox page too - the old find-in-first-page lookup didn't).
           qc.fetchQuery({
             queryKey: prefixDetailKey(v),
             queryFn: () => api<Prefix>(`/api/prefixes/${v}/`),
             staleTime: 10 * 60_000,
           }).then((p) => {
             // A range under a prefix inherits its VRF (the backend enforces
-            // this too) — reflect it immediately.
+            // this too) - reflect it immediately.
             setVrfId(p.vrf?.id ?? null)
             // Pre-fill the span with the prefix's network → broadcast so the
             // user starts from the full subnet and narrows from there.
@@ -267,7 +267,7 @@ export function IpRangeForm({ range, onSaved, onCancel }: IpRangeFormProps) {
           rows={3}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="e.g. DHCP pool — floor 3 wireless"
+          placeholder="e.g. DHCP pool - floor 3 wireless"
         />
       </Field>
 

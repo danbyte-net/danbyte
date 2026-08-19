@@ -1,4 +1,4 @@
-"""Component bulk edit — ComponentBulkMixin on interfaces / ports /
+"""Component bulk edit - ComponentBulkMixin on interfaces / ports /
 VM interfaces / component templates."""
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ class ComponentBulkTests(TestCase):
         self.assertEqual(self.if1.mode, "")
 
     def test_grouped_choice_accepted(self):
-        # Interface.type uses grouped choices — validation reads flatchoices,
+        # Interface.type uses grouped choices - validation reads flatchoices,
         # so a real value from inside a group passes.
         r = self.client_api.post(
             "/api/interfaces/bulk-update/",
@@ -88,7 +88,7 @@ class ComponentBulkTests(TestCase):
         self.assertEqual(self.if1.mode, "")
 
     def test_free_text_str_field_unconstrained(self):
-        # speed stays free-form (no model choices) — validation must not
+        # speed stays free-form (no model choices) - validation must not
         # touch it, only the choice-backed fields.
         r = self.client_api.post(
             "/api/interfaces/bulk-update/",
@@ -183,7 +183,7 @@ class ComponentBulkTests(TestCase):
         t1.refresh_from_db()
         self.assertEqual(t1.type, "10gbase-x-sfpp")
         self.assertTrue(t1.mgmt_only)
-        # Templates have no tags — tag keys must be rejected, not ignored.
+        # Templates have no tags - tag keys must be rejected, not ignored.
         r = self.client_api.post(
             "/api/interface-templates/bulk-update/",
             {"ids": [str(t1.id)], "fields": {"add_tag_ids": [1]}},

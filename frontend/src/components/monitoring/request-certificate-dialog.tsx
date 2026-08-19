@@ -47,7 +47,7 @@ const lines = (s: string) =>
 
 /**
  * Generate a CSR + key pair. Two phases: the request form, then a one-time
- * reveal of the private key (Danbyte returns it exactly once — the store never
+ * reveal of the private key (Danbyte returns it exactly once - the store never
  * hands it back over the API afterwards without the change grant), with the CSR
  * ready to download and take to a CA.
  */
@@ -129,7 +129,7 @@ export function RequestCertificateDialog({
             <DialogHeader>
               <DialogTitle>Certificate request created</DialogTitle>
               <DialogDescription>
-                Save the private key now — this is the only time it is shown.
+                Save the private key now - this is the only time it is shown.
                 Download the CSR and give it to your certificate authority.
               </DialogDescription>
             </DialogHeader>

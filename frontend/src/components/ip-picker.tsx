@@ -12,7 +12,7 @@ export interface IpPickerProps extends Omit<ObjectPickerProps, "label"> {
   label?: string
 }
 
-/** The IP-address preset of ObjectPicker — advanced search by prefix / VRF /
+/** The IP-address preset of ObjectPicker - advanced search by prefix / VRF /
  * site plus free text over address + DNS name. Replaces the page_size=500
  * dropdown pattern: the combobox holds one page, the modal scales to any
  * address space. */
@@ -20,7 +20,7 @@ export function IpPicker({ label = "IP address", ...rest }: IpPickerProps) {
   const spec = useMemo<ObjectPickerSpec<IPAddress, IPAddress>>(
     () => ({
       noun: "IP",
-      // No compact ?picker=1 shape exists for IPs — first page of the
+      // No compact ?picker=1 shape exists for IPs - first page of the
       // standard list feeds the combobox; the modal covers the rest.
       pickerEndpoint: "/api/ips/",
       pickerQueryKey: ["ips-picker"],
@@ -62,7 +62,7 @@ export function IpPicker({ label = "IP address", ...rest }: IpPickerProps) {
           header: "DNS name",
           cell: (ip) => (
             <span className="font-mono text-muted-foreground">
-              {ip.dns_name || "—"}
+              {ip.dns_name || "-"}
             </span>
           ),
         },
@@ -71,7 +71,7 @@ export function IpPicker({ label = "IP address", ...rest }: IpPickerProps) {
           header: "Assigned to",
           cell: (ip) => (
             <span className="text-muted-foreground">
-              {ip.assigned_device?.name ?? ip.assigned_vm?.name ?? "—"}
+              {ip.assigned_device?.name ?? ip.assigned_vm?.name ?? "-"}
             </span>
           ),
         },
@@ -79,7 +79,7 @@ export function IpPicker({ label = "IP address", ...rest }: IpPickerProps) {
           header: "Prefix",
           cell: (ip) => (
             <span className="font-mono text-muted-foreground">
-              {ip.prefix?.cidr ?? "—"}
+              {ip.prefix?.cidr ?? "-"}
             </span>
           ),
         },

@@ -102,7 +102,7 @@ class StateTransitionAdmin(admin.ModelAdmin):
 
 @admin.register(Certificate)
 class CertificateAdmin(admin.ModelAdmin):
-    """Observed certificates. Read-only — a row records what an endpoint served,
+    """Observed certificates. Read-only - a row records what an endpoint served,
     so there is nothing to author here (and nowhere to type key material)."""
 
     list_display = ("subject_cn", "issuer_cn", "not_after", "self_signed",
@@ -120,7 +120,7 @@ class CertificateAdmin(admin.ModelAdmin):
 
 @admin.register(CertificateBinding)
 class CertificateBindingAdmin(admin.ModelAdmin):
-    """Which endpoint served which certificate. Read-only, and never pruned —
+    """Which endpoint served which certificate. Read-only, and never pruned -
     a stale binding is the record of what an endpoint *used* to serve."""
 
     list_display = ("target_ip", "port", "server_name", "certificate",

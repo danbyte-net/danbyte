@@ -9,7 +9,7 @@ import { SimpleTable } from "@/components/ui/simple-table"
 import type { SimpleColumn } from "@/components/ui/simple-table"
 import { ColorBadge } from "@/components/cells/color-badge"
 
-// Compact, border-defined tables matching the data-table look on list pages —
+// Compact, border-defined tables matching the data-table look on list pages -
 // the shared SimpleTable *is* that look, so the widgets use it directly.
 
 const PREFIX_COLUMNS: SimpleColumn<DashRecentPrefix>[] = [
@@ -35,7 +35,7 @@ const PREFIX_COLUMNS: SimpleColumn<DashRecentPrefix>[] = [
     id: "site",
     header: "Site",
     flex: true,
-    cell: (p) => <span className="text-muted-foreground">{p.site ?? "—"}</span>,
+    cell: (p) => <span className="text-muted-foreground">{p.site ?? "-"}</span>,
   },
   {
     id: "ips",
@@ -76,13 +76,13 @@ const DEVICE_COLUMNS: SimpleColumn<DashRecentDevice>[] = [
   {
     id: "type",
     header: "Type",
-    cell: (x) => <span className="text-muted-foreground">{x.type ?? "—"}</span>,
+    cell: (x) => <span className="text-muted-foreground">{x.type ?? "-"}</span>,
   },
   {
     id: "site",
     header: "Site",
     flex: true,
-    cell: (x) => <span className="text-muted-foreground">{x.site ?? "—"}</span>,
+    cell: (x) => <span className="text-muted-foreground">{x.site ?? "-"}</span>,
   },
 ]
 
@@ -114,7 +114,7 @@ const IP_COLUMNS: SimpleColumn<DashRecentIp>[] = [
       x.status ? (
         <ColorBadge name={x.status} color={x.status_color || undefined} />
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
   },
   {
@@ -123,7 +123,7 @@ const IP_COLUMNS: SimpleColumn<DashRecentIp>[] = [
     flex: true,
     cell: (x) => (
       <span className="font-mono text-xs text-muted-foreground">
-        {x.dns ?? "—"}
+        {x.dns ?? "-"}
       </span>
     ),
   },

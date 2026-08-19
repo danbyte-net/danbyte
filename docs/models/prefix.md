@@ -36,7 +36,7 @@ class Meta:
 ```
 
 The `nulls_distinct=False` (Postgres 15+) is what makes `vrf=NULL` (Global) act
-like a real VRF for uniqueness — without it, two `(tenant, NULL,
+like a real VRF for uniqueness - without it, two `(tenant, NULL,
 '10.0.10.0/24')` rows would both be allowed.
 
 ## Moving a prefix between VRFs
@@ -70,11 +70,11 @@ stack-walking sorted prefixes per `(vrf, family)` bucket. This means:
 - Deleting a prefix doesn't orphan children
 - Re-CIDR'ing automatically re-roots the tree
 
-The cost is that "find all children" is O(n) within a VRF — fine for IPAMs at
+The cost is that "find all children" is O(n) within a VRF - fine for IPAMs at
 the scale Danbyte targets.
 
 ## Related
 
-- [Prefix CRUD](../features/prefix-crud.md) — the create / edit flow
-- [Tree + sections](../features/tree-and-sections.md) — the list rendering
-- [Space map](../features/space-map.md) — the per-mask grid view
+- [Prefix CRUD](../features/prefix-crud.md) - the create / edit flow
+- [Tree + sections](../features/tree-and-sections.md) - the list rendering
+- [Space map](../features/space-map.md) - the per-mask grid view

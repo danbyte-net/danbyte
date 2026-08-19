@@ -82,7 +82,7 @@ function BulkDeleteConfirm({
   const qc = useQueryClient()
   const m = useMutation({
     mutationFn: async () => {
-      // Tunnels have no bulk-delete endpoint — delete each row in turn.
+      // Tunnels have no bulk-delete endpoint - delete each row in turn.
       await Promise.all(
         ids.map((id) => api<void>(`/api/tunnels/${id}/`, { method: "DELETE" }))
       )

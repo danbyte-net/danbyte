@@ -15,7 +15,7 @@ export interface FieldProps {
    * Prefer this over cramming a clarification into the label in parentheses. */
   info?: ReactNode
   error?: string
-  /** Mark the label. Field components forward their own `required` here — until
+  /** Mark the label. Field components forward their own `required` here - until
    * this existed, 111 `required` props across 82 files rendered NOTHING, so the
    * only signal a user got was the browser's native validation bubble on
    * submit. That absence is why so many fields say `hint="optional"`: the
@@ -51,7 +51,7 @@ export function Field({
             </span>
           )}
           {info && <InfoTip>{info}</InfoTip>}
-          {/* "A change to this value is already planned" — renders
+          {/* "A change to this value is already planned" - renders
               nothing unless a PendingFieldsProvider says so. */}
           <PendingFieldMark label={label} />
         </Label>

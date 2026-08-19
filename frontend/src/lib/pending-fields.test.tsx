@@ -7,7 +7,7 @@ import { PendingFieldsProvider } from "@/lib/pending-fields"
 import { KvCard } from "@/components/kv-card"
 
 // The device Overview's exact shape: one provider, one KvCard, a planned
-// change per field — every marked label must grow its calendar-clock.
+// change per field - every marked label must grow its calendar-clock.
 vi.mock("@/lib/save-object", () => ({
   usePlanTarget: () => null,
 }))
@@ -24,7 +24,7 @@ vi.mock("@/lib/api", async (orig) => {
           state: "planned",
           effective_date: null,
           display: [
-            { field: "description", label: "Description", from: "—", to: "x" },
+            { field: "description", label: "Description", from: "-", to: "x" },
           ],
         },
         {
@@ -59,7 +59,7 @@ describe("pending-field marks on a KvCard", () => {
               { label: "Status", value: "Active" },
               { label: "Description", value: "x" },
               // The form's unit-suffixed label must match the registry's
-              // bare "Position" — the rack-elevation mark regression.
+              // bare "Position" - the rack-elevation mark regression.
               { label: "Position (U)", value: "U27" },
             ]}
           />

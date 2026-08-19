@@ -9,7 +9,7 @@ import { TileBadge } from "@/components/floorplan/tile-badge"
 import type { MarkerTypeOption } from "@/components/site-map/map-sidebar"
 import { cn } from "@/lib/utils"
 
-// The site map's LEFT palette rail — a clone of the floor planner's palette.
+// The site map's LEFT palette rail - a clone of the floor planner's palette.
 // Visible only in edit mode. Tabs switch what you're placing; click-to-arm,
 // then click the map. Marker types stay armed so several can be stamped.
 
@@ -121,7 +121,7 @@ export function MapPaletteRail({
       {placing && (
         <p className="border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
           {placing.kind === "marker"
-            ? `Click the map to stamp ${placing.name} — stays armed. Esc to stop.`
+            ? `Click the map to stamp ${placing.name} - stays armed. Esc to stop.`
             : `Click the map to place ${placing.name}. Esc to stop.`}
         </p>
       )}

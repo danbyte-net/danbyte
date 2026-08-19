@@ -42,12 +42,12 @@ interface ImportResult {
 }
 
 /**
- * The sensor catalog — every custom SNMP sensor in the tenant, in one place.
+ * The sensor catalog - every custom SNMP sensor in the tenant, in one place.
  *
  * Sensors are per-vendor OID archaeology: once someone works out that a Lenovo
  * chassis reports drive health at `1.3.6.1.4.1.2.3.51.3.1.12.2.1.3`, that
  * knowledge should be reusable rather than rediscovered. So the catalog exports
- * to a JSON pack and imports one back — between device types, between tenants,
+ * to a JSON pack and imports one back - between device types, between tenants,
  * between deployments, or pasted from someone else's notes.
  */
 function SnmpSensorCatalogPage() {
@@ -95,7 +95,7 @@ function SnmpSensorCatalogPage() {
         }),
       }),
     onSuccess: (row) => {
-      toast.success("Sensor duplicated — disabled until you review it")
+      toast.success("Sensor duplicated - disabled until you review it")
       qc.invalidateQueries({ queryKey: ["snmp-sensors"] })
       setEditing(row)
     },
@@ -136,7 +136,7 @@ function SnmpSensorCatalogPage() {
         <h2 className="text-sm font-semibold">SNMP sensors</h2>
         <p className="mt-1 text-xs text-muted-foreground">
           Every custom health sensor in this tenant. A sensor maps a vendor OID
-          to an inventory item's status — SNMP has no standard disk/PSU/fan
+          to an inventory item's status - SNMP has no standard disk/PSU/fan
           health MIB, so this is the escape hatch. Bind one to a device type and
           every device of that model inherits it. Sensors carry no credentials,
           which is what makes a pack safe to share.
@@ -243,7 +243,7 @@ function SnmpSensorCatalogPage() {
                     size="icon"
                     variant="ghost"
                     className="h-7 w-7"
-                    title="Duplicate — same OID, new name/binding"
+                    title="Duplicate - same OID, new name/binding"
                     onClick={() => duplicate.mutate(s)}
                     disabled={duplicate.isPending}
                   >
@@ -316,7 +316,7 @@ function SnmpSensorCatalogPage() {
 }
 
 /** Paste or upload a pack. Skips slugs that already exist unless you ask for a
- * replace — an import shouldn't quietly rewrite a sensor somebody tuned. */
+ * replace - an import shouldn't quietly rewrite a sensor somebody tuned. */
 function ImportDialog({
   open,
   onOpenChange,
@@ -420,7 +420,7 @@ function ImportDialog({
             {result.unbound_device_types.length > 0 && (
               <span className="text-amber-600 dark:text-amber-400">
                 No device type here named:{" "}
-                {result.unbound_device_types.join(", ")} — those sensors apply
+                {result.unbound_device_types.join(", ")} - those sensors apply
                 to all types until you bind them.
               </span>
             )}

@@ -14,7 +14,7 @@ const DIR: Record<Position, [number, number]> = {
 }
 
 /** Deterministic per-edge offset so cables sharing a run don't stack into one
- * line — each gets its own channel a few px apart. Derived from the edge id so
+ * line - each gets its own channel a few px apart. Derived from the edge id so
  * it's stable across renders. */
 function stagger(id: string): number {
   let h = 0
@@ -149,7 +149,7 @@ export function RoutedEdge({
     )
   }
 
-  // The two interior bends encode one clear "channel" — a fixed main-axis
+  // The two interior bends encode one clear "channel" - a fixed main-axis
   // coordinate the cable routes through. Rebuild a clean orthogonal Z anchored
   // at the ACTUAL handle positions (not the centre-based bends), so the cable
   // leaves its port straight instead of kinking diagonally toward a centre.

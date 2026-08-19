@@ -36,7 +36,7 @@ export interface Slice {
   color: string
 }
 
-// A thin SVG donut + legend. No charting dependency — just stacked arc strokes,
+// A thin SVG donut + legend. No charting dependency - just stacked arc strokes,
 // which keeps it perfectly on-token and light.
 export function Donut({
   slices,

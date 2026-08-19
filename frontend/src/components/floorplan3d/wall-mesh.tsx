@@ -8,18 +8,18 @@ import {
 } from "./world"
 import type { ScenePayload, SceneWall } from "./world"
 
-/** Neutral zinc, the rack-frame family — walls are structure, not signal. */
+/** Neutral zinc, the rack-frame family - walls are structure, not signal. */
 const WALL_COLOR = "#27272a"
 
 /**
- * One wall polyline as solid boxes with door gaps and lintels — the 3D read
+ * One wall polyline as solid boxes with door gaps and lintels - the 3D read
  * of what Structure mode drew. Render-only (owner's rule: build in 2D, view
  * in 3D): no pointer handlers, nothing raycastable, no animation, so the
  * demand frameloop never ticks for a wall. Spans extend half a thickness at
  * each end to close the corner joints of a multi-segment run.
  *
  * X-ray ghosts walls (the room's one transparency convention); every other
- * shell mode leaves them at full height — a knee-cap variant shipped once
+ * shell mode leaves them at full height - a knee-cap variant shipped once
  * and read as "my walls broke", so the Walls toggle is the way to clear
  * the view instead.
  */

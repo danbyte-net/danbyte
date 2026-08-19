@@ -23,7 +23,7 @@ function AccessSummary({ id }: { id: string }) {
   if (s.is_admin)
     return (
       <div className="mb-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-[13px]">
-        <span className="font-medium">Administrator</span> — full access in this
+        <span className="font-medium">Administrator</span> - full access in this
         tenant.
       </div>
     )

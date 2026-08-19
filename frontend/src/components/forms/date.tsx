@@ -14,7 +14,7 @@ export interface FormDateProps extends Base {
 }
 
 // Date field using the shared DatePicker (displays per the user's date-format
-// setting) — the drop-in replacement for FormText type="date".
+// setting) - the drop-in replacement for FormText type="date".
 export function FormDate({
   value,
   onChange,

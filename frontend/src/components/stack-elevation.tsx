@@ -8,7 +8,7 @@ import type { FaceplateMode } from "@/components/device-faceplate"
 import type { LegendReporter } from "@/components/speed-scale"
 import { cn } from "@/lib/utils"
 
-/** The stack drawn as a chassis — one bar per member in position order,
+/** The stack drawn as a chassis - one bar per member in position order,
  * gaps rendered as dashed empty slots so the physical shape reads at a
  * glance. Same restrained language as the rack elevation: borders define
  * edges, color only for state (status dot, master crown). */
@@ -25,7 +25,7 @@ export function StackElevation({
   highlightId?: string
   /** Photo faceplate where a member's type has one, else the schematic. */
   mode?: FaceplateMode
-  /** Per-member interface lists — when provided, each member renders its
+  /** Per-member interface lists - when provided, each member renders its
    * front panel (the "switch builder") inside the bar. */
   interfacesByMember?: Map<string, Interface[]>
   /** One legend under the whole stack: every member reports what it drew and
@@ -35,7 +35,7 @@ export function StackElevation({
   if (members.length === 0)
     return (
       <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-        An empty chassis — add the first member to draw the stack.
+        An empty chassis - add the first member to draw the stack.
       </div>
     )
 

@@ -70,7 +70,7 @@ export function TemplateEditor({
         interval_seconds: Number(interval),
         degraded_enabled: true,
       }
-      // Only send secrets when the user actually entered some — otherwise a
+      // Only send secrets when the user actually entered some - otherwise a
       // PATCH would wipe stored credentials with blanks.
       if (Object.keys(secret_params).length > 0)
         body.secret_params = secret_params
@@ -159,7 +159,7 @@ export function TemplateEditor({
           {isEdit && (template.usage_count ?? 0) > 0 && (
             <p className="text-[11px] text-muted-foreground">
               Used by {template.usage_count} assignment
-              {template.usage_count === 1 ? "" : "s"} — saving updates them all.
+              {template.usage_count === 1 ? "" : "s"} - saving updates them all.
             </p>
           )}
 

@@ -45,7 +45,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   )
 }
 
-// Read the present users — used by the SiteHeader to render the presence bar.
+// Read the present users - used by the SiteHeader to render the presence bar.
 export function usePresentUsers(): PresentUser[] {
   return useContext(PresenceContext)?.present ?? []
 }

@@ -36,7 +36,7 @@ export type StencilData = TopoNode["data"] & {
   portOrder?: Record<string, number>
 }
 
-// Sizing — dagre reserves these; the DOM must match so handles land right.
+// Sizing - dagre reserves these; the DOM must match so handles land right.
 export const CENTER_W = 178
 export const CENTER_H = 46
 const STRIP_H = 20 // top / bottom horizontal strip
@@ -45,7 +45,7 @@ const CHIP_W = 58 // one port in a horizontal strip MINIMUM
 const ROW_H = 16 // one port in a vertical column
 export const STENCIL_FOOTER = 14
 
-// Port names render in full (no truncation) — cells size to their text.
+// Port names render in full (no truncation) - cells size to their text.
 // 9px monospace ≈ 5.5px/char; padding = px-1.5 (12) + dot (4) + gap (4).
 const CHAR_W = 5.5
 const CELL_PAD = 22
@@ -78,7 +78,7 @@ const STATUS_DOT: Record<string, string> = {
 
 type FlatPort = { name: string; kind: TopoPortKind }
 
-/** Cabled ports flattened — a pass-through pair contributes both its ports. */
+/** Cabled ports flattened - a pass-through pair contributes both its ports. */
 function flatPorts(d: StencilData): FlatPort[] {
   const out: FlatPort[] = []
   for (const p of d.ports ?? []) {
@@ -90,7 +90,7 @@ function flatPorts(d: StencilData): FlatPort[] {
 
 /** Split ports by their assigned side; unassigned default to L (first pass).
  * Each side is then ordered by the neighbour's cross-axis position so edges
- * on that side leave in the same order as their targets — no crossings. */
+ * on that side leave in the same order as their targets - no crossings. */
 function bySide(d: StencilData) {
   const sides: Record<PortSide, FlatPort[]> = { L: [], R: [], T: [], B: [] }
   for (const fp of flatPorts(d)) {
@@ -108,7 +108,7 @@ function bySide(d: StencilData) {
 /** Card w/h from the per-side port counts. Strips size to their own ports,
  * so a device with three uplinks on top and one downlink on bottom gets a
  * wide top strip and a narrow bottom one. */
-/** Sum of the chip widths on a horizontal strip (top/bottom) — each chip sizes
+/** Sum of the chip widths on a horizontal strip (top/bottom) - each chip sizes
  * to its own full port name, so the strip is as wide as its labels need. */
 function stripW(ports: FlatPort[]): number {
   return ports.reduce((sum, p) => sum + chipW(p.name), 0)
@@ -168,7 +168,7 @@ function PortCell({
       <span
         className={`h-1 w-1 shrink-0 rounded-full ${KIND_DOT[port.kind]}`}
       />
-      {/* Full port name — no truncation; cells are sized to fit it. */}
+      {/* Full port name - no truncation; cells are sized to fit it. */}
       <span className="font-mono text-[9px] leading-none whitespace-nowrap">
         {port.name}
       </span>
@@ -178,7 +178,7 @@ function PortCell({
 
 /**
  * Adaptive wiring-diagram device card. Each cabled port renders **once**, on
- * whichever of the four card edges faces its neighbour — so HA links between
+ * whichever of the four card edges faces its neighbour - so HA links between
  * two side-by-side devices connect on their touching sides, uplinks sit on
  * top, downlinks on the bottom, and nothing wraps around the card. The strips
  * auto-size to their own port counts. One node serves both the side-to-side
@@ -274,7 +274,7 @@ export function StencilNode({ data, selected }: NodeProps) {
               ? "patch panel"
               : [d.device_type, d.primary_ip].filter(Boolean).join(" · ") ||
                 d.site ||
-                "—"}
+                "-"}
           </div>
           {extra > 0 && (
             <div className="text-[9px] text-muted-foreground">
@@ -305,7 +305,7 @@ export function StencilNode({ data, selected }: NodeProps) {
 }
 
 /** Small pill for port-level trace nodes (interface / front / rear port on
- * the cable-trace views) — the stencil card is for devices. */
+ * the cable-trace views) - the stencil card is for devices. */
 export function PortNode({ data, selected }: NodeProps) {
   const d = data as {
     name: string

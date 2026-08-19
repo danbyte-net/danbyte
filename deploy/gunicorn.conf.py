@@ -1,7 +1,7 @@
 """Gunicorn config for Danbyte's WSGI app (the HTTP path).
 
 WebSockets are served separately by daphne (danbyte-ws.service) so channels
-never sits in the HTTP request path — putting the ASGI server in front of all
+never sits in the HTTP request path - putting the ASGI server in front of all
 HTTP wedges plain requests (a hard-won lesson). Gunicorn here is sync WSGI.
 
 Tune worker count with WEB_CONCURRENCY; bind with GUNICORN_BIND.

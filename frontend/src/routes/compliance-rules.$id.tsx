@@ -291,7 +291,7 @@ function AffectedObjects({
         <div className="rounded-lg border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
           {enabled
             ? "Nothing fails this rule. 🎉"
-            : "This rule is disabled — it isn't evaluated."}
+            : "This rule is disabled - it isn't evaluated."}
         </div>
       )}
       {q.data && total > 0 && realColumns ? (

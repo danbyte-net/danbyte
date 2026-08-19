@@ -136,7 +136,7 @@ export function AlertRulesList() {
 
       {q.data && rows.length === 0 ? (
         <div className="overflow-hidden rounded-lg border border-border bg-card px-3 py-10 text-center text-sm text-muted-foreground">
-          No rules — the default severity policy is in effect.
+          No rules - the default severity policy is in effect.
         </div>
       ) : (
         <DataTable

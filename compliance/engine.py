@@ -66,7 +66,7 @@ def _violates(rule: ComplianceRule, obj, tag_slugs) -> bool:
 def evaluate_for_object(tenant, object_type: str, obj) -> list[ComplianceRule]:
     """The enabled rules of ``object_type`` that ``obj`` currently fails.
 
-    Single-object companion to :func:`evaluate` — powers the per-device
+    Single-object companion to :func:`evaluate` - powers the per-device
     compliance status endpoint without scanning the whole tenant. One rule
     fails one object at most once, so the failed rules *are* the violations.
     """

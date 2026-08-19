@@ -56,7 +56,7 @@ const KIND_LABEL: Record<string, string> = Object.fromEntries(
   KINDS.map((k) => [k.value, k.label])
 )
 
-/** The device's login credentials — each references a secret Danbyte stores in
+/** The device's login credentials - each references a secret Danbyte stores in
  * the configured secret manager (managed) or an external path the operator keeps
  * themselves. Secrets are never shown in the list; the Reveal action (gated on
  * the reveal verb) fetches one on demand. */
@@ -120,7 +120,7 @@ export function DeviceCredentialsCard({ deviceId }: { deviceId: string }) {
                   )}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {c.username || "—"}
+                  {c.username || "-"}
                   {c.port ? `:${c.port}` : ""}
                 </div>
               </div>
@@ -357,7 +357,7 @@ function CredentialForm({
 
           <FormCheckbox
             label="Let Danbyte store the secret for me (recommended)"
-            hint="Keep this checked: type the password or key below and Danbyte saves it in the configured secret store for you (right now that's Vault) — you don't deal with Vault paths at all. Only uncheck it if you want to point at a secret you already manage in Vault yourself."
+            hint="Keep this checked: type the password or key below and Danbyte saves it in the configured secret store for you (right now that's Vault) - you don't deal with Vault paths at all. Only uncheck it if you want to point at a secret you already manage in Vault yourself."
             checked={managed}
             onChange={setManaged}
           />
@@ -395,7 +395,7 @@ function CredentialForm({
           ) : (
             <div className="space-y-2 rounded-md border border-border p-3">
               <p className="text-xs text-muted-foreground">
-                Advanced — reference a secret that already exists in your store.
+                Advanced - reference a secret that already exists in your store.
                 Most people should leave the box above checked instead.
               </p>
             <FormRow>

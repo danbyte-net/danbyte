@@ -46,7 +46,7 @@ export function RirDeleteDialog({
           <AlertDialogTitle>Delete RIR {rir?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {blocked
-              ? `This RIR is referenced by ${rir?.aggregate_count} aggregate${rir?.aggregate_count === 1 ? "" : "s"}. Reassign or delete them first — the API will protect them anyway.`
+              ? `This RIR is referenced by ${rir?.aggregate_count} aggregate${rir?.aggregate_count === 1 ? "" : "s"}. Reassign or delete them first - the API will protect them anyway.`
               : "This action can't be undone."}
           </AlertDialogDescription>
         </AlertDialogHeader>

@@ -154,7 +154,7 @@ function writeStoredPositions(p: Record<string, [number, number]>) {
   try {
     localStorage.setItem(POS_KEY, JSON.stringify(p))
   } catch {
-    /* quota / private mode — non-fatal */
+    /* quota / private mode - non-fatal */
   }
 }
 function clearStoredPositions() {
@@ -166,7 +166,7 @@ function clearStoredPositions() {
 }
 
 // Display settings (Levels order/bonds/distances, direction, colour mode,
-// edge routing) for the DEFAULT topology — like the dragged positions above,
+// edge routing) for the DEFAULT topology - like the dragged positions above,
 // they must survive a reload. Saved views persist theirs via Save.
 const DISPLAY_KEY = "danbyte-topology-display"
 interface StoredDisplay {
@@ -189,7 +189,7 @@ function writeStoredDisplay(d: StoredDisplay) {
   try {
     localStorage.setItem(DISPLAY_KEY, JSON.stringify(d))
   } catch {
-    /* quota / private mode — non-fatal */
+    /* quota / private mode - non-fatal */
   }
 }
 
@@ -210,7 +210,7 @@ function TopologyPage() {
     stored.direction ?? "LR"
   )
   const [roleOrder, setRoleOrder] = useState<string[]>(stored.roleOrder ?? [])
-  // Roles bonded to the level of the role above them — lets several roles share
+  // Roles bonded to the level of the role above them - lets several roles share
   // one level (core switches beside routers, say).
   const [roleBonds, setRoleBonds] = useState<string[]>(stored.roleBonds ?? [])
   const [roleDistance, setRoleDistance] = useState<Record<string, number>>(
@@ -244,7 +244,7 @@ function TopologyPage() {
   }
 
   // Persist the DEFAULT view's display settings across reloads. Only while no
-  // saved view is selected — a saved view's settings belong to that view.
+  // saved view is selected - a saved view's settings belong to that view.
   useEffect(() => {
     if (viewId !== "none") return
     writeStoredDisplay({
@@ -381,7 +381,7 @@ function TopologyPage() {
     setRoleDistance(f.roleDistance ?? {})
     setFocus(null)
     // A tiered view (Levels) is defined by its role order + distances, so
-    // regenerate it instead of re-pinning saved coordinates — otherwise the
+    // regenerate it instead of re-pinning saved coordinates - otherwise the
     // pinned positions would suppress the tiers, distance dots, and routing.
     // Bumping the tick marks this as a deliberate relayout so the canvas uses
     // the fresh layout rather than keeping the previous view's node positions.
@@ -607,7 +607,7 @@ function TopologyPage() {
             onBonds={(b) => {
               setRoleBonds(b)
               // Bonding changes the tiers, so drop pinned coordinates and
-              // relayout — same as reordering.
+              // relayout - same as reordering.
               setPositions(undefined)
               clearStoredPositions()
               setLayoutTick((t) => t + 1)
@@ -637,7 +637,7 @@ function TopologyPage() {
                   value={direction}
                   onValueChange={(d) => {
                     setDirection(d)
-                    // A saved LR layout doesn't fit TB — re-run the layout.
+                    // A saved LR layout doesn't fit TB - re-run the layout.
                     setPositions(undefined)
                     clearStoredPositions()
                     setLayoutTick((t) => t + 1)
@@ -692,7 +692,7 @@ function TopologyPage() {
           value={viewId}
           onValueChange={(v) => {
             if (v === "none") {
-              // Back to the default view — restore its stored drag arrangement
+              // Back to the default view - restore its stored drag arrangement
               // AND display settings BEFORE flipping viewId, so the persist
               // effect re-saves the restored values, not the saved view's.
               const d = readStoredDisplay()
@@ -820,8 +820,8 @@ function TopologyPage() {
               onDragEnd={() => {
                 const p = canvas.current?.positions()
                 if (!p) return
-                // Keep the arrangement in-session (so an incidental rebuild —
-                // colour/search — doesn't snap cards back) and, on the default
+                // Keep the arrangement in-session (so an incidental rebuild -
+                // colour/search - doesn't snap cards back) and, on the default
                 // view, persist it across reloads. Saved views persist via Save.
                 setPositions(p)
                 if (viewId === "none") writeStoredPositions(p)

@@ -4,12 +4,12 @@
 configured, the command meets its exit-code / output criteria). Auth failure is
 distinguished from connect failure: a refused/timed-out connection is ``down``
 (the host is unreachable), while a reachable host that rejects the credentials
-is ``degraded`` (it's up, the check just can't log in) — surfaced so a rotated
+is ``degraded`` (it's up, the check just can't log in) - surfaced so a rotated
 password doesn't read as an outage.
 
 Credentials come from ``secret_params`` (encrypted at rest): ``username`` +
-``password`` and/or ``private_key`` (PEM string). Host keys are not verified —
-this is reachability monitoring, not a secure channel — which we note explicitly
+``password`` and/or ``private_key`` (PEM string). Host keys are not verified -
+this is reachability monitoring, not a secure channel - which we note explicitly
 rather than silently trusting.
 """
 from __future__ import annotations
@@ -27,7 +27,7 @@ from .base import CheckConfigError, CheckOutcome, register, require_port
 
 def _capture_host_key(conn) -> dict | None:
     """The SSH host key the server presented, as
-    ``{key_type, public_key(b64), fingerprint}`` — the shape the Django side
+    ``{key_type, public_key(b64), fingerprint}`` - the shape the Django side
     reconciles into a ``SSHHostKey`` and drifts on. Best-effort: any asyncssh
     version/API surprise degrades to ``None`` and never disturbs the
     reachability check that is this probe's real job. The fingerprint matches
@@ -43,7 +43,7 @@ def _capture_host_key(conn) -> dict | None:
             "public_key": blob,
             "fingerprint": key.get_fingerprint(),  # "SHA256:…"
         }
-    except Exception:  # noqa: BLE001 — host-key capture is a bonus, never fatal
+    except Exception:  # noqa: BLE001 - host-key capture is a bonus, never fatal
         return None
 
 
@@ -123,5 +123,5 @@ class SshChecker:
             )
         except (OSError, asyncssh.Error, asyncio.TimeoutError) as e:
             return CheckOutcome("down", None, {"port": port, "error": str(e) or type(e).__name__})
-        except Exception as e:  # noqa: BLE001 — config/internal issue → unknown
+        except Exception as e:  # noqa: BLE001 - config/internal issue → unknown
             return CheckOutcome.unknown(f"ssh error: {e}", port=port)

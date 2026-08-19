@@ -29,7 +29,7 @@ def _action_for(view, request) -> str:
     """Map the DRF action / HTTP method to a permission action.
 
     A viewset may declare ``rbac_action_map = {"bulk_delete": "delete", ...}``
-    to override the default for custom @actions — without it every mutating
+    to override the default for custom @actions - without it every mutating
     @action maps to ``change``, which under-demands ``bulk-delete`` (should
     need ``delete``) and ``bulk-create`` (should need ``add``). The map flows
     into BOTH gates: the type-level permission check and the row-level
@@ -62,7 +62,7 @@ class DeploymentAdminForWrites(BasePermission):
     (create/update/delete or a mutating @action) requires a DEPLOYMENT admin.
 
     Used on the global identity/RBAC viewsets (Users, Groups, ObjectPermissions)
-    — those objects are deployment-wide, so a *tenant*-scoped ``change-user``
+    - those objects are deployment-wide, so a *tenant*-scoped ``change-user``
     grant must not let a tenant admin edit users/groups/permissions and thereby
     escalate to global admin (issue #59+ escalation)."""
 
@@ -92,7 +92,7 @@ class RBACObjectPermission(BasePermission):
             return True
         slug = _object_type(view)
         if slug is None:
-            return True  # non-model viewset — it gates itself
+            return True  # non-model viewset - it gates itself
         if not is_registered(slug):
             # Fail CLOSED: a model exposed through an RBAC-gated viewset but
             # missing from the registry must not silently grant every tenant

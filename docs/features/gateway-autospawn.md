@@ -6,7 +6,7 @@ icon: lucide/route
 
 Gateway autospawn saves you a step: when you create a prefix and leave the
 **gateway** field blank, Danbyte can create the gateway IP for you and link it to
-the prefix automatically — as long as the prefix's site has a gateway policy.
+the prefix automatically - as long as the prefix's site has a gateway policy.
 
 ## Set it up
 
@@ -15,7 +15,7 @@ gateway. Set it on the site, then never think about it again:
 
 | Policy | Gateway picked |
 |---|---|
-| **None** (default) | No automatic gateway — you set it yourself, or leave it blank. |
+| **None** (default) | No automatic gateway - you set it yourself, or leave it blank. |
 | **First** | The first usable host in the prefix (e.g. `10.0.10.1` in a `/24`). |
 | **Last** | The last usable host in the prefix (e.g. `10.0.10.254` in a `/24`). |
 
@@ -45,7 +45,7 @@ different VRFs gets its own gateway, one per VRF.
 |---|---|
 | The prefix has no site | There's no policy to look up. |
 | The site's policy is **None** | You've opted out for that site. |
-| You filled in the gateway yourself | Your value wins — no automatic address. |
+| You filled in the gateway yourself | Your value wins - no automatic address. |
 | The prefix is IPv6 | An IPv6 `/64` has no obvious "first host" to use as a default gateway. |
 
 ## Setting or changing the gateway by hand

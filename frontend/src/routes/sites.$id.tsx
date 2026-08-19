@@ -229,7 +229,7 @@ function roleOf(p: ObjectPermission): "editor" | "viewer" {
     : "viewer"
 }
 
-/** Who can edit / view this site — the per-site face of the Site role feature.
+/** Who can edit / view this site - the per-site face of the Site role feature.
  * `viewerOnly` is a delegating local editor: they may invite *viewers* only and
  * can't read the full permission list (admin-gated), so we hide it for them. */
 function SiteAccessPanel({
@@ -268,7 +268,7 @@ function SiteAccessPanel({
             <>
               People and groups scoped to <b>{siteName}</b>. <b>Editors</b>{" "}
               manage everything in this site; <b>viewers</b> can only read it.
-              Grants are ordinary permissions — fine-tune or remove them on the{" "}
+              Grants are ordinary permissions - fine-tune or remove them on the{" "}
               <Link
                 to="/permissions"
                 className="underline underline-offset-2 hover:text-foreground"
@@ -443,7 +443,7 @@ function SitePrefixesTable({
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <p className="text-[11px] text-muted-foreground">
-          Prefixes assigned here are the site's <b>address scope</b> —
+          Prefixes assigned here are the site's <b>address scope</b> -
           site-scoped users can only carve child prefixes within these ranges.
         </p>
         {canDo("prefix", "change") && (
@@ -551,7 +551,7 @@ function SiteVmsTable({ siteId }: { siteId: string }) {
         </h3>
         {placedRows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No VM has this site set. A VM's site is its own field — set it on the
+            No VM has this site set. A VM's site is its own field - set it on the
             VM, or tick <strong>Give VMs on this cluster its site</strong> on a
             cluster that really is here.
           </p>
@@ -609,7 +609,7 @@ function SiteVlansTable({ siteId }: { siteId: string }) {
   return <DataTable data={rows} columns={columns} flexColumn="description" />
 }
 
-/** The site's IANA zone plus its current local time — so an operator can read
+/** The site's IANA zone plus its current local time - so an operator can read
  * the offset between sites at a glance. Recomputed each render (cheap; the page
  * isn't a clock, it just needs to be right when opened). */
 function SiteLocalTime({ tz }: { tz: string }) {
@@ -621,7 +621,7 @@ function SiteLocalTime({ tz }: { tz: string }) {
       minute: "2-digit",
     }).format(new Date())
   } catch {
-    // Unknown zone (shouldn't pass validation) — show the name alone.
+    // Unknown zone (shouldn't pass validation) - show the name alone.
   }
   return (
     <span className="text-xs">
@@ -631,7 +631,7 @@ function SiteLocalTime({ tz }: { tz: string }) {
   )
 }
 
-/** The site's attributes, grouped into labelled tables — the detail that used
+/** The site's attributes, grouped into labelled tables - the detail that used
  * to crowd the page header. Only the name, compliance badge, location, tags and
  * description stay up top; everything else reads here. */
 function SiteOverview({

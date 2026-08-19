@@ -21,8 +21,8 @@ type AnyRow = { id: string } & Record<string, unknown>
 
 /**
  * Value picker for an object-reference custom field. Models with a dedicated
- * advanced picker get it (devices, racks, VLANs, prefixes, IPs — full filter
- * modal); everything else — users, groups, plugin models — gets a generic
+ * advanced picker get it (devices, racks, VLANs, prefixes, IPs - full filter
+ * modal); everything else - users, groups, plugin models - gets a generic
  * ObjectPicker built from the backend registry's metadata, so new reference
  * models need zero frontend changes.
  */
@@ -34,7 +34,7 @@ export function CfObjectPicker({
   onChange,
   customFieldId,
 }: CfObjectPickerProps) {
-  const common = { label, hint, value, onChange, noneLabel: "—", customFieldId }
+  const common = { label, hint, value, onChange, noneLabel: "-", customFieldId }
   switch (refMeta.value) {
     case "device":
       return <DevicePicker {...common} />

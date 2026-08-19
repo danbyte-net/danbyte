@@ -1,4 +1,4 @@
-"""ASGI config for danbyte — HTTP via Django, WebSockets via Channels."""
+"""ASGI config for danbyte - HTTP via Django, WebSockets via Channels."""
 import os
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "danbyte.settings")

@@ -60,7 +60,7 @@ function DhcpLeasesPage() {
             </Link>
           ) : (
             <span className="font-mono text-[11px] text-muted-foreground">
-              —
+              -
             </span>
           ),
       },
@@ -86,7 +86,7 @@ function DhcpLeasesPage() {
         header: ({ column }) => <SortHeader column={column} label="State" />,
         cell: ({ row }) => (
           <span className="text-xs text-muted-foreground">
-            {row.original.address_state || "—"}
+            {row.original.address_state || "-"}
           </span>
         ),
       },
@@ -131,7 +131,7 @@ function DhcpLeasesPage() {
     >
       {rows.length === 0 && query.data && !q ? (
         <EmptyState title="No leases synced.">
-          Lease sync is opt-in per scope — turn it on for a scope on its Windows
+          Lease sync is opt-in per scope - turn it on for a scope on its Windows
           server's page, and its active leases appear here.
         </EmptyState>
       ) : (

@@ -28,7 +28,7 @@ type Version = "v1" | "v2c" | "v3"
 
 function SnmpProfilesPage() {
   // Every other settings page guards in-component; this one relied on the
-  // hidden nav link + backend RBAC only — close the gap.
+  // hidden nav link + backend RBAC only - close the gap.
   const { canManage, isLoading: meLoading } = useMe()
   const qc = useQueryClient()
   const list = useQuery({
@@ -97,7 +97,7 @@ function SnmpProfilesPage() {
         params,
         is_default: isDefault,
       }
-      // Only send secrets when the user actually entered one — otherwise an edit
+      // Only send secrets when the user actually entered one - otherwise an edit
       // would wipe the encrypted credential. (On create, v2c needs a community.)
       if (Object.keys(secret_params).length > 0)
         body.secret_params = secret_params
@@ -148,7 +148,7 @@ function SnmpProfilesPage() {
         <h2 className="text-sm font-semibold">SNMP profiles</h2>
         <p className="mt-1 text-xs text-muted-foreground">
           Reusable SNMP credentials for polling device facts. Credentials are
-          encrypted at rest and never shown again after saving — when editing,
+          encrypted at rest and never shown again after saving - when editing,
           leave a key blank to keep the existing one.
         </p>
       </div>
@@ -161,7 +161,7 @@ function SnmpProfilesPage() {
         )}
         {profiles.length === 0 ? (
           <p className="p-4 text-sm text-muted-foreground">
-            No profiles yet — create one below.
+            No profiles yet - create one below.
           </p>
         ) : (
           <ul className="divide-y divide-border">

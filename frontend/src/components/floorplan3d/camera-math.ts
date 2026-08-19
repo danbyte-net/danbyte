@@ -1,5 +1,5 @@
 /**
- * Pure keyboard-navigation math for the 3D room camera. No three.js imports —
+ * Pure keyboard-navigation math for the 3D room camera. No three.js imports -
  * everything here is plain tuples so it stays unit-testable; `camera-rig.tsx`
  * owns the DOM listeners and the actual camera/orbit-target mutation.
  *
@@ -28,7 +28,7 @@ export const NAV_KEYS: ReadonlySet<string> = new Set([
 ])
 
 /**
- * Nav keys whose browser default scrolls the page — these get
+ * Nav keys whose browser default scrolls the page - these get
  * `preventDefault()` while the 3D view is driving. Letters are absent on
  * purpose: w/a/s/d and Shift have no default worth suppressing.
  */
@@ -64,15 +64,15 @@ const MIN_SPEED = 1.5
 /** Speed ceiling (m/s) so a fully zoomed-out view stays controllable. */
 const MAX_SPEED = 40
 
-/** Holding Shift multiplies the speed — a sprint through the aisles. */
+/** Holding Shift multiplies the speed - a sprint through the aisles. */
 export const SPRINT_FACTOR = 4
 
-/** Absolute ceiling with sprint applied — a zoomed-out sprint stays sane. */
+/** Absolute ceiling with sprint applied - a zoomed-out sprint stays sane. */
 const SPRINT_MAX_SPEED = 80
 
 /**
  * Vertical motion (Space/C, PageUp/PageDown) runs at this fraction of the
- * horizontal speed — the room is far wider than it is tall.
+ * horizontal speed - the room is far wider than it is tall.
  */
 const VERTICAL_FACTOR = 0.6
 
@@ -84,7 +84,7 @@ const EPSILON_SQ = 1e-12
  *
  * @param pressed  Held keys, already `normalizeKey`-ed. Non-nav keys ignored.
  * @param forward  Camera→orbit-target direction projected onto the ground
- *                 plane, as a unit `[x, z]` tuple (`[0, 0]` when degenerate —
+ *                 plane, as a unit `[x, z]` tuple (`[0, 0]` when degenerate -
  *                 horizontal motion is then suppressed, vertical still works).
  * @param distance Camera→orbit-target distance in metres (speed scale).
  * @param dt       Frame delta in seconds.
@@ -139,7 +139,7 @@ export function panVector(
 
 // ─── Zoom freedom ────────────────────────────────────────────────────────────
 
-/** Closest the orbit arm may get (m) — inside this, wheel becomes a walk. */
+/** Closest the orbit arm may get (m) - inside this, wheel becomes a walk. */
 export const MIN_DISTANCE_M = 0.05
 
 /** One full wheel tick at the wall walks the camera this far forward (m). */
@@ -149,7 +149,7 @@ export const DOLLY_THROUGH_STEP_M = 0.35
 const DOLLY_THROUGH_AT = 1.2
 
 /**
- * The "zoom stops working" fix. OrbitControls' dolly is multiplicative — each
+ * The "zoom stops working" fix. OrbitControls' dolly is multiplicative - each
  * tick scales the arm by ~0.95, so steps collapse to nothing near
  * `minDistance` and then hit its hard wall. When a wheel-IN arrives with the
  * arm already at that wall, this returns a world-space translation that walks
@@ -182,7 +182,7 @@ export function dollyThroughStep(
 /**
  * Near-plane for the current orbit distance: 1 cm when nose-on a faceplate,
  * 0.5 m across the hall. A FIXED near that small would burn the depth buffer's
- * far-field precision — the zone patches sit 3 mm above the slab and would
+ * far-field precision - the zone patches sit 3 mm above the slab and would
  * shimmer from across the room. Scaling near with distance serves both ends.
  */
 export function nearForDistance(distance: number): number {
@@ -211,7 +211,7 @@ export const NEAR_PIVOT_M = 3
 /**
  * The pulled-in target: `maxDist` metres from `cam` along the current sight
  * line, or `null` when the target is already at least that close (pulling a
- * near pivot would zoom the view). Pure tuples — unit-testable.
+ * near pivot would zoom the view). Pure tuples - unit-testable.
  */
 export function pullInTarget(
   cam: readonly [number, number, number],

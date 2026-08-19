@@ -1,4 +1,4 @@
-"""Certificate expiry alerting (X2) — feed the existing alert engine.
+"""Certificate expiry alerting (X2) - feed the existing alert engine.
 
 An inventory that only *records* expiry dates is a spreadsheet with extra steps.
 This module turns the observed bindings into ordinary :class:`Alert` rows on the
@@ -13,9 +13,9 @@ The one idea that makes it work
 A renewal is a *new* :class:`Certificate` (new bytes → new fingerprint → new
 row). If the alert were keyed on the certificate, every renewal would strand a
 firing alert on a row nobody serves any more, and nothing would ever resolve it
-— the expiry inventory would fill with permanent noise within one renewal cycle.
+- the expiry inventory would fill with permanent noise within one renewal cycle.
 
-So the dedup key is the **endpoint** — ``(IP, port, SNI)``, which is exactly
+So the dedup key is the **endpoint** - ``(IP, port, SNI)``, which is exactly
 what a renewal does *not* change. Evaluation asks "what is this endpoint
 serving *now*?", which after a renewal is the new certificate, which is healthy,
 which resolves the same alert row that was firing for the old one.
@@ -26,13 +26,13 @@ Four, because "expired" is not just "very urgent":
 
 ``expired``
     Past ``not_after``. Anything that validates is already failing. Critical,
-    and recorded with ``check_status="down"`` — it is a failure, not a warning.
+    and recorded with ``check_status="down"`` - it is a failure, not a warning.
 ``expiring_critical``
     Inside ``cert_expiry_critical_days`` (default 7).
 ``expiring_warning``
     Inside ``cert_expiry_warning_days`` (default 30).
 ``ok``
-    Beyond the warning window — resolves a firing alert.
+    Beyond the warning window - resolves a firing alert.
 
 Silence, not noise
 ------------------
@@ -73,7 +73,7 @@ EXPIRING_CRITICAL = "expiring_critical"
 EXPIRING_WARNING = "expiring_warning"
 OK = "ok"
 
-# Used when a tenant has no MonitoringSettings row — alerting works out of the
+# Used when a tenant has no MonitoringSettings row - alerting works out of the
 # box, exactly as the check-alert engine falls back to a default severity map.
 DEFAULTS = {
     "enabled": True,
@@ -122,7 +122,7 @@ def thresholds(settings_row: MonitoringSettings | None) -> dict:
 def classify(certificate, limits: dict, now) -> str:
     """Which of the four states this certificate is in, right now.
 
-    Derived from ``not_after`` at call time — never from a stored flag, so a row
+    Derived from ``not_after`` at call time - never from a stored flag, so a row
     that has not been re-observed cannot report itself healthy.
     """
     if certificate.not_after <= now:
@@ -136,7 +136,7 @@ def classify(certificate, limits: dict, now) -> str:
 
 
 def current_bindings(*, tenant_ids=None, endpoint_keys=None):
-    """The newest leaf binding per endpoint — i.e. what each endpoint serves now.
+    """The newest leaf binding per endpoint - i.e. what each endpoint serves now.
 
     After a renewal this is the *new* certificate's binding: the old one is
     still on file (history is never deleted) but it is no longer current, so it
@@ -183,7 +183,7 @@ def _resolve(tenant_id: str, endpoint_key: str, reason: str, now) -> int:
     """Resolve the endpoint's firing expiry alert, if it has one.
 
     The same row that fired for the old certificate resolves once the endpoint
-    serves a healthy one — which is the whole point of keying on the endpoint.
+    serves a healthy one - which is the whole point of keying on the endpoint.
     """
     from .notify import notify_alert
 
@@ -204,7 +204,7 @@ def _resolve(tenant_id: str, endpoint_key: str, reason: str, now) -> int:
         )
         try:
             notify_alert(alert, "resolved")
-        except Exception:  # noqa: BLE001 — notification must not break the engine
+        except Exception:  # noqa: BLE001 - notification must not break the engine
             log.exception("resolve notify failed for %s", alert.dedup_key)
     return len(firing)
 
@@ -240,7 +240,7 @@ def _open_or_update(binding, state: str, limits: dict, now) -> str:
 
     previous = (alert.detail or {}).get("cert_state")
     if previous == state and alert.severity == _SEVERITY[state]:
-        # Same state — refresh the payload silently so it points at whatever the
+        # Same state - refresh the payload silently so it points at whatever the
         # endpoint serves now (a renewal *into* the warning window keeps the
         # alert open but must not keep naming the retired certificate), without
         # re-paging anyone.
@@ -327,8 +327,8 @@ def evaluate_endpoints(*, tenant_ids=None, endpoint_keys=None, now=None) -> dict
             counts["opened"], counts["updated"], counts["resolved"], counts["stale"],
         )
 
-    # Assignment drift (S1) rides the same endpoint pass — reactive after an
-    # observation, and the nightly sweep — so a served-vs-declared mismatch
+    # Assignment drift (S1) rides the same endpoint pass - reactive after an
+    # observation, and the nightly sweep - so a served-vs-declared mismatch
     # opens/resolves on the same schedule as expiry. Isolated: a drift problem
     # must never lose the expiry reconciliation above.
     try:
@@ -337,7 +337,7 @@ def evaluate_endpoints(*, tenant_ids=None, endpoint_keys=None, now=None) -> dict
         evaluate_mismatch(
             tenant_ids=tenant_ids, endpoint_keys=endpoint_keys, now=now
         )
-    except Exception:  # noqa: BLE001 — mismatch drift must not break expiry
+    except Exception:  # noqa: BLE001 - mismatch drift must not break expiry
         log.exception("certificate mismatch evaluation failed")
 
     return counts
@@ -345,12 +345,12 @@ def evaluate_endpoints(*, tenant_ids=None, endpoint_keys=None, now=None) -> dict
 
 # ─── Source-of-truth expiry: a *declared* cert expiring, even if never served ──
 # The endpoint sweep above only sees certificates observed on the wire. A cert an
-# operator uploaded and *assigned* to a device/VM/IP is intent — it must warn on
+# operator uploaded and *assigned* to a device/VM/IP is intent - it must warn on
 # expiry too, or "email me before my cert expires" silently misses every cert
 # Danbyte knows about but hasn't happened to observe. Keyed on the assignment
 # (namespaced apart from the endpoint keys) and hung on the assigned object's IP,
 # because Alert.target_ip is not-null. Only certs that are *not* currently
-# observed are handled here — an observed cert is already covered by the endpoint
+# observed are handled here - an observed cert is already covered by the endpoint
 # sweep, so this never double-alerts.
 
 SOT_DEDUP_PREFIX = "cert-expiry-sot:"
@@ -365,7 +365,7 @@ def _assignment_ip_id(assignment):
     Device/VM → primary (else any assigned) IP; an IP assignment → itself.
     None when nothing resolves (the cert stays list/widget-only)."""
     # object_type is stored as "app.model" but the app label may be omitted for
-    # api models ("device" ≡ "api.device") — normalise to the bare model name.
+    # api models ("device" ≡ "api.device") - normalise to the bare model name.
     model_name = assignment.object_type.split(".")[-1].lower()
     oid = assignment.object_id
     if model_name == "ipaddress":
@@ -447,14 +447,14 @@ def _open_sot(assignment, cert, state, target_ip_id, now) -> str:
 
     previous = (alert.detail or {}).get("cert_state")
     if previous == state and alert.severity == _SEVERITY[state]:
-        # Same state — refresh the payload silently (a renewal into the warning
+        # Same state - refresh the payload silently (a renewal into the warning
         # window must stop naming the retired cert) without re-paging.
         if alert.detail != detail:
             alert.detail = detail
             alert.save(update_fields=["detail"])
         return "unchanged"
 
-    # State moved (e.g. warning → critical) — escalate and re-notify.
+    # State moved (e.g. warning → critical) - escalate and re-notify.
     alert.severity = _SEVERITY[state]
     alert.check_status = _CHECK_STATUS[state]
     alert.detail = detail
@@ -518,7 +518,7 @@ def evaluate_sot_expiry(*, tenant_ids=None, now=None) -> dict:
 
 
 def sweep(now=None) -> dict:
-    """Full pass over every endpoint — the timer entry point.
+    """Full pass over every endpoint - the timer entry point.
 
     Also resolves any firing expiry alert whose endpoint has no leaf binding
     left at all (the certificate row was deleted out from under it), so the
@@ -548,17 +548,17 @@ def sweep(now=None) -> dict:
         from .cert_drift import sweep_orphans
 
         counts["resolved"] += sweep_orphans(now)
-    except Exception:  # noqa: BLE001 — mismatch sweep must not break expiry
+    except Exception:  # noqa: BLE001 - mismatch sweep must not break expiry
         log.exception("certificate mismatch orphan sweep failed")
 
-    # Declared (assigned, not-observed) certs — the source-of-truth expiry pass.
+    # Declared (assigned, not-observed) certs - the source-of-truth expiry pass.
     # Isolated so it can't take the endpoint sweep down with it.
     try:
         sot = evaluate_sot_expiry(now=now)
         for k in ("opened", "updated", "resolved"):
             counts[k] = counts.get(k, 0) + sot.get(k, 0)
         counts["sot_checked"] = sot.get("checked", 0)
-    except Exception:  # noqa: BLE001 — SoT sweep must not break endpoint expiry
+    except Exception:  # noqa: BLE001 - SoT sweep must not break endpoint expiry
         log.exception("certificate source-of-truth expiry sweep failed")
 
     return counts

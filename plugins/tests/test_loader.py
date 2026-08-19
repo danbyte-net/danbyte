@@ -31,7 +31,7 @@ class CompatibilityTests(SimpleTestCase):
 
     def test_dev_prefixed_running_version_is_parsed(self):
         # Danbyte's own dev-build version string (e.g. "dev0.10.1") must not lock
-        # every plugin out — it's coerced to 0.10.1 for the comparison.
+        # every plugin out - it's coerced to 0.10.1 for the comparison.
         self.assertEqual(_compatible("dev0.10.1", "0.8.0", None), (True, ""))
         ok, why = _compatible("dev0.10.1", "1.0.0", None)
         self.assertFalse(ok)

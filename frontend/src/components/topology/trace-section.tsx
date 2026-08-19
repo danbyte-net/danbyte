@@ -53,7 +53,7 @@ export function TraceSection({
       {q.isError && <QueryError error={q.error} />}
       {q.data && (q.data.device_graph?.nodes.length ?? 0) <= 1 && (
         <p className="text-sm text-muted-foreground">
-          Not cabled — nothing to trace.
+          Not cabled - nothing to trace.
         </p>
       )}
       {q.data && (q.data.device_graph?.nodes.length ?? 0) > 1 && (

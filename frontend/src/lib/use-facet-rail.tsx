@@ -16,7 +16,7 @@ export interface FacetSpec<T> {
 }
 
 /**
- * Client-side faceted filtering for a list page — the shared version of the
+ * Client-side faceted filtering for a list page - the shared version of the
  * inline pattern used across the app. Give it the fetched rows and a few facet
  * specs; get back a ready `rail` (or null when there's nothing to filter) and
  * the `filtered` rows. Groups AND together; options within a group OR.

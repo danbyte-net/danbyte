@@ -23,8 +23,8 @@ export const Route = createFileRoute("/import/")({ component: ImportPage })
 type Format = "csv" | "json"
 type ImportError = ImportResult["errors"][number]
 
-// Read-only preview of rows the importer rejected. Built once — the shape is
-// always { row, error } — so the columns are derived rather than hand-rolled,
+// Read-only preview of rows the importer rejected. Built once - the shape is
+// always { row, error } - so the columns are derived rather than hand-rolled,
 // keeping every table in the app on the shared DataTable.
 const errorColumns: ColumnDef<ImportError, unknown>[] = [
   {
@@ -39,7 +39,7 @@ const errorColumns: ColumnDef<ImportError, unknown>[] = [
     id: "error",
     accessorKey: "error",
     header: "Error",
-    // Rejected rows are a danger state — tint the message so invalid cells
+    // Rejected rows are a danger state - tint the message so invalid cells
     // read at a glance.
     cell: ({ row }) => (
       <span className="text-red-700 dark:text-red-300">
@@ -107,7 +107,7 @@ function ImportPage() {
     <div className="flex-1 overflow-auto p-4 lg:p-6">
       <div className="grid max-w-3xl gap-4">
         <p className="text-xs text-muted-foreground">
-          Bulk import from CSV or JSON — rows are matched by <code>id</code> or
+          Bulk import from CSV or JSON - rows are matched by <code>id</code> or
           natural key, so existing rows <b>update</b> and new ones are created.
           Links resolve by human-readable name within the current tenant.
           Validate first to preview, then import. Tip: export from any table to

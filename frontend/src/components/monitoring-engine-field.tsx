@@ -9,7 +9,7 @@ import { apiErrorToast } from "@/lib/api-toast"
 const INHERIT = "__inherit__"
 
 /** Assign the monitoring engine (Outpost) that runs checks for a site or
- * location. Saves immediately on change via the engine-binding endpoint — the
+ * location. Saves immediately on change via the engine-binding endpoint - the
  * assignment is independent of the form's own save. Render only for an existing
  * object (needs its id). */
 export function MonitoringEngineField({
@@ -63,7 +63,7 @@ export function MonitoringEngineField({
       label="Monitoring engine"
       hint={
         scope === "location"
-          ? "Which engine runs checks here — overrides the site's."
+          ? "Which engine runs checks here - overrides the site's."
           : "Which engine runs checks here (an Outpost for a remote site). Inherit follows the tenant default."
       }
       value={binding.data?.engine_id ?? INHERIT}

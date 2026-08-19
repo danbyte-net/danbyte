@@ -42,12 +42,12 @@ const FRAME_SELECTED = "#0ea5e9"
 /** A focus-ghosted rack (everything that is NOT the focused one). */
 const FOCUS_GHOST_OPACITY = 0.08
 
-/** Painted rack steel — slight sheen so the studio environment reads on it. */
+/** Painted rack steel - slight sheen so the studio environment reads on it. */
 const STEEL_ROUGHNESS = 0.6
 const STEEL_METALNESS = 0.35
 
 /** The operator's shell control: closed cabinet, open frame, or see-through.
- * ORTHOGONAL to the LOD tier — the mode owns what panels exist, the tier
+ * ORTHOGONAL to the LOD tier - the mode owns what panels exist, the tier
  * owns geometry detail. */
 export type ShellMode = "solid" | "cutaway" | "xray"
 
@@ -63,7 +63,7 @@ export interface Sel {
 
 /**
  * One rack cabinet at its tile position. Three LOD tiers (see `tierFor`):
- *  - far: a single frame box + name plate (cheap — scales to large rooms)
+ *  - far: a single frame box + name plate (cheap - scales to large rooms)
  *  - mid: that frame plus every device in ONE instanced draw call
  *  - detail: shell per `shellMode` + one clickable box per racked device at
  *    true U position/size, wearing its device-type face image
@@ -71,7 +71,7 @@ export interface Sel {
  * Shell modes: solid = side panels + smoked-glass doors; cutaway = open
  * post frame; x-ray = the open frame up close and a bare cabinet OUTLINE at
  * distance, with devices ghosted except the selected one. Lines and solid
- * frames on purpose — the first x-ray ghosted every shell box and the
+ * frames on purpose - the first x-ray ghosted every shell box and the
  * per-frame transparency sort flickered like a broken sign.
  *
  * `ghosted` (focus on another cabinet) collapses the WHOLE rack to one
@@ -105,7 +105,7 @@ export function RackMesh({
   shellMode?: ShellMode
   /** Focus mode is on and THIS rack is not the focused one. */
   ghosted?: boolean
-  /** Focus is on one device in THIS rack — its siblings ghost. */
+  /** Focus is on one device in THIS rack - its siblings ghost. */
   focusDeviceId?: string | null
   /** World point the operator is looking at (the selected rack's centre);
    * racks blocking the sight line to it auto-ghost. */
@@ -118,7 +118,7 @@ export function RackMesh({
   const rack = tile.rack!
   const { width, depth, height } = rackFootprintM(rack)
   // U-positioned gear renders per tier; side-mounted 0U strips render in
-  // BOTH tiers (one box each — a PDU that pops in/out reads as a glitch).
+  // BOTH tiers (one box each - a PDU that pops in/out reads as a glitch).
   const positioned = rack.devices.filter((d) => d.position != null)
   const mounted = rack.devices.filter((d) => d.mount && d.position == null)
   const [cx, cz] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
@@ -128,11 +128,11 @@ export function RackMesh({
 
   // Manual LOD (NOT drei <Detailed>/THREE.LOD): the raycaster ignores
   // `visible`, so an invisible far-tier solid box would sit in front of the
-  // devices and eat their clicks. Mount exactly one tier instead — unmounted
+  // devices and eat their clicks. Mount exactly one tier instead - unmounted
   // meshes can't be raycast.
   //
   // Distance is measured to the cabinet's SURFACE (centre minus half its
-  // diagonal), not its centre — centre-distance made big/edge-of-room racks
+  // diagonal), not its centre - centre-distance made big/edge-of-room racks
   // flip tiers later than they looked, reading as "devices missing up close".
   // `tierFor` carries the hysteresis that keeps orbiting on a boundary from
   // strobing; with the demand frameloop this runs only on frames the controls
@@ -141,7 +141,7 @@ export function RackMesh({
   const tierRef = useRef<Tier>("far")
   const [viewRear, setViewRear] = useState(false)
   const viewRearRef = useRef(false)
-  // This cabinet stands between the eye and the selected one — fade it.
+  // This cabinet stands between the eye and the selected one - fade it.
   const [autoDim, setAutoDim] = useState(false)
   const autoDimRef = useRef(false)
   const centre = useMemo(
@@ -153,7 +153,7 @@ export function RackMesh({
     [width, height, depth]
   )
   useFrame(({ camera }) => {
-    // Both swaps below go through useState, so each one re-renders this rack —
+    // Both swaps below go through useState, so each one re-renders this rack -
     // and a detail-tier rack re-renders two dozen DeviceMesh subtrees with
     // their queries and memos. While the camera is moving, dozens of racks
     // cross a threshold every frame, and the resulting React cascade is what
@@ -185,7 +185,7 @@ export function RackMesh({
     // of sight to it, fade this one out of the way. Same settle gating as the
     // tier swap, so it never churns React while the camera moves. Hysteresis
     // on the sight-line radius (engage tight, release loose) so a rack near
-    // the edge of the line can't flap dim/undim as you orbit — which read as
+    // the edge of the line can't flap dim/undim as you orbit - which read as
     // the faceplates popping in and out.
     const half = Math.max(width, depth) / 2
     const r = autoDimRef.current ? half + 0.35 : half * 0.6
@@ -225,15 +225,15 @@ export function RackMesh({
 
   const dimmed = ghosted || autoDim
   // Focus-ghosted cabinets drop their overlays (labels on a ghost read as
-  // noise); x-ray keeps them — it is still the room, just opened up.
+  // noise); x-ray keeps them - it is still the room, just opened up.
   const showOverlays = tier === "detail" && !dimmed
 
   // Live port + SNMP resolution is TWO fetches per device, and it used to fire
   // for every device in the detail tier. In a full hall that is ~1000 XHRs at
   // once: Chrome runs out of resource slots (ERR_INSUFFICIENT_RESOURCES) and
   // the main thread spends the frame budget on fetch/JSON/query churn instead
-  // of drawing. Only the cabinet the operator has actually engaged with —
-  // selected, or holding the focused device — resolves it. That caps the
+  // of drawing. Only the cabinet the operator has actually engaged with -
+  // selected, or holding the focused device - resolves it. That caps the
   // traffic at one rack's worth (~24 devices) no matter how big the room is.
   const engaged = selection?.tileId === tile.id || focusDeviceId != null
   const liveData = tier === "detail" && !dimmed && engaged
@@ -286,7 +286,7 @@ export function RackMesh({
               selection.deviceId === d.id
             // Only FOCUS ghosts devices (spotlighting one, dimming its rack
             // siblings). X-ray deliberately does not: x-ray removes the TIN,
-            // not the equipment — faceplates and ports stay rendered and
+            // not the equipment - faceplates and ports stay rendered and
             // clickable (owner override of the original ghost-except-
             // selected spec).
             const devGhost =
@@ -391,12 +391,12 @@ export function RackMesh({
             }
           />
         ))}
-      {/* Airflow cues — near tier only, like every overlay; the glyph layer
+      {/* Airflow cues - near tier only, like every overlay; the glyph layer
           reports its legend content and retracts it on unmount. */}
       {showOverlays && showAirflow && (
         <AirflowGlyphs rack={rack} legendKey={tile.id} onLegend={onLegend} />
       )}
-      {/* Overlays — near tier only, and drawn FLAT on the front face so they
+      {/* Overlays - near tier only, and drawn FLAT on the front face so they
           stay anchored (billboards piled up in the aisle). */}
       {showOverlays && showUNumbers && (
         <RackRuler rack={rack} width={width} depth={depth} />
@@ -422,7 +422,7 @@ export function RackMesh({
           )
         })}
       {beacon && !dimmed && (
-        // raycast disabled — decoration must never steal the rack's clicks.
+        // raycast disabled - decoration must never steal the rack's clicks.
         <mesh position={[0, height + 0.03, 0]} raycast={() => null}>
           <boxGeometry args={[width * 0.6, 0.05, 0.06]} />
           <meshStandardMaterial
@@ -432,7 +432,7 @@ export function RackMesh({
           />
         </mesh>
       )}
-      {/* Rack name plate — flat on the front, above the top U, facing the
+      {/* Rack name plate - flat on the front, above the top U, facing the
           aisle. Flat (not billboard) so neighbours don't overlap. */}
       {!dimmed && (
         <FaceLabel
@@ -460,7 +460,7 @@ function Frame({
   color: string
   ghostOpacity?: number
 }) {
-  // Ghosts neither cast nor catch shadows — a see-through box with a solid
+  // Ghosts neither cast nor catch shadows - a see-through box with a solid
   // shadow reads as a bug.
   const ghost = ghostOpacity > 0
   return (
@@ -495,7 +495,7 @@ function Frame({
  * Far-tier x-ray: the cabinet as a bare edge outline. Lines have no
  * transparency-sort order to lose, which is the whole reason this replaced
  * ghost boxes. The invisible box underneath keeps the cabinet clickable
- * (colorWrite/depthWrite off — raycastable, never drawn).
+ * (colorWrite/depthWrite off - raycastable, never drawn).
  */
 function OutlineShell({ w, h, d }: { w: number; h: number; d: number }) {
   const edges = useMemo(
@@ -529,7 +529,7 @@ function OutlineShell({ w, h, d }: { w: number; h: number; d: number }) {
 const POST = 0.018
 const POST_INSET = 0.006
 /**
- * Top/base overhang past the panel planes — on the DEPTH axis only.
+ * Top/base overhang past the panel planes - on the DEPTH axis only.
  *
  * The lip used to run all four sides, which meant two cabinets bayed side by
  * side overlapped each other's caps by 12 mm: intersecting geometry that
@@ -543,7 +543,7 @@ const CAP_LIP = 0.012
  * Near-tier cabinet shell:
  *  - cutaway: overhung top + plinth on four inset corner posts
  *  - solid:   overhung top + plinth, side panels, smoked-glass doors
- * Every piece is strictly inset or outset from its neighbours — the first
+ * Every piece is strictly inset or outset from its neighbours - the first
  * version ended posts, panels and caps on the SAME planes, which was
  * invisible under flat light and shimmered the moment shadows, AO and the
  * dynamic near-plane landed (classic coplanar z-fighting).
@@ -561,7 +561,7 @@ function Shell({
   color: string
   mode: "solid" | "cutaway"
 }) {
-  const t = RACK_CAP_M // panel thickness — also the cap headroom in rackFootprintM
+  const t = RACK_CAP_M // panel thickness - also the cap headroom in rackFootprintM
   const steel = (
     key: string,
     pos: [number, number, number],
@@ -615,7 +615,7 @@ function Shell({
 const DOOR_HEADROOM = 0.034
 
 /**
- * Solid mode's door: one smoked-glass pane — gear silhouettes read through,
+ * Solid mode's door: one smoked-glass pane - gear silhouettes read through,
  * and no busy texture. Casts no shadow (a solid shadow from glass lies) and
  * is raycast-INERT: glass that ate clicks made every photo port behind it
  * unclickable in solid mode. Clicks pass through to devices and ports; the

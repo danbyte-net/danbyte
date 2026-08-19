@@ -1,4 +1,4 @@
-"""ICMP prefix sweep — the discovery primitive, shared by the core and a remote
+"""ICMP prefix sweep - the discovery primitive, shared by the core and a remote
 Outpost. Enumerates a CIDR's hosts and ICMP-sweeps them (sharded), returning the
 addresses that answered. ORM-free (only ``icmplib``), so an Outpost runs the same
 sweep the core does.
@@ -9,7 +9,7 @@ import asyncio
 import ipaddress
 
 # A prefix bigger than this many hosts is skipped here (the caller decides how to
-# handle large blocks — the core has a size gate before it ever hands one over).
+# handle large blocks - the core has a size gate before it ever hands one over).
 MAX_HOSTS = 8192
 SHARD = 512
 

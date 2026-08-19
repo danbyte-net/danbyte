@@ -21,7 +21,7 @@ import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 
 // The one source of truth for "a table of cables". Every surface that lists
-// cables — /cables and /fiber-cables — builds its columns here so a cable row
+// cables - /cables and /fiber-cables - builds its columns here so a cable row
 // reads identically everywhere. Page-specific columns (the /cables trace +
 // row-actions pair, which wraps two controls in its own flex row) are spliced
 // around this factory's output; the shared cells are never re-authored inline.
@@ -32,9 +32,9 @@ import { timeAgoColumn } from "@/components/cells/time-ago"
 // "strands"/"labelled" only mean anything for optical fibre, so /cables omits
 // them; /fiber-cables omits "description" in their place.
 
-/** "device:port, device:port" for one end of a run — em dash when uncabled. */
+/** "device:port, device:port" for one end of a run - em dash when uncabled. */
 export function termSummary(terms: Termination[]): string {
-  if (!terms.length) return "—"
+  if (!terms.length) return "-"
   return terms.map((t) => `${t.device.name}:${t.name}`).join(", ")
 }
 
@@ -116,7 +116,7 @@ function labelledCount(c: Cable): number {
 /** A compact colour strip previewing the first few strands. */
 function StrandPreview({ cable }: { cable: Cable }) {
   const n = cable.fiber_count ?? 0
-  if (!n) return <span className="text-muted-foreground">—</span>
+  if (!n) return <span className="text-muted-foreground">-</span>
   const shown = Math.min(n, 8)
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -170,17 +170,17 @@ export interface CableColumnOpts {
   include?: CableColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
   /** Label cell rendering:
    * - "strict" (default): the label as a medium-weight link, em dash when
-   *   blank — an unlabelled cable on /cables is identified by its ends.
-   * - "numbered": always a link, falling back to a muted "Cable #n" — the
+   *   blank - an unlabelled cable on /cables is identified by its ends.
+   * - "numbered": always a link, falling back to a muted "Cable #n" - the
    *   fibre list, where labels are often unset but every run needs opening. */
   labelVariant?: "strict" | "numbered"
   /** Link the A/B termination summaries to the cable (default true). */
   terminationsLinked?: boolean
-  /** Render Status as the inline switcher instead of a plain badge — pass the
+  /** Render Status as the inline switcher instead of a plain badge - pass the
    * caller's `cable:change` permission, not a bare `true`. */
   statusEditable?: boolean
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
@@ -279,7 +279,7 @@ export function buildCableColumns(
           label: "Type",
           get: (r: Cable) => r.type || "__none__",
           formatValue: (v, sample) => ({
-            label: v === "__none__" ? "—" : sample.type_display || v,
+            label: v === "__none__" ? "-" : sample.type_display || v,
           }),
         },
       },
@@ -337,7 +337,7 @@ export function buildCableColumns(
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "—"}
+          {row.original.description || "-"}
         </span>
       ),
     }),

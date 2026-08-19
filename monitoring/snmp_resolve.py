@@ -27,7 +27,7 @@ def _binding_profile(tenant, scope, object_id):
 
 
 def _location_chain_profile(tenant, location_id):
-    """Walk the location and its ancestors, returning the first bound profile —
+    """Walk the location and its ancestors, returning the first bound profile -
     so a device in a child location inherits a profile set on a parent."""
     if not location_id:
         return None
@@ -68,7 +68,7 @@ def resolve_device_profile(device, tenant):
         if binding is not None:
             return binding.profile, scope
 
-    # Location (walking parents) then site — where the device lives, not what it
+    # Location (walking parents) then site - where the device lives, not what it
     # is. Lets a site's Outpost resolve site-scoped credentials.
     profile = _location_chain_profile(tenant, getattr(device, "location_id", None))
     if profile is not None:
@@ -81,7 +81,7 @@ def resolve_device_profile(device, tenant):
 
     default = SnmpProfile.objects.filter(tenant=tenant, is_default=True).first()
     if default is None:
-        # Only auto-pick when there's exactly one profile — otherwise we'd guess
+        # Only auto-pick when there's exactly one profile - otherwise we'd guess
         # which credential to poll with and silently use the wrong one.
         profiles = list(SnmpProfile.objects.filter(tenant=tenant)[:2])
         default = profiles[0] if len(profiles) == 1 else None
@@ -103,7 +103,7 @@ def resolve_vm_profile(vm, tenant):
     """Return ``(SnmpProfile | None, source)`` for a virtual machine.
 
     Resolution mirrors the device hierarchy, adapted to what a VM has:
-    **vm → platform → cluster → site → tenant default** — most specific wins.
+    **vm → platform → cluster → site → tenant default** - most specific wins.
     """
     chain = [
         (SnmpProfileBinding.SCOPE_VM, vm.id),

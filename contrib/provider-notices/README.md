@@ -1,7 +1,7 @@
 # Provider notices → Danbyte
 
 The reference parser for provider maintenance/outage notifications
-(issue #20). Parsing stays outside Danbyte — this script reads a mailbox (or
+(issue #20). Parsing stays outside Danbyte - this script reads a mailbox (or
 one `.eml`), normalises per provider, and POSTs to
 `/api/monitoring/maintenance-events/ingest/`.
 

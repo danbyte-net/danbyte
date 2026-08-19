@@ -340,7 +340,7 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
           min={0}
           value={vcpus}
           onChange={setVcpus}
-          placeholder="—"
+          placeholder="-"
           error={fieldErrors.vcpus}
         />
         <UnitInput

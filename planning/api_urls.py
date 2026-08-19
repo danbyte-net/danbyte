@@ -1,4 +1,4 @@
-"""Planning API URLs — mounted under /api/planning/ by api/api_urls.py."""
+"""Planning API URLs - mounted under /api/planning/ by api/api_urls.py."""
 from __future__ import annotations
 
 from django.urls import path

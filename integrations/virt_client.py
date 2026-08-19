@@ -3,10 +3,10 @@
 Two hypervisors behind the same
 :class:`~integrations.models.VirtualizationSource` model:
 
-* **Proxmox VE** — plain REST with an API token
+* **Proxmox VE** - plain REST with an API token
   (``Authorization: PVEAPIToken=<token_id>=<secret>``): revocable, no ticket
   dance, works against any node in the cluster.
-* **VMware vCenter** — the vSphere Automation REST API (``/api/``): a session
+* **VMware vCenter** - the vSphere Automation REST API (``/api/``): a session
   is created once with username/password (``POST /api/session``) and reused via
   the ``vmware-api-session-id`` header for the rest of the pass.
 

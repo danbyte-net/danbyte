@@ -7,12 +7,12 @@ const WS_PING_MS = 20_000
 
 /**
  * Announce that the current user is viewing/editing an object, and learn who
- * else is here — in real time.
+ * else is here - in real time.
  *
  * Transport is **WebSocket-first** (`/ws/presence/`): the server pushes the
  * present list the instant anyone joins, leaves, or starts editing. If the WS
  * can't be established (proxy not wired, network), it **falls back to polling**
- * the `/api/presence/heartbeat/` endpoint every 15s — so presence still works,
+ * the `/api/presence/heartbeat/` endpoint every 15s - so presence still works,
  * just less instantly. Both transports share one Redis store, so WS and polling
  * clients see each other.
  *

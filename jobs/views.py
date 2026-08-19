@@ -1,6 +1,6 @@
 """DRF endpoints for the Jobs (background queue) admin page.
 
-Gated on the flat ``jobs.manage`` permission — admins hold it by default, and it
+Gated on the flat ``jobs.manage`` permission - admins hold it by default, and it
 can be granted to any custom-role user from the user edit form. Jobs are global
 infrastructure (shared across tenants), so there is no tenant scoping here.
 """
@@ -100,7 +100,7 @@ def jobs_list_view(request):
 
 
 # Known periodic tasks (systemd-timer oneshots) + cadence, so the page shows the
-# whole beat — including a task that has never run yet (its row stays empty).
+# whole beat - including a task that has never run yet (its row stays empty).
 SCHEDULED_TASKS = [
     {"name": "dispatch", "label": "Check engine (dispatch)", "cadence": "every minute"},
     {"name": "drift", "label": "Config-drift dispatch", "cadence": "every minute"},

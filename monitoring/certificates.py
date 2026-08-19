@@ -1,8 +1,8 @@
-"""Certificate inventory — fold observed TLS chains into :class:`Certificate`.
+"""Certificate inventory - fold observed TLS chains into :class:`Certificate`.
 
 The collector lives in the Django-free :mod:`danbyte_checks.tls_cert` (shared
 verbatim with the Outpost agent). This module is the Django half: it takes the
-JSON observation the collector produced — locally, or uploaded by an Outpost —
+JSON observation the collector produced - locally, or uploaded by an Outpost -
 and reconciles it into tenant-scoped rows.
 
 Reconcile rules, deliberately narrow:
@@ -14,19 +14,19 @@ Reconcile rules, deliberately narrow:
   different bytes and so a different fingerprint; it is created alongside the
   old one, which stays untouched as history.
 * **Immutable facts are written once.** Subject, issuer, SANs, serial, validity
-  window, key and signature algorithm are properties *of those exact bytes* —
+  window, key and signature algorithm are properties *of those exact bytes* -
   if they differed it would be a different certificate. Only ``last_seen`` (the
   roll-up "still in service somewhere") is refreshed on the certificate row.
 * **Where it was seen is a binding, not a certificate field.** Given an
   endpoint, each chain member also gets a :class:`CertificateBinding` carrying
-  the per-handshake facts — ``chain_depth``, ``chain_verified``, and its own
+  the per-handshake facts - ``chain_depth``, ``chain_verified``, and its own
   ``first_seen``/``last_seen``. One certificate on ten endpoints is one
   certificate row and ten bindings.
 * **Bindings are never deleted.** An endpoint that stops serving a certificate
   leaves a binding whose ``last_seen`` goes stale. Deleting it would throw away
   the answer to "what used to serve this?".
 * **Fail closed.** An observation that produced no chain (``validity`` is
-  ``unknown``) writes nothing at all — no certificate, no binding, no refreshed
+  ``unknown``) writes nothing at all - no certificate, no binding, no refreshed
   timestamp. An unreachable endpoint can never make an old row look fresh.
 
 No private key is ever handled here. The observation carries none, the model has
@@ -60,7 +60,7 @@ class CertificateUploadError(ValueError):
     """An uploaded PEM could not be turned into a certificate row.
 
     Carries an operator-facing ``message`` the viewset returns verbatim as a
-    400 — private key present, unparseable PEM, or nothing certificate-shaped.
+    400 - private key present, unparseable PEM, or nothing certificate-shaped.
     """
 
 
@@ -70,13 +70,13 @@ def upload_certificate(tenant, pem_text, *, name="", notes="", now=None):
     Parsing reuses :func:`danbyte_checks.tls_cert.parse_certificate` and the same
     field extraction the collector uses, so an uploaded certificate that is later
     observed on the wire (or was already observed) **dedups to one row** by its
-    ``(tenant, fingerprint)`` identity — the upload just flips ``uploaded`` on and
+    ``(tenant, fingerprint)`` identity - the upload just flips ``uploaded`` on and
     attaches the PEM.
 
     Rules, all raising :class:`CertificateUploadError` (→ 400) rather than 500:
 
     * a PEM carrying **any** private-key block is refused outright, before the
-      model guard, with a clear message — only the public certificate is stored;
+      model guard, with a clear message - only the public certificate is stored;
     * an unparseable PEM is refused;
     * a bundle with several certificates uses the **first** block as the leaf
       (the end-entity certificate being declared), and re-serialises *only* that
@@ -110,12 +110,12 @@ def upload_certificate(tenant, pem_text, *, name="", notes="", now=None):
         stripped = (pem_text or "").strip()
         if stripped.startswith(("ssh-", "ecdsa-", "sk-")):
             raise CertificateUploadError(
-                "This looks like an SSH public key — add it under SSH host "
+                "This looks like an SSH public key - add it under SSH host "
                 "keys, not Certificates."
             )
         raise CertificateUploadError(
             "Could not parse an X.509 certificate. Paste the public certificate "
-            "in PEM form (-----BEGIN CERTIFICATE-----) — not a private key or "
+            "in PEM form (-----BEGIN CERTIFICATE-----) - not a private key or "
             "an SSH key."
         )
 
@@ -144,7 +144,7 @@ def upload_certificate(tenant, pem_text, *, name="", notes="", now=None):
     )
     if not created:
         # Already on file (commonly: already observed). Converge rather than
-        # duplicate — mark it uploaded and attach the PEM, never touching the
+        # duplicate - mark it uploaded and attach the PEM, never touching the
         # immutable facts.
         row.uploaded = True
         row.pem = canonical_pem
@@ -172,7 +172,7 @@ def import_bundle(tenant, pem_text, *, name="", notes="", now=None) -> BundleImp
     """Import **every** certificate in a PEM bundle as its own row.
 
     Where :func:`upload_certificate` keeps only the leaf, this stores each block
-    — leaf, intermediates, root — so a chain arrives complete and
+    - leaf, intermediates, root - so a chain arrives complete and
     :func:`link_issuer` can wire it together. Still public-only: a private-key
     block anywhere refuses the whole bundle, and each block dedups by
     fingerprint. ``name``/``notes`` apply to the first (leaf) block only. A block
@@ -239,7 +239,7 @@ def import_bundle(tenant, pem_text, *, name="", notes="", now=None) -> BundleImp
             rows.append(row)
         except CertificateUploadError as exc:
             errors.append(f"block {i + 1}: {exc}")
-        except Exception as exc:  # noqa: BLE001 — one bad block must not sink the rest
+        except Exception as exc:  # noqa: BLE001 - one bad block must not sink the rest
             errors.append(f"block {i + 1}: could not import ({exc})")
 
     for row in rows:
@@ -248,7 +248,7 @@ def import_bundle(tenant, pem_text, *, name="", notes="", now=None) -> BundleImp
         created=created, existing=existing, total=len(certs), errors=errors
     )
 
-# Fields written only when the row is created — properties of the exact DER
+# Fields written only when the row is created - properties of the exact DER
 # bytes the fingerprint covers, so they cannot legitimately change.
 _IMMUTABLE_FIELDS = (
     "subject", "subject_cn", "issuer", "issuer_cn", "serial", "san_dns",
@@ -298,8 +298,8 @@ def _defaults(cert: dict) -> dict:
 def link_issuer(certificate) -> bool:
     """Resolve this row's parent CA and adopt any children it issues.
 
-    Chain edges are built from the RFC 5280 key identifiers — a cert's Authority
-    Key Identifier equals its issuer's Subject Key Identifier — falling back to
+    Chain edges are built from the RFC 5280 key identifiers - a cert's Authority
+    Key Identifier equals its issuer's Subject Key Identifier - falling back to
     issuer-DN → subject-DN when a cert omits the identifiers. Self-signed roots
     point at nothing (they are the top). Everything is tenant-scoped. Idempotent;
     returns True if any edge changed. Runs after upload and after an observed
@@ -310,7 +310,7 @@ def link_issuer(certificate) -> bool:
     changed = False
     qs = Certificate.objects.filter(tenant_id=certificate.tenant_id)
 
-    # 1. This cert's parent — skip self-signed roots (they issue themselves).
+    # 1. This cert's parent - skip self-signed roots (they issue themselves).
     if not certificate.self_signed:
         parent = None
         if certificate.authority_key_id:
@@ -386,7 +386,7 @@ class Endpoint:
 def endpoint_from_result(result) -> Endpoint | None:
     """The endpoint a ``tls_cert`` :class:`CheckResult` observed.
 
-    The IP comes from the check's own target (never from the payload — a
+    The IP comes from the check's own target (never from the payload - a
     detail blob must not be able to point a binding at someone else's IP); the
     port and SNI come from the observation, since that is what was dialled.
     """
@@ -410,7 +410,7 @@ def _record_binding(tenant, certificate, endpoint: Endpoint, cert: dict,
     """Create or refresh this endpoint's binding to ``certificate``.
 
     ``chain_depth`` / ``chain_verified`` are re-stamped every time because they
-    describe *this* handshake — a server that stops sending its intermediate
+    describe *this* handshake - a server that stops sending its intermediate
     changes them without changing any certificate.
     """
     binding, created = CertificateBinding.objects.get_or_create(
@@ -443,7 +443,7 @@ def record_chain(
     """Upsert every certificate in one observed chain for ``tenant``.
 
     With an ``endpoint``, each chain member also gets a binding to it, and the
-    endpoint's expiry alert is reconciled — so recording an observation is
+    endpoint's expiry alert is reconciled - so recording an observation is
     always enough to open, update or **resolve** the alert, whichever path the
     observation arrived by. Without an endpoint (an ad-hoc read not tied to a
     monitored IP) only the certificate rows are written: the per-handshake facts
@@ -481,9 +481,9 @@ def record_chain(
             defaults={**defaults, "last_seen": now, "observed": True},
         )
         if not created:
-            # Never rewrite the immutable facts — different facts would mean
+            # Never rewrite the immutable facts - different facts would mean
             # different bytes, which would be a different fingerprint. Only the
-            # roll-up "seen somewhere" timestamp moves — and the ``observed``
+            # roll-up "seen somewhere" timestamp moves - and the ``observed``
             # flag flips on if this row had only been uploaded until now (that
             # convergence is the whole point: the declared cert is being served).
             row.last_seen = now
@@ -516,7 +516,7 @@ def evaluate_expiry(tenant_ids, endpoint_keys) -> None:
 
     try:
         evaluate_endpoints(tenant_ids=tenant_ids, endpoint_keys=endpoint_keys)
-    except Exception:  # noqa: BLE001 — alerting must not break monitoring
+    except Exception:  # noqa: BLE001 - alerting must not break monitoring
         logger.exception("certificate expiry evaluation failed")
 
 
@@ -526,7 +526,7 @@ def record_check_results(results) -> int:
     Called from both result-persistence seams (``runner.record_results`` for
     *Check now*, ``worker._finalise`` for the scheduled path), so a certificate
     check populates the inventory however it was triggered. A no-op for every
-    other check kind. Never raises into the check pipeline — a reconcile problem
+    other check kind. Never raises into the check pipeline - a reconcile problem
     must not lose a check result.
 
     Every endpoint touched is then re-evaluated for expiry, so a renewal
@@ -543,13 +543,13 @@ def record_check_results(results) -> int:
             endpoint = endpoint_from_result(result)
             rows = record_chain(
                 result.tenant, result.detail or {}, endpoint=endpoint,
-                evaluate=False,  # batched below — one pass for the whole run
+                evaluate=False,  # batched below - one pass for the whole run
             )
             touched += len(rows)
             if rows and endpoint is not None:
                 endpoint_keys.add(endpoint.key)
                 tenant_ids.add(result.tenant_id)
-        except Exception:  # noqa: BLE001 — inventory must not break monitoring
+        except Exception:  # noqa: BLE001 - inventory must not break monitoring
             logger.exception("certificate reconcile failed for result %s", result.pk)
     evaluate_expiry(tenant_ids, endpoint_keys)
     return touched
@@ -568,7 +568,7 @@ def observe_endpoint(
     """Collect ``host:port`` once and record what it presented.
 
     ``allow_private`` is the scoped private-address allowance described in
-    :func:`danbyte_checks.tls_cert.target_allowed` — internal PKI lives on
+    :func:`danbyte_checks.tls_cert.target_allowed` - internal PKI lives on
     RFC1918 space, so an **admin-configured** endpoint may reach it, exactly as
     a Redfish endpoint does. It defaults to off; a caller acting on
     user-supplied input must leave it off.

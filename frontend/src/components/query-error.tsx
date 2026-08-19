@@ -3,7 +3,7 @@ import { ApiError } from "@/lib/api"
 // Pretty error renderer for useQuery failures.
 //
 // 403 (authenticated but lacks the RBAC permission for this object/action)
-// is the common case now that login is forced — show the permission message,
+// is the common case now that login is forced - show the permission message,
 // not a "sign in" CTA. A genuine 401 (session expired) is normally caught by
 // the root auth gate, which redirects to /login; if one still surfaces here we
 // point at /login, never the Django /admin/.

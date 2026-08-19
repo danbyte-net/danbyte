@@ -10,7 +10,7 @@ export interface VlanPickerProps extends Omit<ObjectPickerProps, "label"> {
   label?: string
 }
 
-/** The VLAN preset of ObjectPicker — options read "100 · users", advanced
+/** The VLAN preset of ObjectPicker - options read "100 · users", advanced
  * search by site / group (server-side, matches the VLAN list filters). */
 export function VlanPicker({ label = "VLAN", ...rest }: VlanPickerProps) {
   const spec = useMemo<ObjectPickerSpec<VLAN, VLANOption>>(
@@ -56,7 +56,7 @@ export function VlanPicker({ label = "VLAN", ...rest }: VlanPickerProps) {
           header: "Group",
           cell: (v) => (
             <span className="text-muted-foreground">
-              {v.group?.name ?? "—"}
+              {v.group?.name ?? "-"}
             </span>
           ),
         },

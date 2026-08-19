@@ -50,7 +50,7 @@ class LoginMixin:
         session.save()
 
 
-# ── #5 — deployment admin must not take over a superuser ─────────────────────
+# ── #5 - deployment admin must not take over a superuser ─────────────────────
 class SuperuserTargetGuardTests(LoginMixin, APITestCase):
     def setUp(self):
         org = Organization.objects.create(name="Esc Org", slug="esc-org")
@@ -89,7 +89,7 @@ class SuperuserTargetGuardTests(LoginMixin, APITestCase):
         self.assertEqual(resp.status_code, 200)
 
 
-# ── #16 — ObjectPermission list is tenant-scoped ─────────────────────────────
+# ── #16 - ObjectPermission list is tenant-scoped ─────────────────────────────
 class ObjectPermissionScopeTests(LoginMixin, APITestCase):
     def setUp(self):
         org = Organization.objects.create(name="OP Org", slug="op-org")
@@ -113,7 +113,7 @@ class ObjectPermissionScopeTests(LoginMixin, APITestCase):
         self.assertNotIn("tenant-b-secret", names)
 
 
-# ── #17 — global search tags are tenant-scoped ───────────────────────────────
+# ── #17 - global search tags are tenant-scoped ───────────────────────────────
 class SearchTagScopeTests(LoginMixin, APITestCase):
     def setUp(self):
         org = Organization.objects.create(name="ST Org", slug="st-org")
@@ -129,7 +129,7 @@ class SearchTagScopeTests(LoginMixin, APITestCase):
         self.assertEqual(resp.json()["groups"]["tags"], [])
 
 
-# ── #7 — tag usage is per-type + site scoped ─────────────────────────────────
+# ── #7 - tag usage is per-type + site scoped ─────────────────────────────────
 class TagUsageScopeTests(LoginMixin, APITestCase):
     def setUp(self):
         org = Organization.objects.create(name="TU Org", slug="tu-org")
@@ -158,7 +158,7 @@ class TagUsageScopeTests(LoginMixin, APITestCase):
         self.assertNotIn(str(self.dev_b.id), ids)
 
 
-# ── #12 — automation deploy honours device row/site scope ────────────────────
+# ── #12 - automation deploy honours device row/site scope ────────────────────
 class AutomationDeployScopeTests(LoginMixin, APITestCase):
     def setUp(self):
         from integrations.models import AutomationTarget
@@ -188,7 +188,7 @@ class AutomationDeployScopeTests(LoginMixin, APITestCase):
         self.assertEqual(resp.status_code, 400)
 
 
-# ── #18 — generic-import tag creation binds to the caller's tenant ───────────
+# ── #18 - generic-import tag creation binds to the caller's tenant ───────────
 class IoImportTagTenantTests(TestCase):
     def setUp(self):
         org = Organization.objects.create(name="IO Org", slug="io-org")
@@ -204,7 +204,7 @@ class IoImportTagTenantTests(TestCase):
         self.assertEqual(tag.tenant_id, self.tenant.id)
 
 
-# ── #19 — bulk-import FK resolution honours site scope ───────────────────────
+# ── #19 - bulk-import FK resolution honours site scope ───────────────────────
 class BulkImportFkSiteTests(TestCase):
     def setUp(self):
         from django.core.exceptions import ValidationError  # noqa: F401
@@ -232,7 +232,7 @@ class BulkImportFkSiteTests(TestCase):
             _resolve_fk(field, "FK Site B", self.tenant, self.user)
 
 
-# ── #10 — journal notes can't target a foreign tenant's tenant-less object ───
+# ── #10 - journal notes can't target a foreign tenant's tenant-less object ───
 class JournalTenantlessObjectTests(LoginMixin, APITestCase):
     def setUp(self):
         from api.models import Interface
@@ -244,7 +244,7 @@ class JournalTenantlessObjectTests(LoginMixin, APITestCase):
         dev_b = Device.objects.create(
             tenant=self.tenant_b, site=site_b, name="jl-dev-b"
         )
-        # Interface has no direct tenant field — its tenant path is device__site.
+        # Interface has no direct tenant field - its tenant path is device__site.
         self.iface_b = Interface.objects.create(device=dev_b, name="eth0")
         self.user = _custom_user("journaler", self.tenant_a)
         # Unscoped view on interface (the built-in Read-only role shape).
@@ -265,7 +265,7 @@ class JournalTenantlessObjectTests(LoginMixin, APITestCase):
         self.assertIn(resp.status_code, (403, 404))
 
 
-# ── #3 — webhook payloads never carry secret fields in cleartext ─────────────
+# ── #3 - webhook payloads never carry secret fields in cleartext ─────────────
 class WebhookSecretMaskTests(TestCase):
     def setUp(self):
         org = Organization.objects.create(name="WH Org", slug="wh-org")

@@ -30,7 +30,7 @@ import {
 import { apiErrorToast } from "@/lib/api-toast"
 
 /**
- * The round-trip *data* export/import control — distinct from the pretty
+ * The round-trip *data* export/import control - distinct from the pretty
  * `Export` dropdown (share with a colleague). Exports include ids + stable keys
  * so the file can be edited and re-uploaded to update rows. Renders nothing
  * unless the backend reports this type as IO-capable for the user.
@@ -181,7 +181,7 @@ function TableIODialog({
     onSuccess: (r) => {
       qc.invalidateQueries()
       toast.success(
-        `Imported — ${r.created ?? 0} created, ${r.updated ?? 0} updated` +
+        `Imported - ${r.created ?? 0} created, ${r.updated ?? 0} updated` +
           (r.errors.length ? `, ${r.errors.length} failed` : "")
       )
       if (!r.errors.length) {

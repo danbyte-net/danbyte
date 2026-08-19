@@ -1,4 +1,4 @@
-"""assign_numids — backfill the per-tenant ``numid`` for existing rows.
+"""assign_numids - backfill the per-tenant ``numid`` for existing rows.
 
 Idempotent. Rows created through the ORM get a numid on save; this command
 fills in rows that predate the field (or were inserted via ``bulk_create``,
@@ -47,7 +47,7 @@ class Command(BaseCommand):
                 seq, _ = NumIdSequence.objects.select_for_update().get_or_create(
                     tenant_id=tenant_id, model_label=label
                 )
-                # Start after whatever's already used — the sequence counter or
+                # Start after whatever's already used - the sequence counter or
                 # the highest existing numid, whichever is greater.
                 existing_max = (
                     model.objects.filter(tenant_id=tenant_id)

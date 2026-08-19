@@ -24,8 +24,8 @@ class DevicePanelPathsTests(_Base):
         self.fb = FrontPort.objects.create(
             device=self.pb, name="front1", rear_port=self.rb, rear_port_position=1
         )
-        # server.eth0 — panel-a.front1 ; panel-a.rear — panel-b.rear (trunk) ;
-        # panel-b.front1 — client.eth0
+        # server.eth0 - panel-a.front1 ; panel-a.rear - panel-b.rear (trunk) ;
+        # panel-b.front1 - client.eth0
         self._cable(self.seth, self.fa)
         self._cable(self.ra, self.rb)
         self._cable(self.fb, self.ceth)
@@ -39,7 +39,7 @@ class DevicePanelPathsTests(_Base):
         self.assertEqual(len(runs), 1, runs)
         steps = runs[0]["steps"]
         names = [s["device"] for s in steps if s["t"] == "chip"]
-        # Spans both endpoints and both panels — not a fragment.
+        # Spans both endpoints and both panels - not a fragment.
         for expected in ("server", "client", "panel-a", "panel-b"):
             self.assertIn(expected, names)
         # The viewed panel is the highlighted origin, mid-path (not an endpoint).
@@ -47,5 +47,5 @@ class DevicePanelPathsTests(_Base):
         self.assertEqual(len(origins), 1)
         self.assertEqual(origins[0]["device"], "panel-a")
         self.assertNotEqual(names[0], "panel-a")   # panel isn't the first chip
-        self.assertNotEqual(names[-1], "panel-a")  # nor the last — it's in the middle
+        self.assertNotEqual(names[-1], "panel-a")  # nor the last - it's in the middle
         self.assertTrue(runs[0]["complete"])

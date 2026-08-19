@@ -111,7 +111,7 @@ export function CustomFieldForm({
   const mutation = useMutation({
     mutationFn: async () => {
       // Number("abc") is NaN, which would serialize as null and silently
-      // clobber the weight — validate before building the payload.
+      // clobber the weight - validate before building the payload.
       const trimmedWeight = weight.trim()
       const weightNum = trimmedWeight === "" ? 0 : Number(trimmedWeight)
       if (!Number.isFinite(weightNum)) {
@@ -279,7 +279,7 @@ export function CustomFieldForm({
         label="Group"
         value={group}
         onChange={setGroup}
-        noneLabel="— None —"
+        noneLabel="- None -"
         options={groupOptions}
         hint="Optional section heading this field shows under."
         error={fieldErrors.group}

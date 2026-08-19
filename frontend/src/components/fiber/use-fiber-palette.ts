@@ -14,7 +14,7 @@ function useFiberSettings() {
 }
 
 /** The tenant's fibre palette, falling back to TIA-598-C while loading / on
- * error. Cached app-wide — the palette rarely changes. */
+ * error. Cached app-wide - the palette rarely changes. */
 export function useFiberPalette(): FiberColorEntry[] {
   const q = useFiberSettings()
   return q.data?.colors.length ? q.data.colors : TIA_598C

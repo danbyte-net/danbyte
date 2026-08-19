@@ -52,7 +52,7 @@ export function MacObjectDeleteDialog({
               ? " and its interface assignment"
               : ""}{" "}
             will be removed. This doesn't clear the hardware address on the
-            interface or IP — those keep their recorded value. This action can't
+            interface or IP - those keep their recorded value. This action can't
             be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>

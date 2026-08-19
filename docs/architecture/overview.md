@@ -113,7 +113,7 @@ ignore prefix, so the test does not become a route):
   named in an acknowledged-gap list that is asserted to match exactly.
 - **Edit routes are named `$id_.edit`, never `$id.edit`.** The file router
   treats `<entity>.$id.tsx` as the *layout parent* of `<entity>.$id.edit.tsx`,
-  so a dot-named edit route renders the detail component instead of the form —
+  so a dot-named edit route renders the detail component instead of the form -
   and the detail component has no `<Outlet/>`, so the form never appears. It
   typechecks and it builds. The trailing underscore opts the child out of the
   nesting; the URL is unchanged.

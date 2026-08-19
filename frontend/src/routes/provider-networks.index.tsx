@@ -62,7 +62,7 @@ function ProviderNetworksPage() {
         accessorFn: (n) => n.provider?.name ?? "",
         header: "Provider",
         cell: ({ row }) => (
-          <span className="text-xs">{row.original.provider?.name ?? "—"}</span>
+          <span className="text-xs">{row.original.provider?.name ?? "-"}</span>
         ),
         meta: {
           facet: {
@@ -81,7 +81,7 @@ function ProviderNetworksPage() {
           row.original.service_id ? (
             <span className="font-mono text-xs">{row.original.service_id}</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -98,7 +98,7 @@ function ProviderNetworksPage() {
         header: "Description",
         cell: ({ row }) => (
           <span className="line-clamp-1 block text-muted-foreground">
-            {row.original.description || "—"}
+            {row.original.description || "-"}
           </span>
         ),
       },

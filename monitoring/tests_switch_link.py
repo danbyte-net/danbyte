@@ -119,7 +119,7 @@ class SwitchLinkDriftTests(APITestCase):
         return [i for i in items if i["kind"] == "switch_link_suggested"]
 
     def test_trunk_port_learning_many_macs_is_skipped(self):
-        # Issue #22: an uplink learns every MAC behind it — a port over the
+        # Issue #22: an uplink learns every MAC behind it - a port over the
         # limit must never claim hosts that hang off another switch.
         state = DeviceSnmp.objects.get(device=self.sw)
         state.fdb = [{"mac": "00:11:22:33:44:55", "if_index": "10"}] + [
@@ -177,7 +177,7 @@ class SwitchLinkDriftTests(APITestCase):
         settings.arp_source_device = gw
         settings.save(update_fields=["arp_source_device"])
 
-        # Blank the switch's own ARP — pure-L2 reality. The suggestion must
+        # Blank the switch's own ARP - pure-L2 reality. The suggestion must
         # still appear, driven by the gateway's table.
         state = DeviceSnmp.objects.get(device=self.sw)
         state.arp = []
@@ -187,7 +187,7 @@ class SwitchLinkDriftTests(APITestCase):
         self.assertEqual(sl[0]["ip"], "10.0.0.5")
 
     def test_lldp_to_non_bridging_neighbor_still_suggests(self):
-        # A server or phone announcing LLDP must not mute the port — only a
+        # A server or phone announcing LLDP must not mute the port - only a
         # neighbour we know bridges (has an FDB) marks it as an uplink.
         state = DeviceSnmp.objects.get(device=self.sw)
         state.neighbors = [

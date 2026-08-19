@@ -19,7 +19,7 @@ def validate_hex_color(value):
 
 
 class Tag(TagBase):
-    """User-defined tag, optionally colored — and tenant-scoped.
+    """User-defined tag, optionally colored - and tenant-scoped.
 
     Colorless tags render as neutral zinc badges. Colored tags render as solid
     badges with white or black text picked from the color's perceived luminance.
@@ -27,7 +27,7 @@ class Tag(TagBase):
     ``tenant`` scopes the tag: taggit's TagBase is one global table, which
     leaked every tenant's tag names to every other tenant. NULL tenant =
     legacy/deployment-global (visible to all, writable by superusers only).
-    ``name``/``slug`` are therefore unique per tenant, not globally —
+    ``name``/``slug`` are therefore unique per tenant, not globally -
     TagBase's slug-collision retry keys off IntegrityError, so it keeps
     working against the composite constraints. ``owning_site`` makes a tag
     local to one site under enhanced site separation (NULL = tenant-global).
@@ -77,7 +77,7 @@ class Tag(TagBase):
 
     @property
     def text_color(self) -> str:
-        """Black or white text for the badge — chosen by sRGB luminance.
+        """Black or white text for the badge - chosen by sRGB luminance.
 
         Returns '' for colorless tags (caller decides). Empty / malformed
         ``color`` is treated as colorless.
@@ -143,13 +143,13 @@ class TaggableMixin(models.Model):
 
 
 class ScheduledRun(models.Model):
-    """One execution of a periodic/background task — the run-log behind the Jobs
+    """One execution of a periodic/background task - the run-log behind the Jobs
     page's "Scheduled tasks" section.
 
     Most of Danbyte's background work runs as systemd-timer oneshots that never
     touch RQ (the digest, discovery, drift dispatch, Outpost driver, cleanup,
     …). Each wraps its work in ``core.scheduled_runs.record_run`` so admins can
-    see *that it ran, when, and how it went* — even for tasks that produce no
+    see *that it ran, when, and how it went* - even for tasks that produce no
     other visible artifact. Append-only; old rows are pruned per task.
     """
 
@@ -209,8 +209,8 @@ class DeploymentSettings(TimestampedModel):
 
     Self-hosted installs configure a single SMTP server and outbound-delivery
     options here, from the Admin → Email & Delivery page (``users.manage``
-    only). These are infrastructure shared by the whole install — not
-    tenant-scoped — so there is exactly one row (``pk=1``). The SMTP password
+    only). These are infrastructure shared by the whole install - not
+    tenant-scoped - so there is exactly one row (``pk=1``). The SMTP password
     lives in ``secrets`` (Fernet-encrypted), never returned in clear text.
     """
 
@@ -224,7 +224,7 @@ class DeploymentSettings(TimestampedModel):
 
     # ─── session security ────────────────────────────────────────────────
     # Idle timeout: sign a browser session out after this many minutes without a
-    # request. Rolling — each request resets the window. 0 = no idle timeout
+    # request. Rolling - each request resets the window. 0 = no idle timeout
     # (Django's SESSION_COOKIE_AGE default applies). Enforced by
     # core.middleware.SessionIdleTimeoutMiddleware.
     session_idle_timeout_minutes = models.PositiveIntegerField(
@@ -332,7 +332,7 @@ class DeploymentSettings(TimestampedModel):
         max_length=100,
         blank=True,
         default="",
-        help_text='Display name for this install — the app name shown in the '
+        help_text='Display name for this install - the app name shown in the '
         'sidebar header, the browser tab title, and the login page. '
         'Blank = "Danbyte".',
     )
@@ -378,12 +378,12 @@ class DeploymentSettings(TimestampedModel):
         default=dict,
         blank=True,
         help_text="Per-tile-type popover field lists, keyed by tile-type slug. "
-        "A slug that is ABSENT inherits floorplan_popover_fields — only store a "
+        "A slug that is ABSENT inherits floorplan_popover_fields - only store a "
         "list for types that genuinely differ.",
     )
 
     # ─── outbound-connection allowlist (SSRF guard exceptions) ────────────
-    # CIDRs/hosts the SSRF guard permits despite resolving to private space —
+    # CIDRs/hosts the SSRF guard permits despite resolving to private space -
     # e.g. an internal NetBox for the importer, or an internal SMTP relay.
     # DEPLOYMENT tier on purpose: a tenant admin must never be able to widen
     # the guard that exists to contain tenant admins. Merged with the
@@ -408,7 +408,7 @@ class DeploymentSettings(TimestampedModel):
     # Vault/OpenBao connection (used only when secrets_provider == "vault").
     # The token is a secret and lives in ``secrets["vault_token"]``, never here.
     # Admin-configured + deployment-tier, so it may point at an internal/loopback
-    # Vault — reached directly (TLS-verified), not via the tenant SSRF guard.
+    # Vault - reached directly (TLS-verified), not via the tenant SSRF guard.
     vault_addr = models.CharField(
         max_length=255, blank=True, default="",
         help_text="Vault/OpenBao base URL, e.g. https://vault.danbyte.lan:8200.",
@@ -421,7 +421,7 @@ class DeploymentSettings(TimestampedModel):
 
     # ─── site map tiles ──────────────────────────────────────────────────
     # Blank = OpenStreetMap's donated tile servers (light use only, per
-    # https://operations.osmfoundation.org/policies/tiles/ — which also asks
+    # https://operations.osmfoundation.org/policies/tiles/ - which also asks
     # apps NOT to hard-code the URL, hence this setting). Heavy or offline
     # deployments point this at their own raster tile server.
     map_tile_url = models.URLField(
@@ -458,7 +458,7 @@ class DeploymentSettings(TimestampedModel):
     allow_site_settings = models.BooleanField(
         default=False,
         help_text="When on, site admins (site editors, or holders of a "
-        "sitesettings grant) may manage their own site's settings — e.g. "
+        "sitesettings grant) may manage their own site's settings - e.g. "
         "email delivery.",
     )
 
@@ -466,7 +466,7 @@ class DeploymentSettings(TimestampedModel):
     allow_site_editor_delegation = models.BooleanField(
         default=False,
         help_text="When on, a site editor (local IT) may invite their own "
-        "viewers to the site(s) they edit — without a global admin.",
+        "viewers to the site(s) they edit - without a global admin.",
     )
 
     # ─── scheduled config-drift dispatch (opt-in, off by default) ─────────
@@ -516,9 +516,9 @@ class DeploymentSettings(TimestampedModel):
     )
     digest_recipients = models.TextField(
         blank=True, default="",
-        help_text="Digest recipients — comma/newline-separated email addresses.",
+        help_text="Digest recipients - comma/newline-separated email addresses.",
     )
-    # Separate, certificate-focused digest — expiry/renewal summary — fired
+    # Separate, certificate-focused digest - expiry/renewal summary - fired
     # independently of the monitoring digest (own enable flag + own recipients,
     # falling back to the digest recipients when blank). Same cadence/override
     # group as the monitoring digest.
@@ -573,7 +573,7 @@ class DeploymentSettings(TimestampedModel):
     human_ids_enabled = models.BooleanField(
         default=True,
         help_text="When on, objects expose a short per-tenant sequential number "
-        "(numid) alongside their UUID — e.g. so a cable physically tagged '27' "
+        "(numid) alongside their UUID - e.g. so a cable physically tagged '27' "
         "maps to cable #27. Numbers are namespaced per tenant, so each tenant "
         "counts from 1 independently.",
     )
@@ -619,8 +619,8 @@ class DeploymentSettings(TimestampedModel):
 
 
 class SavedFilter(TimestampedModel):
-    """A named set of list-page filters — "my racks in Aarhus", "decommissioning
-    switches" — so a view an operator rebuilds every morning is one click.
+    """A named set of list-page filters - "my racks in Aarhus", "decommissioning
+    switches" - so a view an operator rebuilds every morning is one click.
 
     The filters are stored as the list page's own state (``query``), not as a
     query string or an ORM lookup: every list derives its rail from the columns
@@ -628,7 +628,7 @@ class SavedFilter(TimestampedModel):
     rest without a per-model filter grammar. A saved filter therefore describes
     *the page*, and ``object_type`` says which one.
 
-    Scoping: tenant-scoped like everything else, and **private by default** —
+    Scoping: tenant-scoped like everything else, and **private by default** -
     ``shared`` publishes it to everyone in the tenant. Only the person who wrote
     a filter (or someone with change rights on saved filters) can edit it, so a
     shared view can't be redefined under its users.
@@ -708,7 +708,7 @@ class BookmarkFolder(TimestampedModel):
 class Bookmark(TimestampedModel):
     """A per-user saved page link, surfaced on the dashboard. Stores the SPA
     path (with query string) so a filtered view can be saved verbatim. Scoped
-    to the user, not the tenant — bookmarks follow the person."""
+    to the user, not the tenant - bookmarks follow the person."""
 
     from django.conf import settings as _settings
 
@@ -761,7 +761,7 @@ class TenantGroup(TimestampedModel):
         unique_together = [("org", "slug")]
 
     def clean(self):
-        # Cycle guard — a group can't be its own ancestor.
+        # Cycle guard - a group can't be its own ancestor.
         seen, node = {self.pk}, self.parent
         while node is not None:
             if node.pk in seen:
@@ -779,7 +779,7 @@ class Tenant(TimestampedModel):
     """Hard isolation scope inside an organization.
 
     For an MSP, one tenant per customer. For a single-company deployment,
-    one tenant. Tenants are never displayed together — the UI shows the
+    one tenant. Tenants are never displayed together - the UI shows the
     currently-selected tenant only.
     """
 
@@ -821,7 +821,7 @@ class Tenant(TimestampedModel):
 class TenantSettings(TimestampedModel):
     """Per-tenant overrides of selected :class:`DeploymentSettings` groups.
 
-    Each group carries an ``override_*`` toggle — off (the default, and the
+    Each group carries an ``override_*`` toggle - off (the default, and the
     absence of a row) means the tenant inherits the deployment-wide value; on
     means this row's fields win. Field names deliberately **mirror**
     ``DeploymentSettings`` so the consumers (``build_email_connection``, the
@@ -907,7 +907,7 @@ class TenantSettings(TimestampedModel):
     # Certificate digest (mirrors DeploymentSettings; shares override_digest).
     cert_digest_enabled = models.BooleanField(default=False)
     cert_digest_recipients = models.TextField(blank=True, default="")
-    # Per-tenant send bookkeeping — used regardless of override, so each tenant
+    # Per-tenant send bookkeeping - used regardless of override, so each tenant
     # is gated independently even when they share the deployment schedule.
     digest_last_run = models.DateTimeField(null=True, blank=True)
     cert_digest_last_run = models.DateTimeField(null=True, blank=True)
@@ -934,7 +934,7 @@ class TenantSettings(TimestampedModel):
         default="ad",
     )
     ldap_require_group = models.CharField(max_length=255, blank=True, default="")
-    # Email-style suffixes ("corp.com") — a "user@corp.com" login routes
+    # Email-style suffixes ("corp.com") - a "user@corp.com" login routes
     # straight (and only) to THIS tenant's directory, searched as "user"; the
     # Django username keeps the full user@domain form so it can't collide with
     # bare local/deployment usernames.
@@ -944,7 +944,7 @@ class TenantSettings(TimestampedModel):
     secrets = EncryptedJSONField(default=dict, blank=True)
 
     # ─── first-run onboarding ──────────────────────────────────────────────
-    # Per-tenant bookkeeping (like digest_last_run) — not an inheritable
+    # Per-tenant bookkeeping (like digest_last_run) - not an inheritable
     # override. Set once the first-run wizard is completed or skipped, so it
     # never pops up again for this tenant.
     onboarding_dismissed = models.BooleanField(default=False)
@@ -963,13 +963,13 @@ class TenantSettings(TimestampedModel):
 
 
 class SiteSettings(TimestampedModel):
-    """Per-SITE settings overrides — the third layer (site → tenant →
+    """Per-SITE settings overrides - the third layer (site → tenant →
     deployment), for orgs whose sites run their own IT.
 
     v1 carries only the email group. Field names mirror ``DeploymentSettings``
     exactly (like ``TenantSettings``) so ``build_email_connection`` accepts
     any of the three unchanged. Editing is gated by ``allow_site_settings``
-    (the separation group) + site-admin qualification — see
+    (the separation group) + site-admin qualification - see
     ``core.site_settings``.
     """
 
@@ -1005,7 +1005,7 @@ class SiteSettings(TimestampedModel):
 
 
 class Notification(TimestampedModel):
-    """One in-app notification for one user — what the topbar bell lists.
+    """One in-app notification for one user - what the topbar bell lists.
 
     Written by event producers (task assigned/queued/commented/@mentioned so
     far; ``kind`` leaves room for more) alongside their emails: the bell always

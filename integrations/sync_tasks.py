@@ -3,7 +3,7 @@
 The beat (``manage.py external_sync``, driven by ``danbyte-external-sync.timer``)
 selects due, enabled connections whose tenant has the matching toggle on and
 enqueues one RQ job each on the ``low`` queue. Jobs re-check enablement at run
-time — a toggle flipped between enqueue and execution wins.
+time - a toggle flipped between enqueue and execution wins.
 """
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def run_windows_sync(conn_id: str) -> dict:
             from .dns_sync import sync_dns
 
             result["dns"] = sync_dns(conn)
-    except Exception as exc:  # noqa: BLE001 — the row carries the error
+    except Exception as exc:  # noqa: BLE001 - the row carries the error
         record_sync_failure(conn, exc)
         logger.warning("windows sync %s failed: %s", conn.name, exc)
         return {"error": str(exc)}
@@ -80,7 +80,7 @@ def run_virt_sync(source_id: str) -> dict:
     engine = sync_vcenter if source.kind == "vcenter" else sync_proxmox
     try:
         return engine(source)
-    except Exception as exc:  # noqa: BLE001 — the row carries the error
+    except Exception as exc:  # noqa: BLE001 - the row carries the error
         record_virt_failure(source, exc)
         logger.warning("virt sync %s failed: %s", source.name, exc)
         return {"error": str(exc)}
@@ -95,7 +95,7 @@ def enqueue_due_virt_syncs() -> int:
     for source in VirtualizationSource.objects.filter(enabled=True).select_related(
         "tenant"
     ):
-        # manual sources only sync on demand — the beat leaves them alone.
+        # manual sources only sync on demand - the beat leaves them alone.
         if source.sync_mode == "manual":
             continue
         if integration_enabled(source.tenant, "virtualization") and _due(source, now):

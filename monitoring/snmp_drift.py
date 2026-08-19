@@ -2,7 +2,7 @@
 source-of-truth and surface the differences (drift), then apply an accepted
 difference back to intent (#84, Phase 3).
 
-Discovery never mutates the SoT on its own — ``compute_device_drift`` is
+Discovery never mutates the SoT on its own - ``compute_device_drift`` is
 read-only; only an explicit ``apply_drift_action`` (an operator clicking
 "Accept") writes a Device/Interface field. That's what keeps Danbyte the source
 of truth while still letting reality flow in on demand.
@@ -23,7 +23,7 @@ from .models import DeviceSnmp, MonitoringSettings
 
 def _real_ip(ip: str) -> bool:
     """Whether an observed IP is worth importing. Skips the addresses SNMP will
-    inevitably report but that don't belong in IPAM — IPv4/IPv6 loopback
+    inevitably report but that don't belong in IPAM - IPv4/IPv6 loopback
     (127.x, ::1), link-local (169.254.x, fe80::), unspecified (0.0.0.0, ::), and
     multicast. Uses the stdlib classifier so every special range is covered."""
     try:
@@ -39,8 +39,8 @@ def _real_ip(ip: str) -> bool:
 
 
 def _suggested_prefix(ip: str) -> str:
-    """A sensible prefix to create for an observed IP that has none — the host's
-    natural /24 (v4) or /64 (v6) — so the UI can pre-fill "Add prefix"."""
+    """A sensible prefix to create for an observed IP that has none - the host's
+    natural /24 (v4) or /64 (v6) - so the UI can pre-fill "Add prefix"."""
     try:
         addr = ipmod.ip_address(ip)
     except ValueError:
@@ -76,7 +76,7 @@ def _norm(value) -> str:
 def _speed_mbps(value) -> int | None:
     """Parse a human speed string to Mbps, or None when it isn't one.
 
-    Interface.speed is free text and legitimately arrives in several shapes —
+    Interface.speed is free text and legitimately arrives in several shapes -
     the form suggests "1G"/"25G", sync writes "1 Gbps", operators type
     "100 Mbps". Comparing the strings would flag "1G" against "1 Gbps" as
     drift forever, so speeds are compared as numbers or not at all.
@@ -102,7 +102,7 @@ def _part_drift(device, tenant, state) -> list[dict]:
 
     Covers the SNMP sensor path only for now. The Redfish collector still writes
     part statuses directly (``monitoring/redfish.py``) and so never appears here
-    — the same treatment is owed to it.
+    - the same treatment is owed to it.
 
     Deliberately mode-agnostic: an ``auto`` sensor has already written its
     reading into intent, so the two agree and it contributes nothing.
@@ -137,7 +137,7 @@ def _part_drift(device, tenant, state) -> list[dict]:
         out.append({
             "kind": "part_status", "part_id": str(part.id), "name": part.name,
             "sensor": r.get("sensor") or "",
-            "intended": part.status.name if part.status_id else "—",
+            "intended": part.status.name if part.status_id else "-",
             "observed": r["status"], "raw": r.get("raw") or "",
         })
     return out
@@ -170,7 +170,7 @@ def _ip_attachable(ip_rows: dict, device, iface, ip: str) -> bool:
     if row.assigned_interface_id == iface.id:
         return False  # already right
     if row.assigned_interface_id:
-        return False  # on another port — a conflict to resolve, not to move
+        return False  # on another port - a conflict to resolve, not to move
     # No port. Free, or already on THIS device: binding it to the port SNMP
     # names is a refinement, not a theft.
     return row.assigned_device_id in (None, device.id)
@@ -180,7 +180,7 @@ def _intent_by_observed_name(intended) -> dict:
     """Map every name the agent may report → the interface it means.
 
     Ports match on their label, except that an explicit SNMP link REPLACES the
-    label: the link is the operator saying "the agent calls this port eth0" —
+    label: the link is the operator saying "the agent calls this port eth0" -
     which also says the agent never reports the label, so keeping the label as
     a second key invented a phantom "not seen on device" row for the very port
     that was just linked.
@@ -189,7 +189,7 @@ def _intent_by_observed_name(intended) -> dict:
     exists in its own right and would be evicted from the map, hiding a real
     duplicate. Such a link is ignored and both stay visible.
 
-    Shared by drift compute AND sync — when sync had its own label-only map, a
+    Shared by drift compute AND sync - when sync had its own label-only map, a
     linked port's observed row didn't match it, so sync created a duplicate
     interface under the discovered name and hung the speed/VLAN/IPs there.
     """
@@ -213,7 +213,7 @@ def _match_observed(o: dict, int_by_name: dict):
     """The intended interface an observed SNMP row refers to, or ``None``.
 
     Tries ifName (``Gi1/0/1``) first, then ifDescr (``GigabitEthernet1/0/1``).
-    Cisco — and most vendors — report the SHORT form as ifName but the FULL form
+    Cisco - and most vendors - report the SHORT form as ifName but the FULL form
     as ifDescr, and the full form is exactly what the device-type library stamps.
     Matching on name alone drifts every port of a library-built switch twice: a
     "new interface" for the short name and a "not seen on device" for the full
@@ -222,7 +222,7 @@ def _match_observed(o: dict, int_by_name: dict):
     guessing) and is safe: ifDescr only matches when it equals a real intended
     name, so a device that puts descriptive or duplicate text in ifDescr simply
     falls through to "new", exactly as before. An explicit snmp_name link still
-    wins — it is already folded into ``int_by_name``.
+    wins - it is already folded into ``int_by_name``.
     """
     for key in (_norm(o.get("name")), _norm(o.get("descr"))):
         if key and key in int_by_name:
@@ -233,7 +233,7 @@ def _match_observed(o: dict, int_by_name: dict):
 def _norm_mac(value) -> str:
     """Compare MACs by their hex digits only, so colon/dash/Cisco-dotted forms
     of the same address (``00:11:22:33:44:55`` vs ``0011.2233.4455``) don't read
-    as drift — which would otherwise churn the SoT on every accept."""
+    as drift - which would otherwise churn the SoT on every accept."""
     return re.sub(r"[^0-9a-f]", "", (value or "").lower())
 
 
@@ -241,7 +241,7 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
     """Read-only list of differences between observed SNMP state and intent.
 
     ``state`` (the device's ``DeviceSnmp`` row) and ``intended_interfaces`` (its
-    ``Interface`` rows) may be passed pre-fetched — the fleet-wide drift list does
+    ``Interface`` rows) may be passed pre-fetched - the fleet-wide drift list does
     this to avoid an N+1. Omit them on the per-device path and they're queried.
     """
     if state is None:
@@ -268,8 +268,8 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
     )
     int_by_name = _intent_by_observed_name(intended)
     # Existing rows for the addresses SNMP just reported. Keyed by address so we
-    # can tell "already on this port" from "on the device but on no port" — the
-    # OOB address case, where the port SNMP names is new information — from
+    # can tell "already on this port" from "on the device but on no port" - the
+    # OOB address case, where the port SNMP names is new information - from
     # "belongs to someone else".
     ip_rows = _observed_ip_rows(tenant, observed)
     # The tenant's prefix networks (loaded once) so we can tell the UI whether a
@@ -308,7 +308,7 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
         # doesn't drift as "new"), but produces no items in either direction.
         if existing.snmp_ignore:
             continue
-        # MAC mismatch (separator-insensitive — see _norm_mac).
+        # MAC mismatch (separator-insensitive - see _norm_mac).
         if o.get("mac") and _norm_mac(o["mac"]) != _norm_mac(existing.mac_address):
             items.append({
                 "kind": "interface_mismatch", "interface_id": str(existing.id),
@@ -324,7 +324,7 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
                     "name": existing.name, "field": "enabled",
                     "intended": existing.enabled, "observed": obs_enabled,
                 })
-        # Speed — compared numerically (see _speed_mbps): "1G", "1 Gbps" and
+        # Speed - compared numerically (see _speed_mbps): "1G", "1 Gbps" and
         # 1000 Mbps are the same value in three costumes. An intended speed
         # that doesn't parse is deliberate free text; leave it alone.
         obs_mbps = _speed_mbps(_fmt_speed(o.get("speed_mbps")))
@@ -336,17 +336,17 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
                 items.append({
                     "kind": "interface_mismatch", "interface_id": str(existing.id),
                     "name": existing.name, "field": "speed",
-                    "intended": existing.speed or "—",
+                    "intended": existing.speed or "-",
                     "observed": _fmt_speed(o.get("speed_mbps")),
                 })
-        # Access-VLAN (PVID) mismatch — observed from Q-BRIDGE-MIB.
+        # Access-VLAN (PVID) mismatch - observed from Q-BRIDGE-MIB.
         if o.get("vlan"):
             intended_vid = str(existing.vlan.vlan_id) if existing.vlan_id else ""
             if str(o["vlan"]) != intended_vid:
                 items.append({
                     "kind": "interface_mismatch", "interface_id": str(existing.id),
                     "name": existing.name, "field": "vlan",
-                    "intended": intended_vid or "—", "observed": str(o["vlan"]),
+                    "intended": intended_vid or "-", "observed": str(o["vlan"]),
                 })
         # IPs observed on the interface that aren't recorded on it yet.
         for ip in o.get("ip_addresses", []):
@@ -363,7 +363,7 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
                 "suggested_prefix": "" if has_pfx else _suggested_prefix(ip),
             })
 
-    # 3. Stale: Danbyte has it, the device doesn't report it. Report only —
+    # 3. Stale: Danbyte has it, the device doesn't report it. Report only -
     #    discovery never deletes from the SoT.
     for name, i in int_by_name.items():
         if i.snmp_ignore:
@@ -375,11 +375,11 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
 
     # 3b. Hardware parts. Sensor and BMC readings are observed data like any
     #     other, so a health value that disagrees with the status a human set is
-    #     a difference to review — not a write. (A sensor in `auto` mode has
+    #     a difference to review - not a write. (A sensor in `auto` mode has
     #     already written, so its intent matches and nothing appears here.)
     items.extend(_part_drift(device, tenant, state))
 
-    # 4. Switch-link suggestions — join this device's ARP (IP↔MAC) with its FDB
+    # 4. Switch-link suggestions - join this device's ARP (IP↔MAC) with its FDB
     #    (MAC↔switch port) to propose which access port each already-known IP
     #    sits behind. Only fires on bridging devices (empty fdb → nothing) and
     #    only for IPs Danbyte already tracks (SoT: suggest, never invent).
@@ -419,7 +419,7 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
         if ip_to_ifindex:
             # Uplink guard (issue #22): trunk/aggregate ports learn every MAC
             # behind them, so suggesting attachment there claims hosts that
-            # really hang off another switch — and each polled switch then
+            # really hang off another switch - and each polled switch then
             # re-claims them, a tug of war. Skip ports that look like
             # infrastructure rather than host access:
             #   - the port learns more MACs than an access port plausibly
@@ -471,7 +471,7 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
                 if iface is None:
                     continue
                 if iface.is_uplink or iface.snmp_ignore:
-                    continue  # operator said so — beats every heuristic
+                    continue  # operator said so - beats every heuristic
                 if len(macs_on_port.get(idx, ())) > UPLINK_MAC_LIMIT:
                     continue
                 if iface.id in lag_iface_ids:
@@ -482,7 +482,7 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
                     continue  # already linked to this exact port
                 cur = (
                     f"{row.switch.name} · {row.switch_interface.name}"
-                    if row.switch_id and row.switch_interface_id else "—"
+                    if row.switch_id and row.switch_interface_id else "-"
                 )
                 items.append({
                     "kind": "switch_link_suggested",
@@ -518,7 +518,7 @@ def apply_drift_action(device, tenant, action: dict) -> bool:
             )
         except IntegrityError:
             # Already created (double-accept) or collides with an existing
-            # (device, name) row — nothing to apply, report a clean failure.
+            # (device, name) row - nothing to apply, report a clean failure.
             return False
         if iface.mac_address:
             _ensure_mac_object(tenant, iface, iface.mac_address)
@@ -618,7 +618,7 @@ def sync_device_from_snmp(device, tenant) -> dict:
     if state is None or not state.polled_at:
         return summary
 
-    # The same observed-name map drift uses, so SNMP links hold here too —
+    # The same observed-name map drift uses, so SNMP links hold here too -
     # with a label-only map, a linked port's observed row didn't match and
     # sync created a duplicate interface under the discovered name, hanging
     # the speed/VLAN/IPs on the duplicate instead of the port it means.
@@ -715,7 +715,7 @@ def _ensure_mac_object(tenant, iface, mac: str) -> None:
 
 def _resolve_observed_vlan(tenant, o: dict):
     """Find-or-create the access VLAN an observed interface reports (Q-BRIDGE
-    PVID), or ``None`` when it reports no usable VLAN. Ungrouped, tenant-scoped —
+    PVID), or ``None`` when it reports no usable VLAN. Ungrouped, tenant-scoped -
     so a switch's VLANs become first-class Danbyte VLAN objects on sync."""
     try:
         vid = int(o.get("vlan"))
@@ -742,7 +742,7 @@ def _attach_observed_ip(tenant, iface, ip: str) -> str:
             existing.assigned_device_id
             and existing.assigned_device_id != iface.device_id
         ):
-            # Another port's, or another device's — don't steal it. An address
+            # Another port's, or another device's - don't steal it. An address
             # already on THIS device with no port falls through: that's the OOB
             # address, and the port SNMP names for it is the missing half.
             return "skipped"
@@ -767,7 +767,7 @@ def _attach_observed_ip(tenant, iface, ip: str) -> str:
     return "created"
 
 
-# Prefix placement is shared with the sync engines — see api.vrf_placement.
+# Prefix placement is shared with the sync engines - see api.vrf_placement.
 # These aliases keep this module's call sites reading the same as before.
 _ANY_VRF = ANY_VRF
 _containing_prefix = containing_prefix

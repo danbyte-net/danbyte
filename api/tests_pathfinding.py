@@ -21,7 +21,7 @@ User = get_user_model()
 
 
 class RouterTests(APITestCase):
-    """Pure-geometry tests — no DB."""
+    """Pure-geometry tests - no DB."""
 
     def test_no_trays_is_straight_and_unreachable(self):
         r = route_through_trays((0, 0), (10, 0), [])
@@ -56,7 +56,7 @@ class RouterTests(APITestCase):
         self.assertEqual(r.tray_indexes, [0, 1])
 
     def test_disconnected_trays_fall_back_straight(self):
-        # Two parallel trays far apart — no junction, so B's side is only
+        # Two parallel trays far apart - no junction, so B's side is only
         # reachable via its own entry… which IS connected through B's hop.
         # Truly unreachable needs the graph split: A hops onto tray 0, B onto
         # tray 1, and nothing links them.

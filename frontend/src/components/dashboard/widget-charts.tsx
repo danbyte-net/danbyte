@@ -198,7 +198,7 @@ export function DistBar({ data, link }: { data: DashDist[]; link?: DistLink }) {
   )
 }
 
-/** A radial gauge with a big % in the centre — the "hero" KPI. */
+/** A radial gauge with a big % in the centre - the "hero" KPI. */
 export function RadialGauge({
   value,
   label,
@@ -265,7 +265,7 @@ export function RadialGauge({
   )
 }
 
-/** Top prefixes by utilisation — fills the tile. */
+/** Top prefixes by utilisation - fills the tile. */
 export function TopPrefixes({ data }: { data: DashTopPrefix[] }) {
   if (!data.length) return <Empty />
   return (
@@ -299,7 +299,7 @@ export function TopPrefixes({ data }: { data: DashTopPrefix[] }) {
   )
 }
 
-/** Object-count panel — a dense table of model counts + links. */
+/** Object-count panel - a dense table of model counts + links. */
 const COUNT_ROWS: { key: string; label: string; to?: string }[] = [
   { key: "sites", label: "Sites", to: "/sites" },
   { key: "prefixes", label: "Prefixes", to: "/prefixes" },
@@ -342,7 +342,7 @@ export function ObjectCounts({ counts }: { counts: Record<string, number> }) {
   )
 }
 
-/** Recent monitoring status changes — the recent-changes feed. */
+/** Recent monitoring status changes - the recent-changes feed. */
 export function RecentActivity({ rows }: { rows: DashActivity[] }) {
   if (!rows.length) return <Empty hint="No recent changes." />
   return (

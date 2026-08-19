@@ -1,4 +1,4 @@
-"""Config-drift computation — diff a device's intended vs actual config.
+"""Config-drift computation - diff a device's intended vs actual config.
 
 Pure helpers, no I/O. Used by the drift-ingest endpoint to turn a posted
 "actual" config into a stored diff + status.
@@ -21,7 +21,7 @@ def _norm(text: str) -> list[str]:
 def compute_drift(intended: str, actual: str) -> tuple[str, str]:
     """Return (status, unified_diff). status ∈ in_sync|drift|unknown.
 
-    `unknown` when either side is empty — there's nothing meaningful to compare.
+    `unknown` when either side is empty - there's nothing meaningful to compare.
     """
     if not (intended or "").strip() or not (actual or "").strip():
         return ("unknown", "")

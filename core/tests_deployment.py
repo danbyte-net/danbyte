@@ -1,4 +1,4 @@
-"""Deployment Email & Delivery settings — endpoint + secret handling."""
+"""Deployment Email & Delivery settings - endpoint + secret handling."""
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
@@ -261,7 +261,7 @@ class SystemUpdatesApiTests(APITestCase):
             {"tag": "v0.1.0", "name": "0.1.0", "body": "", "published_at": None,
              "prerelease": False, "has_binary": False},
         ]
-        # Pin the running version too — the assertion below broke every time a
+        # Pin the running version too - the assertion below broke every time a
         # real release bumped danbyte.__version__ past the fixture tags.
         with patch("core.github.list_releases", return_value=fake), \
              patch("core.version.system_version",
@@ -857,7 +857,7 @@ class SystemInfoTests(APITestCase):
 
     def test_info_is_instant_and_never_fetches_the_repo(self):
         # The info endpoint must render version + environment WITHOUT ever
-        # contacting the release repo — that's what makes the version load
+        # contacting the release repo - that's what makes the version load
         # instantly even when the repo check is slow/failing/airgapped.
         from unittest.mock import patch
 
@@ -995,7 +995,7 @@ class DeploymentFaviconApiTests(APITestCase):
 
 class HealthApiTests(APITestCase):
     def test_health_is_public_and_reports_version(self):
-        # No auth — a load balancer / install-smoke hits it anonymously.
+        # No auth - a load balancer / install-smoke hits it anonymously.
         r = self.client.get("/api/health/")
         self.assertEqual(r.status_code, 200, r.content)
         d = r.json()

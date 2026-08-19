@@ -35,7 +35,7 @@ export function FiberDot({
       height={size}
       viewBox={`0 0 ${size} ${size}`}
       className="shrink-0"
-      aria-label={`Fibre ${position} — ${c.name}`}
+      aria-label={`Fibre ${position} - ${c.name}`}
     >
       {title ? <title>{title}</title> : null}
       {bands > 0 && (

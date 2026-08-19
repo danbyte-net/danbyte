@@ -26,7 +26,7 @@ function NewVrfPage() {
       title={cloning ? "Clone VRF" : "Add VRF"}
       subtitle={
         cloning
-          ? "Route targets, color and description carried over — pick a new name and RD."
+          ? "Route targets, color and description carried over - pick a new name and RD."
           : "Register a new routing context."
       }
     >

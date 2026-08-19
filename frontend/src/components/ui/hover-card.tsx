@@ -32,7 +32,7 @@ function HoverCardContent({
         align={align}
         sideOffset={sideOffset}
         className={cn(
-          // Popover tokens (theme-correct in light AND dark) + shadow-sm — the
+          // Popover tokens (theme-correct in light AND dark) + shadow-sm - the
           // one sanctioned shadow use. Width hugs the content.
           "z-50 w-fit min-w-40 rounded-md border border-border bg-popover p-2.5 text-popover-foreground shadow-sm outline-hidden",
           "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",

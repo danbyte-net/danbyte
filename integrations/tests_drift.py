@@ -1,4 +1,4 @@
-"""Config-drift ingest (P3) — compute_drift helper + the device endpoint."""
+"""Config-drift ingest (P3) - compute_drift helper + the device endpoint."""
 from __future__ import annotations
 
 from django.contrib.auth.models import User
@@ -246,13 +246,13 @@ class DriftHistoryTests(APITestCase):
     def test_snapshot_only_on_change(self):
         from integrations.models import DeviceConfigSnapshot
 
-        self._report("a", "a")  # in_sync — first snapshot
+        self._report("a", "a")  # in_sync - first snapshot
         self.assertEqual(DeviceConfigSnapshot.objects.count(), 1)
-        self._report("a", "a")  # unchanged — no new snapshot
+        self._report("a", "a")  # unchanged - no new snapshot
         self.assertEqual(DeviceConfigSnapshot.objects.count(), 1)
-        self._report("a", "b")  # → drift — new snapshot
+        self._report("a", "b")  # → drift - new snapshot
         self.assertEqual(DeviceConfigSnapshot.objects.count(), 2)
-        self._report("a", "a")  # back in sync — new snapshot
+        self._report("a", "a")  # back in sync - new snapshot
         self.assertEqual(DeviceConfigSnapshot.objects.count(), 3)
 
     def test_history_endpoint_filters_by_device(self):
