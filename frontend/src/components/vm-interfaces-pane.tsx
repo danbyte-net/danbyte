@@ -189,21 +189,33 @@ export function VMInterfacesPane({
         header: "",
         cell: ({ row }) => (
           <div className="flex items-center justify-end gap-0.5">
+            {/* Labelled, like the device interface pane — an icon-only button
+                here was missed entirely (#36). */}
             {canAddIp && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                title="Add an IP on this interface"
-                asChild
-              >
+              <Button size="sm" variant="ghost" asChild className="h-7">
                 <Link
                   to="/ips/new"
                   search={{ vm: vmId, vm_interface: row.original.id }}
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span className="sr-only">Add IP</span>
+                  + Add IP
                 </Link>
+              </Button>
+            )}
+            {canAddIp && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7"
+                onClick={() =>
+                  setAssignTarget({
+                    vmId,
+                    vmName,
+                    vmInterfaceId: row.original.id,
+                    interfaceName: row.original.name,
+                  })
+                }
+              >
+                Assign IP
               </Button>
             )}
             {canEdit && (
@@ -234,7 +246,7 @@ export function VMInterfacesPane({
         ),
       },
     ],
-    [canEdit, canDelete, canAddIp, vmId]
+    [canEdit, canDelete, canAddIp, vmId, vmName]
   )
 
   if (q.isLoading)

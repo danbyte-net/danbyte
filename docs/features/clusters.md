@@ -44,8 +44,10 @@ site**:
   clearing the cluster's site later never clears the VMs'.
 - A site-scoped user can then see those VMs, so turn it on deliberately.
 
-Either way, a site's own page has a **Virtual machines** tab listing what is
-placed there.
+Either way, a site's own page has a **Virtual machines** tab, which answers both
+questions separately: **Placed here** (VMs whose own site is this one) and
+**Hosted by clusters here** (VMs running on a cluster at this site that carry no
+site of their own).
 
 ## Cluster types
 

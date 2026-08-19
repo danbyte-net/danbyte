@@ -498,15 +498,25 @@ function SitePrefixesTable({
   )
 }
 
-/** VMs located at this site. A VM's site is its own field — a cluster's site is
- * not inherited unless that cluster opts in — so this lists what is actually
- * placed here, wherever its compute lives. */
+/** What runs at a site, in two honest groups.
+ *
+ * A VM's site is its own field and a cluster's site is not inherited (a central
+ * cluster routinely runs branch workloads), so "placed here" and "hosted here"
+ * are different questions. Both are worth answering on a site page. */
 function SiteVmsTable({ siteId }: { siteId: string }) {
-  const q = useQuery({
+  const placed = useQuery({
     queryKey: ["site-vms", siteId],
     queryFn: () =>
       api<Paginated<VirtualMachine>>(
         `/api/virtual-machines/?site=${siteId}&page_size=500`
+      ),
+  })
+  // Hosted by a cluster that sits here, but carrying no site of their own.
+  const hosted = useQuery({
+    queryKey: ["site-cluster-vms", siteId],
+    queryFn: () =>
+      api<Paginated<VirtualMachine>>(
+        `/api/virtual-machines/?cluster_site=${siteId}&page_size=500`
       ),
   })
   const columns = useMemo<ColumnDef<VirtualMachine>[]>(
@@ -517,19 +527,61 @@ function SiteVmsTable({ siteId }: { siteId: string }) {
     []
   )
 
-  if (q.isLoading)
+  if (placed.isLoading || hosted.isLoading)
     return <p className="text-sm text-muted-foreground">Loading VMs…</p>
-  if (q.isError) return <QueryError error={q.error} />
-  const rows = q.data?.results ?? []
-  if (rows.length === 0)
+  if (placed.isError) return <QueryError error={placed.error} />
+  const placedRows = placed.data?.results ?? []
+  const placedIds = new Set(placedRows.map((v) => v.id))
+  const hostedRows = (hosted.data?.results ?? []).filter(
+    (v) => !placedIds.has(v.id)
+  )
+
+  if (placedRows.length === 0 && hostedRows.length === 0)
     return (
       <p className="text-sm text-muted-foreground">
-        No virtual machines are placed at this site. A VM's site is its own
-        field — set it on the VM, or tick “Give VMs on this cluster its site”
-        on a cluster that really is here.
+        No virtual machines are placed at or hosted from this site.
       </p>
     )
-  return <DataTable data={rows} columns={columns} flexColumn="primary_ip" />
+
+  return (
+    <div className="space-y-6">
+      <section>
+        <h3 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
+          Placed here
+        </h3>
+        {placedRows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No VM has this site set. A VM's site is its own field — set it on the
+            VM, or tick <strong>Give VMs on this cluster its site</strong> on a
+            cluster that really is here.
+          </p>
+        ) : (
+          <DataTable
+            data={placedRows}
+            columns={columns}
+            flexColumn="primary_ip"
+          />
+        )}
+      </section>
+
+      {hostedRows.length > 0 && (
+        <section>
+          <h3 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
+            Hosted by clusters here ({hostedRows.length})
+          </h3>
+          <p className="mb-2 text-xs text-muted-foreground">
+            These run on a cluster at this site but have no site of their own,
+            so they are not counted above.
+          </p>
+          <DataTable
+            data={hostedRows}
+            columns={columns}
+            flexColumn="primary_ip"
+          />
+        </section>
+      )}
+    </div>
+  )
 }
 
 function SiteVlansTable({ siteId }: { siteId: string }) {
