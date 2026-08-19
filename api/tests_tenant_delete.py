@@ -34,6 +34,40 @@ class TenantForceDeleteTests(APITestCase):
         self.assertFalse(Prefix.objects.filter(tenant_id=self.tenant.id).exists())
         self.assertFalse(Status.objects.filter(tenant_id=self.tenant.id).exists())
 
+    def test_deleting_a_tenant_that_owns_audited_objects(self):
+        """A tenant owning an audited object could not be deleted at all (#37).
+
+        Its change log is deleted with it, but each cascaded delete still wrote
+        a new entry pointing at the tenant — so the deferred foreign key failed
+        at COMMIT and the whole deletion rolled back. Any audited model reached
+        only through the tenant's own cascade hit this; a VirtualizationSource
+        is one, which is how it was reported.
+        """
+        from integrations.models import VirtualizationSource
+
+        VirtualizationSource.objects.create(
+            tenant=self.tenant, name="pve", host="192.0.2.30",
+            credentials={"token_id": "x", "secret": "s"},
+        )
+        r = self.client.delete(f"/api/tenants/{self.tenant.id}/")
+        self.assertEqual(r.status_code, 204, r.content)
+        self.assertFalse(Tenant.objects.filter(pk=self.tenant.pk).exists())
+        self.assertFalse(
+            VirtualizationSource.objects.filter(tenant_id=self.tenant.id).exists()
+        )
+
+    def test_audit_logging_resumes_after_a_tenant_delete(self):
+        """The suspension is scoped — an ordinary edit is still recorded."""
+        from audit.models import ChangeLogEntry
+
+        other = Tenant.objects.create(org=self.org, name="Keep", slug="keep")
+        self.client.delete(f"/api/tenants/{self.tenant.id}/")
+        before = ChangeLogEntry.objects.filter(tenant=other).count()
+        Prefix.objects.create(tenant=other, cidr="10.9.0.0/24")
+        self.assertEqual(
+            ChangeLogEntry.objects.filter(tenant=other).count(), before + 1
+        )
+
     def test_bulk_delete(self):
         r = self.client.post(
             "/api/tenants/bulk-delete/", {"ids": [str(self.tenant.id)]}, format="json"

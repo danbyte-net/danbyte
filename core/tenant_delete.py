@@ -23,6 +23,8 @@ from collections import defaultdict
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
 
+from audit.context import suspended as audit_suspended
+
 logger = logging.getLogger("danbyte.tenant")
 
 # Safety bound: the PROTECT graph is shallow (leaf data → catalogs → tenant), so
@@ -38,7 +40,11 @@ def force_delete_tenant(tenant) -> int:
     un-deletable reference still surfaces rather than looping forever).
     """
     total = 0
-    with transaction.atomic():
+    # The tenant's change log is deleted along with the tenant, so recording
+    # each cascaded delete would write entries referencing a tenant row this
+    # same transaction removes — the deferred foreign key then fails at COMMIT
+    # and the whole deletion rolls back (#37).
+    with audit_suspended(), transaction.atomic():
         for _ in range(_MAX_PASSES):
             try:
                 deleted, _ = tenant.delete()

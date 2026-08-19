@@ -17,7 +17,7 @@ from django.db.models.fields.files import FieldFile
 from django.db.models.signals import post_delete, post_save, pre_save
 
 
-from .context import current_request_id, current_user
+from .context import current_request_id, current_user, is_suspended
 from .models import ChangeAction, ChangeLogEntry
 
 _SKIP_FIELDS = {"created_at", "updated_at"}
@@ -72,6 +72,8 @@ def _safe_repr(instance) -> str:
 def _record(instance, action, changes, pre=None, post=None):
     from .site_capture import entry_site_id
 
+    if is_suspended():
+        return
     user = current_user()
     ChangeLogEntry.objects.create(
         tenant_id=getattr(instance, "tenant_id", None),
