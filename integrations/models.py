@@ -497,6 +497,11 @@ class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
     sync_disks = models.BooleanField(default=True)
     #: Virtual switches + networks (port-groups/bridges → VLANs).
     sync_networks = models.BooleanField(default=False)
+    #: Enrich those host Devices with real hardware - model, vendor, serial -
+    #: read over the vSphere SOAP API, which is the only place vCenter exposes
+    #: it. Separate from sync_hosts: wanting Device placeholders is not the
+    #: same as wanting DeviceTypes minted in a curated catalog.
+    sync_host_hardware = models.BooleanField(default=False)
     #: Create the hypervisor's own nodes/hosts as Devices. Off by default:
     #: this writes into the physical inventory, which is the operator's
     #: territory. The site comes from placement rules when they resolve one;

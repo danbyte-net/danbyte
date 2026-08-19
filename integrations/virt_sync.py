@@ -29,6 +29,7 @@ from functools import partial
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.text import slugify
 
 from api import vrf_placement
 
@@ -230,7 +231,8 @@ def _network_group(source, cluster):
     return grp
 
 
-def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now):
+def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
+                  kind=None):
     """Shared: upsert VirtualSwitch(bridge) + VirtNetwork(→VLAN) and blank-fill
     the VM interface's VLAN. Returns 1 if a network row was touched."""
     from api.models import VLAN, VMInterface, VirtualSwitch
@@ -239,11 +241,23 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now):
     if not bridge:
         return 0
     c = cluster()
+    # `kind` is what the hypervisor actually says, when it says anything.
+    # Falling back to the connector guesses, which labelled every vCenter
+    # switch "standard" even when it was distributed.
     vswitch, _ = VirtualSwitch.objects.get_or_create(
         tenant=source.tenant, cluster=c, name=bridge,
-        defaults={"kind": "linux-bridge" if source.kind == "proxmox"
-                  else "standard", "created_switch": True},
+        defaults={
+            "kind": kind or (
+                "linux-bridge" if source.kind == "proxmox" else "standard"
+            ),
+            "created_switch": True,
+        },
     )
+    # A switch created before the type was known gets corrected once, but an
+    # operator's own choice is left alone.
+    if kind and vswitch.created_switch and vswitch.kind != kind:
+        vswitch.kind = kind
+        vswitch.save(update_fields=["kind"])
     vlan = None
     if tag is not None:
         grp = _network_group(source, c)
@@ -511,7 +525,7 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
             if not place.ok and (rules or site_by_name):
                 warnings.append(placement.unplaced_warning(guest_path))
             _reconcile_guest(source, guest_cluster, guest_cluster_name, guest, r,
-                             apply, now, counts, fresh_changes, place)
+                             apply, now, counts, fresh_changes, place, warnings)
             if guest.vm_id:
                 d = details.get(vmid) or {}
                 made, seen_ifaces = sync_ifaces(guest, d.get("ifaces"))
@@ -616,8 +630,19 @@ def _reconcile_interfaces(guest, seen_names, now, fresh_changes) -> None:
         _clear_change(guest, "iface_extra")
 
 
+def _owned_by_another_source(vm, source) -> bool:
+    """Is this VM already tracked by a *different* virtualization source?"""
+    from .models import VirtGuest
+
+    return (
+        VirtGuest.objects.filter(vm=vm)
+        .exclude(source=source)
+        .exists()
+    )
+
+
 def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
-                     counts, fresh_changes, place=None) -> None:
+                     counts, fresh_changes, place=None, warnings=None) -> None:
     """Bring one guest into line with the inventory - applying (auto) or
     queuing a change (review/manual)."""
     from api.models import VirtualMachine
@@ -631,6 +656,18 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
         adopted = VirtualMachine.objects.filter(
             tenant=source.tenant, name=name
         ).first()
+        if adopted is not None and _owned_by_another_source(adopted, source):
+            # Two hypervisors, two different machines, one name. VM names are
+            # unique per tenant, so adopting would merge them into a single row
+            # that both syncs then write to - wrong specs, wrong cluster, wrong
+            # host, and no sign anything happened. Leave both alone and say so.
+            if warnings is not None:
+                warnings.append(
+                    f'"{name}" already belongs to another virtualization '
+                    f"source, so it was skipped - rename one of them, since a "
+                    f"VM name has to be unique"
+                )
+            return
         if adopted is not None:
             guest.vm = adopted
             guest.created_vm = False
@@ -871,6 +908,57 @@ def _apply_placement(obj, place, changed: list) -> None:
         changed.append("location")
 
 
+def _apply_host_hardware(dev, hw, source) -> list:
+    """Blank-fill a host Device from what vim25 reports. Never overwrites.
+
+    Model and vendor become a DeviceType under a Manufacturer, because that is
+    how Danbyte models hardware - the alternative would be free text on the
+    Device that nothing else can use. The catalog rows are created on demand,
+    the same way the sync already creates a ClusterType and a DeviceRole.
+    """
+    from api.devicetype_import import _get_or_create_manufacturer
+    from api.models import DeviceType, Platform
+
+    changed = []
+    serial = (hw.get("serial") or "").strip()
+    if serial and not dev.serial_number:
+        dev.serial_number = serial[:255]
+        changed.append("serial_number")
+
+    model = (hw.get("model") or "").strip()
+    if model and dev.device_type_id is None:
+        # DeviceType has no slug and its unique key is case-sensitive, so match
+        # case-insensitively first or a second sync mints a near-duplicate.
+        dt = DeviceType.objects.filter(
+            tenant=source.tenant, name__iexact=model
+        ).first()
+        if dt is None:
+            vendor = (hw.get("vendor") or "").strip()
+            dt = DeviceType.objects.create(
+                tenant=source.tenant, name=model, model=model,
+                manufacturer=(
+                    _get_or_create_manufacturer(source.tenant, vendor)
+                    if vendor else None
+                ),
+            )
+        dev.device_type = dt
+        changed.append("device_type")
+
+    platform = (hw.get("platform") or "").strip()
+    if platform and dev.platform_id is None:
+        slug = slugify(platform)[:128] or "esxi"
+        plat = Platform.objects.filter(
+            Q(name__iexact=platform) | Q(slug=slug), tenant=source.tenant
+        ).first()
+        if plat is None:
+            plat = Platform.objects.create(
+                tenant=source.tenant, name=platform, slug=slug
+            )
+        dev.platform = plat
+        changed.append("platform")
+    return changed
+
+
 def _sync_hosts(source, cluster_name: str, hosts, *, placements=None,
                 warnings=None) -> int:
     """Create the hypervisor's own nodes/hosts as Devices - opt-in (#34).
@@ -928,6 +1016,8 @@ def _sync_hosts(source, cluster_name: str, hosts, *, placements=None,
             dev.cluster = cluster
             changed.append("cluster")
         _apply_placement(dev, place, changed)
+        if h.get("hardware"):
+            changed += _apply_host_hardware(dev, h["hardware"], source)
         if changed:
             dev.save(update_fields=changed)
         if place is not None and not place.ok and warnings is not None:
@@ -1204,6 +1294,16 @@ def sync_vcenter(source) -> dict:
         # Where everything sits, for placement. Folder walking is skipped
         # unless the source actually has folder rules.
         maps = _vcenter_placement_maps(client, source, datacenters, hosts)
+        # Port-group type tells a distributed switch from a standard one.
+        net_kinds: dict = {}
+        if source.sync_networks:
+            try:
+                for net in client.get("vcenter/network") or []:
+                    kind = _VC_PORTGROUP_KIND.get(net.get("type") or "")
+                    if kind and net.get("name"):
+                        net_kinds[net["name"]] = kind
+            except VirtAPIError:
+                pass  # fall back to the connector default
 
         # Fallback name for guests that belong to no cluster (standalone hosts).
         cluster_name = clusters[0]["name"] if len(clusters) == 1 else source.name
@@ -1272,11 +1372,27 @@ def sync_vcenter(source) -> dict:
                     ),
                     rules, site_by_name=by_name,
                 )
+            # Hardware is a second, SOAP-only round trip, so it only happens
+            # when asked for. A failure there must not cost the whole sync.
+            hw_by_name: dict = {}
+            if source.sync_host_hardware:
+                from .vsphere_soap import VSphereSoap
+
+                soap = VSphereSoap(source)
+                try:
+                    soap.connect()
+                    hw_by_name = {h["name"]: h for h in soap.hosts()}
+                except VirtAPIError as exc:
+                    host_warnings.append(f"Host hardware unavailable: {exc}")
+                finally:
+                    soap.close()
+
             counts["hosts"] = _sync_hosts(
                 source, cluster_name,
                 [{"name": h.get("name") or "",
                   "online": h.get("connection_state") == "CONNECTED",
-                  "cluster": host_cluster.get(h.get("host")) or ""}
+                  "cluster": host_cluster.get(h.get("host")) or "",
+                  "hardware": hw_by_name.get(h.get("name") or "")}
                  for h in hosts],
                 placements=places, warnings=host_warnings,
             )
@@ -1318,7 +1434,8 @@ def sync_vcenter(source) -> dict:
                          _sync_vcenter_interfaces, _sync_vcenter_ips,
                          extra_warnings=host_warnings,
                          sync_disks_fn=_sync_vcenter_disks,
-                         sync_nets_fn=_sync_networks_vcenter,
+                         sync_nets_fn=partial(_sync_networks_vcenter,
+                                              net_kinds=net_kinds),
                          sync_meta_fn=_sync_meta_vcenter, label="vcenter")
     finally:
         client.close()
@@ -1351,7 +1468,16 @@ def _sync_vcenter_disks(guest, disks) -> int:
     return n
 
 
-def _sync_networks_vcenter(source, cluster, guest, nics, now) -> int:
+# vCenter reports what a port-group is attached to, so the switch kind is a
+# fact rather than a guess. Anything else (opaque/NSX backings) stays unset.
+_VC_PORTGROUP_KIND = {
+    "STANDARD_PORTGROUP": "standard",
+    "DISTRIBUTED_PORTGROUP": "distributed",
+}
+
+
+def _sync_networks_vcenter(source, cluster, guest, nics, now,
+                           net_kinds=None) -> int:
     """vCenter NIC backings → VirtualSwitch + VirtNetwork. VLAN tags live on the
     port-group (not the VM NIC), so a VLAN is only linked when the backing
     exposes one; otherwise the network is recorded without a VLAN."""
@@ -1369,6 +1495,7 @@ def _sync_networks_vcenter(source, cluster, guest, nics, now) -> int:
         n += _link_network(
             source, cluster, guest, iface_name, network,
             int(tag) if isinstance(tag, int) else None, network, now,
+            kind=(net_kinds or {}).get(network),
         )
     return n
 

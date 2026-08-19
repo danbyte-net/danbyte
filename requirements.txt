@@ -35,6 +35,9 @@ icmplib>=3.0              # async, unprivileged ICMP for the ping checker
 httpx>=0.27               # async HTTP checker
 asyncssh>=2.18            # async SSH checker
 pysnmp>=7.1               # async SNMP checker (v2c/v3)
+pyvmomi>=8.0              # vSphere SOAP (vim25) - the only API that exposes
+                          # ESXi host hardware; imported lazily, so a
+                          # REST-only deployment never loads it
 # Auth / MFA / directory
 pyotp>=2.9                # TOTP authenticator codes for login MFA
 django-auth-ldap>=5.0     # optional LDAP/AD auth (pulls python-ldap; needs

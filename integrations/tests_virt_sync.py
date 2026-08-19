@@ -505,6 +505,13 @@ VC_CLUSTERS = [{"cluster": "domain-c1", "name": "Lab-Cluster"},
 VC_BY_CLUSTER = {"domain-c1": ["vm-100"], "domain-c2": ["vm-101"]}
 VC_HOSTS_BY_CLUSTER = {"domain-c1": ["host-1"], "domain-c2": ["host-2"]}
 VC_DATACENTERS = [{"datacenter": "datacenter-3", "name": "Lab"}]
+# A distributed port-group beside a standard one, so the switch kind is a
+# fact read off the hypervisor rather than guessed from the connector.
+VC_NETWORKS = [
+    {"network": "network-1", "name": "VM Network", "type": "STANDARD_PORTGROUP"},
+    {"network": "dvpg-1", "name": "DSwitch-Prod",
+     "type": "DISTRIBUTED_PORTGROUP"},
+]
 # The folder tree, as `?parent_folders=` walks it: "vm" is a vCenter
 # built-in and gets stripped, so web01 reads as "Test site / Linux".
 VC_FOLDERS = [
@@ -520,14 +527,16 @@ VC_DETAIL = {
         "cpu": {"count": 4}, "memory": {"size_MiB": 8192},
         "disks": {"2000": {"capacity": 40 * 1024**3}},
         "nics": {"4000": {"label": "Network adapter 1",
-                          "mac_address": "00:50:56:AA:BB:CC"}},
+                          "mac_address": "00:50:56:AA:BB:CC",
+                          "backing": {"network_name": "VM Network"}}},
     },
     "vm-101": {
         "name": "db01", "power_state": "POWERED_OFF",
         "cpu": {"count": 2}, "memory": {"size_MiB": 4096},
         "disks": {"2000": {"capacity": 20 * 1024**3}},
         "nics": {"4000": {"label": "Network adapter 1",
-                          "mac_address": "00:50:56:DD:EE:FF"}},
+                          "mac_address": "00:50:56:DD:EE:FF",
+                          "backing": {"network_name": "DSwitch-Prod"}}},
     },
 }
 VC_GUEST_NET = {
@@ -568,6 +577,8 @@ class FakeVCenter:
         if path.startswith("vcenter/host?clusters="):
             cm = path.split("=", 1)[1]
             return [{"host": h} for h in VC_HOSTS_BY_CLUSTER.get(cm, [])]
+        if path == "vcenter/network":
+            return VC_NETWORKS
         if path == "vcenter/datacenter":
             return VC_DATACENTERS
         if path == "vcenter/folder":
@@ -1451,3 +1462,251 @@ class InterfaceDriftTests(TestCase):
         self.sync()
         self.sync()
         self.assertFalse(VirtChange.objects.filter(kind="iface_extra").exists())
+
+
+class SwitchKindTests(TestCase):
+    """The switch kind comes from vCenter, not from the connector (#34).
+
+    Every vCenter switch used to be labelled "Standard switch" because the
+    kind was inferred from the source's platform. vCenter reports the
+    port-group type directly, so a distributed switch can be recognised.
+    """
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="vc", host="192.0.2.20", kind="vcenter",
+            credentials={"username": "u", "password": "p"}, sync_mode="auto",
+            sync_networks=True,
+        )
+        Prefix.objects.create(tenant=self.tenant, cidr="10.77.0.0/24")
+
+    def sync(self):
+        with mock.patch("integrations.virt_client.VCenterClient", FakeVCenter):
+            return virt_sync.sync_vcenter(self.source)
+
+    def test_a_standard_portgroup_makes_a_standard_switch(self):
+        self.sync()
+        self.assertEqual(
+            VirtualSwitch.objects.get(name="VM Network").kind, "standard"
+        )
+
+    def test_a_distributed_portgroup_is_recognised(self):
+        """This is the case that used to be mislabelled as Standard."""
+        self.sync()
+        self.assertEqual(
+            VirtualSwitch.objects.get(name="DSwitch-Prod").kind, "distributed"
+        )
+
+    def test_an_unknown_backing_still_falls_back(self):
+        """No type reported means the old behaviour, not a blank kind."""
+        self.sync()
+        for sw in VirtualSwitch.objects.all():
+            self.assertTrue(sw.kind, f"{sw.name} ended up with no kind")
+
+    def test_an_operator_kind_is_not_overwritten(self):
+        self.sync()
+        sw = VirtualSwitch.objects.get(name="VM Network")
+        sw.kind = "bond"
+        sw.created_switch = False  # adopted by the operator
+        sw.save(update_fields=["kind", "created_switch"])
+
+        self.sync()
+
+        sw.refresh_from_db()
+        self.assertEqual(sw.kind, "bond")
+
+
+class DuplicateVmNameTests(TestCase):
+    """Two hypervisors, two machines, one name.
+
+    VM names are unique per tenant and the sync adopts by name, so a `web01`
+    on Proxmox and a different `web01` on vCenter used to collapse into one
+    row that both syncs then wrote to - wrong cluster, wrong host, wrong
+    specs, and nothing to show it had happened.
+    """
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        Prefix.objects.create(tenant=self.tenant, cidr="10.77.0.0/24")
+        self.pve = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="pve", host="192.0.2.30",
+            credentials={"token_id": "a@pam!t", "secret": "s"}, sync_mode="auto",
+        )
+        self.vc = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="vc", host="192.0.2.20", kind="vcenter",
+            credentials={"username": "u", "password": "p"}, sync_mode="auto",
+        )
+
+    def _collide(self):
+        """Sync Proxmox, then rename one of its VMs onto a vCenter name."""
+        with mock.patch.object(virt_sync, "proxmox_get", side_effect=fake_get):
+            virt_sync.sync_proxmox(self.pve)
+        vm = VirtualMachine.objects.get(name="router-vm")
+        vm.name = "web01"
+        vm.save(update_fields=["name"])
+        return vm
+
+    def _sync_vc(self):
+        with mock.patch("integrations.virt_client.VCenterClient", FakeVCenter):
+            return virt_sync.sync_vcenter(self.vc)
+
+    def test_the_two_machines_are_not_merged(self):
+        from integrations.models import VirtGuest
+
+        mine = self._collide()
+        self._sync_vc()
+
+        guests = VirtGuest.objects.filter(vm=mine).select_related("source")
+        self.assertEqual(
+            [g.source.name for g in guests], ["pve"],
+            "a second source adopted a VM that already belonged to another",
+        )
+
+    def test_the_proxmox_vm_keeps_its_own_placement(self):
+        mine = self._collide()
+        self._sync_vc()
+        mine.refresh_from_db()
+        self.assertEqual(mine.cluster.name, "DB-CLUSTER01")
+
+    def test_the_clash_is_reported(self):
+        self._collide()
+        self._sync_vc()
+        self.vc.refresh_from_db()
+        joined = " ".join(self.vc.last_sync_skipped)
+        self.assertIn("web01", joined)
+        self.assertIn("another virtualization source", joined)
+
+    def test_a_normal_adoption_still_works(self):
+        """The guard must only fire for a VM another source already owns."""
+        from api.models import Cluster, ClusterType
+        from integrations.models import VirtGuest
+
+        ctype = ClusterType.objects.create(
+            tenant=self.tenant, name="Mine", slug="mine"
+        )
+        cluster = Cluster.objects.create(
+            tenant=self.tenant, name="ops", type=ctype
+        )
+        mine = VirtualMachine.objects.create(
+            tenant=self.tenant, name="web01", cluster=cluster
+        )
+
+        self._sync_vc()
+
+        self.assertTrue(
+            VirtGuest.objects.filter(vm=mine, source=self.vc).exists(),
+            "an operator's own VM should still be adopted",
+        )
+
+
+class HostHardwareTests(TestCase):
+    """Host model, vendor and serial - the part of #34 REST cannot answer.
+
+    `vcenter/host` returns four fields and there is no host-detail endpoint, so
+    this comes from the vim25 SOAP API. Opt-in separately from `sync_hosts`,
+    because minting DeviceTypes in a curated catalog is a bigger ask than
+    creating a placeholder Device.
+    """
+
+    HW = {
+        "name": "esxi-lab-01",
+        "vendor": "Dell Inc.",
+        "model": "PowerEdge R640",
+        "serial": "ABC1234",
+        "platform": "VMware ESXi 8.0.3",
+    }
+
+    def setUp(self):
+        from api.status_registry import seed_builtin_statuses
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        seed_builtin_statuses(self.tenant)
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="vc", host="192.0.2.20", kind="vcenter",
+            credentials={"username": "u", "password": "p"}, sync_mode="auto",
+            sync_hosts=True, sync_host_hardware=True,
+        )
+        Prefix.objects.create(tenant=self.tenant, cidr="10.77.0.0/24")
+
+    def sync(self, hosts=None):
+        fake = mock.MagicMock()
+        fake.hosts.return_value = [self.HW] if hosts is None else hosts
+        with mock.patch("integrations.virt_client.VCenterClient", FakeVCenter), \
+             mock.patch("integrations.vsphere_soap.VSphereSoap",
+                        return_value=fake):
+            return virt_sync.sync_vcenter(self.source)
+
+    def test_hardware_lands_on_the_device(self):
+        from api.models import Device
+
+        self.sync()
+        dev = Device.objects.get(name="esxi-lab-01")
+        self.assertEqual(dev.serial_number, "ABC1234")
+        self.assertEqual(dev.device_type.name, "PowerEdge R640")
+        self.assertEqual(dev.device_type.manufacturer.name, "Dell Inc.")
+        self.assertEqual(dev.platform.name, "VMware ESXi 8.0.3")
+
+    def test_it_is_idempotent(self):
+        """A second pass must not mint a duplicate type or manufacturer."""
+        from api.models import DeviceType, Manufacturer, Platform
+
+        self.sync()
+        self.sync()
+        self.assertEqual(DeviceType.objects.count(), 1)
+        self.assertEqual(Manufacturer.objects.count(), 1)
+        self.assertEqual(Platform.objects.count(), 1)
+
+    def test_operator_values_are_never_overwritten(self):
+        from api.models import Device, DeviceType
+
+        self.sync()
+        dev = Device.objects.get(name="esxi-lab-01")
+        mine = DeviceType.objects.create(tenant=self.tenant, name="My model")
+        dev.device_type = mine
+        dev.serial_number = "MINE-1"
+        dev.save(update_fields=["device_type", "serial_number"])
+
+        self.sync()
+
+        dev.refresh_from_db()
+        self.assertEqual(dev.device_type_id, mine.id)
+        self.assertEqual(dev.serial_number, "MINE-1")
+
+    def test_a_blank_serial_is_not_written(self):
+        """Nested ESXi reports no service tag - that must stay empty."""
+        from api.models import Device
+
+        self.sync([{**self.HW, "serial": ""}])
+        self.assertEqual(Device.objects.get(name="esxi-lab-01").serial_number, "")
+
+    def test_the_flag_is_off_by_default(self):
+        from api.models import Device, DeviceType
+
+        self.source.sync_host_hardware = False
+        self.source.save(update_fields=["sync_host_hardware"])
+        self.sync()
+        self.assertTrue(Device.objects.filter(name="esxi-lab-01").exists())
+        self.assertEqual(DeviceType.objects.count(), 0)
+
+    def test_a_soap_failure_does_not_fail_the_sync(self):
+        from api.models import Device
+        from integrations.virt_client import VirtAPIError
+
+        fake = mock.MagicMock()
+        fake.connect.side_effect = VirtAPIError("SOAP down")
+        with mock.patch("integrations.virt_client.VCenterClient", FakeVCenter), \
+             mock.patch("integrations.vsphere_soap.VSphereSoap",
+                        return_value=fake):
+            counts = virt_sync.sync_vcenter(self.source)
+
+        self.assertEqual(counts["vms"], 2)  # the rest of the sync still ran
+        self.assertTrue(Device.objects.filter(name="esxi-lab-01").exists())
+        self.source.refresh_from_db()
+        self.assertIn(
+            "Host hardware unavailable",
+            " ".join(self.source.last_sync_skipped),
+        )
