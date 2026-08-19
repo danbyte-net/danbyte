@@ -10,6 +10,16 @@ import { apiErrorToast } from "@/lib/api-toast"
 import { SyncStatusBadge } from "@/components/integrations/sync-status-badge"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -40,6 +50,7 @@ function VirtualizationSourcesPage() {
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<VirtualizationSource | null>(null)
   const [reviewing, setReviewing] = useState<VirtualizationSource | null>(null)
+  const [deleting, setDeleting] = useState<VirtualizationSource | null>(null)
 
   const query = useQuery({
     queryKey: ["virtualization-sources", q],
@@ -57,6 +68,7 @@ function VirtualizationSourcesPage() {
       api(`/api/virtualization-sources/${s.id}/`, { method: "DELETE" }),
     onSuccess: () => {
       toast.success("Source removed")
+      setDeleting(null)
       invalidate()
     },
     onError: (e) => apiErrorToast(e),
@@ -210,7 +222,7 @@ function VirtualizationSourcesPage() {
         cell: ({ row }) => (
           <RowActions
             onEdit={canEdit ? () => setEditing(row.original) : undefined}
-            onDelete={canDelete ? () => del.mutate(row.original) : undefined}
+            onDelete={canDelete ? () => setDeleting(row.original) : undefined}
             extra={
               <>
                 <Button
@@ -284,6 +296,34 @@ function VirtualizationSourcesPage() {
           onOpenChange={(o) => !o && setReviewing(null)}
         />
       )}
+      <AlertDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleting?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Removes the connection and its sync state. The virtual machines,
+              switches and networks it imported stay — they simply stop
+              updating.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={del.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={del.isPending}
+              onClick={(e) => {
+                e.preventDefault()
+                if (deleting) del.mutate(deleting)
+              }}
+            >
+              {del.isPending ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </ListPageShell>
   )
 }

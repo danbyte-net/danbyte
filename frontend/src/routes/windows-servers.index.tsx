@@ -10,6 +10,16 @@ import { apiErrorToast } from "@/lib/api-toast"
 import { SyncStatusBadge as ConnSyncStatusBadge } from "@/components/integrations/sync-status-badge"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
@@ -65,6 +75,7 @@ function WindowsServersPage() {
   const [q, setQ] = useState("")
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<WindowsConnection | null>(null)
+  const [deleting, setDeleting] = useState<WindowsConnection | null>(null)
 
   const query = useQuery({
     queryKey: ["windows-connections", q],
@@ -80,6 +91,7 @@ function WindowsServersPage() {
       api(`/api/windows-connections/${c.id}/`, { method: "DELETE" }),
     onSuccess: () => {
       toast.success("Server removed")
+      setDeleting(null)
       qc.invalidateQueries({ queryKey: ["windows-connections"] })
     },
     onError: (e) => apiErrorToast(e),
@@ -141,7 +153,7 @@ function WindowsServersPage() {
         cell: ({ row }) => (
           <RowActions
             onEdit={canEdit ? () => setEditing(row.original) : undefined}
-            onDelete={canDelete ? () => del.mutate(row.original) : undefined}
+            onDelete={canDelete ? () => setDeleting(row.original) : undefined}
           />
         ),
       },
@@ -184,6 +196,33 @@ function WindowsServersPage() {
           onOpenChange={(o) => !o && setEditing(null)}
         />
       )}
+      <AlertDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleting?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Removes the connection and its DHCP/DNS links. Prefixes, IP addresses and
+              records it created stay in IPAM — they simply stop syncing.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={del.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={del.isPending}
+              onClick={(e) => {
+                e.preventDefault()
+                if (deleting) del.mutate(deleting)
+              }}
+            >
+              {del.isPending ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </ListPageShell>
   )
 }
