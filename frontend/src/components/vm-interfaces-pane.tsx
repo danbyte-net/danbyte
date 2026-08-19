@@ -44,16 +44,28 @@ import {
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
 import { QueryError } from "@/components/query-error"
+import {
+  AssignIpDialog,
+  type AssignIpTarget,
+} from "@/components/assign-ip-dialog"
 import { VlanBadge } from "@/components/cells/vlan-badge"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useSaveObject } from "@/lib/save-object"
 
-export function VMInterfacesPane({ vmId }: { vmId: string }) {
+export function VMInterfacesPane({
+  vmId,
+  vmName,
+}: {
+  vmId: string
+  vmName?: string
+}) {
   const { canDo } = useMe()
   const canAdd = canDo("vminterface", "add")
   const canEdit = canDo("vminterface", "change")
   const canDelete = canDo("vminterface", "delete")
+  const canAddIp = canDo("ipaddress", "add")
+  const [assignTarget, setAssignTarget] = useState<AssignIpTarget | null>(null)
   const qc = useQueryClient()
   const [editing, setEditing] = useState<VMInterface | null>(null)
   const [adding, setAdding] = useState(false)
@@ -177,6 +189,23 @@ export function VMInterfacesPane({ vmId }: { vmId: string }) {
         header: "",
         cell: ({ row }) => (
           <div className="flex items-center justify-end gap-0.5">
+            {canAddIp && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                title="Add an IP on this interface"
+                asChild
+              >
+                <Link
+                  to="/ips/new"
+                  search={{ vm: vmId, vm_interface: row.original.id }}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span className="sr-only">Add IP</span>
+                </Link>
+              </Button>
+            )}
             {canEdit && (
               <Button
                 variant="ghost"
@@ -205,7 +234,7 @@ export function VMInterfacesPane({ vmId }: { vmId: string }) {
         ),
       },
     ],
-    [canEdit, canDelete]
+    [canEdit, canDelete, canAddIp, vmId]
   )
 
   if (q.isLoading)
@@ -214,11 +243,22 @@ export function VMInterfacesPane({ vmId }: { vmId: string }) {
 
   return (
     <div className="space-y-3">
-      {canAdd && (
-        <div className="flex justify-end">
-          <Button size="sm" onClick={() => setAdding(true)}>
-            <Plus className="h-3.5 w-3.5" /> Add interface
-          </Button>
+      {(canAdd || canAddIp) && (
+        <div className="flex justify-end gap-2">
+          {canAddIp && rows.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setAssignTarget({ vmId, vmName })}
+            >
+              Assign IP
+            </Button>
+          )}
+          {canAdd && (
+            <Button size="sm" onClick={() => setAdding(true)}>
+              <Plus className="h-3.5 w-3.5" /> Add interface
+            </Button>
+          )}
         </div>
       )}
 
@@ -252,6 +292,11 @@ export function VMInterfacesPane({ vmId }: { vmId: string }) {
           { key: "description", label: "Description", kind: "text" },
         ]}
         tags
+      />
+
+      <AssignIpDialog
+        target={assignTarget}
+        onOpenChange={(o) => !o && setAssignTarget(null)}
       />
 
       <VMInterfaceFormDialog

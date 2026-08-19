@@ -67,10 +67,20 @@ A **VM interface** mirrors a device interface: name, enabled flag, MAC address,
 MTU, speed, and an 802.1Q **VLAN** with an access/trunk mode. Add them from the
 VM's **Components** tab.
 
-IP addresses attach to an interface exactly as on a device — **Add IP** or
-**Assign IP** from the VM, or from the address itself. The first private IPv4
-becomes the VM's **primary IP** when it has none, and that is what monitoring
-checks.
+IP addresses attach to an interface exactly as on a device. From the VM's
+**Components** tab:
+
+- the **+** on an interface row opens the IP form with that VM and interface
+  already filled in — use it to record a **new** address;
+- **Assign IP** attaches an **existing** address to the VM instead.
+
+You can also set it from the address itself: the IP form has **Virtual
+machine** and **VM interface** pickers next to the device ones. Assigning to
+the VM without naming an interface is allowed when you only care that the
+address belongs to that VM.
+
+The first private IPv4 becomes the VM's **primary IP** when it has none, and
+that is what monitoring checks.
 
 !!! note "A synced IP needs its prefix to exist first"
     When a hypervisor reports a guest address, Danbyte records it only if a

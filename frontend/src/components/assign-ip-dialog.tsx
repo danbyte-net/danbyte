@@ -30,12 +30,17 @@ import { apiErrorToast } from "@/lib/api-toast"
 import { PlanStaged, useSaveObject } from "@/lib/save-object"
 
 export interface AssignIpTarget {
-  deviceId: string
+  /** A device target. Mutually exclusive with `vmId`. */
+  deviceId?: string
   /** Omit to attach the IP to the device itself (no interface). */
   interfaceId?: string | null
   interfaceName?: string | null
   /** Display name of the target — the device name for a device-level assign. */
   deviceName?: string
+  /** A virtual-machine target: the VM, and optionally one of its interfaces. */
+  vmId?: string
+  vmInterfaceId?: string | null
+  vmName?: string
 }
 
 // Cap on candidates pulled into the picker. Danbyte instances can hold millions
@@ -130,15 +135,29 @@ export function AssignIpDialog({
         objectType: "api.ipaddress",
         endpoint: "/api/ips/",
         id: ipId!,
-        payload: {
-          assigned_device_id: target!.deviceId,
-          // null → attach to the device itself (no interface).
-          assigned_interface_id: target!.interfaceId ?? null,
-        },
+        payload: target!.vmId
+          ? {
+              assigned_vm_id: target!.vmId,
+              // null → attach to the VM itself (no interface).
+              assigned_vm_interface_id: target!.vmInterfaceId ?? null,
+            }
+          : {
+              assigned_device_id: target!.deviceId,
+              // null → attach to the device itself (no interface).
+              assigned_interface_id: target!.interfaceId ?? null,
+            },
       }),
     onSuccess: (ip) => {
-      const where = target!.interfaceName ?? target!.deviceName ?? "this device"
+      const where =
+        target!.interfaceName ??
+        target!.vmName ??
+        target!.deviceName ??
+        "this device"
       toast.success(`Assigned ${ip.ip_address} to ${where}`)
+      if (target!.vmId) {
+        qc.invalidateQueries({ queryKey: ["vm-interfaces", target!.vmId] })
+        qc.invalidateQueries({ queryKey: ["vm", target!.vmId] })
+      }
       qc.invalidateQueries({
         queryKey: ["device-interfaces", target!.deviceId],
       })

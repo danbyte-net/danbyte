@@ -17,6 +17,8 @@ export const Route = createFileRoute("/ips/new")({
     prefix?: string
     device?: string
     interface?: string
+    vm?: string
+    vm_interface?: string
     clone?: string
   } & PlanSearch => ({
     address: typeof s.address === "string" ? s.address : undefined,
@@ -24,6 +26,10 @@ export const Route = createFileRoute("/ips/new")({
     // Prefill the assignment when adding an IP from a device's interface.
     device: typeof s.device === "string" ? s.device : undefined,
     interface: typeof s.interface === "string" ? s.interface : undefined,
+    // …or from a VM's interface.
+    vm: typeof s.vm === "string" ? s.vm : undefined,
+    vm_interface:
+      typeof s.vm_interface === "string" ? s.vm_interface : undefined,
     clone: typeof s.clone === "string" ? s.clone : undefined,
     ...planSearch(s),
   }),
@@ -36,6 +42,8 @@ function NewIpPage() {
     prefix,
     device,
     interface: interfaceId,
+    vm,
+    vm_interface: vmInterfaceId,
     clone,
   } = Route.useSearch()
   const nav = useNavigate()
@@ -46,9 +54,11 @@ function NewIpPage() {
   const back = () =>
     device
       ? nav({ to: "/devices/$id", params: { id: device } })
-      : prefix
+      : vm
+        ? nav({ to: "/virtual-machines/$id", params: { id: vm } })
+        : prefix
         ? nav({ to: "/prefixes/$id", params: { id: prefix } })
-        : nav({ to: "/prefixes" })
+          : nav({ to: "/prefixes" })
   return (
     <EditPageShell
       crumbs={[
@@ -68,7 +78,14 @@ function NewIpPage() {
         </div>
       ) : (
         <IpForm
-          initial={{ address, prefixId: prefix, deviceId: device, interfaceId }}
+          initial={{
+            address,
+            prefixId: prefix,
+            deviceId: device,
+            interfaceId,
+            vmId: vm,
+            vmInterfaceId,
+          }}
           clone={cloning ? cloneQ.data?.initial : undefined}
           onSaved={(ip) => nav({ to: "/ips/$id", params: { id: ip.id } })}
           onCancel={back}

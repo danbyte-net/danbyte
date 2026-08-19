@@ -2553,6 +2553,8 @@ export interface IPWritePayload {
   role_id?: string | null
   assigned_device_id?: string | null
   assigned_interface_id?: string | null
+  assigned_vm_id?: string | null
+  assigned_vm_interface_id?: string | null
   switch_id?: string | null
   switch_interface_id?: string | null
   mac_address?: string

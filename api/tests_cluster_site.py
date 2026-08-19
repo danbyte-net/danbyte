@@ -129,3 +129,91 @@ class ClusterSiteInheritanceTests(APITestCase):
         _blank_fill(vm, {}, source, guest)
         vm.refresh_from_db()
         self.assertEqual(vm.site_id, self.dc.id)
+
+
+class VMInterfaceIpAssignmentTests(APITestCase):
+    """An IP can be assigned to a VM interface, not only to a device (#36).
+
+    The model and API always allowed it; the UI had no path, so these lock the
+    contract the new pickers write against.
+    """
+
+    def setUp(self):
+        from api.models import Prefix
+
+        org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        ctype = ClusterType.objects.create(
+            tenant=self.tenant, name="Proxmox VE", slug="proxmox-ve"
+        )
+        cluster = Cluster.objects.create(
+            tenant=self.tenant, name="cl1", type=ctype
+        )
+        self.vm = VirtualMachine.objects.create(
+            tenant=self.tenant, name="vm1", cluster=cluster
+        )
+        self.prefix = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.60.0.0/24"
+        )
+        self.user = get_user_model().objects.create_superuser("admin", "a@b.c", "pw")
+        self.client.force_login(self.user)
+        sess = self.client.session
+        sess["current_tenant_id"] = str(self.tenant.id)
+        sess.save()
+
+    def _iface(self, name="eth0"):
+        r = self.client.post(
+            "/api/vm-interfaces/",
+            {"vm_id": str(self.vm.id), "name": name}, format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        return r.json()["id"]
+
+    def test_create_ip_on_a_vm_interface(self):
+        iface = self._iface()
+        r = self.client.post(
+            "/api/ips/",
+            {"ip_address": "10.60.0.10", "prefix_id": str(self.prefix.id),
+             "assigned_vm_id": str(self.vm.id),
+             "assigned_vm_interface_id": iface},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        body = r.json()
+        self.assertEqual(body["assigned_vm"]["id"], str(self.vm.id))
+        self.assertEqual(body["assigned_vm_interface"]["id"], iface)
+        # …and the interface reports it, which is what the pane renders.
+        listing = self.client.get(f"/api/vm-interfaces/?vm={self.vm.id}")
+        row = next(i for i in listing.json()["results"] if i["id"] == iface)
+        self.assertEqual(
+            [ip["ip_address"] for ip in row["ip_addresses"]], ["10.60.0.10"]
+        )
+
+    def test_assign_an_existing_ip_to_a_vm_interface(self):
+        iface = self._iface("eth1")
+        created = self.client.post(
+            "/api/ips/",
+            {"ip_address": "10.60.0.20", "prefix_id": str(self.prefix.id)},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.content)
+        ip_id = created.json()["id"]
+        r = self.client.patch(
+            f"/api/ips/{ip_id}/",
+            {"assigned_vm_id": str(self.vm.id),
+             "assigned_vm_interface_id": iface},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["assigned_vm_interface"]["id"], iface)
+
+    def test_vm_level_assignment_without_an_interface(self):
+        r = self.client.post(
+            "/api/ips/",
+            {"ip_address": "10.60.0.30", "prefix_id": str(self.prefix.id),
+             "assigned_vm_id": str(self.vm.id)},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["assigned_vm"]["id"], str(self.vm.id))
+        self.assertIsNone(r.json()["assigned_vm_interface"])

@@ -165,7 +165,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         <VmOverview vm={vm} />
       </DetailTab>
       <DetailTab value="components">
-        <VMInterfacesPane vmId={vm.id} />
+        <VMInterfacesPane vmId={vm.id} vmName={vm.name} />
       </DetailTab>
       <DetailTab value="config">
         <ConfigContextPanel endpoint="virtual-machines" id={vm.id} />

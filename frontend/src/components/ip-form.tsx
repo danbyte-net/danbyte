@@ -44,6 +44,9 @@ export interface IpFormInitial {
   /** Prefill the assignment (e.g. adding an IP from a device's interface). */
   deviceId?: string
   interfaceId?: string
+  /** …or from a virtual machine's interface. */
+  vmId?: string
+  vmInterfaceId?: string
 }
 
 export interface IpFormProps {
@@ -87,6 +90,15 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   )
   const [interfaceId, setInterfaceId] = useState<string | null>(
     ip?.assigned_interface?.id ?? initial?.interfaceId ?? null
+  )
+  // A VM assignment is the virtual counterpart of device+interface. The model
+  // and API have always supported it; the form did not, so a VM's addresses
+  // could only be set through the API or a sync.
+  const [vmId, setVmId] = useState<string | null>(
+    ip?.assigned_vm?.id ?? initial?.vmId ?? null
+  )
+  const [vmInterfaceId, setVmInterfaceId] = useState<string | null>(
+    ip?.assigned_vm_interface?.id ?? initial?.vmInterfaceId ?? null
   )
   // L2 edge: the access switch + port this IP is reached through.
   const [switchId, setSwitchId] = useState<string | null>(
@@ -145,6 +157,8 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
     setReservationNote(ip.reservation_note)
     setDeviceId(ip.assigned_device?.id ?? null)
     setInterfaceId(ip.assigned_interface?.id ?? null)
+    setVmId(ip.assigned_vm?.id ?? null)
+    setVmInterfaceId(ip.assigned_vm_interface?.id ?? null)
     setMac(ip.mac_address ?? "")
     setDnsName(ip.dns_name ?? "")
     setIsPrimary(ip.is_primary_for_device)
@@ -201,6 +215,23 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
     queryKey: ["ip-roles-picker"],
     queryFn: () => api<Paginated<IPRoleOption>>("/api/ip-roles/"),
     staleTime: 10 * 60_000,
+  })
+  const vms = useQuery({
+    queryKey: ["vms-picker"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>(
+        "/api/virtual-machines/?picker=1"
+      ),
+    staleTime: 5 * 60_000,
+  })
+  const vmInterfaces = useQuery({
+    queryKey: ["vm-interfaces-picker", vmId],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>(
+        `/api/vm-interfaces/?vm=${vmId}`
+      ),
+    enabled: !!vmId,
+    staleTime: 60_000,
   })
   const interfaces = useQuery({
     queryKey: ["interfaces-picker", deviceId],
@@ -309,6 +340,8 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
         role_id: roleId,
         assigned_device_id: deviceId,
         assigned_interface_id: deviceId ? interfaceId : null,
+        assigned_vm_id: vmId,
+        assigned_vm_interface_id: vmId ? vmInterfaceId : null,
         switch_id: switchId,
         switch_interface_id: switchId ? switchInterfaceId : null,
         mac_address: mac.trim(),
@@ -536,6 +569,48 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
             <SelectContent>
               <SelectItem value={NONE}>— none —</SelectItem>
               {interfaces.data?.results.map((i) => (
+                <SelectItem key={i.id} value={i.id}>
+                  {i.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      </div>
+
+      {/* The virtual counterpart of Device + Interface above. */}
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Virtual machine" error={fieldErrors.assigned_vm_id}>
+          <Combobox
+            value={vmId}
+            onChange={(next) => {
+              setVmId(next)
+              setVmInterfaceId(null)
+            }}
+            options={(vms.data?.results ?? []).map((v) => ({
+              value: v.id,
+              label: v.name,
+            }))}
+            noneLabel="No virtual machine"
+            placeholder="No virtual machine"
+            searchPlaceholder="Search VMs…"
+            emptyText="No virtual machines."
+          />
+        </Field>
+        <Field label="VM interface">
+          <Select
+            value={vmInterfaceId ?? NONE}
+            onValueChange={(v) => setVmInterfaceId(v === NONE ? null : v)}
+            disabled={!vmId}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue
+                placeholder={vmId ? "Pick interface" : "Pick a VM first"}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>— none —</SelectItem>
+              {vmInterfaces.data?.results.map((i) => (
                 <SelectItem key={i.id} value={i.id}>
                   {i.name}
                 </SelectItem>
