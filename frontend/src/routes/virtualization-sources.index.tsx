@@ -66,20 +66,25 @@ function VirtualizationSourcesPage() {
     mutationFn: (s: VirtualizationSource) =>
       api<{
         ok: boolean
+        product?: string
         version?: string
         nodes?: number
         online_nodes?: number
+        vms?: number
         error?: string
       }>(`/api/virtualization-sources/${s.id}/test/`, {
         method: "POST",
         body: "{}",
       }),
     onSuccess: (r) => {
-      if (r.ok)
-        toast.success(
-          `Connected — Proxmox VE ${r.version}, ${r.online_nodes}/${r.nodes} nodes online`
-        )
-      else toast.error(r.error || "Probe failed")
+      if (r.ok) {
+        // The product comes from the response — naming it here is what made a
+        // vCenter probe report "Proxmox VE". vCenter reports no version.
+        const name = [r.product, r.version].filter(Boolean).join(" ")
+        const parts = [`${r.online_nodes}/${r.nodes} nodes online`]
+        if (r.vms !== undefined) parts.push(`${r.vms} VMs`)
+        toast.success(`Connected — ${name}, ${parts.join(", ")}`)
+      } else toast.error(r.error || "Probe failed")
     },
     onError: (e) => apiErrorToast(e),
   })
@@ -91,17 +96,26 @@ function VirtualizationSourcesPage() {
         vms?: number
         interfaces?: number
         ips?: number
+        ips_skipped?: number
+        hosts?: number
         error?: string
       }>(`/api/virtualization-sources/${s.id}/sync/`, {
         method: "POST",
         body: "{}",
       }),
     onSuccess: (r) => {
-      if (r.ok)
-        toast.success(
-          `Synced: ${r.vms ?? 0} VMs, ${r.interfaces ?? 0} interfaces, ${r.ips ?? 0} IPs`
-        )
-      else toast.error(r.error || "Sync failed")
+      if (r.ok) {
+        let base = `Synced: ${r.vms ?? 0} VMs, ${r.interfaces ?? 0} interfaces, ${r.ips ?? 0} IPs`
+        if (r.hosts) base += `, ${r.hosts} host${r.hosts === 1 ? "" : "s"}`
+        // An address with no containing prefix is dropped by design; say how
+        // many, so it stops looking like the sync just missed them.
+        const unplaced = r.ips_skipped ?? 0
+        if (unplaced)
+          toast.warning(
+            `${base} · ${unplaced} address${unplaced === 1 ? "" : "es"} unplaced — no containing prefix`
+          )
+        else toast.success(base)
+      } else toast.error(r.error || "Sync failed")
       invalidate()
     },
     onError: (e) => apiErrorToast(e),
@@ -183,6 +197,7 @@ function VirtualizationSourcesPage() {
               <SyncStatusBadge
                 status={s.last_sync_status}
                 error={s.last_sync_error}
+                warnings={s.last_sync_warnings}
               />
               {s.last_sync_at && <TimeCell iso={s.last_sync_at} />}
             </span>
@@ -314,7 +329,19 @@ function SourceDialog({
   const [syncNetworks, setSyncNetworks] = useState(
     source?.sync_networks ?? false
   )
+  const [syncHosts, setSyncHosts] = useState(source?.sync_hosts ?? false)
   const [enabled, setEnabled] = useState(source?.enabled ?? true)
+  // Where discovered addresses may land. Empty = the Global VRF, which is a
+  // real routing context here, not "unset".
+  const [vrfId, setVrfId] = useState(source?.vrf_id ?? "")
+  const [vrfMode, setVrfMode] = useState(source?.vrf_mode ?? "pinned")
+  const vrfs = useQuery({
+    queryKey: ["vrfs-picker"],
+    queryFn: () => api<Paginated<{ id: string; name: string }>>(
+      "/api/vrfs/?picker=1"
+    ),
+    staleTime: 5 * 60_000,
+  })
 
   const save = useMutation({
     mutationFn: () => {
@@ -328,6 +355,9 @@ function SourceDialog({
         poll_interval_minutes: Number(interval) || 10,
         sync_disks: syncDisks,
         sync_networks: syncNetworks,
+        sync_hosts: syncHosts,
+        vrf_id: vrfId || null,
+        vrf_mode: vrfMode,
         enabled,
       }
       if (isVcenter) {
@@ -479,6 +509,12 @@ function SourceDialog({
               checked={syncNetworks}
               onChange={setSyncNetworks}
             />
+            <FormCheckbox
+              label="Create hosts as devices"
+              hint="Add each hypervisor node as a Device, so VMs link to their host and bridge uplinks find its NICs. Device type and site stay yours to set."
+              checked={syncHosts}
+              onChange={setSyncHosts}
+            />
             {isEdit && (
               <FormCheckbox
                 label="Enabled"
@@ -486,6 +522,29 @@ function SourceDialog({
                 onChange={setEnabled}
               />
             )}
+          </div>
+          <div className="col-span-2 grid grid-cols-2 gap-3 border-t pt-3">
+            <FormSelect
+              label="Address VRF"
+              hint="Routing context for the addresses this source discovers. An address is only recorded when a prefix in that VRF contains it."
+              value={vrfId || null}
+              onChange={(v) => setVrfId(v ?? "")}
+              noneLabel="Global"
+              options={(vrfs.data?.results ?? []).map((v) => ({
+                value: v.id,
+                label: v.name,
+              }))}
+            />
+            <FormSelect
+              label="If nothing there contains it"
+              hint="Searching other VRFs only ever places addresses that would otherwise be skipped — it never moves one that already fits."
+              value={vrfMode}
+              onChange={(v) => setVrfMode(v === "search" ? "search" : "pinned")}
+              options={[
+                { value: "pinned", label: "Skip the address" },
+                { value: "search", label: "Look in other VRFs" },
+              ]}
+            />
           </div>
         </div>
         <DialogFooter>

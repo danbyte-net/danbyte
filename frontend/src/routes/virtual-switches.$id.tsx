@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { DevicePicker } from "@/components/device-picker"
 import { EmptyState } from "@/components/empty-state"
+import { FormSelect } from "@/components/forms"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -39,6 +40,10 @@ import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { VlanBadge } from "@/components/cells/vlan-badge"
 import { useUrlTab } from "@/lib/use-url-tab"
+
+/** Sentinel for "no VRF of its own — inherit the switch, then the source".
+ * The Select primitive disallows an empty string as an item value. */
+const INHERIT = "__inherit__"
 
 export const Route = createFileRoute("/virtual-switches/$id")({
   component: VirtualSwitchDetail,
@@ -148,10 +153,11 @@ function Body({ sw }: { sw: VirtualSwitch }) {
             <KvCard title="Virtual switch" rows={rows} />
           </div>
           <SwitchUplinks sw={sw} />
+          <SwitchVrf sw={sw} />
         </div>
       </DetailTab>
       <DetailTab value="networks">
-        <SwitchNetworks nets={nets} loading={networks.isLoading} />
+        <SwitchNetworks nets={nets} loading={networks.isLoading} sw={sw} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.virtualswitch" objectId={sw.id} />
@@ -288,15 +294,92 @@ function SwitchUplinks({ sw }: { sw: VirtualSwitch }) {
   )
 }
 
+/** The switch-wide routing context. A vSwitch trunks many VLANs, so this is a
+ * default the networks on it can override — it decides which VRF's prefixes a
+ * discovered address may land in, and is read live at sync time. */
+function SwitchVrf({ sw }: { sw: VirtualSwitch }) {
+  const qc = useQueryClient()
+  const { canDo } = useMe()
+  const canEdit = canDo("virtualswitch", "change")
+  const vrfs = useQuery({
+    queryKey: ["vrfs-picker"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>("/api/vrfs/?picker=1"),
+    staleTime: 5 * 60_000,
+  })
+  const save = useMutation({
+    mutationFn: (vrfId: string | null) =>
+      api(`/api/virtual-switches/${sw.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ vrf_id: vrfId }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["virtual-switch", sw.id] })
+      qc.invalidateQueries({ queryKey: ["virt-networks"] })
+      toast.success("Routing context updated")
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  return (
+    <section>
+      <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
+        Address VRF
+      </h2>
+      <p className="mb-3 max-w-prose text-sm text-muted-foreground">
+        Which VRF&rsquo;s prefixes a synced address on this switch may land in.
+        Leave it empty to follow the sync source; a network below can override
+        it.
+      </p>
+      <div className="max-w-xs">
+        <FormSelect
+          label="VRF"
+          value={sw.vrf?.id ?? null}
+          onChange={(v) => save.mutate(v ?? null)}
+          noneLabel="Follow the sync source"
+          disabled={!canEdit || save.isPending}
+          options={(vrfs.data?.results ?? []).map((v) => ({
+            value: v.id,
+            label: v.name,
+          }))}
+        />
+      </div>
+    </section>
+  )
+}
+
 /** The networks (port-groups / bridges) on this switch as a table — each with
  * its VLAN and the VMs attached (the switch→network→VM chain). */
 function SwitchNetworks({
   nets,
   loading,
+  sw,
 }: {
   nets: VirtNetwork[]
   loading: boolean
+  sw: VirtualSwitch
 }) {
+  const qc = useQueryClient()
+  const { canDo } = useMe()
+  const canEdit = canDo("virtnetwork", "change")
+  const vrfs = useQuery({
+    queryKey: ["vrfs-picker"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>("/api/vrfs/?picker=1"),
+    staleTime: 5 * 60_000,
+  })
+  const setVrf = useMutation({
+    mutationFn: ({ id, vrfId }: { id: string; vrfId: string | null }) =>
+      api(`/api/virt-networks/${id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ vrf_id: vrfId }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["virt-networks"] })
+      toast.success("Routing context updated")
+    },
+    onError: (e) => apiErrorToast(e),
+  })
   const columns = useMemo<ColumnDef<VirtNetwork>[]>(
     () => [
       {
@@ -321,6 +404,57 @@ function SwitchNetworks({
           ),
       },
       {
+        id: "vrf",
+        accessorFn: (r) => r.vrf?.name ?? "",
+        header: "VRF",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const net = row.original
+          const inherited = net.vrf?.inherited ?? false
+          if (!canEdit)
+            return net.vrf ? (
+              <span className="text-xs">
+                {net.vrf.name}
+                {inherited && (
+                  <span className="text-muted-foreground"> (switch)</span>
+                )}
+              </span>
+            ) : (
+              <span className="text-xs text-muted-foreground">—</span>
+            )
+          // Inline control, so the bare Select rather than FormSelect — a
+          // labelled Field belongs in a form, not a table cell. An empty value
+          // inherits, so the sentinel says what it inherits *to*.
+          const inheritLabel = sw.vrf
+            ? `Switch (${sw.vrf.name})`
+            : "Follow the source"
+          return (
+            <Select
+              value={net.vrf && !net.vrf.inherited ? net.vrf.id : INHERIT}
+              onValueChange={(v) =>
+                setVrf.mutate({
+                  id: net.id,
+                  vrfId: v === INHERIT ? null : v,
+                })
+              }
+              disabled={setVrf.isPending}
+            >
+              <SelectTrigger size="sm" className="h-7 w-44 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={INHERIT}>{inheritLabel}</SelectItem>
+                {(vrfs.data?.results ?? []).map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {v.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )
+        },
+      },
+      {
         id: "vms",
         header: "Virtual machines",
         enableSorting: false,
@@ -343,7 +477,7 @@ function SwitchNetworks({
           ),
       },
     ],
-    []
+    [canEdit, sw.vrf, setVrf, vrfs.data]
   )
 
   if (loading) return <p className="text-sm text-muted-foreground">Loading…</p>

@@ -25,12 +25,16 @@ export const Route = createFileRoute("/windows-servers/")({
 export function SyncStatusBadge({
   conn,
 }: {
-  conn: Pick<WindowsConnection, "last_sync_status" | "last_sync_error">
+  conn: Pick<
+    WindowsConnection,
+    "last_sync_status" | "last_sync_error" | "last_sync_warnings"
+  >
 }) {
   return (
     <ConnSyncStatusBadge
       status={conn.last_sync_status}
       error={conn.last_sync_error}
+      warnings={conn.last_sync_warnings}
     />
   )
 }

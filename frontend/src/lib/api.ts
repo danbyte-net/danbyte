@@ -3268,6 +3268,9 @@ export interface VirtNetwork {
   } | null
   vswitch: string | null
   vswitch_name: string | null
+  /** Routing context in force. `inherited` means it comes from the switch,
+   * not from this network — the editor needs to tell those apart. */
+  vrf: { id: string; name: string; inherited: boolean } | null
   vms: { id: string; name: string; status: string | null; iface?: string }[]
   last_seen_at: string | null
 }
@@ -3285,6 +3288,9 @@ export interface VirtualSwitch {
     device: { id: string; name: string }
   }[]
   mtu: number | null
+  /** Default routing context for addresses on this switch's networks.
+   * null = follow the sync source. */
+  vrf: { id: string; name: string } | null
   created_switch: boolean
   description: string
   created_at: string
@@ -6945,6 +6951,13 @@ export interface WindowsConnection {
   dhcp_enabled: boolean
   dns_enabled: boolean
   poll_interval_minutes: number
+  /** Where addresses this connection discovers may land. Empty vrf_id =
+   * the Global VRF, a real routing context rather than "unset". */
+  vrf_id: string | null
+  vrf_name: string
+  vrf_mode: "pinned" | "search"
+  /** Notes from the last run — addresses that couldn't be placed, and why. */
+  last_sync_warnings: string[]
   enabled: boolean
   last_sync_at: string | null
   last_sync_status: string
@@ -7069,6 +7082,15 @@ export interface VirtualizationSource {
   poll_interval_minutes: number
   sync_disks: boolean
   sync_networks: boolean
+  /** Create each hypervisor node/host as a Device. Off by default. */
+  sync_hosts: boolean
+  /** Where addresses this connection discovers may land. Empty vrf_id =
+   * the Global VRF, a real routing context rather than "unset". */
+  vrf_id: string | null
+  vrf_name: string
+  vrf_mode: "pinned" | "search"
+  /** Notes from the last run — addresses that couldn't be placed, and why. */
+  last_sync_warnings: string[]
   enabled: boolean
   pending_count: number
   last_sync_at: string | null

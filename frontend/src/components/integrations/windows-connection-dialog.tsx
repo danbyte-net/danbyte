@@ -1,8 +1,8 @@
 import { useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type WindowsConnection } from "@/lib/api"
+import { api, type Paginated, type WindowsConnection } from "@/lib/api"
 import {
   Dialog,
   DialogContent,
@@ -46,6 +46,16 @@ export function WindowsConnectionDialog({
     String(connection?.poll_interval_minutes ?? 5)
   )
   const [enabled, setEnabled] = useState(connection?.enabled ?? true)
+  // Where DHCP scopes and imported DNS addresses land. Windows has no VRF
+  // concept, so this is Danbyte's choice; empty = the Global VRF.
+  const [vrfId, setVrfId] = useState(connection?.vrf_id ?? "")
+  const [vrfMode, setVrfMode] = useState(connection?.vrf_mode ?? "pinned")
+  const vrfs = useQuery({
+    queryKey: ["vrfs-picker"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>("/api/vrfs/?picker=1"),
+    staleTime: 5 * 60_000,
+  })
 
   const save = useMutation({
     mutationFn: () => {
@@ -60,6 +70,8 @@ export function WindowsConnectionDialog({
         dhcp_enabled: dhcp,
         dns_enabled: dns,
         poll_interval_minutes: Number(interval) || 5,
+        vrf_id: vrfId || null,
+        vrf_mode: vrfMode,
         enabled,
       }
       if (password) body.password = password
@@ -183,6 +195,29 @@ export function WindowsConnectionDialog({
                 onChange={setEnabled}
               />
             )}
+          </div>
+          <div className="mt-1 grid gap-3 border-t border-border pt-3 sm:grid-cols-2">
+            <FormSelect
+              label="Address VRF"
+              hint="Routing context for DHCP scope prefixes and addresses imported from DNS."
+              value={vrfId || null}
+              onChange={(v) => setVrfId(v ?? "")}
+              noneLabel="Global"
+              options={(vrfs.data?.results ?? []).map((v) => ({
+                value: v.id,
+                label: v.name,
+              }))}
+            />
+            <FormSelect
+              label="If nothing there contains it"
+              hint="Searching other VRFs only ever places addresses that would otherwise be skipped — it never moves one that already fits."
+              value={vrfMode}
+              onChange={(v) => setVrfMode(v === "search" ? "search" : "pinned")}
+              options={[
+                { value: "pinned", label: "Skip the address" },
+                { value: "search", label: "Look in other VRFs" },
+              ]}
+            />
           </div>
           <FormFooter
             onCancel={() => onOpenChange(false)}
