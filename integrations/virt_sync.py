@@ -448,14 +448,18 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
     net_vrfs = _network_vrf_map(source)
     warnings: list[str] = []
     with transaction.atomic():
-        # The cluster is a container — only materialise it when a VM actually
-        # lands (so a review-mode source with nothing accepted stays inert).
-        cluster_box: list = []
+        # Clusters are containers — only materialise one when a guest actually
+        # lands on it (so a review-mode source with nothing accepted stays
+        # inert), and materialise them **per name**. This used to be a single
+        # cluster shared by the whole pass, which collapsed every guest in a
+        # multi-cluster vCenter into one cluster named after the source.
+        cluster_cache: dict = {}
 
-        def cluster():
-            if not cluster_box:
-                cluster_box.append(_cluster_for(source, cluster_name))
-            return cluster_box[0]
+        def cluster_for(name: str):
+            key = name or cluster_name
+            if key not in cluster_cache:
+                cluster_cache[key] = _cluster_for(source, key)
+            return cluster_cache[key]
 
         seen = set()
         fresh_changes: set = set()  # (guest_id, kind) queued this pass
@@ -474,8 +478,12 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
             guest.power_state = r.get("status") or ""
             guest.last_seen_at = now
             guest.save()
-            _reconcile_guest(source, cluster, cluster_name, guest, r, apply,
-                             now, counts, fresh_changes)
+            # Each guest carries the cluster it actually runs on; Proxmox
+            # reports one for the whole source, so its behaviour is unchanged.
+            guest_cluster_name = r.get("cluster") or cluster_name
+            guest_cluster = partial(cluster_for, guest_cluster_name)
+            _reconcile_guest(source, guest_cluster, guest_cluster_name, guest, r,
+                             apply, now, counts, fresh_changes)
             if guest.vm_id:
                 d = details.get(vmid) or {}
                 counts["interfaces"] += sync_ifaces(guest, d.get("ifaces"))
@@ -489,7 +497,7 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
                     counts["disks"] += sync_disks_fn(guest, d.get("disks"))
                 if source.sync_networks and sync_nets_fn:
                     counts["networks"] += sync_nets_fn(
-                        source, cluster, guest, d.get("nets"), now
+                        source, guest_cluster, guest, d.get("nets"), now
                     )
                 if sync_meta_fn:
                     sync_meta_fn(guest, d.get("meta"))
@@ -968,7 +976,8 @@ def _moref_id(moref: str):
     return int(m.group(1)) if m else None
 
 
-def _vcenter_resource(summary: dict, info: dict, vmid: int, node: str) -> dict:
+def _vcenter_resource(summary: dict, info: dict, vmid: int, node: str,
+                      cluster: str = "") -> dict:
     """Normalise a vCenter VM into the shared resource shape ``_run_pass`` wants."""
     mem_mib = (info.get("memory") or {}).get("size_MiB") \
         or summary.get("memory_size_MiB") or 0
@@ -984,6 +993,9 @@ def _vcenter_resource(summary: dict, info: dict, vmid: int, node: str) -> dict:
         "type": "vmware",
         "name": summary.get("name") or info.get("name") or f"vm-{vmid}",
         "node": node,
+        # "" when the guest is on a standalone host — _run_pass falls back to
+        # the pass-level cluster name.
+        "cluster": cluster,
         "status": _VC_POWER.get(power, power.lower()),
         "maxcpu": cpu,
         "maxmem": int(mem_mib) * 1024 * 1024,
@@ -1000,9 +1012,29 @@ def sync_vcenter(source) -> dict:
         clusters = client.get("vcenter/cluster") or []
         hosts = client.get("vcenter/host") or []
 
-        # A single cluster names the api.Cluster; a multi-cluster vCenter falls
-        # back to the source name (VM→cluster placement isn't in the VM summary).
+        # Fallback name for guests that belong to no cluster (standalone hosts).
         cluster_name = clusters[0]["name"] if len(clusters) == 1 else source.name
+
+        # Map each VM to the cluster it runs on. The VM summary doesn't carry
+        # it, but `?clusters=` filters by it — the same trick the host mapping
+        # below already uses. Without this every guest on a multi-cluster
+        # vCenter landed in one cluster named after the source.
+        cluster_of: dict = {}
+        host_cluster: dict = {}
+        for cl in clusters:
+            cm, cn = cl.get("cluster"), cl.get("name") or ""
+            if not cm:
+                continue
+            try:
+                for v in client.get(f"vcenter/vm?clusters={cm}") or []:
+                    cluster_of[v.get("vm")] = cn
+            except VirtAPIError:
+                pass
+            try:
+                for h in client.get(f"vcenter/host?clusters={cm}") or []:
+                    host_cluster[h.get("host")] = cn
+            except VirtAPIError:
+                pass
 
         # Map each VM to its ESXi host so blank-fill can link the host Device.
         host_of: dict = {}
@@ -1026,7 +1058,8 @@ def sync_vcenter(source) -> dict:
         if source.sync_hosts:
             counts["hosts"] = _sync_hosts(source, cluster_name, [
                 {"name": h.get("name") or "",
-                 "online": h.get("connection_state") == "CONNECTED"}
+                 "online": h.get("connection_state") == "CONNECTED",
+                 "cluster": host_cluster.get(h.get("host")) or ""}
                 for h in hosts
             ])
 
@@ -1043,7 +1076,8 @@ def sync_vcenter(source) -> dict:
                 logger.warning("vcenter vm %s fetch failed: %s", moref, exc)
                 info = {}
             resources.append(
-                _vcenter_resource(v, info, vmid, host_of.get(moref, ""))
+                _vcenter_resource(v, info, vmid, host_of.get(moref, ""),
+                                  cluster_of.get(moref, ""))
             )
             nics = info.get("nics") or {}
             guest_nets = []

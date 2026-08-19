@@ -494,8 +494,16 @@ VC_VMS = [
      "cpu_count": 2, "memory_size_MiB": 4096},
 ]
 VC_HOSTS = [{"host": "host-1", "name": "esxi-lab-01",
+             "connection_state": "CONNECTED"},
+            {"host": "host-2", "name": "esxi-lab-02",
              "connection_state": "CONNECTED"}]
-VC_CLUSTERS = [{"cluster": "domain-c1", "name": "Lab-Cluster"}]
+# Two clusters on purpose: a single-cluster fixture is what let a
+# multi-cluster vCenter collapse every guest into one cluster unnoticed.
+VC_CLUSTERS = [{"cluster": "domain-c1", "name": "Lab-Cluster"},
+               {"cluster": "domain-c2", "name": "DR-Cluster"}]
+# vm-100 runs on Lab-Cluster/host-1, vm-101 on DR-Cluster/host-2.
+VC_BY_CLUSTER = {"domain-c1": ["vm-100"], "domain-c2": ["vm-101"]}
+VC_HOSTS_BY_CLUSTER = {"domain-c1": ["host-1"], "domain-c2": ["host-2"]}
 VC_DETAIL = {
     "vm-100": {
         "name": "web01", "power_state": "POWERED_ON",
@@ -541,7 +549,15 @@ class FakeVCenter:
         if path == "vcenter/cluster":
             return VC_CLUSTERS
         if path == "vcenter/vm?hosts=host-1":
-            return [{"vm": "vm-100"}, {"vm": "vm-101"}]
+            return [{"vm": "vm-100"}]
+        if path == "vcenter/vm?hosts=host-2":
+            return [{"vm": "vm-101"}]
+        if path.startswith("vcenter/vm?clusters="):
+            cm = path.split("=", 1)[1]
+            return [{"vm": v} for v in VC_BY_CLUSTER.get(cm, [])]
+        if path.startswith("vcenter/host?clusters="):
+            cm = path.split("=", 1)[1]
+            return [{"host": h} for h in VC_HOSTS_BY_CLUSTER.get(cm, [])]
         if path.endswith("/guest/networking/interfaces"):
             moref = path.split("/")[2]  # vcenter/vm/<moref>/guest/...
             return VC_GUEST_NET.get(moref, [])
@@ -568,6 +584,49 @@ class VCenterSyncTests(TestCase):
     def sync(self):
         with mock.patch("integrations.virt_client.VCenterClient", FakeVCenter):
             return virt_sync.sync_vcenter(self.source)
+
+    def test_guests_land_in_the_cluster_they_actually_run_on(self):
+        """Multi-cluster vCenters used to collapse into one fake cluster.
+
+        The VM summary carries no cluster, so the sync named a single cluster
+        after the source and put every guest in it. `?clusters=` filters by
+        cluster the same way `?hosts=` already did — so each guest now lands
+        where it runs, which is also what makes site inheritance meaningful.
+        """
+        self.sync()
+
+        self.assertEqual(
+            VirtualMachine.objects.get(name="web01").cluster.name, "Lab-Cluster"
+        )
+        self.assertEqual(
+            VirtualMachine.objects.get(name="db01").cluster.name, "DR-Cluster"
+        )
+        # Both clusters are real rows, and nothing was named after the source.
+        self.assertEqual(Cluster.objects.count(), 2)
+        self.assertFalse(Cluster.objects.filter(name=self.source.name).exists())
+
+    def test_a_guest_on_no_cluster_falls_back_to_the_source_name(self):
+        """Standalone ESXi has no cluster at all — that path must stay green.
+
+        It is also the shape of the dev box, so this is the case a live run
+        actually exercises.
+        """
+        class NoClusters(FakeVCenter):
+            def get(self, path):
+                if path == "vcenter/cluster":
+                    return []
+                if path.startswith(("vcenter/vm?clusters=",
+                                    "vcenter/host?clusters=")):
+                    return []
+                return super().get(path)
+
+        with mock.patch("integrations.virt_client.VCenterClient", NoClusters):
+            virt_sync.sync_vcenter(self.source)
+
+        self.assertEqual(
+            VirtualMachine.objects.get(name="web01").cluster.name,
+            self.source.name,
+        )
 
     def test_full_sync_maps_cluster_vms_interfaces_ips(self):
         counts = self.sync()
