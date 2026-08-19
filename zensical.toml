@@ -72,6 +72,11 @@ nav = [
     { "Wireless"          = "features/wireless.md" },
     { "VPN tunnels"       = "features/vpn.md" },
   ] },
+  { "Virtualization" = [
+    { "Virtual machines & clusters" = "features/virtualization.md" },
+    { "Proxmox VE sync" = "features/virt-proxmox.md" },
+    { "VMware vCenter sync" = "features/virt-vcenter.md" },
+  ] },
   { "Monitoring & compliance" = [
     "monitoring/index.md",
     { "Monitoring"        = "features/monitoring.md" },
@@ -108,11 +113,8 @@ nav = [
     { "Advanced: custom-field-driven playbook" = "features/cf-driven-playbook.md" },
     { "Webhooks"          = "features/webhooks.md" },
     { "Import from NetBox" = "features/netbox-import.md" },
-    { "Virtual machines & clusters" = "features/virtualization.md" },
     { "External sync overview" = "features/external-sync.md" },
     { "Windows DHCP & DNS sync" = "features/windows-sync.md" },
-    { "Proxmox VE sync" = "features/virt-proxmox.md" },
-    { "VMware vCenter sync" = "features/virt-vcenter.md" },
   ] },
   { "Administration" = [
     "access/index.md",
