@@ -649,6 +649,8 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
 
     name = resource.get("name") or f"vm-{guest.vmid}"
     specs = _desired_specs(resource)
+    # (enum, human label) as the hypervisor reports them; Proxmox sends neither.
+    os_info = (resource.get("os_kind") or "", resource.get("os_name") or "")
 
     if guest.vm_id is None:
         # Adopt an operator's existing VM of the same name - a non-destructive
@@ -672,7 +674,7 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
             guest.vm = adopted
             guest.created_vm = False
             guest.save(update_fields=["vm", "created_vm"])
-            _blank_fill(adopted, specs, source, guest, place)
+            _blank_fill(adopted, specs, source, guest, place, os_info)
             _clear_change(guest, "new_guest")
             return
         if apply:
@@ -685,7 +687,7 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
             guest.vm = vm
             guest.created_vm = True
             guest.save(update_fields=["vm", "created_vm"])
-            _blank_fill(vm, {}, source, guest, place)  # node → device
+            _blank_fill(vm, {}, source, guest, place, os_info)  # node → device
             counts["vms_created"] += 1
         else:
             detail = {"name": name, "node": guest.node, "kind": guest.kind,
@@ -711,14 +713,15 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
                 _queue_change(guest, "spec_change", diffs, now, fresh_changes)
         else:
             _clear_change(guest, "spec_change")
-    _blank_fill(vm, {} if guest.created_vm else specs, source, guest, place)
+    _blank_fill(vm, {} if guest.created_vm else specs, source, guest, place,
+                os_info)
 
 
 def _nonnull(specs: dict) -> dict:
     return {k: v for k, v in specs.items() if v is not None}
 
 
-def _blank_fill(vm, specs, source, guest, place=None) -> None:
+def _blank_fill(vm, specs, source, guest, place=None, os_info=None) -> None:
     """Fill only empty spec fields (adopted rows) and the host device link.
     Never overwrites operator data."""
     from api.models import Device
@@ -739,6 +742,14 @@ def _blank_fill(vm, specs, source, guest, place=None) -> None:
     # placement rule (or a site named after the datacenter/cluster), and then
     # the cluster's own site when it opts in. Placement is the more specific
     # statement, so it goes first.
+    # Platform is opt-in: it mints rows in a catalog the operator curates, and
+    # a large estate would produce a lot of them on the first pass.
+    if source.sync_platforms and vm.platform_id is None:
+        name = _platform_name(*(os_info or ("", "")))
+        plat = _platform_for(source.tenant, name) if name else None
+        if plat is not None:
+            vm.platform = plat
+            changed.append("platform")
     _apply_placement(vm, place, changed)
     if vm.site_id is None and vm.cluster_id is not None:
         cl = vm.cluster
@@ -906,6 +917,78 @@ def _apply_placement(obj, place, changed: list) -> None:
     ):
         obj.location = place.location
         changed.append("location")
+
+
+# vCenter reports the guest OS as an enum (RHEL_8_64, OTHER_3X_LINUX_64). Short
+# all-caps words are acronyms and stay as they are; the rest title-case. Four
+# characters is the cut-off that keeps RHEL and SLES while letting OTHER and
+# LINUX read normally.
+_OS_TRAILING_BITS = {"64": "(64-bit)", "32": "(32-bit)"}
+
+
+def _platform_name(guest_os: str, full_name: str = "") -> str:
+    """A human name for a guest OS.
+
+    vCenter's own label is used when VMware Tools reports one, since it is
+    better than anything derived. Otherwise the enum is unpacked mechanically -
+    deliberately no 200-row lookup table, because the operator can rename the
+    Platform afterwards and the slug keeps it matched.
+    """
+    full_name = (full_name or "").strip()
+    if full_name:
+        return full_name[:128]
+    parts = [p for p in (guest_os or "").split("_") if p]
+    if not parts:
+        return ""
+    suffix = _OS_TRAILING_BITS.get(parts[-1], "")
+    if suffix:
+        parts = parts[:-1]
+    words = [w if (w.isupper() and len(w) <= 4) else w.title() for w in parts]
+    return " ".join([*words, suffix]).strip()[:128]
+
+
+def _platform_key(name: str) -> str:
+    """A loose key for comparing platform names.
+
+    Lowercased, punctuation dropped, and the bit-width suffix removed, so
+    "RHEL 8 (64-bit)" and an operator's existing "RHEL 8" are recognised as the
+    same platform. Deliberately mild: it will not fold "Windows Server 2019"
+    into "Windows Server 2022", because a wrong match is worse than a new row.
+    """
+    text = re.sub(r"\(?\b(32|64)[- ]?bit\)?", " ", (name or "").lower())
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return " ".join(text.split())
+
+
+def _platform_for(tenant, name: str):
+    """The Platform row for ``name`` - an existing one wherever possible.
+
+    Order matters. An exact name or slug hit comes first, then a loose match
+    against the platforms the tenant already curates, and only then a new row.
+    That way a sync joins the operator's catalog instead of growing a parallel
+    one beside it, and renaming a platform keeps it matched.
+    """
+    from api.models import Platform
+
+    slug = slugify(name)[:128]
+    if not slug:
+        return None
+    plat = Platform.objects.filter(
+        Q(name__iexact=name) | Q(slug=slug), tenant=tenant
+    ).first()
+    if plat is not None:
+        return plat
+
+    key = _platform_key(name)
+    if key:
+        for existing in Platform.objects.filter(tenant=tenant).only(
+            "id", "name", "slug"
+        ):
+            if _platform_key(existing.name) == key or (
+                _platform_key(existing.slug) == key
+            ):
+                return existing
+    return Platform.objects.create(tenant=tenant, name=name, slug=slug)
 
 
 def _apply_host_hardware(dev, hw, source) -> list:
@@ -1237,6 +1320,18 @@ def _attach_ips(source, guest, entries, *, prefixes=None, warnings=None,
 
 _MOREF_RE = re.compile(r"(\d+)")
 
+def _vc_full_name(info: dict) -> str:
+    """VMware Tools' own OS label, when it reports one.
+
+    The field is sometimes a plain string and sometimes a localisable message
+    object, so both shapes are handled rather than assuming one.
+    """
+    fn = ((info or {}).get("identity") or {}).get("full_name")
+    if isinstance(fn, dict):
+        return (fn.get("default_message") or "").strip()
+    return (fn or "").strip()
+
+
 _VC_POWER = {"POWERED_ON": "running", "POWERED_OFF": "stopped",
              "SUSPENDED": "suspended"}
 
@@ -1269,6 +1364,9 @@ def _vcenter_resource(summary: dict, info: dict, vmid: int, node: str,
         # "" when the guest is on a standalone host - _run_pass falls back to
         # the pass-level cluster name.
         "cluster": cluster,
+        # Guest OS, for the optional Platform mapping.
+        "os_kind": info.get("guest_OS") or "",
+        "os_name": _vc_full_name(info),
         # Placement inputs; empty for Proxmox, which has neither concept.
         "datacenter": datacenter,
         "folders": list(folders or []),

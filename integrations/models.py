@@ -497,6 +497,9 @@ class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
     sync_disks = models.BooleanField(default=True)
     #: Virtual switches + networks (port-groups/bridges → VLANs).
     sync_networks = models.BooleanField(default=False)
+    #: Map the guest OS onto a Platform. Off by default: it mints rows in a
+    #: catalog the operator curates, and a large estate makes a lot of them.
+    sync_platforms = models.BooleanField(default=False)
     #: Enrich those host Devices with real hardware - model, vendor, serial -
     #: read over the vSphere SOAP API, which is the only place vCenter exposes
     #: it. Separate from sync_hosts: wanting Device placeholders is not the

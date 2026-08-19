@@ -244,7 +244,7 @@ class VirtualizationSourceSerializer(
                   "verify_ssl", "token_id", "secret", "username", "password",
                   "credentials_set", "sync_mode", "poll_interval_minutes",
                   "sync_disks", "sync_networks", "sync_hosts",
-                  "sync_host_hardware",
+                  "sync_host_hardware", "sync_platforms",
                   *AddressPlacementSerializerMixin.PLACEMENT_FIELDS,
                   "enabled", "pending_count", "last_sync_at", "last_sync_status",
                   "last_sync_error", "created_at", "updated_at"]

@@ -48,6 +48,13 @@ Per-source switches widen what a source imports:
   port-group becomes a **VLAN** in a VLAN group named after the source. A VM
   interface's access VLAN is **blank-filled** from the port-group tag (never
   overwriting a VLAN you set).
+- **Set platform from the guest OS** (off by default) - fills each VM's
+  **platform** from what the hypervisor reports, creating the platform on
+  demand. vCenter's own label is used when VMware Tools supplies one
+  (*Red Hat Enterprise Linux 8 (64-bit)*); otherwise the raw enum is unpacked
+  into something readable (`RHEL_8_64` becomes *RHEL 8 (64-bit)*). Rename it
+  afterwards if you prefer - matching is by slug as well as name, so the next
+  sync still finds your row instead of making a second one. Blank-fill only.
 - **Read host hardware** (off by default, needs *Create hosts as devices*) -
   fills each host Device's **model**, **vendor** and **serial** from vSphere,
   and its platform (e.g. *VMware ESXi 8.0.3*). The model becomes a **device

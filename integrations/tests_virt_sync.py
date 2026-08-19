@@ -524,6 +524,7 @@ VC_VMS_BY_FOLDER = {"group-v3": ["vm-100"]}
 VC_DETAIL = {
     "vm-100": {
         "name": "web01", "power_state": "POWERED_ON",
+        "guest_OS": "RHEL_8_64",
         "cpu": {"count": 4}, "memory": {"size_MiB": 8192},
         "disks": {"2000": {"capacity": 40 * 1024**3}},
         "nics": {"4000": {"label": "Network adapter 1",
@@ -1710,3 +1711,103 @@ class HostHardwareTests(TestCase):
             "Host hardware unavailable",
             " ".join(self.source.last_sync_skipped),
         )
+
+
+class PlatformSyncTests(TestCase):
+    """Guest OS -> Platform, opt-in (#34).
+
+    No 200-row lookup table: vCenter's own label is preferred, and the enum is
+    unpacked mechanically otherwise. That is safe because matching is by name
+    *or* slug, so renaming the Platform keeps it matched.
+    """
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="vc", host="192.0.2.20", kind="vcenter",
+            credentials={"username": "u", "password": "p"}, sync_mode="auto",
+            sync_platforms=True,
+        )
+        Prefix.objects.create(tenant=self.tenant, cidr="10.77.0.0/24")
+
+    def sync(self):
+        with mock.patch("integrations.virt_client.VCenterClient", FakeVCenter):
+            return virt_sync.sync_vcenter(self.source)
+
+    def test_the_enum_becomes_a_readable_platform(self):
+        from api.models import Platform
+
+        self.sync()
+        vm = VirtualMachine.objects.get(name="web01")
+        self.assertEqual(vm.platform.name, "RHEL 8 (64-bit)")
+        self.assertEqual(Platform.objects.count(), 1)
+
+    def test_renaming_the_platform_keeps_it_matched(self):
+        """The slug is the key, so an operator can make the name readable."""
+        from api.models import Platform
+
+        self.sync()
+        plat = Platform.objects.get()
+        plat.name = "Red Hat 8"
+        plat.save(update_fields=["name"])
+
+        self.sync()
+
+        self.assertEqual(Platform.objects.count(), 1, "a duplicate was minted")
+
+    def test_an_operator_platform_is_not_overwritten(self):
+        from api.models import Platform
+
+        self.sync()
+        vm = VirtualMachine.objects.get(name="web01")
+        mine = Platform.objects.create(
+            tenant=self.tenant, name="Mine", slug="mine"
+        )
+        vm.platform = mine
+        vm.save(update_fields=["platform"])
+
+        self.sync()
+
+        vm.refresh_from_db()
+        self.assertEqual(vm.platform_id, mine.id)
+
+    def test_an_existing_platform_is_reused(self):
+        """Join the operator's catalog rather than growing one beside it."""
+        from api.models import Platform
+
+        mine = Platform.objects.create(
+            tenant=self.tenant, name="RHEL 8", slug="rhel-8"
+        )
+
+        self.sync()
+
+        self.assertEqual(Platform.objects.count(), 1, "a near-duplicate appeared")
+        self.assertEqual(
+            VirtualMachine.objects.get(name="web01").platform_id, mine.id
+        )
+
+    def test_a_different_version_is_not_folded_together(self):
+        """A wrong match is worse than an extra row."""
+        from api.models import Platform
+
+        Platform.objects.create(
+            tenant=self.tenant, name="RHEL 9", slug="rhel-9"
+        )
+
+        self.sync()
+
+        self.assertEqual(Platform.objects.count(), 2)
+        self.assertEqual(
+            VirtualMachine.objects.get(name="web01").platform.name,
+            "RHEL 8 (64-bit)",
+        )
+
+    def test_off_by_default_mints_nothing(self):
+        from api.models import Platform
+
+        self.source.sync_platforms = False
+        self.source.save(update_fields=["sync_platforms"])
+        self.sync()
+        self.assertEqual(Platform.objects.count(), 0)
+        self.assertIsNone(VirtualMachine.objects.get(name="web01").platform_id)
