@@ -26,12 +26,12 @@ from core.models import (
 
 # ─── Human-readable per-tenant object numbers (numid) ──────────────────────
 #
-# Every object keeps its UUID PK (load-bearing — FKs + tenant isolation depend
+# Every object keeps its UUID PK (load-bearing - FKs + tenant isolation depend
 # on it). ``numid`` is a *separate*, human-facing sequential number assigned on
 # create, namespaced per (tenant, object-type): tenant A's cable #30 and tenant
 # B's cable #30 are different objects, and each tenant counts from 1. This is
-# the NetBox-migration affordance — a cable physically tagged "27" can map to
-# cable #27 — see issue #82.
+# the NetBox-migration affordance - a cable physically tagged "27" can map to
+# cable #27 - see issue #82.
 
 
 class NumIdSequence(models.Model):
@@ -79,11 +79,11 @@ class NumIdMixin(models.Model):
     The field is nullable: it's assigned on first save once a tenant is set, and
     pre-existing rows are backfilled by ``manage.py assign_numids``. Uniqueness
     per (tenant, object-type) is guaranteed by ``NumIdSequence`` (the allocator),
-    not a DB constraint — so this mixin contributes only a field and inherits
+    not a DB constraint - so this mixin contributes only a field and inherits
     cleanly even when the concrete model defines its own ``Meta``.
 
     Bulk paths that bypass ``save()`` (``bulk_create``) leave numid null until
-    the next ``assign_numids`` run — intentional, to keep bulk inserts cheap.
+    the next ``assign_numids`` run - intentional, to keep bulk inserts cheap.
     """
 
     numid = models.PositiveIntegerField(
@@ -99,7 +99,7 @@ class NumIdMixin(models.Model):
             self.numid = NumIdSequence.next_value(self.tenant_id, self._meta.label_lower)
             # A caller that scoped the write with update_fields (e.g.
             # ip.save(update_fields=["role"])) on a still-null row would otherwise
-            # burn the sequence value without persisting numid — leaving it NULL
+            # burn the sequence value without persisting numid - leaving it NULL
             # and advancing the counter on every such edit. Persist it too.
             update_fields = kwargs.get("update_fields")
             if update_fields is not None:
@@ -124,7 +124,7 @@ def is_enumerable(net, cap: int = ENUMERABLE_HOST_CAP) -> bool:
 
 
 class RouteTarget(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """A BGP MPLS-VPN route target (RT) — used to control which VRFs import
+    """A BGP MPLS-VPN route target (RT) - used to control which VRFs import
     and export each other's prefixes.
 
     Names look like ``65000:100`` (ASN:value) and are tenant-unique. VRFs
@@ -165,7 +165,7 @@ class VRF(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """A routing context inside a tenant.
 
     Two prefixes with identical CIDR in different VRFs are valid and distinct
-    — that's the whole point of L3VPN-style separation. The conventional
+    - that's the whole point of L3VPN-style separation. The conventional
     "Global" VRF is modelled as ``vrf=NULL`` on Prefix/IPAddress so we don't
     need a special seeded row.
     """
@@ -242,7 +242,7 @@ class Site(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # the separate Location model.
     location = models.CharField(max_length=255, blank=True)
     # IANA tz name (e.g. "Europe/Copenhagen"); blank = unset. Free text on
-    # purpose — no fixed choice list to maintain — validated against the
+    # purpose - no fixed choice list to maintain - validated against the
     # standard zoneinfo set at the serializer. Lets an operator read the local
     # time difference between sites, the way NetBox surfaces it.
     time_zone = models.CharField(max_length=63, blank=True, default="")
@@ -273,7 +273,7 @@ class Site(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         blank=True,
         related_name="default_for_sites",
         help_text=(
-            "The prefix new addresses at this site come from by default — so "
+            "The prefix new addresses at this site come from by default - so "
             "staff working at one site don't have to hunt for the right subnet. "
             "A hint, not a constraint: the picker still offers every prefix."
         ),
@@ -282,7 +282,7 @@ class Site(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         VRF,
         blank=True,
         related_name="sites",
-        help_text="Which VRFs operate at this site. Documentation only — not enforced.",
+        help_text="Which VRFs operate at this site. Documentation only - not enforced.",
     )
 
     class Meta:
@@ -335,14 +335,14 @@ AIRFLOW_CHOICES = [
 
 class LifecycleMixin(models.Model):
     """Vendor lifecycle window for a catalog item (hardware type, OS
-    platform). All dates are user-entered — nothing ships pre-filled — and
+    platform). All dates are user-entered - nothing ships pre-filled - and
     everything renders from them: the lifetime progress bar runs
     ``release_date`` → ``end_of_support``, and ``lifecycle_state`` is the
     most severe passed milestone."""
 
     release_date = models.DateField(
         null=True, blank=True,
-        help_text="GA / first-ship date — the start of the lifetime bar.",
+        help_text="GA / first-ship date - the start of the lifetime bar.",
     )
     end_of_sale = models.DateField(
         null=True, blank=True,
@@ -354,7 +354,7 @@ class LifecycleMixin(models.Model):
     )
     end_of_support = models.DateField(
         null=True, blank=True,
-        help_text="End of life — vendor support and maintenance ends.",
+        help_text="End of life - vendor support and maintenance ends.",
     )
     lifecycle_url = models.URLField(
         blank=True, default="",
@@ -366,7 +366,7 @@ class LifecycleMixin(models.Model):
 
     @property
     def lifecycle_state(self) -> str:
-        """'' (no dates) · supported · eos · security_ended · eol —
+        """'' (no dates) · supported · eos · security_ended · eol -
         the most severe milestone that has passed wins."""
         today = timezone.localdate()
         if self.end_of_support and self.end_of_support <= today:
@@ -386,7 +386,7 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
                  LifecycleMixin):
     """User-defined device type / template (e.g. ``Dell R650``, ``Cisco C9300``).
 
-    DeviceType is the *template* — manufacturer + model + part number + slot
+    DeviceType is the *template* - manufacturer + model + part number + slot
     counts. Concrete ``Device`` instances inherit from this template.
     """
 
@@ -490,13 +490,13 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
 
 # ─── Device-type component templates ─────────────────────────────────────────
 #
-# A DeviceType owns a set of component *templates* — the ports the hardware
+# A DeviceType owns a set of component *templates* - the ports the hardware
 # ships with. Creating a Device of that type materialises every template into
 # a concrete component (Interface, ConsolePort, …) on the device, so a
 # "C9300-48P" stamps out its 48 interfaces + console + 2 PSU inlets each time.
 # Matches the community devicetype-library's *template semantics,
 # so imported device types carry their components over. Templates hold no
-# per-device state — they're part of the type definition, and per the
+# per-device state - they're part of the type definition, and per the
 # zero-pre-filled-data rule none ship by default.
 
 class _ComponentTemplate(TimestampedModel):
@@ -530,7 +530,7 @@ class InterfaceTemplate(_ComponentTemplate):
     )
     combo_group = models.CharField(
         max_length=64, blank=True, default="",
-        help_text="Combo/shared port group — materialised onto each device so "
+        help_text="Combo/shared port group - materialised onto each device so "
                   "its alternate connectors stay mutually exclusive.",
     )
 
@@ -568,7 +568,7 @@ class ConsoleServerPortTemplate(_ComponentTemplate):
 
 
 class AuxPortTemplate(_ComponentTemplate):
-    """Template for an aux port — USB / video / card slot / grounding, the
+    """Template for an aux port - USB / video / card slot / grounding, the
     connectors no other component type models."""
 
     device_type = models.ForeignKey(
@@ -688,7 +688,7 @@ class ModuleBayTemplate(_ComponentTemplate):
         related_name="default_in_bay_templates",
         help_text="Pre-install a module of this type when the bay is stamped "
         "onto a new device, and into an empty matching bay on sync-from-type. "
-        "Fully replaceable afterwards — this only decides what's pre-seated.",
+        "Fully replaceable afterwards - this only decides what's pre-seated.",
     )
 
     class Meta:
@@ -698,7 +698,7 @@ class ModuleBayTemplate(_ComponentTemplate):
 
 class DeviceBayTemplate(_ComponentTemplate):
     """A slot in a parent chassis that holds a whole child Device (blade
-    server, FEX) — unlike a module bay, whose occupant is not an independent
+    server, FEX) - unlike a module bay, whose occupant is not an independent
     device."""
 
     device_type = models.ForeignKey(
@@ -711,7 +711,7 @@ class DeviceBayTemplate(_ComponentTemplate):
         ordering = ["name"]
 
 
-# Hardware kind of an inventory item/template — what the part IS. "other"
+# Hardware kind of an inventory item/template - what the part IS. "other"
 # keeps pre-existing rows meaningful; new kinds may be added here (kept as
 # hardcoded protocol constants, like connector types).
 INVENTORY_ITEM_KINDS = [
@@ -728,7 +728,7 @@ INVENTORY_ITEM_KINDS = [
 
 # Storage media/protocol for kind=disk ("" for non-disks).
 INVENTORY_MEDIA_TYPES = [
-    ("", "—"),
+    ("", "-"),
     ("nvme", "NVMe"),
     ("ssd", "SSD (SATA/SAS)"),
     ("hdd", "HDD"),
@@ -738,7 +738,7 @@ INVENTORY_MEDIA_TYPES = [
 
 class InventoryItemTemplate(_ComponentTemplate):
     """A physical part the hardware ships with that isn't a connectable
-    component — PSU, fan tray, CPU, disk bay, factory-fitted transceiver."""
+    component - PSU, fan tray, CPU, disk bay, factory-fitted transceiver."""
 
     device_type = models.ForeignKey(
         DeviceType, on_delete=models.CASCADE,
@@ -773,7 +773,7 @@ class InventoryItemTemplate(_ComponentTemplate):
 # ─── Module types (pluggable line cards / network modules) ───────────────────
 
 class ModuleType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """A pluggable hardware model — line card, uplink module, PSU sled. Like a
+    """A pluggable hardware model - line card, uplink module, PSU sled. Like a
     DeviceType but installed *into* a device's module bay rather than a rack.
     Carries its own interface templates whose names may use ``{module}``."""
 
@@ -833,7 +833,7 @@ class ModuleInterfaceTemplate(_ComponentTemplate):
 #
 # Template names may carry a ``{position}`` token that resolves to the
 # device's stack member number (``Device.vc_position``) when components are
-# stamped — so a "Catalyst 9300-24P" template named
+# stamped - so a "Catalyst 9300-24P" template named
 # ``GigabitEthernet{position}/0/1`` materialises as ``…1/0/1`` on member 1 and
 # ``…2/0/1`` on member 2. Standalone devices resolve the token to 1; vendors
 # that count from 0 (Juniper ``ge-0/0/0``) write ``{position:0}`` to set the
@@ -873,7 +873,7 @@ def sync_positional_interface_names(device, old_position, new_position) -> int:
 
     For every interface template of the device's type that carries a
     ``{position}`` token, the template is rendered at the *old* effective
-    position to find the interface, then renamed to the *new* rendering —
+    position to find the interface, then renamed to the *new* rendering -
     so joining, moving within, or leaving a stack keeps port names truthful
     (``2/0/24`` really is member 2). Name clashes are skipped, never
     clobbered. Returns how many interfaces were renamed."""
@@ -892,7 +892,7 @@ def sync_positional_interface_names(device, old_position, new_position) -> int:
             continue
         iface = by_name.get(old_name)
         # Skip: nothing to rename, or the target name is already taken by a
-        # different interface (hand-made or conflicting) — never clobber.
+        # different interface (hand-made or conflicting) - never clobber.
         if iface is None or (new_name in by_name and by_name[new_name] is not iface):
             continue
         renames.append((iface, new_name))
@@ -909,13 +909,13 @@ def sync_positional_interface_names(device, old_position, new_position) -> int:
 
 @transaction.atomic
 def materialize_device_components(device) -> dict[str, int]:
-    """Stamp a device's components out of its device type's templates —
+    """Stamp a device's components out of its device type's templates -
     called when a Device is created with a device_type. Skips any name the
     device already has (idempotent, and safe for imports that pre-create
     ports). Returns {component_kind: created_count} for reporting.
 
     Ordering matters: rear ports before front ports, power ports before
-    outlets — the latter FK the former."""
+    outlets - the latter FK the former."""
 
     dt = device.device_type
     if dt is None:
@@ -1062,14 +1062,14 @@ def materialize_device_components(device) -> dict[str, int]:
     ModuleBay.objects.bulk_create(made)
     created["module_bays"] = len(made)
 
-    # Seat each bay template's default module into a matching *empty* bay — the
+    # Seat each bay template's default module into a matching *empty* bay - the
     # ones just stamped, and any pre-existing empty ones (so sync-from-type fills
     # them on existing devices too). Idempotent: occupied bays are left alone.
     seated = _seat_default_modules(device, pos)
     if seated:
         created["modules"] = seated
 
-    # Services aren't positional — plain name, carries protocol/ports/monitored.
+    # Services aren't positional - plain name, carries protocol/ports/monitored.
     have = _names(device.services)
     made = [
         Service(tenant=device.tenant, device=device, name=t.name,
@@ -1115,7 +1115,7 @@ def marker_referenced_names(device_type) -> dict[str, set[str]]:
 
     A layout is often drawn before (or instead of) filling in component
     templates, so a marker can reference a component no template defines. Those
-    names are still part of what the type *says* a device looks like — the
+    names are still part of what the type *says* a device looks like - the
     sync-from-type diff counts them as expected, and applying the sync stamps
     them as bare components (type/kind "other") the operator can refine."""
     out: dict[str, set[str]] = {}
@@ -1198,7 +1198,7 @@ _SYNC_KINDS = [
 def diff_device_components(device) -> dict[str, dict[str, list[str]]]:
     """Name-level diff of a device's components against what its type's
     templates would produce now. Returns ``{kind: {"add": [...], "extra":
-    [...]}}`` — *add* = template names the device is missing, *extra* = device
+    [...]}}`` - *add* = template names the device is missing, *extra* = device
     components with no matching template (candidates for removal). Only kinds
     with a difference are included. Empty dict if the device has no type."""
     dt = device.device_type
@@ -1226,9 +1226,9 @@ def diff_device_components(device) -> dict[str, dict[str, list[str]]]:
 
 def sync_device_components(device, *, remove_extra: bool = False) -> dict:
     """Bring a device in line with its type's current templates. Always
-    *adds* missing components (via ``materialize_device_components`` — idempotent
+    *adds* missing components (via ``materialize_device_components`` - idempotent
     and relational-aware). When ``remove_extra`` is set, also **deletes**
-    components the type no longer defines (cascading their cabling / IP links —
+    components the type no longer defines (cascading their cabling / IP links -
     destructive, hence opt-in). Returns ``{"added": {...}, "removed": {...}}``.
     """
     diff = diff_device_components(device)
@@ -1239,7 +1239,7 @@ def sync_device_components(device, *, remove_extra: bool = False) -> dict:
     removed: dict[str, int] = {}
     if remove_extra:
         # Dependents before their targets: front ports FK rear ports, outlets
-        # FK inlets — remove the referencing side first to avoid FK errors.
+        # FK inlets - remove the referencing side first to avoid FK errors.
         order = [
             "front_ports", "power_outlets", "services", "interfaces",
             "console_ports", "console_server_ports", "aux_ports",
@@ -1254,7 +1254,7 @@ def sync_device_components(device, *, remove_extra: bool = False) -> dict:
     return {"added": {k: v for k, v in added.items() if v}, "removed": removed}
 
 
-# Dimension fields a rack inherits from its type — the ones the rack form
+# Dimension fields a rack inherits from its type - the ones the rack form
 # pre-fills, and therefore the ones that can drift from the model.
 _RACK_TYPE_DIMS = (
     "width", "u_height", "starting_unit", "desc_units",
@@ -1267,10 +1267,10 @@ def diff_rack_from_type(rack) -> dict:
 
     Two halves, because a rack inherits two different things from its model:
 
-    * ``dims`` — ``{field: {"rack": v, "type": v}}`` for every dimension that
+    * ``dims`` - ``{field: {"rack": v, "type": v}}`` for every dimension that
       drifted. Picking a type pre-fills these and then lets you edit them, so
       drift is legitimate; this only reports it.
-    * ``accessories`` — ``{"add": [...], "update": [...], "extra": [...]}``.
+    * ``accessories`` - ``{"add": [...], "update": [...], "extra": [...]}``.
       *add* = accessories on the type with no side-mounted device carrying
       that label; *update* = a strip that EXISTS but no longer matches its
       accessory (the type's device type was swapped, the rail moved, a
@@ -1346,14 +1346,14 @@ def sync_rack_from_type(rack, *, dims: bool = True, accessories: bool = True):
 
     ``dims`` copies the model's dimensions onto the rack. ``accessories``
     stamps the strips the type defines that this rack is missing AND brings
-    existing strips back in line with their accessory — the same naming and
+    existing strips back in line with their accessory - the same naming and
     component materialisation the create-time stamp uses, so a type that
     gains a PDU (or swaps to a different one) can be rolled out to racks
     already built from it.
 
     NEVER deletes: an "extra" strip is somebody's real, cabled PDU, and a
     re-pointed device type keeps the components it already had (the new
-    type's are added alongside — the DEVICE's own sync-from-type is where
+    type's are added alongside - the DEVICE's own sync-from-type is where
     stale components get pruned, because only that action knows what the
     cabling depends on). The diff reports extras so a human can decide.
     Returns ``{"dims": [...], "accessories": [...], "updated": [...]}``.
@@ -1422,7 +1422,7 @@ def sync_rack_from_type(rack, *, dims: bool = True, accessories: bool = True):
 
 
 def _module_interface_names(module) -> list[str]:
-    """The concrete interface names a module contributes to its host device —
+    """The concrete interface names a module contributes to its host device -
     ``{module}`` → the bay's position, then ``{position}`` → the device's
     stack member. Used by both install and uninstall so they always agree."""
     bay = module.module_bay
@@ -1434,7 +1434,7 @@ def _module_interface_names(module) -> list[str]:
 
 
 def install_module(module) -> int:
-    """Stamp the module type's interfaces onto the host device. Idempotent —
+    """Stamp the module type's interfaces onto the host device. Idempotent -
     names the device already has are skipped. Returns the created count."""
     names = _module_interface_names(module)
     types = {  # rendered name → template, for type/enabled/mgmt flags
@@ -1464,8 +1464,8 @@ def uninstall_module(module) -> int:
 def _seat_default_modules(device, pos) -> int:
     """Install each module bay template's ``default_module_type`` into the
     device's matching bay, but only where that bay is currently empty. Runs from
-    ``materialize_device_components`` — i.e. on device creation and on
-    sync-from-type — so the default is pre-seated on new devices and fills empty
+    ``materialize_device_components`` - i.e. on device creation and on
+    sync-from-type - so the default is pre-seated on new devices and fills empty
     bays on existing ones, while never overwriting a module an operator placed or
     deliberately left out until the next sync. Returns the count installed."""
     dt = device.device_type
@@ -1480,7 +1480,7 @@ def _seat_default_modules(device, pos) -> int:
     count = 0
     bays = device.module_bays.filter(name__in=wanted).select_related("module")
     for bay in bays:
-        if hasattr(bay, "module"):  # occupied — leave it be
+        if hasattr(bay, "module"):  # occupied - leave it be
             continue
         module = Module.objects.create(
             device=device, module_bay=bay, module_type_id=wanted[bay.name],
@@ -1546,7 +1546,7 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text=("Zero-U side mounting: the rack rail this device bolts "
                    "to instead of occupying units. Requires a rack and a 0U "
                    "device type, and no U position or half-width side. "
-                   "``face`` stays meaningful — it says which channel "
+                   "``face`` stays meaningful - it says which channel "
                    "(front/rear) the strip lives in; blank shows it on both."),
     )
     mount_offset_mm = models.PositiveSmallIntegerField(
@@ -1670,7 +1670,7 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     @property
     def effective_airflow(self) -> str:
         """The device's own airflow when set, else its type's default, else
-        "". Derived like ``effective_platform`` — the stored field stays
+        "". Derived like ``effective_platform`` - the stored field stays
         untouched, so clearing the override falls back to the hardware's."""
         return self.airflow or (self.device_type.airflow if self.device_type else "")
 
@@ -1680,7 +1680,7 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 class ImageAttachment(TimestampedModel):
     """A user-uploaded image pinned to any object that makes sense to
-    photograph — devices, racks, sites, locations.
+    photograph - devices, racks, sites, locations.
 
     Generic-FK so one model + one upload flow covers every object type. Scoped
     to the parent's tenant, so the same tenant isolation applies; managed
@@ -1720,7 +1720,7 @@ class DocumentCategory(TimestampedModel):
     """An editable, per-tenant catalog of document categories (e.g. "Warranty",
     "Runbook", "Diagram", "Datasheet").
 
-    Ships EMPTY — categories are user-defined (customization-first, zero seed).
+    Ships EMPTY - categories are user-defined (customization-first, zero seed).
     Attaching a category to a :class:`Document` is optional; deleting a category
     nulls its documents' ``category`` rather than removing the documents."""
 
@@ -1753,13 +1753,13 @@ class Document(TimestampedModel):
     circuit, prefix, …).
 
     Generic reference by ``object_type`` label (``app.model`` lower, e.g.
-    ``api.device``) + ``object_id`` — the same string-label mechanism as
+    ``api.device``) + ``object_id`` - the same string-label mechanism as
     :class:`audit.models.JournalEntry`, so one model + one flow covers every
     object type without a per-type table. Exactly one of ``file`` / ``url`` is
     set (DB ``CheckConstraint``).
 
-    Files are served **privately** through ``DocumentViewSet.download`` — an auth
-    + row/site check runs on every fetch — never a raw ``/media`` URL. External
+    Files are served **privately** through ``DocumentViewSet.download`` - an auth
+    + row/site check runs on every fetch - never a raw ``/media`` URL. External
     links are SSRF-validated on write and swept by the ``document_linkcheck``
     dead-link job.
 
@@ -1781,7 +1781,7 @@ class Document(TimestampedModel):
         max_length=64, help_text="Model label, e.g. api.device."
     )
     object_id = models.UUIDField()
-    # Site of the target object at write time — row/site RBAC on this generic
+    # Site of the target object at write time - row/site RBAC on this generic
     # table without re-fetching the (possibly deleted) object. NULL = no site.
     object_site_id = models.UUIDField(null=True, blank=True, db_index=True)
 
@@ -1873,7 +1873,7 @@ class VirtualChassis(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMi
 
 
 class VLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """User-defined VLAN. Not VRF-scoped — VLAN IDs are an L2 namespace."""
+    """User-defined VLAN. Not VRF-scoped - VLAN IDs are an L2 namespace."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -1890,7 +1890,7 @@ class VLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         null=True,
         blank=True,
         related_name="vlans",
-        help_text="Optional VLAN group — scopes VID uniqueness.",
+        help_text="Optional VLAN group - scopes VID uniqueness.",
     )
     zone = models.ForeignKey(
         "Zone",
@@ -1900,7 +1900,7 @@ class VLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         related_name="vlans",
         help_text="Security zone this segment belongs to (zone-based firewalling).",
     )
-    # The VLAN's own display colour (badges, topology rails). Optional — zones
+    # The VLAN's own display colour (badges, topology rails). Optional - zones
     # stay firewall semantics, never a colour requirement.
     color = models.CharField(max_length=7, blank=True, default="")
     description = models.TextField(blank=True)
@@ -1925,7 +1925,7 @@ class VLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 # ─── Prefix / IPAddress (VRF-scoped) ──────────────────────────────────────
 
 
-_UNSET = object()  # "we didn't look" — distinct from a real NULL vrf
+_UNSET = object()  # "we didn't look" - distinct from a real NULL vrf
 
 
 def _include_update_field(kwargs: dict, field: str) -> None:
@@ -1948,7 +1948,7 @@ def _include_update_field(kwargs: dict, field: str) -> None:
 class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """An IP prefix (CIDR), scoped to a (tenant, VRF) pair.
 
-    Same CIDR is allowed in different VRFs — that's the whole point. The
+    Same CIDR is allowed in different VRFs - that's the whole point. The
     unique constraint uses ``nulls_distinct=False`` so a NULL vrf (= Global)
     behaves like a real value for uniqueness, not as "anything goes".
     """
@@ -1994,7 +1994,7 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     description = models.TextField(blank=True)
     auto_discover = models.BooleanField(
         default=False,
-        help_text="Opt in to periodic ICMP discovery — responders not yet "
+        help_text="Opt in to periodic ICMP discovery - responders not yet "
         "recorded are auto-created as IPs (see monitoring settings).",
     )
     last_discovered_at = models.DateTimeField(
@@ -2022,14 +2022,14 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         return self.cidr
 
     def save(self, *args, **kwargs):
-        # A location implies its site — keep the prefix's site in sync so
+        # A location implies its site - keep the prefix's site in sync so
         # site-scoped queries (and auto_assign_site) have a single source.
         if self.location_id and self.location.site_id:
             self.site_id = self.location.site_id
         # The prefix owns the routing context, and its addresses and ranges
         # denormalise it. Those rows only re-derive it on their own save, so
         # moving a prefix between VRFs would otherwise strand every child in
-        # the old one — invisible, and wrong for every VRF-filtered query.
+        # the old one - invisible, and wrong for every VRF-filtered query.
         previous_vrf_id = _UNSET
         if not self._state.adding:
             was = Prefix.objects.filter(pk=self.pk).values("vrf_id").first()
@@ -2061,7 +2061,7 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     @property
     def utilisation_pct(self):
-        # ``status`` is a Status FK (post-0047), not the old enum string — compare
+        # ``status`` is a Status FK (post-0047), not the old enum string - compare
         # the slug. The bare ``== "container"`` here was always False after the
         # migration, so container prefixes reported a bogus utilisation %.
         if self.status_id and self.status.slug == "container":
@@ -2069,7 +2069,7 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         n = self.network
         if n is None:
             return None
-        # IPv6 % is only meaningful for small (enumerable) prefixes — a /64 is
+        # IPv6 % is only meaningful for small (enumerable) prefixes - a /64 is
         # forever ~0%, which is noise, so leave it blank (UI shows nothing).
         if n.version == 6 and not is_enumerable(n):
             return None
@@ -2089,7 +2089,7 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     ``vrf`` is denormalised from the parent prefix so the unique constraint
     can be enforced at the DB level: same IP can exist in different VRFs.
 
-    ``status`` and ``role`` are tenant-managed catalogs — see Status and
+    ``status`` and ``role`` are tenant-managed catalogs - see Status and
     IPRole. Gateway semantics use ``role.is_gateway`` so users can rename
     the role to match their org's vocabulary without losing behaviour.
     """
@@ -2121,7 +2121,7 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         related_name="ips",
         null=True,
         blank=False,
-        help_text="Operational status — pick from your tenant's status catalog.",
+        help_text="Operational status - pick from your tenant's status catalog.",
     )
     role = models.ForeignKey(
         "IPRole",
@@ -2156,7 +2156,7 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text=("Specific interface this IP is bound to. Setting it also "
                    "keeps assigned_device in sync with the interface's device."),
     )
-    # Virtual-machine assignment — the VM analogue of assigned_device/interface.
+    # Virtual-machine assignment - the VM analogue of assigned_device/interface.
     assigned_vm = models.ForeignKey(
         "VirtualMachine",
         on_delete=models.SET_NULL,
@@ -2172,7 +2172,7 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     # ─── L2 edge (access switch/port this IP is reached THROUGH) ──────────
     # Distinct from assigned_device/interface (the IP's own L3 host port). This
-    # records which access switch + physical port the host sits behind — set
+    # records which access switch + physical port the host sits behind - set
     # manually, via API, or accepted from an SNMP ARP+MAC-table suggestion.
     switch = models.ForeignKey(
         "Device",
@@ -2193,7 +2193,7 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     mac_address = models.CharField(
         max_length=17, blank=True,
-        help_text=("Hardware address paired with this IP — e.g. a DHCP "
+        help_text=("Hardware address paired with this IP - e.g. a DHCP "
                    "reservation. Independent of the interface's own MAC."),
     )
     dns_name = models.CharField(
@@ -2213,7 +2213,7 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     flap_exclude = models.BooleanField(
         default=False,
-        help_text=("Exclude this IP from the flapping monitor — for a known "
+        help_text=("Exclude this IP from the flapping monitor - for a known "
                    "noisy host you don't want flagged."),
     )
 
@@ -2231,7 +2231,7 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         return self.ip_address
 
     def save(self, *args, **kwargs):
-        # Always keep vrf in sync with the parent prefix — including on a
+        # Always keep vrf in sync with the parent prefix - including on a
         # scoped save(update_fields=…), which would otherwise drop it.
         if self.prefix_id and self.vrf_id != self.prefix.vrf_id:
             self.vrf_id = self.prefix.vrf_id
@@ -2262,7 +2262,7 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 class _LabeledChoice(TimestampedModel):
     """Shared base for tenant-managed labelled-choice catalogs.
 
-    IPRole and Status both follow the same shape — an operator-defined
+    IPRole and Status both follow the same shape - an operator-defined
     list of values per tenant, each with a color + ordering weight. The
     class is abstract so each child gets its own table + uniqueness scope.
 
@@ -2297,7 +2297,7 @@ class _LabeledChoice(TimestampedModel):
 
     @property
     def text_color(self) -> str:
-        """Black or white text picked from sRGB luminance — same helper Tag uses."""
+        """Black or white text picked from sRGB luminance - same helper Tag uses."""
         if not self.color:
             return ""
         h = self.color.lstrip("#")
@@ -2382,7 +2382,7 @@ class Status(_LabeledChoice):
     requires_note = models.BooleanField(
         default=False,
         help_text=("Picking this status on an IP forces the operator to fill "
-                   "in the reservation_note field — used so e.g. 'Reserved' "
+                   "in the reservation_note field - used so e.g. 'Reserved' "
                    "always carries the who/why on hover."),
     )
     suppresses_alerts = models.BooleanField(
@@ -2393,7 +2393,7 @@ class Status(_LabeledChoice):
     )
     is_closed = models.BooleanField(
         default=False,
-        help_text=("Marks the workflow as finished — a closed maintenance/"
+        help_text=("Marks the workflow as finished - a closed maintenance/"
                    "outage event leaves the open list, the calendar's open "
                    "count, and releases its silence."),
     )
@@ -2424,7 +2424,7 @@ class Status(_LabeledChoice):
 
 
 class Zone(_LabeledChoice, CustomFieldsMixin, TaggableMixin):
-    """A security zone — models zone-based firewalling (Palo Alto style).
+    """A security zone - models zone-based firewalling (Palo Alto style).
 
     User-defined per tenant, zero pre-filled. A VLAN may link to a zone
     (``VLAN.zone``) so "which zone is this segment in?" is answerable from the
@@ -2454,21 +2454,21 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     snmp_name = models.CharField(
         max_length=128, blank=True, default="",
         help_text="What the agent calls this interface over SNMP (ifName / "
-        "ifDescr) when it differs from the label — e.g. the port silkscreened "
+        "ifDescr) when it differs from the label - e.g. the port silkscreened "
         "'Ethernet 1' reporting as 'eth0'. Set it and discovery stops "
         "reporting the pair as both new and missing.",
     )
     snmp_ignore = models.BooleanField(
         default=False,
         help_text="Exclude this interface from SNMP drift. For ports the "
-        "polled agent can never report — silkscreened ports a BMC doesn't "
-        "see, out-of-band jacks — which would otherwise flag as 'not seen "
+        "polled agent can never report - silkscreened ports a BMC doesn't "
+        "see, out-of-band jacks - which would otherwise flag as 'not seen "
         "on device' after every poll, forever.",
     )
     is_uplink = models.BooleanField(
         default=False,
         help_text="This port faces other network infrastructure. It never "
-        "gets switch-link suggestions — the MACs it learns belong to hosts "
+        "gets switch-link suggestions - the MACs it learns belong to hosts "
         "behind it, not on it. The escape hatch when the automatic uplink "
         "detection misreads a topology.",
     )
@@ -2487,7 +2487,7 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     combo_group = models.CharField(
         max_length=64, blank=True, default="",
         help_text="Combo/shared port: interfaces on this device with the same "
-                  "group are alternate connectors for one logical port — "
+                  "group are alternate connectors for one logical port - "
                   "enabling one disables the others.",
     )
     DUPLEX_CHOICES = [("half", "Half"), ("full", "Full"), ("auto", "Auto")]
@@ -2542,7 +2542,7 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # ─── Virtual / sub-interfaces ────────────────────────────────────────
     virtual = models.BooleanField(
         default=False,
-        help_text="A logical interface with no physical port — sub-interface, "
+        help_text="A logical interface with no physical port - sub-interface, "
                   "LAG/aggregate, loopback, tunnel, VLAN interface.",
     )
     parent = models.ForeignKey(
@@ -2586,7 +2586,7 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 class MACAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """A first-class MAC address. Assigned to an interface, it carries its own
-    description / tags / custom fields and a stable identity — so a MAC is a real
+    description / tags / custom fields and a stable identity - so a MAC is a real
     object you can click, annotate, and track across interfaces, not just a
     string. An interface's ``mac_addresses`` are all the MACs it bears; the one
     matching ``Interface.mac_address`` is its primary.
@@ -2626,7 +2626,7 @@ class MACAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin)
 
 
 class RearPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """The trunk side of a patch panel — ``positions`` strands, each one a
+    """The trunk side of a patch panel - ``positions`` strands, each one a
     position a FrontPort maps onto. Tenant scope inherited via device."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -2650,13 +2650,13 @@ class RearPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         ordering = ["name"]
 
     def clean(self):
-        """A splitter broadcasts one input to all outputs — the front→rear
+        """A splitter broadcasts one input to all outputs - the front→rear
         direction stays deterministic only with a single input position."""
         from django.core.exceptions import ValidationError
 
         if self.is_splitter and (self.positions or 1) != 1:
             raise ValidationError(
-                {"positions": "A splitter has exactly 1 input position — "
+                {"positions": "A splitter has exactly 1 input position - "
                  "its front ports are the outputs."}
             )
 
@@ -2715,7 +2715,7 @@ class FrontPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
                  f"{self.rear_port.positions} positions."}
             )
         if self.rear_port_id and self.rear_port.is_splitter:
-            # Splitter outputs all share position 1 by design — no overlap
+            # Splitter outputs all share position 1 by design - no overlap
             # check; the range-fit check above already pinned lo=hi=1.
             return
         if self.rear_port_id:
@@ -2736,7 +2736,7 @@ class FrontPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 
 class ConsolePort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """A device's serial/management console jack — the out-of-band path.
+    """A device's serial/management console jack - the out-of-band path.
     Cable-terminable (usually to a ConsoleServerPort). Tenant scope inherited
     via device."""
 
@@ -2762,7 +2762,7 @@ class ConsolePort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 
 class ConsoleServerPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """One port on a console/terminal server — the far end a ConsolePort
+    """One port on a console/terminal server - the far end a ConsolePort
     patches into. Tenant scope inherited via device."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -2787,13 +2787,13 @@ class ConsoleServerPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 
 class InventoryItem(TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """A serial-tracked physical part on a device — disk, CPU, RAM, PSU, fan,
+    """A serial-tracked physical part on a device - disk, CPU, RAM, PSU, fan,
     discrete SFP. Self-nesting (a card can contain sub-parts). Roles are tags,
     per the zero-pre-filled-data rule. Tenant scope inherited via device.
 
     ``kind``/``media``/``capacity_bytes``/``speed`` describe the hardware;
     ``status`` carries its lifecycle/health (active / planned / failed /
-    spare — user-extensible via the Status catalog)."""
+    spare - user-extensible via the Status catalog)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     device = models.ForeignKey(
@@ -2914,7 +2914,7 @@ class Module(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 
 class AuxPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """An auxiliary physical connector on a device — USB data ports, video
+    """An auxiliary physical connector on a device - USB data ports, video
     outputs (HDMI/VGA/DP), card slots, grounding lugs: everything no other
     component type models. Not cable-terminable (yet). Tenant scope inherited
     via device."""
@@ -2938,7 +2938,7 @@ class AuxPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 
 class PowerPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """A device's power **inlet** — where the device draws power. Completes
+    """A device's power **inlet** - where the device draws power. Completes
     the chain PowerPanel → PowerFeed → (PDU) PowerOutlet → PowerPort. A rack
     PDU is a Device whose PowerPort cables to a PowerFeed and whose
     PowerOutlets feed downstream PowerPorts. Tenant scope inherited via
@@ -3031,11 +3031,11 @@ class Cable(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     color = models.CharField(
         max_length=7, blank=True, default="",
-        help_text="Optional 7-char hex — the physical cable's color.",
+        help_text="Optional 7-char hex - the physical cable's color.",
     )
     label = models.CharField(
         max_length=255, blank=True, default="",
-        help_text="Free-form physical label (matches NetBox's cable label) — "
+        help_text="Free-form physical label (matches NetBox's cable label) - "
         "what's printed on the cable's tag.",
     )
     description = models.TextField(blank=True)
@@ -3053,7 +3053,7 @@ class Cable(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        # Prefer the human label, then the per-tenant number, then the UUID —
+        # Prefer the human label, then the per-tenant number, then the UUID -
         # so a cable never renders as a bare UUID in the UI / logs.
         if self.label:
             return self.label
@@ -3214,7 +3214,7 @@ class CableTermination(TimestampedModel):
 class FiberSettings(TimestampedModel):
     """Per-tenant fibre-strand colour palette. One row per tenant, created on
     demand with the TIA-598-C default (see ``api/fiber_colors.py``). Editable on
-    the Fibre settings page — a tenant can reorder / recolour the 12 entries."""
+    the Fibre settings page - a tenant can reorder / recolour the 12 entries."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.OneToOneField(
@@ -3222,10 +3222,10 @@ class FiberSettings(TimestampedModel):
     )
     # List of {"name": str, "hex": "#RRGGBB"} in strand-position order.
     colors = models.JSONField(default=list, blank=True)
-    # How deeply this tenant models fibres — drives how much fibre UI appears.
-    #   off      — a cable is just a cable; no fibre prompts.
-    #   count    — fibre_count + coloured/labelled strands (straight-through).
-    #   accurate — multi-fibre connectors + per-termination strand maps.
+    # How deeply this tenant models fibres - drives how much fibre UI appears.
+    #   off      - a cable is just a cable; no fibre prompts.
+    #   count    - fibre_count + coloured/labelled strands (straight-through).
+    #   accurate - multi-fibre connectors + per-termination strand maps.
     STRAND_MODELLING = [
         ("off", "Off"),
         ("count", "Count + colours"),
@@ -3328,7 +3328,7 @@ class Cluster(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         blank=True,
         related_name="clusters",
     )
-    # Opt-in: a cluster's site describes the cluster, not its workloads — a
+    # Opt-in: a cluster's site describes the cluster, not its workloads - a
     # central cluster often runs VMs that belong to branch offices. Tick this
     # where the two really are the same place and the site is blank-filled onto
     # the cluster's VMs (never overwriting one an operator set).
@@ -3423,7 +3423,7 @@ class VirtualMachine(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMi
 
 
 class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """A virtual network interface on a VM — the VM analogue of Interface.
+    """A virtual network interface on a VM - the VM analogue of Interface.
     IPs attach to it via ``IPAddress.assigned_vm_interface``. Carries the same
     L2 (802.1Q) and L3 (VRF) context as a device Interface, so VLAN-trunked /
     VRF-scoped VM NICs import from NetBox without data loss."""
@@ -3439,6 +3439,10 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # Virtual NICs have a real link speed: a VMXNET3 negotiates 10G where an
     # emulated E1000 caps at 1G. Free-form like the physical Interface.speed.
     speed = models.CharField(max_length=64, blank=True, default="")
+    #: Created by a hypervisor sync, mirroring VirtualDisk.created_disk. Without
+    #: it the sync cannot tell its own rows from the operator's, so it could
+    #: never remove a stale NIC without risking one somebody added by hand.
+    created_interface = models.BooleanField(default=False)
     # ─── L2: 802.1Q switching (mirrors Interface) ────────────────────────
     vlan = models.ForeignKey(
         VLAN, on_delete=models.SET_NULL, null=True, blank=True,
@@ -3483,7 +3487,7 @@ class VirtualDisk(TimestampedModel):
     """One virtual disk attached to a VM. Sync-filled from the hypervisor
     (Proxmox ``scsi0``/``virtio0``…, vCenter disk devices); ``created_disk``
     marks rows the sync minted, so only those are pruned when the disk
-    disappears — operator-added rows are never deleted by sync. The VM's
+    disappears - operator-added rows are never deleted by sync. The VM's
     aggregate ``disk_gb`` stays the sum of these. Scopes through ``vm`` (no
     own tenant FK), exactly like :class:`VMInterface`."""
 
@@ -3505,7 +3509,7 @@ class VirtualDisk(TimestampedModel):
     controller = models.CharField(
         max_length=16, blank=True, default="", choices=CONTROLLER_CHOICES
     )
-    # raw / qcow2 / vmdk … — free-form, hypervisor-reported.
+    # raw / qcow2 / vmdk … - free-form, hypervisor-reported.
     disk_format = models.CharField(max_length=16, blank=True, default="")
     created_disk = models.BooleanField(default=False)
     description = models.TextField(blank=True)
@@ -3547,17 +3551,17 @@ class VirtualSwitch(TimestampedModel):
     name = models.CharField(max_length=128)
     kind = models.CharField(max_length=16, blank=True, default="", choices=KIND_CHOICES)
     # Comma-separated physical uplink NAMES as the hypervisor reports them
-    # (vmnicN / bridge_ports) — the raw list, even when a name doesn't resolve
+    # (vmnicN / bridge_ports) - the raw list, even when a name doesn't resolve
     # to a modelled interface.
     uplinks = models.CharField(max_length=255, blank=True, default="")
     # The real physical NICs (on the hypervisor host Device) that carry this
-    # switch — the "Physical Adapters" of the vCenter picture. Links the switch
+    # switch - the "Physical Adapters" of the vCenter picture. Links the switch
     # to actual device I/O, so an uplink traces through to its cabled port.
     uplink_interfaces = models.ManyToManyField(
         "Interface", blank=True, related_name="uplink_switches",
     )
     mtu = models.IntegerField(null=True, blank=True)
-    # Routing context for addresses discovered on this switch's networks — the
+    # Routing context for addresses discovered on this switch's networks - the
     # switch-wide default, which a network on it can override. NULL means "no
     # opinion": placement falls through to the source's own policy, not to
     # Global. See ``api.vrf_placement``.
@@ -3609,14 +3613,14 @@ class RackRole(NumIdMixin, TimestampedModel):
 
 
 class DeviceTypeImportRun(TimestampedModel):
-    """A background bulk import from the NetBox devicetype-library — one folder
+    """A background bulk import from the NetBox devicetype-library - one folder
     (e.g. a whole manufacturer, or the entire device-types dir) pulled off the
     RQ ``low`` queue so the UI can poll its progress. The synchronous
     import-yaml endpoint handles small pastes; this handles the thousands.
 
     ``kind`` distinguishes the two jobs sharing this machinery: ``library``
-    (the original YAML import — creates types) and ``image_reimport``
-    (re-downloading elevation images for EXISTING types after media loss —
+    (the original YAML import - creates types) and ``image_reimport``
+    (re-downloading elevation images for EXISTING types after media loss -
     touches only the two image fields)."""
 
     STATUS_CHOICES = [
@@ -3742,7 +3746,7 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     max_weight = models.DecimalField(
         max_digits=8, decimal_places=2, null=True, blank=True,
-        help_text="Load budget (see max_weight_unit) — what the rack/floor is "
+        help_text="Load budget (see max_weight_unit) - what the rack/floor is "
         "rated to carry. Devices sum against it via their type's weight.",
     )
     max_weight_unit = models.CharField(
@@ -3758,7 +3762,7 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     desc_units = models.BooleanField(
         default=False, help_text="Number units top-to-bottom instead of bottom-up.",
     )
-    # Cabinet outer dimensions — the physical footprint (frame included), used
+    # Cabinet outer dimensions - the physical footprint (frame included), used
     # by the 3D room view and scaled drawings. Blank = plausible render
     # defaults (depth 1000 mm; width = rail width + 150 mm frame).
     outer_width_mm = models.PositiveSmallIntegerField(
@@ -3786,7 +3790,7 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 
 class RackType(NumIdMixin, TimestampedModel, TaggableMixin):
-    """A reusable rack profile — manufacturer/model plus the physical
+    """A reusable rack profile - manufacturer/model plus the physical
     dimensions a cabinet of that model always has. Picking one on a rack
     pre-fills the dims (client-side; the rack stays the source of truth),
     and its accessories can stamp side-mounted 0U gear onto new racks."""
@@ -3847,7 +3851,7 @@ class RackType(NumIdMixin, TimestampedModel, TaggableMixin):
 
 
 class RackTypeAccessory(TimestampedModel):
-    """Factory-fitted 0U gear on a rack model — typically vertical PDU
+    """Factory-fitted 0U gear on a rack model - typically vertical PDU
     strips. On rack creation the accessories can (opt-in) stamp one
     side-mounted device each, named ``{rack}-{label}``."""
 
@@ -3919,7 +3923,7 @@ class DeviceRole(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin)
     )
     is_patch_panel = models.BooleanField(
         default=False,
-        help_text="Devices with this role are passive patch panels — hidden "
+        help_text="Devices with this role are passive patch panels - hidden "
         "in topology by default and kept out of the level tiers.",
     )
     config_template = models.ForeignKey(
@@ -3966,7 +3970,7 @@ class PlatformGroup(NumIdMixin, TimestampedModel):
         ]
 
     def clean(self):
-        # Cycle guard — a group can't be its own ancestor.
+        # Cycle guard - a group can't be its own ancestor.
         seen, node = {self.pk}, self.parent
         while node is not None:
             if node.pk in seen:
@@ -4017,7 +4021,7 @@ class Platform(NumIdMixin, TimestampedModel, LifecycleMixin, TaggableMixin):
 
 
 class Service(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """A network service exposed by a device or VM — a name + protocol + one or
+    """A network service exposed by a device or VM - a name + protocol + one or
     more ports. Can spawn a monitoring check on its port (the Danbyte twist)."""
 
     PROTOCOL_CHOICES = [("tcp", "TCP"), ("udp", "UDP")]
@@ -4061,7 +4065,7 @@ class Service(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 
 class ServiceTemplate(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """A reusable service definition (e.g. "HTTPS — TCP 443"). Define a
+    """A reusable service definition (e.g. "HTTPS - TCP 443"). Define a
     name + protocol + ports once, then reuse it when creating Services."""
 
     PROTOCOL_CHOICES = Service.PROTOCOL_CHOICES
@@ -4091,7 +4095,7 @@ class ServiceTemplate(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableM
 
 
 class DeviceTypeService(_ComponentTemplate):
-    """A service template on a device type — like an interface/port template,
+    """A service template on a device type - like an interface/port template,
     but for a network service. Materialises a ``Service`` onto every new device
     of the type (see ``materialize_device_components``). ``monitor`` carries
     through to the materialised service's ``monitored`` flag so a whole fleet is
@@ -4120,7 +4124,7 @@ class DeviceTypeService(_ComponentTemplate):
 class IPRange(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """A contiguous range of IP addresses ``start_address``…``end_address``.
 
-    Unlike a Prefix (a CIDR block), a range is an arbitrary inclusive span —
+    Unlike a Prefix (a CIDR block), a range is an arbitrary inclusive span -
     handy for DHCP pools or carve-outs that don't align to a subnet boundary.
     VRF-scoped like Prefix/IPAddress so the same span can exist per routing
     context. ``role`` reuses the tenant's IPRole catalog.
@@ -4174,7 +4178,7 @@ class IPRange(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         return f"{self.start_address}–{self.end_address}"
 
     def save(self, *args, **kwargs):
-        # A range under a prefix lives in that prefix's VRF — the same
+        # A range under a prefix lives in that prefix's VRF - the same
         # denormalisation IPAddress does, and the rule IPRangeSerializer already
         # applies. Enforcing it here covers the ORM paths the serializer never
         # sees (the DHCP sync creates exclusion ranges directly). A range with
@@ -4286,7 +4290,7 @@ class Aggregate(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     @property
     def utilisation_pct(self):
         """Share of the aggregate's space covered by child prefixes (those that
-        are subnets of it, same tenant). IPv4 only — IPv6 spaces are too large
+        are subnets of it, same tenant). IPv4 only - IPv6 spaces are too large
         to express as a meaningful percentage."""
         net = self.network
         if net is None or net.version == 6:
@@ -4349,7 +4353,7 @@ class VLANGroup(NumIdMixin, TimestampedModel):
     )
     name = models.CharField(max_length=128)
     slug = models.SlugField(max_length=128)
-    # Optional scope — a group usually belongs to a site or a cluster.
+    # Optional scope - a group usually belongs to a site or a cluster.
     site = models.ForeignKey(
         Site, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="vlan_groups",
@@ -4380,7 +4384,7 @@ class VLANGroup(NumIdMixin, TimestampedModel):
 
 # ─── FHRP groups (VRRP / HSRP / GLBP / CARP) ─────────────────────────────────
 class FHRPGroup(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """A First-Hop Redundancy Protocol group — VRRP/HSRP/GLBP/CARP — that shares
+    """A First-Hop Redundancy Protocol group - VRRP/HSRP/GLBP/CARP - that shares
     a virtual IP across the interfaces assigned to it."""
 
     PROTOCOL_CHOICES = [
@@ -4428,7 +4432,7 @@ class FHRPGroup(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 class FHRPGroupAssignment(TimestampedModel):
     """Binds an FHRP group to a device interface (or VM interface) with a
-    priority — the per-member election weight."""
+    priority - the per-member election weight."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     fhrp_group = models.ForeignKey(
@@ -4510,7 +4514,7 @@ class ContactGroup(NumIdMixin, TimestampedModel):
         ]
 
     def clean(self):
-        # Cycle guard — a group can't be its own ancestor.
+        # Cycle guard - a group can't be its own ancestor.
         seen, node = {self.pk}, self.parent
         while node is not None:
             if node.pk in seen:
@@ -4655,7 +4659,7 @@ class Provider(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 
 class ProviderNetwork(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """The far side of a circuit that isn't one of your own sites — a
+    """The far side of a circuit that isn't one of your own sites - a
     provider's cloud, an internet exchange fabric, another carrier's network.
     Exists so a CircuitTermination has something to point at when the Z end
     isn't a Site."""
@@ -4690,7 +4694,7 @@ class ProviderNetwork(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableM
 
 class CircuitType(NumIdMixin, TimestampedModel):
     """A user-defined classification for circuits (Internet, Transit, MPLS,
-    Dark Fibre, …). Zero pre-filled data — operators create their own."""
+    Dark Fibre, …). Zero pre-filled data - operators create their own."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -4739,7 +4743,7 @@ class Circuit(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     commit_rate_kbps = models.PositiveIntegerField(
         null=True, blank=True, help_text="Committed information rate, in kbps."
     )
-    # A/Z endpoints live in CircuitTermination rows (circuit.terminations) —
+    # A/Z endpoints live in CircuitTermination rows (circuit.terminations) -
     # each end carries its own speeds / xconnect / patch-panel info and can
     # land on a Site or a ProviderNetwork.
     description = models.CharField(max_length=255, blank=True, default="")
@@ -4761,7 +4765,7 @@ class Circuit(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 class CircuitTermination(TimestampedModel):
     """One end (A or Z) of a circuit. Lands on **either** one of your sites or
     a provider network (exactly one), and carries the per-side physical
-    details — speeds, cross-connect ID, patch-panel info. Tenant scope is
+    details - speeds, cross-connect ID, patch-panel info. Tenant scope is
     inherited via circuit."""
 
     SIDE_CHOICES = [("A", "A"), ("Z", "Z")]
@@ -4822,7 +4826,7 @@ class CircuitTermination(TimestampedModel):
 
 # ─── Power ───────────────────────────────────────────────────────────────────
 class PowerPanel(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """An electrical distribution panel within a site — the source that power
+    """An electrical distribution panel within a site - the source that power
     feeds draw from."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -4849,7 +4853,7 @@ class PowerPanel(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin)
 
 
 class PowerFeed(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """A power feed from a panel, optionally delivered to a rack — carries the
+    """A power feed from a panel, optionally delivered to a rack - carries the
     electrical characteristics and a utilisation ceiling."""
 
     TYPE_CHOICES = [("primary", "Primary"), ("redundant", "Redundant")]
@@ -4900,7 +4904,7 @@ class PowerFeed(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 # ─── Wireless ────────────────────────────────────────────────────────────────
 class WirelessLANGroup(NumIdMixin, TimestampedModel):
     """An organisational grouping of wireless LANs (a campus, a tenant-zone…).
-    Zero pre-filled data — operators create their own."""
+    Zero pre-filled data - operators create their own."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -4995,7 +4999,7 @@ class TunnelGroup(NumIdMixin, TimestampedModel):
 
 
 class IPSecProfile(NumIdMixin, TimestampedModel):
-    """A reusable IKE/IPSec crypto profile that tunnels reference — flattens the
+    """A reusable IKE/IPSec crypto profile that tunnels reference - flattens the
     common IKE + IPSec policy parameters into one named record."""
 
     IKE_VERSION_CHOICES = [(1, "IKEv1"), (2, "IKEv2")]
@@ -5057,8 +5061,8 @@ class Tunnel(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """A VPN tunnel, optionally grouped and secured by an IPSec profile."""
 
     ENCAP_CHOICES = [
-        ("ipsec-tunnel", "IPSec — Tunnel"),
-        ("ipsec-transport", "IPSec — Transport"),
+        ("ipsec-tunnel", "IPSec - Tunnel"),
+        ("ipsec-transport", "IPSec - Transport"),
         ("gre", "GRE"),
         ("ip-ip", "IP-in-IP"),
         ("wireguard", "WireGuard"),
@@ -5102,7 +5106,7 @@ class Tunnel(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 class TunnelTermination(TimestampedModel):
     """One end of a tunnel, bound to a device interface **or** a VM interface
-    (exactly one — same explicit-FK pattern as CableTermination). ``role``
+    (exactly one - same explicit-FK pattern as CableTermination). ``role``
     says what this end is in the topology; ``outside_ip`` is the underlay /
     public address the tunnel rides on. The tunnel's *inside* IPs attach to
     the terminating interface normally. Tenant scope inherited via tunnel."""
@@ -5174,7 +5178,7 @@ class L2VPN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     slug = models.SlugField(max_length=128)
     type = models.CharField(max_length=16, choices=TYPE_CHOICES)
     identifier = models.BigIntegerField(
-        null=True, blank=True, help_text="Overlay identifier — VNI / VC-ID."
+        null=True, blank=True, help_text="Overlay identifier - VNI / VC-ID."
     )
     status = models.ForeignKey(
         "Status", on_delete=models.PROTECT, null=True, blank=True,
@@ -5203,7 +5207,7 @@ class L2VPN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 
 class L2VPNTermination(TimestampedModel):
-    """Attaches an L2VPN to the thing carrying its traffic — a VLAN, a device
+    """Attaches an L2VPN to the thing carrying its traffic - a VLAN, a device
     interface, or a VM interface. Exactly one endpoint per termination; an
     endpoint terminates at most one L2VPN. Tenant scope inherited via the
     l2vpn."""
@@ -5261,7 +5265,7 @@ class L2VPNTermination(TimestampedModel):
 
 # ─── Regions & Locations (org-tree nesting) ──────────────────────────────────
 class Region(NumIdMixin, TimestampedModel):
-    """A geographic/organisational region — a self-nesting tree above sites
+    """A geographic/organisational region - a self-nesting tree above sites
     (e.g. Europe → Netherlands → Amsterdam). Zero pre-filled data."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -5299,7 +5303,7 @@ class Region(NumIdMixin, TimestampedModel):
 
 
 class Location(NumIdMixin, TimestampedModel):
-    """A physical location *within a site* — a self-nesting tree (e.g.
+    """A physical location *within a site* - a self-nesting tree (e.g.
     Building A → Floor 2 → Room 210). Racks/devices can hang off these."""
 
 
@@ -5362,7 +5366,7 @@ class ConfigContext(NumIdMixin, TimestampedModel):
     )
     name = models.CharField(max_length=128)
     weight = models.PositiveIntegerField(
-        default=1000, help_text="Merge order — higher weight wins on conflicts."
+        default=1000, help_text="Merge order - higher weight wins on conflicts."
     )
     is_active = models.BooleanField(default=True)
     description = models.TextField(blank=True, default="")
@@ -5410,7 +5414,7 @@ class ExportTemplate(NumIdMixin, TimestampedModel):
     )
     description = models.TextField(blank=True, default="")
     template_code = models.TextField(
-        help_text="Jinja2 source. Context: `objects` (and `queryset`) — the "
+        help_text="Jinja2 source. Context: `objects` (and `queryset`) - the "
                   "objects of this type in the active tenant.",
     )
     mime_type = models.CharField(max_length=64, blank=True, default="text/plain")
@@ -5430,7 +5434,7 @@ class ExportTemplate(NumIdMixin, TimestampedModel):
 
 
 class LabelTemplate(NumIdMixin, TimestampedModel):
-    """A printable label for one object of ``object_type`` — a Jinja2 HTML body
+    """A printable label for one object of ``object_type`` - a Jinja2 HTML body
     sized in millimetres, optionally carrying a QR code. Rendered per object in a
     sandbox (see :mod:`api.label_templates`) and laid out on a print sheet by the
     frontend. Same shape as :class:`ExportTemplate`, but per-object + physical."""
@@ -5523,7 +5527,7 @@ class LabelTemplate(NumIdMixin, TimestampedModel):
 
 
 def resolve_config_template(device):
-    """The config template that renders this device's intended config —
+    """The config template that renders this device's intended config -
     device's own, else its role's, else its platform's. None when nothing is
     bound anywhere."""
     if device.config_template_id:
@@ -5538,7 +5542,7 @@ def resolve_config_template(device):
 class FloorTileType(NumIdMixin, TimestampedModel):
     """A user-created floor-plan tile kind ("Rack", "Wall", "Cooling"…).
 
-    The whole tile vocabulary is tenant data — there are no built-in kinds
+    The whole tile vocabulary is tenant data - there are no built-in kinds
     (zero-pre-filled-data). Behaviour never keys off the type; it derives
     from what a tile *links to*, so these stay purely visual/semantic."""
 
@@ -5564,7 +5568,7 @@ class FloorTileType(NumIdMixin, TimestampedModel):
     is_zone = models.BooleanField(
         default=False,
         help_text="Zone tiles paint the grid background (hot/cold aisles, "
-                  "security areas) — they render under normal tiles and other "
+                  "security areas) - they render under normal tiles and other "
                   "tiles may sit on top of them.",
     )
     has_fov = models.BooleanField(
@@ -5575,7 +5579,7 @@ class FloorTileType(NumIdMixin, TimestampedModel):
     perforated = models.BooleanField(
         default=False,
         help_text="Zone tiles of this type render as perforated/grate floor "
-                  "in the 3D room — the cold-aisle supply-tile read.",
+                  "in the 3D room - the cold-aisle supply-tile read.",
     )
     description = models.TextField(blank=True, default="")
 
@@ -5631,7 +5635,7 @@ class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         validators=[MinValueValidator(1000), MaxValueValidator(20000)],
         help_text="Room ceiling height, in millimetres.",
     )
-    # View prefs (default zoom/pan, overlay mode, grid on/off) — free schema,
+    # View prefs (default zoom/pan, overlay mode, grid on/off) - free schema,
     # same trick as TopologyView.state, so it evolves without migrations.
     state = models.JSONField(default=dict, blank=True)
     description = models.TextField(blank=True, default="")
@@ -5653,12 +5657,12 @@ class FloorPlanTile(TimestampedModel):
     """One tile placed on a floor plan's grid.
 
     No ``NumIdMixin``: tiles carry no tenant FK (they scope through their
-    plan), so a per-tenant numid could never be assigned — and canvas cells
+    plan), so a per-tenant numid could never be assigned - and canvas cells
     aren't objects an operator refers to by number anyway.
 
     Its *type* (colour + icon) is exactly one of: a user-created
     FloorTileType, or a DeviceRole (roles double as tile types, reusing
-    their colour). Its *behaviour* comes from its optional link — a tile
+    their colour). Its *behaviour* comes from its optional link - a tile
     linked to a rack gets the rack overlays whatever its type is called."""
 
     STATUS_CHOICES = [
@@ -5845,7 +5849,7 @@ class FloorPlanTile(TimestampedModel):
 
 
 class SiteMarker(TimestampedModel):
-    """A free-standing marker on the geographic Site map — the world-map
+    """A free-standing marker on the geographic Site map - the world-map
     analog of an unlinked floor-plan tile. Its type is exactly one of a
     user-created FloorTileType or a DeviceRole (reusing their color/icon),
     so the marker vocabulary stays tenant data (zero pre-filled). Camera-ish
@@ -5871,7 +5875,7 @@ class SiteMarker(TimestampedModel):
         blank=True,
         related_name="site_markers",
     )
-    # Optional link to a real device — a free marker can stand in for a
+    # Optional link to a real device - a free marker can stand in for a
     # camera/AP that isn't itself placed, and the popover then offers a
     # jump-off to it.
     device = models.ForeignKey(
@@ -5912,7 +5916,7 @@ class SiteMarker(TimestampedModel):
 class FloorPlanTray(TimestampedModel):
     """A cable tray / conduit run drawn on a floor plan: a named polyline of
     grid points that physical cables are assigned to follow. This is the
-    buildable wiring layer — the thing you print and hand to contractors.
+    buildable wiring layer - the thing you print and hand to contractors.
 
     Cables are assigned manually or by the auto-router (``api/pathfinding.py``
     via ``POST /api/cables/{id}/auto-route/``), which picks the best path
@@ -5927,7 +5931,7 @@ class FloorPlanTray(TimestampedModel):
     # "ladder", "underfloor"… whatever the shop calls it.
     kind = models.CharField(max_length=32, blank=True, default="")
     color = models.CharField(max_length=7, blank=True, default="")
-    # Vertical placement — where the run physically lives. Drives the 3D
+    # Vertical placement - where the run physically lives. Drives the 3D
     # render height and the vertical-drop term in route-length estimation.
     LEVEL_CHOICES = [
         ("overhead", "Overhead"),
@@ -5964,7 +5968,7 @@ class FloorPlanTray(TimestampedModel):
 class FloorPlanRaisedFloorArea(TimestampedModel):
     """A raised-floor region of a plan: a rectangle of grid cells standing on
     pedestals with a cable plenum underneath. Rooms are rarely uniformly
-    raised — the DC pad is, the adjoining corridor isn't — so the raised
+    raised - the DC pad is, the adjoining corridor isn't - so the raised
     floor is per-area, and an L-shaped pad is simply two rectangles.
 
     The plenum depth drives two things: how deep underfloor trays/cables sit
@@ -5987,7 +5991,7 @@ class FloorPlanRaisedFloorArea(TimestampedModel):
     plenum_mm = models.PositiveSmallIntegerField(
         default=300,
         validators=[MinValueValidator(50), MaxValueValidator(2000)],
-        help_text="Void depth under the finished floor — how far below 0 the "
+        help_text="Void depth under the finished floor - how far below 0 the "
         "structural slab sits here.",
     )
     label = models.CharField(max_length=64, blank=True, default="")
@@ -6006,7 +6010,7 @@ class FloorPlanWall(TimestampedModel):
     trays use, so a wall can run along the boundary BETWEEN two tiles or down
     the centreline OF a tile. ``openings`` are door/passage spans along the
     polyline's segments; v1 doors are pure geometry (no per-door metadata),
-    so they live as JSON on the wall — one PATCH keeps wall + doors atomic,
+    so they live as JSON on the wall - one PATCH keeps wall + doors atomic,
     exactly how a tray keeps its whole geometry in ``points``.
 
     v1 walls are documentation geometry: they render in 2D and 3D but do NOT
@@ -6025,7 +6029,7 @@ class FloorPlanWall(TimestampedModel):
         help_text="Blank = full height (the plan's ceiling).",
     )
     color = models.CharField(max_length=7, blank=True, default="")
-    # [{"seg": int, "from": float, "to": float, "height_mm": int|null}, …] —
+    # [{"seg": int, "from": float, "to": float, "height_mm": int|null}, …] -
     # spans along segment ``seg`` measured in cell units from its start
     # vertex; null height renders a standard 2100 mm door.
     openings = models.JSONField(default=list, blank=True)
@@ -6040,7 +6044,7 @@ class FloorPlanWall(TimestampedModel):
 
 class CableRoute(TimestampedModel):
     """A geographic cable run drawn on the site map: a named polyline of
-    lat/lng waypoints that physical cables are assigned to follow — ducts,
+    lat/lng waypoints that physical cables are assigned to follow - ducts,
     aerial spans, direct-bury trenches. The outside-plant sibling of
     FloorPlanTray; routing is manual in v1 (a cable belongs to the routes
     it runs through)."""

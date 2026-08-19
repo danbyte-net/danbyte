@@ -90,12 +90,12 @@ function VirtualizationSourcesPage() {
       }),
     onSuccess: (r) => {
       if (r.ok) {
-        // The product comes from the response — naming it here is what made a
+        // The product comes from the response - naming it here is what made a
         // vCenter probe report "Proxmox VE". vCenter reports no version.
         const name = [r.product, r.version].filter(Boolean).join(" ")
         const parts = [`${r.online_nodes}/${r.nodes} nodes online`]
         if (r.vms !== undefined) parts.push(`${r.vms} VMs`)
-        toast.success(`Connected — ${name}, ${parts.join(", ")}`)
+        toast.success(`Connected - ${name}, ${parts.join(", ")}`)
       } else toast.error(r.error || "Probe failed")
     },
     onError: (e) => apiErrorToast(e),
@@ -124,7 +124,7 @@ function VirtualizationSourcesPage() {
         const unplaced = r.ips_skipped ?? 0
         if (unplaced)
           toast.warning(
-            `${base} · ${unplaced} address${unplaced === 1 ? "" : "es"} unplaced — no containing prefix`
+            `${base} · ${unplaced} address${unplaced === 1 ? "" : "es"} unplaced - no containing prefix`
           )
         else toast.success(base)
       } else toast.error(r.error || "Sync failed")
@@ -279,7 +279,7 @@ function VirtualizationSourcesPage() {
         <EmptyState title="No virtualization sources.">
           Connect a Proxmox VE cluster or a VMware vCenter and Danbyte imports
           its virtual machines, their interfaces and guest IPs into the
-          cluster/VM inventory — and keeps them fresh.
+          cluster/VM inventory - and keeps them fresh.
         </EmptyState>
       ) : (
         <DataTable
@@ -311,7 +311,7 @@ function VirtualizationSourcesPage() {
             <AlertDialogTitle>Delete {deleting?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
               Removes the connection and its sync state. The virtual machines,
-              switches and networks it imported stay — they simply stop
+              switches and networks it imported stay - they simply stop
               updating.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -474,7 +474,7 @@ function SourceDialog({
             info={
               isVcenter
                 ? "The vCenter Server FQDN or IP."
-                : "Any cluster node works — the API answers cluster-wide."
+                : "Any cluster node works - the API answers cluster-wide."
             }
           />
           <FormText label="API port" value={port} onChange={setPort} />
@@ -482,11 +482,11 @@ function SourceDialog({
             label="Sync mode"
             value={syncMode}
             onChange={(v) => setSyncMode(v ?? "review")}
-            info="Automatic mirrors the hypervisor (it becomes the source of truth). Review polls on a schedule but only applies changes you accept. Manual detects only when you sync by hand — both keep Danbyte the source of truth."
+            info="Automatic mirrors the hypervisor (it becomes the source of truth). Review polls on a schedule but only applies changes you accept. Manual detects only when you sync by hand - both keep Danbyte the source of truth."
             options={[
-              { value: "review", label: "Review — apply on accept" },
-              { value: "auto", label: "Automatic — mirror" },
-              { value: "manual", label: "Manual — detect on demand" },
+              { value: "review", label: "Review - apply on accept" },
+              { value: "auto", label: "Automatic - mirror" },
+              { value: "manual", label: "Manual - detect on demand" },
             ]}
           />
           <FormText
@@ -583,7 +583,7 @@ function SourceDialog({
             />
             <FormSelect
               label="If nothing there contains it"
-              hint="Searching other VRFs only ever places addresses that would otherwise be skipped — it never moves one that already fits."
+              hint="Searching other VRFs only ever places addresses that would otherwise be skipped - it never moves one that already fits."
               value={vrfMode}
               onChange={(v) => setVrfMode(v === "search" ? "search" : "pinned")}
               options={[

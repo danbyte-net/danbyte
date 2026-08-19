@@ -1,4 +1,4 @@
-"""Outbound webhooks — POST a payload to an external URL when objects change.
+"""Outbound webhooks - POST a payload to an external URL when objects change.
 
 Tenant-scoped: each tenant configures its own webhooks. Delivery is fired from
 post_save / post_delete signals (see ``webhooks.py``) and runs off the request
@@ -84,7 +84,7 @@ class Webhook(TimestampedModel):
 
 
 class AutomationTarget(TimestampedModel):
-    """A runner Danbyte can dispatch a deploy to — an Ansible AWX/AAP job
+    """A runner Danbyte can dispatch a deploy to - an Ansible AWX/AAP job
     template, or a generic signed webhook (Jenkins/GitLab/Rundeck). Danbyte fires
     the trigger; the runner holds device creds and does the push."""
 
@@ -111,7 +111,7 @@ class AutomationTarget(TimestampedModel):
         max_length=64, blank=True, default="",
         help_text="AWX job-template id to launch (AWX kind only).",
     )
-    # Encrypted at rest — an AWX bearer token is lateral movement into the
+    # Encrypted at rest - an AWX bearer token is lateral movement into the
     # automation platform if the DB leaks.
     token = EncryptedJSONField(
         blank=True, default="",
@@ -191,7 +191,7 @@ class DeviceConfigState(TimestampedModel):
     A runner renders intended config from Danbyte, reads the actual running
     config off the box, and POSTs the actual (and optionally the intended) back.
     Danbyte diffs them and stores the result so the device's drift is visible in
-    the UI — the read-half of the IaC loop (Golden-Config / Assurance style).
+    the UI - the read-half of the IaC loop (Golden-Config / Assurance style).
     One row per device (latest wins); history can come later.
     """
 
@@ -238,7 +238,7 @@ class DeviceConfigSnapshot(TimestampedModel):
     """An append-only history of config-drift *transitions* for a device (P3.2).
 
     A row is written only when the device's drift status or diff actually
-    changes (see the signal in ``drift_history.py``) — so the table is an event
+    changes (see the signal in ``drift_history.py``) - so the table is an event
     log ("drifted at T1, back in sync at T2"), not one row per heartbeat. Keeps
     the diff for context; the full intended/actual blobs stay on the latest
     ``DeviceConfigState`` only.
@@ -270,7 +270,7 @@ class NetBoxImportRun(TimestampedModel):
     poll its progress. Mirrors ``DeployRun``'s job-record shape.
 
     The NetBox API token is write-only (Fernet-encrypted in ``secrets``) and
-    cleared when the run reaches a terminal state — a migration credential
+    cleared when the run reaches a terminal state - a migration credential
     should not outlive the migration.
     """
 
@@ -315,7 +315,7 @@ class NetBoxImportRun(TimestampedModel):
         "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="+",
     )
-    # Fernet-encrypted {"token": "..."} — cleared on finish.
+    # Fernet-encrypted {"token": "..."} - cleared on finish.
     secrets = EncryptedJSONField(default=dict, blank=True)
 
     class Meta:
@@ -356,7 +356,7 @@ class AddressPlacementMixin(models.Model):
     """Where the addresses a connection discovers are allowed to land.
 
     A sync records an address only when a containing prefix already exists, and
-    it used to look for that prefix in the Global VRF alone — so a prefix moved
+    it used to look for that prefix in the Global VRF alone - so a prefix moved
     into a VRF made its addresses vanish from sync entirely. These two fields
     say which VRF to look in; ``api.vrf_placement`` does the looking.
 
@@ -381,7 +381,7 @@ class AddressPlacementMixin(models.Model):
         help_text="Routing context for addresses this connection discovers. "
                   "NULL = Global VRF.",
     )
-    #: What the last run saw but couldn't record — an address with no
+    #: What the last run saw but couldn't record - an address with no
     #: containing prefix, a host with no matching site. Not errors: the sync
     #: succeeded. Bounded on write, since a scheduled run has no toast.
     last_sync_skipped = models.JSONField(default=list, blank=True)
@@ -410,7 +410,7 @@ class WindowsServerConnection(AddressPlacementMixin, TimestampedModel):
     A single connection can serve both the DHCP and DNS roles (they usually
     live on the same box). The password is Fernet-encrypted at rest and
     write-only through the API. Outbound connects go through the same
-    deployment SSRF allowlist as the NetBox importer — an internal host must
+    deployment SSRF allowlist as the NetBox importer - an internal host must
     be allow-listed under Settings → Deployment before Danbyte will talk to it.
     """
 
@@ -429,7 +429,7 @@ class WindowsServerConnection(AddressPlacementMixin, TimestampedModel):
     verify_ssl = models.BooleanField(default=False)
     auth_mode = models.CharField(max_length=16, choices=AUTH_CHOICES, default="ntlm")
     username = models.CharField(max_length=255)
-    # Fernet-encrypted {"password": "..."} — write-only in serializers.
+    # Fernet-encrypted {"password": "..."} - write-only in serializers.
     credentials = EncryptedJSONField(default=dict, blank=True)
 
     dhcp_enabled = models.BooleanField(default=False)
@@ -457,8 +457,8 @@ class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
     """A hypervisor/cluster API Danbyte syncs virtual machines from.
 
     ``kind`` picks the client; Proxmox is the first implementation and vCenter
-    slots in behind the same model later. Credentials are kind-shaped —
-    Proxmox: ``{"token_id": "user@realm!name", "secret": "..."}`` — and
+    slots in behind the same model later. Credentials are kind-shaped -
+    Proxmox: ``{"token_id": "user@realm!name", "secret": "..."}`` - and
     write-only through the API.
     """
 
@@ -466,7 +466,7 @@ class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
 
     #: How discovered changes reach the inventory. ``auto`` mirrors the
     #: hypervisor (it becomes the source of truth); ``review`` and ``manual``
-    #: keep Danbyte the source of truth — nothing changes without a human
+    #: keep Danbyte the source of truth - nothing changes without a human
     #: accepting it. ``review`` still polls on a schedule to *detect*; ``manual``
     #: only detects when you run a sync by hand.
     MODE_CHOICES = [
@@ -500,7 +500,7 @@ class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
     #: Create the hypervisor's own nodes/hosts as Devices. Off by default:
     #: this writes into the physical inventory, which is the operator's
     #: territory. The site comes from placement rules when they resolve one;
-    #: the device type stays theirs — nothing on the wire says what it is.
+    #: the device type stays theirs - nothing on the wire says what it is.
     sync_hosts = models.BooleanField(default=False)
 
     last_sync_at = models.DateTimeField(null=True, blank=True)
@@ -525,15 +525,15 @@ class VirtPlacementRule(TimestampedModel):
     Operators asked for this as a config string keyed on management IP
     (``192.168.110.* = UA``). Two problems with that: a host's address isn't in
     the sync payload at all, and a site name in a string is a name Danbyte has
-    to trust. So a rule matches the hypervisor's own **structure** — datacenter,
-    folder, cluster or host name — and points at a real :class:`api.Site`, which
+    to trust. So a rule matches the hypervisor's own **structure** - datacenter,
+    folder, cluster or host name - and points at a real :class:`api.Site`, which
     makes "never invent a Site" a property of the schema rather than a check
     someone has to remember.
 
     Resolution is **nearest wins**: host beats folder beats cluster beats
     datacenter, and for folders the closest matching ancestor wins, so a rule on
     ``Test site`` covers ``Test site / Linux`` without a rule per subfolder.
-    ``weight`` only breaks ties within one level — nobody should have to reason
+    ``weight`` only breaks ties within one level - nobody should have to reason
     about global ordering to override a single machine.
     """
 
@@ -588,7 +588,7 @@ class DhcpScope(TimestampedModel):
     """Mirror of one Windows DHCP scope, linked to the Prefix it syncs into.
 
     The IPAM objects (Prefix / IPRange / IPAddress) stay clean: everything
-    DHCP-specific — scope identity, options, lease-sync opt-in — lives here,
+    DHCP-specific - scope identity, options, lease-sync opt-in - lives here,
     so a synced prefix is an ordinary prefix that happens to have a scope row
     pointing at it.
     """
@@ -614,7 +614,7 @@ class DhcpScope(TimestampedModel):
     end_range = models.GenericIPAddressField(null=True, blank=True)
     subnet_mask = models.GenericIPAddressField(null=True, blank=True)
     lease_duration = models.CharField(max_length=64, blank=True, default="")
-    # [{"option_id": 3, "name": "Router", "value": ["10.77.0.1"]}, …] — kept
+    # [{"option_id": 3, "name": "Router", "value": ["10.77.0.1"]}, …] - kept
     # structured (not flattened) so scope options stay inspectable.
     options = models.JSONField(default=list, blank=True)
     prefix = models.ForeignKey(
@@ -632,7 +632,7 @@ class DhcpScope(TimestampedModel):
             models.UniqueConstraint(
                 fields=["connection", "scope_id"], name="uniq_dhcpscope_conn_scope"
             ),
-            # Local scopes have no connection — dedupe them per tenant instead
+            # Local scopes have no connection - dedupe them per tenant instead
             # (NULL connections are distinct, so the pair above can't).
             models.UniqueConstraint(
                 fields=["tenant", "scope_id"],
@@ -676,7 +676,7 @@ class DhcpExclusion(TimestampedModel):
 
 
 class DhcpReservation(TimestampedModel):
-    """One DHCP reservation, mirrored from — or pushed to — the server.
+    """One DHCP reservation, mirrored from - or pushed to - the server.
 
     ``managed`` marks rows Danbyte owns (created/edited here and pushed out);
     on those, a change made directly in the Windows console is recorded as
@@ -737,7 +737,7 @@ class DhcpLease(TimestampedModel):
         "api.IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="dhcp_leases",
     )
-    # True when the sync created the IPAddress row itself — only those are
+    # True when the sync created the IPAddress row itself - only those are
     # cleaned up again when the lease disappears; rows an operator already had
     # (or has since edited) are never deleted by lease churn.
     created_ip = models.BooleanField(default=False)
@@ -773,10 +773,10 @@ class DnsZone(TimestampedModel):
     sync = models.BooleanField(default=False)
     # Opt-in: when reconciling, create an IPAddress for any record whose
     # address isn't in IPAM yet (only where a containing prefix exists). Off by
-    # default — zero-prefilled-data means importing is a deliberate choice.
+    # default - zero-prefilled-data means importing is a deliberate choice.
     auto_create = models.BooleanField(default=False)
     # Authored in Danbyte (not mirrored from a server). Managed zones are never
-    # pruned by sync — Danbyte is their source of truth. Mirrors DnsRecord.managed.
+    # pruned by sync - Danbyte is their source of truth. Mirrors DnsRecord.managed.
     managed = models.BooleanField(default=False)
     record_count = models.PositiveIntegerField(default=0)
     last_seen_at = models.DateTimeField(null=True, blank=True)
@@ -799,7 +799,7 @@ class DnsDrift(TimestampedModel):
     ``mismatch``: the record for this IP names something else than the IP's
     ``dns_name``. ``missing_record``: the IP carries a name inside this zone
     but the zone has no record for it. Rows are recomputed on every sync and
-    resolved by the operator (accept the server / push Danbyte's version) —
+    resolved by the operator (accept the server / push Danbyte's version) -
     never auto-applied.
     """
 
@@ -838,7 +838,7 @@ class DnsDrift(TimestampedModel):
 class VirtGuest(TimestampedModel):
     """One hypervisor guest, linked to the VirtualMachine it syncs into.
 
-    ``created_vm`` marks VMs the sync minted itself — only those are removed
+    ``created_vm`` marks VMs the sync minted itself - only those are removed
     again when the guest disappears from the hypervisor; VMs an operator
     already had are adopted and never deleted by sync.
     """
@@ -876,7 +876,7 @@ class VirtGuest(TimestampedModel):
 
 class VirtChange(TimestampedModel):
     """A discovered difference between the hypervisor and Danbyte's inventory,
-    awaiting a human decision (review/manual modes) — the review inbox.
+    awaiting a human decision (review/manual modes) - the review inbox.
 
     In ``auto`` mode changes are applied straight away and no rows land here.
     In ``review``/``manual`` mode each detected difference is recorded once and
@@ -888,6 +888,7 @@ class VirtChange(TimestampedModel):
         ("new_guest", "New VM on hypervisor"),
         ("spec_change", "Specs changed"),
         ("removed_guest", "VM removed from hypervisor"),
+        ("iface_extra", "Interface not on hypervisor"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -923,8 +924,8 @@ class VirtChange(TimestampedModel):
 
 
 class VirtNetwork(TimestampedModel):
-    """Maps one hypervisor network — a vCenter port-group or a Proxmox bridge
-    (optionally with a VLAN tag) — to the :class:`api.VLAN` it reconciles into,
+    """Maps one hypervisor network - a vCenter port-group or a Proxmox bridge
+    (optionally with a VLAN tag) - to the :class:`api.VLAN` it reconciles into,
     mirroring how :class:`DhcpScope` links to a Prefix. Danbyte's VLAN stays the
     source of truth; ``created_vlan`` marks VLANs the sync minted so only those
     are pruned. Optionally records the owning virtual switch."""
@@ -945,7 +946,7 @@ class VirtNetwork(TimestampedModel):
         related_name="virt_networks",
     )
     # A vSwitch trunks many VLANs and the routing domain follows the segment,
-    # so the port-group is the finer — and usually the correct — place to say
+    # so the port-group is the finer - and usually the correct - place to say
     # which VRF its addresses live in. NULL = follow the switch, then the
     # source. PROTECT (not SET_NULL like the links above) because this is
     # operator policy: silently reverting it to "follow the source" is the
@@ -976,7 +977,7 @@ class DnsRecord(TimestampedModel):
     linked to the IPAddress it concerns.
 
     Persisted so DNS data is queryable from IPAM (the prefix and IP pages) and
-    presentable as a real table — without a live WinRM call per view. Only
+    presentable as a real table - without a live WinRM call per view. Only
     reconciled (``sync=True``) zones populate records; the set is bounded and
     stable, and rows are pruned each sync like drift. High-churn, so it is
     RBAC-registered but deliberately **not** audited.

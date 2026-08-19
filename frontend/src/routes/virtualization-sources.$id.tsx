@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Trash2 } from "lucide-react"
+import { Plug, RefreshCw, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -61,6 +61,68 @@ function SourceDetailPage() {
       ),
   })
   const vmCount = vms.data?.count ?? 0
+  const qc = useQueryClient()
+  const { canDo } = useMe()
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["virtualization-source", id] })
+    qc.invalidateQueries({ queryKey: ["source-vms", id] })
+    qc.invalidateQueries({ queryKey: ["source-vms-list", id] })
+  }
+  const syncNow = useMutation({
+    mutationFn: () =>
+      api<{
+        ok: boolean
+        vms?: number
+        interfaces?: number
+        ips?: number
+        ips_skipped?: number
+        hosts?: number
+        error?: string
+      }>(`/api/virtualization-sources/${id}/sync/`, {
+        method: "POST",
+        body: "{}",
+      }),
+    onSuccess: (r) => {
+      if (!r.ok) {
+        toast.error(r.error || "Sync failed")
+      } else {
+        let base = `Synced: ${r.vms ?? 0} VMs, ${r.interfaces ?? 0} interfaces, ${r.ips ?? 0} IPs`
+        if (r.hosts) base += `, ${r.hosts} host${r.hosts === 1 ? "" : "s"}`
+        const unplaced = r.ips_skipped ?? 0
+        if (unplaced)
+          toast.warning(
+            `${base} · ${unplaced} address${unplaced === 1 ? "" : "es"} unplaced`
+          )
+        else toast.success(base)
+      }
+      refresh()
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  const test = useMutation({
+    mutationFn: () =>
+      api<{
+        ok: boolean
+        product?: string
+        version?: string
+        nodes?: number
+        online_nodes?: number
+        vms?: number
+        error?: string
+      }>(`/api/virtualization-sources/${id}/test/`, {
+        method: "POST",
+        body: "{}",
+      }),
+    onSuccess: (r) => {
+      if (!r.ok) return toast.error(r.error || "Probe failed")
+      const name = [r.product, r.version].filter(Boolean).join(" ")
+      const parts = [`${r.online_nodes}/${r.nodes} nodes online`]
+      if (r.vms !== undefined) parts.push(`${r.vms} VMs`)
+      toast.success(`Connected - ${name}, ${parts.join(", ")}`)
+    },
+    onError: (e) => apiErrorToast(e),
+  })
   const source = query.data
   if (query.isError) return <QueryError error={query.error} />
   if (!source) return <p className="text-sm text-muted-foreground">Loading…</p>
@@ -109,6 +171,31 @@ function SourceDetailPage() {
       backTo="/virtualization-sources"
       backLabel="Virtualization sources"
       title={source.name}
+      actions={
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={test.isPending}
+            onClick={() => test.mutate()}
+          >
+            <Plug className="h-3.5 w-3.5" />
+            {test.isPending ? "Testing…" : "Test"}
+          </Button>
+          {canDo("virtualizationsource", "change") && (
+            <Button
+              size="sm"
+              disabled={syncNow.isPending}
+              onClick={() => syncNow.mutate()}
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${syncNow.isPending ? "animate-spin" : ""}`}
+              />
+              {syncNow.isPending ? "Syncing…" : "Sync now"}
+            </Button>
+          )}
+        </>
+      }
       hero={
         <DetailHero
           title={source.name}
@@ -169,23 +256,27 @@ function SourceDetailPage() {
  *
  * Answers "what does this connection actually see?" without making the
  * operator go to the VM list and work out which rows came from where. */
+const VM_PAGE = 500
+
 function SourceVms({ sourceId }: { sourceId: string }) {
+  const { humanIds } = useMe()
   const query = useQuery({
     queryKey: ["source-vms-list", sourceId],
     queryFn: () =>
       api<Paginated<VirtualMachine>>(
-        `/api/virtual-machines/?virt_source=${sourceId}&page_size=200`
+        `/api/virtual-machines/?virt_source=${sourceId}&page_size=${VM_PAGE}`
       ),
   })
+  // The full column set, not a cut-down one: this tab answers "what does this
+  // connection actually see", which is a VM list that happens to be filtered -
+  // so it gets the same columns, facets and column preferences as the real one.
   const columns = useMemo(
-    () =>
-      buildVmColumns<VirtualMachine>({
-        include: ["name", "power", "cluster", "site", "primary_ip", "vcpus"],
-      }),
-    []
+    () => buildVmColumns<VirtualMachine>({ humanIds }),
+    [humanIds]
   )
   if (query.isError) return <QueryError error={query.error} />
   const rows = query.data?.results ?? []
+  const total = query.data?.count ?? 0
   if (!query.isLoading && rows.length === 0)
     return (
       <EmptyState title="No virtual machines yet.">
@@ -194,19 +285,27 @@ function SourceVms({ sourceId }: { sourceId: string }) {
       </EmptyState>
     )
   return (
-    <DataTable
-      data={rows}
-      columns={columns}
-      tableId="source-vms"
-      flexColumn="name"
-      embedded
-    />
+    <div className="space-y-2">
+      <DataTable
+        data={rows}
+        columns={columns}
+        tableId="source-vms"
+        flexColumn="name"
+        embedded
+      />
+      {total > rows.length && (
+        // Never let a cap look like the whole truth.
+        <p className="text-xs text-muted-foreground">
+          Showing the first {rows.length} of {total}.
+        </p>
+      )}
+    </div>
   )
 }
 
 /** What the last run saw but couldn't record.
  *
- * Not errors and not drift — the sync succeeded. These are things with nowhere
+ * Not errors and not drift - the sync succeeded. These are things with nowhere
  * to go: an address with no containing prefix, a host with no matching site.
  * Each line names its own fix, so this reads as a to-do list. */
 function SkippedList({ items }: { items: string[] }) {
@@ -325,7 +424,7 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
   return (
     <div className="max-w-3xl space-y-4">
       {/* The tip is part of the sentence, so it must not wrap onto a line of
-          its own — inline-flex keeps the trailing word and the icon together. */}
+          its own - inline-flex keeps the trailing word and the icon together. */}
       <p className="max-w-prose text-sm text-muted-foreground">
         Which site a synced host or VM belongs to, decided by where it sits in
         the{" "}
@@ -428,7 +527,7 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
           )}
           {found.isError && (
             <p className="text-xs text-muted-foreground">
-              Couldn&rsquo;t read what this source contains — type a pattern by
+              Couldn&rsquo;t read what this source contains - type a pattern by
               hand, or check the connection.
             </p>
           )}

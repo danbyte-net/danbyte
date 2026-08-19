@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
+import { GitCompareArrows, Pencil, RefreshCw, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import { type ColumnDef } from "@tanstack/react-table"
 
@@ -18,6 +18,8 @@ import {
 } from "@/components/detail-shell"
 import { QueryError } from "@/components/query-error"
 import { VmDeleteDialog } from "@/components/vm-delete-dialog"
+import { Badge } from "@/components/ui/badge"
+import { DriftDot } from "@/components/monitoring/device-drift-badge"
 import { StatusBadge } from "@/components/status-badge"
 import { PowerBadge } from "@/components/cells/power-badge"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -115,6 +117,23 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
             <>
               <StatusBadge status={vm.status} />
               <PowerBadge state={vm.power_state} />
+              {vm.synced_from && (
+                <Link
+                  to="/virtualization-sources/$id"
+                  params={{ id: vm.synced_from_id! }}
+                >
+                  <Badge variant="outline" className="gap-1 text-[10px]">
+                    <RefreshCw className="h-3 w-3" />
+                    {vm.synced_from}
+                  </Badge>
+                </Link>
+              )}
+              {vm.drift_count > 0 && (
+                <Badge variant="warning" className="gap-1 text-[10px]">
+                  <GitCompareArrows className="h-3 w-3" />
+                  {vm.drift_count} drift
+                </Badge>
+              )}
             </>
           }
           tags={vm.tags.length > 0 && <TagList tags={vm.tags} />}
@@ -146,7 +165,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
                       {vm.primary_ip.ip_address}
                     </Link>
                   ) : (
-                    <span className="text-muted-foreground">—</span>
+                    <span className="text-muted-foreground">-</span>
                   )
                 }
               />
@@ -156,7 +175,19 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
-        { value: "components", label: "Components", count: vm.interface_count },
+        {
+          value: "components",
+          // Same amber dot devices use for component drift - this is the same
+          // question ("does what we hold match the real thing?"), so it should
+          // look the same.
+          label: (
+            <>
+              Components
+              {vm.drift_count > 0 && <DriftDot />}
+            </>
+          ),
+          count: vm.interface_count,
+        },
         { value: "services", label: "Services", count: vm.service_count },
         { value: "monitoring", label: "Monitoring" },
         { value: "snmp", label: "SNMP" },
@@ -223,7 +254,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
   )
 }
 
-// The default "Overview" tab — VM facts in labelled cards with copy
+// The default "Overview" tab - VM facts in labelled cards with copy
 // buttons on the technical strings, then custom fields.
 function VmOverview({ vm }: { vm: VirtualMachine }) {
   const { humanIds } = useMe()
@@ -264,12 +295,14 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
         <Link
           to="/virtualization-sources/$id"
           params={{ id: vm.synced_from_id! }}
-          className="link"
         >
-          {vm.synced_from}
+          <Badge variant="outline" className="gap-1 text-[10px]">
+            <RefreshCw className="h-3 w-3" />
+            {vm.synced_from}
+          </Badge>
         </Link>
       ) : (
-        <span className="text-muted-foreground">Not synced</span>
+        dash
       ),
     },
     { label: "Role", value: vm.role?.name ?? dash },
@@ -401,7 +434,7 @@ function VmDisks({ disks }: { disks: VirtualDisk[] }) {
         accessorKey: "storage",
         header: "Storage",
         cell: ({ row }) => (
-          <span className="text-xs">{row.original.storage || "—"}</span>
+          <span className="text-xs">{row.original.storage || "-"}</span>
         ),
       },
       {
@@ -410,7 +443,7 @@ function VmDisks({ disks }: { disks: VirtualDisk[] }) {
         header: "Controller",
         cell: ({ row }) => (
           <span className="text-xs uppercase">
-            {row.original.controller || "—"}
+            {row.original.controller || "-"}
           </span>
         ),
       },

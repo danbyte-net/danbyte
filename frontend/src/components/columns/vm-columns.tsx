@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router"
 
 import type { VirtualMachine } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
+import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
 import { PowerBadge } from "@/components/cells/power-badge"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
@@ -17,7 +18,7 @@ import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
 // The one source of truth for "a table of virtual machines". Every surface
-// that lists VMs — /virtual-machines and the cluster detail page's VM pane —
+// that lists VMs - /virtual-machines and the cluster detail page's VM pane -
 // builds its columns here so a VM row reads identically everywhere.
 // Page-specific columns are spliced around this factory's output; the shared
 // cells are never re-authored inline.
@@ -44,6 +45,7 @@ export type VmColumnId =
   | "site"
   | "role"
   | "platform"
+  | "synced_from"
   | "tags"
   | "updated"
 
@@ -60,6 +62,7 @@ const CANONICAL_ORDER: VmColumnId[] = [
   "site",
   "role",
   "platform",
+  "synced_from",
   "tags",
   "updated",
 ]
@@ -71,7 +74,7 @@ export interface VmColumnOpts<T extends VirtualMachine = VirtualMachine> {
   include?: VmColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
-  /** Leading "#" numid column — gate on `useMe().humanIds`. */
+  /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
   tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }
@@ -172,6 +175,34 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
                   : v === "__none__"
                     ? "Not tracked"
                     : String(v),
+          }),
+        },
+      },
+    }),
+    synced_from: () => ({
+      id: "synced_from",
+      accessorFn: (r) => r.synced_from ?? "",
+      header: ({ column }) => <SortHeader column={column} label="Synced from" />,
+      cell: ({ row }) =>
+        row.original.synced_from ? (
+          <Link
+            to="/virtualization-sources/$id"
+            params={{ id: row.original.synced_from_id! }}
+          >
+            <Badge variant="outline" className="text-[10px]">
+              {row.original.synced_from}
+            </Badge>
+          </Link>
+        ) : (
+          dash
+        ),
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Synced from",
+          get: (r: T) => r.synced_from ?? "__none__",
+          formatValue: (v) => ({
+            label: v === "__none__" ? "Not synced" : String(v),
           }),
         },
       },

@@ -2,18 +2,18 @@
 
 One pass per source:
 
-1. ``/cluster/status`` — cluster name + nodes.
-2. ``/cluster/resources?type=vm`` — every guest (QEMU + LXC) with specs and
+1. ``/cluster/status`` - cluster name + nodes.
+2. ``/cluster/resources?type=vm`` - every guest (QEMU + LXC) with specs and
    power state.
 3. Per guest, its config (``/nodes/<n>/qemu|lxc/<vmid>/config``) for NICs,
-   and — for running QEMU guests — the guest agent's
+   and - for running QEMU guests - the guest agent's
    ``network-get-interfaces`` for live IPs.
 
 Mapping: cluster → :class:`api.Cluster` (a "Proxmox VE" ClusterType is
-created on demand — required structural data, editable); guest →
+created on demand - required structural data, editable); guest →
 :class:`api.VirtualMachine`; NICs → :class:`api.VMInterface`; agent IPs →
 :class:`api.IPAddress` assigned to the interface (only when a containing
-Prefix exists — sync never invents address space).
+Prefix exists - sync never invents address space).
 
 Adoption rules mirror the DHCP/DNS engines: rows the operator already has are
 adopted and blank-filled, never overwritten; only VMs the sync created are
@@ -63,7 +63,7 @@ def _parse_net(value: str) -> dict:
     return out
 
 
-# Proxmox disk buses (skip cdrom/efidisk/tpmstate/cloudinit — not data disks).
+# Proxmox disk buses (skip cdrom/efidisk/tpmstate/cloudinit - not data disks).
 _DISK_KEY = re.compile(r"^(scsi|virtio|sata|ide|nvme)(\d+)$")
 
 
@@ -137,7 +137,7 @@ def _upsert_disk(vm, key, *, name="", size_gb=None, storage="",
 
 
 def _apply_notes(vm, notes) -> None:
-    """Blank-fill the VM description from the hypervisor's notes — only when the
+    """Blank-fill the VM description from the hypervisor's notes - only when the
     operator hasn't written one (a sync-created VM's «Synced from …» placeholder
     counts as empty). Never overwrites a real description."""
     notes = (notes or "").strip()
@@ -154,7 +154,7 @@ def _apply_notes(vm, notes) -> None:
 def _parse_tag_colors(tag_style) -> dict:
     """Parse Proxmox ``tag-style`` (cluster/options) into ``{name: "#rrggbb"}``.
 
-    Format: ``color-map=<tag>:<RRGGBB>[:<text RRGGBB>];…,shape=…,…`` — only the
+    Format: ``color-map=<tag>:<RRGGBB>[:<text RRGGBB>];…,shape=…,…`` - only the
     explicit color-map is usable; without one Proxmox derives colors from a
     UI-side name hash, which isn't worth replicating.
     """
@@ -171,9 +171,9 @@ def _parse_tag_colors(tag_style) -> dict:
 
 
 def _apply_tags(vm, names, colors: dict | None = None) -> None:
-    """Additively attach hypervisor tags to the VM — get-or-create each Tag in
+    """Additively attach hypervisor tags to the VM - get-or-create each Tag in
     the tenant, add the ones missing. Never removes operator-added tags. The
-    hypervisor's tag color (Proxmox color-map) is blank-filled — set on create
+    hypervisor's tag color (Proxmox color-map) is blank-filled - set on create
     or on an uncoloured tag, never overwriting a color an operator picked."""
     from django.utils.text import slugify
 
@@ -212,14 +212,14 @@ def _sync_meta_proxmox(guest, cfg, tag_colors: dict | None = None) -> None:
 
 def _sync_meta_vcenter(guest, meta) -> None:
     """vCenter VM annotation (notes) → description. (vSphere tags live behind a
-    separate tagging API — not synced here.)"""
+    separate tagging API - not synced here.)"""
     if guest.vm is None or not meta:
         return
     _apply_notes(guest.vm, meta.get("notes"))
 
 
 def _network_group(source, cluster):
-    """A dedicated VLANGroup for one source's synced VLANs — keeps their VIDs
+    """A dedicated VLANGroup for one source's synced VLANs - keeps their VIDs
     scoped so they never collide with operator-defined VLANs."""
     from api.models import VLANGroup
 
@@ -295,7 +295,7 @@ def _sync_networks_proxmox(source, cluster, guest, cfg, now) -> int:
 
 
 def _sync_proxmox_uplinks(source, cluster_name, nodes) -> int:
-    """Link each bridge's physical ports to the node Device's interfaces — the
+    """Link each bridge's physical ports to the node Device's interfaces - the
     switch's uplinks (physical adapters). A bridge (vmbrN) exists on every node,
     so a cluster switch gets the union of all hosts' ports (multi-hypervisor).
 
@@ -344,7 +344,7 @@ def _sync_proxmox_uplinks(source, cluster_name, nodes) -> int:
 
 
 def sync_proxmox(source) -> dict:
-    # cluster/status needs Sys.Audit on / — a narrowly-scoped token may be
+    # cluster/status needs Sys.Audit on / - a narrowly-scoped token may be
     # denied it while still seeing VMs. Fall back to /nodes + the source name.
     try:
         status = proxmox_get(source, "cluster/status") or []
@@ -374,7 +374,7 @@ def sync_proxmox(source) -> dict:
               "interfaces": 0, "ips": 0, "ips_skipped": 0, "disks": 0,
               "networks": 0, "uplinks": 0, "pending": 0}
 
-    # Guest details come over the network — fetch before the DB transaction.
+    # Guest details come over the network - fetch before the DB transaction.
     # The Proxmox config blob carries both NICs (netN) and disks (scsiN/…), so
     # one fetch feeds interfaces, disks and networks.
     details = {}
@@ -394,7 +394,7 @@ def sync_proxmox(source) -> dict:
                 )
                 agent_ifaces = (agent or {}).get("result", [])
             except VirtAPIError:
-                pass  # agent not installed/running — IPs just stay unknown
+                pass  # agent not installed/running - IPs just stay unknown
         details[vmid] = {"ifaces": cfg, "ips": agent_ifaces,
                          "disks": cfg, "nets": cfg, "meta": cfg}
 
@@ -418,7 +418,7 @@ def sync_proxmox(source) -> dict:
                        sync_meta_fn=partial(_sync_meta_proxmox,
                                             tag_colors=tag_colors),
                        label="proxmox")
-    # Switches exist now — link their bridge uplinks to the node's real NICs.
+    # Switches exist now - link their bridge uplinks to the node's real NICs.
     if source.sync_networks:
         result["uplinks"] = _sync_proxmox_uplinks(source, cluster_name, nodes)
     return result
@@ -428,27 +428,27 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
               sync_ifaces, sync_ips, *, sync_disks_fn=None,
               sync_nets_fn=None, sync_meta_fn=None, extra_warnings=None,
               label) -> dict:
-    """Reconcile one fetched inventory against Danbyte — hypervisor-agnostic.
+    """Reconcile one fetched inventory against Danbyte - hypervisor-agnostic.
 
     ``resources`` is a list of normalised guest dicts (``vmid``, ``name``,
     ``type``, ``node``, ``status`` + ``maxcpu``/``maxmem``/``maxdisk`` specs);
     ``details`` maps ``vmid → (iface_data, ip_data)`` fetched before the
     transaction. ``sync_ifaces``/``sync_ips`` are the hypervisor-specific
     callables that turn that detail into VMInterface/IPAddress rows. Everything
-    else — adoption, spec diffing, the review queue, orphan pruning — is shared.
+    else - adoption, spec diffing, the review queue, orphan pruning - is shared.
     """
     from api.models import Site
 
     from .models import VirtChange, VirtGuest
 
     apply = source.sync_mode == "auto"
-    # Load the tenant's prefixes once for the whole pass — this used to be a
-    # full Prefix scan per guest — and collect the run's placement warnings so
+    # Load the tenant's prefixes once for the whole pass - this used to be a
+    # full Prefix scan per guest - and collect the run's placement warnings so
     # a scheduled sync can report them without a toast to show.
     prefixes = vrf_placement.load_prefixes(source.tenant)
     # Which networks/switches state a routing context, read once per pass. A
     # network can only be configured after it has been discovered, so on the
-    # pass that first creates one this is simply empty — no reordering needed.
+    # pass that first creates one this is simply empty - no reordering needed.
     net_vrfs = _network_vrf_map(source)
     # Placement inputs, read once: the operator's rules and the tenant's sites
     # by name (the hierarchy fallback). Both are small.
@@ -461,7 +461,7 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
     }
     warnings: list[str] = list(extra_warnings or [])
     with transaction.atomic():
-        # Clusters are containers — only materialise one when a guest actually
+        # Clusters are containers - only materialise one when a guest actually
         # lands on it (so a review-mode source with nothing accepted stays
         # inert), and materialise them **per name**. This used to be a single
         # cluster shared by the whole pass, which collapsed every guest in a
@@ -504,7 +504,7 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
             place = placement.resolve(
                 guest_path, rules, site_by_name=site_by_name
             )
-            # Only worth saying when placement could plausibly have worked —
+            # Only worth saying when placement could plausibly have worked -
             # a deployment with no sites and no rules isn't using this, and
             # nagging it every pass would be noise. Duplicates collapse in
             # record_skipped, so this is one line per distinct location.
@@ -514,7 +514,12 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
                              apply, now, counts, fresh_changes, place)
             if guest.vm_id:
                 d = details.get(vmid) or {}
-                counts["interfaces"] += sync_ifaces(guest, d.get("ifaces"))
+                made, seen_ifaces = sync_ifaces(guest, d.get("ifaces"))
+                counts["interfaces"] += made
+                # An interface Danbyte has but the hypervisor doesn't is either
+                # stale bookkeeping or the operator's - see _reconcile_interfaces.
+                if seen_ifaces:
+                    _reconcile_interfaces(guest, seen_ifaces, now, fresh_changes)
                 attached, unplaced = sync_ips(
                     source, guest, d.get("ips"), nets=d.get("nets"),
                     prefixes=prefixes, warnings=warnings, net_vrfs=net_vrfs,
@@ -577,9 +582,43 @@ def _desired_specs(resource: dict) -> dict:
     }
 
 
+def _reconcile_interfaces(guest, seen_names, now, fresh_changes) -> None:
+    """Deal with VM interfaces the hypervisor no longer reports.
+
+    Two different situations, and conflating them would lose operator data:
+
+    * a NIC **the sync created** that has vanished is stale bookkeeping - prune
+      it, exactly as ``_sync_disks`` prunes its own disks;
+    * a NIC **the operator created** is theirs. It may be a typo, or it may be
+      a NIC they are about to add on the hypervisor. Either way, deleting it is
+      not the sync's call - it is raised as drift for a human to resolve.
+    """
+    from api.models import VMInterface
+
+    if guest.vm is None:
+        return
+    extra = list(
+        VMInterface.objects.filter(vm=guest.vm).exclude(name__in=seen_names)
+    )
+    if not extra:
+        _clear_change(guest, "iface_extra")
+        return
+    stale = [i for i in extra if i.created_interface]
+    theirs = [i for i in extra if not i.created_interface]
+    if stale:
+        VMInterface.objects.filter(pk__in=[i.pk for i in stale]).delete()
+    if theirs:
+        _queue_change(
+            guest, "iface_extra",
+            {"names": sorted(i.name for i in theirs)}, now, fresh_changes,
+        )
+    else:
+        _clear_change(guest, "iface_extra")
+
+
 def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
                      counts, fresh_changes, place=None) -> None:
-    """Bring one guest into line with the inventory — applying (auto) or
+    """Bring one guest into line with the inventory - applying (auto) or
     queuing a change (review/manual)."""
     from api.models import VirtualMachine
 
@@ -587,7 +626,7 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
     specs = _desired_specs(resource)
 
     if guest.vm_id is None:
-        # Adopt an operator's existing VM of the same name — a non-destructive
+        # Adopt an operator's existing VM of the same name - a non-destructive
         # link, so it happens in every mode.
         adopted = VirtualMachine.objects.filter(
             tenant=source.tenant, name=name
@@ -600,9 +639,11 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
             _clear_change(guest, "new_guest")
             return
         if apply:
+            # No «Synced from …» description: a VM reports its source as a
+            # real field, and this one belongs to the operator.
             vm = VirtualMachine.objects.create(
                 tenant=source.tenant, name=name, cluster=cluster(),
-                description=f"Synced from «{source.name}»", **_nonnull(specs),
+                **_nonnull(specs),
             )
             guest.vm = vm
             guest.created_vm = True
@@ -738,7 +779,7 @@ def _vcenter_folder_paths(client, want: bool) -> dict:
     The REST payload carries no parent, so the tree is walked **downward** with
     ``?parent_folders=``. That is one call per folder, which is why it is
     skipped entirely unless the source actually has folder rules. Identity is
-    the MoRef, never the name — vCenter happily hosts several folders called
+    the MoRef, never the name - vCenter happily hosts several folders called
     ``vm``.
     """
     if not want:
@@ -804,7 +845,7 @@ def _vcenter_placement_maps(client, source, datacenters, hosts) -> dict:
             continue  # a built-in folder, or the root
         try:
             for v in client.get(f"vcenter/vm?folders={fid}") or []:
-                # Direct membership only — the ancestor chain is the path.
+                # Direct membership only - the ancestor chain is the path.
                 folders_of_vm[v.get("vm")] = path
         except VirtAPIError:
             continue
@@ -832,12 +873,12 @@ def _apply_placement(obj, place, changed: list) -> None:
 
 def _sync_hosts(source, cluster_name: str, hosts, *, placements=None,
                 warnings=None) -> int:
-    """Create the hypervisor's own nodes/hosts as Devices — opt-in (#34).
+    """Create the hypervisor's own nodes/hosts as Devices - opt-in (#34).
 
     ``hosts`` is ``[{"name": .., "online": bool}]``, normalised by the caller.
 
     A Device needs only a tenant and a name, so this fills what the hypervisor
-    actually reports: name, cluster, status — plus a **site**, when placement
+    actually reports: name, cluster, status - plus a **site**, when placement
     resolves one from the operator's rules or from a site named after the
     datacenter. It still leaves **device type empty**: nothing on the wire says
     what the hardware is, and guessing would put fiction in the physical
@@ -881,7 +922,7 @@ def _sync_hosts(source, cluster_name: str, hosts, *, placements=None,
             )
             made += 1
         # Adopted or fresh: blank-fill the cluster link and the resolved site.
-        # A Device the operator already models is theirs — nothing is restyled.
+        # A Device the operator already models is theirs - nothing is restyled.
         changed = []
         if dev.cluster_id is None:
             dev.cluster = cluster
@@ -897,8 +938,8 @@ def _sync_hosts(source, cluster_name: str, hosts, *, placements=None,
 def _hypervisor_role(source):
     """The *Hypervisor* device role, created on demand.
 
-    Same shape as ``_cluster_for``'s cluster-type handling — a catalog row the
-    product needs to function, not illustrative inventory — but without its
+    Same shape as ``_cluster_for``'s cluster-type handling - a catalog row the
+    product needs to function, not illustrative inventory - but without its
     habit of silently defaulting an unrecognised source kind.
     """
     from api.models import DeviceRole
@@ -917,27 +958,31 @@ def _hypervisor_role(source):
     )
 
 
-def _sync_interfaces(guest, cfg: dict) -> int:
+def _sync_interfaces(guest, cfg: dict) -> tuple[int, list]:
+    """Proxmox NICs → VMInterface. Returns (count, names the hypervisor has)."""
     from api.models import VMInterface
 
     if guest.vm is None:
-        return 0
+        return 0, []
     n = 0
+    seen: list = []
     for key, value in (cfg or {}).items():
         if not _NET_KEY.match(str(key)):
             continue
         parsed = _parse_net(str(value))
         name = parsed["name"] or key  # LXC names its NIC; QEMU keeps netX
+        seen.append(name)
         iface = VMInterface.objects.filter(vm=guest.vm, name=name).first()
         if iface is None:
             iface = VMInterface.objects.create(
-                vm=guest.vm, name=name, mac_address=parsed["mac"]
+                vm=guest.vm, name=name, mac_address=parsed["mac"],
+                created_interface=True,
             )
         elif parsed["mac"] and not iface.mac_address:
             iface.mac_address = parsed["mac"]
             iface.save(update_fields=["mac_address"])
         n += 1
-    return n
+    return n, seen
 
 
 def _sync_ips(source, guest, agent_ifaces, *, nets=None, prefixes=None,
@@ -946,7 +991,7 @@ def _sync_ips(source, guest, agent_ifaces, *, nets=None, prefixes=None,
 
     ``nets`` is the same VM config blob the interface/network passes already
     read, so tagging each NIC with the bridge it sits on costs no extra API
-    call — ``_parse_net`` hands back mac, bridge and tag in one go.
+    call - ``_parse_net`` hands back mac, bridge and tag in one go.
     """
     net_key_by_mac = {}
     for key, value in (nets or {}).items():
@@ -978,7 +1023,7 @@ def _network_vrf_map(source) -> dict:
     """``{ext_key: VRF}`` for the source's networks that state a routing context.
 
     A network's own VRF wins; otherwise its switch's, which is the switch-wide
-    default. A key is **absent** when neither states one — that means "no
+    default. A key is **absent** when neither states one - that means "no
     opinion, fall through to the source", which is not the same as Global.
     """
     from .models import VirtNetwork
@@ -1001,12 +1046,12 @@ def _attach_ips(source, guest, entries, *, prefixes=None, warnings=None,
     """Attach discovered IPs to a VM's interfaces (matched by MAC).
 
     ``entries`` is a hypervisor-agnostic ``[{"mac": .., "ips": [str, ..]}]``.
-    An IP is only recorded when a containing Prefix already exists — sync never
-    invents address space — and only ever adopts an unassigned IPAM row.
+    An IP is only recorded when a containing Prefix already exists - sync never
+    invents address space - and only ever adopts an unassigned IPAM row.
 
     Which VRF's prefixes count is decided most-specific-first: the NIC's own
     ``VMInterface.vrf``, then the network/switch it attaches to (``net_vrfs``),
-    then the source's policy. Every one of those is operator-set — sync only
+    then the source's policy. Every one of those is operator-set - sync only
     ever *reads* them.
 
     ``prefixes`` is the tenant's prefix list, hoisted by the caller so it isn't
@@ -1060,7 +1105,7 @@ def _attach_ips(source, guest, entries, *, prefixes=None, warnings=None,
                     source.tenant, str(addr), placement, prefixes=prefixes
                 )
                 if not placed.ok:
-                    # Never invent address space — but say so, rather than
+                    # Never invent address space - but say so, rather than
                     # letting the address disappear without a trace.
                     skipped += 1
                     label = f"{guest.vm.name}/{iface.name}" if iface else guest.vm.name
@@ -1074,7 +1119,7 @@ def _attach_ips(source, guest, entries, *, prefixes=None, warnings=None,
                     )
                 except IntegrityError:
                     # Same address already recorded in this VRF by a concurrent
-                    # pass — nothing to do, and nothing worth failing over.
+                    # pass - nothing to do, and nothing worth failing over.
                     skipped += 1
                     continue
             changed = []
@@ -1131,7 +1176,7 @@ def _vcenter_resource(summary: dict, info: dict, vmid: int, node: str,
         "type": "vmware",
         "name": summary.get("name") or info.get("name") or f"vm-{vmid}",
         "node": node,
-        # "" when the guest is on a standalone host — _run_pass falls back to
+        # "" when the guest is on a standalone host - _run_pass falls back to
         # the pass-level cluster name.
         "cluster": cluster,
         # Placement inputs; empty for Proxmox, which has neither concept.
@@ -1164,7 +1209,7 @@ def sync_vcenter(source) -> dict:
         cluster_name = clusters[0]["name"] if len(clusters) == 1 else source.name
 
         # Map each VM to the cluster it runs on. The VM summary doesn't carry
-        # it, but `?clusters=` filters by it — the same trick the host mapping
+        # it, but `?clusters=` filters by it - the same trick the host mapping
         # below already uses. Without this every guest on a multi-cluster
         # vCenter landed in one cluster named after the source.
         cluster_of: dict = {}
@@ -1264,7 +1309,7 @@ def sync_vcenter(source) -> dict:
                         f"vcenter/vm/{moref}/guest/networking/interfaces"
                     ) or []
                 except VirtAPIError:
-                    pass  # VMware Tools absent/starting — IPs stay unknown
+                    pass  # VMware Tools absent/starting - IPs stay unknown
             details[vmid] = {"ifaces": nics, "ips": guest_nets,
                              "disks": info.get("disks"), "nets": nics,
                              "meta": {"notes": info.get("notes")}}
@@ -1328,24 +1373,29 @@ def _sync_networks_vcenter(source, cluster, guest, nics, now) -> int:
     return n
 
 
-def _sync_vcenter_interfaces(guest, nics) -> int:
+def _sync_vcenter_interfaces(guest, nics) -> tuple[int, list]:
+    """vCenter NICs → VMInterface. Returns (count, names the hypervisor has)."""
     from api.models import VMInterface
 
     if guest.vm is None or not nics:
-        return 0
+        return 0, []
     n = 0
+    seen: list = []
     for key, nic in (nics or {}).items():
         nic = nic or {}
         name = nic.get("label") or f"nic-{key}"
         mac = (nic.get("mac_address") or "").lower()
+        seen.append(name)
         iface = VMInterface.objects.filter(vm=guest.vm, name=name).first()
         if iface is None:
-            VMInterface.objects.create(vm=guest.vm, name=name, mac_address=mac)
+            VMInterface.objects.create(
+                vm=guest.vm, name=name, mac_address=mac, created_interface=True
+            )
         elif mac and not iface.mac_address:
             iface.mac_address = mac
             iface.save(update_fields=["mac_address"])
         n += 1
-    return n
+    return n, seen
 
 
 def _sync_vcenter_ips(source, guest, guest_nets, *, nets=None, prefixes=None,
@@ -1353,7 +1403,7 @@ def _sync_vcenter_ips(source, guest, guest_nets, *, nets=None, prefixes=None,
     """vCenter guest-tools IPs → the shared attach path (matched by MAC).
 
     ``nets`` is the NIC map the interface/network passes already fetched, so
-    the port-group each NIC sits on comes free — matching the ``ext_key``
+    the port-group each NIC sits on comes free - matching the ``ext_key``
     ``_link_network`` builds.
     """
     net_key_by_mac = {}
@@ -1399,7 +1449,7 @@ def apply_change(change) -> None:
 
     Interface/IP enrichment for a newly-created VM lands on the next sync pass
     (it needs the guest's live config), so accepting a ``new_guest`` creates
-    the VM shell and links it — the specs and NICs fill in on the next detect.
+    the VM shell and links it - the specs and NICs fill in on the next detect.
     """
     from api.models import VirtualMachine
 
@@ -1418,7 +1468,6 @@ def apply_change(change) -> None:
             tenant=guest.source.tenant,
             name=detail.get("name") or f"vm-{guest.vmid}",
             cluster=cluster,
-            description=f"Synced from «{guest.source.name}»",
             **{k: v for k, v in specs.items() if v is not None},
         )
         guest.vm = vm

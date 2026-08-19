@@ -29,6 +29,7 @@ const KIND_VARIANT: Record<
   new_guest: "default",
   spec_change: "secondary",
   removed_guest: "destructive",
+  iface_extra: "secondary",
 }
 
 // Spec fields as they appear in change payloads, with display labels and
@@ -80,7 +81,7 @@ function ChangeDetail({ c }: { c: VirtChange }) {
       </span>
     )
   }
-  // spec_change: {field: {danbyte, hypervisor}} — old → new per column.
+  // spec_change: {field: {danbyte, hypervisor}} - old → new per column.
   const diffs = c.detail as Record<
     string,
     { danbyte: unknown; hypervisor: unknown }
@@ -102,7 +103,7 @@ function ChangeDetail({ c }: { c: VirtChange }) {
   )
 }
 
-/** The review inbox for one virtualization source — accept applies a change,
+/** The review inbox for one virtualization source - accept applies a change,
  * ignore dismisses it until it changes again. */
 export function VirtChangesDialog({
   source,
@@ -218,7 +219,7 @@ export function VirtChangesDialog({
       <DialogContent size="3xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-1.5">
-            Pending changes — {source.name}
+            Pending changes - {source.name}
             <InfoTip>
               This source is in {source.sync_mode} mode, so nothing is applied
               until you accept it. Accept writes the change to the inventory;

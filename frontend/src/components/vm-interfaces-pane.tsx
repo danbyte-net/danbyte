@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import { GitCompareArrows, Pencil, Plus, Trash2 } from "lucide-react"
 import { type ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
 
@@ -13,6 +13,11 @@ import {
   type VMInterfaceWritePayload,
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -79,6 +84,29 @@ export function VMInterfacesPane({
   })
   const rows = q.data?.results ?? []
 
+  // Interfaces the hypervisor doesn't report. Raised as drift rather than
+  // deleted - a NIC you added is yours, and might be one you're about to
+  // create on the hypervisor.
+  const drift = useQuery({
+    queryKey: ["vm-drift", vmId],
+    queryFn: () =>
+      api<Paginated<{ kind: string; detail: { names?: string[] } }>>(
+        `/api/virt-changes/?vm=${vmId}`
+      ),
+    retry: false,
+  })
+  // Sorted + joined so it is a stable value the columns memo can depend on:
+  // a fresh Set every render would rebuild the table on every render.
+  const driftNames = (drift.data?.results ?? [])
+    .filter((c) => c.kind === "iface_extra")
+    .flatMap((c) => c.detail?.names ?? [])
+    .sort()
+    .join("\u0000")
+  const notOnHypervisor = useMemo(
+    () => new Set(driftNames ? driftNames.split("\u0000") : []),
+    [driftNames]
+  )
+
   const invalidate = () =>
     qc.invalidateQueries({ queryKey: ["vm-interfaces", vmId] })
 
@@ -92,7 +120,24 @@ export function VMInterfacesPane({
           <SortHeader column={column} label="Interface" />
         ),
         cell: ({ row }) => (
-          <span className="font-mono font-medium">{row.original.name}</span>
+          <span className="inline-flex items-center gap-2">
+            <span className="font-mono font-medium">{row.original.name}</span>
+            {notOnHypervisor.has(row.original.name) && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="warning" className="gap-1 text-[10px]">
+                    <GitCompareArrows className="h-3 w-3" />
+                    drift
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent variant="panel" className="max-w-72">
+                  This interface isn&rsquo;t on the hypervisor. Nothing was
+                  changed or deleted. Either delete it here, or create it on
+                  the hypervisor - the flag clears on the next sync.
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </span>
         ),
       },
       {
@@ -114,7 +159,7 @@ export function VMInterfacesPane({
               {row.original.mac_address}
             </span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -124,7 +169,7 @@ export function VMInterfacesPane({
           row.original.mtu != null ? (
             <span className="num text-xs">{row.original.mtu}</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -134,7 +179,7 @@ export function VMInterfacesPane({
           row.original.speed ? (
             <span className="text-xs">{row.original.speed}</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -144,7 +189,7 @@ export function VMInterfacesPane({
           row.original.vlan ? (
             <VlanBadge vlan={row.original.vlan} />
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -181,7 +226,7 @@ export function VMInterfacesPane({
               ))}
             </div>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -189,7 +234,7 @@ export function VMInterfacesPane({
         header: "",
         cell: ({ row }) => (
           <div className="flex items-center justify-end gap-0.5">
-            {/* Labelled, like the device interface pane — an icon-only button
+            {/* Labelled, like the device interface pane - an icon-only button
                 here was missed entirely (#36). */}
             {canAddIp && (
               <Button size="sm" variant="ghost" asChild className="h-7">
@@ -246,7 +291,9 @@ export function VMInterfacesPane({
         ),
       },
     ],
-    [canEdit, canDelete, canAddIp, vmId, vmName]
+    // notOnHypervisor matters: without it the columns are built once with an
+    // empty drift set and the badge never appears on a direct page load.
+    [canEdit, canDelete, canAddIp, vmId, vmName, notOnHypervisor]
   )
 
   if (q.isLoading)
@@ -491,7 +538,7 @@ function VMInterfaceForm({
           label="802.1Q mode"
           value={mode || null}
           onChange={(v) => setMode(v ?? "")}
-          noneLabel="—"
+          noneLabel="-"
           options={[
             { value: "access", label: "Access" },
             { value: "tagged", label: "Tagged (trunk)" },

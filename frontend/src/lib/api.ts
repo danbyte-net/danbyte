@@ -2,7 +2,7 @@
 // Same-origin in production (Django serves the SPA), proxied to :8000 in
 // dev via vite.config.ts. Carries Django's CSRF cookie automatically.
 
-// Type-only import (erased at compile time — api.ts stays runtime-import-free).
+// Type-only import (erased at compile time - api.ts stays runtime-import-free).
 // The faceplate doc types live beside their algorithms in faceplate-layout.ts.
 import type { FaceplateDoc } from "@/lib/faceplate-layout"
 
@@ -17,7 +17,7 @@ function getCsrf(): string {
 // A global 401 handler, registered from the router root. When the server
 // rejects a request as unauthenticated (session expired server-side), we
 // notify the app so it can re-resolve auth (invalidate ["me"]) and the
-// layout guard kicks the user to /login — instead of leaving stale chrome.
+// layout guard kicks the user to /login - instead of leaving stale chrome.
 let onUnauthorized: (() => void) | null = null
 export function setUnauthorizedHandler(fn: (() => void) | null) {
   onUnauthorized = fn
@@ -38,7 +38,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 // Like `api`, but also returns the HTTP status. Use when the endpoint encodes
-// meaning in the status beyond ok/not-ok — the certificate upload returns 201
+// meaning in the status beyond ok/not-ok - the certificate upload returns 201
 // when a new row was authored and 200 when the PEM matched an already-seen
 // certificate (dedup by fingerprint), and the UI reports the two differently.
 export async function apiStatus<T>(
@@ -52,7 +52,7 @@ export async function apiStatus<T>(
   if (!headers.has("Accept")) headers.set("Accept", "application/json")
   if (isMutation) {
     headers.set("X-CSRFToken", getCsrf())
-    // Don't force JSON on FormData — the browser must set its own multipart
+    // Don't force JSON on FormData - the browser must set its own multipart
     // Content-Type (with boundary). Only default JSON for other bodies.
     if (
       init.body &&
@@ -63,7 +63,7 @@ export async function apiStatus<T>(
     }
   }
   const res = await fetch(path, { credentials: "include", ...init, headers })
-  // Skip the global handler ONLY for the /api/me/ auth probe — a 401 there is
+  // Skip the global handler ONLY for the /api/me/ auth probe - a 401 there is
   // the normal "logged out" signal, not a session that just expired. Match the
   // exact path (query string stripped); `includes("/api/me")` wrongly swallowed
   // 401s from sub-paths like /api/me/prefs/.
@@ -73,7 +73,7 @@ export async function apiStatus<T>(
   }
   if (!res.ok) {
     // Read the body ONCE as text, then try to parse JSON from it. Calling
-    // both .json() and .text() on the same Response throws — the body
+    // both .json() and .text() on the same Response throws - the body
     // stream is single-use.
     const raw = await res.text()
     let body: unknown = raw
@@ -96,7 +96,7 @@ export async function apiStatus<T>(
 // string, then the first field error ("field: message", unprefixed for
 // non_field_errors), then the ApiError message with its "path → status "
 // debugging prefix stripped. Use this (or apiErrorToast from lib/api-toast)
-// instead of `(err as Error).message` — raw messages leak URLs and status
+// instead of `(err as Error).message` - raw messages leak URLs and status
 // codes into the UI.
 export function apiErrorMessage(
   err: unknown,
@@ -130,7 +130,7 @@ export interface Tag {
   text_color: string
   /** Number of objects tagged. Only present from the Tags management API. */
   usage_count?: number
-  /** Site this catalog entry is scoped to — null means tenant-wide (Global).
+  /** Site this catalog entry is scoped to - null means tenant-wide (Global).
    * Only present from the Tags management API. */
   owning_site?: { id: string; name: string } | null
   permissions?: ObjectPerms
@@ -165,7 +165,7 @@ export interface ObjectPerms {
   delete: boolean
 }
 
-/** The embedded VLAN mini-shape (VLANMiniSerializer) — zone rides along so
+/** The embedded VLAN mini-shape (VLANMiniSerializer) - zone rides along so
  * tables can render the zone chip without a second fetch. */
 export interface VLANMini {
   id: string
@@ -215,7 +215,7 @@ export interface Paginated<T> {
 
 // ─── Connect protocols (device "Connect" menu catalog) ──────────────────────
 
-/** A tenant catalog entry for the device "Connect" menu — a launchable
+/** A tenant catalog entry for the device "Connect" menu - a launchable
  * protocol whose `url_template` carries `{host}`/`{username}`/`{port}`/`{name}`
  * placeholders substituted client-side, then handed to the OS scheme handler
  * (ssh://, rdp://, …). Managing these is gated on the `connectprotocol` verbs;
@@ -232,7 +232,7 @@ export interface ConnectProtocol {
   weight: number
   enabled: boolean
   description: string
-  /** Optional targeting — empty = every device. A device matches when its type
+  /** Optional targeting - empty = every device. A device matches when its type
    * is in device_types OR its role is in roles. */
   device_types_detail: { id: string; name: string }[]
   roles_detail: { id: string; name: string }[]
@@ -284,7 +284,7 @@ export interface Me {
   permissions: Record<string, string[]>
   can_manage_users?: boolean
   /** Deployment-tier admin (global email/LDAP/updates). Stricter than
-   * can_manage_users — a tenant-narrowed grant doesn't qualify. */
+   * can_manage_users - a tenant-narrowed grant doesn't qualify. */
   can_manage_deployment?: boolean
   can_edit_tenant?: boolean
   deployment_name?: string
@@ -304,7 +304,7 @@ export interface Me {
   /** Enhanced site separation (per-tenant effective): when on, forms filter
    * site pickers to editable_sites and lock single-site users' site fields. */
   site_separation?: boolean
-  /** Sites this user may WRITE in — "all" for admins/cross-site editors. */
+  /** Sites this user may WRITE in - "all" for admins/cross-site editors. */
   editable_sites?: "all" | string[]
   /** Per-site settings: the tenant's allow switch + the sites whose settings
    * this user may manage ("all" | ids; [] hides the section). */
@@ -407,7 +407,7 @@ export interface RBACUserWritePayload {
   tenant_ids?: string[]
   set_auth_source?: "local" | "ldap"
   set_require_mfa?: boolean
-  /** One-click site scoping — assembles the ObjectPermission combo server-side. */
+  /** One-click site scoping - assembles the ObjectPermission combo server-side. */
   site_role?: SiteRolePayload
 }
 
@@ -419,7 +419,7 @@ export interface SiteRolePayload {
   silo?: boolean
 }
 
-/** GET /api/users/<id>/access-summary/ — plain-language read of a user's reach. */
+/** GET /api/users/<id>/access-summary/ - plain-language read of a user's reach. */
 export interface UserAccessSummary {
   is_admin: boolean
   edit_scope: "all" | "sites" | "none"
@@ -498,7 +498,7 @@ export interface ColumnPref {
   is_forced: boolean
 }
 
-/** One row of the bulk summary (GET /api/prefs/columns/) — table_id → this. */
+/** One row of the bulk summary (GET /api/prefs/columns/) - table_id → this. */
 export interface ColumnPrefSummary {
   source: ColumnPref["source"]
   is_forced: boolean
@@ -513,7 +513,7 @@ export interface SpaceMapCell {
   dirty: boolean
   ip_count: number
   overlap_with: string[]
-  /** Only populated for used cells — UUID of the prefix already covering
+  /** Only populated for used cells - UUID of the prefix already covering
    * this CIDR, so the map can deep-link to its detail page. */
   prefix_id?: string | null
 }
@@ -817,7 +817,7 @@ export interface IPRoleOption {
 
 // ─── IP status / role catalogs (full read+write) ───────────────────────────
 
-// Object types a Status can be made "available to" — mirrors the backend
+// Object types a Status can be made "available to" - mirrors the backend
 // api/status_registry.STATUSABLE_MODELS.
 export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "ipaddress", label: "IP addresses" },
@@ -950,14 +950,14 @@ export interface SiteMapSite {
   longitude: number | null
   device_count: number
   floor_plan_count: number
-  /** First few floor plans — popover jump-offs into the drill-down. */
+  /** First few floor plans - popover jump-offs into the drill-down. */
   floor_plans: { id: string; name: string }[]
   /** Worst monitoring status across the site's device IPs, or null. */
   check: string | null
   can_edit: boolean
 }
 
-/** The display fields a device contributes to the map — shared by a placed
+/** The display fields a device contributes to the map - shared by a placed
  * device pin ({@link SiteMapDevice}) and a marker's linked device, so both
  * popovers render the same detail set. */
 export interface SiteMapDeviceInfo {
@@ -1041,13 +1041,13 @@ export interface SiteMapPayload {
 /** Derived, most-severe-passed-milestone lifecycle state. "" = no dates. */
 export type LifecycleState = "" | "supported" | "eos" | "security_ended" | "eol"
 
-/** Vendor lifecycle window (LifecycleMixin) — DeviceType + Platform. */
+/** Vendor lifecycle window (LifecycleMixin) - DeviceType + Platform. */
 export interface LifecycleInfo {
-  /** GA / first-ship date — the start of the lifetime bar. */
+  /** GA / first-ship date - the start of the lifetime bar. */
   release_date: string | null
   end_of_sale: string | null
   end_of_security_updates: string | null
-  /** End of life — the end of the lifetime bar. */
+  /** End of life - the end of the lifetime bar. */
   end_of_support: string | null
   /** Vendor EoL notice URL. */
   lifecycle_url: string
@@ -1079,7 +1079,7 @@ export interface DeviceType extends LifecycleInfo {
   /** Default OS platform for devices of this type (effective-platform fallback). */
   platform: { id: string; name: string } | null
   u_height: number
-  /** Horizontal rack footprint — "half" mounts two side-by-side per U. */
+  /** Horizontal rack footprint - "half" mounts two side-by-side per U. */
   rack_width: "full" | "half"
   description: string
   /** Absolute URL of the front rack-face image, or null. */
@@ -1100,7 +1100,7 @@ export interface DeviceType extends LifecycleInfo {
   tags: Tag[]
   custom_fields: Record<string, unknown>
   device_count: number
-  /** Every component-template kind summed — detail responses only (0 on
+  /** Every component-template kind summed - detail responses only (0 on
    * list, where it isn't rendered). */
   component_count: number
   owning_site?: { id: string; name: string } | null
@@ -1135,7 +1135,7 @@ export interface DeviceTypeWritePayload {
   lifecycle_url?: string
 }
 
-/** Picker shape (?picker=1) — DeviceTypeMiniSerializer. */
+/** Picker shape (?picker=1) - DeviceTypeMiniSerializer. */
 export interface DeviceTypeOption {
   id: string
   name: string
@@ -1329,7 +1329,7 @@ export interface DeviceFieldVisibility {
   longitude: boolean
 }
 
-/** Floor-plan tile popover config — the deployment-default editor's shape
+/** Floor-plan tile popover config - the deployment-default editor's shape
  * (GET/PUT /api/deployment/floorplan-popover/). `available` + `defaults` come
  * from the server so the field vocabulary lives in one place. */
 export interface FloorplanPopoverSettings {
@@ -1347,7 +1347,7 @@ export interface FloorplanPopoverSettings {
   }
 }
 
-/** The EFFECTIVE config for the active tenant (GET /api/floorplan-popover/) —
+/** The EFFECTIVE config for the active tenant (GET /api/floorplan-popover/) -
  * what the canvas renders from. A tile-type slug absent from `tile_overrides`
  * inherits `fields`. */
 export interface FloorplanPopoverConfig {
@@ -1425,7 +1425,7 @@ export interface PlatformGroupWritePayload {
   description?: string
 }
 
-/** Picker shape (?picker=1) — PlatformGroupMiniSerializer. */
+/** Picker shape (?picker=1) - PlatformGroupMiniSerializer. */
 export interface PlatformGroupOption {
   id: string
   name: string
@@ -1505,7 +1505,7 @@ export type RackWidth = 10 | 19 | 21 | 23
 
 export type RackMount = "side_left" | "side_right"
 
-/** Factory-fitted 0U gear on a rack model — typically vertical PDU strips. */
+/** Factory-fitted 0U gear on a rack model - typically vertical PDU strips. */
 export interface RackTypeAccessory {
   id: string
   device_type: {
@@ -1535,7 +1535,7 @@ export interface RackTypeAccessoryWritePayload {
   order?: number
 }
 
-/** Picker shape (?picker=1) — carries the dims so the rack form can
+/** Picker shape (?picker=1) - carries the dims so the rack form can
  * pre-fill client-side; the rack stays the source of truth. */
 export interface RackTypeOption {
   id: string
@@ -1633,7 +1633,7 @@ export interface RackWritePayload {
   custom_fields?: Record<string, unknown>
 }
 
-/** POST /api/racks/{id}/sync-from-type/ — dry-run unless `apply`. */
+/** POST /api/racks/{id}/sync-from-type/ - dry-run unless `apply`. */
 export interface RackSyncResponse {
   applied: boolean
   diff: {
@@ -1648,14 +1648,14 @@ export interface RackSyncResponse {
         label: string
         changes: Record<string, { device: unknown; type: unknown }>
       }[]
-      /** Stamped-looking strips the type no longer defines — never deleted. */
+      /** Stamped-looking strips the type no longer defines - never deleted. */
       extra: string[]
     }
   }
   result?: { dims: string[]; accessories: string[]; updated: string[] }
 }
 
-/** Picker shape (?picker=1) — RackMiniSerializer, includes unit geometry. */
+/** Picker shape (?picker=1) - RackMiniSerializer, includes unit geometry. */
 export interface RackOption {
   id: string
   name: string
@@ -1695,7 +1695,7 @@ export interface CableMini {
 
 /**
  * A photo-port marker resolved to the device's real component
- * (GET /api/devices/{id}/face-ports/) — lets the 3D room view turn a clicked
+ * (GET /api/devices/{id}/face-ports/) - lets the 3D room view turn a clicked
  * marker into a cable termination. `id`/`kind` are null when the marker's
  * template name doesn't match any component on the device.
  */
@@ -1708,23 +1708,23 @@ export interface FacePort {
   id: string | null
   connected: boolean
   cable_id: string | null
-  /** Interface admin state — feeds the shared portState colouring. */
+  /** Interface admin state - feeds the shared portState colouring. */
   enabled: boolean
   /** Interface speed string ("25G"); "" for non-interface kinds. */
   speed: string
-  /** Media type slug ("qsfp28"/"100gbase-x-qsfp28") — speed-tier fallback. */
+  /** Media type slug ("qsfp28"/"100gbase-x-qsfp28") - speed-tier fallback. */
   type: string
   /** Hardware markers (inventory items): lifecycle status; null for ports. */
   status: StatusMini | null
   /** Module-bay markers: the module seated in the bay, or null when the bay is
-   * empty (an empty bay still resolves — `id` is set, this is not). */
+   * empty (an empty bay still resolves - `id` is set, this is not). */
   module: InstalledModuleMini | null
   /** One line naming what SNMP saw differently, or null when they agree. The
-   * fields above stay the source of truth — this is drawn beside them. */
+   * fields above stay the source of truth - this is drawn beside them. */
   drift: string | null
 }
 
-/** The module occupying a bay, as carried by a bay's resolution — enough to
+/** The module occupying a bay, as carried by a bay's resolution - enough to
  * name it without a second request. */
 export interface InstalledModuleMini {
   id: string
@@ -1762,13 +1762,13 @@ export interface SnmpSensor {
   updated_at: string
 }
 
-/** One column of a walked OID subtree — an attribute of the table, held across
+/** One column of a walked OID subtree - an attribute of the table, held across
  * every component in it. `distinct` is capped server-side, so a column of
  * serial numbers reports a sample rather than hundreds of values. */
 export interface OidWalkColumn {
   /** Sub-identifier after the base, e.g. "6" in 1.3.6…11.2.1.6. */
   column: string
-  /** The full OID of this column — what a sensor would poll. */
+  /** The full OID of this column - what a sensor would poll. */
   oid: string
   distinct: string[]
   values_seen: number
@@ -1777,12 +1777,12 @@ export interface OidWalkColumn {
 }
 
 export interface OidWalkRow {
-  /** The row's index within the table — one physical component. */
+  /** The row's index within the table - one physical component. */
   index: string
   values: Record<string, string>
 }
 
-/** One direct child of a browsed OID — a branch to descend into, or a column
+/** One direct child of a browsed OID - a branch to descend into, or a column
  * when its parent turns out to be a table entry. */
 export interface OidWalkChild {
   /** The sub-identifier, e.g. "51" under 1.3.6.1.4.1.2.3. */
@@ -1804,7 +1804,7 @@ export interface OidWalkResult {
   columns: OidWalkColumn[]
   rows: OidWalkRow[]
   count: number
-  /** Hit the server's varbind cap — the subtree is larger than shown. */
+  /** Hit the server's varbind cap - the subtree is larger than shown. */
   truncated: boolean
   error: string
 }
@@ -1813,7 +1813,7 @@ export interface OidWalkResult {
 export interface DcimChoice {
   value: string
   label: string
-  /** Sub-category heading, e.g. "10 Gigabit Ethernet" — drives optgroups. */
+  /** Sub-category heading, e.g. "10 Gigabit Ethernet" - drives optgroups. */
   group?: string
 }
 export interface DcimChoices {
@@ -1840,7 +1840,7 @@ export interface Interface {
   name: string
   /** What the SNMP agent calls this port, when linked (see drift "Link to…"). */
   snmp_name: string
-  /** Excluded from SNMP drift — never compared, never flagged stale. */
+  /** Excluded from SNMP drift - never compared, never flagged stale. */
   snmp_ignore: boolean
   is_uplink?: boolean
   /** Media type slug (e.g. 10gbase-x-sfpp), or "" if unset. */
@@ -1896,7 +1896,7 @@ export interface Interface {
 }
 
 export interface InterfaceWritePayload {
-  /** Discovery link — the agent's name for this port ("" unlinks). */
+  /** Discovery link - the agent's name for this port ("" unlinks). */
   snmp_name?: string
   snmp_ignore?: boolean
   is_uplink?: boolean
@@ -2107,7 +2107,7 @@ export interface ModuleInterfaceTemplate {
   updated_at: string
 }
 
-/** Hardware kind of an inventory item — what the part IS. */
+/** Hardware kind of an inventory item - what the part IS. */
 export type InventoryItemKind =
   | "other"
   | "disk"
@@ -2122,7 +2122,7 @@ export type InventoryItemKind =
 /** Storage media/protocol for kind=disk ("" for non-disks). */
 export type InventoryMedia = "" | "nvme" | "ssd" | "hdd" | "tape"
 
-// Mirror api/models.py INVENTORY_ITEM_KINDS / INVENTORY_MEDIA_TYPES — one
+// Mirror api/models.py INVENTORY_ITEM_KINDS / INVENTORY_MEDIA_TYPES - one
 // list for the device pane and the device-type template dialog.
 export const INVENTORY_KIND_OPTIONS: {
   value: InventoryItemKind
@@ -2152,7 +2152,7 @@ export const INVENTORY_MEDIA_OPTIONS: {
 /**
  * What "speed" means for a part depends on what the part is: a spindle rate
  * for an HDD, a bus width for an NVMe drive, a memory grade for a DIMM. These
- * are the common industry values per kind, offered as a dropdown — the field
+ * are the common industry values per kind, offered as a dropdown - the field
  * stays free text so any vendor's wording still fits.
  */
 const INVENTORY_SPEEDS_BY_KIND: Partial<Record<InventoryItemKind, string[]>> = {
@@ -2186,7 +2186,7 @@ const INVENTORY_SPEEDS_BY_MEDIA: Record<
 }
 
 /** Speed values to offer for a part. Falls back to every known value when the
- * kind/media isn't pinned down yet — as in bulk edit across mixed rows. */
+ * kind/media isn't pinned down yet - as in bulk edit across mixed rows. */
 export function inventorySpeedSuggestions(
   kind?: InventoryItemKind | null,
   media?: InventoryMedia | null
@@ -2204,7 +2204,7 @@ export function inventorySpeedSuggestions(
 }
 
 /** Storage units (decimal, per the storage industry: 1 TB = 10¹² B).
- * Capacity is STORED in bytes — unit-agnostic from KB floppies to PB
+ * Capacity is STORED in bytes - unit-agnostic from KB floppies to PB
  * arrays; these drive the UI pickers + display. */
 export const STORAGE_UNITS = [
   { value: "KB", factor: 1e3 },
@@ -2416,7 +2416,7 @@ export type TopoPortKind =
 export interface TopoPort {
   name: string
   kind: TopoPortKind
-  /** Rear port sharing this row — a panel's front ⇄ rear pass-through. */
+  /** Rear port sharing this row - a panel's front ⇄ rear pass-through. */
   pair?: string
 }
 
@@ -2438,7 +2438,7 @@ export interface TopoNode {
     device_name?: string
     /** Pass-through-only device (patch panel). */
     panel?: boolean
-    /** Cabled ports, ordered — each is an edge anchor on the stencil card. */
+    /** Cabled ports, ordered - each is an edge anchor on the stencil card. */
     ports?: TopoPort[]
   }
 }
@@ -2583,7 +2583,7 @@ export interface MacObject {
   tags: Tag[]
 }
 
-/** MAC object on the detail page — adds its editable custom-field values. */
+/** MAC object on the detail page - adds its editable custom-field values. */
 export interface MacObjectDetail extends MacObject {
   custom_fields: Record<string, unknown>
 }
@@ -2599,7 +2599,7 @@ export interface MacEntry {
   objects: MacObject[]
 }
 
-/** MAC detail — richer than the list row (interface enabled, IP status). */
+/** MAC detail - richer than the list row (interface enabled, IP status). */
 export interface MacDetail {
   mac: string
   objects: MacObjectDetail[]
@@ -2616,7 +2616,7 @@ export interface MacDetail {
     device: { id: string; name: string } | null
     interface: { id: string; name: string } | null
   }[]
-  /** SNMP sightings — the ARP/FDB rows on polled devices that carry this MAC.
+  /** SNMP sightings - the ARP/FDB rows on polled devices that carry this MAC.
    * A MAC clicked on a monitoring card may exist only here. */
   seen: {
     device: { id: string; name: string }
@@ -2626,7 +2626,7 @@ export interface MacDetail {
   }[]
 }
 
-/** Full first-class MAC object — the `/api/mac-addresses/` CRUD serializer.
+/** Full first-class MAC object - the `/api/mac-addresses/` CRUD serializer.
  * Same shape as the detail-page object, plus timestamps. */
 export interface MACAddress extends MacObjectDetail {
   created_at: string
@@ -2652,13 +2652,13 @@ export interface IPBulkUpdateFields {
 // Nested IPs endpoint returns a flat list (no DRF pagination on this
 // action). Carries the same Paginated-ish shape so the React side can
 // reuse list helpers.
-/** A DHCP scope's pool range on a prefix — shades free addresses in the pane. */
+/** A DHCP scope's pool range on a prefix - shades free addresses in the pane. */
 export interface DhcpScopeRange {
   scope_id: string
   name: string
   start: string
   end: string
-  /** Exclusion ranges carved out of the pool — never shaded as pool space. */
+  /** Exclusion ranges carved out of the pool - never shaded as pool space. */
   exclusions: { start: string; end: string }[]
 }
 
@@ -3037,7 +3037,7 @@ export interface Site {
   /** IANA tz name (e.g. "Europe/Copenhagen"), or "" when unset. */
   time_zone: string
   gateway_policy: SiteGatewayPolicy
-  /** The prefix new addresses here come from by default — a hint for staff at
+  /** The prefix new addresses here come from by default - a hint for staff at
    * this site, not a constraint. */
   default_prefix: { id: string; cidr: string } | null
   vrfs: { id: string; name: string; rd: string; color: string }[]
@@ -3228,7 +3228,7 @@ export interface VirtualMachine {
   role: { id: string; name: string; slug: string; color: string } | null
   platform: { id: string; name: string; slug: string } | null
   status: StatusMini | null
-  /** Hypervisor-reported runtime state — "running" | "stopped" | "suspended".
+  /** Hypervisor-reported runtime state - "running" | "stopped" | "suspended".
    * Null for a VM no sync tracks. Distinct from `status`, which is the
    * operator's lifecycle field: a VM can be Active and powered off. */
   power_state: string | null
@@ -3237,6 +3237,8 @@ export interface VirtualMachine {
   /** Which virtualization source syncs this VM; null when nobody does. */
   synced_from: string | null
   synced_from_id: string | null
+  /** Unresolved differences between Danbyte and the hypervisor. */
+  drift_count: number
   vcpus: number | null
   memory_mb: number | null
   disk_gb: number | null
@@ -3278,7 +3280,7 @@ export interface VirtNetwork {
   vswitch: string | null
   vswitch_name: string | null
   /** Routing context in force. `inherited` means it comes from the switch,
-   * not from this network — the editor needs to tell those apart. */
+   * not from this network - the editor needs to tell those apart. */
   vrf: { id: string; name: string; inherited: boolean } | null
   vms: { id: string; name: string; status: string | null; iface?: string }[]
   last_seen_at: string | null
@@ -3398,7 +3400,7 @@ export interface ServiceWritePayload {
   tag_ids?: number[]
 }
 
-/** POST /api/services/{id}/monitor/ — spawns TCP/UDP checks per port. */
+/** POST /api/services/{id}/monitor/ - spawns TCP/UDP checks per port. */
 export interface ServiceMonitorResponse {
   monitored: number
   ip: string
@@ -3434,7 +3436,7 @@ export interface DeviceSyncDiffEntry {
   extra: string[]
 }
 
-/** POST /api/devices/{id}/sync-from-type/ — dry-run when apply omitted. */
+/** POST /api/devices/{id}/sync-from-type/ - dry-run when apply omitted. */
 export interface DeviceSyncResponse {
   applied: boolean
   diff: Record<string, DeviceSyncDiffEntry>
@@ -3799,7 +3801,7 @@ export interface CheckNowResponse {
   results: CheckNowResult[]
 }
 
-// ─── Monitoring — prefix rollup + bulk status ──────────────────────────────
+// ─── Monitoring - prefix rollup + bulk status ──────────────────────────────
 
 export interface AssignmentOverrides {
   interval_seconds?: number
@@ -3845,7 +3847,7 @@ export interface PrefixIpStatus {
 export interface PrefixChecksResponse {
   prefix_id: string
   cidr: string
-  /** Which engine monitors this prefix — an Outpost, or the built-in local. */
+  /** Which engine monitors this prefix - an Outpost, or the built-in local. */
   engine: { id: string; name: string; is_local: boolean }
   /** Last time this prefix was ICMP-swept (ISO), or null. */
   last_discovered_at: string | null
@@ -3877,7 +3879,7 @@ export interface BulkStatusResponse {
   statuses: Record<string, BulkStatusEntry>
 }
 
-// ─── Monitoring — settings + global stats ──────────────────────────────────
+// ─── Monitoring - settings + global stats ──────────────────────────────────
 
 export interface MonitoringSkipStatus {
   id: string
@@ -3914,9 +3916,9 @@ export interface MonitoringSettings {
   cleanup_after_days: number
   flap_exclude_ip_statuses: string[]
   flap_exclude_ip_status_detail: MonitoringSkipStatus[]
-  /** Tenant default monitoring engine (id) — null = the local built-in. */
+  /** Tenant default monitoring engine (id) - null = the local built-in. */
   default_engine: string | null
-  /** GitHub repo of the Outpost agent — powers the version dropdown. */
+  /** GitHub repo of the Outpost agent - powers the version dropdown. */
   outpost_repo_url: string
   outpost_repo_token_set: boolean
   updated_at: string
@@ -3974,7 +3976,7 @@ export interface MonitoringDenySubnet {
   updated_at: string
 }
 
-/** A monitoring engine — the built-in `local` (core workers) or a remote
+/** A monitoring engine - the built-in `local` (core workers) or a remote
  * **Outpost** installed at a site. GET /api/monitoring/engines/. */
 export interface MonitoringEngine {
   id: string
@@ -4018,7 +4020,7 @@ export interface MonitoringEngineWritePayload {
   ssh_credential?: { private_key?: string; password?: string }
 }
 
-/** GET /api/system/upgrade/status — progress of an in-flight upgrade. */
+/** GET /api/system/upgrade/status - progress of an in-flight upgrade. */
 export interface SystemUpgradeStatus {
   state: "idle" | "running" | "done" | "failed"
   step?: string
@@ -4028,7 +4030,7 @@ export interface SystemUpgradeStatus {
   error?: string
 }
 
-/** GET /api/system/info — instant, network-free runtime + version facts. */
+/** GET /api/system/info - instant, network-free runtime + version facts. */
 export interface SystemInfo {
   version: string
   commit: string
@@ -4041,7 +4043,7 @@ export interface SystemInfo {
   platform: string
 }
 
-/** GET /api/system/updates — current version + the release repo's versions. */
+/** GET /api/system/updates - current version + the release repo's versions. */
 export interface SystemUpdates {
   current: { version: string; commit: string }
   repo_url: string
@@ -4165,8 +4167,8 @@ export interface MonitoringStats {
 // X.509 certificates, the endpoints that served them, and the assignments that
 // declare which object should present which certificate (the source of truth a
 // drift check compares against). A certificate's intrinsic facts
-// (subject/issuer/serial/fingerprint/validity/key) are read-only — they are
-// properties of the exact DER bytes — and the field names mirror
+// (subject/issuer/serial/fingerprint/validity/key) are read-only - they are
+// properties of the exact DER bytes - and the field names mirror
 // CertificateSerializer / CertificateBindingSerializer / the assignment
 // serializer exactly. Only `name`/`notes` are writable (PATCH), and a
 // certificate is authored solely by uploading a public PEM (never a key).
@@ -4180,7 +4182,7 @@ export type PublicKeyAlgorithm =
   | "unknown"
 
 /** How the row came to exist: seen on the wire, uploaded by an operator, or
- * both (an uploaded cert later observed being served — one row, by fingerprint). */
+ * both (an uploaded cert later observed being served - one row, by fingerprint). */
 export type CertificateOrigin = "observed" | "uploaded" | "both"
 
 export interface Certificate {
@@ -4195,7 +4197,7 @@ export interface Certificate {
   san_ip: string[]
   not_before: string
   not_after: string
-  /** Derived at read time — a stale row can't report itself healthy. */
+  /** Derived at read time - a stale row can't report itself healthy. */
   is_expired: boolean
   /** Derived at read time; negative once expired. Sort key for urgency. */
   days_until_expiry: number
@@ -4203,18 +4205,18 @@ export interface Certificate {
   public_key_bits: number | null
   signature_algorithm: string
   self_signed: boolean
-  /** basicConstraints CA:TRUE — this cert may sign other certs. */
+  /** basicConstraints CA:TRUE - this cert may sign other certs. */
   is_ca: boolean
-  /** RFC 5280 Subject Key Identifier (hex) — a CA's identity for chaining. */
+  /** RFC 5280 Subject Key Identifier (hex) - a CA's identity for chaining. */
   subject_key_id: string
-  /** RFC 5280 Authority Key Identifier (hex) — points at the issuer's SKI. */
+  /** RFC 5280 Authority Key Identifier (hex) - points at the issuer's SKI. */
   authority_key_id: string
   /** The resolved parent CA cert in this tenant's inventory, or null (root/unknown). */
   issuer_certificate: string | null
   /** The parent CA's subject CN, for "issued by <CA>" without a lookup. */
   issuer_certificate_subject_cn: string | null
   last_seen: string | null
-  /** Endpoints on record as having served this cert — the blast radius. */
+  /** Endpoints on record as having served this cert - the blast radius. */
   binding_count: number
   /** Objects declared to present this cert (the source-of-truth intent). */
   assignment_count: number
@@ -4224,7 +4226,7 @@ export interface Certificate {
   observed: boolean
   /** Authored by an operator (a public PEM was uploaded). */
   uploaded: boolean
-  /** The stored **public** PEM — present only for uploaded rows, else "". */
+  /** The stored **public** PEM - present only for uploaded rows, else "". */
   pem: string
   /** Operator-authored label; editable. */
   name: string
@@ -4290,7 +4292,7 @@ export interface CertificateRequest {
   updated_at: string
 }
 
-/** Create response — carries the private key ONCE (never returned again). */
+/** Create response - carries the private key ONCE (never returned again). */
 export interface CertificateRequestCreated extends CertificateRequest {
   private_key: string
 }
@@ -4356,7 +4358,7 @@ export interface AcmeOrder {
   updated_at: string
 }
 
-/** A printable label template — Jinja2 HTML + QR, sized in mm (#9). */
+/** A printable label template - Jinja2 HTML + QR, sized in mm (#9). */
 export interface LabelTemplate {
   id: string
   name: string
@@ -4428,7 +4430,7 @@ export interface CertificateBinding {
   /** Human-readable endpoint, e.g. `192.0.2.10:443 (www.example.com)`. */
   endpoint: string
   endpoint_key: string
-  /** 0 = end-entity (leaf), 1 = its issuer, … — this endpoint's chain. */
+  /** 0 = end-entity (leaf), 1 = its issuer, … - this endpoint's chain. */
   chain_depth: number
   /** Did the chain THIS endpoint presented verify? null = not known. */
   chain_verified: boolean | null
@@ -4529,8 +4531,8 @@ export interface IpUptime {
 }
 
 export interface DashDist {
-  /** Machine value for the bucket (id/slug) — drives deep-link filters; null
-   * for an "unset"/"—" bucket. `name` is only the display label. */
+  /** Machine value for the bucket (id/slug) - drives deep-link filters; null
+   * for an "unset"/"-" bucket. `name` is only the display label. */
   key?: string | null
   name: string
   count: number
@@ -4642,7 +4644,7 @@ export interface ComplianceEvaluation {
   total_violations: number
 }
 
-/** Response of GET /api/compliance-rules/<id>/violations/ — the objects one
+/** Response of GET /api/compliance-rules/<id>/violations/ - the objects one
  * rule currently fails, for its detail page. */
 export interface ComplianceRuleViolations {
   rule: {
@@ -4654,7 +4656,7 @@ export interface ComplianceRuleViolations {
     enabled: boolean
   }
   violations: ComplianceViolation[]
-  /** Failing rows serialized with the type's real serializer — feeds the
+  /** Failing rows serialized with the type's real serializer - feeds the
    * genuine per-type table on the rule detail page. */
   objects: Record<string, unknown>[]
   total: number
@@ -4675,7 +4677,7 @@ export interface DeviceComplianceViolation {
   cf_key: string
 }
 
-/** Response of GET /api/compliance/devices/<id>/ — one device's compliance
+/** Response of GET /api/compliance/devices/<id>/ - one device's compliance
  * status: all-clear, or the rules it currently fails (grouped per rule). */
 export interface DeviceComplianceStatus {
   device: { id: string; name: string }
@@ -4767,12 +4769,12 @@ export interface ChangeLogEntry {
   changes: Record<string, FieldChange>
   change_count: number
   request_id: string
-  /** Full row snapshots — only present on the detail endpoint. Pre is null
+  /** Full row snapshots - only present on the detail endpoint. Pre is null
    * for a create, post is null for a delete. */
   pre_change?: Record<string, unknown> | null
   post_change?: Record<string, unknown> | null
   /** `{uuid: human label}` for every resolvable FK value in this entry
-   * (changes + snapshots) — detail endpoint only. Lets the UI show the
+   * (changes + snapshots) - detail endpoint only. Lets the UI show the
    * related object's name wherever its UUID appears. */
   related_labels?: Record<string, string>
 }
@@ -4961,7 +4963,7 @@ export interface DeploymentSettings {
   human_ids_enabled: boolean
   date_format: DateFormat
   time_style: TimeStyle
-  /** Raw stored value — blank inherits the server's TIME_ZONE. */
+  /** Raw stored value - blank inherits the server's TIME_ZONE. */
   display_timezone: string
   release_repo_url: string
   release_repo_token_set: boolean
@@ -5016,7 +5018,7 @@ export interface TenantSettingsDefaults {
   ldap_server_uri: string
   date_format: DateFormat
   time_style: TimeStyle
-  /** Resolved for the "inherit" summary — never blank. */
+  /** Resolved for the "inherit" summary - never blank. */
   display_timezone: string
 }
 
@@ -5040,7 +5042,7 @@ export interface TenantSettings {
   override_datetime: boolean
   date_format: DateFormat
   time_style: TimeStyle
-  /** Raw stored value — blank inherits the server's TIME_ZONE. */
+  /** Raw stored value - blank inherits the server's TIME_ZONE. */
   display_timezone: string
   updated_at: string
   deployment_defaults: TenantSettingsDefaults
@@ -5067,7 +5069,7 @@ export interface LdapSettings {
   updated_at: string
 }
 
-/** Tenant LDAP override — the deployment fields + the override toggle and
+/** Tenant LDAP override - the deployment fields + the override toggle and
  * login-domain routing (GET/PUT /api/tenant-settings/ldap/). */
 export interface TenantLdapSettings extends LdapSettings {
   override_ldap: boolean
@@ -5094,7 +5096,7 @@ export interface LdapGroupMapping {
 // ─── SSO / Identity providers (admin) ───────────────────────────────────────
 export type SsoProtocol = "oidc" | "saml"
 
-/** A provider offered on the login page — GET /api/auth/sso/providers/ (public,
+/** A provider offered on the login page - GET /api/auth/sso/providers/ (public,
  * no auth). Only the fields the "Sign in with…" buttons need. */
 export interface SsoPublicProvider {
   name: string
@@ -5316,7 +5318,7 @@ export interface MaintenanceEvent {
   updated_at: string
 }
 
-/** `/api/planning/calendar/` — everything scheduled inside a date window. */
+/** `/api/planning/calendar/` - everything scheduled inside a date window. */
 export interface PlanningCalendar {
   start: string
   end: string
@@ -5400,7 +5402,7 @@ export interface PlanningChangeLine {
 }
 
 /** A change set a task says it will make: one saved submission of the object's
- *  own edit (or create) form. Applying writes it into Danbyte's record — it does
+ *  own edit (or create) form. Applying writes it into Danbyte's record - it does
  *  not push config to the device. */
 export interface PlanningPlannedChange {
   id: string
@@ -5439,7 +5441,7 @@ export interface PlanningAssignableUser {
   email: string
 }
 
-/** `/api/planning/assignable-groups/` — teams a task can be queued on. */
+/** `/api/planning/assignable-groups/` - teams a task can be queued on. */
 export interface PlanningAssignableGroup {
   id: number
   name: string
@@ -6124,7 +6126,7 @@ export interface ApiToken {
   created_at: string
 }
 
-/** Create response — `key` is present only here, once. */
+/** Create response - `key` is present only here, once. */
 export interface ApiTokenCreated extends ApiToken {
   key: string
 }
@@ -6193,7 +6195,7 @@ export interface DeviceConfigState {
   updated_at: string
 }
 
-// Light row from the tenant-wide drift list (/api/config-states/) — no blobs.
+// Light row from the tenant-wide drift list (/api/config-states/) - no blobs.
 export interface DeviceConfigStateRow {
   id: string
   device: string
@@ -6204,7 +6206,7 @@ export interface DeviceConfigStateRow {
   reported_at: string | null
 }
 
-// One row of the tenant-wide SNMP drift list (/api/monitoring/snmp-drift/) —
+// One row of the tenant-wide SNMP drift list (/api/monitoring/snmp-drift/) -
 // observed SNMP state vs the device's intended source of truth, summarised.
 export type SnmpDriftStatus = "drift" | "in_sync" | "unreachable"
 export interface SnmpDriftRow {
@@ -6235,7 +6237,7 @@ export interface DeviceConfigSnapshot {
   created_at: string
 }
 
-// Collaborative presence — who else is viewing/editing an object.
+// Collaborative presence - who else is viewing/editing an object.
 export type PresenceMode = "viewing" | "editing"
 
 export interface PresentUser {
@@ -6420,7 +6422,7 @@ export interface VirtualChassisMember {
   vc_priority: number | null
   is_master: boolean
   serial_number: string
-  /** For the stack faceplates — saved layouts live on the type. */
+  /** For the stack faceplates - saved layouts live on the type. */
   device_type_id: string | null
   status: StatusMini | null
 }
@@ -6548,7 +6550,7 @@ export interface FloorTileType {
   updated_at: string
 }
 
-/** Picker shape (?picker=1) — FloorTileTypeMiniSerializer. */
+/** Picker shape (?picker=1) - FloorTileTypeMiniSerializer. */
 export interface FloorTileTypeOption {
   id: string
   name: string
@@ -6587,7 +6589,7 @@ export interface SiteMarker {
   label: string
   description: string
   device: { id: string; name: string } | null
-  /** Exactly one of a floor tile type or a device role — `kind` says which. */
+  /** Exactly one of a floor tile type or a device role - `kind` says which. */
   type: {
     id: string
     name: string
@@ -6685,7 +6687,7 @@ export interface FloorPlanTileWritePayload {
   fov_ptz?: boolean
 }
 
-/** POST /api/floor-plans/<id>/tiles/bulk/ — one transaction, fresh list back. */
+/** POST /api/floor-plans/<id>/tiles/bulk/ - one transaction, fresh list back. */
 export interface FloorPlanTilesBulkPayload {
   create?: FloorPlanTileWritePayload[]
   update?: (FloorPlanTileWritePayload & { id: string })[]
@@ -6700,14 +6702,14 @@ export interface FloorPlan {
   site: SiteOption
   grid_width: number
   grid_height: number
-  /** Physical size of one grid cell (mm) — default 600, a raised-floor tile. */
+  /** Physical size of one grid cell (mm) - default 600, a raised-floor tile. */
   cell_mm: number
   /** Room ceiling height (mm). */
   ceiling_mm: number
   /** Relative /media/… URL for the blueprint under the grid, or null. */
   background_image: string | null
   background_opacity: number
-  /** View prefs (overlay mode, grid on/off…) — free schema. */
+  /** View prefs (overlay mode, grid on/off…) - free schema. */
   state: Record<string, unknown>
   description: string
   tile_count: number
@@ -6738,7 +6740,7 @@ export interface FloorPlanTray {
   color: string
   /** [[x, y], …] in cell units, snapped to 0.5 steps. */
   points: [number, number][]
-  /** Vertical placement — drives 3D height + route-length drops. */
+  /** Vertical placement - drives 3D height + route-length drops. */
   level: TrayLevel
   /** Height above finished floor (mm, negative = underfloor). Null derives
    * from level: overhead → ceiling−300, underfloor → −300, floor → 0. */
@@ -6817,7 +6819,7 @@ export interface FloorPlanTrayWritePayload {
   cable_ids?: string[]
 }
 
-/** A geographic cable run on the site map — the outside-plant tray. */
+/** A geographic cable run on the site map - the outside-plant tray. */
 export interface CableRoute {
   id: string
   numid: number | null
@@ -6871,7 +6873,7 @@ export interface FloorPlanCablePath {
   /** Tile ids at each end (device tile, else the device's rack tile). */
   a_tiles: string[]
   b_tiles: string[]
-  /** Endpoint device + port name per termination — lets the 3D room anchor
+  /** Endpoint device + port name per termination - lets the 3D room anchor
    * the run to the exact photo-port quad. */
   a_points: { device: string; port: string }[]
   b_points: { device: string; port: string }[]
@@ -6886,12 +6888,12 @@ export interface TrayRef {
   elevation_mm: number | null
 }
 
-/** What a cable follows on one floor plan — GET/PUT /api/cables/{id}/routing/ */
+/** What a cable follows on one floor plan - GET/PUT /api/cables/{id}/routing/ */
 export interface CableRouting {
   mode: "trays" | "point-to-point"
   /** The trays it rides, in run order. Empty means point-to-point. */
   trays: TrayRef[]
-  /** Every tray on the plan — the pick list. */
+  /** Every tray on the plan - the pick list. */
   available: TrayRef[]
 }
 
@@ -6908,7 +6910,7 @@ export interface FloorPlanWritePayload {
   tag_ids?: number[]
 }
 
-/** GET /api/floor-plans/<id>/state/ — live per-tile metrics, keyed by tile id. */
+/** GET /api/floor-plans/<id>/state/ - live per-tile metrics, keyed by tile id. */
 export type FloorTileCheck =
   | "up"
   | "down"
@@ -6965,7 +6967,7 @@ export interface WindowsConnection {
   vrf_id: string | null
   vrf_name: string
   vrf_mode: "pinned" | "search"
-  /** What the last run saw but couldn't record — an address with no
+  /** What the last run saw but couldn't record - an address with no
    * prefix, a host with no matching site. Not errors. */
   last_sync_skipped: string[]
   enabled: boolean
@@ -7011,9 +7013,9 @@ export interface DhcpReservation {
   id: string
   scope: string
   scope_display: string
-  /** The scope's backing Prefix id — links the Scope cell into IPAM. */
+  /** The scope's backing Prefix id - links the Scope cell into IPAM. */
   scope_prefix: string | null
-  /** Windows server connection id — null for reservations in local scopes. */
+  /** Windows server connection id - null for reservations in local scopes. */
   connection: string | null
   connection_name: string | null
   ip: string
@@ -7099,7 +7101,7 @@ export interface VirtualizationSource {
   vrf_id: string | null
   vrf_name: string
   vrf_mode: "pinned" | "search"
-  /** What the last run saw but couldn't record — an address with no
+  /** What the last run saw but couldn't record - an address with no
    * prefix, a host with no matching site. Not errors. */
   last_sync_skipped: string[]
   enabled: boolean
@@ -7129,7 +7131,7 @@ export interface VirtChange {
   id: string
   source: string
   source_name: string
-  kind: "new_guest" | "spec_change" | "removed_guest"
+  kind: "new_guest" | "spec_change" | "removed_guest" | "iface_extra"
   kind_display: string
   vmid: number
   node: string

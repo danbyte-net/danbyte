@@ -43,7 +43,7 @@ QEMU_CONFIG = {
     "net0": "virtio=AA:BB:CC:00:11:22,bridge=vmbr0,tag=10",
     "scsi0": "local-lvm:vm-100-disk-0,size=32G,ssd=1",
     "scsi1": "ceph-vm:vm-100-disk-1,size=100G",
-    "ide2": "local:iso/debian.iso,media=cdrom",  # optical — must be ignored
+    "ide2": "local:iso/debian.iso,media=cdrom",  # optical - must be ignored
     "cores": 4,
     "tags": "prod;web",
     "description": "Frontend router",
@@ -347,7 +347,7 @@ class ProxmoxSyncTests(TestCase):
             set(sw.uplink_interfaces.values_list("name", flat=True)),
             {"eno1", "eno2"},
         )
-        # Additive + idempotent — a second sync doesn't duplicate.
+        # Additive + idempotent - a second sync doesn't duplicate.
         self.sync()
         self.assertEqual(sw.uplink_interfaces.count(), 2)
 
@@ -543,7 +543,7 @@ VC_GUEST_NET = {
 
 
 class FakeVCenter:
-    """Stand-in for VCenterClient — routes REST paths to the fixtures above."""
+    """Stand-in for VCenterClient - routes REST paths to the fixtures above."""
 
     def __init__(self, source):
         self.source = source
@@ -615,7 +615,7 @@ class VCenterSyncTests(TestCase):
 
         The VM summary carries no cluster, so the sync named a single cluster
         after the source and put every guest in it. `?clusters=` filters by
-        cluster the same way `?hosts=` already did — so each guest now lands
+        cluster the same way `?hosts=` already did - so each guest now lands
         where it runs, which is also what makes site inheritance meaningful.
         """
         self.sync()
@@ -631,7 +631,7 @@ class VCenterSyncTests(TestCase):
         self.assertFalse(Cluster.objects.filter(name=self.source.name).exists())
 
     def test_a_guest_on_no_cluster_falls_back_to_the_source_name(self):
-        """Standalone ESXi has no cluster at all — that path must stay green.
+        """Standalone ESXi has no cluster at all - that path must stay green.
 
         It is also the shape of the dev box, so this is the case a live run
         actually exercises.
@@ -799,7 +799,7 @@ class VirtChangeApiTests(TestCase):
         self.assertEqual(self.client.get("/api/virt-changes/").status_code, 404)
 
     def test_cannot_create_via_post(self):
-        # No `add` grant (and create() 405s anyway) — either way it's refused.
+        # No `add` grant (and create() 405s anyway) - either way it's refused.
         res = self.client.post("/api/virt-changes/", {}, format="json")
         self.assertIn(res.status_code, (403, 405))
 
@@ -851,7 +851,7 @@ class AddressPlacementTests(TestCase):
     def test_a_pin_is_a_hard_scope_not_a_preference(self):
         """Pinned to a VRF with no matching prefix must skip, not fall back.
 
-        A Global prefix exists and would fit — using it anyway would file the
+        A Global prefix exists and would fit - using it anyway would file the
         address in a routing domain the operator explicitly didn't name.
         """
         self._prefix()  # Global
@@ -875,7 +875,7 @@ class AddressPlacementTests(TestCase):
         """Preference beats specificity, deliberately.
 
         A plain longest-match across all VRFs would move an address that sits
-        happily in a Global /8 today into a /24 in some other VRF — a silent
+        happily in a Global /8 today into a /24 in some other VRF - a silent
         data change on upgrade. The preferred VRF is always tried first.
         """
         self._prefix("10.0.0.0/8")            # Global, less specific
@@ -917,7 +917,7 @@ class AddressPlacementTests(TestCase):
         )
 
     def test_sync_never_writes_the_interface_vrf(self):
-        """Layer 1 is the operator's field — reading it is the whole contract."""
+        """Layer 1 is the operator's field - reading it is the whole contract."""
         self._prefix(vrf=self.prod)
         self._pin(self.prod)
         self.sync()
@@ -944,7 +944,7 @@ class AddressPlacementTests(TestCase):
 
 
 class NetworkPlacementTests(TestCase):
-    """The vSwitch / port-group layers — "on this switch it's this VRF".
+    """The vSwitch / port-group layers - "on this switch it's this VRF".
 
     A vSwitch trunks many VLANs, so both levels exist: the switch is the
     default, a network on it overrides. Both are read live at sync time, so
@@ -1136,7 +1136,7 @@ class HostDeviceTests(TestCase):
 
     Off by default because this writes into the *physical* inventory, which is
     the operator's territory. On, it fills only what the hypervisor actually
-    reports and leaves the judgement calls — device type, site — alone.
+    reports and leaves the judgement calls - device type, site - alone.
     """
 
     def setUp(self):
@@ -1216,7 +1216,7 @@ class HostDeviceTests(TestCase):
         self.assertEqual(vm.device.name, "pve1")
 
     def test_bridge_uplinks_find_the_created_hosts_nics(self):
-        """The bigger payoff — uplink auto-sync used to bail with no Device."""
+        """The bigger payoff - uplink auto-sync used to bail with no Device."""
         from api.models import Interface
 
         self._enable()
@@ -1239,7 +1239,7 @@ class HostDeviceTests(TestCase):
         )
 
     def test_an_existing_role_holding_the_slug_is_reused(self):
-        """(tenant, slug) is unique — creating past it would 500 the sync."""
+        """(tenant, slug) is unique - creating past it would 500 the sync."""
         mine = DeviceRole.objects.create(
             tenant=self.tenant, name="HV", slug="hypervisor"
         )
@@ -1282,14 +1282,14 @@ class SitePlacementSyncTests(TestCase):
         )
 
     def test_a_site_named_after_the_datacenter_is_used(self):
-        """The hierarchy, as the implicit last rule — zero configuration."""
+        """The hierarchy, as the implicit last rule - zero configuration."""
         lab = self.Site.objects.create(tenant=self.tenant, name="Lab")
         self.sync()
         self.assertEqual(VirtualMachine.objects.get(name="web01").site_id, lab.id)
         self.assertEqual(Device.objects.get(name="esxi-lab-01").site_id, lab.id)
 
     def test_nothing_is_placed_when_no_site_matches(self):
-        """A Site is a physical fact — the sync must never invent one.
+        """A Site is a physical fact - the sync must never invent one.
 
         A site exists but isn't named after anything here, which is the real
         "why didn't my host get a site?" case.
@@ -1349,7 +1349,7 @@ class SitePlacementSyncTests(TestCase):
         self.assertNotEqual(vm.site_id, lab.id)
 
     def test_folders_are_not_walked_without_a_folder_rule(self):
-        """The tree walk is a call per folder — it must not run for nothing."""
+        """The tree walk is a call per folder - it must not run for nothing."""
         self.Site.objects.create(tenant=self.tenant, name="Lab")
         seen = []
         real = FakeVCenter.get
@@ -1364,3 +1364,90 @@ class SitePlacementSyncTests(TestCase):
             [p for p in seen if "parent_folders" in p],
             "walked the folder tree with no folder rules configured",
         )
+
+
+class InterfaceDriftTests(TestCase):
+    """An interface Danbyte has but the hypervisor doesn't (#34 follow-up).
+
+    Both engines were additive only: they created what was missing and never
+    noticed the reverse. Disks already pruned their own rows via
+    `created_disk`; VMInterface had no equivalent, so nothing could safely be
+    removed - an operator's hand-made NIC was indistinguishable from a stale
+    synced one.
+    """
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="pve", host="192.0.2.30",
+            credentials={"token_id": "a@pam!t", "secret": "s"},
+            sync_mode="auto",
+        )
+        Prefix.objects.create(tenant=self.tenant, cidr="10.77.0.0/24")
+
+    def sync(self):
+        with mock.patch.object(virt_sync, "proxmox_get", side_effect=fake_get):
+            return virt_sync.sync_proxmox(self.source)
+
+    def _guest(self, name="router-vm"):
+        from integrations.models import VirtGuest
+
+        return VirtGuest.objects.get(vm__name=name)
+
+    def test_synced_interfaces_are_marked_as_ours(self):
+        self.sync()
+        iface = VMInterface.objects.get(vm__name="router-vm")
+        self.assertTrue(iface.created_interface)
+
+    def test_an_operator_interface_is_flagged_not_deleted(self):
+        """The case reported: a hand-added NIC should raise drift."""
+        from integrations.models import VirtChange
+
+        self.sync()
+        vm = VirtualMachine.objects.get(name="router-vm")
+        VMInterface.objects.create(vm=vm, name="etc 01")
+
+        self.sync()
+
+        self.assertTrue(
+            VMInterface.objects.filter(vm=vm, name="etc 01").exists(),
+            "an operator's interface must never be deleted by a sync",
+        )
+        change = VirtChange.objects.get(kind="iface_extra", vm=vm)
+        self.assertEqual(change.detail["names"], ["etc 01"])
+
+    def test_a_stale_synced_interface_is_pruned(self):
+        """Sync-created bookkeeping that vanished is the sync's to clean up."""
+        self.sync()
+        vm = VirtualMachine.objects.get(name="router-vm")
+        VMInterface.objects.create(
+            vm=vm, name="net9", created_interface=True
+        )
+
+        self.sync()
+
+        self.assertFalse(VMInterface.objects.filter(vm=vm, name="net9").exists())
+
+    def test_the_flag_clears_once_the_interface_goes(self):
+        from integrations.models import VirtChange
+
+        self.sync()
+        vm = VirtualMachine.objects.get(name="router-vm")
+        VMInterface.objects.create(vm=vm, name="etc 01")
+        self.sync()
+        self.assertTrue(VirtChange.objects.filter(kind="iface_extra").exists())
+
+        VMInterface.objects.filter(vm=vm, name="etc 01").delete()
+        self.sync()
+
+        self.assertFalse(
+            VirtChange.objects.filter(kind="iface_extra", ignored=False).exists()
+        )
+
+    def test_no_drift_when_everything_matches(self):
+        from integrations.models import VirtChange
+
+        self.sync()
+        self.sync()
+        self.assertFalse(VirtChange.objects.filter(kind="iface_extra").exists())

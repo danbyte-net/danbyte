@@ -16,7 +16,7 @@ from .toggles import IntegrationToggleMixin
 
 class VirtNetworkSerializer(serializers.ModelSerializer):
     """A synced hypervisor network (port-group / bridge) with the VLAN it maps
-    to and the VMs currently attached — the switch→network→VM linkage that
+    to and the VMs currently attached - the switch→network→VM linkage that
     feeds the switch page and the virtual topology view."""
 
     vlan = serializers.SerializerMethodField()
@@ -79,7 +79,7 @@ class VirtNetworkSerializer(serializers.ModelSerializer):
                 seen[vm.id] = {
                     "id": str(vm.id), "name": vm.name,
                     "status": vm.status.name if vm.status_id else None,
-                    # Which VM interface rides this network — the topology
+                    # Which VM interface rides this network - the topology
                     # labels the connector leg with it.
                     "iface": i.name,
                 }
@@ -155,6 +155,9 @@ class VirtChangeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         source = self.request.query_params.get("source")
         if source:
             qs = qs.filter(source_id=source)
+        vm = self.request.query_params.get("vm")
+        if vm:
+            qs = qs.filter(vm_id=vm)
         if self.request.query_params.get("ignored") != "1":
             qs = qs.filter(ignored=False)
         return qs
@@ -204,7 +207,7 @@ class VirtPlacementRuleSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         # The source is a plain FK in the payload, so it must be checked
-        # against the active tenant — a posted id is never trusted.
+        # against the active tenant - a posted id is never trusted.
         src = attrs.get("source") or getattr(self.instance, "source", None)
         request = self.context.get("request") if self.context else None
         if src is not None and request is not None:
@@ -244,7 +247,7 @@ class VirtPlacementRuleViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     serializer_class = VirtPlacementRuleSerializer
 
     def perform_create(self, serializer):
-        # Tenant is implied by the source, so there is nothing to stamp —
+        # Tenant is implied by the source, so there is nothing to stamp -
         # the base class would try to pass the `source__tenant` traversal as a
         # model kwarg and blow up. `source` is validated below instead.
         serializer.save()

@@ -1,4 +1,4 @@
-"""DRF viewsets — JSON endpoints for the v2 React frontend.
+"""DRF viewsets - JSON endpoints for the v2 React frontend.
 
 Scoped to the user's active tenant via ``_get_active_tenant`` (same rule
 the old Django UI used) so a user can never see another tenant's data.
@@ -6,7 +6,7 @@ the old Django UI used) so a user can never see another tenant's data.
 from __future__ import annotations
 
 from django.db import transaction
-from django.db.models.functions import Collate
+from django.db.models.functions import Coalesce, Collate
 from django.db.models import Count, F, OuterRef, Q, Subquery
 from django.utils.text import slugify
 from drf_spectacular.utils import extend_schema, extend_schema_view
@@ -204,7 +204,7 @@ def annotate_dhcp(qs):
     """Add the counts the IPAddress serializer's ``dhcp`` field reads, so every
     surface that lists IPs marks DHCP state consistently: a reservation, a lease,
     or membership in a scope's pool range (address between start/end). An
-    exclusion range carves a hole in the pool — DHCP never hands those out — so
+    exclusion range carves a hole in the pool - DHCP never hands those out - so
     the serializer subtracts ``dhcp_excl_n`` from pool membership. The reverse
     path ``prefix__dhcp_scopes`` keeps ``api`` free of an ``integrations``
     import; the ``inet`` columns compare directly."""
@@ -275,7 +275,7 @@ from .views import _build_space_map, _get_active_tenant, _next_available_ips, _s
 
 
 
-# Human/natural name ordering ("disk2" before "disk10") — backed by the
+# Human/natural name ordering ("disk2" before "disk10") - backed by the
 # `natural_sort` ICU collation (migration 0099). Used wherever a list orders
 # by a user-visible name.
 NATURAL_NAME = Collate("name", "natural_sort")
@@ -291,7 +291,7 @@ class StandardPagination(PageNumberPagination):
 
 
 class TenantScopedReadViewSet(RBACViewSetMixin, viewsets.ReadOnlyModelViewSet):
-    """Read-only base — filters by active tenant. Anonymous → empty."""
+    """Read-only base - filters by active tenant. Anonymous → empty."""
 
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
@@ -314,7 +314,7 @@ class TenantScopedViewSet(RBACViewSetMixin, viewsets.ModelViewSet):
     Same tenant filter on the queryset as the read-only base, plus a
     ``perform_create`` that stamps the active tenant onto the new row.
     Write endpoints reject anonymous calls and refuse to touch rows from
-    a different tenant (defence-in-depth — the queryset filter already
+    a different tenant (defence-in-depth - the queryset filter already
     hides them, but a hand-crafted PATCH could try).
 
     RBAC: action grants are checked by ``RBACObjectPermission`` (via the
@@ -349,7 +349,7 @@ class TenantScopedViewSet(RBACViewSetMixin, viewsets.ModelViewSet):
 
     def _site_default_kwargs(self, serializer, field_name="site") -> dict:
         """Under enhanced site separation, default a *missing* direct ``site``
-        (or a catalog's ``owning_site``) to a single-site user's own site — so
+        (or a catalog's ``owning_site``) to a single-site user's own site - so
         local IT's creates just work instead of 403ing on the post-save guard
         (an omitted site would land NULL, which site-scoped users may never
         write). Multi-site users still pick; an explicit value (even null) in
@@ -387,7 +387,7 @@ class TenantScopedViewSet(RBACViewSetMixin, viewsets.ModelViewSet):
     # The queryset filter scopes *reads* (and so edit/delete of existing rows).
     # Create/move need their own guard: a site-scoped editor must not place or
     # re-parent an object into a site outside their scope. We wrap create/update
-    # (the entry points subclasses don't override — many override perform_create)
+    # (the entry points subclasses don't override - many override perform_create)
     # and re-check the *saved* object against the same restrict_queryset logic,
     # inside a transaction so a violation rolls back. Reusing restrict_queryset
     # means it also covers IPs (site is derived in save) and indirect paths.
@@ -429,7 +429,7 @@ class TenantScopedViewSet(RBACViewSetMixin, viewsets.ModelViewSet):
         create/update wrappers. The *selection* is already scoped by
         ``get_queryset``; this re-checks the rows **after** the update so a
         site-scoped user can't move their own objects into a foreign site
-        (e.g. ``fields.site_id``). Call inside the caller's transaction —
+        (e.g. ``fields.site_id``). Call inside the caller's transaction -
         a violation rolls the whole bulk write back.
         """
         from auth_api import rbac
@@ -557,7 +557,7 @@ class ComponentBulkMixin(FieldWriteAllowList):
     """``bulk-update`` + ``bulk-delete`` for component viewsets (interfaces,
     ports, VM interfaces, device-type component templates).
 
-    POST ``bulk-update`` {ids: [...], fields: {...}} — only keys present in
+    POST ``bulk-update`` {ids: [...], fields: {...}} - only keys present in
     ``fields`` are touched, and only keys the viewset allow-lists are
     accepted (an unknown key is a 400, never silently dropped). Tenant-scoped
     FKs re-validate against the active tenant since ``qs.update`` bypasses
@@ -566,7 +566,7 @@ class ComponentBulkMixin(FieldWriteAllowList):
 
     The allow-list itself lives on :class:`FieldWriteAllowList`.
 
-    POST ``bulk-delete`` {ids: [...]} — same scoping; audited.
+    POST ``bulk-delete`` {ids: [...]} - same scoping; audited.
     """
 
     bulk_tags = False                    # add_tag_ids / remove_tag_ids
@@ -613,7 +613,7 @@ class ComponentBulkMixin(FieldWriteAllowList):
                 # Choice-backed CharFields validate against the model's own
                 # choice list (flatchoices flattens the grouped ones), so a
                 # typo'd slug is a 400 rather than a silently written value.
-                # "" always passes — it's how bulk edit clears the field.
+                # "" always passes - it's how bulk edit clears the field.
                 valid = dict(model._meta.get_field(k).flatchoices)
                 if valid and v and v not in valid:
                     # Short lists name their options; the long ones (216 interface
@@ -708,7 +708,7 @@ class ComponentBulkMixin(FieldWriteAllowList):
         maxlen = model._meta.get_field("name").max_length or 255
         rows = list(self.get_queryset().filter(pk__in=ids))
 
-        plan = []  # (row, new_name) — only rows whose name actually changes
+        plan = []  # (row, new_name) - only rows whose name actually changes
         for r in rows:
             new = fn(r.name)
             if not new:
@@ -752,7 +752,7 @@ class ComponentBulkMixin(FieldWriteAllowList):
 
         A find/replace (optional) renames the clones so they don't collide; with
         no find, clones get a ' copy' suffix. Every clone name must be unique in
-        its scope — otherwise 400 with guidance to add a find/replace.
+        its scope - otherwise 400 with guidance to add a find/replace.
         """
         ids = self._bulk_ids(request)
         fn, _replace, _rx = self._rename_fn(request)
@@ -776,7 +776,7 @@ class ComponentBulkMixin(FieldWriteAllowList):
             key = (getattr(r, scope) if scope else None, nn)
             if key in seen:
                 raise ValidationError(
-                    {"name": f"Two clones would both be named '{nn}' — "
+                    {"name": f"Two clones would both be named '{nn}' - "
                              "add a find/replace so they differ."}
                 )
             seen.add(key)
@@ -785,7 +785,7 @@ class ComponentBulkMixin(FieldWriteAllowList):
                 filt[scope] = getattr(r, scope)
             if model.objects.filter(**filt).exists():
                 raise ValidationError(
-                    {"name": f"'{nn}' already exists — use find/replace to give "
+                    {"name": f"'{nn}' already exists - use find/replace to give "
                              "the clones new names."}
                 )
 
@@ -813,7 +813,7 @@ class CloneableMixin:
     """Adds ``GET /<type>/<id>/clone/`` → an initial-values payload for the
     create form, seeded from an existing object.
 
-    Only the fields named in ``clone_fields`` are carried over — an **allowlist**,
+    Only the fields named in ``clone_fields`` are carried over - an **allowlist**,
     so a newly-added unique/sensitive field is never leaked into a clone by
     accident. The identifying/unique fields (name, address, serial, the human
     ``numid``, …) are deliberately omitted, so the clone can't collide: the user
@@ -822,7 +822,7 @@ class CloneableMixin:
     values are copied when the model has them.
 
     The payload uses the read serializer's field names/shape (nested FK objects),
-    so the SPA create form seeds from it exactly as it seeds for edit — just
+    so the SPA create form seeds from it exactly as it seeds for edit - just
     without an ``id``, so it POSTs a new object.
 
     Requires ``view`` on the source (``get_object`` is tenant- and
@@ -842,7 +842,7 @@ class CloneableMixin:
         obj = self.get_object()
         data = self.get_serializer(obj).data
         payload = {k: data[k] for k in self.clone_fields if k in data}
-        # Tags + custom-field values are non-identifying user data — always carry
+        # Tags + custom-field values are non-identifying user data - always carry
         # them when present (matches the "copy everything but the identity").
         for extra in ("tags", "custom_fields"):
             if extra in data and extra not in payload:
@@ -957,14 +957,14 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             **self._site_default_kwargs(serializer),
         )
         # Site gateway-policy autospawn: register a role=gateway IP at the
-        # first/last usable address. Best-effort — never block prefix creation.
+        # first/last usable address. Best-effort - never block prefix creation.
         try:
             from .views import _autospawn_gateway
 
             _autospawn_gateway(prefix, request=self.request)
         except Exception:  # noqa: BLE001
             pass
-        # Re-home the IPs this new subnet most-specifically contains — carving a
+        # Re-home the IPs this new subnet most-specifically contains - carving a
         # child out of a parent must move the covered IPs onto it (they'd
         # otherwise stay stranded on the parent). Best-effort: never block the
         # create if re-homing hits a problem.
@@ -985,7 +985,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         # Prefix-specific rule for site-scoped users: "don't steal anyone
         # else's space." The new CIDR may either carve *within* their own
         # site's existing prefixes (a sub-allocation), OR be a brand-new range
-        # that overlaps NOTHING — a "dark"/non-routed subnet (e.g. a private
+        # that overlaps NOTHING - a "dark"/non-routed subnet (e.g. a private
         # 192.168.x). What it must never do is overlap a prefix belonging to
         # the shared (site-less) space or another site.
         import ipaddress
@@ -1107,7 +1107,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
 
         child_nets = []
         cidr_to_pk: dict[str, str] = {}
-        # Only sibling prefixes the caller may view feed the space map — a
+        # Only sibling prefixes the caller may view feed the space map - a
         # site-scoped user must not learn another site's child prefixes.
         for sib in (
             rbac.restrict_queryset(
@@ -1151,7 +1151,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         """List every IP address registered inside this prefix.
 
         Sorted by numeric address so contiguous ranges show together. No
-        pagination yet — typical prefixes have hundreds of IPs at most;
+        pagination yet - typical prefixes have hundreds of IPs at most;
         we'll add it when a customer pushes that envelope.
         """
         import ipaddress as ip
@@ -1159,12 +1159,12 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         from auth_api import rbac
 
         prefix = self.get_object()
-        # Row/site scope the child IPs — the prefix being viewable doesn't imply
+        # Row/site scope the child IPs - the prefix being viewable doesn't imply
         # ipaddress.view on every IP inside it (a site-scoped or absent
         # ipaddress grant must not enumerate them). Mirrors DeviceViewSet.ips /
         # InterfaceViewSet.ips.
         qs = rbac.restrict_queryset(
-            # annotate_dhcp feeds the serializer's `dhcp` flag — this pane builds
+            # annotate_dhcp feeds the serializer's `dhcp` flag - this pane builds
             # its own queryset, so it needs the same counts IPAddressViewSet adds.
             annotate_dhcp(
                 IPAddress.objects
@@ -1177,16 +1177,16 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             request.user, prefix.tenant, "ipaddress", "view",
         )
         # IPAddressField is a string; sort numerically so 10.0.0.2 lands
-        # before 10.0.0.10 — Django's default lexicographic sort doesn't.
+        # before 10.0.0.10 - Django's default lexicographic sort doesn't.
         rows = sorted(qs, key=lambda r: int(ip.ip_address(r.ip_address)))
         # Pass the request in context so the serializer's per-object `permissions`
-        # (change/delete) resolves for the current user — without it every row
+        # (change/delete) resolves for the current user - without it every row
         # reports change:false and the table's Edit/Delete row actions vanish.
         ser = IPAddressSerializer(rows, many=True, context=self.get_serializer_context())
         # The scope pool ranges on this prefix, so the pane can shade *free*
         # addresses (which have no IPAddress row) as DHCP-scope space too.
-        # Exclusions ride along — they carve holes in the pool that must not be
-        # shaded. Reverse accessor — no integrations import.
+        # Exclusions ride along - they carve holes in the pool that must not be
+        # shaded. Reverse accessor - no integrations import.
         dhcp_ranges = [
             {
                 "scope_id": s.scope_id, "name": s.name,
@@ -1206,7 +1206,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # ── Populate a pool of addresses ─────────────────────────────────────
     @action(detail=True, methods=["post"], url_path="populate")
     def populate(self, request, pk=None):
-        """Bulk-create host IP rows across a range — "add a pool of addresses".
+        """Bulk-create host IP rows across a range - "add a pool of addresses".
 
         Body: ``{start, end, status_id?, role_id?, description?}``. Every address
         in ``[start, end]`` that doesn't already exist is created as an IP in this
@@ -1223,7 +1223,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         tenant = prefix.tenant
         user = request.user
 
-        # `ipaddress.add` is its own grant — a viewable prefix doesn't confer it.
+        # `ipaddress.add` is its own grant - a viewable prefix doesn't confer it.
         if not rbac.has_action(user, tenant, "ipaddress", "add"):
             raise PermissionDenied("You do not have permission to add IP addresses.")
         allowed_sites = rbac.site_scope(user, tenant, "ipaddress", "add")
@@ -1250,7 +1250,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         if total > POOL_MAX:
             raise ValidationError(
                 {"end": f"That range is {total} addresses; the limit is {POOL_MAX} "
-                        "per pool — add it in smaller ranges."}
+                        "per pool - add it in smaller ranges."}
             )
 
         # FK options must resolve inside this tenant (bypasses the serializer).
@@ -1267,7 +1267,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         skip_addrs: set[str] = set()
         if isinstance(net, ipmod.IPv4Network) and net.prefixlen <= 30:
             skip_addrs = {str(net.network_address), str(net.broadcast_address)}
-        # An address is unique per VRF, not per prefix — dedupe against that.
+        # An address is unique per VRF, not per prefix - dedupe against that.
         existing = set(
             IPAddress.objects.filter(
                 tenant=tenant, vrf=prefix.vrf, ip_address__in=wanted
@@ -1325,7 +1325,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
-        # Reject cross-tenant FK assignment — each *_id must resolve within the
+        # Reject cross-tenant FK assignment - each *_id must resolve within the
         # active tenant (the bulk path bypasses the serializer's scoped fields).
         tenant = _get_active_tenant(self.request)
         for key, model in (
@@ -1372,7 +1372,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
     queryset = (
         IPAddress.objects
         # prefix__vlan__zone: PrefixMiniSerializer nests the VLAN (+ its zone
-        # chip) — without the joins every IP row lazy-loads them.
+        # chip) - without the joins every IP row lazy-loads them.
         .select_related(
             "status", "role", "assigned_device", "prefix__vlan__zone",
             "prefix__vrf", "prefix__site", "site",
@@ -1452,7 +1452,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
-        # Reject cross-tenant FK assignment — the bulk path bypasses the
+        # Reject cross-tenant FK assignment - the bulk path bypasses the
         # serializer's tenant-scoped fields (issue #59).
         tenant = _get_active_tenant(self.request)
         for key, model in (("status_id", Status), ("role_id", IPRole)):
@@ -1487,7 +1487,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
 
 # ─── Pickers ────────────────────────────────────────────────────────────
 #
-# Light list endpoints used by the React form pickers. No pagination —
+# Light list endpoints used by the React form pickers. No pagination -
 # pickers always show every option in the active tenant so the user can
 # scroll/search inside the combobox.
 
@@ -1607,7 +1607,7 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 | qs.filter(location__icontains=search)
                 | qs.filter(description__icontains=search)
             )
-        # Sites within a region — powers the region detail page's Sites tab.
+        # Sites within a region - powers the region detail page's Sites tab.
         region = self.request.query_params.get("region")
         if region:
             qs = qs.filter(region_id=region)
@@ -1740,7 +1740,7 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
 
 
 class TagViewSet(CatalogLocalityMixin, TenantScopedViewSet):
-    """Read+write Tags — tenant-scoped, plus legacy deployment-global rows.
+    """Read+write Tags - tenant-scoped, plus legacy deployment-global rows.
 
     A tag belongs to the tenant that created it; rows with ``tenant=NULL``
     predate tag scoping and stay visible to every tenant but writable only by
@@ -1780,7 +1780,7 @@ class TagViewSet(CatalogLocalityMixin, TenantScopedViewSet):
     def _guard_legacy(self, obj):
         if obj.tenant_id is None and not self.request.user.is_superuser:
             raise PermissionDenied(
-                "This is a legacy global tag (it predates tag scoping) — "
+                "This is a legacy global tag (it predates tag scoping) - "
                 "only a superuser can edit or delete it."
             )
 
@@ -1797,7 +1797,7 @@ class TagViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         """The objects carrying this tag, in the active tenant.
 
         Tags are global, but the objects they're attached to are tenant-
-        scoped — so the breakdown is limited to the current tenant. Returns
+        scoped - so the breakdown is limited to the current tenant. Returns
         ``{count, results:[{type, type_label, id, name, url}]}`` where ``url``
         is the frontend detail path.
         """
@@ -1819,7 +1819,7 @@ class TagViewSet(CatalogLocalityMixin, TenantScopedViewSet):
 
         results = []
         for slug, label, model, name_fn, base in specs:
-            # Row/site scope each type — a site-scoped user must only see the
+            # Row/site scope each type - a site-scoped user must only see the
             # tagged objects they may actually view, not every tagged row.
             tagged = rbac.restrict_queryset(
                 model.objects.filter(tags=tag, tenant=tenant).distinct(),
@@ -1854,7 +1854,7 @@ class CustomFieldViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         model = self.request.query_params.get("model")
         if model:
             qs = qs.filter(applies_to__contains=[model])
-        # "Which fields are in this section" — the custom-field-group detail
+        # "Which fields are in this section" - the custom-field-group detail
         # page's Fields tab. Applied after the tenant-scoped queryset above.
         group = self.request.query_params.get("group")
         if group:
@@ -1897,7 +1897,7 @@ class CustomFieldViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         qs = ref.model.objects.all()
         if ref.tenant_field:
             qs = qs.filter(**{ref.tenant_field: tenant})
-        # Row/site scope the preview rows — never reveal objects the caller
+        # Row/site scope the preview rows - never reveal objects the caller
         # can't view (an arbitrary ?model= must not become a scoped-data probe).
         from auth_api import rbac
         from auth_api.object_types import is_registered
@@ -1997,7 +1997,7 @@ class TenantGroupViewSet(viewsets.ModelViewSet):
 class TenantViewSet(viewsets.ModelViewSet):
     """Tenants. Reads + ``switch``/``active`` stay open to every member (the
     tenant switcher must work for users with no explicit tenant grant), but
-    WRITES are RBAC-gated on the registered ``tenant`` type — without this,
+    WRITES are RBAC-gated on the registered ``tenant`` type - without this,
     any member of a tenant could DELETE it (single or bulk) or mint new ones,
     since the base permission is only ``IsAuthenticated``.
     """
@@ -2027,7 +2027,7 @@ class TenantViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset()
         if not self.request:
             return qs
-        # A user may only see/act on tenants they're granted — without this any
+        # A user may only see/act on tenants they're granted - without this any
         # authed user could GET /api/tenants/<id>/ for any tenant's metadata.
         user = getattr(self.request, "user", None)
         if not (user and user.is_superuser):
@@ -2044,7 +2044,7 @@ class TenantViewSet(viewsets.ModelViewSet):
         # the FK isn't required from the React form. Mirrors the assumption
         # made everywhere else in the codebase. On a fresh install there is no
         # Organization yet and no setup wizard to make one, so auto-create a
-        # default one here (idempotent — only when the table is empty). Run
+        # default one here (idempotent - only when the table is empty). Run
         # ``manage.py bootstrap`` to provision it explicitly instead.
         org = Organization.objects.first()
         if org is None:
@@ -2060,7 +2060,7 @@ class TenantViewSet(viewsets.ModelViewSet):
         from .role_seeds import seed_builtin_roles
 
         seed_builtin_statuses(tenant)
-        # Same story for IP roles (gateway/HA/etc.) — migrations only seeded
+        # Same story for IP roles (gateway/HA/etc.) - migrations only seeded
         # pre-existing tenants, so seed them here too (needed for the gateway
         # role + site gateway-policy autospawn).
         seed_builtin_roles(tenant)
@@ -2092,7 +2092,7 @@ class TenantViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         # A tenant's own catalogs (Status/VRF/Site/DeviceRole/…) PROTECT it, so a
         # plain delete always 409s once the tenant has data. This is the
-        # deliberate teardown — the UI's type-the-name confirm is the guard.
+        # deliberate teardown - the UI's type-the-name confirm is the guard.
         from core.tenant_delete import force_delete_tenant
 
         tenant = self.get_object()
@@ -2121,7 +2121,7 @@ class TenantViewSet(viewsets.ModelViewSet):
     def bulk_update(self, request):
         """POST {ids:[...], fields:{group_id?, is_active?}} → 200.
 
-        Only ``group`` and active status are bulk-editable — name/slug are the
+        Only ``group`` and active status are bulk-editable - name/slug are the
         tenant's identity (unique per org) and never make sense to set en masse.
         """
         ids = request.data.get("ids") or []
@@ -2213,7 +2213,7 @@ class StatusViewSet(_IpCatalogViewSet):
     queryset = Status.objects.all().order_by("weight", "name")
     serializer_class = StatusSerializer
     picker_serializer_class = StatusPickerSerializer
-    # usage spans 13 models — the serializer sums them (no single-relation count).
+    # usage spans 13 models - the serializer sums them (no single-relation count).
     usage_relation = None
 
     def get_queryset(self):
@@ -2250,7 +2250,7 @@ class IPRoleViewSet(_IpCatalogViewSet):
 
 
 class ZoneViewSet(_IpCatalogViewSet):
-    """Security zones (zone-based firewalling). Zero pre-filled — users
+    """Security zones (zone-based firewalling). Zero pre-filled - users
     define their own zone catalog; VLANs link to zones via ``VLAN.zone``."""
 
     queryset = Zone.objects.all().order_by("weight", "name")
@@ -2308,7 +2308,7 @@ class ManufacturerViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         if n:
             return Response(
                 {"detail": f"{n} device type{'s' if n != 1 else ''} use this "
-                           "manufacturer — reassign or delete them first."},
+                           "manufacturer - reassign or delete them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
@@ -2343,9 +2343,9 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
 
     # Importing a bundle creates a device type, so it demands `add`; replacing
     # one that already exists is a change and checked separately. Bulk delete
-    # must demand `delete` — the @action default is `change`, which would let a
+    # must demand `delete` - the @action default is `change`, which would let a
     # read/write-but-not-delete editor empty the catalog. Reimporting images
-    # rewrites existing rows' image fields — `change`, pinned explicitly so the
+    # rewrites existing rows' image fields - `change`, pinned explicitly so the
     # row restriction below scopes the batch the same way.
     rbac_action_map = {
         "import_bundle": "add",
@@ -2355,7 +2355,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
 
     @action(detail=True, methods=["get"], url_path="library-export")
     def library_export(self, request, pk=None):
-        """This device type as a portable bundle — templates, faceplate,
+        """This device type as a portable bundle - templates, faceplate,
         photo-port markers, inventory templates and bound SNMP sensors.
 
         The point of the device library: the work of teaching Danbyte a piece of
@@ -2371,7 +2371,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
     def import_bundle(self, request):
         """Create or update a device type from a bundle.
 
-        ``?dry_run=1`` reports what would happen and writes nothing — importing
+        ``?dry_run=1`` reports what would happen and writes nothing - importing
         a stranger's file should never be a blind action. ``?replace=1`` is
         required to touch a type that already exists here, and additionally
         demands `change`.
@@ -2406,7 +2406,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
     def _import_owning_site(self, request, tenant):
         """Under enhanced site separation, a site-scoped importer's new device
         types (and any manufacturers minted along the way) are LOCAL to their
-        site — the raw import path skips the post-save guard, so resolve the
+        site - the raw import path skips the post-save guard, so resolve the
         one editable site here (or fail if their scope spans several)."""
         from core.effective_settings import separation_enabled
 
@@ -2419,7 +2419,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
             return None
         if len(editable) != 1:
             raise PermissionDenied(
-                "Site-scoped import needs exactly one editable site — yours "
+                "Site-scoped import needs exactly one editable site - yours "
                 "spans several, so imported types have no home."
             )
         return Site.objects.filter(
@@ -2443,7 +2443,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
 
     @action(detail=False, methods=["post"], url_path="import-folder")
     def import_folder(self, request):
-        """Start a BACKGROUND import of a whole devicetype-library folder — a
+        """Start a BACKGROUND import of a whole devicetype-library folder - a
         manufacturer, or the entire device-types dir (thousands of files).
 
         Body: {"url": "<github /tree/ folder url>", "stack_positions": bool}.
@@ -2492,7 +2492,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         Body: {"items": ["<yaml or github url>", …], "stack_positions": bool}.
         Each item is a raw YAML document, a URL to one (github.com blob links
         convert to raw automatically), or a github.com ``/tree/`` **folder**
-        URL — expanded to every .yaml under it (one manufacturer, or the whole
+        URL - expanded to every .yaml under it (one manufacturer, or the whole
         device-types dir, capped for this synchronous path). Returns one report
         per file; content problems never abort the batch.
         """
@@ -2504,7 +2504,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
 
         # A GitHub /tree/ directory URL fetched as-is returns HTML, not YAML.
         # This is a synchronous request, so it can only fetch so many files
-        # before the proxy times out — a whole-library import (thousands) needs
+        # before the proxy times out - a whole-library import (thousands) needs
         # the background path, not this one.
         SYNC_FILE_CAP = 200
 
@@ -2547,7 +2547,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         if len(expanded) > SYNC_FILE_CAP:
             return Response(
                 {"detail": (
-                    f"That expands to {len(expanded)} files — over the "
+                    f"That expands to {len(expanded)} files - over the "
                     f"{SYNC_FILE_CAP} this import handles at once. Pick a "
                     "narrower folder (e.g. one manufacturer)."
                 )},
@@ -2564,7 +2564,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
                 url = to_raw_url(text)
                 try:
                     # SSRF-guarded fetch (validates the host is public + pins
-                    # the connection + no redirects) — a tenant user must not
+                    # the connection + no redirects) - a tenant user must not
                     # be able to make the server read cloud metadata / internal
                     # services via an import URL.
                     resp = safe_get(url, timeout=10)
@@ -2575,7 +2575,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
                         results.append({
                             "ok": False, "name": url, "id": None,
                             "created": {}, "skipped": [],
-                            "error": "Got an HTML page, not YAML — link to a "
+                            "error": "Got an HTML page, not YAML - link to a "
                             "raw .yaml file or a folder (tree) URL.",
                             "kind": "device-type",
                         })
@@ -2587,7 +2587,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
                         "kind": "device-type",
                     })
                     continue
-                except Exception as exc:  # noqa: BLE001 — report, don't abort
+                except Exception as exc:  # noqa: BLE001 - report, don't abort
                     results.append({
                         "ok": False, "name": url, "id": None, "created": {},
                         "skipped": [], "error": f"Fetch failed: {exc}",
@@ -2603,17 +2603,17 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
 
     @action(detail=False, methods=["post"], url_path="reimport-images")
     def reimport_images(self, request):
-        """Re-download elevation images for EXISTING device types — the
+        """Re-download elevation images for EXISTING device types - the
         recovery tool for a lost/corrupt media folder (the DB rows survived,
         the files didn't). Matches each in-scope type against a
         devicetype-library-layout repo and touches nothing but the two image
         fields; no types are created.
 
-        Body: ``{"repo": "<owner/name | github.com URL | https base>"}`` —
+        Body: ``{"repo": "<owner/name | github.com URL | https base>"}`` -
         blank uses Danbyte's device-library fork. ``?dry_run=1`` (bundle-import
         convention; a body flag works too) classifies without downloading:
         ``matched`` / ``no_match`` / ``skipped_has_images``. Default apply is
-        fill-gaps-only — a face is written only when its field is empty or the
+        fill-gaps-only - a face is written only when its field is empty or the
         file is missing from storage; ``?overwrite=1`` replaces intact images
         too. Catalogs over the sync cap run in the background instead (202 +
         ``{"run": …}``, poll ``import-runs/<id>/``).
@@ -2726,14 +2726,14 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         The submitted ids are never trusted: the selection is re-derived from
         ``get_queryset()``, which is tenant-filtered and then row-restricted for
         the *delete* action (``rbac_action_map`` above). An id from another
-        tenant — or, with enhanced site separation on, a global entry or one
-        local to a site outside the caller's grant — simply falls out of the
+        tenant - or, with enhanced site separation on, a global entry or one
+        local to a site outside the caller's grant - simply falls out of the
         set rather than being deleted.
 
         ``n`` counts DEVICE TYPES, not the cascade. A type drags its component
         templates (interfaces, ports, bays…) with it, so the total returned by
         ``qs.delete()`` would report a single 48-port switch type as "49
-        deleted". Devices are NOT deleted — ``Device.device_type`` is
+        deleted". Devices are NOT deleted - ``Device.device_type`` is
         SET_NULL, so they keep running and lose their type reference; the UI
         warns about that before it calls this.
         """
@@ -2749,7 +2749,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
             # No log_bulk_delete() here, deliberately: that helper exists for
             # deletes Django can "fast delete" (no signals). DeviceType is in
             # AUDITED_MODELS *and* cascades, so the collector always fires
-            # post_delete — one richer entry per row (it carries the
+            # post_delete - one richer entry per row (it carries the
             # pre_change field snapshot) plus entries for the templates that
             # go with it. Adding the explicit call would log every deletion
             # TWICE. Covered by tests_catalog_scope.
@@ -2779,7 +2779,7 @@ def _region_and_descendant_ids(region_id):
     """All region ids in the subtree rooted at ``region_id`` (inclusive).
 
     Region is a plain self-referential adjacency list (no MPTT / tree-queries),
-    so we walk ``children`` breadth-first in Python — one query per tree depth,
+    so we walk ``children`` breadth-first in Python - one query per tree depth,
     which is cheap for the handful of levels a region tree ever has. Returns an
     empty list if the region id is unknown, so the caller's ``__in`` filter
     matches nothing rather than everything.
@@ -2808,7 +2808,7 @@ class DeviceViewSet(
     FieldWriteAllowList, CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet
 ):
     queryset = (
-        # select_related every FK the serializer dereferences per row — role,
+        # select_related every FK the serializer dereferences per row - role,
         # rack, status, platform, location, cluster were method-field lookups
         # doing one query each, so the list ran ~430 extra queries (see the
         # DeviceSerializer getters). Pulling them into the join keeps the list
@@ -2829,7 +2829,7 @@ class DeviceViewSet(
     )
     serializer_class = DeviceSerializer
     pagination_class = StandardPagination
-    # Field-level write allow-list, read by api.editable_fields — devices have
+    # Field-level write allow-list, read by api.editable_fields - devices have
     # NO bulk-update endpoint, so this only powers planned changes and any
     # future single-field write path. Rack *placement* scalars (position, face,
     # rack_side, mount) are deliberately absent: they interact, so they need a
@@ -2898,7 +2898,7 @@ class DeviceViewSet(
         out: dict[str, str] = {}
         for item in compute_device_drift(device, device.tenant):
             cid = item.get("part_id") or item.get("interface_id")
-            # First difference wins — the marker only has room for one line, and
+            # First difference wins - the marker only has room for one line, and
             # its job is "look here", not "here is the full report".
             if cid and cid not in out:
                 out[cid] = self._face_drift_label(item)
@@ -2910,8 +2910,8 @@ class DeviceViewSet(
         ``image_ports``) to the device's REAL components: the port id, its
         cable-termination kind, whether it's already cabled, and whether SNMP
         sees it differently than the record does. The 3D room view needs this to
-        turn a clicked marker into a termination it can cable — the marker
-        itself only carries a template name — and to flag drift without a
+        turn a clicked marker into a termination it can cable - the marker
+        itself only carries a template name - and to flag drift without a
         second request per device in the rack.
 
         Power ports/outlets no marker covers are appended to ``rear`` as
@@ -2945,7 +2945,7 @@ class DeviceViewSet(
                     comps = comps.select_related("status")
                 comps = list(comps)
                 name_maps[relation] = {c.name: c for c in comps}
-                # Case/whitespace-insensitive twin (first name wins) — the
+                # Case/whitespace-insensitive twin (first name wins) - the
                 # same normalization the frontend's normalizePortName applies.
                 norm = {}
                 for c in comps:
@@ -2957,7 +2957,7 @@ class DeviceViewSet(
             """Exact rendered-name match first, then tolerant: imported photo
             markers routinely disagree with the live component names by case
             alone ("Psu 1" vs "PSU 1"), and an exact-only match silently left
-            those markers unresolved — grey, unclickable, uncable-able."""
+            those markers unresolved - grey, unclickable, uncable-able."""
             comp = name_map(relation, cabled=cabled).get(name)
             if comp is None:
                 comp = norm_maps[relation].get(name.strip().lower())
@@ -2983,7 +2983,7 @@ class DeviceViewSet(
                     # client a request per bay.
                     "module": None,
                     # What SNMP saw differently, or null when they agree. The
-                    # status/speed above stay the SOURCE OF TRUTH either way —
+                    # status/speed above stay the SOURCE OF TRUTH either way -
                     # drift is drawn beside intent, never over it.
                     "drift": None,
                 }
@@ -2994,7 +2994,7 @@ class DeviceViewSet(
                     if comp is not None:
                         entry["drift"] = drift.get(str(comp.id))
                     if comp is not None and kind == "module-bay":
-                        # Module bay — reads occupied/empty, never cable-able.
+                        # Module bay - reads occupied/empty, never cable-able.
                         # The reverse OneToOne raises (an AttributeError
                         # subclass) when the bay is free, so getattr → None.
                         mod = getattr(comp, "module", None)
@@ -3010,7 +3010,7 @@ class DeviceViewSet(
                             } if mod else None,
                         })
                     elif comp is not None and term_kind is None:
-                        # Inventory item — status-coloured, never cable-able.
+                        # Inventory item - status-coloured, never cable-able.
                         s = comp.status
                         entry.update({
                             "id": str(comp.id),
@@ -3020,7 +3020,7 @@ class DeviceViewSet(
                     elif comp is not None:
                         term = next(iter(comp.terminations.all()), None)
                         # Only interfaces carry a network-speed string; other
-                        # kinds may have an int `speed` (power draw) — ignore it.
+                        # kinds may have an int `speed` (power draw) - ignore it.
                         speed = getattr(comp, "speed", "")
                         ctype = getattr(comp, "type", "")
                         entry.update({
@@ -3040,7 +3040,7 @@ class DeviceViewSet(
         # Power components no photo marker covers still have to be clickable
         # and cable-able in the 3D room (a PDU strip has no photo at all, and
         # many rear photos never got their inlets marked). Emit them as
-        # SYNTHETIC entries under "rear" — power lives on the back — keyed by
+        # SYNTHETIC entries under "rear" - power lives on the back - keyed by
         # the component's own name, which is exactly the name the room's
         # synthetic quads carry. Component ids already claimed by a marker
         # (exact or tolerant) are skipped, so nothing resolves twice.
@@ -3094,7 +3094,7 @@ class DeviceViewSet(
 
     @action(detail=True, methods=["get"])
     def inventory(self, request, pk=None):
-        """What Ansible sees for this one device — its groups + hostvars, the
+        """What Ansible sees for this one device - its groups + hostvars, the
         same data the /api/inventory/ansible/ export carries for this host."""
         from .inventory_views import (
             device_groups, device_hostvars, with_inventory_relations,
@@ -3209,7 +3209,7 @@ class DeviceViewSet(
             if s:
                 qs = (qs.filter(name__icontains=s) | qs.filter(serial_number__icontains=s)
                       | qs.filter(asset_tag__icontains=s) | qs.filter(description__icontains=s))
-            # The with_vc picker reads each device's chassis — pull it in one join.
+            # The with_vc picker reads each device's chassis - pull it in one join.
             if self.request.query_params.get("with_vc") == "1":
                 qs = qs.select_related("virtual_chassis")
             for key, field in (("site", "site_id"), ("device_type", "device_type_id"),
@@ -3225,7 +3225,7 @@ class DeviceViewSet(
             region = self.request.query_params.get("region")
             if region:
                 qs = qs.filter(site__region_id__in=_region_and_descendant_ids(region))
-            # ?tag=<slug> (repeatable) — AND semantics, matching the HTML list
+            # ?tag=<slug> (repeatable) - AND semantics, matching the HTML list
             # pages' tag rail (see api/filters.apply_tag_filter).
             tag_slugs = [t for t in self.request.query_params.getlist("tag") if t]
             for slug in tag_slugs:
@@ -3246,7 +3246,7 @@ class DeviceViewSet(
 
     def perform_update(self, serializer):
         _check_unique_name(Device, serializer, self._tenant_or_403(), "device")
-        # Stack membership before the save — if the position (or membership)
+        # Stack membership before the save - if the position (or membership)
         # changes, positional interface names ({position} templates) follow.
         old = serializer.instance
         old_in_stack = old.virtual_chassis_id is not None
@@ -3260,7 +3260,7 @@ class DeviceViewSet(
             # Surfaced by DeviceSerializer.vc_renamed_interfaces so the UI can
             # toast "Renamed N interfaces to position X".
             new._vc_renamed_interfaces = renamed
-        # Reconcile monitored services — e.g. a just-set primary IP now gives a
+        # Reconcile monitored services - e.g. a just-set primary IP now gives a
         # target to services that materialised before the device had one.
         from monitoring.service_checks import sync_service_checks
 
@@ -3274,7 +3274,7 @@ class DeviceViewSet(
         ``apply=false`` (default) → dry-run: return the name-level diff plus a
         risk summary so the UI can preview before touching anything.
         ``apply=true`` → add missing components; with ``remove_extra=true`` also
-        delete components the type no longer defines (destructive — cascades
+        delete components the type no longer defines (destructive - cascades
         cabling / IP links)."""
         from auth_api import rbac
         from .views import _get_active_tenant
@@ -3290,7 +3290,7 @@ class DeviceViewSet(
             )
 
         diff = diff_device_components(device)
-        # Risk: extra interfaces that carry IPs — deleting them drops the links.
+        # Risk: extra interfaces that carry IPs - deleting them drops the links.
         extra_ifaces = diff.get("interfaces", {}).get("extra", [])
         risk = {
             "interfaces_with_ips": (
@@ -3372,7 +3372,7 @@ class DeviceViewSet(
 
 
 class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
-    """Interfaces have no direct tenant FK — scope via device.tenant."""
+    """Interfaces have no direct tenant FK - scope via device.tenant."""
 
     bulk_str_fields = ("type", "mode", "speed", "duplex", "description")
     bulk_bool_fields = ("enabled", "mgmt_only")
@@ -3446,7 +3446,7 @@ class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
 
     @action(detail=True, methods=["get"], url_path="ips")
     def ips(self, request, pk=None):
-        """IPs assigned to this interface — backs the IP section on the
+        """IPs assigned to this interface - backs the IP section on the
         interface detail page."""
         iface = self.get_object()  # tenant-scoped via device__tenant
         qs = annotate_dhcp(
@@ -3506,7 +3506,7 @@ class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
         speed = (data.get("speed") or "").strip()
         enabled = bool(data.get("enabled", True))
         vlan_id = data.get("vlan_id") or None
-        # This raw path bypasses the tenant-scoped serializer field — validate
+        # This raw path bypasses the tenant-scoped serializer field - validate
         # the VLAN belongs to the active tenant (issue #59 FK smuggling).
         if vlan_id and not VLAN.objects.filter(pk=vlan_id, tenant=tenant).exists():
             raise ValidationError({"vlan_id": "Not found in this tenant."})
@@ -3594,7 +3594,7 @@ class CableViewSet(TenantScopedViewSet):
             "terminations__interface__device",
             "terminations__front_port__device",
             "terminations__rear_port__device",
-            # A power feed hangs off a panel, not a device — the read shape
+            # A power feed hangs off a panel, not a device - the read shape
             # names the panel, so prefetch it like the device-side kinds.
             "terminations__power_feed__power_panel",
             "tags",
@@ -3630,7 +3630,7 @@ class CableViewSet(TenantScopedViewSet):
                 qs = (qs.filter(terminations__interface__device_id=device_id)
                       | qs.filter(terminations__front_port__device_id=device_id)
                       | qs.filter(terminations__rear_port__device_id=device_id))
-            # "What lands on this feed" — the power feed detail page's
+            # "What lands on this feed" - the power feed detail page's
             # Terminations tab. Site-level power has no device to filter by.
             feed_id = self.request.query_params.get("power_feed")
             if feed_id:
@@ -3749,7 +3749,7 @@ class CableViewSet(TenantScopedViewSet):
         if not used:
             # Both ends resolved to the same tile (e.g. a same-rack patch): no
             # tray path is needed. Don't clear existing assignments or write a
-            # bogus 0 m — report it as point-to-point and leave the cable alone.
+            # bogus 0 m - report it as point-to-point and leave the cable alone.
             return Response({
                 "reachable": True,
                 "point_to_point": True,
@@ -3789,12 +3789,12 @@ class CableViewSet(TenantScopedViewSet):
         """Read or set how this cable is routed on one floor plan.
 
         GET ``?floor_plan=<id>`` → ``{mode, trays: [{id, name, level,
-        elevation_mm}], available: [...]}`` — ``mode`` is ``"trays"`` when the
+        elevation_mm}], available: [...]}`` - ``mode`` is ``"trays"`` when the
         cable is assigned any tray on that plan, else ``"point-to-point"``.
 
         PUT ``{floor_plan, tray_ids: [...]}`` replaces THIS plan's assignment
         in the given order (other plans' assignments are untouched). An empty
-        list is point-to-point — a legitimate answer, not a no-op.
+        list is point-to-point - a legitimate answer, not a no-op.
 
         The auto-route action picks the trays for you; this is the manual
         twin, so an operator can see what a run follows and name the exact
@@ -3835,7 +3835,7 @@ class CableViewSet(TenantScopedViewSet):
             if not isinstance(ids, list):
                 return Response({"tray_ids": "Expected a list."}, status=400)
             # Only trays on THIS plan (which is already tenant-scoped) may be
-            # named — an id from another plan or tenant is simply not found.
+            # named - an id from another plan or tenant is simply not found.
             by_id = {str(t.id): t for t in plan.trays.all()}
             unknown = [str(i) for i in ids if str(i) not in by_id]
             if unknown:
@@ -3859,9 +3859,9 @@ class CableViewSet(TenantScopedViewSet):
 
     @action(detail=True, methods=["get"], url_path="floor-plan")
     def floor_plan(self, request, pk=None):
-        """The floor plan where this cable can be traced — a plan whose trays
+        """The floor plan where this cable can be traced - a plan whose trays
         carry it, else one that tiles either of its devices (or their racks).
-        `{plan_id: <id|null>}` — powers the "trace on map" button."""
+        `{plan_id: <id|null>}` - powers the "trace on map" button."""
         from .models import FloorPlan, FloorPlanTile
 
         cable = self.get_object()
@@ -3895,7 +3895,7 @@ class CableViewSet(TenantScopedViewSet):
 
 
 class _DevicePortViewSet(ComponentBulkMixin, TenantScopedViewSet):
-    """Shared base for FrontPort / RearPort — no direct tenant FK; scope via
+    """Shared base for FrontPort / RearPort - no direct tenant FK; scope via
     device.tenant, like interfaces."""
 
     pagination_class = StandardPagination
@@ -3958,7 +3958,7 @@ class _DevicePortViewSet(ComponentBulkMixin, TenantScopedViewSet):
     ),
 )
 class FiberSettingsViewSet(viewsets.ViewSet):
-    """The tenant's fibre colour palette — a singleton. GET reads it (creating
+    """The tenant's fibre colour palette - a singleton. GET reads it (creating
     the TIA-598-C default on first access); POST saves an edited palette."""
 
     permission_classes = [permissions.IsAuthenticated]
@@ -4009,7 +4009,7 @@ class ConsolePortViewSet(_DevicePortViewSet):
 class AuxPortViewSet(_DevicePortViewSet):
     queryset = (
         AuxPort.objects.select_related("device")
-        .prefetch_related("tags")  # not cable-terminable — no terminations
+        .prefetch_related("tags")  # not cable-terminable - no terminations
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = AuxPortSerializer
@@ -4060,7 +4060,7 @@ class PowerOutletViewSet(_DevicePortViewSet):
 
 # ─── Device-type component templates ─────────────────────────────────────────
 class _ComponentTemplateViewSet(ComponentBulkMixin, TenantScopedViewSet):
-    """Shared base for the per-device-type component templates — no direct
+    """Shared base for the per-device-type component templates - no direct
     tenant FK; scope via device_type.tenant. Filter with ?device_type=."""
 
     pagination_class = StandardPagination
@@ -4117,7 +4117,7 @@ class InterfaceTemplateViewSet(_ComponentTemplateViewSet):
 
 
 class DeviceTypeServiceViewSet(_ComponentTemplateViewSet):
-    """Service templates on a device type — materialise onto new devices as
+    """Service templates on a device type - materialise onto new devices as
     Services (see ``materialize_device_components``)."""
 
     queryset = DeviceTypeService.objects.select_related("device_type").order_by(NATURAL_NAME)
@@ -4150,7 +4150,7 @@ class InventoryItemViewSet(_DevicePortViewSet):
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = InventoryItemSerializer
-    # InventoryItem has no `type` column — its own allowlist. kind/media are
+    # InventoryItem has no `type` column - its own allowlist. kind/media are
     # choice-backed CharFields (validated against the model choices); status
     # is the tenant's Status catalog; capacity is raw bytes.
     bulk_str_fields = (
@@ -4167,7 +4167,7 @@ class DeviceBayTemplateViewSet(_ComponentTemplateViewSet):
 
 
 class DeviceBayViewSet(_DevicePortViewSet):
-    # Bays have no `type` field — the shared port base declares one for
+    # Bays have no `type` field - the shared port base declares one for
     # front/rear ports, and bulk-updating `type` here used to 500 inside
     # the choices lookup instead of returning a 400.
     bulk_str_fields = ("description",)
@@ -4226,7 +4226,7 @@ class ModuleTypeViewSet(TenantScopedViewSet):
 
 
 class ModuleInterfaceTemplateViewSet(TenantScopedViewSet):
-    """Interface templates on a MODULE type — scope via module_type.tenant;
+    """Interface templates on a MODULE type - scope via module_type.tenant;
     filter with ?module_type=."""
 
     queryset = ModuleInterfaceTemplate.objects.select_related("module_type").order_by(NATURAL_NAME)
@@ -4265,7 +4265,7 @@ class ModuleInterfaceTemplateViewSet(TenantScopedViewSet):
 
 
 class ModuleBayViewSet(_DevicePortViewSet):
-    # Bays have no `type` field — the shared port base declares one for
+    # Bays have no `type` field - the shared port base declares one for
     # front/rear ports, and bulk-updating `type` here used to 500 inside
     # the choices lookup instead of returning a 400.
     bulk_str_fields = ("description",)
@@ -4403,7 +4403,7 @@ class _SlugCatalogViewSet(TenantScopedViewSet):
         n = getattr(obj, self.count_rel).count()
         if n:
             return Response(
-                {"detail": f"{n} cluster{'s' if n != 1 else ''} use this — "
+                {"detail": f"{n} cluster{'s' if n != 1 else ''} use this - "
                            "reassign or delete them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
@@ -4492,7 +4492,7 @@ class ClusterViewSet(TenantScopedViewSet):
         if n:
             return Response(
                 {"detail": f"{n} virtual machine{'s' if n != 1 else ''} run on "
-                           "this cluster — reassign or delete them first."},
+                           "this cluster - reassign or delete them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
@@ -4555,7 +4555,7 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
         # row. Annotate it rather than walking the relation in the serializer,
         # which would cost a query per row on the list endpoint. `integrations`
         # imports `api`, never the reverse, so the import stays local.
-        from integrations.models import VirtGuest
+        from integrations.models import VirtChange, VirtGuest
 
         latest = VirtGuest.objects.filter(vm=OuterRef("pk")).order_by(
             "-last_seen_at"
@@ -4575,6 +4575,18 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
                 power_state_at=Subquery(latest.values("last_seen_at")[:1]),
                 synced_from=Subquery(latest_src),
                 synced_from_id=Subquery(latest.values("source_id")[:1]),
+                # Open review items for this VM - a hypervisor disagreement the
+                # operator hasn't resolved. Annotated so a list of VMs doesn't
+                # fan out one query per row.
+                drift_count=Coalesce(
+                    Subquery(
+                        VirtChange.objects.filter(vm=OuterRef("pk"), ignored=False)
+                        .values("vm")
+                        .annotate(n=Count("id"))
+                        .values("n")[:1]
+                    ),
+                    0,
+                ),
             )
         )
         if self.request:
@@ -4595,7 +4607,7 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
-            # VMs whose *cluster* sits at a site — they run there even when the
+            # VMs whose *cluster* sits at a site - they run there even when the
             # cluster's site was not applied to them (see Cluster.
             # apply_site_to_vms). Lets a site page show what it hosts.
             cluster_site = self.request.query_params.get("cluster_site")
@@ -4672,7 +4684,7 @@ class RackRoleViewSet(_SlugCatalogViewSet):
 
 
 class RackTypeViewSet(TenantScopedViewSet):
-    """Rack model catalog — manufacturer/model profiles whose dims pre-fill
+    """Rack model catalog - manufacturer/model profiles whose dims pre-fill
     the rack form and whose accessories can stamp 0U strips onto new racks."""
 
     queryset = RackType.objects.select_related("manufacturer").prefetch_related(
@@ -4722,7 +4734,7 @@ class RackTypeViewSet(TenantScopedViewSet):
 
 
 class RackTypeAccessoryViewSet(TenantScopedViewSet):
-    """Accessory strips on a rack type — scoped through the type's tenant,
+    """Accessory strips on a rack type - scoped through the type's tenant,
     like floor-plan trays through their plan."""
 
     queryset = RackTypeAccessory.objects.select_related(
@@ -4777,7 +4789,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
-            # VMs whose *cluster* sits at a site — they run there even when the
+            # VMs whose *cluster* sits at a site - they run there even when the
             # cluster's site was not applied to them (see Cluster.
             # apply_site_to_vms). Lets a site page show what it hosts.
             cluster_site = self.request.query_params.get("cluster_site")
@@ -4796,7 +4808,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 
     @action(detail=True, methods=["post"], url_path="sync-from-type")
     def sync_from_type(self, request, pk=None):
-        """Re-align this rack with its rack type — the rack twin of the
+        """Re-align this rack with its rack type - the rack twin of the
         device action.
 
         ``apply=false`` (default) → dry-run: the dimension drift and the
@@ -4830,7 +4842,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         dims = bool(request.data.get("dims", True))
         accessories = bool(request.data.get("accessories", True))
         if accessories and diff.get("accessories", {}).get("add"):
-            # Stamping writes devices — same gate as the create-time stamp.
+            # Stamping writes devices - same gate as the create-time stamp.
             scope = rbac.site_scope(request.user, tenant, "device", "add")
             if scope is not None and not (
                 rack.site_id is not None and rack.site_id in scope
@@ -4847,7 +4859,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         n = obj.devices.count()
         if n:
             return Response(
-                {"detail": f"{n} device{'s' if n != 1 else ''} are racked here — "
+                {"detail": f"{n} device{'s' if n != 1 else ''} are racked here - "
                            "remove them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
@@ -4907,7 +4919,7 @@ class DeviceRoleViewSet(TenantScopedViewSet):
 
 
 class PlatformGroupViewSet(TenantScopedViewSet):
-    """Groupings of platforms (Windows, Linux, network NOS, …) — self-nesting."""
+    """Groupings of platforms (Windows, Linux, network NOS, …) - self-nesting."""
 
     queryset = PlatformGroup.objects.all().order_by(NATURAL_NAME)
     serializer_class = PlatformGroupSerializer
@@ -4955,7 +4967,7 @@ class PlatformGroupViewSet(TenantScopedViewSet):
         if n:
             return Response(
                 {"detail": f"{n} platform{'s' if n != 1 else ''} belong to this "
-                           "group — reassign or delete them first."},
+                           "group - reassign or delete them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
@@ -5049,7 +5061,7 @@ class ServiceViewSet(TenantScopedViewSet):
 
     @action(detail=True, methods=["post"], url_path="monitor")
     def monitor(self, request, pk=None):
-        """Turn on monitoring for the service and reconcile its checks — a
+        """Turn on monitoring for the service and reconcile its checks - a
         convenience alias for ``PATCH {monitored: true}``. Kept for backward
         compatibility; the Services tab uses the flag directly."""
         from monitoring.service_checks import sync_service_checks
@@ -5061,7 +5073,7 @@ class ServiceViewSet(TenantScopedViewSet):
         result = sync_service_checks(svc, created_by=request.user)
         if result["ip"] is None:
             return Response(
-                {"detail": "No IP to monitor — set the service's IP or a "
+                {"detail": "No IP to monitor - set the service's IP or a "
                            "primary IP on its device / VM."},
                 status=drf_status.HTTP_400_BAD_REQUEST,
             )
@@ -5126,7 +5138,7 @@ class IPRangeViewSet(TenantScopedViewSet):
             .select_related("vrf", "role", "prefix")
             .prefetch_related("tags")
             # Backs a DHCP exclusion? → serializer `dhcp` flag ("exclusion").
-            # Reverse accessor — no integrations import.
+            # Reverse accessor - no integrations import.
             .annotate(dhcp_excl_n=Count("dhcp_exclusions", distinct=True))
         )
         if self.request:
@@ -5152,7 +5164,7 @@ class IPRangeViewSet(TenantScopedViewSet):
     def available(self, request, pk=None):
         """List addresses in the range not yet recorded as IPs.
 
-        Enumeration is capped (large/IPv6 ranges) — ``truncated`` flags when
+        Enumeration is capped (large/IPv6 ranges) - ``truncated`` flags when
         the list was cut short. ``size`` / ``used`` give the full accounting.
         """
         import ipaddress as ip
@@ -5242,7 +5254,7 @@ class RIRViewSet(TenantScopedViewSet):
         if n:
             return Response(
                 {"detail": f"{n} aggregate{'s' if n != 1 else ''} reference this "
-                           "RIR — reassign or delete them first."},
+                           "RIR - reassign or delete them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
@@ -5267,7 +5279,7 @@ class AggregateViewSet(TenantScopedViewSet):
             rir = self.request.query_params.get("rir")
             if rir:
                 qs = qs.filter(rir_id=rir)
-        # Numeric address order (see PrefixViewSet) — the CharField `prefix`
+        # Numeric address order (see PrefixViewSet) - the CharField `prefix`
         # otherwise sorts lexicographically.
         from django.db.models.expressions import RawSQL
 
@@ -5330,7 +5342,7 @@ class VLANGroupViewSet(TenantScopedViewSet):
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
-            # VMs whose *cluster* sits at a site — they run there even when the
+            # VMs whose *cluster* sits at a site - they run there even when the
             # cluster's site was not applied to them (see Cluster.
             # apply_site_to_vms). Lets a site page show what it hosts.
             cluster_site = self.request.query_params.get("cluster_site")
@@ -5364,7 +5376,7 @@ class VLANGroupViewSet(TenantScopedViewSet):
         if n:
             return Response(
                 {"detail": f"{n} VLAN{'s' if n != 1 else ''} belong to this "
-                           "group — reassign or delete them first."},
+                           "group - reassign or delete them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
@@ -5478,7 +5490,7 @@ class ContactGroupViewSet(_ContactCatalogViewSet):
         qs = super().get_queryset().annotate(
             contact_count_annotated=Count("contacts")
         )
-        # "Groups nested directly under this one" — the group detail page's
+        # "Groups nested directly under this one" - the group detail page's
         # Child groups tab. Applied after the tenant scoping above, so a
         # foreign parent id narrows to nothing rather than widening the set.
         if self.request:
@@ -5493,7 +5505,7 @@ class ContactGroupViewSet(_ContactCatalogViewSet):
         if n:
             return Response(
                 {"detail": f"{n} contact{'s' if n != 1 else ''} belong to this "
-                           "group — reassign or delete them first."},
+                           "group - reassign or delete them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
@@ -5511,7 +5523,7 @@ class ContactRoleViewSet(_ContactCatalogViewSet):
         if n:
             return Response(
                 {"detail": f"{n} assignment{'s' if n != 1 else ''} use this "
-                           "role — reassign them first."},
+                           "role - reassign them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
@@ -5573,7 +5585,7 @@ class ContactAssignmentViewSet(TenantScopedViewSet):
             contact = self.request.query_params.get("contact")
             if contact:
                 qs = qs.filter(contact_id=contact)
-            # "What uses this role" — the contact-role detail page's
+            # "What uses this role" - the contact-role detail page's
             # Assignments tab. Applied after the tenant filter above, so it
             # narrows an already-authorised set rather than widening one.
             role = self.request.query_params.get("role")
@@ -5583,7 +5595,7 @@ class ContactAssignmentViewSet(TenantScopedViewSet):
 
     def _check_target(self, serializer):
         """The generic (object_type, object_id) target must belong to the
-        active tenant — otherwise a tenant could attach a contact to another
+        active tenant - otherwise a tenant could attach a contact to another
         tenant's object (issue #59 cross-tenant reference)."""
         from django.apps import apps
 
@@ -5648,7 +5660,7 @@ class ProviderViewSet(TenantScopedViewSet):
         if n:
             return Response(
                 {"detail": f"{n} circuit{'s' if n != 1 else ''} belong to this "
-                           "provider — delete them first."},
+                           "provider - delete them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
@@ -5680,7 +5692,7 @@ class CircuitTypeViewSet(TenantScopedViewSet):
         n = obj.circuits.count()
         if n:
             return Response(
-                {"detail": f"{n} circuit{'s' if n != 1 else ''} use this type — "
+                {"detail": f"{n} circuit{'s' if n != 1 else ''} use this type - "
                            "reassign them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
@@ -5713,7 +5725,7 @@ class CircuitViewSet(TenantScopedViewSet):
                 val = self.request.query_params.get(param)
                 if val:
                     qs = qs.filter(**{field: val})
-            # Circuits terminating at a given site / provider network — powers
+            # Circuits terminating at a given site / provider network - powers
             # the site and provider-network detail pages' Circuits tabs.
             # distinct() because a circuit with both ends on the same object
             # would otherwise appear twice.
@@ -5747,7 +5759,7 @@ class ProviderNetworkViewSet(TenantScopedViewSet):
 
 
 class CircuitTerminationViewSet(TenantScopedViewSet):
-    """A/Z ends of circuits — no direct tenant FK; scoped via circuit.tenant.
+    """A/Z ends of circuits - no direct tenant FK; scoped via circuit.tenant.
     Filter with ?circuit=."""
 
     queryset = (
@@ -5822,7 +5834,7 @@ class PowerPanelViewSet(TenantScopedViewSet):
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
-            # VMs whose *cluster* sits at a site — they run there even when the
+            # VMs whose *cluster* sits at a site - they run there even when the
             # cluster's site was not applied to them (see Cluster.
             # apply_site_to_vms). Lets a site page show what it hosts.
             cluster_site = self.request.query_params.get("cluster_site")
@@ -5836,7 +5848,7 @@ class PowerPanelViewSet(TenantScopedViewSet):
         if n:
             return Response(
                 {"detail": f"{n} feed{'s' if n != 1 else ''} draw from this "
-                           "panel — delete them first."},
+                           "panel - delete them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
@@ -5897,7 +5909,7 @@ class WirelessLANGroupViewSet(TenantScopedViewSet):
         if n:
             return Response(
                 {"detail": f"{n} wireless LAN{'s' if n != 1 else ''} use this "
-                           "group — reassign them first."},
+                           "group - reassign them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
@@ -5957,7 +5969,7 @@ class TunnelGroupViewSet(TenantScopedViewSet):
         n = obj.tunnels.count()
         if n:
             return Response(
-                {"detail": f"{n} tunnel{'s' if n != 1 else ''} use this group — "
+                {"detail": f"{n} tunnel{'s' if n != 1 else ''} use this group - "
                            "reassign them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
@@ -5991,7 +6003,7 @@ class IPSecProfileViewSet(TenantScopedViewSet):
         if n:
             return Response(
                 {"detail": f"{n} tunnel{'s' if n != 1 else ''} use this profile "
-                           "— reassign them first."},
+                           "- reassign them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
@@ -6015,7 +6027,7 @@ class TunnelViewSet(TenantScopedViewSet):
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
             for param, field in (
                 ("group", "group_id"),
-                # "What uses this profile" — the IPSec profile detail page's
+                # "What uses this profile" - the IPSec profile detail page's
                 # Tunnels tab. Applied after the tenant-scoped queryset, so it
                 # only ever narrows an already-authorized set.
                 ("ipsec_profile", "ipsec_profile_id"),
@@ -6034,7 +6046,7 @@ class TunnelViewSet(TenantScopedViewSet):
 
 
 class TunnelTerminationViewSet(TenantScopedViewSet):
-    """Tunnel ends — no direct tenant FK; scoped via tunnel.tenant. Filter
+    """Tunnel ends - no direct tenant FK; scoped via tunnel.tenant. Filter
     with ?tunnel=."""
 
     queryset = (
@@ -6114,7 +6126,7 @@ class L2VPNViewSet(TenantScopedViewSet):
 
 
 class L2VPNTerminationViewSet(TenantScopedViewSet):
-    """L2VPN attachments — no direct tenant FK; scoped via l2vpn.tenant.
+    """L2VPN attachments - no direct tenant FK; scoped via l2vpn.tenant.
     Filter with ?l2vpn=."""
 
     queryset = (
@@ -6183,7 +6195,7 @@ class VirtualChassisViewSet(TenantScopedViewSet):
         return qs
 
     def perform_destroy(self, instance):
-        # Deleting a stack releases its members (SET_NULL on the FK) — also
+        # Deleting a stack releases its members (SET_NULL on the FK) - also
         # clear their stale position/priority so they read as standalone.
         instance.members.update(vc_position=None, vc_priority=None)
         super().perform_destroy(instance)
@@ -6217,7 +6229,7 @@ class RegionViewSet(TenantScopedViewSet):
         n = obj.children.count() + obj.sites.count()
         if n:
             return Response(
-                {"detail": "This region still has sub-regions or sites — "
+                {"detail": "This region still has sub-regions or sites - "
                            "reassign them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
@@ -6258,7 +6270,7 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         obj = self.get_object()
         if obj.children.count():
             return Response(
-                {"detail": "This location has sub-locations — delete them first."},
+                {"detail": "This location has sub-locations - delete them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
@@ -6358,7 +6370,7 @@ class LabelTemplateViewSet(TenantScopedViewSet):
             if ot:
                 qs = qs.filter(object_type=ot)
             # Optional targeting filters: return templates that either carry no
-            # restriction OR name this device-type/role — so the print menu on a
+            # restriction OR name this device-type/role - so the print menu on a
             # given device shows exactly the labels that apply to it (an empty
             # restriction is universal). AND across the two dimensions mirrors
             # LabelTemplate.applies_to.
@@ -6373,7 +6385,7 @@ class LabelTemplateViewSet(TenantScopedViewSet):
         return qs
 
     def _view_scoped(self, model, object_type, qs):
-        """Narrow ``qs`` to rows the caller may actually VIEW — tenant plus the
+        """Narrow ``qs`` to rows the caller may actually VIEW - tenant plus the
         row/site RBAC restriction for the target type. Rendering a label must
         not leak a name/serial/IP/custom field of an object the user couldn't
         retrieve directly (row/site isolation)."""
@@ -6488,7 +6500,7 @@ class LabelTemplateViewSet(TenantScopedViewSet):
 
     @action(detail=True, methods=["get"])
     def text(self, request, pk=None):
-        """Plain-text of the label for `?ids=` objects — for copying into an
+        """Plain-text of the label for `?ids=` objects - for copying into an
         external label-printer program. Returns `{labels:[{id,name,text}]}`."""
         from jinja2 import TemplateError
 
@@ -6509,7 +6521,7 @@ class LabelTemplateViewSet(TenantScopedViewSet):
 
     @action(detail=True, methods=["get"])
     def xlsx(self, request, pk=None):
-        """Spreadsheet of the label text for `?ids=` objects — one row each, with
+        """Spreadsheet of the label text for `?ids=` objects - one row each, with
         the text also split line-by-line into columns so it drops straight into
         an external label program's import. Reuses the sandboxed text render."""
         import io
@@ -6525,7 +6537,7 @@ class LabelTemplateViewSet(TenantScopedViewSet):
         objs = self._objects(tmpl.object_type, ids) or []
         if not objs:
             return Response(
-                {"detail": "No printable objects — none exist or none are viewable."},
+                {"detail": "No printable objects - none exist or none are viewable."},
                 status=drf_status.HTTP_400_BAD_REQUEST,
             )
         base = self._base_url(request)
@@ -6566,7 +6578,7 @@ class LabelTemplateViewSet(TenantScopedViewSet):
         label's mm size (one per page) for a label printer; ``a4``/``letter``
         tiles the labels at true size onto that office sheet so an ordinary
         printer prints them at real size without an "actual size" toggle. Either
-        way the size is baked into the PDF — HTML `window.print()` can't
+        way the size is baked into the PDF - HTML `window.print()` can't
         guarantee it (the paper size is dialog-controlled).
         """
         from django.http import HttpResponse
@@ -6582,7 +6594,7 @@ class LabelTemplateViewSet(TenantScopedViewSet):
         objs = self._objects(tmpl.object_type, ids) or []
         if not objs:
             return Response(
-                {"detail": "No printable objects — none exist or none are viewable."},
+                {"detail": "No printable objects - none exist or none are viewable."},
                 status=drf_status.HTTP_400_BAD_REQUEST,
             )
         try:
@@ -6609,7 +6621,7 @@ def resolve_shortlink(request):
     Scanning a small QR (or typing a short id) opens the object without carrying
     the full UUID. Because ``numid`` is only unique within a tenant, the link
     names the tenant: the resolver switches the session's active tenant to it (so
-    the SPA then loads the object in the right context) — but only after the
+    the SPA then loads the object in the right context) - but only after the
     object resolves **view-scoped for this user**, so it never switches a caller
     into a tenant/object they can't see. Anything unresolvable is a 404, leaking
     nothing. Returns ``{object_type, id, tenant, switched}``.
@@ -6673,7 +6685,7 @@ class DocumentViewSet(TenantScopedViewSet):
     """Files / external links attached to any object.
 
     List is scoped to one object via ``?object_type=&object_id=`` (the detail-
-    page Documents tab) — and only when the caller can *view* that exact target,
+    page Documents tab) - and only when the caller can *view* that exact target,
     so a foreign object UUID can't enumerate its documents (IDOR). The tenant-
     wide list is row/site-scoped through the stored ``object_site_id`` (Document
     has no ``site`` field). Files are served privately by ``download``; a raw
@@ -6717,7 +6729,7 @@ class DocumentViewSet(TenantScopedViewSet):
 
     def _viewable_sites(self):
         """Site ids the caller may view (aggregated across site-bound types), or
-        ``None`` when unrestricted — superuser, separation OFF, or any view grant
+        ``None`` when unrestricted - superuser, separation OFF, or any view grant
         is site-unscoped. Mirrors ``rbac.editable_sites`` for the view action."""
         user = getattr(self.request, "user", None)
         if user is None or user.is_superuser:
@@ -6744,7 +6756,7 @@ class DocumentViewSet(TenantScopedViewSet):
 
     def perform_create(self, serializer):
         # A document may only be attached to an object the caller can view
-        # (row/site-scoped) — otherwise object_type+object_id are attacker-set.
+        # (row/site-scoped) - otherwise object_type+object_id are attacker-set.
         from audit.api import _can_view_object, _object_site_id
 
         otype = serializer.validated_data.get("object_type")
@@ -6759,7 +6771,7 @@ class DocumentViewSet(TenantScopedViewSet):
         )
 
     def perform_update(self, serializer):
-        # A document is bound to its target — retargeting object_type/object_id
+        # A document is bound to its target - retargeting object_type/object_id
         # would move it onto an object the caller can't view, bypassing the
         # create-time gate. Reject any such change (JournalEntry rule).
         inst = serializer.instance
@@ -6804,7 +6816,7 @@ class DocumentViewSet(TenantScopedViewSet):
 
 # ─── Floor plans ─────────────────────────────────────────────────────────────
 class FloorTileTypeViewSet(TenantScopedViewSet):
-    """The user-created floor-tile palette. Ships empty — zero built-ins."""
+    """The user-created floor-tile palette. Ships empty - zero built-ins."""
 
     queryset = FloorTileType.objects.all().order_by(NATURAL_NAME)
     serializer_class = FloorTileTypeSerializer
@@ -6859,9 +6871,9 @@ def _resolve_route_endpoints(plan, body):
     """Resolve a route request's two endpoints to tile-centre coordinates.
 
     Each endpoint is ``{"kind": "device"|"rack", "id": …}``; a device resolves
-    to its own tile, else its rack's tile — the same fallback ``cable_paths``
-    uses. Returns ``((a, b, rack_a, rack_b), None)`` on success — the racks (or
-    None) feed the vertical-drop estimate — or ``(None, error_message)``."""
+    to its own tile, else its rack's tile - the same fallback ``cable_paths``
+    uses. Returns ``((a, b, rack_a, rack_b), None)`` on success - the racks (or
+    None) feed the vertical-drop estimate - or ``(None, error_message)``."""
     from .models import Device
 
     tiles = list(plan.tiles.select_related("rack"))
@@ -7002,7 +7014,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 }
         return Response({"as_of": timezone.now().isoformat(), "tiles": out})
 
-    # `route` is a POST (it carries a body) but computes only — view, not change.
+    # `route` is a POST (it carries a body) but computes only - view, not change.
     rbac_action_map = {"route": "view"}
 
     @action(detail=True, methods=["post"], url_path="route")
@@ -7010,7 +7022,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         """Preview the best tray route between two placed endpoints.
 
         Body: ``{"from": {"kind": "device"|"rack", "id": …}, "to": {…}}``.
-        Pure computation — nothing is persisted; the cable ``auto-route``
+        Pure computation - nothing is persisted; the cable ``auto-route``
         action is the writing twin. Returns the polyline (cell units), the
         trays it rides, and the estimated physical length (run + vertical
         drops + slack)."""
@@ -7064,7 +7076,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
     def scene(self, request, pk=None):
         """Everything the 3D room view needs, in one fetch: the plan's physical
         dimensions, every tile (racks carrying their racked devices' geometry +
-        face images), and the trays at their elevations. Static structure only —
+        face images), and the trays at their elevations. Static structure only -
         live status keeps coming from the sibling ``state`` action, so the 3D
         view polls exactly what the 2D canvas polls."""
         from django.utils import timezone
@@ -7086,7 +7098,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
             )
         }
 
-        # Which redundant feed powers each PDU — the data-driven A/B signal the
+        # Which redundant feed powers each PDU - the data-driven A/B signal the
         # 3D room tints vertical strips by (primary vs redundant), instead of
         # guessing from a name. One query: every inlet power-port in these racks
         # → the feed on the far end of its cable. `""` when the inlet isn't
@@ -7122,7 +7134,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "position": d.position,
                 "face": d.face or "",
                 "rack_side": d.rack_side or "",
-                # Zero-U side mounting — position is None for these; the 3D
+                # Zero-U side mounting - position is None for these; the 3D
                 # room draws them as vertical strips on the named rail.
                 "mount": d.mount or "",
                 "mount_offset_mm": d.mount_offset_mm,
@@ -7147,12 +7159,12 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 # Photo-anchored port markers (per device type; denormalized
                 # here like front_image so the 3D face can overlay them).
                 "image_ports": (dt.image_ports if dt else None) or None,
-                # The device's REAL power component names — the room lays out
+                # The device's REAL power component names - the room lays out
                 # deterministic clickable quads (and cable anchors) for any of
                 # these that no photo marker covers, incl. PDU strip outlets.
                 "power_ports": [p.name for p in d.power_ports.all()],
                 "power_outlets": [o.name for o in d.power_outlets.all()],
-                # Per-outlet/-port phase leg (A/B/C, "" if unset) — the vertical
+                # Per-outlet/-port phase leg (A/B/C, "" if unset) - the vertical
                 # PDU strip colours its cells by this. Keyed by name so the
                 # existing name-list consumers are untouched.
                 # feed_leg lives on outlets (which leg of the feed each socket
@@ -7160,7 +7172,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "power_legs": {
                     o.name: o.feed_leg for o in d.power_outlets.all()
                 },
-                # "primary" | "redundant" | "" — which redundant feed powers
+                # "primary" | "redundant" | "" - which redundant feed powers
                 # this PDU (its whole strip tints by it: the A/B story).
                 "power_feed_type": next(
                     (
@@ -7185,7 +7197,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "devices": [
                     device_geo(d)
                     for d in r.devices.all()
-                    # Positioned gear AND side-mounted 0U strips — a mounted
+                    # Positioned gear AND side-mounted 0U strips - a mounted
                     # PDU has no U position but very much exists in the room.
                     if d.position is not None or d.mount
                 ],
@@ -7213,7 +7225,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     or t.color or ""
                 ),
                 "is_zone": bool(t.tile_type_id and t.tile_type.is_zone),
-                # Perforated zone types render as grate floor in 3D — the
+                # Perforated zone types render as grate floor in 3D - the
                 # cold-aisle supply-tile read.
                 "perforated": bool(
                     t.tile_type_id and t.tile_type.perforated
@@ -7276,8 +7288,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
     @action(detail=True, methods=["get"], url_path="cable-paths")
     def cable_paths(self, request, pk=None):
-        """Resolve each cable on this plan to its two endpoint tiles — a
-        device-linked tile, else the device's rack tile — so the canvas can
+        """Resolve each cable on this plan to its two endpoint tiles - a
+        device-linked tile, else the device's rack tile - so the canvas can
         draw the physical A↔B run. Includes cables routed through a tray here,
         AND any cable whose ends are both placed on the plan (drawn straight
         when it has no tray)."""
@@ -7387,7 +7399,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
     @action(detail=True, methods=["post"], url_path="tiles/bulk")
     def tiles_bulk(self, request, pk=None):
-        """Apply many tile edits in one transaction — the editor mutates many
+        """Apply many tile edits in one transaction - the editor mutates many
         tiles at once (drag several, paint a wall run). Payload
         ``{create: [...], update: [{id, ...}], delete: [ids]}`` → the fresh
         tile list. Deletes run first so a move-recreate can't collide."""
@@ -7459,7 +7471,7 @@ class SiteMarkerViewSet(TenantScopedViewSet):
 
 class FloorPlanTileViewSet(TenantScopedViewSet):
     """Tiles are scoped through their plan's tenant (they carry no tenant FK
-    themselves) — same shape as ModuleInterfaceTemplateViewSet."""
+    themselves) - same shape as ModuleInterfaceTemplateViewSet."""
 
     queryset = FloorPlanTile.objects.select_related(
         "floor_plan", "tile_type", "role_type", "rack", "device",
@@ -7479,7 +7491,7 @@ class FloorPlanTileViewSet(TenantScopedViewSet):
                 ("floor_plan", "floor_plan_id"),
                 ("rack", "rack_id"),
                 ("device", "device_id"),
-                # "Where is this tile type placed" — the floor-tile-type
+                # "Where is this tile type placed" - the floor-tile-type
                 # detail page's Tiles tab.
                 ("tile_type", "tile_type_id"),
             ):
@@ -7495,7 +7507,7 @@ class FloorPlanTileViewSet(TenantScopedViewSet):
 
 
 class FloorPlanTrayViewSet(TenantScopedViewSet):
-    """Tray/conduit runs — scoped through their plan's tenant, like tiles."""
+    """Tray/conduit runs - scoped through their plan's tenant, like tiles."""
 
     queryset = FloorPlanTray.objects.select_related("floor_plan").prefetch_related(
         "cables"
@@ -7522,7 +7534,7 @@ class FloorPlanTrayViewSet(TenantScopedViewSet):
 
 
 class FloorPlanWallViewSet(TenantScopedViewSet):
-    """Wall polylines — scoped through their plan's tenant, like trays.
+    """Wall polylines - scoped through their plan's tenant, like trays.
     Render-only geometry in v1: drawn in 2D, extruded in 3D, and deliberately
     NOT part of the cable-routing graph."""
 
@@ -7549,7 +7561,7 @@ class FloorPlanWallViewSet(TenantScopedViewSet):
 
 
 class FloorPlanRaisedFloorAreaViewSet(TenantScopedViewSet):
-    """Raised-floor rectangles — scoped through their plan's tenant, like
+    """Raised-floor rectangles - scoped through their plan's tenant, like
     trays. The plenum depth they carry feeds underfloor tray elevation in the
     3D room and the vertical-drop term in route-length estimation."""
 
