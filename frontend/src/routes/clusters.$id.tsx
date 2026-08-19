@@ -8,14 +8,17 @@ import { type ColumnDef } from "@tanstack/react-table"
 import {
   api,
   type Cluster,
+  type Device,
   type Paginated,
   type VirtualMachine,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { DataTable } from "@/components/data-table"
+import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { buildVmColumns } from "@/components/columns/vm-columns"
 import { CustomFieldValues } from "@/components/custom-field-display"
+import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
 import { ClusterDeleteDialog } from "@/components/cluster-delete-dialog"
 import { StatusBadge } from "@/components/status-badge"
@@ -57,10 +60,16 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
   const { canDo } = useMe()
   const canEdit = canDo("cluster", "change")
   const canDelete = canDo("cluster", "delete")
-  const [tab, setTab] = useUrlTab<"overview" | "vms" | "journal" | "history">(
+  const [tab, setTab] = useUrlTab<"overview" | "vms" | "devices" | "journal" | "history">(
     "overview"
   )
   const nav = useNavigate()
+  const devices = useQuery({
+    queryKey: ["cluster-devices", c.id],
+    queryFn: () =>
+      api<Paginated<Device>>(`/api/devices/?cluster=${c.id}&page_size=1`),
+  })
+  const deviceCount = devices.data?.count ?? 0
   const [deleting, setDeleting] = useState<Cluster | null>(null)
   const openDelete = useCallback(() => setDeleting(c), [c])
   const goBack = useCallback(() => nav({ to: "/clusters" }), [nav])
@@ -139,6 +148,7 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "vms", label: "Virtual machines", count: c.vm_count },
+        { value: "devices", label: "Hosts", count: deviceCount },
         { value: "journal", label: "Journal" },
         { value: "history", label: "History" },
       ]}
@@ -150,6 +160,9 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
       </DetailTab>
       <DetailTab value="vms">
         <ClusterVmsPane clusterId={c.id} />
+      </DetailTab>
+      <DetailTab value="devices">
+        <ClusterDevicesPane clusterId={c.id} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.cluster" objectId={c.id} />
@@ -250,5 +263,47 @@ function ClusterOverview({ cluster: c }: { cluster: Cluster }) {
       <KvCard title="Cluster" rows={clusterRows} />
       <KvCard title="Members" rows={membersRows} />
     </div>
+  )
+}
+
+
+/** The physical hosts in this cluster.
+ *
+ * A cluster page answered "what runs here?" but never "what is it made of?" -
+ * and the hypervisor sync can now fill those hosts in, so the answer is worth
+ * showing beside the VMs. */
+function ClusterDevicesPane({ clusterId }: { clusterId: string }) {
+  const { humanIds } = useMe()
+  const query = useQuery({
+    queryKey: ["cluster-devices-list", clusterId],
+    queryFn: () =>
+      api<Paginated<Device>>(`/api/devices/?cluster=${clusterId}&page_size=200`),
+  })
+  const columns = useMemo(
+    () =>
+      buildDeviceColumns<Device>({
+        humanIds,
+        include: ["numid", "name", "status", "role", "type", "site",
+                  "primary_ip"],
+      }),
+    [humanIds]
+  )
+  if (query.isError) return <QueryError error={query.error} />
+  const rows = query.data?.results ?? []
+  if (!query.isLoading && rows.length === 0)
+    return (
+      <EmptyState title="No hosts in this cluster.">
+        Assign a device's <span className="font-medium">Cluster</span> field, or
+        let a hypervisor sync create them.
+      </EmptyState>
+    )
+  return (
+    <DataTable
+      data={rows}
+      columns={columns}
+      tableId="cluster-devices"
+      flexColumn="name"
+      embedded
+    />
   )
 }

@@ -3220,6 +3220,20 @@ class DeviceViewSet(
                 v = self.request.query_params.get(key)
                 if v:
                     qs = qs.filter(**{field: v})
+            # The physical hosts behind a virtualization source. There is no
+            # FK from Device to the source - the honest link is that the source
+            # syncs VMs onto them, or into a cluster they belong to. Covers a
+            # host with no VMs yet, which a VM-only join would miss.
+            virt_source = self.request.query_params.get("virt_source")
+            if virt_source:
+                qs = qs.filter(
+                    Q(virtual_machines__virt_guests__source_id=virt_source)
+                    | Q(
+                        cluster__virtual_machines__virt_guests__source_id=(
+                            virt_source
+                        )
+                    )
+                ).distinct()
             # Region is an adjacency-list tree (no MPTT), so filtering by a
             # region must include devices in its descendant regions' sites.
             region = self.request.query_params.get("region")

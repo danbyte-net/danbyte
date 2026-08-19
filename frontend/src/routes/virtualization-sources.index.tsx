@@ -334,7 +334,7 @@ function VirtualizationSourcesPage() {
   )
 }
 
-function SourceDialog({
+export function SourceDialog({
   source,
   onOpenChange,
 }: {
@@ -379,6 +379,9 @@ function SourceDialog({
   const [syncHostHw, setSyncHostHw] = useState(
     source?.sync_host_hardware ?? false
   )
+  const [syncPlatforms, setSyncPlatforms] = useState(
+    source?.sync_platforms ?? false
+  )
   const [enabled, setEnabled] = useState(source?.enabled ?? true)
   // Where discovered addresses may land. Empty = the Global VRF, which is a
   // real routing context here, not "unset".
@@ -406,6 +409,7 @@ function SourceDialog({
         sync_networks: syncNetworks,
         sync_hosts: syncHosts,
         sync_host_hardware: syncHostHw,
+        sync_platforms: syncPlatforms,
         vrf_id: vrfId || null,
         vrf_mode: vrfMode,
         enabled,
@@ -564,6 +568,12 @@ function SourceDialog({
               hint="Add each hypervisor node as a Device, so VMs link to their host and bridge uplinks find its NICs."
               checked={syncHosts}
               onChange={setSyncHosts}
+            />
+            <FormCheckbox
+              label="Set platform from the guest OS"
+              hint="Fill in each VM's platform from what the hypervisor reports, creating the platform on demand. Rename it afterwards if you like - the match survives."
+              checked={syncPlatforms}
+              onChange={setSyncPlatforms}
             />
             {isVcenter && syncHosts && (
               <FormCheckbox

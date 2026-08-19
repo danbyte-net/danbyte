@@ -1,12 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Plug, RefreshCw } from "lucide-react"
+import { Pencil, Plug, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
 import {
   api,
+  type Device,
   type Paginated,
   type VirtPlacementRule,
   type VirtualMachine,
@@ -19,6 +20,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { RowActions } from "@/components/row-actions"
+import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { buildVmColumns } from "@/components/columns/vm-columns"
 import { FormSelect, FormText } from "@/components/forms"
 import { InfoTip } from "@/components/ui/info-tip"
@@ -33,6 +35,7 @@ import {
   DetailTab,
 } from "@/components/detail-shell"
 import { useUrlTab } from "@/lib/use-url-tab"
+import { SourceDialog } from "./virtualization-sources.index"
 
 export const Route = createFileRoute("/virtualization-sources/$id")({
   component: SourceDetailPage,
@@ -48,7 +51,7 @@ const SCOPES = [
 function SourceDetailPage() {
   const { id } = Route.useParams()
   const [tab, setTab] = useUrlTab<
-    "overview" | "vms" | "placement" | "skipped"
+    "overview" | "vms" | "hosts" | "placement" | "skipped"
   >("overview")
 
   const query = useQuery({
@@ -70,8 +73,15 @@ function SourceDetailPage() {
       ),
   })
   const vmCount = vms.data?.count ?? 0
+  const hosts = useQuery({
+    queryKey: ["source-hosts", id],
+    queryFn: () =>
+      api<Paginated<Device>>(`/api/devices/?virt_source=${id}&page_size=1`),
+  })
+  const hostCount = hosts.data?.count ?? 0
   const qc = useQueryClient()
   const { canDo } = useMe()
+  const [editing, setEditing] = useState(false)
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["virtualization-source", id] })
@@ -173,6 +183,7 @@ function SourceDetailPage() {
     { label: "Disks", value: source.sync_disks ? "Yes" : "No" },
     { label: "Switches & networks", value: source.sync_networks ? "Yes" : "No" },
     { label: "Hosts as devices", value: source.sync_hosts ? "Yes" : "No" },
+    { label: "Platforms", value: source.sync_platforms ? "Yes" : "No" },
     ...(source.kind === "vcenter"
       ? [
           {
@@ -190,6 +201,11 @@ function SourceDetailPage() {
       title={source.name}
       actions={
         <>
+          {canDo("virtualizationsource", "change") && (
+            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -241,6 +257,7 @@ function SourceDetailPage() {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "vms", label: "Virtual machines", count: vmCount },
+        { value: "hosts", label: "Hosts", count: hostCount },
         {
           value: "placement",
           label: "Placement",
@@ -262,6 +279,10 @@ function SourceDetailPage() {
         <SourceVms sourceId={source.id} />
       </DetailTab>
 
+      <DetailTab value="hosts">
+        <SourceHosts sourceId={id} />
+      </DetailTab>
+
       <DetailTab value="placement">
         <PlacementRules source={source} />
       </DetailTab>
@@ -269,6 +290,16 @@ function SourceDetailPage() {
       <DetailTab value="skipped">
         <SkippedList items={skipped} />
       </DetailTab>
+
+      {editing && (
+        <SourceDialog
+          source={source}
+          onOpenChange={(o) => {
+            setEditing(o)
+            if (!o) refresh()
+          }}
+        />
+      )}
     </DetailShell>
   )
 }
@@ -324,6 +355,51 @@ function SourceVms({ sourceId }: { sourceId: string }) {
   )
 }
 
+/** The physical hosts behind this source.
+ *
+ * There is no foreign key from a Device to a source - the link is that the
+ * source syncs VMs onto them, or into a cluster they belong to. Ticking
+ * "Create hosts as devices" is what puts them here in the first place. */
+function SourceHosts({ sourceId }: { sourceId: string }) {
+  const { humanIds } = useMe()
+  const query = useQuery({
+    queryKey: ["source-hosts-list", sourceId],
+    queryFn: () =>
+      api<Paginated<Device>>(
+        `/api/devices/?virt_source=${sourceId}&page_size=200`
+      ),
+  })
+  const columns = useMemo(
+    () =>
+      buildDeviceColumns<Device>({
+        humanIds,
+        include: ["numid", "name", "status", "type", "manufacturer", "serial",
+                  "site", "platform"],
+      }),
+    [humanIds]
+  )
+  if (query.isError) return <QueryError error={query.error} />
+  const rows = query.data?.results ?? []
+  if (!query.isLoading && rows.length === 0)
+    return (
+      <EmptyState title="No hosts linked yet.">
+        Hosts appear once they exist as devices - either create them yourself
+        with names matching what the hypervisor reports, or tick{" "}
+        <span className="font-medium">Create hosts as devices</span> on this
+        source.
+      </EmptyState>
+    )
+  return (
+    <DataTable
+      data={rows}
+      columns={columns}
+      tableId="source-hosts"
+      flexColumn="name"
+      embedded
+    />
+  )
+}
+
 /** What the last run saw but couldn't record.
  *
  * Not errors and not drift - the sync succeeded. These are things with nowhere
@@ -370,6 +446,28 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
   const [scope, setScope] = useState("cluster")
   const [pattern, setPattern] = useState("")
   const [siteId, setSiteId] = useState<string | null>(null)
+  const [locationId, setLocationId] = useState<string | null>(null)
+  const [weight, setWeight] = useState("100")
+  // The same form edits an existing rule; null means "adding a new one".
+  const [editingId, setEditingId] = useState<string | null>(null)
+
+  const reset = () => {
+    setEditingId(null)
+    setPattern("")
+    setSiteId(null)
+    setLocationId(null)
+    setWeight("100")
+  }
+  // useCallback because the columns memo depends on it - a fresh function each
+  // render would rebuild the table on every render.
+  const startEdit = useCallback((r: VirtPlacementRule) => {
+    setEditingId(r.id)
+    setScope(r.scope)
+    setPattern(r.pattern)
+    setSiteId(r.site.id)
+    setLocationId(r.location?.id ?? null)
+    setWeight(String(r.weight))
+  }, [])
 
   const rules = useQuery({
     queryKey: ["virt-placement-rules", source.id],
@@ -383,6 +481,17 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
     queryFn: () =>
       api<Paginated<{ id: string; name: string }>>("/api/sites/?picker=1"),
     staleTime: 5 * 60_000,
+  })
+  // Only locations inside the chosen site can be used - one outside it would
+  // place a device somewhere it physically isn't, and the API refuses it.
+  const locations = useQuery({
+    queryKey: ["locations-picker", siteId],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>(
+        `/api/locations/?site=${siteId}&page_size=200`
+      ),
+    enabled: !!siteId,
+    staleTime: 60_000,
   })
   const found = useQuery({
     queryKey: ["virt-discovered", source.id],
@@ -400,20 +509,26 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
 
   const invalidate = () =>
     qc.invalidateQueries({ queryKey: ["virt-placement-rules", source.id] })
-  const add = useMutation({
-    mutationFn: () =>
-      api("/api/virt-placement-rules/", {
-        method: "POST",
-        body: JSON.stringify({
-          source: source.id,
-          scope,
-          pattern: pattern.trim(),
-          site_id: siteId,
-        }),
-      }),
+  const save = useMutation({
+    mutationFn: () => {
+      const body = JSON.stringify({
+        source: source.id,
+        scope,
+        pattern: pattern.trim(),
+        site_id: siteId,
+        location_id: locationId,
+        weight: Number(weight) || 100,
+      })
+      return editingId
+        ? api(`/api/virt-placement-rules/${editingId}/`, {
+            method: "PATCH",
+            body,
+          })
+        : api("/api/virt-placement-rules/", { method: "POST", body })
+    },
     onSuccess: () => {
-      toast.success("Rule added")
-      setPattern("")
+      toast.success(editingId ? "Rule updated" : "Rule added")
+      reset()
       invalidate()
     },
     onError: (e) => apiErrorToast(e),
@@ -423,6 +538,7 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
       api(`/api/virt-placement-rules/${r.id}/`, { method: "DELETE" }),
     onSuccess: () => {
       toast.success("Rule removed")
+      reset()
       invalidate()
     },
     onError: (e) => apiErrorToast(e),
@@ -482,13 +598,14 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
         enableHiding: false,
         cell: ({ row }) => (
           <RowActions
+            onEdit={canEdit ? () => startEdit(row.original) : undefined}
             onDelete={canEdit ? () => del.mutate(row.original) : undefined}
             deleteLabel="Remove"
           />
         ),
       },
     ],
-    [canEdit, del]
+    [canEdit, del, startEdit]
   )
   // Indexing the whole payload by scope would also reach `ok`, so pick the
   // list explicitly.
@@ -501,7 +618,7 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
       }
     : {}
   const suggestions = byScope[scope] ?? []
-  const canAdd = pattern.trim().length > 0 && !!siteId && !add.isPending
+  const canSave = pattern.trim().length > 0 && !!siteId && !save.isPending
 
   return (
     <div className="max-w-3xl space-y-4">
@@ -539,13 +656,13 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
 
       {canEdit && (
         <div className="space-y-2 border-t border-border pt-4">
-          <div className="grid gap-3 sm:grid-cols-[10rem_1fr_13rem_auto] sm:items-end">
+          <div className="grid gap-3 sm:grid-cols-[10rem_1fr_12rem_12rem_6rem] sm:items-end">
             <FormSelect
               label="Match on"
               value={scope}
               onChange={(v) => {
                 setScope(v ?? "cluster")
-                setPattern("")
+                if (!editingId) setPattern("")
               }}
               options={SCOPES}
             />
@@ -558,16 +675,48 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
             <FormSelect
               label="Site"
               value={siteId}
-              onChange={setSiteId}
+              onChange={(v) => {
+                setSiteId(v)
+                setLocationId(null)  // a location only belongs to one site
+              }}
               placeholder="Pick a site"
               options={(sites.data?.results ?? []).map((s) => ({
                 value: s.id,
                 label: s.name,
               }))}
             />
-            <Button disabled={!canAdd} onClick={() => add.mutate()}>
-              {add.isPending ? "Adding…" : "Add rule"}
+            <FormSelect
+              label="Location"
+              hint="Optional, and only locations inside the site above."
+              value={locationId}
+              onChange={setLocationId}
+              noneLabel="None"
+              disabled={!siteId}
+              options={(locations.data?.results ?? []).map((l) => ({
+                value: l.id,
+                label: l.name,
+              }))}
+            />
+            <FormText
+              label="Weight"
+              hint="Breaks ties between rules that match at the same level. Lower wins."
+              value={weight}
+              onChange={setWeight}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Button disabled={!canSave} onClick={() => save.mutate()}>
+              {save.isPending
+                ? "Saving…"
+                : editingId
+                  ? "Save rule"
+                  : "Add rule"}
             </Button>
+            {editingId && (
+              <Button variant="ghost" onClick={reset}>
+                Cancel
+              </Button>
+            )}
           </div>
 
           {suggestions.length > 0 && (

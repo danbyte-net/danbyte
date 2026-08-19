@@ -7099,6 +7099,9 @@ export interface VirtualizationSource {
   /** Enrich those Devices with model, vendor and serial over vSphere SOAP.
    * vCenter only, and off by default - it mints catalog rows. */
   sync_host_hardware: boolean
+  /** Map the guest OS onto a Platform, creating rows on demand. Off by
+   * default - it writes into a catalog you curate. */
+  sync_platforms: boolean
   /** Where addresses this connection discovers may land. Empty vrf_id =
    * the Global VRF, a real routing context rather than "unset". */
   vrf_id: string | null

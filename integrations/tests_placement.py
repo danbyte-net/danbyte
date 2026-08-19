@@ -247,3 +247,30 @@ class PlacementRuleApiTests(TestCase):
         self._post()
         r = self.client.get(f"/api/virt-placement-rules/?source={self.source.id}")
         self.assertEqual(len(r.json()["results"]), 1)
+
+    def test_editing_a_rule(self):
+        """Rules were create/delete only - a typo meant recreating them."""
+        r = self._post()
+        rid = r.json()["id"]
+        patched = self.client.patch(
+            f"/api/virt-placement-rules/{rid}/",
+            {"pattern": "cl-9*", "weight": 5}, content_type="application/json",
+        )
+        self.assertEqual(patched.status_code, 200, patched.content)
+        rule = VirtPlacementRule.objects.get(pk=rid)
+        self.assertEqual(rule.pattern, "cl-9*")
+        self.assertEqual(rule.weight, 5)
+
+    def test_a_location_can_be_set_and_cleared(self):
+        loc = Location.objects.create(
+            tenant=self.tenant, site=self.site, name="Row 3", slug="row-3"
+        )
+        rid = self._post(location_id=str(loc.id)).json()["id"]
+        self.assertEqual(VirtPlacementRule.objects.get(pk=rid).location_id, loc.id)
+
+        cleared = self.client.patch(
+            f"/api/virt-placement-rules/{rid}/",
+            {"location_id": None}, content_type="application/json",
+        )
+        self.assertEqual(cleared.status_code, 200, cleared.content)
+        self.assertIsNone(VirtPlacementRule.objects.get(pk=rid).location_id)
