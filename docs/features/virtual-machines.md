@@ -1,0 +1,106 @@
+---
+icon: lucide/server-cog
+---
+
+# Virtual machines
+
+A **virtual machine** is a first-class object next to devices: it carries its
+own interfaces, IP addresses, disks and services, so monitoring, IPAM, config
+context and change history all work the same way they do for physical
+hardware — a virtual router is checked and SNMP-polled exactly like a switch.
+
+Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
+[sync](external-sync.md) can import them instead.
+
+## Fields
+
+| Field | Notes |
+| --- | --- |
+| **Name**, **status** | As for a device — the same status catalog. |
+| **Role**, **platform** | Also the device catalogs, so one role can span physical and virtual. |
+| **Cluster** | The [cluster](clusters.md) it runs on. |
+| **Host device** | The physical host *inside* that cluster — see [Placement](#placement-site-and-host-device). |
+| **Site** | Where it is — also [Placement](#placement-site-and-host-device). |
+| **vCPUs**, **Memory**, **Disk** | Resource sizing. Memory is entered in MB, disk in GB. |
+| **Primary IP** | The address the VM is reached on; monitoring uses it. |
+| **Description**, **tags**, **custom fields** | Free-form notes, labels and your own attributes. |
+
+## The detail page
+
+**Overview** carries the attribute cards, the disk list and a per-VM network
+diagram. Then:
+
+| Tab | What's on it |
+| --- | --- |
+| **Components** | The VM's interfaces (and their IPs), with a count on the tab. |
+| **Services** | Services running on it, from your service templates. |
+| **Monitoring** | Checks against its addresses, same engine as devices. |
+| **SNMP** | Interface tables and polling, when the VM answers SNMP. |
+| **Certificates** | TLS certificates seen on its endpoints. |
+| **Config** | The rendered config context for this VM. |
+| **Journal**, **History** | Notes you write, and the full change log. |
+
+## Placement: site and host device
+
+Two different questions, two different fields:
+
+- **Site** — *where in the world*. Set it on the **cluster** and everything in
+  that cluster is located there; set it **per VM** only when one sits somewhere
+  else.
+- **Host device** — *which physical machine*. Model the ESXi host or Proxmox
+  node as a **Device**, then pick it as the VM's *Host device*. The device's
+  own page lists the VMs it hosts.
+
+!!! tip "Host devices link themselves during a sync"
+    A sync sets *Host device* automatically whenever a Device already exists
+    whose **name matches** the host the hypervisor reports. It never creates
+    that Device for you — a physical machine needs a device type, role and
+    site, which are yours to decide. Create the hosts once with matching names
+    and every VM lands on the right one from then on.
+
+## Interfaces and IP addresses
+
+A **VM interface** mirrors a device interface: name, enabled flag, MAC address,
+MTU, speed, and an 802.1Q **VLAN** with an access/trunk mode. Add them from the
+VM's **Components** tab.
+
+IP addresses attach to an interface exactly as on a device — **Add IP** or
+**Assign IP** from the VM, or from the address itself. The first private IPv4
+becomes the VM's **primary IP** when it has none, and that is what monitoring
+checks.
+
+!!! note "A synced IP needs its prefix to exist first"
+    When a hypervisor reports a guest address, Danbyte records it only if a
+    **prefix containing it already exists** — the sync never invents address
+    space, because nothing in the guest data says what the subnet is. Create
+    the prefix, sync again, and the address attaches to its interface.
+
+    Guest addresses also depend on the in-guest agent (**VMware Tools** or the
+    **QEMU guest agent**) and only appear for running VMs.
+
+## Disks
+
+**Virtual disks** are listed on the VM's Overview: name, size, the storage pool
+or datastore they live on, and their controller. They're descriptive — the VM's
+own *Disk* figure is its own field, not a total of these. A sync imports them
+when **Sync disks** is enabled on the source.
+
+## What a sync owns, and what you own
+
+For a VM that came from a hypervisor:
+
+- **The hypervisor owns** its existence, its host, its power state, and — in
+  *Automatic* mode — its specs (vCPU / RAM / disk).
+- **You own** everything else: role, platform, **site**, tags, custom fields,
+  description and the primary-IP choice. A sync never overwrites those, in any
+  mode.
+
+VMs, interfaces and IPs **you** created are linked and blank-filled, never
+overwritten, and never deleted by a sync.
+
+## See also
+
+- [Clusters](clusters.md) — where VMs run, and the site they inherit.
+- [Virtual switches & topology](virtual-switches.md) — how VMs reach the network.
+- [Proxmox VE sync](virt-proxmox.md) · [VMware vCenter sync](virt-vcenter.md)
+- [Devices](../dcim/devices.md) — the physical counterpart.

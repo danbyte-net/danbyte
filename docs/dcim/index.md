@@ -21,7 +21,7 @@ Manufacturer  →  Device type  →  Device  →  Interfaces  →  Cables
 | Lay out a rack and mount gear in it | **Racks** | [Racks](racks.md) |
 | Add ports to a device | **Interfaces** | [Interfaces](interfaces.md) |
 | Model LAGs, sub-interfaces, loopbacks | **Virtual interfaces** | [Virtual & aggregate interfaces](virtual-interfaces.md) |
-| Track VMs, clusters and virtual switches | **Virtual machines** | [Virtual machines & clusters](../features/virtualization.md) |
+| Track VMs, clusters and virtual switches | **Virtual machines** | [Virtual machines](../features/virtual-machines.md) |
 | Put an IP on an interface | **IP assignment** | [Assigning IP addresses](ip-assignment.md) |
 | Connect two ports with a cable | **Cabling** | [Cabling & connections](cabling.md) |
 | Draw the room and place the racks | **Floor plans** | [Floor plans](../features/floor-plans.md) |

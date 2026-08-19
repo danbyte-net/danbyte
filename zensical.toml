@@ -73,9 +73,9 @@ nav = [
     { "VPN tunnels"       = "features/vpn.md" },
   ] },
   { "Virtualization" = [
-    { "Virtual machines & clusters" = "features/virtualization.md" },
-    { "Proxmox VE sync" = "features/virt-proxmox.md" },
-    { "VMware vCenter sync" = "features/virt-vcenter.md" },
+    { "Virtual machines"  = "features/virtual-machines.md" },
+    { "Clusters, types & groups" = "features/clusters.md" },
+    { "Virtual switches & topology" = "features/virtual-switches.md" },
   ] },
   { "Monitoring & compliance" = [
     "monitoring/index.md",
@@ -115,6 +115,8 @@ nav = [
     { "Import from NetBox" = "features/netbox-import.md" },
     { "External sync overview" = "features/external-sync.md" },
     { "Windows DHCP & DNS sync" = "features/windows-sync.md" },
+    { "Proxmox VE sync"   = "features/virt-proxmox.md" },
+    { "VMware vCenter sync" = "features/virt-vcenter.md" },
   ] },
   { "Administration" = [
     "access/index.md",

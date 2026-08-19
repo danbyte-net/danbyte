@@ -103,4 +103,4 @@ Rules:
 
 - [VMware vCenter sync](virt-vcenter.md) — the sibling connector.
 - [External sync](external-sync.md) — toggles, allowlist, where things live.
-- [Virtual machines & clusters](virtualization.md) — the objects a sync fills in.
+- [Virtual machines](virtual-machines.md) · [Clusters](clusters.md) · [Virtual switches](virtual-switches.md) — the objects a sync fills in.
