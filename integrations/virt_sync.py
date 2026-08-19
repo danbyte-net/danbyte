@@ -26,8 +26,11 @@ import logging
 import re
 from functools import partial
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
+
+from api import vrf_placement
 
 from .virt_client import VirtAPIError, proxmox_get
 
@@ -350,18 +353,25 @@ def sync_proxmox(source) -> dict:
         (s.get("name") for s in status if s.get("type") == "cluster"),
         source.name,
     )
-    nodes = [s.get("name") for s in status if s.get("type") == "node"]
-    if not nodes:
-        nodes = [n.get("node") for n in (proxmox_get(source, "nodes") or [])]
+    node_rows = [
+        {"name": s.get("name"), "online": bool(s.get("online"))}
+        for s in status if s.get("type") == "node"
+    ]
+    if not node_rows:
+        node_rows = [
+            {"name": n.get("node"), "online": n.get("status") == "online"}
+            for n in (proxmox_get(source, "nodes") or [])
+        ]
+    nodes = [n["name"] for n in node_rows]
     resources = [
         r for r in (proxmox_get(source, "cluster/resources?type=vm") or [])
         if r.get("template") not in (1, True)  # VM templates aren't inventory
     ]
 
     now = timezone.now()
-    counts = {"nodes": len(nodes), "vms": 0, "vms_created": 0,
-              "interfaces": 0, "ips": 0, "disks": 0, "networks": 0,
-              "uplinks": 0, "pending": 0}
+    counts = {"nodes": len(nodes), "vms": 0, "vms_created": 0, "hosts": 0,
+              "interfaces": 0, "ips": 0, "ips_skipped": 0, "disks": 0,
+              "networks": 0, "uplinks": 0, "pending": 0}
 
     # Guest details come over the network — fetch before the DB transaction.
     # The Proxmox config blob carries both NICs (netN) and disks (scsiN/…), so
@@ -396,6 +406,10 @@ def sync_proxmox(source) -> dict:
         opts.get("tag-style") if isinstance(opts, dict) else ""
     )
 
+    # Hosts first: the VM pass links each guest to the Device of the same name,
+    # and the uplink pass needs those Devices to hang bridge ports off.
+    if source.sync_hosts:
+        counts["hosts"] = _sync_hosts(source, cluster_name, node_rows)
     result = _run_pass(source, cluster_name, resources, details, now, counts,
                        _sync_interfaces, _sync_ips,
                        sync_disks_fn=_sync_disks,
@@ -424,6 +438,15 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
     from .models import VirtChange, VirtGuest
 
     apply = source.sync_mode == "auto"
+    # Load the tenant's prefixes once for the whole pass — this used to be a
+    # full Prefix scan per guest — and collect the run's placement warnings so
+    # a scheduled sync can report them without a toast to show.
+    prefixes = vrf_placement.load_prefixes(source.tenant)
+    # Which networks/switches state a routing context, read once per pass. A
+    # network can only be configured after it has been discovered, so on the
+    # pass that first creates one this is simply empty — no reordering needed.
+    net_vrfs = _network_vrf_map(source)
+    warnings: list[str] = []
     with transaction.atomic():
         # The cluster is a container — only materialise it when a VM actually
         # lands (so a review-mode source with nothing accepted stays inert).
@@ -456,7 +479,12 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
             if guest.vm_id:
                 d = details.get(vmid) or {}
                 counts["interfaces"] += sync_ifaces(guest, d.get("ifaces"))
-                counts["ips"] += sync_ips(source, guest, d.get("ips"))
+                attached, unplaced = sync_ips(
+                    source, guest, d.get("ips"), nets=d.get("nets"),
+                    prefixes=prefixes, warnings=warnings, net_vrfs=net_vrfs,
+                )
+                counts["ips"] += attached
+                counts["ips_skipped"] += unplaced
                 if source.sync_disks and sync_disks_fn:
                     counts["disks"] += sync_disks_fn(guest, d.get("disks"))
                 if source.sync_networks and sync_nets_fn:
@@ -487,8 +515,18 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
     source.last_sync_at = now
     source.last_sync_status = "ok"
     source.last_sync_error = ""
+    unplaced = counts.get("ips_skipped") or 0
+    summary = ""
+    if unplaced:
+        where = vrf_placement.vrf_label(source.vrf)
+        summary = (
+            f"{unplaced} address{'' if unplaced == 1 else 'es'} could not be "
+            f"placed. Create a prefix that contains them in {where}, or change "
+            f"this source's Address VRF."
+        )
+    source.record_warnings(warnings, summary=summary)
     source.save(update_fields=["last_sync_at", "last_sync_status",
-                               "last_sync_error"])
+                               "last_sync_error", "last_sync_warnings"])
     logger.info("%s sync %s (%s): %s", label, source.name, source.sync_mode, counts)
     return counts
 
@@ -652,6 +690,88 @@ def _cluster_for(source, name: str):
     )
 
 
+_HYPERVISOR_ROLE = ("Hypervisor", "hypervisor")
+
+
+def _sync_hosts(source, cluster_name: str, hosts) -> int:
+    """Create the hypervisor's own nodes/hosts as Devices — opt-in (#34).
+
+    ``hosts`` is ``[{"name": .., "online": bool}]``, normalised by the caller.
+
+    A Device needs only a tenant and a name, so this fills exactly what the
+    hypervisor actually reports: name, cluster, status. It deliberately leaves
+    **device type and site empty** — nothing on the wire says what they are,
+    and guessing would put fiction in the physical inventory. Enrich them by
+    hand, or later from Redfish/SNMP.
+
+    Matching is ``name__iexact`` because that is how ``_blank_fill`` already
+    finds a host; the uniqueness constraint is case-sensitive, so matching any
+    other way would mint a near-duplicate of a host the operator already has.
+    Existing Devices are adopted and blank-filled, never overwritten.
+    """
+    from api.models import Device
+    from api.status_registry import resolve_status
+
+    hosts = [h for h in hosts if (h.get("name") or "").strip()]
+    if not hosts:
+        return 0
+    # Materialise the cluster here rather than waiting for a VM to land: when
+    # an operator has asked for host Devices, the nodes *are* the cluster, and
+    # a host with no cluster on the first pass would be needlessly incomplete.
+    cluster = _cluster_for(source, cluster_name)
+    made = 0
+    role = None
+    for h in hosts:
+        name = (h.get("name") or "").strip()
+        if not name:
+            continue
+        dev = Device.objects.filter(
+            tenant=source.tenant, name__iexact=name
+        ).first()
+        if dev is None:
+            if role is None:
+                role = _hypervisor_role(source)
+            dev = Device.objects.create(
+                tenant=source.tenant, name=name, role=role, cluster=cluster,
+                status=resolve_status(
+                    source.tenant, "active" if h.get("online") else "offline",
+                    "device",
+                ),
+                description=f"Synced from «{source.name}»",
+            )
+            made += 1
+            continue
+        # Adopted: blank-fill the cluster link, and nothing else. A Device the
+        # operator already models is theirs — the sync doesn't restyle it.
+        if dev.cluster_id is None:
+            dev.cluster = cluster
+            dev.save(update_fields=["cluster"])
+    return made
+
+
+def _hypervisor_role(source):
+    """The *Hypervisor* device role, created on demand.
+
+    Same shape as ``_cluster_for``'s cluster-type handling — a catalog row the
+    product needs to function, not illustrative inventory — but without its
+    habit of silently defaulting an unrecognised source kind.
+    """
+    from api.models import DeviceRole
+
+    name, slug = _HYPERVISOR_ROLE
+    # Match on either half of the identity: the slug is unique per tenant, so a
+    # role already holding it under a different name would collide on create.
+    role = DeviceRole.objects.filter(
+        Q(name__iexact=name) | Q(slug=slug), tenant=source.tenant
+    ).first()
+    if role is not None:
+        return role
+    return DeviceRole.objects.create(
+        tenant=source.tenant, name=name, slug=slug,
+        description="Hypervisor hosts imported by a virtualization sync.",
+    )
+
+
 def _sync_interfaces(guest, cfg: dict) -> int:
     from api.models import VMInterface
 
@@ -675,43 +795,88 @@ def _sync_interfaces(guest, cfg: dict) -> int:
     return n
 
 
-def _sync_ips(source, guest, agent_ifaces) -> int:
-    """Proxmox guest-agent IPs → the shared attach path (matched by MAC)."""
+def _sync_ips(source, guest, agent_ifaces, *, nets=None, prefixes=None,
+              warnings=None, net_vrfs=None) -> tuple[int, int]:
+    """Proxmox guest-agent IPs → the shared attach path (matched by MAC).
+
+    ``nets`` is the same VM config blob the interface/network passes already
+    read, so tagging each NIC with the bridge it sits on costs no extra API
+    call — ``_parse_net`` hands back mac, bridge and tag in one go.
+    """
+    net_key_by_mac = {}
+    for key, value in (nets or {}).items():
+        if not _NET_KEY.match(str(key)):
+            continue
+        parsed = _parse_net(str(value))
+        if not parsed["mac"] or not parsed["bridge"]:
+            continue
+        tag = parsed["tag"]
+        net_key_by_mac[parsed["mac"]] = (
+            f"{parsed['bridge']}:{tag}" if tag is not None else parsed["bridge"]
+        )
     entries = [
         {
             "mac": entry.get("hardware-address") or "",
             "ips": [i.get("ip-address") or ""
                     for i in (entry.get("ip-addresses") or [])],
+            "net_key": net_key_by_mac.get(
+                (entry.get("hardware-address") or "").lower()
+            ),
         }
         for entry in (agent_ifaces or [])
     ]
-    return _attach_ips(source, guest, entries)
+    return _attach_ips(source, guest, entries, prefixes=prefixes,
+                       warnings=warnings, net_vrfs=net_vrfs)
 
 
-def _attach_ips(source, guest, entries) -> int:
+def _network_vrf_map(source) -> dict:
+    """``{ext_key: VRF}`` for the source's networks that state a routing context.
+
+    A network's own VRF wins; otherwise its switch's, which is the switch-wide
+    default. A key is **absent** when neither states one — that means "no
+    opinion, fall through to the source", which is not the same as Global.
+    """
+    from .models import VirtNetwork
+
+    out = {}
+    rows = VirtNetwork.objects.filter(source=source).select_related(
+        "vrf", "vswitch", "vswitch__vrf"
+    )
+    for n in rows:
+        vrf = n.vrf if n.vrf_id else (
+            n.vswitch.vrf if n.vswitch_id and n.vswitch.vrf_id else None
+        )
+        if vrf is not None:
+            out[n.ext_key] = vrf
+    return out
+
+
+def _attach_ips(source, guest, entries, *, prefixes=None, warnings=None,
+                net_vrfs=None) -> tuple[int, int]:
     """Attach discovered IPs to a VM's interfaces (matched by MAC).
 
     ``entries`` is a hypervisor-agnostic ``[{"mac": .., "ips": [str, ..]}]``.
     An IP is only recorded when a containing Prefix already exists — sync never
     invents address space — and only ever adopts an unassigned IPAM row.
+
+    Which VRF's prefixes count is decided most-specific-first: the NIC's own
+    ``VMInterface.vrf``, then the network/switch it attaches to (``net_vrfs``),
+    then the source's policy. Every one of those is operator-set — sync only
+    ever *reads* them.
+
+    ``prefixes`` is the tenant's prefix list, hoisted by the caller so it isn't
+    rebuilt per guest. Returns ``(attached, skipped)``; unplaceable addresses
+    are counted and explained in ``warnings`` rather than silently dropped.
     """
-    from api.models import IPAddress, Prefix, VMInterface
+    from api.models import IPAddress, VMInterface
 
     if guest.vm is None or not entries:
-        return 0
-    prefixes = []
-    for p in Prefix.objects.filter(tenant=source.tenant, vrf__isnull=True):
-        try:
-            prefixes.append((ipaddress.ip_network(p.cidr, strict=False), p))
-        except ValueError:
-            continue
-
-    def containing_prefix(addr):
-        best = None
-        for net, p in prefixes:
-            if addr in net and (best is None or net.prefixlen > best[0].prefixlen):
-                best = (net, p)
-        return best[1] if best else None
+        return 0, 0
+    if prefixes is None:
+        prefixes = vrf_placement.load_prefixes(source.tenant)
+    if warnings is None:
+        warnings = []
+    source_placement = vrf_placement.Placement.from_policy(source)
 
     by_mac = {
         (i.mac_address or "").lower(): i
@@ -719,10 +884,20 @@ def _attach_ips(source, guest, entries) -> int:
         if i.mac_address
     }
     n = 0
+    skipped = 0
     first_v4 = None
     for entry in entries:
         mac = (entry.get("mac") or "").lower()
         iface = by_mac.get(mac)
+        # Most specific statement wins. Each layer is a hard scope: naming a
+        # VRF that turns out to hold nothing skips the address rather than
+        # quietly filing it in Global.
+        placement = source_placement
+        net_vrf = (net_vrfs or {}).get(entry.get("net_key"))
+        if net_vrf is not None:
+            placement = vrf_placement.Placement(preferred=net_vrf)
+        if iface is not None and iface.vrf_id:
+            placement = vrf_placement.Placement(preferred=iface.vrf)
         for raw in entry.get("ips") or []:
             try:
                 addr = ipaddress.ip_address(raw)
@@ -730,17 +905,33 @@ def _attach_ips(source, guest, entries) -> int:
                 continue
             if addr.is_loopback or addr.is_link_local:
                 continue
-            row = IPAddress.objects.filter(
-                tenant=source.tenant, vrf__isnull=True, ip_address=str(addr)
-            ).first()
+            row, note = vrf_placement.existing_row(
+                source.tenant, str(addr), placement
+            )
+            if note:
+                warnings.append(f"{guest.vm.name}: {note}")
             if row is None:
-                prefix = containing_prefix(addr)
-                if prefix is None:
-                    continue  # no containing prefix — never invent address space
-                row = IPAddress.objects.create(
-                    tenant=source.tenant, ip_address=str(addr), prefix=prefix,
-                    description=f"Synced from «{source.name}»",
+                placed = vrf_placement.place(
+                    source.tenant, str(addr), placement, prefixes=prefixes
                 )
+                if not placed.ok:
+                    # Never invent address space — but say so, rather than
+                    # letting the address disappear without a trace.
+                    skipped += 1
+                    label = f"{guest.vm.name}/{iface.name}" if iface else guest.vm.name
+                    warnings.append(f"{label}: {placed.detail}")
+                    continue
+                try:
+                    row = IPAddress.objects.create(
+                        tenant=source.tenant, ip_address=str(addr),
+                        prefix=placed.prefix,
+                        description=f"Synced from «{source.name}»",
+                    )
+                except IntegrityError:
+                    # Same address already recorded in this VRF by a concurrent
+                    # pass — nothing to do, and nothing worth failing over.
+                    skipped += 1
+                    continue
             changed = []
             if row.assigned_vm_id is None and row.assigned_interface_id is None:
                 row.assigned_vm = guest.vm
@@ -759,7 +950,7 @@ def _attach_ips(source, guest, entries) -> int:
     if first_v4 is not None and guest.vm.primary_ip_id is None:
         guest.vm.primary_ip = first_v4
         guest.vm.save(update_fields=["primary_ip"])
-    return n
+    return n, skipped
 
 
 # ─── VMware vCenter (vSphere Automation REST) ────────────────────────────────
@@ -827,9 +1018,17 @@ def sync_vcenter(source) -> dict:
                 host_of[v.get("vm")] = hn
 
         now = timezone.now()
-        counts = {"nodes": len(hosts), "vms": 0, "vms_created": 0,
-                  "interfaces": 0, "ips": 0, "disks": 0, "networks": 0,
-                  "pending": 0}
+        counts = {"nodes": len(hosts), "vms": 0, "vms_created": 0, "hosts": 0,
+                  "interfaces": 0, "ips": 0, "ips_skipped": 0, "disks": 0,
+                  "networks": 0, "pending": 0}
+
+        # Hosts first, so the VM pass can link each guest to its ESXi Device.
+        if source.sync_hosts:
+            counts["hosts"] = _sync_hosts(source, cluster_name, [
+                {"name": h.get("name") or "",
+                 "online": h.get("connection_state") == "CONNECTED"}
+                for h in hosts
+            ])
 
         resources: list = []
         details: dict = {}
@@ -937,17 +1136,39 @@ def _sync_vcenter_interfaces(guest, nics) -> int:
     return n
 
 
-def _sync_vcenter_ips(source, guest, guest_nets) -> int:
-    """vCenter guest-tools IPs → the shared attach path (matched by MAC)."""
+def _sync_vcenter_ips(source, guest, guest_nets, *, nets=None, prefixes=None,
+                      warnings=None, net_vrfs=None) -> tuple[int, int]:
+    """vCenter guest-tools IPs → the shared attach path (matched by MAC).
+
+    ``nets`` is the NIC map the interface/network passes already fetched, so
+    the port-group each NIC sits on comes free — matching the ``ext_key``
+    ``_link_network`` builds.
+    """
+    net_key_by_mac = {}
+    for nic in (nets or {}).values():
+        nic = nic or {}
+        mac = (nic.get("mac_address") or "").lower()
+        backing = nic.get("backing") or {}
+        network = backing.get("network_name") or backing.get("network") or ""
+        if not mac or not network:
+            continue
+        tag = backing.get("vlan_id")
+        net_key_by_mac[mac] = (
+            f"{network}:{tag}" if isinstance(tag, int) else network
+        )
     entries = [
         {
             "mac": gn.get("mac_address") or "",
             "ips": [a.get("ip_address") or ""
                     for a in ((gn.get("ip") or {}).get("ip_addresses") or [])],
+            "net_key": net_key_by_mac.get(
+                (gn.get("mac_address") or "").lower()
+            ),
         }
         for gn in (guest_nets or [])
     ]
-    return _attach_ips(source, guest, entries)
+    return _attach_ips(source, guest, entries, prefixes=prefixes,
+                       warnings=warnings, net_vrfs=net_vrfs)
 
 
 def record_virt_failure(source, exc: Exception) -> None:

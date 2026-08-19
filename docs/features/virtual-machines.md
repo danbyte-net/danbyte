@@ -55,11 +55,16 @@ Two different questions, two different fields:
   own page lists the VMs it hosts.
 
 !!! tip "Host devices link themselves during a sync"
-    A sync sets *Host device* automatically whenever a Device already exists
-    whose **name matches** the host the hypervisor reports. It never creates
-    that Device for you — a physical machine needs a device type, role and
-    site, which are yours to decide. Create the hosts once with matching names
-    and every VM lands on the right one from then on.
+    A sync sets *Host device* automatically whenever a Device exists whose
+    **name matches** the host the hypervisor reports.
+
+    You can create those hosts yourself, or tick **Create hosts as devices** on
+    the [source](external-sync.md) and let the sync add each hypervisor node as
+    a Device — name, cluster and status, with a *Hypervisor* role created on
+    demand. It deliberately leaves **device type and site empty**: nothing the
+    hypervisor reports says what they are, and those are yours to decide. A
+    host you already model is matched case-insensitively and adopted, never
+    duplicated or restyled.
 
 ## Interfaces and IP addresses
 
@@ -87,6 +92,15 @@ that is what monitoring checks.
     **prefix containing it already exists** — the sync never invents address
     space, because nothing in the guest data says what the subnet is. Create
     the prefix, sync again, and the address attaches to its interface.
+
+    Which VRF it looks in is the source's **Address VRF**, overridden per NIC by
+    a VRF you set on the **VM interface** — sync reads that field and never
+    writes it. See [where synced addresses
+    land](external-sync.md#where-synced-addresses-land).
+
+    The sync result says how many addresses it couldn't place, so a missing
+    prefix shows up as *"2 addresses unplaced"* rather than as addresses that
+    quietly never appear.
 
     Guest addresses also depend on the in-guest agent (**VMware Tools** or the
     **QEMU guest agent**) and only appear for running VMs.

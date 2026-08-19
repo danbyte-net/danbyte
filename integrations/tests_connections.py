@@ -156,6 +156,52 @@ class ConnectionApiTests(APITestCase):
         }, format="json")
         self.assertEqual(res.status_code, 400)
 
+    # ─── Test-connection names the product it actually probed (#33) ──────
+
+    def _source(self, kind, host):
+        from integrations.models import VirtualizationSource
+
+        return VirtualizationSource.objects.create(
+            tenant=self.tenant, kind=kind, name=kind, host=host,
+            credentials={"token_id": "a@pam!t", "secret": "s",
+                         "username": "administrator@vsphere.local",
+                         "password": "s"},
+        )
+
+    def test_vcenter_probe_says_vcenter(self):
+        """It used to say "Proxmox VE" — the client named the product itself."""
+        self._login(self.admin)
+        self._enable(virtualization_enabled=True)
+        src = self._source("vcenter", "192.0.2.20")
+        client = mock.MagicMock()
+        client.get.side_effect = lambda p: (
+            [{"connection_state": "CONNECTED"}, {"connection_state": "CONNECTED"}]
+            if p == "vcenter/host" else [{"vm": "vm-1"}]
+        )
+        with mock.patch("integrations.virt_client.VCenterClient",
+                        return_value=client):
+            res = self.client.post(f"/api/virtualization-sources/{src.id}/test/")
+        self.assertEqual(res.status_code, 200, res.content)
+        body = res.json()
+        self.assertEqual(body["product"], "VMware vCenter")
+        self.assertEqual(body["online_nodes"], 2)
+        self.assertEqual(body["vms"], 1)  # was returned but dropped by the client
+
+    def test_proxmox_probe_says_proxmox(self):
+        self._login(self.admin)
+        self._enable(virtualization_enabled=True)
+        src = self._source("proxmox", "192.0.2.30")
+        with mock.patch(
+            "integrations.virt_client.proxmox_get",
+            side_effect=lambda s, p: ({"version": "8.2.2"} if p == "version"
+                                      else [{"status": "online"}]),
+        ):
+            res = self.client.post(f"/api/virtualization-sources/{src.id}/test/")
+        self.assertEqual(res.status_code, 200, res.content)
+        body = res.json()
+        self.assertEqual(body["product"], "Proxmox VE")
+        self.assertEqual(body["version"], "8.2.2")
+
     # ─── Tenant isolation ────────────────────────────────────────────────
 
     def test_other_tenants_connections_invisible(self):

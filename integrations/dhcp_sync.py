@@ -157,13 +157,24 @@ def _apply(conn, data: dict, now) -> dict:
 
     seen_scope_ids = set()
     scopes_by_id: dict[str, DhcpScope] = {}
+    warnings: list[str] = []
     for s in _as_list(data.get("scopes")):
         sid = s["scope_id"]
         seen_scope_ids.add(sid)
         counts["scopes"] += 1
-        prefix, created = _prefix_for_scope(conn, sid, s.get("mask"))
+        prefix, created = _prefix_for_scope(
+            conn, sid, s.get("mask"), vrf=conn.vrf
+        )
         if created:
             counts["prefixes_created"] += 1
+        if prefix is None and s.get("mask"):
+            # The CIDR exists in more than one VRF, so linking it would be a
+            # guess. Say which scope is affected — the scope still syncs, it
+            # just carries no prefix until an operator names the VRF.
+            warnings.append(
+                f"Scope {sid}/{s.get('mask')} matches prefixes in several VRFs "
+                f"— set this connection's VRF to choose one"
+            )
         scope, _ = DhcpScope.objects.update_or_create(
             connection=conn, scope_id=sid,
             defaults={
@@ -298,7 +309,9 @@ def _apply(conn, data: dict, now) -> dict:
     conn.last_sync_at = now
     conn.last_sync_status = "ok"
     conn.last_sync_error = ""
-    conn.save(update_fields=["last_sync_at", "last_sync_status", "last_sync_error"])
+    conn.record_warnings(warnings)
+    conn.save(update_fields=["last_sync_at", "last_sync_status",
+                             "last_sync_error", "last_sync_warnings"])
     return counts
 
 
@@ -306,9 +319,13 @@ def _prefix_for_scope(conn, scope_id: str, mask: str | None, *,
                       tenant=None, vrf=None, note: str | None = None):
     """Find or create the Prefix a scope maps to. Returns (prefix, created).
 
-    Sync passes just the connection (global VRF — Windows DHCP has no VRF
-    concept); the authoring API may pass an explicit tenant/VRF, and a note
-    for local scopes that have no connection to describe them.
+    Windows DHCP has no VRF concept, so the VRF is Danbyte's choice: sync takes
+    it from the connection's placement policy (Global unless configured), and
+    the authoring API passes an explicit tenant/VRF plus a note for local scopes
+    that have no connection to describe them.
+
+    This is the only place in the DHCP path that needs the policy — a scope's
+    reservations, leases and exclusions all follow ``scope.prefix.vrf``.
     """
     from api.models import Prefix
 
@@ -321,6 +338,17 @@ def _prefix_for_scope(conn, scope_id: str, mask: str | None, *,
     existing = Prefix.objects.filter(tenant=tenant, vrf=vrf, cidr=cidr).first()
     if existing:
         return existing, False
+    # Not in the VRF we asked for — but never invent address space that already
+    # exists elsewhere. An operator who moves a scope's prefix into a VRF would
+    # otherwise get a second prefix with the same CIDR minted here, and the
+    # scope silently re-pointed at the duplicate. One match elsewhere is
+    # unambiguous, so adopt it; several means we cannot choose, and a scope with
+    # no prefix is already a state the sync handles.
+    elsewhere = list(Prefix.objects.filter(tenant=tenant, cidr=cidr)[:2])
+    if len(elsewhere) == 1:
+        return elsewhere[0], False
+    if elsewhere:
+        return None, False
     return Prefix.objects.create(
         tenant=tenant, cidr=cidr, vrf=vrf,
         description=note if note is not None else _source_note(conn),
@@ -330,8 +358,11 @@ def _prefix_for_scope(conn, scope_id: str, mask: str | None, *,
 def _range_for_exclusion(conn, scope, start: str, end: str):
     from api.models import IPRange
 
+    # An exclusion belongs to the scope's prefix, so it shares that prefix's
+    # routing context — look it up and create it there, not in the Global VRF.
+    vrf_id = scope.prefix.vrf_id if scope.prefix_id else None
     existing = IPRange.objects.filter(
-        tenant=conn.tenant, vrf__isnull=True, start_address=start, end_address=end
+        tenant=conn.tenant, vrf_id=vrf_id, start_address=start, end_address=end
     ).first()
     if existing:
         return existing
@@ -346,12 +377,13 @@ def _adopt_ip(conn, scope, ip: str, mac: str, dns_name: str, note: str):
     """Find the tenant's row for ``ip`` or mint one; fill blanks only."""
     from api.models import IPAddress
 
-    # Local scopes (no connection) carry the tenant themselves and follow
-    # their prefix's VRF; synced scopes are connection-tenant + global VRF.
+    # Local scopes (no connection) carry the tenant themselves.
     tenant = conn.tenant if conn is not None else scope.tenant
-    vrf_id = None if conn is not None else (
-        scope.prefix.vrf_id if scope.prefix_id else None
-    )
+    # A scope's addresses live wherever its prefix lives — the same for synced
+    # and local scopes. IPAddress.save() derives this anyway; matching it here
+    # means the lookup finds the row it is about to create rather than missing
+    # it and minting a duplicate.
+    vrf_id = scope.prefix.vrf_id if scope.prefix_id else None
     row = IPAddress.objects.filter(
         tenant=tenant, vrf_id=vrf_id, ip_address=ip
     ).first()

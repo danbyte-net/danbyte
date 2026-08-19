@@ -26,6 +26,8 @@ import logging
 from django.db import transaction
 from django.utils import timezone
 
+from api import vrf_placement
+
 from .winrm_client import ps_str, run_json, run_ps
 
 logger = logging.getLogger("danbyte.dns_sync")
@@ -42,25 +44,15 @@ class DnsImportError(RuntimeError):
     """Raised when a record can't be imported into IPAM (no containing prefix)."""
 
 
-def containing_prefix(tenant, ip: str):
-    """The smallest global-VRF prefix that contains ``ip``, or None."""
-    import ipaddress as _ip
+def containing_prefix(tenant, ip: str, *, placement=None):
+    """The smallest prefix that contains ``ip``, or None.
 
-    from api.models import Prefix
-
-    try:
-        addr = _ip.ip_address(ip)
-    except ValueError:
-        return None
-    best = None
-    for p in Prefix.objects.filter(tenant=tenant, vrf__isnull=True):
-        try:
-            net = _ip.ip_network(p.cidr, strict=False)
-        except ValueError:
-            continue
-        if addr in net and (best is None or net.prefixlen > best[0].prefixlen):
-            best = (net, p)
-    return best[1] if best else None
+    Which VRF's prefixes are eligible is the connection's placement policy;
+    ``placement=None`` means the default — the Global VRF alone, which is what
+    this did before placement existed.
+    """
+    placement = placement or vrf_placement.Placement()
+    return vrf_placement.place(tenant, ip, placement).prefix
 
 
 def suggested_prefix_cidr(ip: str) -> str:
@@ -80,17 +72,19 @@ def import_record(record):
     """
     from api.models import IPAddress
 
-    tenant = record.zone.connection.tenant
-    row = IPAddress.objects.filter(
-        tenant=tenant, vrf__isnull=True, ip_address=record.ip
-    ).first()
+    conn = record.zone.connection
+    tenant = conn.tenant
+    placement = vrf_placement.Placement.from_policy(conn)
+    row, _note = vrf_placement.existing_row(tenant, record.ip, placement)
     if row is None:
-        prefix = containing_prefix(tenant, record.ip)
-        if prefix is None:
+        placed = vrf_placement.place(tenant, record.ip, placement)
+        if not placed.ok:
+            where = vrf_placement.vrf_label(placement.preferred)
             raise DnsImportError(
-                f"No prefix contains {record.ip} — create the prefix first, "
-                "then import."
+                f"No prefix contains {record.ip} in {where} — create the "
+                "prefix first, then import."
             )
+        prefix = placed.prefix
         dns_name = record.name if record.record_type in ("A", "AAAA") else ""
         row = IPAddress.objects.create(
             tenant=tenant, ip_address=record.ip, prefix=prefix,
@@ -257,10 +251,11 @@ def _reconcile(conn, synced_zones, data, now, counts) -> None:
             zone.record_count = int(c.get("n") or 0)
             zone.save(update_fields=["record_count"])
 
+    placement = vrf_placement.Placement.from_policy(conn)
+
     def ip_row(ip: str):
-        return IPAddress.objects.filter(
-            tenant=conn.tenant, vrf__isnull=True, ip_address=ip
-        ).first()
+        row, _note = vrf_placement.existing_row(conn.tenant, ip, placement)
+        return row
 
     fresh: set = set()  # (zone_id, ip, rtype) drift keys seen this pass
     fresh_records: set = set()  # (zone_id, name, rtype, data) stored this pass
@@ -299,7 +294,7 @@ def _reconcile(conn, synced_zones, data, now, counts) -> None:
         # Opt-in auto-create: mint the IP for an untracked address when the zone
         # asks for it and a prefix contains it (else leave it unlinked).
         if linked is None and zone.auto_create:
-            prefix = containing_prefix(conn.tenant, ip)
+            prefix = containing_prefix(conn.tenant, ip, placement=placement)
             if prefix is not None:
                 from api.models import IPAddress
 
@@ -345,11 +340,14 @@ def _reconcile(conn, synced_zones, data, now, counts) -> None:
         if zone.is_reverse:
             continue
         suffix = "." + zone.name.lower()
-        candidates = IPAddress.objects.filter(
-            tenant=conn.tenant, vrf__isnull=True, dns_name__iendswith=suffix
-        ) | IPAddress.objects.filter(
-            tenant=conn.tenant, vrf__isnull=True, dns_name__iexact=zone.name
-        )
+        scoped = IPAddress.objects.filter(tenant=conn.tenant)
+        # Only addresses this connection is responsible for can be "missing" a
+        # record here — one in another VRF is another routing domain's business.
+        if not placement.allow_other_vrfs:
+            scoped = scoped.filter(vrf=placement.preferred)
+        candidates = scoped.filter(
+            dns_name__iendswith=suffix
+        ) | scoped.filter(dns_name__iexact=zone.name)
         for row in candidates:
             if row.ip_address in recorded.get(zone.name, set()):
                 continue

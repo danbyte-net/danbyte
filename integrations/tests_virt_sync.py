@@ -219,6 +219,30 @@ class ProxmoxSyncTests(TestCase):
         counts = self.sync()
         self.assertEqual(counts["ips"], 0)
         self.assertEqual(IPAddress.objects.count(), 0)
+        # Dropping the address is by design; doing it silently was not.
+        self.assertEqual(counts["ips_skipped"], 1)
+
+    def test_prefix_in_a_vrf_makes_the_address_unplaced(self):
+        """Today's behaviour, now visible: the sync only searches the Global VRF.
+
+        Moving a prefix into a VRF therefore hides it, and the guest address is
+        dropped rather than mis-filed. The count is what tells the operator.
+        """
+        from api.models import VRF
+
+        vrf = VRF.objects.create(tenant=self.tenant, name="prod")
+        Prefix.objects.all().update(vrf=vrf)
+
+        counts = self.sync()
+
+        self.assertEqual(counts["ips"], 0)
+        self.assertEqual(counts["ips_skipped"], 1)
+        self.assertEqual(IPAddress.objects.count(), 0)
+
+    def test_placed_addresses_are_not_counted_as_skipped(self):
+        counts = self.sync()
+        self.assertEqual(counts["ips"], 1)
+        self.assertEqual(counts["ips_skipped"], 0)
 
     def test_disks_synced_cdrom_ignored(self):
         counts = self.sync()
@@ -694,3 +718,448 @@ class VirtChangeApiTests(TestCase):
         # No `add` grant (and create() 405s anyway) — either way it's refused.
         res = self.client.post("/api/virt-changes/", {}, format="json")
         self.assertIn(res.status_code, (403, 405))
+
+
+class AddressPlacementTests(TestCase):
+    """Which VRF's prefixes a synced address may land in.
+
+    The default (pinned + no VRF = Global) is exactly what shipped before
+    placement existed, so the tests above must keep passing untouched. These
+    cover what an operator can now choose instead.
+    """
+
+    def setUp(self):
+        from api.models import VRF
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="pve", host="192.0.2.30",
+            credentials={"token_id": "a@pam!t", "secret": "s"},
+            sync_mode="auto",
+        )
+        self.prod = VRF.objects.create(tenant=self.tenant, name="prod")
+        self.dr = VRF.objects.create(tenant=self.tenant, name="dr")
+
+    def sync(self):
+        with mock.patch.object(virt_sync, "proxmox_get", side_effect=fake_get):
+            return virt_sync.sync_proxmox(self.source)
+
+    def _prefix(self, cidr="10.77.0.0/24", vrf=None):
+        return Prefix.objects.create(tenant=self.tenant, cidr=cidr, vrf=vrf)
+
+    def _pin(self, vrf, *, search=False):
+        self.source.vrf = vrf
+        self.source.vrf_mode = "search" if search else "pinned"
+        self.source.save(update_fields=["vrf", "vrf_mode"])
+
+    # ── pinned ───────────────────────────────────────────────────────────
+    def test_pinned_to_a_vrf_places_the_address_there(self):
+        self._prefix(vrf=self.prod)
+        self._pin(self.prod)
+        counts = self.sync()
+        self.assertEqual(counts["ips"], 1)
+        self.assertEqual(counts["ips_skipped"], 0)
+        self.assertEqual(
+            IPAddress.objects.get(ip_address="10.77.0.30").vrf_id, self.prod.id
+        )
+
+    def test_a_pin_is_a_hard_scope_not_a_preference(self):
+        """Pinned to a VRF with no matching prefix must skip, not fall back.
+
+        A Global prefix exists and would fit — using it anyway would file the
+        address in a routing domain the operator explicitly didn't name.
+        """
+        self._prefix()  # Global
+        self._pin(self.dr)  # …but the source says dr
+        counts = self.sync()
+        self.assertEqual(counts["ips"], 0)
+        self.assertEqual(counts["ips_skipped"], 1)
+        self.assertEqual(IPAddress.objects.count(), 0)
+
+    # ── search ───────────────────────────────────────────────────────────
+    def test_search_finds_a_prefix_outside_the_preferred_vrf(self):
+        self._prefix(vrf=self.prod)
+        self._pin(None, search=True)  # prefer Global, allowed to look further
+        counts = self.sync()
+        self.assertEqual(counts["ips"], 1)
+        self.assertEqual(
+            IPAddress.objects.get(ip_address="10.77.0.30").vrf_id, self.prod.id
+        )
+
+    def test_search_is_additive_and_never_relocates(self):
+        """Preference beats specificity, deliberately.
+
+        A plain longest-match across all VRFs would move an address that sits
+        happily in a Global /8 today into a /24 in some other VRF — a silent
+        data change on upgrade. The preferred VRF is always tried first.
+        """
+        self._prefix("10.0.0.0/8")            # Global, less specific
+        self._prefix("10.77.0.0/24", self.prod)  # prod, more specific
+        self._pin(None, search=True)
+        self.sync()
+        self.assertIsNone(
+            IPAddress.objects.get(ip_address="10.77.0.30").vrf_id,
+            "search relocated an address that already placed in Global",
+        )
+
+    def test_search_skips_rather_than_guessing_between_vrfs(self):
+        self._prefix("10.77.0.0/24", self.prod)
+        self._prefix("10.77.0.0/24", self.dr)
+        self._pin(None, search=True)  # nothing in Global to prefer
+        counts = self.sync()
+        self.assertEqual(counts["ips"], 0)
+        self.assertEqual(counts["ips_skipped"], 1)
+        self.source.refresh_from_db()
+        warning = " ".join(self.source.last_sync_warnings)
+        self.assertIn("prod", warning)
+        self.assertIn("dr", warning)
+
+    # ── the interface override ───────────────────────────────────────────
+    def test_interface_vrf_overrides_the_source_policy(self):
+        self._prefix(vrf=self.prod)
+        self._prefix("10.99.0.0/24", self.dr)  # so dr isn't simply empty
+        self._pin(self.dr)  # source says dr…
+        self.sync()  # first pass creates the interface
+        iface = VMInterface.objects.get(mac_address="aa:bb:cc:00:11:22")
+        iface.vrf = self.prod  # …the operator says prod for this NIC
+        iface.save(update_fields=["vrf"])
+
+        counts = self.sync()
+
+        self.assertEqual(counts["ips"], 1)
+        self.assertEqual(
+            IPAddress.objects.get(ip_address="10.77.0.30").vrf_id, self.prod.id
+        )
+
+    def test_sync_never_writes_the_interface_vrf(self):
+        """Layer 1 is the operator's field — reading it is the whole contract."""
+        self._prefix(vrf=self.prod)
+        self._pin(self.prod)
+        self.sync()
+        iface = VMInterface.objects.get(mac_address="aa:bb:cc:00:11:22")
+        self.assertIsNone(iface.vrf_id)
+
+    # ── diagnostics ──────────────────────────────────────────────────────
+    def test_unplaceable_addresses_are_explained_on_the_source(self):
+        self._pin(self.prod)  # no prefix anywhere
+        self.sync()
+        self.source.refresh_from_db()
+        self.assertTrue(self.source.last_sync_warnings)
+        self.assertIn("prod", " ".join(self.source.last_sync_warnings))
+
+    def test_a_clean_run_clears_stale_warnings(self):
+        self._pin(self.prod)
+        self.sync()
+        self.assertTrue(self.source.__class__.objects.get(
+            pk=self.source.pk).last_sync_warnings)
+        self._prefix(vrf=self.prod)
+        self.sync()
+        self.source.refresh_from_db()
+        self.assertEqual(self.source.last_sync_warnings, [])
+
+
+class NetworkPlacementTests(TestCase):
+    """The vSwitch / port-group layers — "on this switch it's this VRF".
+
+    A vSwitch trunks many VLANs, so both levels exist: the switch is the
+    default, a network on it overrides. Both are read live at sync time, so
+    changing one takes effect on the next pass with nothing to backfill.
+    """
+
+    def setUp(self):
+        from api.models import VRF
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="pve", host="192.0.2.30",
+            credentials={"token_id": "a@pam!t", "secret": "s"},
+            sync_mode="auto", sync_networks=True,
+        )
+        self.prod = VRF.objects.create(tenant=self.tenant, name="prod")
+        self.dmz = VRF.objects.create(tenant=self.tenant, name="dmz")
+        self.dr = VRF.objects.create(tenant=self.tenant, name="dr")
+
+    def sync(self):
+        with mock.patch.object(virt_sync, "proxmox_get", side_effect=fake_get):
+            return virt_sync.sync_proxmox(self.source)
+
+    def _prefix(self, vrf=None, cidr="10.77.0.0/24"):
+        return Prefix.objects.create(tenant=self.tenant, cidr=cidr, vrf=vrf)
+
+    def _discover(self):
+        """First pass: materialise the switch/network rows so they can be set."""
+        self.sync()
+        from integrations.models import VirtNetwork
+
+        # The fixture NIC is on vmbr0 tag 10 → ext_key "vmbr0:10".
+        return VirtNetwork.objects.get(source=self.source, ext_key="vmbr0:10")
+
+    def test_switch_vrf_places_the_address(self):
+        self._prefix(self.prod)
+        net = self._discover()
+        sw = net.vswitch
+        sw.vrf = self.prod
+        sw.save(update_fields=["vrf"])
+
+        counts = self.sync()
+
+        self.assertEqual(counts["ips"], 1)
+        self.assertEqual(
+            IPAddress.objects.get(ip_address="10.77.0.30").vrf_id, self.prod.id
+        )
+
+    def test_network_vrf_overrides_its_switch(self):
+        self._prefix(self.dmz)
+        self._prefix(self.prod, cidr="10.90.0.0/24")  # so prod isn't just empty
+        net = self._discover()
+        net.vswitch.vrf = self.prod  # switch-wide default…
+        net.vswitch.save(update_fields=["vrf"])
+        net.vrf = self.dmz  # …overridden for this port-group
+        net.save(update_fields=["vrf"])
+
+        counts = self.sync()
+
+        self.assertEqual(counts["ips"], 1)
+        self.assertEqual(
+            IPAddress.objects.get(ip_address="10.77.0.30").vrf_id, self.dmz.id
+        )
+
+    def test_interface_vrf_beats_the_network(self):
+        self._prefix(self.prod)
+        self._prefix(self.dmz, cidr="10.90.0.0/24")
+        net = self._discover()
+        net.vrf = self.dmz
+        net.save(update_fields=["vrf"])
+        iface = VMInterface.objects.get(mac_address="aa:bb:cc:00:11:22")
+        iface.vrf = self.prod
+        iface.save(update_fields=["vrf"])
+
+        self.sync()
+
+        self.assertEqual(
+            IPAddress.objects.get(ip_address="10.77.0.30").vrf_id, self.prod.id
+        )
+
+    def test_network_without_a_vrf_falls_through_to_the_source(self):
+        """Empty means "no opinion", which is not the same as Global."""
+        self._prefix(self.dr)
+        self.source.vrf = self.dr
+        self.source.save(update_fields=["vrf"])
+        net = self._discover()
+        self.assertIsNone(net.vrf_id)
+        self.assertIsNone(net.vswitch.vrf_id)
+
+        counts = self.sync()
+
+        self.assertEqual(counts["ips"], 1)
+        self.assertEqual(
+            IPAddress.objects.get(ip_address="10.77.0.30").vrf_id, self.dr.id
+        )
+
+    def test_layer_is_inert_when_networks_are_not_synced(self):
+        self.source.sync_networks = False
+        self.source.save(update_fields=["sync_networks"])
+        self._prefix()  # Global
+        counts = self.sync()
+        self.assertEqual(counts["ips"], 1)
+        self.assertIsNone(
+            IPAddress.objects.get(ip_address="10.77.0.30").vrf_id
+        )
+
+
+class VirtNetworkVrfApiTests(TestCase):
+    """The port-group VRF is the one writable field on an otherwise mirrored row."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+
+        from api.models import VRF
+        from integrations.models import IntegrationSettings, VirtNetwork
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        IntegrationSettings.objects.create(
+            tenant=self.tenant, virtualization_enabled=True
+        )
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="pve", host="192.0.2.30",
+            credentials={"token_id": "a@pam!t", "secret": "s"},
+        )
+        self.sw = VirtualSwitch.objects.create(tenant=self.tenant, name="vmbr0")
+        self.net = VirtNetwork.objects.create(
+            source=self.source, ext_key="vmbr0:10", name="DMZ", vswitch=self.sw
+        )
+        self.vrf = VRF.objects.create(tenant=self.tenant, name="dmz")
+        user = get_user_model().objects.create_superuser("admin", "a@b.c", "pw")
+        self.client.force_login(user)
+        sess = self.client.session
+        sess["current_tenant_id"] = str(self.tenant.id)
+        sess.save()
+
+    def test_patching_the_vrf(self):
+        r = self.client.patch(
+            f"/api/virt-networks/{self.net.id}/",
+            {"vrf_id": str(self.vrf.id)}, content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.net.refresh_from_db()
+        self.assertEqual(self.net.vrf_id, self.vrf.id)
+        self.assertEqual(r.json()["vrf"], {
+            "id": str(self.vrf.id), "name": "dmz", "inherited": False,
+        })
+
+    def test_an_unset_network_reports_the_switchs_vrf_as_inherited(self):
+        self.sw.vrf = self.vrf
+        self.sw.save(update_fields=["vrf"])
+        r = self.client.get(f"/api/virt-networks/?vswitch={self.sw.id}")
+        row = r.json()["results"][0]
+        self.assertEqual(row["vrf"]["name"], "dmz")
+        self.assertTrue(row["vrf"]["inherited"])
+        # vrf_id is write-only; `inherited` is what tells a reader the value
+        # came from the switch rather than from this network.
+        self.assertNotIn("vrf_id", row)
+
+    def test_mirrored_fields_stay_read_only(self):
+        r = self.client.patch(
+            f"/api/virt-networks/{self.net.id}/",
+            {"name": "renamed", "ext_key": "hacked"},
+            content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.net.refresh_from_db()
+        self.assertEqual(self.net.name, "DMZ")
+        self.assertEqual(self.net.ext_key, "vmbr0:10")
+
+    def test_a_foreign_tenants_vrf_is_refused(self):
+        from api.models import VRF
+
+        other_org = Organization.objects.create(name="X", slug="x")
+        other = Tenant.objects.create(org=other_org, name="X", slug="x")
+        foreign = VRF.objects.create(tenant=other, name="theirs")
+        r = self.client.patch(
+            f"/api/virt-networks/{self.net.id}/",
+            {"vrf_id": str(foreign.id)}, content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.net.refresh_from_db()
+        self.assertIsNone(self.net.vrf_id)
+
+
+class HostDeviceTests(TestCase):
+    """Opt-in: the hypervisor's own nodes become Devices (#34).
+
+    Off by default because this writes into the *physical* inventory, which is
+    the operator's territory. On, it fills only what the hypervisor actually
+    reports and leaves the judgement calls — device type, site — alone.
+    """
+
+    def setUp(self):
+        from api.status_registry import seed_builtin_statuses
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        seed_builtin_statuses(self.tenant)
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="pve", host="192.0.2.30",
+            credentials={"token_id": "a@pam!t", "secret": "s"},
+            sync_mode="auto",
+        )
+        Prefix.objects.create(tenant=self.tenant, cidr="10.77.0.0/24")
+
+    def sync(self):
+        with mock.patch.object(virt_sync, "proxmox_get", side_effect=fake_get):
+            return virt_sync.sync_proxmox(self.source)
+
+    def _enable(self):
+        self.source.sync_hosts = True
+        self.source.save(update_fields=["sync_hosts"])
+
+    def test_off_by_default_creates_no_devices(self):
+        counts = self.sync()
+        self.assertEqual(Device.objects.count(), 0)
+        self.assertEqual(counts["hosts"], 0)
+
+    def test_nodes_become_devices(self):
+        self._enable()
+        counts = self.sync()
+        self.assertEqual(counts["hosts"], 2)
+        names = set(Device.objects.values_list("name", flat=True))
+        self.assertEqual(names, {"pve1", "pve2"})
+        dev = Device.objects.get(name="pve1")
+        self.assertEqual(dev.role.name, "Hypervisor")
+        self.assertEqual(dev.cluster.name, "DB-CLUSTER01")
+        self.assertIsNotNone(dev.status)
+
+    def test_type_and_site_are_left_to_the_operator(self):
+        """Nothing on the wire says what they are, so nothing is invented."""
+        self._enable()
+        self.sync()
+        dev = Device.objects.get(name="pve1")
+        self.assertIsNone(dev.device_type_id)
+        self.assertIsNone(dev.site_id)
+
+    def test_idempotent(self):
+        self._enable()
+        self.sync()
+        counts = self.sync()
+        self.assertEqual(Device.objects.count(), 2)
+        self.assertEqual(counts["hosts"], 0)  # nothing new the second time
+        self.assertEqual(DeviceRole.objects.filter(name="Hypervisor").count(), 1)
+
+    def test_an_existing_host_is_matched_case_insensitively(self):
+        """The uniqueness constraint is case-sensitive but the lookup isn't.
+
+        Matching any other way would mint "pve1" beside the operator's "PVE1".
+        """
+        mine = Device.objects.create(
+            tenant=self.tenant, name="PVE1", description="mine"
+        )
+        self._enable()
+        counts = self.sync()
+        self.assertEqual(counts["hosts"], 1)  # only pve2 was new
+        self.assertEqual(Device.objects.filter(name__iexact="pve1").count(), 1)
+        mine.refresh_from_db()
+        self.assertEqual(mine.description, "mine")  # never restyled
+        self.assertEqual(mine.cluster.name, "DB-CLUSTER01")  # blank-filled
+
+    def test_vms_link_to_their_host(self):
+        """The payoff: no hand-created Devices needed for host linkage."""
+        self._enable()
+        self.sync()
+        vm = VirtualMachine.objects.get(name="router-vm")
+        self.assertEqual(vm.device.name, "pve1")
+
+    def test_bridge_uplinks_find_the_created_hosts_nics(self):
+        """The bigger payoff — uplink auto-sync used to bail with no Device."""
+        from api.models import Interface
+
+        self._enable()
+        self.source.sync_networks = True
+        self.source.save(update_fields=["sync_networks"])
+        self.sync()  # creates pve1 as a Device
+
+        # Model the node's real NICs, as an operator would (or an SNMP sync).
+        dev = Device.objects.get(name="pve1")
+        for nic in ("eno1", "eno2"):
+            Interface.objects.create(device=dev, name=nic)
+
+        counts = self.sync()
+
+        self.assertEqual(counts["uplinks"], 2)
+        sw = VirtualSwitch.objects.get(name="vmbr0")
+        self.assertEqual(
+            set(sw.uplink_interfaces.values_list("name", flat=True)),
+            {"eno1", "eno2"},
+        )
+
+    def test_an_existing_role_holding_the_slug_is_reused(self):
+        """(tenant, slug) is unique — creating past it would 500 the sync."""
+        mine = DeviceRole.objects.create(
+            tenant=self.tenant, name="HV", slug="hypervisor"
+        )
+        self._enable()
+        self.sync()
+        self.assertEqual(DeviceRole.objects.count(), 1)
+        self.assertEqual(Device.objects.get(name="pve1").role_id, mine.id)

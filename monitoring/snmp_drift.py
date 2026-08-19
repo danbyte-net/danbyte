@@ -16,6 +16,7 @@ import ipaddress as ipmod
 from django.db import IntegrityError
 
 from api.models import Interface, IPAddress, MACAddress, Prefix, VLAN
+from api.vrf_placement import ANY_VRF, containing_prefix
 
 from .models import DeviceSnmp, MonitoringSettings
 
@@ -766,30 +767,7 @@ def _attach_observed_ip(tenant, iface, ip: str) -> str:
     return "created"
 
 
-_ANY_VRF = object()
-
-
-def _containing_prefix(tenant, ip: str, vrf=_ANY_VRF):
-    """Smallest tenant prefix that contains ``ip`` (or ``None``). When ``vrf`` is
-    given (an interface's VRF, possibly None = Global), the search is scoped to
-    that VRF — so an IP lands in the prefix of the right routing context and
-    overlapping IPs across VRFs don't collide."""
-    import ipaddress as ipmod
-
-    try:
-        addr = ipmod.ip_address(ip)
-    except ValueError:
-        return None
-    qs = Prefix.objects.filter(tenant=tenant)
-    if vrf is not _ANY_VRF:
-        qs = qs.filter(vrf=vrf)
-    best = None
-    best_len = -1
-    for p in qs:
-        try:
-            net = ipmod.ip_network(p.cidr, strict=False)
-        except ValueError:
-            continue
-        if addr in net and net.prefixlen > best_len:
-            best, best_len = p, net.prefixlen
-    return best
+# Prefix placement is shared with the sync engines — see api.vrf_placement.
+# These aliases keep this module's call sites reading the same as before.
+_ANY_VRF = ANY_VRF
+_containing_prefix = containing_prefix

@@ -155,6 +155,47 @@ class DhcpSyncTests(TestCase):
         self.assertEqual(IPRange.objects.count(), 0)
         self.assertEqual(DhcpExclusion.objects.count(), 0)
 
+    def test_scope_prefix_moved_into_a_vrf_is_adopted_not_duplicated(self):
+        """Moving a scope's prefix into a VRF must not mint a Global twin.
+
+        The sync looks up the scope's prefix in the Global VRF. When an operator
+        moves it into a real VRF that lookup misses, and the sync used to create
+        a second prefix with the same CIDR and re-point the scope at it —
+        inventing address space it had been told not to invent.
+        """
+        from api.models import VRF
+
+        self.sync(payload())
+        prefix = Prefix.objects.get(cidr="10.77.0.0/24")
+        vrf = VRF.objects.create(tenant=self.tenant, name="prod")
+        prefix.vrf = vrf
+        prefix.save(update_fields=["vrf"])
+
+        counts = self.sync(payload())
+
+        self.assertEqual(Prefix.objects.count(), 1, "a duplicate prefix was minted")
+        self.assertEqual(counts["prefixes_created"], 0)
+        scope = DhcpScope.objects.get()
+        self.assertEqual(scope.prefix_id, prefix.id)
+        # …and everything hanging off the scope follows the prefix's VRF.
+        self.assertEqual(IPAddress.objects.get(ip_address="10.77.0.60").vrf_id, vrf.id)
+        self.assertEqual(IPRange.objects.get().vrf_id, vrf.id)
+
+    def test_exclusion_range_takes_its_prefixs_vrf(self):
+        """IPRange.vrf is denormalised from the prefix — including via the ORM.
+
+        Only the serializer used to apply that rule, so exclusion ranges the
+        sync creates directly sat in the Global VRF under a VRF'd prefix.
+        """
+        from api.models import VRF
+
+        vrf = VRF.objects.create(tenant=self.tenant, name="prod")
+        Prefix.objects.create(tenant=self.tenant, cidr="10.77.0.0/24", vrf=vrf)
+        self.sync(payload())
+        rng = IPRange.objects.get(start_address="10.77.0.100")
+        self.assertEqual(rng.vrf_id, vrf.id)
+        self.assertEqual(rng.vrf_id, rng.prefix.vrf_id)
+
     def test_removed_scope_keeps_prefix(self):
         self.sync(payload())
         self.sync({"scopes": [], "exclusions": [], "reservations": [],

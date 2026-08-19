@@ -15,7 +15,10 @@ under **Integrations → Virtualization sources**; see
 - **Host** — the vCenter Server FQDN or IP. Default API port `443`.
 - **Auth** — an **SSO username and password** (a read-only role is enough for
   inventory sync). Credentials are encrypted at rest and write-only.
-- **Test connection** reports the reachable host count.
+- **Address VRF** — the routing context guest addresses land in; see [where
+  synced addresses land](external-sync.md#where-synced-addresses-land).
+- **Test connection** reports the reachable host and VM counts. vSphere's REST
+  list endpoints carry no version string, so no version is shown.
 
 ## What syncs in
 
@@ -33,9 +36,9 @@ under **Integrations → Virtualization sources**; see
 
 Guest identity uses the VM **MoRef**, whose numeric part is the stable id.
 
-## Disks, virtual switches and networks (opt-in)
+## Disks, switches, networks and hosts (opt-in)
 
-Two per-source switches widen what a source imports:
+Per-source switches widen what a source imports:
 
 - **Sync disks** (on by default) — each VM's virtual disks become **Virtual
   disk** rows (shown on the VM's Overview): name, size, datastore, and
@@ -45,6 +48,12 @@ Two per-source switches widen what a source imports:
   port-group becomes a **VLAN** in a VLAN group named after the source. A VM
   interface's access VLAN is **blank-filled** from the port-group tag (never
   overwriting a VLAN you set).
+- **Create hosts as devices** (off by default) — each ESXi host becomes
+  a **Device**: name, cluster and status, with a *Hypervisor* role created on
+  demand. Device type and site are left empty — nothing on the wire says what
+  they are. A host you already model is matched **case-insensitively** and
+  adopted, never duplicated. This is what lets VMs link to their host, and
+  what gives bridge uplinks a Device to hang NICs off.
 
 Once networks are synced, each **virtual switch** page has a **Networks** tab
 and **Virtualization → Network topology** draws the whole picture — switches,
@@ -89,7 +98,10 @@ Rules:
   disappears.
 - Guest IPs come from **VMware Tools**, so they only appear for running VMs
   with Tools present. An IP is only created when a **containing prefix**
-  already exists — sync never invents address space. The first private IPv4
+  already exists — sync never invents address space. Which VRF's prefixes count
+  is the source's **Address VRF**; addresses it can't place are reported as
+  *unplaced* and listed on the Last sync badge. See [where synced addresses
+  land](external-sync.md#where-synced-addresses-land). The first private IPv4
   becomes the VM's primary IP (if it had none).
 - VM templates are skipped; the sync is read-only — Danbyte never changes the
   hypervisor.

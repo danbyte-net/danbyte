@@ -13,11 +13,36 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from api.models import VRF
+from api.serializers import TenantScopedPrimaryKeyRelatedField
 from api.viewsets import TenantScopedViewSet
 from auth_api.permissions import can_manage_admin
 
 from .models import IntegrationSettings, VirtualizationSource, WindowsServerConnection
 from .toggles import IntegrationToggleMixin
+
+
+class AddressPlacementSerializerMixin(serializers.Serializer):
+    """Read/write the VRF a connection's discovered addresses land in.
+
+    ``vrf_id`` goes through :class:`TenantScopedPrimaryKeyRelatedField` so a
+    foreign tenant's VRF fails validation rather than being accepted; ``vrf``
+    reads back as a mini object, and ``vrf_name`` renders NULL as *Global*
+    since that is a real routing context, not a blank.
+    """
+
+    PLACEMENT_FIELDS = ["vrf_mode", "vrf_id", "vrf_name", "last_sync_warnings"]
+    PLACEMENT_READ_ONLY = ["vrf_name", "last_sync_warnings"]
+
+    vrf_id = TenantScopedPrimaryKeyRelatedField(
+        source="vrf", queryset=VRF.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    vrf_name = serializers.SerializerMethodField()
+
+    def get_vrf_name(self, obj) -> str:
+        return obj.vrf.name if obj.vrf_id else "Global"
+
 
 # ─── Settings → Integrations toggles ─────────────────────────────────────────
 
@@ -63,7 +88,9 @@ def integration_settings(request):
 # ─── Windows server connections (WinRM) ──────────────────────────────────────
 
 
-class WindowsServerConnectionSerializer(serializers.ModelSerializer):
+class WindowsServerConnectionSerializer(
+    AddressPlacementSerializerMixin, serializers.ModelSerializer
+):
     password = serializers.CharField(
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
@@ -86,11 +113,13 @@ class WindowsServerConnectionSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "host", "port", "use_tls", "verify_ssl",
                   "auth_mode", "username", "password", "password_set",
                   "dhcp_enabled", "dns_enabled", "poll_interval_minutes",
+                  *AddressPlacementSerializerMixin.PLACEMENT_FIELDS,
                   "enabled", "last_sync_at", "last_sync_status",
                   "last_sync_error", "created_at", "updated_at"]
         read_only_fields = ["id", "password_set", "last_sync_at",
                             "last_sync_status", "last_sync_error",
-                            "created_at", "updated_at"]
+                            "created_at", "updated_at",
+                            *AddressPlacementSerializerMixin.PLACEMENT_READ_ONLY]
 
 
 class WindowsServerConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
@@ -146,7 +175,9 @@ class WindowsServerConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet
 # ─── Virtualization sources ──────────────────────────────────────────────────
 
 
-class VirtualizationSourceSerializer(serializers.ModelSerializer):
+class VirtualizationSourceSerializer(
+    AddressPlacementSerializerMixin, serializers.ModelSerializer
+):
     # Proxmox credentials: API token id + secret.
     token_id = serializers.CharField(write_only=True, required=False, allow_blank=True)
     secret = serializers.CharField(
@@ -212,12 +243,14 @@ class VirtualizationSourceSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "kind", "kind_display", "host", "port",
                   "verify_ssl", "token_id", "secret", "username", "password",
                   "credentials_set", "sync_mode", "poll_interval_minutes",
-                  "sync_disks", "sync_networks",
+                  "sync_disks", "sync_networks", "sync_hosts",
+                  *AddressPlacementSerializerMixin.PLACEMENT_FIELDS,
                   "enabled", "pending_count", "last_sync_at", "last_sync_status",
                   "last_sync_error", "created_at", "updated_at"]
         read_only_fields = ["id", "kind_display", "credentials_set",
                             "pending_count", "last_sync_at", "last_sync_status",
-                            "last_sync_error", "created_at", "updated_at"]
+                            "last_sync_error", "created_at", "updated_at",
+                            *AddressPlacementSerializerMixin.PLACEMENT_READ_ONLY]
 
 
 class VirtualizationSourceViewSet(IntegrationToggleMixin, TenantScopedViewSet):
@@ -251,6 +284,10 @@ class VirtualizationSourceViewSet(IntegrationToggleMixin, TenantScopedViewSet):
                 client.close()
             return Response({
                 "ok": True,
+                # The client can't name the product from the source alone, and
+                # guessing it there is how a vCenter probe came to report
+                # "Proxmox VE". vSphere's REST list endpoints carry no version.
+                "product": "VMware vCenter",
                 "version": "",
                 "nodes": len(hosts),
                 "online_nodes": sum(
@@ -265,6 +302,7 @@ class VirtualizationSourceViewSet(IntegrationToggleMixin, TenantScopedViewSet):
             return Response({"ok": False, "error": str(exc)}, status=502)
         return Response({
             "ok": True,
+            "product": "Proxmox VE",
             "version": version.get("version", ""),
             "nodes": len(nodes),
             "online_nodes": sum(1 for n in nodes if n.get("status") == "online"),

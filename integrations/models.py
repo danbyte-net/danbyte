@@ -10,6 +10,7 @@ import uuid
 
 from django.db import models
 
+from api.vrf_placement import PINNED, VRF_MODE_CHOICES
 from core.models import TimestampedModel
 from monitoring.secrets import EncryptedJSONField
 
@@ -351,7 +352,58 @@ class IntegrationSettings(TimestampedModel):
         return f"Integration settings · {self.tenant_id}"
 
 
-class WindowsServerConnection(TimestampedModel):
+class AddressPlacementMixin(models.Model):
+    """Where the addresses a connection discovers are allowed to land.
+
+    A sync records an address only when a containing prefix already exists, and
+    it used to look for that prefix in the Global VRF alone — so a prefix moved
+    into a VRF made its addresses vanish from sync entirely. These two fields
+    say which VRF to look in; ``api.vrf_placement`` does the looking.
+
+    The default (``pinned`` + no VRF = Global) is exactly the behaviour that
+    shipped before, so an upgrade changes nothing until an operator chooses.
+    """
+
+    class Meta:
+        abstract = True
+
+    vrf_mode = models.CharField(
+        max_length=8, choices=VRF_MODE_CHOICES, default=PINNED,
+        help_text="Whether to look outside the chosen VRF when nothing there "
+                  "contains a discovered address.",
+    )
+    vrf = models.ForeignKey(
+        "api.VRF",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="Routing context for addresses this connection discovers. "
+                  "NULL = Global VRF.",
+    )
+    #: Operator-facing notes from the last run — addresses that couldn't be
+    #: placed, and why. Bounded on write; a scheduled run has no toast to show.
+    last_sync_warnings = models.JSONField(default=list, blank=True)
+
+    def record_warnings(self, warnings, *, summary="", cap: int = 20) -> list[str]:
+        """Trim a run's warnings to something a badge can hold.
+
+        A cluster with no prefixes modelled yet can produce hundreds of these,
+        and hundreds of near-identical lines carry no more information than a
+        handful. So: the ``summary`` states the count and the remedy once,
+        then a deduplicated sample of the individual addresses follows.
+        """
+        seen: list[str] = []
+        for w in warnings:
+            if w and w not in seen:
+                seen.append(w)
+        if len(seen) > cap:
+            seen = seen[:cap] + [f"… and {len(seen) - cap} more"]
+        self.last_sync_warnings = ([summary] if summary else []) + seen
+        return self.last_sync_warnings
+
+
+class WindowsServerConnection(AddressPlacementMixin, TimestampedModel):
     """One Windows server reached agentlessly over WinRM.
 
     A single connection can serve both the DHCP and DNS roles (they usually
@@ -400,7 +452,7 @@ class WindowsServerConnection(TimestampedModel):
         return f"{self.name} ({self.host})"
 
 
-class VirtualizationSource(TimestampedModel):
+class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
     """A hypervisor/cluster API Danbyte syncs virtual machines from.
 
     ``kind`` picks the client; Proxmox is the first implementation and vCenter
@@ -444,6 +496,10 @@ class VirtualizationSource(TimestampedModel):
     sync_disks = models.BooleanField(default=True)
     #: Virtual switches + networks (port-groups/bridges → VLANs).
     sync_networks = models.BooleanField(default=False)
+    #: Create the hypervisor's own nodes/hosts as Devices. Off by default: this
+    #: writes into the physical inventory, which is the operator's territory,
+    #: and a host's type/site are decisions only they can make.
+    sync_hosts = models.BooleanField(default=False)
 
     last_sync_at = models.DateTimeField(null=True, blank=True)
     last_sync_status = models.CharField(max_length=16, blank=True, default="")
@@ -823,6 +879,18 @@ class VirtNetwork(TimestampedModel):
     vswitch = models.ForeignKey(
         "api.VirtualSwitch", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="virt_networks",
+    )
+    # A vSwitch trunks many VLANs and the routing domain follows the segment,
+    # so the port-group is the finer — and usually the correct — place to say
+    # which VRF its addresses live in. NULL = follow the switch, then the
+    # source. PROTECT (not SET_NULL like the links above) because this is
+    # operator policy: silently reverting it to "follow the source" is the
+    # class of quiet misplacement this whole feature exists to remove.
+    vrf = models.ForeignKey(
+        "api.VRF", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="virt_networks",
+        help_text="Routing context for addresses on this network. Leave empty "
+                  "to follow the virtual switch, then the sync source.",
     )
     created_vlan = models.BooleanField(default=False)
     last_seen_at = models.DateTimeField(null=True, blank=True)

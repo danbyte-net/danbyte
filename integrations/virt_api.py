@@ -6,6 +6,8 @@ from rest_framework import serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from api.models import VRF
+from api.serializers import TenantScopedPrimaryKeyRelatedField
 from api.viewsets import TenantScopedViewSet
 
 from .models import VirtChange, VirtNetwork
@@ -22,11 +24,34 @@ class VirtNetworkSerializer(serializers.ModelSerializer):
     vswitch_name = serializers.CharField(
         source="vswitch.name", read_only=True, default=None
     )
+    vrf_id = TenantScopedPrimaryKeyRelatedField(
+        source="vrf", queryset=VRF.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    vrf = serializers.SerializerMethodField()
+
+    def get_vrf(self, obj):
+        """The routing context in force, and whether it was set here.
+
+        A network that states nothing inherits its switch's VRF, so showing the
+        bare field would read as "Global" when it is really "follow the
+        switch". ``inherited`` is what lets the editor say which.
+        """
+        if obj.vrf_id:
+            return {"id": str(obj.vrf_id), "name": obj.vrf.name,
+                    "inherited": False}
+        sw = obj.vswitch
+        if sw is not None and sw.vrf_id:
+            return {"id": str(sw.vrf_id), "name": sw.vrf.name,
+                    "inherited": True}
+        return None
 
     class Meta:
         model = VirtNetwork
         fields = ["id", "name", "ext_key", "vlan", "vswitch", "vswitch_name",
-                  "vms", "last_seen_at"]
+                  "vrf", "vrf_id", "vms", "last_seen_at"]
+        # Everything else mirrors the hypervisor; the VRF is Danbyte's call.
+        read_only_fields = [f for f in fields if f != "vrf_id"]
 
     def get_vlan(self, obj):
         if not obj.vlan_id:
@@ -62,13 +87,18 @@ class VirtNetworkSerializer(serializers.ModelSerializer):
 
 
 class VirtNetworkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
-    """Read-only synced networks; filter by ``?vswitch=`` or ``?source=``."""
+    """Synced networks; filter by ``?vswitch=`` or ``?source=``.
+
+    Read-only except for the **VRF**: everything else mirrors the hypervisor,
+    but which routing context a network's addresses belong to is Danbyte's
+    call, so PATCH is allowed for that one field.
+    """
 
     integration_keys = ("virtualization",)
     tenant_field = "source__tenant"
-    http_method_names = ["get"]
+    http_method_names = ["get", "patch"]
     queryset = VirtNetwork.objects.select_related(
-        "source", "vlan", "vlan__zone", "vswitch"
+        "source", "vlan", "vlan__zone", "vswitch", "vrf", "vswitch__vrf"
     ).order_by("name", "ext_key")
     serializer_class = VirtNetworkSerializer
 

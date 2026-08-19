@@ -40,11 +40,34 @@ names its host device, so it stays clear which port belongs where.
   reads each bridge's own port list (`bridge_ports` / `ovs_ports`) and matches
   those names to interfaces on **that node's** Device. So `vmbr0` with
   `bridge_ports eno1 eno2` gets exactly those two; a NIC that belongs to no
-  bridge is never linked. Nothing is guessed — the node must be modelled as a
-  Device carrying interfaces with matching names — and matching is additive, so
-  an uplink you set by hand is never removed.
+  bridge is never linked. Nothing is guessed — the node must exist as a Device
+  carrying interfaces with matching names, and ticking **Create hosts as
+  devices** on the source creates the Device half for you. Matching is
+  additive, so an uplink you set by hand is never removed.
 - **vCenter** doesn't expose standard-switch pNICs cleanly through its REST
   API, so assign those uplinks by hand on the switch page.
+
+## Routing context (VRF)
+
+A switch's **Address VRF** says which VRF's prefixes a synced address on it may
+land in. It exists at two levels because one vSwitch normally trunks many VLANs
+and the routing domain follows the **segment**, not the switch:
+
+| Where | Meaning |
+| --- | --- |
+| **Switch → Address VRF** | The default for every network on it. |
+| **Networks tab → VRF** | An override for that port group / bridge. |
+
+Empty means *no opinion* — not Global. A network with no VRF follows its
+switch; a switch with none follows the [sync source](external-sync.md). So
+`vmbr0` can default to *prod* while `vmbr0:30` overrides to *dmz*, and the
+Networks tab shows which value is inherited.
+
+Both are read **live** at sync time, so changing one takes effect on the next
+pass with nothing to backfill — and neither is ever written by a sync. A VRF set
+on a **VM interface** is more specific still and wins for that NIC. The full
+order, and what happens when nothing matches, is in [where synced addresses
+land](external-sync.md#where-synced-addresses-land).
 
 ## Networks
 

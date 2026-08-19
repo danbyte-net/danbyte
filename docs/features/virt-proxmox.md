@@ -16,6 +16,8 @@ sources**; see [External sync](external-sync.md) for the shared ground rules.
 - **Auth** — an **API token** (Datacenter → Permissions → API Tokens);
   the `PVEAuditor` role is enough for read sync. The secret is encrypted at
   rest and write-only.
+- **Address VRF** — the routing context guest addresses land in; see [where
+  synced addresses land](external-sync.md#where-synced-addresses-land).
 - **Test connection** reports the reachable node count and API version.
 
 ## What syncs in
@@ -35,9 +37,9 @@ sources**; see [External sync](external-sync.md) for the shared ground rules.
 
 Guest identity uses the Proxmox integer **VMID** as the stable id.
 
-## Disks, virtual switches and networks (opt-in)
+## Disks, switches, networks and hosts (opt-in)
 
-Two per-source switches widen what a source imports:
+Per-source switches widen what a source imports:
 
 - **Sync disks** (on by default) — each VM's virtual disks become **Virtual
   disk** rows (shown on the VM's Overview): name, size, storage pool, and
@@ -47,6 +49,12 @@ Two per-source switches widen what a source imports:
   becomes a **VLAN** in a VLAN group named after the source. A VM interface's
   access VLAN is **blank-filled** from the bridge tag (never overwriting a
   VLAN you set).
+- **Create hosts as devices** (off by default) — each hypervisor node becomes
+  a **Device**: name, cluster and status, with a *Hypervisor* role created on
+  demand. Device type and site are left empty — nothing on the wire says what
+  they are. A host you already model is matched **case-insensitively** and
+  adopted, never duplicated. This is what lets VMs link to their host, and
+  what gives bridge uplinks a Device to hang NICs off.
 
 Once networks are synced, each **virtual switch** page has a **Networks** tab
 and **Virtualization → Network topology** draws the whole picture — switches,
@@ -58,8 +66,9 @@ A switch's **Uplinks · physical adapters** link the switch to the real host
 NICs. For Proxmox these are filled **automatically**: each bridge's
 `bridge_ports` are matched to the node Device's interfaces — a cluster-wide
 bridge collects the ports from every host (the multi-hypervisor case). The
-node must be modelled as a Device with those interfaces; matching is additive
-and never removes an uplink you set.
+node must be modelled as a Device carrying those interfaces — tick **Create
+hosts as devices** and the sync does the Device half for you, leaving only the
+interfaces. Matching is additive and never removes an uplink you set.
 
 ## Sync mode — who is the source of truth
 
@@ -91,6 +100,9 @@ Rules:
 - Guest IPs come from the **QEMU guest agent**, so they only appear for
   running VMs with the agent installed. An IP is only created when a
   **containing prefix** already exists — sync never invents address space.
+  Which VRF's prefixes count is the source's **Address VRF**; addresses it
+  can't place are reported as *unplaced* and listed on the Last sync badge. See
+  [where synced addresses land](external-sync.md#where-synced-addresses-land).
   The first private IPv4 becomes the VM's primary IP (if it had none).
 - VM templates are skipped; the sync is read-only — Danbyte never changes the
   hypervisor.

@@ -53,3 +53,63 @@ connect. Test connection tells you exactly that when the target isn't listed.
   never deleted by a sync.
 - Objects Danbyte manages are **drift-checked**, not silently overwritten:
   differences surface for review (Accept / Push ours).
+- **A sync never invents address space.** An address is recorded only when a
+  prefix that contains it already exists. What it can't place, it reports —
+  see below.
+- **Writing into the physical inventory is opt-in.** A virtualization source
+  can create its hypervisor nodes as **Devices** (*Create hosts as devices*),
+  off by default; it fills only what the hypervisor reports and leaves device
+  type and site to you.
+
+## Where synced addresses land
+
+Every connection states which **VRF** the addresses it discovers belong to:
+
+| Setting | What it does |
+| --- | --- |
+| **Address VRF** | The routing context to look in. *Global* is the default and is a real choice, not a blank. |
+| **If nothing there contains it** | *Skip the address* (default), or *Look in other VRFs*. |
+
+An address's VRF always comes from its prefix, so choosing where to look is
+what decides where the address lands — you never set a VRF on an address
+directly.
+
+**A stated VRF is a hard scope.** If a connection says *prod* and no prefix in
+*prod* contains an address, that address is skipped and reported. It is never
+quietly filed in Global instead: a setting that silently falls back is worse
+than no setting.
+
+*Look in other VRFs* tries the chosen VRF **first** and only widens if nothing
+there matches. That ordering matters — it means turning it on can only place
+addresses that were being skipped, and can never move one that already fits.
+Where two VRFs contain an address equally well, the sync skips it and says so
+rather than guessing; name a VRF to resolve it.
+
+For virtual machines you can be more specific than the source. Most specific
+wins:
+
+```
+VM interface VRF          the operator's per-NIC override
+  ↓ (empty)
+Port group / bridge VRF   on the switch's Networks tab
+  ↓ (empty)
+Virtual switch VRF        the switch-wide default
+  ↓ (empty)
+Source Address VRF        the connection's own setting
+```
+
+Every layer is read live and **none is ever written by a sync** — they're
+yours. Empty means *no opinion*, so it falls through to the next layer rather
+than meaning Global. See [virtual switches](virtual-switches.md#routing-context-vrf).
+
+### When an address can't be placed
+
+Nothing is dropped silently:
+
+- **Sync now** reports the count in its result — *"3 addresses unplaced"*.
+- The connection's **Last sync** badge reads `ok · 3 warnings`, and hovering it
+  lists each address with the reason and the fix. Scheduled runs have no toast,
+  so this is where they surface.
+
+The usual cause is simply a missing prefix. Create it — in the right VRF — and
+the next sync attaches the address.

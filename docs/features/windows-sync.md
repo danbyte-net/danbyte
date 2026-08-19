@@ -22,6 +22,9 @@ roles. A connection carries:
 - **Credentials** — a username and password, encrypted at rest and write-only:
   the API never returns the password, only whether one is set.
 - **Roles** — which of DHCP / DNS to sync from this server.
+- **Address VRF** — the routing context scope prefixes and imported DNS
+  addresses land in; see [where synced addresses
+  land](external-sync.md#where-synced-addresses-land).
 - **Poll interval** and an enable switch per connection.
 
 **Test connection** runs a real probe: PowerShell version plus a scope count
@@ -62,6 +65,13 @@ Rules:
   IPs you already had are never deleted. A reservation always wins over a
   lease on the same address.
 - Deleting a scope on the server removes the scope link, **not** the prefix.
+- **A scope's prefix can live in a VRF.** Windows DHCP has no VRF concept, so
+  the VRF is Danbyte's choice: the connection's **Address VRF** decides where a
+  scope's prefix is created, and its reservations, leases and exclusion ranges
+  all follow that prefix. Move an existing prefix into a VRF and it is
+  *adopted*, not duplicated. If the same CIDR exists in several VRFs the sync
+  can't choose, so it leaves the scope without a prefix and says so on the Last
+  sync badge rather than guessing.
 
 ### Adding reservations
 
@@ -188,10 +198,12 @@ To pull it in:
 - **Add to IPAM** on the record creates the IP address, links the record, and
   sets the IP's DNS name from it. On a zone page, **Add all unmatched to IPAM**
   does the whole zone at once.
-- Import needs a **containing prefix** — an IP must belong to one. If no prefix
-  covers the address (common for a public IPv6 record), the import is refused
-  with a message; create the prefix first, then import. Bulk import reports how
-  many were skipped for this reason.
+- Import needs a **containing prefix** — an IP must belong to one, in the
+  connection's **Address VRF**. If no prefix covers the address (common for a
+  public IPv6 record), the import is refused with a message naming the VRF
+  searched; create the prefix first, then import. Bulk import reports how many
+  were skipped for this reason. See [where synced addresses
+  land](external-sync.md#where-synced-addresses-land).
 - **Auto-add to IPAM** (per-zone switch) does it automatically on every sync —
   off by default, since importing is a deliberate choice. It still only creates
   IPs where a prefix exists.
