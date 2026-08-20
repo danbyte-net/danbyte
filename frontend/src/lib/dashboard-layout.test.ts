@@ -18,14 +18,14 @@ const META: Record<string, WidgetMeta> = {
 const metaOf = (id: string) => META[id]
 
 describe("normalizeLayout", () => {
-  it("migrates a v1 flat id array by flowing default spans", () => {
+  it("migrates a v1 flat id array by packing default spans", () => {
     // Existing users' localStorage is v1; it must upgrade in place, never
     // silently reset to the default dashboard.
     const items = normalizeLayout(["small", "wide", "tall"], metaOf)!
     expect(items.map((i) => i.id)).toEqual(["small", "wide", "tall"])
     expect(items[0]).toMatchObject({ x: 0, y: 0, w: 2, h: 2 })
     expect(items[1]).toMatchObject({ x: 2, y: 0, w: 4, h: 2 })
-    expect(items[2]).toMatchObject({ x: 0, y: 2, w: 2, h: 3 }) // wrapped
+    expect(items[2]).toMatchObject({ x: 0, y: 2, w: 2, h: 3 }) // next row
   })
 
   it("drops unknown ids rather than wedging the dashboard", () => {
@@ -81,25 +81,45 @@ describe("rgl round trip", () => {
   })
 })
 
+function overlaps(a: { x: number; y: number; w: number; h: number },
+                  b: { x: number; y: number; w: number; h: number }) {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+}
+
 describe("placeIdsCurated", () => {
   const CURATED = [
     { id: "wide", x: 0, y: 0, w: 4, h: 2 },
     { id: "small", x: 4, y: 0, w: 2, h: 2 },
   ]
-  it("keeps the template geometry for known ids", async () => {
+  it("uses the template sizes and fills the row", async () => {
     const { placeIdsCurated } = await import("./dashboard-layout")
-    // The v1 list's ORDER doesn't matter - the hand-placed template wins,
-    // which is what stops a migrated tenant default resetting into holes.
     const items = placeIdsCurated(["small", "wide"], CURATED, metaOf)
-    expect(items).toEqual(CURATED)
+    expect(items).toEqual(CURATED) // full set packs back into the template
   })
-  it("shelf-packs unknown ids below the template", async () => {
+  it("a SUBSET repacks dense - a missing widget leaves no hole", async () => {
+    // The exact regression that shipped twice: a tenant default lacking
+    // template widgets inherited the holes their absence left.
     const { placeIdsCurated } = await import("./dashboard-layout")
-    const items = placeIdsCurated(["wide", "tall"], CURATED, metaOf)
-    expect(items[0]).toMatchObject({ id: "wide", x: 0, y: 0 })
-    expect(items[1]).toMatchObject({ id: "tall", y: 2 }) // below the template
+    const big = [
+      { id: "wide", x: 0, y: 0, w: 3, h: 3 },
+      { id: "gone", x: 3, y: 0, w: 3, h: 3 },
+      { id: "small", x: 0, y: 3, w: 2, h: 2 },
+    ]
+    const items = placeIdsCurated(["wide", "small"], big, metaOf)
+    // "small" must slot beside "wide" where "gone" used to sit, not below.
+    expect(items.find((i) => i.id === "small")).toMatchObject({ x: 3, y: 0 })
   })
-  it("normalizeLayout uses it for v1 arrays when given", async () => {
+  it("packs unknown ids too, without overlap or overflow", async () => {
+    const { GRID_COLS, placeIdsCurated } = await import("./dashboard-layout")
+    const items = placeIdsCurated(["wide", "tall", "small"], CURATED, metaOf)
+    for (const a of items) {
+      expect(a.x + a.w).toBeLessThanOrEqual(GRID_COLS)
+      for (const b of items) {
+        if (a.id !== b.id) expect(overlaps(a, b)).toBe(false)
+      }
+    }
+  })
+  it("normalizeLayout routes v1 arrays through it", async () => {
     const { normalizeLayout } = await import("./dashboard-layout")
     const items = normalizeLayout(["small", "wide"], metaOf, CURATED)!
     expect(items).toEqual(CURATED)

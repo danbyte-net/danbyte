@@ -46,43 +46,59 @@ export function clampItem(item: DashItem, meta: WidgetMeta): DashItem {
   return { id: item.id, x, y, w, h }
 }
 
-/** Flow ids onto the grid with their default spans - the v1 migration.
+/** Pack sized blocks onto the grid with NO horizontal holes.
  *
- * Simple shelf packing: left to right, new row when a widget doesn't fit.
- * react-grid-layout compacts vertically afterwards, so the exact y values
- * only need to preserve ORDER, not be gap-free.
+ * Greedy skyline packing: each block lands at the lowest spot (leftmost on
+ * ties) where its width fits. Order is preserved as reading order, so a
+ * curated sequence still reads the way it was designed - but any SUBSET of
+ * widgets packs dense. This replaced two earlier attempts (shelf packing,
+ * then curated fixed positions) that both left holes whenever the widget
+ * set didn't match the template exactly.
  */
-export function placeIds(
-  ids: string[],
-  metaOf: (id: string) => WidgetMeta | undefined
+export function packItems(
+  blocks: { id: string; w: number; h: number; config?: Record<string, unknown> }[]
 ): DashItem[] {
+  const heights = new Array(GRID_COLS).fill(0)
   const out: DashItem[] = []
-  let x = 0
-  let y = 0
-  let rowH = 0
-  for (const id of ids) {
-    const meta = metaOf(id)
-    if (!meta) continue
-    const w = Math.min(meta.span.w, GRID_COLS)
-    const h = meta.span.h
-    if (x + w > GRID_COLS) {
-      x = 0
-      y += rowH
-      rowH = 0
+  for (const b of blocks) {
+    const w = Math.min(Math.max(1, b.w), GRID_COLS)
+    let bestX = 0
+    let bestY = Infinity
+    for (let x = 0; x + w <= GRID_COLS; x++) {
+      const y = Math.max(...heights.slice(x, x + w))
+      if (y < bestY) {
+        bestY = y
+        bestX = x
+      }
     }
-    out.push({ id, x, y, w, h })
-    x += w
-    rowH = Math.max(rowH, h)
+    out.push({ id: b.id, x: bestX, y: bestY, w, h: b.h, ...(b.config ? { config: b.config } : {}) })
+    for (let x = bestX; x < bestX + w; x++) heights[x] = bestY + b.h
   }
   return out
 }
 
-/** Flow ids onto the grid, preferring a curated template's geometry.
+/** Flow ids onto the grid with their default spans - the v1 migration. */
+export function placeIds(
+  ids: string[],
+  metaOf: (id: string) => WidgetMeta | undefined
+): DashItem[] {
+  return packItems(
+    ids
+      .map((id) => ({ id, meta: metaOf(id) }))
+      .filter((x): x is { id: string; meta: WidgetMeta } => !!x.meta)
+      .map(({ id, meta }) => ({
+        id,
+        w: Math.min(meta.span.w, GRID_COLS),
+        h: meta.span.h,
+      }))
+  )
+}
 
- * A v1 layout (and an old tenant default) is only an id LIST - naive shelf
- * packing of default spans produces rows full of holes. Ids the curated
- * template knows keep its hand-placed positions; only ids it doesn't know
- * are shelf-packed below. Vertical compaction closes what gaps remain.
+/** Lay an id list out using the curated template's SIZES and ORDER.
+ *
+ * Positions are re-packed rather than copied: a tenant default that lacks
+ * some template widgets must not inherit the holes their absence leaves.
+ * Ids the template doesn't know append after it with their default spans.
  */
 export function placeIdsCurated(
   ids: string[],
@@ -90,14 +106,21 @@ export function placeIdsCurated(
   metaOf: (id: string) => WidgetMeta | undefined
 ): DashItem[] {
   const wanted = new Set(ids)
-  const out = curated.filter((c) => wanted.has(c.id) && metaOf(c.id))
-  const placed = new Set(out.map((c) => c.id))
-  const rest = ids.filter((id) => !placed.has(id))
-  const bottom = out.reduce((m, c) => Math.max(m, c.y + c.h), 0)
-  for (const it of placeIds(rest, metaOf)) {
-    out.push({ ...it, y: it.y + bottom })
-  }
-  return out
+  const known = curated.filter((c) => wanted.has(c.id) && metaOf(c.id))
+  const placed = new Set(known.map((c) => c.id))
+  const rest = ids
+    .filter((id) => !placed.has(id))
+    .map((id) => ({ id, meta: metaOf(id) }))
+    .filter((x): x is { id: string; meta: WidgetMeta } => !!x.meta)
+    .map(({ id, meta }) => ({
+      id,
+      w: Math.min(meta.span.w, GRID_COLS),
+      h: meta.span.h,
+    }))
+  return packItems([
+    ...known.map((c) => ({ id: c.id, w: c.w, h: c.h })),
+    ...rest,
+  ])
 }
 
 /** Parse anything a layout might have been stored as, or null to fall back.
