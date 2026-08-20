@@ -12,11 +12,14 @@ import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import { toast } from "sonner"
 import {
+  Building2,
+  Expand,
   MapPin,
   Maximize,
   PanelRight,
   Satellite,
   Search,
+  Shrink,
   SlidersHorizontal,
   Waypoints,
   X,
@@ -91,7 +94,12 @@ import {
 } from "@/components/site-map/cable-geo-route"
 import { FovEditor } from "@/components/site-map/fov-editor"
 import { DevicePicker } from "@/components/device-picker"
-import { buildConnectionsLayer } from "@/components/site-map/connections-layer"
+import {
+  buildConnectionsLayer,
+  KIND_COLOR,
+} from "@/components/site-map/connections-layer"
+import { CHECK_COLOR } from "@/components/site-map/status-colors"
+import { TileBadge } from "@/components/floorplan/tile-badge"
 import {
   LABEL_ZOOM,
   markerZ,
@@ -189,12 +197,27 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   }, [])
   const [selected, setSelected] = useState<MapSelected | null>(null)
   const [popPos, setPopPos] = useState<{ x: number; y: number } | null>(null)
-  const [layers, setLayers] = useState({
-    sites: true,
-    devices: true,
-    links: true,
-    routes: true,
+  // Layer toggles survive the visit (per browser, like the other map prefs).
+  type LayerToggles = {
+    sites: boolean
+    devices: boolean
+    links: boolean
+    routes: boolean
+  }
+  const [layers, setLayers] = useState<LayerToggles>(() => {
+    const all = { sites: true, devices: true, links: true, routes: true }
+    try {
+      const stored = JSON.parse(
+        localStorage.getItem("site-map:layers")!
+      ) as Partial<LayerToggles>
+      return { ...all, ...stored }
+    } catch {
+      return all
+    }
   })
+  useEffect(() => {
+    localStorage.setItem("site-map:layers", JSON.stringify(layers))
+  }, [layers])
   const [showFov, setShowFovState] = useState(
     () => localStorage.getItem("site-map:fov") !== "off"
   )
@@ -234,6 +257,27 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   const toggleObjects = () =>
     setShowObjects((v) => {
       localStorage.setItem("site-map:sidebar", v ? "closed" : "open")
+      return !v
+    })
+  // Fullscreen: the map wrapper alone (header/sidebars stay behind), so the
+  // popovers/banners inside it keep working.
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+  const [fullscreen, setFullscreen] = useState(false)
+  useEffect(() => {
+    const onChange = () => setFullscreen(!!document.fullscreenElement)
+    document.addEventListener("fullscreenchange", onChange)
+    return () => document.removeEventListener("fullscreenchange", onChange)
+  }, [])
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen()
+    else void wrapRef.current?.requestFullscreen()
+  }
+  const [legendOpen, setLegendOpen] = useState(
+    () => localStorage.getItem("site-map:legend") === "open"
+  )
+  const toggleLegend = () =>
+    setLegendOpen((v) => {
+      localStorage.setItem("site-map:legend", v ? "closed" : "open")
       return !v
     })
   // Arriving with ?focus=<deviceId>: fly to it and open its popover, once.
@@ -602,6 +646,30 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   useEffect(() => {
     if (!mapEl.current || mapRef.current) return
     const map = L.map(mapEl.current, { maxZoom: 19, worldCopyJump: true })
+    L.control.scale({ imperial: false }).addTo(map)
+    // Come back where you left off: the last view is remembered per browser.
+    // Claiming the one-shot auto-fit keeps the marker draw from resetting it;
+    // Fit to view is one click away when you do want everything.
+    try {
+      const v = JSON.parse(localStorage.getItem("site-map:view")!)
+      if (Number.isFinite(v.lat) && Number.isFinite(v.lng) && v.z >= 1) {
+        map.setView([v.lat, v.lng], v.z)
+        ;(map as unknown as { _smFitted?: boolean })._smFitted = true
+      }
+    } catch {
+      /* first visit - the marker draw fits to everything */
+    }
+    map.on("moveend zoomend", () => {
+      const c = map.getCenter()
+      localStorage.setItem(
+        "site-map:view",
+        JSON.stringify({
+          lat: +c.lat.toFixed(5),
+          lng: +c.lng.toFixed(5),
+          z: map.getZoom(),
+        })
+      )
+    })
     // Basemap layer is swapped by the effect below.
     map.on("click", (e: L.LeafletMouseEvent) => {
       if (drawingRef.current) {
@@ -1081,6 +1149,47 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     const map = mapRef.current
     if (map) map.flyTo([lat, lng], Math.max(map.getZoom(), 12))
   }
+
+  // Everything on the map that's currently down or degraded - the pill in the
+  // corner steps through them, worst first, so triage is click-click-click.
+  const problems = useMemo(() => {
+    const list: {
+      kind: "site" | "device"
+      id: string
+      check: string
+      lat: number
+      lng: number
+    }[] = []
+    for (const s of placed)
+      if (s.check === "down" || s.check === "degraded")
+        list.push({
+          kind: "site",
+          id: s.id,
+          check: s.check,
+          lat: s.latitude!,
+          lng: s.longitude!,
+        })
+    for (const d of data.devices)
+      if (d.check === "down" || d.check === "degraded")
+        list.push({
+          kind: "device",
+          id: d.id,
+          check: d.check,
+          lat: d.latitude,
+          lng: d.longitude,
+        })
+    return list.sort((a, b) =>
+      a.check === b.check ? 0 : a.check === "down" ? -1 : 1
+    )
+  }, [placed, data.devices])
+  const problemIdx = useRef(0)
+  const nextProblem = () => {
+    if (problems.length === 0) return
+    const p = problems[problemIdx.current % problems.length]
+    problemIdx.current += 1
+    flyTo(p.lat, p.lng)
+    setSelected({ kind: p.kind, id: p.id })
+  }
   const fitToCables = (ids: string[]) => {
     const map = mapRef.current
     if (!map) return
@@ -1206,6 +1315,18 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           <Button
             variant="outline"
             size="sm"
+            onClick={toggleFullscreen}
+            title={fullscreen ? "Exit fullscreen" : "Fullscreen map"}
+          >
+            {fullscreen ? (
+              <Shrink className="h-3.5 w-3.5" />
+            ) : (
+              <Expand className="h-3.5 w-3.5" />
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={toggleObjects}
             className={cn(!showObjects && "text-muted-foreground")}
             title="List everything on this map"
@@ -1301,8 +1422,37 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           />
         )}
 
-        <div className="relative isolate z-0 min-w-0 flex-1">
+        <div ref={wrapRef} className="relative isolate z-0 min-w-0 flex-1">
           <div ref={mapEl} className="absolute inset-0" />
+
+          {problems.length > 0 && mode === "view" && (
+            <button
+              onClick={nextProblem}
+              title="Step through the problems on this map"
+              className="absolute top-3 left-3 z-[900] flex items-center gap-1.5 rounded-full border border-border bg-background/95 px-3 py-1.5 text-[12px] font-medium shadow-sm backdrop-blur hover:bg-muted"
+            >
+              {problems.some((p) => p.check === "down") && (
+                <span className="flex items-center gap-1 text-red-500">
+                  <span className="size-2 rounded-full bg-red-500" />
+                  <span className="num">
+                    {problems.filter((p) => p.check === "down").length}
+                  </span>{" "}
+                  down
+                </span>
+              )}
+              {problems.some((p) => p.check === "degraded") && (
+                <span className="flex items-center gap-1 text-amber-500">
+                  <span className="size-2 rounded-full bg-amber-500" />
+                  <span className="num">
+                    {problems.filter((p) => p.check === "degraded").length}
+                  </span>{" "}
+                  degraded
+                </span>
+              )}
+            </button>
+          )}
+
+          <MapLegend open={legendOpen} onToggle={toggleLegend} />
 
           {mode === "view" &&
             placed.length === 0 &&
@@ -1721,6 +1871,90 @@ function MapSearch({
 }
 
 // ── popovers (anchored quick-glance cards; the inspector holds the tools) ──
+
+function MapLegend({
+  open,
+  onToggle,
+}: {
+  open: boolean
+  onToggle: () => void
+}) {
+  // Sits above the Leaflet scale control; collapsed it's just a pill.
+  if (!open)
+    return (
+      <button
+        onClick={onToggle}
+        className="absolute bottom-9 left-3 z-[900] rounded-full border border-border bg-background/95 px-3 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground"
+      >
+        Legend
+      </button>
+    )
+  const line = (color: string, dashed = false) => (
+    <span
+      aria-hidden
+      className="inline-block h-0 w-6 shrink-0"
+      style={{
+        borderTop: `2px ${dashed ? "dashed" : "solid"} ${color}`,
+      }}
+    />
+  )
+  return (
+    <div className="absolute bottom-9 left-3 z-[900] w-52 rounded-lg border border-border bg-background/95 p-3 text-[11px] shadow-sm backdrop-blur">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="font-medium">Legend</span>
+        <button
+          onClick={onToggle}
+          className="text-muted-foreground hover:text-foreground"
+          aria-label="Close legend"
+        >
+          <X className="size-3" />
+        </button>
+      </div>
+      <div className="grid gap-1.5 text-muted-foreground">
+        <span className="flex items-center gap-2">
+          <span className="flex size-5 shrink-0 items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground shadow-[0_0_0_1px_var(--border)]">
+            <Building2 className="size-3" />
+          </span>
+          Site - its own color and icon
+        </span>
+        <span className="flex items-center gap-2">
+          <TileBadge color="#8b5cf6" />
+          Device / marker, in its role color
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full border-2 border-primary bg-background px-1 text-[10px] font-semibold text-foreground shadow-[0_0_0_1px_var(--border)]">
+            5
+          </span>
+          Markers close together - click to zoom
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="flex shrink-0 items-center gap-1">
+            {(["up", "degraded", "down"] as const).map((c) => (
+              <span
+                key={c}
+                className="size-2 rounded-full"
+                style={{ background: CHECK_COLOR[c] }}
+              />
+            ))}
+          </span>
+          Monitoring: up · degraded · down
+        </span>
+        <span className="flex items-center gap-2">
+          {line(KIND_COLOR.circuit)}
+          Circuit
+        </span>
+        <span className="flex items-center gap-2">
+          {line(KIND_COLOR.tunnel)}
+          Tunnel
+        </span>
+        <span className="flex items-center gap-2">
+          {line(KIND_COLOR.cable)}
+          Cable ({line(KIND_COLOR.cable, true)} = no drawn route)
+        </span>
+      </div>
+    </div>
+  )
+}
 
 function PopHeader({
   title,

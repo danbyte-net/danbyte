@@ -307,6 +307,30 @@
 .leaflet-control-attribution a {
   color: var(--primary);
 }
+/* Zoom buttons + scale bar follow the theme instead of Leaflet's white. */
+.leaflet-bar {
+  border: 1px solid var(--border) !important;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.1);
+}
+.leaflet-bar a {
+  background: var(--background);
+  color: var(--foreground);
+  border-bottom-color: var(--border);
+}
+.leaflet-bar a:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+.leaflet-bar a.leaflet-disabled {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.leaflet-control-scale-line {
+  background: color-mix(in oklab, var(--background) 85%, transparent);
+  color: var(--muted-foreground);
+  border-color: var(--muted-foreground);
+  font-size: 10px;
+}
 .dark .sm-tiles {
   filter: brightness(0.65) invert(1) contrast(3) hue-rotate(200deg)
     saturate(0.35) brightness(0.7);

@@ -116,6 +116,20 @@ dragging a placed device or removing it from the map needs `device.change`.
 Danbyte never geocodes addresses - there's no lookup of your street addresses
 against an external service. You place things yourself.
 
+## Chrome and memory
+
+- **Problems pill** - when anything on the map is down or degraded, a pill in
+  the top-left corner counts it; each click flies to the next problem, worst
+  first, and opens its popover.
+- **Legend** - bottom-left, collapsed to a pill by default; explains pins,
+  badges, cluster chips, health dots and the line colors.
+- **Fullscreen** - the expand button in the toolbar puts just the map
+  fullscreen; every control keeps working.
+- A metric **scale bar** sits bottom-left.
+- The map **remembers where you were**: the last view (center + zoom) and the
+  layer toggles persist per browser, like the satellite/labels/FOV choices.
+  *Fit to view* is always one click to see everything again.
+
 ## Site colors and icons
 
 Every site can carry a **marker color** and a **Lucide icon**, set on the site
