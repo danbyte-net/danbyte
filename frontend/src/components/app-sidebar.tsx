@@ -12,6 +12,7 @@ import {
   Cable as CableIcon,
   CalendarDays,
   ChevronDown,
+  ChevronsDownUp,
   ChevronsUpDown,
   Clock,
   Cloud,
@@ -887,29 +888,33 @@ const sections: NavSection[] = [
   },
 ]
 
-// A sidebar category group whose label toggles its items open/closed. Collapse
-// state is session-local; reloads start collapsed except for the active route.
+// A sidebar category group whose label toggles its items open/closed. State
+// is lifted to AppSidebar (persisted per browser) so collapse-all/expand-all
+// can drive every group at once (#43); reloads keep your arrangement.
 function NavGroup({
   label,
   icon: Icon,
   hasActive,
+  open,
+  onOpenChange,
   children,
 }: {
   label: string
   icon?: React.ComponentType<{ className?: string }>
   hasActive: boolean
+  open: boolean
+  onOpenChange: (open: boolean) => void
   children: React.ReactNode
 }) {
   const { state } = useSidebar()
   const iconMode = state === "collapsed"
-  const [open, setOpen] = React.useState(() => hasActive)
   // Reveal on the false→true transition only, so collapsing the group you're
   // currently in sticks until you navigate away and back into it.
   const prevActive = React.useRef(hasActive)
   React.useEffect(() => {
-    if (hasActive && !prevActive.current) setOpen(true)
+    if (hasActive && !prevActive.current) onOpenChange(true)
     prevActive.current = hasActive
-  }, [hasActive])
+  }, [hasActive, onOpenChange])
   const shown = iconMode || open
 
   return (
@@ -917,7 +922,7 @@ function NavGroup({
       <SidebarGroupLabel asChild>
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => onOpenChange(!open)}
           className="flex w-full items-center gap-2 hover:text-foreground"
         >
           {Icon && <Icon className="size-4 shrink-0 opacity-60" />}
@@ -935,8 +940,40 @@ function NavGroup({
   )
 }
 
+const NAV_GROUPS_KEY = "danbyte-nav-groups"
+
+function loadNavGroups(): Record<string, boolean> {
+  if (typeof window === "undefined") return {}
+  try {
+    const raw = window.localStorage.getItem(NAV_GROUPS_KEY)
+    const parsed = raw ? JSON.parse(raw) : {}
+    return parsed && typeof parsed === "object" ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { canManage, canDo, can } = useMe()
+  // Per-group open state, keyed by label and persisted per browser. A group
+  // absent from the map falls back to "open when it holds the active route" -
+  // exactly the old per-group default, so first load looks unchanged.
+  const [openGroups, setOpenGroups] = React.useState<Record<string, boolean>>(
+    loadNavGroups
+  )
+  const setGroupsOpen = React.useCallback(
+    (patch: Record<string, boolean>) =>
+      setOpenGroups((prev) => {
+        const next = { ...prev, ...patch }
+        try {
+          window.localStorage.setItem(NAV_GROUPS_KEY, JSON.stringify(next))
+        } catch {
+          /* storage full/blocked - state still works for the session */
+        }
+        return next
+      }),
+    []
+  )
   const pluginUi = usePluginUi()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   // The group that owns the current page stays open even if the user collapsed
@@ -977,6 +1014,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         .filter((cluster) => cluster.items.length > 0),
     }))
     .filter((section) => section.clusters.length > 0)
+  const navActiveByLabel = (label: string): boolean => {
+    const section = visibleSections.find((x) => x.label === label)
+    if (section) return inGroup(sectionUrls(section))
+    const plugin = pluginGroups.get(label)
+    if (plugin) return inGroup(plugin.map((i) => i.url))
+    if (label === "Admin")
+      return inGroup(["/users", "/groups", "/permissions"])
+    return false
+  }
   const sectionUrls = (section: (typeof visibleSections)[number]) =>
     section.clusters.flatMap((c) => c.items).map((i) => i.url)
 
@@ -1037,12 +1083,49 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </SidebarGroupContent>
         </SidebarGroup>
 
+        {/* Collapse/expand every category at once (#43). One state-aware
+            button: the label names the action that is available. Hidden in
+            the icon rail, where groups are always shown. */}
+        {(() => {
+          const labels = [
+            ...visibleSections.map((x) => x.label),
+            ...Array.from(pluginGroups.keys()),
+            ...(canManage ? ["Admin"] : []),
+          ]
+          const anyOpen = labels.some(
+            (l) => openGroups[l] ?? navActiveByLabel(l)
+          )
+          return (
+            <div className="flex justify-end px-2 pt-1 group-data-[collapsible=icon]:hidden">
+              <button
+                type="button"
+                onClick={() =>
+                  setGroupsOpen(
+                    Object.fromEntries(labels.map((l) => [l, !anyOpen]))
+                  )
+                }
+                className="flex items-center gap-1 rounded-sm px-1 py-0.5 text-[10px] text-muted-foreground opacity-70 hover:opacity-100"
+                title={anyOpen ? "Collapse all" : "Expand all"}
+              >
+                {anyOpen ? (
+                  <ChevronsDownUp className="size-3" />
+                ) : (
+                  <ChevronsUpDown className="size-3" />
+                )}
+                {anyOpen ? "Collapse all" : "Expand all"}
+              </button>
+            </div>
+          )
+        })()}
+
         {visibleSections.map((section) => (
           <NavGroup
             key={section.label}
             label={section.label}
             icon={section.icon}
             hasActive={inGroup(sectionUrls(section))}
+            open={openGroups[section.label] ?? inGroup(sectionUrls(section))}
+            onOpenChange={(o) => setGroupsOpen({ [section.label]: o })}
           >
             {section.clusters.map((cluster, i) => (
               <React.Fragment key={cluster.label ?? i}>
@@ -1085,6 +1168,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             label={label}
             icon={Puzzle}
             hasActive={inGroup(items.map((i) => i.url))}
+            open={openGroups[label] ?? inGroup(items.map((i) => i.url))}
+            onOpenChange={(o) => setGroupsOpen({ [label]: o })}
           >
             <SidebarMenu>
               {items.map((item) => (
@@ -1116,6 +1201,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             label="Admin"
             icon={UserCog}
             hasActive={inGroup(["/users", "/groups", "/permissions"])}
+            open={
+              openGroups["Admin"] ??
+              inGroup(["/users", "/groups", "/permissions"])
+            }
+            onOpenChange={(o) => setGroupsOpen({ Admin: o })}
           >
             <SidebarMenu>
               <SidebarMenuItem>
