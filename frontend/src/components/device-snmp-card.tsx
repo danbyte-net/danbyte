@@ -223,6 +223,7 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
       {/* Observed: reachability + the credential binding + Poll now. Uses the
           shared Section so its actions line up with every other card's. */}
       <Section
+        boxed
         title="Observed"
         badge={
           state?.reachable === true ? (

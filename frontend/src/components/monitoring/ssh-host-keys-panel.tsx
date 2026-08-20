@@ -177,6 +177,7 @@ export function SSHHostKeysPanel({ deviceId }: { deviceId: string }) {
 
   return (
     <Section
+      boxed
       title="SSH host keys"
       description="the key the device is expected to present on port 22, and what's observed"
       actions={

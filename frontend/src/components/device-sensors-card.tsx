@@ -114,6 +114,7 @@ export function DeviceSensorsCard({
 
   return (
     <Section
+      boxed
       title="Custom SNMP sensors"
       actions={
         canWrite ? (

@@ -265,6 +265,7 @@ export function CertificatesPanel({
 
   return (
     <Section
+      boxed
       title="Certificates"
       count={rows.length}
       actions={
@@ -300,7 +301,7 @@ export function CertificatesPanel({
         ) : undefined
       }
     >
-      <div className="max-w-3xl space-y-3">
+      <div className="space-y-3">
         {assignments.isError && <QueryError error={assignments.error} />}
 
         {/* Expiry: a declared certificate here is expired or nearing expiry.

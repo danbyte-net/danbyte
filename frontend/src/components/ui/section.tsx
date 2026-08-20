@@ -12,6 +12,7 @@ export function Section({
   badge,
   description,
   actions,
+  boxed,
   children,
 }: {
   title: React.ReactNode
@@ -23,6 +24,10 @@ export function Section({
   description?: React.ReactNode
   /** Right-aligned controls (buttons, copy, pickers). */
   actions?: React.ReactNode
+  /** Wrap the body in the standard bordered card. Sections whose content is
+   * bare text/forms float awkwardly on a wide tab without it; tables and
+   * components that draw their own frame should leave it off. */
+  boxed?: boolean
   children: React.ReactNode
 }) {
   return (
@@ -46,7 +51,13 @@ export function Section({
           <div className="ml-auto flex items-center gap-2">{actions}</div>
         )}
       </div>
-      {children}
+      {boxed ? (
+        <div className="rounded-lg border border-border bg-card p-4">
+          {children}
+        </div>
+      ) : (
+        children
+      )}
     </section>
   )
 }

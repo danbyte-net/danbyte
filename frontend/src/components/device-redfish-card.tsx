@@ -142,6 +142,7 @@ export function DeviceRedfishCard({ deviceId }: { deviceId: string }) {
 
   return (
     <Section
+      boxed
       title="BMC (Redfish)"
       actions={
         canWrite && configured ? (
