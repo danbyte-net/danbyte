@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { markerZ, worstCheck } from "./status-colors"
+import { dominantColor, markerZ, worstCheck } from "./status-colors"
 
 describe("markerZ", () => {
   it("selected always beats everything unselected", () => {
@@ -45,5 +45,20 @@ describe("worstCheck", () => {
   it("treats unknown strings like stale", () => {
     expect(worstCheck(["up", "weird"])).toBe("weird")
     expect(worstCheck(["down", "weird"])).toBe("down")
+  })
+})
+
+describe("dominantColor", () => {
+  it("picks the most frequent non-empty color", () => {
+    expect(dominantColor(["#111111", "#222222", "#222222"])).toBe("#222222")
+  })
+
+  it("ignores empties and returns null when nothing has a color", () => {
+    expect(dominantColor(["", null, undefined])).toBeNull()
+    expect(dominantColor([])).toBeNull()
+  })
+
+  it("breaks ties deterministically (first seen wins)", () => {
+    expect(dominantColor(["#aaaaaa", "#bbbbbb"])).toBe("#aaaaaa")
   })
 })

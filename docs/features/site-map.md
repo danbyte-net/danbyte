@@ -125,6 +125,21 @@ pin. The same pair exists on locations - there they color the location's badge
 on list and detail pages (locations have no coordinates, so nothing changes on
 the map), and give the upcoming topology views a grouping color to work with.
 
+## Close markers cluster
+
+In **View** mode, markers that would collide collapse into a round chip with a
+count. Its border takes the dominant site color inside; a corner dot carries
+the worst monitoring status among the clustered objects, so a pile can never
+hide a problem. Click a chip to zoom into it - at maximum zoom, markers on the
+*same* coordinates fan out ("spiderfy") so each one is clickable. Picking a
+clustered object from the sidebar, search, or a `?focus=` link zooms and fans
+automatically until that marker is visible.
+
+**Edit** and **Cables** modes never cluster - dragging, click-to-place and
+route drawing work on the flat markers exactly as before. The MiniMap (the
+dashboard widget, site/device locators, circuits strip) clusters too, with a
+smaller chip.
+
 ## Cabling on the map
 
 Every cable whose two ends land on the map draws as a line - you don't need

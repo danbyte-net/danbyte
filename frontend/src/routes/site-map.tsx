@@ -92,6 +92,11 @@ import { DevicePicker } from "@/components/device-picker"
 import { buildConnectionsLayer } from "@/components/site-map/connections-layer"
 import { markerZ, observeMapSize, setBaseLayer } from "@/components/site-map/map-core"
 import {
+  createMarkerGroup,
+  tagMarker,
+  zoomToRevealMarker,
+} from "@/components/site-map/cluster"
+import {
   deviceIcon,
   freeMarkerIcon,
   siteIcon,
@@ -245,6 +250,16 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   editingRef.current = editing
   placingRef.current = placing
   drawingRef.current = mode === "cables" && drawWaypoints !== null
+  const selectedRef = useRef(selected)
+  selectedRef.current = selected
+  // Marker handles by "kind:id" - selection restyles exactly two markers via
+  // these instead of rebuilding (and re-clustering) the whole group.
+  const markerHandles = useRef(
+    new Map<string, { m: L.Marker; apply: (sel: boolean) => void }>()
+  )
+  // True while a programmatic zoom (cluster reveal) is in flight - the
+  // map-wide "any move clears the selection" rule must not eat it.
+  const revealingRef = useRef(false)
 
   const placed = useMemo(
     () => data.sites.filter((s) => s.latitude !== null),
@@ -593,7 +608,9 @@ function MapBody({ data }: { data: SiteMapPayload }) {
         return null
       })
     })
-    map.on("movestart zoomstart", () => setSelected(null))
+    map.on("movestart zoomstart", () => {
+      if (!revealingRef.current) setSelected(null)
+    })
     mapRef.current = map
     setMapReady(true)
 
@@ -789,21 +806,29 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     fovRef.current = layer
   }, [data, fovDraft, layers.devices, showFov])
 
-  // (Re)draw markers whenever data / edit mode / layers change.
+  // (Re)draw markers whenever data / edit mode / layers change. Selection is
+  // deliberately NOT a dependency: it restyles two markers via markerHandles
+  // in its own effect, because rebuilding here would re-cluster the whole map
+  // (a visible flash) on every click.
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
     markersRef.current?.remove()
-    const group = L.layerGroup()
+    markerHandles.current.clear()
+    // View mode clusters colliding markers; edit modes keep the flat group so
+    // dragging and click-to-place work exactly as before.
+    const group = createMarkerGroup({ cluster: mode === "view" })
+    const sel = selectedRef.current
 
     if (layers.sites) {
       for (const s of placed) {
-        const isSel = selected?.kind === "site" && selected.id === s.id
+        const isSel = sel?.kind === "site" && sel.id === s.id
         const m = L.marker([s.latitude!, s.longitude!], {
           icon: siteIcon(s, { selected: isSel }),
           draggable: editing && s.can_edit,
           zIndexOffset: markerZ("site", s.check, isSel),
         })
+        tagMarker(m, { kind: "site", check: s.check, color: s.color })
         m.on("dragend", () => {
           const p = m.getLatLng()
           moveSiteRef.current.mutate({ id: s.id, lat: p.lat, lng: p.lng })
@@ -812,17 +837,25 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           L.DomEvent.stopPropagation(e)
           setSelected({ kind: "site", id: s.id })
         })
+        markerHandles.current.set(`site:${s.id}`, {
+          m,
+          apply: (on) => {
+            m.setIcon(siteIcon(s, { selected: on }))
+            m.setZIndexOffset(markerZ("site", s.check, on))
+          },
+        })
         group.addLayer(m)
       }
     }
     if (layers.devices) {
       for (const d of data.devices) {
-        const isSel = selected?.kind === "device" && selected.id === d.id
+        const isSel = sel?.kind === "device" && sel.id === d.id
         const m = L.marker([d.latitude, d.longitude], {
           icon: deviceIcon(d, { selected: isSel }),
           draggable: editing && d.can_edit,
           zIndexOffset: markerZ("device", d.check, isSel),
         })
+        tagMarker(m, { kind: "device", check: d.check })
         m.on("dragend", () => {
           const p = m.getLatLng()
           moveDeviceRef.current.mutate({ id: d.id, lat: p.lat, lng: p.lng })
@@ -831,16 +864,24 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           L.DomEvent.stopPropagation(e)
           setSelected({ kind: "device", id: d.id })
         })
+        markerHandles.current.set(`device:${d.id}`, {
+          m,
+          apply: (on) => {
+            m.setIcon(deviceIcon(d, { selected: on }))
+            m.setZIndexOffset(markerZ("device", d.check, on))
+          },
+        })
         group.addLayer(m)
       }
     }
     for (const mk of data.markers) {
-      const isSel = selected?.kind === "marker" && selected.id === mk.id
+      const isSel = sel?.kind === "marker" && sel.id === mk.id
       const m = L.marker([mk.latitude, mk.longitude], {
         icon: freeMarkerIcon(mk, { selected: isSel }),
         draggable: editing,
         zIndexOffset: markerZ("marker", null, isSel),
       })
+      tagMarker(m, { kind: "marker", check: null })
       m.on("dragend", () => {
         const p = m.getLatLng()
         moveMarker.mutate({ id: mk.id, lat: p.lat, lng: p.lng })
@@ -848,6 +889,13 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       m.on("click", (e: L.LeafletMouseEvent) => {
         L.DomEvent.stopPropagation(e)
         setSelected({ kind: "marker", id: mk.id })
+      })
+      markerHandles.current.set(`marker:${mk.id}`, {
+        m,
+        apply: (on) => {
+          m.setIcon(freeMarkerIcon(mk, { selected: on }))
+          m.setZIndexOffset(markerZ("marker", null, on))
+        },
       })
       group.addLayer(m)
     }
@@ -860,7 +908,29 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       ;(map as unknown as { _smFitted?: boolean })._smFitted = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, editing, placed, layers, selected])
+  }, [data, editing, mode, placed, layers])
+
+  // Selection restyle + reveal: touch exactly the old and new selected
+  // markers, and when the new one sits inside a cluster, zoom/spiderfy until
+  // it's actually visible (deep links, search, sidebar picks).
+  const prevSelKey = useRef<string | null>(null)
+  useEffect(() => {
+    const key = selected ? `${selected.kind}:${selected.id}` : null
+    if (prevSelKey.current && prevSelKey.current !== key)
+      markerHandles.current.get(prevSelKey.current)?.apply(false)
+    if (key) {
+      const h = markerHandles.current.get(key)
+      h?.apply(true)
+      const el = h && (h.m as unknown as { _icon?: HTMLElement })._icon
+      if (h && !el && markersRef.current) {
+        revealingRef.current = true
+        zoomToRevealMarker(markersRef.current, h.m, () => {
+          revealingRef.current = false
+        })
+      }
+    }
+    prevSelKey.current = key
+  }, [selected])
 
   const fitAll = useCallback(
     (map?: L.Map | null) => {

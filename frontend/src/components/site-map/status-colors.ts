@@ -42,6 +42,23 @@ export function markerZ(
   )
 }
 
+/** The most frequent non-empty color in a set (cluster chip borders take the
+ * dominant site color). First-seen wins a tie, so the pick is deterministic. */
+export function dominantColor(
+  colors: (string | null | undefined)[]
+): string | null {
+  const counts = new Map<string, number>()
+  for (const c of colors) if (c) counts.set(c, (counts.get(c) ?? 0) + 1)
+  let best: string | null = null
+  let n = 0
+  for (const [c, k] of counts)
+    if (k > n) {
+      n = k
+      best = c
+    }
+  return best
+}
+
 /** The worst status in a set, or null when nothing has one. */
 export function worstCheck(checks: (string | null | undefined)[]): string | null {
   let worst: string | null = null

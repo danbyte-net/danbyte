@@ -22,6 +22,11 @@ import {
   observeMapSize,
   setBaseLayer,
 } from "@/components/site-map/map-core"
+import {
+  createMarkerGroup,
+  tagMarker,
+  zoomToRevealMarker,
+} from "@/components/site-map/cluster"
 import { deviceIcon, siteIcon } from "@/components/site-map/map-icons"
 import { cn } from "@/lib/utils"
 
@@ -119,7 +124,9 @@ export function MiniMap({
     const map = mapRef.current
     if (!map || !data) return
     layersRef.current?.remove()
-    const group = L.layerGroup()
+    // Clustered like the full map's view mode (the MiniMap is view-only);
+    // polylines added below land in the plugin's non-point group untouched.
+    const group = createMarkerGroup({ cluster: true, mini: true, radius: 40 })
 
     const placedSites = data.sites.filter((s) => s.latitude !== null)
     const sitesToShow = onlyConnectionsOf
@@ -152,12 +159,14 @@ export function MiniMap({
         icon: siteIcon(s, { selected: hl, mini: true }),
         zIndexOffset: markerZ("site", s.check, hl),
       })
+      tagMarker(m, { kind: "site", check: s.check, color: s.color })
       m.bindTooltip(s.name, { direction: "top" })
       m.on("click", () => nav({ to: "/sites/$id", params: { id: s.id } }))
       group.addLayer(m)
       bounds.push([s.latitude!, s.longitude!])
     }
 
+    let focusMarker: L.Marker | null = null
     for (const d of data.devices) {
       const focused = d.id === focusDeviceId
       // Same floor-planner badge square as the full map; the focused device
@@ -166,9 +175,11 @@ export function MiniMap({
         icon: deviceIcon(d, { selected: focused, mini: true }),
         zIndexOffset: markerZ("device", d.check, focused),
       })
+      tagMarker(m, { kind: "device", check: d.check })
       m.bindTooltip(d.name, { direction: "top" })
       m.on("click", () => nav({ to: "/devices/$id", params: { id: d.id } }))
       group.addLayer(m)
+      if (focused) focusMarker = m
       if (focusDeviceId ? focused : true) bounds.push([d.latitude, d.longitude])
     }
 
@@ -184,8 +195,15 @@ export function MiniMap({
     } else if (bounds.length > 1) {
       map.fitBounds(L.latLngBounds(bounds).pad(0.3), { maxZoom: 15 })
     }
-    // A tick later, in case the container just became visible.
-    setTimeout(() => map.invalidateSize(), 100)
+    // A tick later, in case the container just became visible. Then, if the
+    // focused device sits inside a cluster (stacked coordinates), zoom or
+    // spiderfy until its pin is actually the thing with the ring on it.
+    const reveal = focusMarker
+    setTimeout(() => {
+      map.invalidateSize()
+      if (reveal && !(reveal as unknown as { _icon?: HTMLElement })._icon)
+        zoomToRevealMarker(group, reveal)
+    }, 100)
   }, [
     data,
     connQ.data,
