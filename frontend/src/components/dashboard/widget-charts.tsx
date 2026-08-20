@@ -49,10 +49,14 @@ export function DistDonut({
   const sum = data.reduce((n, d) => n + d.count, 0)
   const chartData = data.map((d) => ({ ...d, fill: d.color }))
   return (
-    <div className="flex flex-col items-center gap-2 sm:flex-row">
+    <div className="flex h-full flex-col items-center gap-2 sm:flex-row">
+      {/* Grows with the tile: height follows the row, width follows via
+          aspect-square. Fixed 170px made a 3x3 tile look mostly empty.
+          Safe re #42: tile size only changes between gestures - bodies are
+          unmounted placeholders while a drag/resize is in flight. */}
       <ChartContainer
         config={configFor(data)}
-        className="mx-auto aspect-square h-[170px] shrink-0"
+        className="mx-auto aspect-square h-full max-h-[300px] min-h-[150px] shrink-0"
       >
         <PieChart>
           <ChartTooltip
@@ -216,7 +220,7 @@ export function RadialGauge({
   return (
     <ChartContainer
       config={{ value: { label } }}
-      className="mx-auto aspect-square h-[170px]"
+      className="mx-auto aspect-square h-full max-h-[300px] min-h-[150px]"
     >
       <PieChart>
         <Pie
