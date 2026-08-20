@@ -268,6 +268,7 @@ function Dashboard() {
                       title={w.title}
                       description={w.description}
                       editing={editing}
+                      dragging={dragId !== null}
                       onRemove={() => remove(id)}
                     >
                       {w.render(d)}
@@ -309,6 +310,7 @@ function SortableTile({
   title,
   description,
   editing,
+  dragging,
   onRemove,
   children,
 }: {
@@ -316,12 +318,27 @@ function SortableTile({
   title: string
   description: string
   editing: boolean
+  dragging: boolean
   onRemove: () => void
   children: ReactNode
 }) {
   const { setNodeRef, listeners, attributes, isDragging } = useSortable({
     id,
     disabled: !editing,
+  })
+  // While a drag is in flight, the CSS-column masonry re-packs on every pointer
+  // move, so each widget's width changes continuously. A recharts chart reacts
+  // to that through a ResizeObserver, and under a stream of resizes it re-renders
+  // itself into "maximum update depth exceeded" (React #185) - a hard crash of
+  // the whole dashboard, not just the chart. So we unmount the live body during
+  // the drag and hold a static box of the last measured height in its place: no
+  // observer runs, no loop can form, and the masonry still reflows realistically.
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const heightRef = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (!dragging && bodyRef.current) {
+      heightRef.current = bodyRef.current.offsetHeight
+    }
   })
   return (
     <div
@@ -360,11 +377,22 @@ function SortableTile({
           </div>
         )}
       </div>
-      <Suspense
-        fallback={<div className="h-32 animate-pulse rounded-md bg-muted/40" />}
-      >
-        {children}
-      </Suspense>
+      {dragging ? (
+        <div
+          className="rounded-md bg-muted/30"
+          style={{ height: heightRef.current ?? 128 }}
+        />
+      ) : (
+        <div ref={bodyRef}>
+          <Suspense
+            fallback={
+              <div className="h-32 animate-pulse rounded-md bg-muted/40" />
+            }
+          >
+            {children}
+          </Suspense>
+        </div>
+      )}
     </div>
   )
 }
