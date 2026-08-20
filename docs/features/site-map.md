@@ -53,7 +53,10 @@ The page is a clone of the floor-plan editor's shell:
 - **Right inspector** - opens when something is selected. Sites show health,
   counts, and floor-plan jump-offs; devices show badges, the front image,
   and the FOV sliders; markers are edited here (label, description, linked
-  device, FOV, delete); links show their endpoints and metadata.
+  device, FOV, delete); links show their endpoints and metadata. Site and
+  device inspectors carry a **Details** section with the same detail-page
+  rows (and copy buttons) as the popovers - serial, DNS, rack, location,
+  cluster, counts, coordinates - so the answer is on the map either way.
 - **"On this map"** (Objects) - the far-right objects sidebar: one search
   box over foldable groups - sites, devices by role, markers, and links
   grouped by kind. Click a row to fly to it; Enter in the search box jumps

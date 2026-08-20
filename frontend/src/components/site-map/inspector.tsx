@@ -36,6 +36,10 @@ import { TileBadge } from "@/components/floorplan/tile-badge"
 import { Field } from "@/components/forms"
 import { CableForm } from "@/components/cable-form"
 import { DevicePathsList } from "@/components/device-paths-list"
+import {
+  DeviceExtraRows,
+  SiteDetailRows,
+} from "@/components/site-map/detail-rows"
 import { cn } from "@/lib/utils"
 import { KIND_COLOR } from "@/components/site-map/connections-layer"
 
@@ -110,6 +114,12 @@ export function SiteInspector({
         {s.device_count} device{s.device_count === 1 ? "" : "s"}
         {s.floor_plan_count > 0 &&
           ` · ${s.floor_plan_count} floor plan${s.floor_plan_count === 1 ? "" : "s"}`}
+      </div>
+      <div className="grid gap-1.5">
+        <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+          Details
+        </span>
+        <SiteDetailRows site={s} />
       </div>
       {s.floor_plans.length > 0 && (
         <div className="grid gap-2">
@@ -202,6 +212,20 @@ export function DeviceInspector({
 
       <div className="grid gap-1.5">
         <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+          Details
+        </span>
+        {/* Empty shownKeys: the inspector's badges cover status/role/type,
+            everything else from the device page renders here. */}
+        <DeviceExtraRows
+          id={d.id}
+          shownKeys={[]}
+          lat={d.latitude}
+          lng={d.longitude}
+        />
+      </div>
+
+      <div className="grid gap-1.5">
+        <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
           Cabling
         </span>
         <DevicePathsList
@@ -280,6 +304,14 @@ export function MarkerInspector({
       )}
       {deviceLink}
       {fovEditor}
+      {m.device && (
+        <div className="grid gap-1.5">
+          <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+            Linked device
+          </span>
+          <DeviceExtraRows id={m.device.id} shownKeys={[]} />
+        </div>
+      )}
       {m.device && (
         <div className="grid gap-1.5">
           <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
