@@ -17,6 +17,9 @@ import {
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export interface ComboboxOption {
   value: string
   label: string
@@ -136,9 +139,16 @@ export function Combobox({
                 {section.items.map((o) => (
                   <CommandItem
                     key={o.value}
-                    // Include the raw value so typing a slug (e.g. "sfpp",
-                    // "smf-os2") matches, not just the pretty label.
                     value={`${o.label} ${o.value}`}
+                    // What the search actually matches. The label always; the
+                    // raw value only when it is a meaningful slug ("sfpp") -
+                    // never a UUID, which fuzzy/substring-matched short
+                    // searches and made "SW07" list its siblings (#49).
+                    keywords={
+                      UUID_RE.test(o.value)
+                        ? [o.label, o.hint ?? ""]
+                        : [o.label, o.value, o.hint ?? ""]
+                    }
                     disabled={o.disabled}
                     onSelect={() => pick(o.value)}
                     className="gap-2"

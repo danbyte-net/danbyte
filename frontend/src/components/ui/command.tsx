@@ -14,6 +14,30 @@ import {
 import { InputGroup, InputGroupAddon } from "@/components/ui/input-group"
 import { SearchIcon, CheckIcon } from "lucide-react"
 
+/** Substring matching, not cmdk's fuzzy-subsequence scoring.
+
+ * The default matcher counts scattered characters: "SW07" scored as a hit on
+ * "SW05 <uuid>" because the 0 and the 7 appear somewhere in the uuid, so a
+ * unique search still listed its siblings (#49). Every whitespace-separated
+ * term must appear verbatim instead - which is what people expect a search
+ * box to do. Callers can still pass their own `filter`.
+ */
+function substringFilter(
+  value: string,
+  search: string,
+  keywords?: string[]
+): number {
+  // When an item supplies keywords, ONLY those are searchable - that is how
+  // entity pickers keep their UUID values out of the match entirely.
+  const hay = (keywords?.length ? keywords.join(" ") : value).toLowerCase()
+  return search
+    .toLowerCase()
+    .split(/\s+/)
+    .every((term) => !term || hay.includes(term))
+    ? 1
+    : 0
+}
+
 function Command({
   className,
   ...props
@@ -21,6 +45,7 @@ function Command({
   return (
     <CommandPrimitive
       data-slot="command"
+      filter={substringFilter}
       className={cn(
         "flex size-full flex-col overflow-hidden rounded-xl! bg-popover p-1 text-popover-foreground",
         className
