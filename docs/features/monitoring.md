@@ -422,12 +422,13 @@ would look right while coming from the wrong place.
 
 Leave it empty for the previous behaviour.
 
-!!! note "PTR lookups always run on the Danbyte server"
+These resolvers are used by the **Danbyte server**. By default that is where
+every PTR lookup happens, including for checks an Outpost ran remotely - so
+name servers the core server can actually reach.
 
-    Even for checks executed remotely by an Outpost, reverse DNS is resolved
-    centrally. An Outpost in a branch office can often reach that branch's DNS
-    when the core server cannot - so name the servers the *core* server can
-    reach, not the ones nearest the hosts being checked.
+An Outpost can instead resolve its own, which is usually what you want when it
+sits in a branch office: see *Reverse DNS from an Outpost* in
+[Outposts](../monitoring/outposts.md).
 
 ## Alerts
 

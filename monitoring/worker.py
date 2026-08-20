@@ -25,6 +25,8 @@ from django.conf import settings
 from django.utils import timezone
 
 from .checkers import CheckOutcome, get_checker
+from danbyte_checks.reverse_dns import resolve_ptrs, split_resolver
+
 from .models import CheckResult, CheckState, StateTransition
 from .resolver import ResolvedCheck
 from .runner import run_resolved
@@ -361,7 +363,7 @@ def _finalise(states: list[CheckState], outcomes: list[CheckOutcome], settings_m
         from .alerts import process_transitions
 
         process_transitions(transitions, now)
-    _sync_dns(states, settings_map)
+    _sync_dns(states, settings_map, outcomes)
 
 
 def ingest_results(outcome_by_id: dict, *, engine_id=None, tenant_id=None) -> int:
@@ -395,84 +397,18 @@ def ingest_results(outcome_by_id: dict, *, engine_id=None, tenant_id=None) -> in
 # ─── reverse-DNS enrichment ───────────────────────────────────────────────
 
 
-def _ptr_sockaddr(addr: str):
-    return (addr, 0, 0, 0) if ":" in addr else (addr, 0)
-
-
 def _split_resolver(entry: str) -> tuple[str, int]:
-    """``10.0.0.45`` or ``10.0.0.45:5353`` -> ``(host, port)``.
+    """Re-exported so the serializer validates exactly what the resolver parses."""
+    return split_resolver(entry)
 
-    IPv6 needs brackets to be unambiguous, since a bare address is all colons.
+
+async def _resolve_ptrs(addresses: list[str], resolvers=()) -> dict:
+    """Reverse-resolve to hostnames (or None where there is no PTR).
+
+    Thin wrapper over the shared implementation so the core and the Outpost
+    agent cannot drift on what a PTR lookup means.
     """
-    entry = (entry or "").strip()
-    if entry.startswith("["):
-        host, _, rest = entry[1:].partition("]")
-        port = rest.lstrip(":")
-        return host, int(port) if port else 53
-    host, sep, port = entry.rpartition(":")
-    if sep and port.isdigit() and ":" not in host:
-        return host, int(port)
-    return entry, 53
-
-
-async def _resolve_ptrs_via(addresses: list[str], resolvers: tuple) -> dict:
-    """Reverse-resolve against specific nameservers, tried in order.
-
-    Asking a named server is the whole point on a split-horizon network, where
-    the Danbyte host's own resolver answers the wrong view - or nothing.
-
-    It **never falls back to the system resolver**: a resolver setting that
-    silently ignores itself is worse than no setting, because the operator gets
-    plausible answers from the wrong place. NXDOMAIN is an answer, so it stops
-    there; only a transport failure advances to the next server. When every
-    server is unreachable the lookup fails, which `dns_preserve_if_alive`
-    already handles as a transient blip.
-    """
-    import dns.asyncresolver
-    import dns.resolver
-    import dns.reversename
-
-    res = dns.asyncresolver.Resolver(configure=False)
-    res.nameservers = [h for h, _ in (_split_resolver(r) for r in resolvers)]
-    ports = {h: p for h, p in (_split_resolver(r) for r in resolvers)}
-    if any(p != 53 for p in ports.values()):
-        res.nameserver_ports = ports
-    res.timeout, res.lifetime = 3, 5
-    sem = asyncio.Semaphore(_concurrency())
-
-    async def _one(addr: str):
-        async with sem:
-            try:
-                answer = await res.resolve(
-                    dns.reversename.from_address(addr), "PTR"
-                )
-                return addr, str(answer[0]).rstrip(".")
-            except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
-                return addr, None  # an answer: this address has no PTR
-            except Exception:  # noqa: BLE001 - timeouts, refusals, bad config
-                return addr, None
-
-    return dict(await asyncio.gather(*(_one(a) for a in addresses)))
-
-
-async def _resolve_ptrs(addresses: list[str]) -> dict:
-    """Reverse-resolve a list of IPs to hostnames (or None when there's no
-    PTR), bounded by the concurrency limit. Uses the system resolver async."""
-    loop = asyncio.get_running_loop()
-    sem = asyncio.Semaphore(_concurrency())
-
-    async def _one(addr: str):
-        async with sem:
-            try:
-                host, _ = await asyncio.wait_for(
-                    loop.getnameinfo(_ptr_sockaddr(addr), socket.NI_NAMEREQD),
-                    timeout=3,
-                )
-                return addr, host
-            except (socket.gaierror, OSError, asyncio.TimeoutError):
-                return addr, None
-
-    return dict(await asyncio.gather(*(_one(a) for a in addresses)))
+    return await resolve_ptrs(addresses, resolvers, concurrency=_concurrency())
 
 
 async def _resolve_batches(groups: dict) -> dict:
@@ -485,15 +421,27 @@ async def _resolve_batches(groups: dict) -> dict:
     """
     keys = list(groups)
     results = await asyncio.gather(*(
-        _resolve_ptrs_via(groups[k], k) if k else _resolve_ptrs(groups[k])
-        for k in keys
+        _resolve_ptrs(groups[k], k) for k in keys
     ))
     return dict(zip(keys, results))
 
 
-def _sync_dns(states: list[CheckState], settings_map: dict) -> None:
+def _sync_dns(
+    states: list[CheckState], settings_map: dict, outcomes: list | None = None
+) -> None:
     """For tenants with DNS sync on, resolve each checked IP's PTR and update
-    ``IPAddress.dns_name`` per the preserve/clear policy."""
+    ``IPAddress.dns_name`` per the preserve/clear policy.
+
+    An Outpost that resolved the PTR itself reports it in the result detail, and
+    that answer wins - it was taken from where the target actually lives, which
+    is the whole reason to run it there. The core only looks up what nobody
+    reported.
+
+    The contract is **key presence, not value**: ``detail["ptr"]`` present means
+    "I looked", and its value may be empty meaning "there is no PTR". An agent
+    that never looked omits the key entirely, so an older Outpost keeps getting
+    central lookups instead of having its silence read as "no name".
+    """
     targets: dict = {}  # ip_id -> (ip, cfg)
     reachable: dict = {}  # ip_id -> bool (any check up/degraded this run)
     for s in states:
@@ -509,19 +457,33 @@ def _sync_dns(states: list[CheckState], settings_map: dict) -> None:
     # Grouped by resolver, not flattened: the answer depends on who was asked,
     # so two tenants with the same address and different servers must not share
     # a lookup. An empty tuple is the host's own resolver, i.e. old behaviour.
+    # What an Outpost already answered. Keyed on presence: see the docstring.
+    reported: dict = {}
+    for state, oc in zip(states, outcomes or []):
+        detail = getattr(oc, "detail", None) or {}
+        if "ptr" in detail and state.target_ip_id in targets:
+            reported[state.target_ip_id] = detail["ptr"] or None
+
     groups: dict = {}
-    for ip, cfg in targets.values():
+    for ip_id, (ip, cfg) in targets.items():
+        if ip_id in reported:
+            continue  # already answered, and by the better-placed resolver
         groups.setdefault(cfg.get("dns_resolvers", ()), []).append(ip.ip_address)
-    try:
-        resolved_by = asyncio.run(_resolve_batches(groups))
-    except Exception as e:  # noqa: BLE001 - DNS must never fail the check run
-        log.warning("dns sync failed: %s", e)
-        return
+    resolved_by: dict = {}
+    if groups:  # nothing to look up when every answer was reported
+        try:
+            resolved_by = asyncio.run(_resolve_batches(groups))
+        except Exception as e:  # noqa: BLE001 - DNS must never fail a check run
+            log.warning("dns sync failed: %s", e)
+            return
 
     to_update = []
     for ip_id, (ip, cfg) in targets.items():
-        resolved = resolved_by.get(cfg.get("dns_resolvers", ()), {})
-        host = resolved.get(ip.ip_address)
+        if ip_id in reported:
+            host = reported[ip_id]
+        else:
+            resolved = resolved_by.get(cfg.get("dns_resolvers", ()), {})
+            host = resolved.get(ip.ip_address)
         current = ip.dns_name or ""
         if host:
             target = host

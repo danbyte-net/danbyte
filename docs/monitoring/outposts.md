@@ -62,6 +62,41 @@ against a freshly-upgraded core. So:
 Full contract: `docs/COMPATIBILITY.md` in the danbyte-outpost repo. **Whenever you
 extend the monitoring engine, check that doc.**
 
+## Reverse DNS from an Outpost
+
+PTR is the one lookup whose right answer depends on **where you ask from**. A
+branch-office Outpost can usually reach that branch's DNS; the core server often
+cannot, and on a split-horizon network it may get a confidently wrong answer
+rather than none. So an Outpost can resolve PTR itself and report the name back.
+
+Turn on **Resolve reverse DNS here** on the Outpost, and optionally list
+**Nameservers** for it to ask. Leave that empty to use the Outpost machine's own
+resolver, which is usually already correct for its site. The core then skips its
+own lookup for anything the Outpost answered.
+
+This needs no protocol bump - both halves are additive fields:
+
+- `work` and `hello` gain
+  `"dns": {"resolve": true, "resolvers": ["10.20.0.5"]}`.
+- A result may carry `"ptr"` inside its existing `detail` object.
+
+!!! warning "Report on presence, not value"
+
+    The core decides using **whether the `ptr` key is there**, not what it
+    holds. An agent that ran a lookup must *always* send `ptr` - empty string
+    when the address has no PTR - and an agent that did not look must *never*
+    send it.
+
+    Get this backwards and an agent's silence reads as "this address has no
+    name", which would clear DNS names across an estate the moment it upgrades.
+    That is also why an older agent, which never sends the key, keeps getting
+    central lookups and is unaffected.
+
+The lookup itself is shared code: `danbyte_checks/reverse_dns.py`, so the agent
+and the core cannot drift on what a PTR lookup means. Explicit nameservers need
+`dnspython`; with no resolvers configured it uses the standard library and adds
+no dependency to the agent.
+
 ## Transports - which way traffic flows
 
 Sites differ in what their firewall allows, so an Outpost's **transport** is set

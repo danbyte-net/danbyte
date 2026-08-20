@@ -3994,6 +3994,10 @@ export interface MonitoringEngine {
   poll_interval_seconds: number
   /** Self-update to the golden (default) release when the version differs. */
   auto_update: boolean
+  /** This Outpost resolves PTR itself instead of the Danbyte server. */
+  dns_resolve_locally: boolean
+  /** Nameservers it asks; empty = the Outpost machine's own resolver. */
+  dns_resolvers: string[]
   ssh_host: string
   ssh_port: number
   ssh_user: string

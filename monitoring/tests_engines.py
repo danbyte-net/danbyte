@@ -292,6 +292,26 @@ class OutpostApiTests(_Base):
         # Already on the golden version → not offered (handles the v-prefix).
         self.assertIsNone(hello("v9.9.9"))
 
+    def test_work_carries_the_dns_directive(self):
+        """The agent learns whether to resolve PTR itself, and with what."""
+        r = self.client.get("/api/outpost/work/", **self._auth()).json()
+        self.assertEqual(r["dns"], {"resolve": False, "resolvers": []})
+
+        self.engine.dns_resolve_locally = True
+        self.engine.dns_resolvers = ["10.20.0.5", "10.20.0.6:5353"]
+        self.engine.save()
+        r = self.client.get("/api/outpost/work/", **self._auth()).json()
+        self.assertEqual(
+            r["dns"],
+            {"resolve": True, "resolvers": ["10.20.0.5", "10.20.0.6:5353"]},
+        )
+        # hello carries it too, so an agent knows before it has any work.
+        h = self.client.post(
+            "/api/outpost/hello/", {"version": "1", "hostname": "h"},
+            format="json", **self._auth(),
+        ).json()
+        self.assertTrue(h["dns"]["resolve"])
+
     def test_bad_token_rejected(self):
         self.assertEqual(
             self.client.get("/api/outpost/work/", **self._auth("wrong")).status_code,

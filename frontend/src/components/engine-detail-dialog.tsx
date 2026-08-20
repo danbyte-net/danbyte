@@ -13,7 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { FormCheckbox } from "@/components/forms"
+import { FormCheckbox, FormText } from "@/components/forms"
 import { apiErrorToast } from "@/lib/api-toast"
 
 const STATUS_TONE: Record<string, string> = {
@@ -43,6 +43,8 @@ export function EngineDetailDialog({
   const [sshKey, setSshKey] = useState("")
   const [sshHostKey, setSshHostKey] = useState("")
   const [autoUpdate, setAutoUpdate] = useState(false)
+  const [dnsLocal, setDnsLocal] = useState(false)
+  const [dnsResolvers, setDnsResolvers] = useState("")
   const isSsh = engine?.transport === "ssh"
 
   useEffect(() => {
@@ -56,6 +58,8 @@ export function EngineDetailDialog({
       setSshKey("")
       setSshHostKey(engine.ssh_host_key)
       setAutoUpdate(engine.auto_update)
+      setDnsLocal(engine.dns_resolve_locally)
+      setDnsResolvers((engine.dns_resolvers ?? []).join(", "))
     }
   }, [engine])
 
@@ -75,6 +79,11 @@ export function EngineDetailDialog({
         description: description.trim(),
         poll_interval_seconds: Number(poll) || 15,
         auto_update: autoUpdate,
+        dns_resolve_locally: dnsLocal,
+        dns_resolvers: dnsResolvers
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean),
       }
       if (isSsh) {
         body.ssh_host = sshHost.trim()
@@ -258,6 +267,32 @@ export function EngineDetailDialog({
             onChange={setAutoUpdate}
             className="text-[13px]"
           />
+
+          <div className="space-y-2 rounded-md border border-border bg-muted/20 p-2">
+            <FormCheckbox
+              label={
+                <>
+                  Resolve reverse DNS here{" "}
+                  <span className="text-[11px] text-muted-foreground">
+                    - this Outpost looks up PTR records itself
+                  </span>
+                </>
+              }
+              hint="PTR is the one lookup whose answer depends on where you ask from. An Outpost can often see its own site's DNS when the Danbyte server cannot. Off means the server resolves, as before."
+              checked={dnsLocal}
+              onChange={setDnsLocal}
+              className="text-[13px]"
+            />
+            {dnsLocal && (
+              <FormText
+                label="Nameservers"
+                info="IP addresses, comma separated, asked in this order. Leave empty to use the Outpost machine's own resolver, which is usually already right for its site. Needs an agent new enough to report lookups back; older ones are ignored and the server keeps resolving."
+                value={dnsResolvers}
+                onChange={setDnsResolvers}
+                placeholder="10.20.0.5, 10.20.0.6"
+              />
+            )}
+          </div>
 
           {isSsh && (
             <div className="space-y-2 rounded-md border border-border bg-muted/20 p-2">

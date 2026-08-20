@@ -197,3 +197,60 @@ class ResolverValidationTests(TestCase):
 
         with self.assertRaises(ValidationError):
             self._clean(["10.0.0.1", "10.0.0.2", "10.0.0.3", "10.0.0.4"])
+
+
+class OutpostReportedPtrTests(DnsSyncTests):
+    """An Outpost that resolved the name itself is the better source: it asked
+    from where the target lives. The core must defer to it, and must be able to
+    tell 'looked, found nothing' from 'never looked'."""
+
+    class _Outcome:
+        def __init__(self, detail):
+            self.detail = detail
+
+    def test_a_reported_name_wins_and_skips_the_central_lookup(self):
+        st = self._state()
+        called = {}
+
+        async def _never(groups):
+            called["yes"] = groups
+            return {}
+
+        with patch("monitoring.worker._resolve_batches", _never):
+            _sync_dns([st], self._cfg(),
+                      [self._Outcome({"ptr": "branch.example.com"})])
+        self.ip.refresh_from_db()
+        self.assertEqual(self.ip.dns_name, "branch.example.com")
+        self.assertEqual(called, {})  # the core never looked it up itself
+
+    def test_reported_empty_means_no_ptr_not_no_answer(self):
+        """The Outpost looked and found nothing, so the clear policy applies."""
+        self.ip.dns_name = "stale.example.com"
+        self.ip.save()
+        st = self._state(status="down")  # not alive, so preserve doesn't apply
+        with patch("monitoring.worker._resolve_batches") as central:
+            _sync_dns([st], self._cfg(dns_clear_on_missing=True),
+                      [self._Outcome({"ptr": ""})])
+            central.assert_not_called()
+        self.ip.refresh_from_db()
+        self.assertEqual(self.ip.dns_name, "")
+
+    def test_an_agent_that_never_looked_still_gets_a_central_lookup(self):
+        """Older Outposts send no ptr key at all. Their silence must not be
+        read as 'no name' - that would wipe names across an estate on upgrade."""
+        self.ip.dns_name = "keep.example.com"
+        self.ip.save()
+        st = self._state(status="down")
+        with patch("monitoring.worker.asyncio.run",
+                   return_value={(): {"10.0.0.5": "central.example.com"}}):
+            _sync_dns([st], self._cfg(), [self._Outcome({"latency_ms": 4})])
+        self.ip.refresh_from_db()
+        self.assertEqual(self.ip.dns_name, "central.example.com")
+
+    def test_no_outcomes_at_all_behaves_as_before(self):
+        st = self._state()
+        with patch("monitoring.worker.asyncio.run",
+                   return_value={(): {"10.0.0.5": "central.example.com"}}):
+            _sync_dns([st], self._cfg())
+        self.ip.refresh_from_db()
+        self.assertEqual(self.ip.dns_name, "central.example.com")

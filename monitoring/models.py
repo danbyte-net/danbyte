@@ -930,6 +930,20 @@ class MonitoringEngine(TimestampedModel):
     agent_version = models.CharField(max_length=40, blank=True)
     agent_hostname = models.CharField(max_length=255, blank=True)
     agent_ip = models.CharField(max_length=45, blank=True)
+    # Reverse DNS. PTR is the one lookup whose right answer depends on where it
+    # is asked from, so an Outpost can run it locally instead of the core.
+    dns_resolve_locally = models.BooleanField(
+        default=False,
+        help_text="Let this Outpost resolve PTR records itself, instead of the "
+        "Danbyte server doing it. Use when the Outpost can see DNS the server "
+        "cannot.",
+    )
+    dns_resolvers = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Nameservers this Outpost asks, as IP addresses, tried in "
+        "order. Empty means the Outpost's own host resolver.",
+    )
 
     class Meta:
         ordering = ["name"]

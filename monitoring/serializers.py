@@ -1073,6 +1073,7 @@ class MonitoringEngineSerializer(serializers.ModelSerializer):
             "token_set", "is_local", "poll_interval_seconds", "auto_update",
             "ssh_host", "ssh_port", "ssh_user", "ssh_credential",
             "ssh_host_key", "ssh_configured",
+            "dns_resolve_locally", "dns_resolvers",
             "last_seen_at", "stale_since", "agent_version", "agent_hostname", "agent_ip",
             "binding_count", "check_count", "created_at", "updated_at",
         ]
@@ -1081,6 +1082,9 @@ class MonitoringEngineSerializer(serializers.ModelSerializer):
             "last_seen_at", "stale_since", "agent_version", "agent_hostname", "agent_ip",
             "created_at", "updated_at",
         ]
+
+    def validate_dns_resolvers(self, value):
+        return MonitoringSettingsSerializer().validate_dns_resolvers(value)
 
     def get_binding_count(self, obj) -> int:
         return obj.bindings.count()

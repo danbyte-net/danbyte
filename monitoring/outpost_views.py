@@ -185,6 +185,7 @@ def outpost_hello_view(request):
             "assigned_checks": CheckState.objects.filter(engine=eng).count(),
             # Non-null → the agent should self-update to this version.
             "update_to": _update_target(eng, eng.agent_version),
+            "dns": _dns_directive(eng),
         }
     )
 
@@ -252,7 +253,25 @@ def outpost_work_view(request):
         "poll_interval_seconds": eng.poll_interval_seconds,
         # Tells the agent to run a discovery sweep now (a "Discover now" click).
         "sweep_pending": eng.sweep_requested_at is not None,
+        # Reverse DNS this Outpost should do itself. An agent too old to know
+        # this key simply ignores it and the core keeps resolving centrally.
+        "dns": _dns_directive(eng),
     })
+
+
+def _dns_directive(engine) -> dict:
+    """What the agent should do about PTR lookups.
+
+    ``resolvers`` empty means "your own host resolver", which is usually right
+    for an Outpost - its machine already resolves its own site. Reporting is
+    keyed on presence in the result detail, so an agent that runs a lookup must
+    always send ``ptr`` (empty when there is no PTR) and one that does not must
+    never send it.
+    """
+    return {
+        "resolve": bool(engine.dns_resolve_locally),
+        "resolvers": list(engine.dns_resolvers or []),
+    }
 
 
 @extend_schema(
