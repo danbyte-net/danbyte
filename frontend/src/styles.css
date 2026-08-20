@@ -453,38 +453,6 @@
   border: 1.5px solid var(--background);
 }
 
-/* ─── World-map widget arcs + site pulse ───────────────────────────────── */
-.wm-arc {
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  animation: wm-arc-draw 5s ease-in-out infinite;
-  opacity: 0.85;
-}
-@keyframes wm-arc-draw {
-  0% {
-    stroke-dashoffset: 1;
-  }
-  45%,
-  70% {
-    stroke-dashoffset: 0;
-  }
-  100% {
-    stroke-dashoffset: -1;
-  }
-}
-.wm-site-warn {
-  animation: wm-site-pulse 1.6s ease-in-out infinite;
-}
-@keyframes wm-site-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.45;
-  }
-}
-
 /* Tabular figures. Applied at ~370 call sites - every counter, percentage,
    timestamp, latency and byte total - so digits keep their column as data
    updates instead of jittering (docs/design/visual-language.md).

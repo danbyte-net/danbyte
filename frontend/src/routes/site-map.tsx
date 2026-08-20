@@ -12,6 +12,7 @@ import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import { toast } from "sonner"
 import {
+  MapPin,
   Maximize,
   PanelRight,
   Satellite,
@@ -1303,6 +1304,32 @@ function MapBody({ data }: { data: SiteMapPayload }) {
         <div className="relative isolate z-0 min-w-0 flex-1">
           <div ref={mapEl} className="absolute inset-0" />
 
+          {mode === "view" &&
+            placed.length === 0 &&
+            data.devices.length === 0 &&
+            data.markers.length === 0 && (
+              <div className="pointer-events-none absolute inset-0 z-[900] flex items-center justify-center">
+                <div className="pointer-events-auto flex flex-col items-center gap-2 rounded-lg border border-border bg-background/95 px-6 py-5 text-center shadow-sm backdrop-blur">
+                  <MapPin className="size-5 text-muted-foreground" />
+                  <p className="text-sm font-medium">Nothing placed yet</p>
+                  <p className="max-w-64 text-[12px] text-muted-foreground">
+                    Drop your sites on the map, or type coordinates into the
+                    site form.
+                  </p>
+                  {canEditAny && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-1"
+                      onClick={() => setMode("layout")}
+                    >
+                      Start placing
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+
           {tilesBlocked && (
             <div className="absolute inset-x-0 top-3 z-[1000] mx-auto w-fit max-w-xl rounded-lg border border-amber-500/40 bg-background/95 px-4 py-3 text-[13px] shadow-sm backdrop-blur">
               <p className="font-medium">
@@ -1698,18 +1725,32 @@ function MapSearch({
 function PopHeader({
   title,
   mono,
+  dot,
   onClose,
 }: {
   title: string
   mono?: boolean
+  /** Identity colour (site colour, role colour, marker-type colour) - a 10px
+   * dot before the name, same colour the marker itself wears. */
+  dot?: string
   onClose: () => void
 }) {
   return (
     <div className="flex items-start justify-between gap-2">
       <span
-        className={"text-[13px] font-semibold " + (mono ? "font-mono" : "")}
+        className={
+          "flex min-w-0 items-center gap-1.5 text-[13px] font-semibold " +
+          (mono ? "font-mono" : "")
+        }
       >
-        {title}
+        {dot && (
+          <span
+            aria-hidden
+            className="size-2.5 shrink-0 rounded-full border border-background shadow-[0_0_0_1px_var(--border)]"
+            style={{ background: dot }}
+          />
+        )}
+        <span className="truncate">{title}</span>
       </span>
       <button
         onClick={onClose}
@@ -1731,11 +1772,18 @@ function SitePopover({
 }) {
   return (
     <div className="grid gap-2">
-      <PopHeader title={s.name} onClose={onClose} />
-      <div className="text-[12px] text-muted-foreground">
-        {s.device_count} device{s.device_count === 1 ? "" : "s"}
-        {s.floor_plan_count > 0 &&
-          ` · ${s.floor_plan_count} floor plan${s.floor_plan_count === 1 ? "" : "s"}`}
+      <PopHeader
+        title={s.name}
+        dot={s.color || "var(--primary)"}
+        onClose={onClose}
+      />
+      <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-muted-foreground">
+        <span>
+          {s.device_count} device{s.device_count === 1 ? "" : "s"}
+          {s.floor_plan_count > 0 &&
+            ` · ${s.floor_plan_count} floor plan${s.floor_plan_count === 1 ? "" : "s"}`}
+        </span>
+        {s.check && <CheckStatusBadge status={s.check as CheckStatus} />}
       </div>
       {s.floor_plans.length > 0 && (
         <div className="grid gap-0.5">
@@ -1945,7 +1993,12 @@ function DevicePopover({
 }) {
   return (
     <div className="grid gap-2">
-      <PopHeader title={d.name} mono onClose={onClose} />
+      <PopHeader
+        title={d.name}
+        mono
+        dot={d.role?.color || undefined}
+        onClose={onClose}
+      />
       <DeviceDetails device={d} fields={fields} />
       <div className="flex items-center justify-between text-[12px]">
         <span className="text-muted-foreground">
@@ -1985,6 +2038,7 @@ function MarkerPopover({
     <div className="grid gap-2">
       <PopHeader
         title={m.label || m.device?.name || m.type?.name || "Marker"}
+        dot={m.type?.color || undefined}
         onClose={onClose}
       />
       {m.type && (
