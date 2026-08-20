@@ -4,6 +4,8 @@ matching list / detail page actually renders, no kitchen-sink output.
 """
 from __future__ import annotations
 
+import ipaddress
+
 from django.db import transaction
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
@@ -866,6 +868,38 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     has_descendants = serializers.SerializerMethodField()
     monitoring_engine = serializers.SerializerMethodField()
     dhcp = serializers.SerializerMethodField()
+
+    def validate_cidr(self, value):
+        """A prefix must be real CIDR - the model field is a plain CharField,
+        so without this a bare `10.0.0.1` saved fine and then haunted the
+        install: invisible in the tree (which parses CIDRs) but counted by
+        the dashboard (#47).
+        """
+        raw = (value or "").strip()
+        if "/" not in raw:
+            raise serializers.ValidationError(
+                "Include a prefix length in CIDR notation, "
+                "e.g. 10.0.10.0/24 or 2001:db8:1::/64."
+            )
+        try:
+            net = ipaddress.ip_network(raw, strict=True)
+        except ValueError as exc:
+            msg = str(exc)
+            if "has host bits set" in msg:
+                addr = raw.split("/", 1)[0]
+                length = raw.split("/", 1)[1]
+                try:
+                    fixed = ipaddress.ip_network(raw, strict=False)
+                    raise serializers.ValidationError(
+                        f"{addr}/{length} has host bits set - the network "
+                        f"is {fixed}."
+                    ) from None
+                except ValueError:
+                    pass
+            raise serializers.ValidationError(
+                f"Not a valid prefix: {msg}."
+            ) from None
+        return str(net)  # normalised (compressed IPv6, canonical form)
 
     @extend_schema_field(OpenApiTypes.BOOL)
     def get_dhcp(self, obj) -> bool:
