@@ -127,7 +127,7 @@ export function MonitoringSettingsForm() {
           cleanup_enabled: draft.cleanup_enabled,
           cleanup_after_days: Number(draft.cleanup_after_days),
           flap_exclude_ip_statuses: draft.flap_exclude_ip_statuses,
-          arp_source_device: draft.arp_source_device ?? null,
+          arp_source_devices: draft.arp_source_devices ?? [],
         })
       }}
     >
@@ -487,18 +487,65 @@ export function MonitoringSettingsForm() {
           title="Switch-link suggestions"
           hint="SNMP drift proposes which access port each known IP hangs off, joining an ARP table with each switch's MAC table."
         >
+          {(draft.arp_source_devices_detail ?? []).length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {(draft.arp_source_devices_detail ?? []).map((d) => (
+                <span
+                  key={d.id}
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs"
+                >
+                  {d.name}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${d.name}`}
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      set(
+                        "arp_source_devices",
+                        (draft.arp_source_devices ?? []).filter(
+                          (id) => id !== d.id
+                        )
+                      )
+                      set(
+                        "arp_source_devices_detail",
+                        (draft.arp_source_devices_detail ?? []).filter(
+                          (x) => x.id !== d.id
+                        )
+                      )
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <DevicePicker
-            label="ARP source"
-            value={draft.arp_source_device ?? null}
-            onChange={(v) => set("arp_source_device", v)}
+            label="Add ARP source"
+            value={null}
+            excludeIds={draft.arp_source_devices ?? []}
+            onChange={(v) => {
+              if (!v || (draft.arp_source_devices ?? []).includes(v)) return
+              set("arp_source_devices", [
+                ...(draft.arp_source_devices ?? []),
+                v,
+              ])
+              // The picker only hands back the id; show it until the next
+              // reload fills in the server detail.
+              set("arp_source_devices_detail", [
+                ...(draft.arp_source_devices_detail ?? []),
+                { id: v, name: "(added)" },
+              ])
+            }}
           />
           <p className="text-[11px] text-muted-foreground">
-            On L2-only networks a switch's own ARP table is nearly empty - pick
-            the device that actually routes (the gateway or firewall) and its
-            table feeds every switch's suggestions. Leave empty to use each
-            switch's own. Mark individual ports as{" "}
-            <span className="font-medium">Uplink</span> on the interface form to
-            exclude them.
+            On L2-only networks a switch's own ARP table is nearly empty - add
+            the device(s) that actually route (gateways, firewalls); their
+            merged tables feed every switch's suggestions. More than one
+            matters when several firewalls each route part of the network.
+            Leave empty to use each switch's own table. Mark individual ports
+            as <span className="font-medium">Uplink</span> on the interface
+            form to exclude them.
           </p>
         </Section>
       </div>

@@ -3889,8 +3889,9 @@ export interface MonitoringSkipStatus {
 }
 
 export interface MonitoringSettings {
-  arp_source_device?: string | null
-  arp_source_device_detail?: { id: string; name: string } | null
+  /** Devices whose merged ARP tables feed switch-link suggestions. */
+  arp_source_devices?: string[]
+  arp_source_devices_detail?: { id: string; name: string }[]
   global_enabled: boolean
   default_interval_seconds: number
   stale_after_scans: number

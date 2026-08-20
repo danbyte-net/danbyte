@@ -789,10 +789,10 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
     flap_exclude_ip_status_detail = serializers.SerializerMethodField()
     outpost_repo_token = serializers.JSONField(write_only=True, required=False)
     outpost_repo_token_set = serializers.SerializerMethodField()
-    arp_source_device = TenantScopedPrimaryKeyRelatedField(
-        queryset=Device.objects.all(), required=False, allow_null=True
+    arp_source_devices = TenantScopedPrimaryKeyRelatedField(
+        queryset=Device.objects.all(), required=False, many=True
     )
-    arp_source_device_detail = serializers.SerializerMethodField()
+    arp_source_devices_detail = serializers.SerializerMethodField()
 
     def validate_dns_resolvers(self, value):
         """IP literals only, at most three.
@@ -843,20 +843,18 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
             "flap_exclude_ip_statuses", "flap_exclude_ip_status_detail",
             "default_engine", "outpost_repo_url", "outpost_repo_token",
             "outpost_repo_token_set", "updated_at",
-            "arp_source_device", "arp_source_device_detail",
+            "arp_source_devices", "arp_source_devices_detail",
         ]
         read_only_fields = ["updated_at"]
 
     def get_outpost_repo_token_set(self, obj) -> bool:
         return bool((obj.outpost_repo_token or {}).get("token"))
 
-    def get_arp_source_device_detail(self, obj):
-        if not obj.arp_source_device_id:
-            return None
-        return {
-            "id": str(obj.arp_source_device_id),
-            "name": obj.arp_source_device.name,
-        }
+    def get_arp_source_devices_detail(self, obj):
+        return [
+            {"id": str(d.id), "name": d.name}
+            for d in obj.arp_source_devices.all().order_by("name")
+        ]
 
 
     def get_skip_ip_status_detail(self, obj):

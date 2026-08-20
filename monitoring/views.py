@@ -878,11 +878,11 @@ def settings_view(request):
         return Response(
             {"default_engine": "Not in the active tenant."}, status=400
         )
-    arp_src = ser.validated_data.get("arp_source_device")
-    if arp_src is not None and arp_src.tenant_id != tenant.id:
-        return Response(
-            {"arp_source_device": "Not in the active tenant."}, status=400
-        )
+    for arp_src in ser.validated_data.get("arp_source_devices") or []:
+        if arp_src.tenant_id != tenant.id:
+            return Response(
+                {"arp_source_devices": "Not in the active tenant."}, status=400
+            )
     ser.save()
     return Response(ser.data)
 

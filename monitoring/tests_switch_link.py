@@ -174,8 +174,7 @@ class SwitchLinkDriftTests(APITestCase):
             arp=[{"ip": "10.0.0.5", "mac": "00:11:22:33:44:55", "if_index": "1"}],
         )
         settings = MonitoringSettings.for_tenant(self.tenant)
-        settings.arp_source_device = gw
-        settings.save(update_fields=["arp_source_device"])
+        settings.arp_source_devices.add(gw)
 
         # Blank the switch's own ARP - pure-L2 reality. The suggestion must
         # still appear, driven by the gateway's table.
@@ -195,3 +194,75 @@ class SwitchLinkDriftTests(APITestCase):
         ]
         state.save(update_fields=["neighbors"])
         self.assertEqual(len(self._suggestions()), 1)
+
+    def test_multiple_arp_sources_merge(self):
+        """Issue #39: two firewalls each route part of the network - both
+        tables feed the suggestions, unioned."""
+        from monitoring.models import MonitoringSettings
+
+        fw1 = Device.objects.create(tenant=self.tenant, name="fw-a")
+        fw2 = Device.objects.create(tenant=self.tenant, name="fw-b")
+        DeviceSnmp.objects.create(
+            tenant=self.tenant, device=fw1, reachable=True,
+            polled_at=timezone.now(),
+            arp=[{"ip": "10.0.0.5", "mac": "00:11:22:33:44:55", "if_index": "1"}],
+        )
+        DeviceSnmp.objects.create(
+            tenant=self.tenant, device=fw2, reachable=True,
+            polled_at=timezone.now(),
+            arp=[{"ip": "10.0.0.6", "mac": "66:77:88:99:aa:bb", "if_index": "1"}],
+        )
+        ip2 = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.0.0.6", prefix=self.prefix
+        )
+        settings = MonitoringSettings.for_tenant(self.tenant)
+        settings.arp_source_devices.add(fw1, fw2)
+
+        Interface.objects.create(device=self.sw, name="Gi0/2")
+        state = DeviceSnmp.objects.get(device=self.sw)
+        state.arp = []  # pure L2: the switch itself knows nothing
+        state.interfaces = [
+            {"if_index": "10", "name": "Gi0/1"},
+            {"if_index": "11", "name": "Gi0/2"},
+        ]
+        state.fdb = [
+            {"mac": "00:11:22:33:44:55", "if_index": "10"},
+            {"mac": "66:77:88:99:aa:bb", "if_index": "11"},
+        ]
+        state.save(update_fields=["arp", "interfaces", "fdb"])
+
+        got = {s_["ip"] for s_ in self._suggestions()}
+        self.assertEqual(got, {"10.0.0.5", "10.0.0.6"})
+        self.assertIsNotNone(ip2)
+
+    def test_conflicting_sources_are_deterministic(self):
+        """Two gateways claiming the same MAC: the device-name-ordered first
+        answer wins, every poll, rather than flapping between the two."""
+        from monitoring.models import MonitoringSettings
+
+        fw_a = Device.objects.create(tenant=self.tenant, name="a-fw")
+        fw_z = Device.objects.create(tenant=self.tenant, name="z-fw")
+        DeviceSnmp.objects.create(
+            tenant=self.tenant, device=fw_z, reachable=True,
+            polled_at=timezone.now(),
+            arp=[{"ip": "10.0.0.9", "mac": "00:11:22:33:44:55", "if_index": "1"}],
+        )
+        DeviceSnmp.objects.create(
+            tenant=self.tenant, device=fw_a, reachable=True,
+            polled_at=timezone.now(),
+            arp=[{"ip": "10.0.0.5", "mac": "00:11:22:33:44:55", "if_index": "1"}],
+        )
+        # Both candidate IPs are tracked, so whichever source won would be
+        # suggested - the assertion is meaningful, not vacuous.
+        IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.0.0.9", prefix=self.prefix
+        )
+        settings = MonitoringSettings.for_tenant(self.tenant)
+        settings.arp_source_devices.add(fw_a, fw_z)
+
+        state = DeviceSnmp.objects.get(device=self.sw)
+        state.arp = []
+        state.save(update_fields=["arp"])
+
+        got = {s_["ip"] for s_ in self._suggestions()}
+        self.assertEqual(got, {"10.0.0.5"})  # a-fw sorts first and wins

@@ -328,10 +328,14 @@ Two manual overrides ride on top of the automatic detection:
 
 - **Uplink** (interface form) - flag a port as facing other network gear and
   it never gets suggestions, whatever the heuristics think.
-- **ARP source** (Settings → Monitoring → Switch-link suggestions) - on
-  L2-only networks a switch's own ARP table is nearly empty; name the device
-  that actually routes (the gateway or firewall) and its ARP table feeds
-  every switch's suggestions instead of each switch's own.
+- **ARP sources** (Settings → Monitoring → Switch-link suggestions) - on
+  L2-only networks a switch's own ARP table is nearly empty; add the
+  device(s) that actually route (gateways, firewalls) and their **merged**
+  ARP tables feed every switch's suggestions instead of each switch's own.
+  Several sources matter when more than one firewall routes for the tenant -
+  each contributes the part of the network it knows. If two sources disagree
+  about a MAC, the first answer in device-name order wins, deterministically,
+  rather than flapping between polls.
 
 ### Ghost cables on the topology map
 

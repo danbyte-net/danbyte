@@ -385,20 +385,31 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
     #    only for IPs Danbyte already tracks (SoT: suggest, never invent).
     arp = state.arp or []
     fdb = state.fdb or []
-    # "One ARP source" mode: on pure-L2 networks a switch's own ARP table only
-    # knows its management peers; the IP↔MAC truth lives on the gateway. When
-    # the tenant names an ARP source device, its table feeds every switch's
-    # suggestions instead.
-    src_id = (
+    # ARP source mode (issues #22, #39): on pure-L2 networks a switch's own
+    # ARP table only knows its management peers; the IP↔MAC truth lives on the
+    # gateway - or on several, where more than one firewall routes. When the
+    # tenant names source devices, their merged tables feed every switch's
+    # suggestions instead. Merge order is device name, first answer per MAC
+    # wins, so two gateways disagreeing about an address is deterministic.
+    src_ids = list(
         MonitoringSettings.objects.filter(tenant=tenant)
-        .values_list("arp_source_device_id", flat=True)
-        .first()
+        .values_list("arp_source_devices__id", flat=True)
     )
-    if src_id and src_id != device.id:
-        src_state = DeviceSnmp.objects.filter(
-            tenant=tenant, device_id=src_id
-        ).first()
-        arp = (src_state.arp if src_state else None) or []
+    src_ids = [i for i in src_ids if i]
+    if src_ids:
+        merged: list[dict] = []
+        seen_macs: set[str] = set()
+        for src_state in (
+            DeviceSnmp.objects.filter(tenant=tenant, device_id__in=src_ids)
+            .select_related("device")
+            .order_by("device__name")
+        ):
+            for entry in src_state.arp or []:
+                m = _norm_mac(entry.get("mac", ""))
+                if m and m not in seen_macs:
+                    seen_macs.add(m)
+                    merged.append(entry)
+        arp = merged
     if arp and fdb:
         mac_to_ip: dict[str, str] = {}
         for a in arp:
