@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query"
 import { api, type Device, type Site, type SiteMapSite } from "@/lib/api"
 import { CopyButton } from "@/components/kv-card"
 import { TagList } from "@/components/cells/tag-list"
+import { cn } from "@/lib/utils"
 
 // The map's kv detail rows - the same label/value shape the detail pages'
 // KvCards use, at popover/inspector scale, with the shared per-row copy
@@ -20,12 +21,17 @@ export interface DetailRow {
 
 export function DetailRowList({ rows }: { rows: DetailRow[] }) {
   if (rows.length === 0) return null
+  // KvCard's zebra table at popover/inspector scale: bordered container,
+  // alternating muted rows, label left / value right / copy trailing.
   return (
-    <div className="grid gap-1">
-      {rows.map((r) => (
+    <div className="overflow-hidden rounded-md border border-border">
+      {rows.map((r, i) => (
         <div
-          key={r.label}
-          className="flex items-baseline justify-between gap-3 text-[12px]"
+          key={`${r.label}:${i}`}
+          className={cn(
+            "flex items-baseline justify-between gap-3 px-2 py-1.5 text-[12px]",
+            i % 2 === 1 && "bg-muted/30"
+          )}
         >
           <span className="shrink-0 text-muted-foreground">{r.label}</span>
           <span className="flex min-w-0 items-baseline justify-end gap-1">

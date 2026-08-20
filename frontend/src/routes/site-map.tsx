@@ -35,8 +35,8 @@ import {
   type CheckStatus,
   type CustomField,
 } from "@/lib/api"
-import { CopyButton } from "@/components/kv-card"
 import {
+  DetailRowList,
   DeviceExtraRows,
   SiteDetailRows,
   type DetailRow,
@@ -2207,26 +2207,7 @@ function DeviceDetails({
           className="max-h-14 w-full rounded-md border border-border object-contain"
         />
       )}
-      {rows.length > 0 && (
-        <div className="grid gap-1">
-          {rows.map(({ key, row }) => (
-            <div
-              key={key}
-              className="flex items-baseline justify-between gap-3 text-[12px]"
-            >
-              <span className="shrink-0 text-muted-foreground">
-                {row.label}
-              </span>
-              <span className="flex min-w-0 items-baseline justify-end gap-1">
-                <span className="min-w-0 text-right break-words">
-                  {row.node}
-                </span>
-                {row.copy ? <CopyButton value={row.copy} /> : null}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+      <DetailRowList rows={rows.map((r) => r.row)} />
     </>
   )
 }
