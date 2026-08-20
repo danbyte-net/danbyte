@@ -16,7 +16,7 @@ from drf_spectacular.views import (
 from rest_framework.routers import DefaultRouter
 
 from audit.api import ChangeLogViewSet, JournalEntryViewSet
-from auth_api import column_prefs
+from auth_api import column_prefs, dashboard_prefs
 from auth_api import views as auth_views
 from auth_api.api import (
     GroupViewSet,
@@ -559,6 +559,8 @@ urlpatterns = [
          name="tenant-ldap-test-login"),
     path("tenant-settings/ldap/groups/", tenant_ldap_groups,
          name="tenant-ldap-groups"),
+    path("prefs/dashboard/", dashboard_prefs.dashboard_pref,
+         name="dashboard-pref"),
     path("prefs/columns/", column_prefs.column_prefs_bulk, name="column-prefs-bulk"),
     path("prefs/columns/<slug:table_id>/", column_prefs.column_pref,
          name="column-pref"),

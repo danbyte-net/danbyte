@@ -12,21 +12,11 @@ import {
   X,
 } from "lucide-react"
 import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-  type DragStartEvent,
-} from "@dnd-kit/core"
-import {
-  SortableContext,
-  arrayMove,
-  rectSortingStrategy,
-  useSortable,
-} from "@dnd-kit/sortable"
+  Responsive,
+  useContainerWidth,
+  verticalCompactor,
+} from "react-grid-layout"
+import "react-grid-layout/css/styles.css"
 
 import { api, type DashboardData } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -46,23 +36,34 @@ import {
   CATALOG,
   CATALOG_BY_ID,
   DEFAULT_LAYOUT,
+  metaFor,
+  type WidgetFit,
   type WidgetId,
 } from "@/components/dashboard/catalog"
+import {
+  ROW_HEIGHT,
+  fromRglLayout,
+  normalizeLayout,
+  placeIds,
+  toRglLayout,
+  type DashItem,
+} from "@/lib/dashboard-layout"
 
 export const Route = createFileRoute("/")({ component: Dashboard })
 
 const LS_KEY = "danbyte-dashboard-widgets"
 
-function loadLayout(): WidgetId[] {
-  if (typeof window === "undefined") return DEFAULT_LAYOUT
+const builtinLayout = () => placeIds(DEFAULT_LAYOUT, metaFor)
+
+/** The locally cached layout - accepts the old v1 id array AND v2, so an
+ * existing user's arrangement upgrades in place instead of resetting. */
+function loadLocalLayout(): DashItem[] | null {
+  if (typeof window === "undefined") return null
   try {
     const raw = window.localStorage.getItem(LS_KEY)
-    if (!raw) return DEFAULT_LAYOUT
-    const ids = JSON.parse(raw) as WidgetId[]
-    const valid = ids.filter((id) => id in CATALOG_BY_ID)
-    return valid.length ? valid : DEFAULT_LAYOUT
+    return raw ? normalizeLayout(JSON.parse(raw), metaFor) : null
   } catch {
-    return DEFAULT_LAYOUT
+    return null
   }
 }
 
@@ -87,73 +88,110 @@ function Dashboard() {
   }, [prefs.landing_page])
 
   const { canManage } = useMe()
-  const [layout, setLayout] = useState<WidgetId[]>(DEFAULT_LAYOUT)
+  const [items, setItems] = useState<DashItem[]>([])
   const [hydrated, setHydrated] = useState(false)
-  const [hasLocal, setHasLocal] = useState(false)
+
+  // The server-side per-user layout - the primary source, so an arrangement
+  // follows you across browsers. localStorage is the boot cache and the
+  // migration path for pre-#41 layouts.
+  const pref = useQuery({
+    queryKey: ["dashboard-pref"],
+    queryFn: () =>
+      api<{ source: string; data: unknown }>("/api/prefs/dashboard/"),
+  })
+
+  const putServer = (layout: DashItem[]) =>
+    api("/api/prefs/dashboard/", {
+      method: "PUT",
+      body: JSON.stringify({ v: 2, items: layout }),
+    }).catch(() => {
+      /* offline / no tenant - localStorage still has it */
+    })
+
+  // Resolve the initial layout once both the server pref and the dashboard
+  // payload (which carries the tenant default) have answered. Precedence:
+  // server pref → localStorage (adopted upward with one PUT) → tenant
+  // default → built-in.
+  const resolved = useRef(false)
   useEffect(() => {
-    const raw =
-      typeof window !== "undefined" ? window.localStorage.getItem(LS_KEY) : null
-    setLayout(loadLayout())
-    setHasLocal(!!raw)
+    if (resolved.current || pref.isLoading || !q.data) return
+    resolved.current = true
+    const server = normalizeLayout(pref.data?.data, metaFor)
+    if (server) {
+      setItems(server)
+    } else {
+      const local = loadLocalLayout()
+      if (local) {
+        setItems(local)
+        void putServer(local) // one-time adoption of the pre-server layout
+      } else {
+        const tenantDefault = normalizeLayout(q.data.default_widgets, metaFor)
+        setItems(tenantDefault ?? builtinLayout())
+      }
+    }
     setHydrated(true)
-  }, [])
+  }, [pref.isLoading, pref.data, q.data])
 
-  // New users (no saved layout) start from the admin-set tenant default when
-  // one exists - applied once, when the dashboard payload arrives.
-  const appliedDefault = useRef(false)
-  useEffect(() => {
-    if (appliedDefault.current || !hydrated || hasLocal || !q.data) return
-    appliedDefault.current = true
-    const dw = (q.data.default_widgets ?? []).filter(
-      (id) => id in CATALOG_BY_ID
-    )
-    if (dw.length) setLayout(dw as WidgetId[])
-  }, [hydrated, hasLocal, q.data])
-  const persist = (next: WidgetId[]) => {
-    setLayout(next)
-    window.localStorage.setItem(LS_KEY, JSON.stringify(next))
+  // Debounced persistence: localStorage immediately (cheap, survives
+  // refresh), the server after the gesture settles.
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const persist = (next: DashItem[]) => {
+    setItems(next)
+    try {
+      window.localStorage.setItem(
+        LS_KEY,
+        JSON.stringify({ v: 2, items: next })
+      )
+    } catch {
+      /* storage blocked */
+    }
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => void putServer(next), 400)
   }
-  const add = (id: WidgetId) => !layout.includes(id) && persist([...layout, id])
-  const remove = (id: WidgetId) => persist(layout.filter((x) => x !== id))
-  const reset = () => persist(DEFAULT_LAYOUT)
 
-  // Edit mode gates the drag handles / remove buttons, so the normal dashboard
-  // stays clean and read-only until you choose to rearrange it.
+  const add = (id: WidgetId) => {
+    if (items.some((x) => x.id === id)) return
+    const meta = metaFor(id)
+    const bottom = items.reduce((m, x) => Math.max(m, x.y + x.h), 0)
+    persist([
+      ...items,
+      { id, x: 0, y: bottom, w: meta.span.w, h: meta.span.h },
+    ])
+  }
+  const remove = (id: WidgetId) => persist(items.filter((x) => x.id !== id))
+  const reset = async () => {
+    // Reset = drop MY layout: server row and local cache go, and the
+    // effective layout falls back to the tenant default, then the built-in.
+    try {
+      await api("/api/prefs/dashboard/", { method: "DELETE" })
+    } catch {
+      /* offline - local reset still applies */
+    }
+    try {
+      window.localStorage.removeItem(LS_KEY)
+    } catch {
+      /* ignore */
+    }
+    const tenantDefault = normalizeLayout(q.data?.default_widgets, metaFor)
+    setItems(tenantDefault ?? builtinLayout())
+  }
+
+  // Edit mode gates dragging/resizing/removal, so the normal dashboard stays
+  // clean and read-only until you choose to rearrange it.
   const [editing, setEditing] = useState(false)
 
-  // Drag-to-reorder with LIVE feedback: onDragOver reorders the array as you
-  // move over a target (the masonry re-packs live - the dimmed source is the
-  // "ghost"), and we persist on drop. A snapshot restores order on cancel.
-  const [dragId, setDragId] = useState<WidgetId | null>(null)
-  const [preDrag, setPreDrag] = useState<WidgetId[] | null>(null)
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  )
-  const onDragOver = (e: DragEndEvent) => {
-    const { active, over } = e
-    if (!over || active.id === over.id) return
-    setLayout((l) => {
-      const from = l.indexOf(active.id as WidgetId)
-      const to = l.indexOf(over.id as WidgetId)
-      return from >= 0 && to >= 0 ? arrayMove(l, from, to) : l
-    })
-  }
-  const onDragEnd = () => {
-    setDragId(null)
-    setPreDrag(null)
-    window.localStorage.setItem(LS_KEY, JSON.stringify(layout))
-  }
-  const onDragCancel = () => {
-    setDragId(null)
-    if (preDrag) setLayout(preDrag)
-    setPreDrag(null)
-  }
+  // While a drag OR resize gesture is in flight every widget body is
+  // unmounted into a placeholder - the #42 guard. Live-streaming the width
+  // changes into a mounted recharts chart ends in React #185.
+  const [interacting, setInteracting] = useState(false)
 
   const saveAsDefault = async () => {
     try {
       await api("/api/tenant-settings/", {
         method: "PUT",
-        body: JSON.stringify({ default_dashboard_widgets: layout }),
+        body: JSON.stringify({
+          default_dashboard_widgets: { v: 2, items },
+        }),
       })
       toast.success("Saved as the starting layout for new users")
     } catch (e) {
@@ -162,7 +200,7 @@ function Dashboard() {
   }
 
   const d = q.data
-  const available = CATALOG.filter((w) => !layout.includes(w.id))
+  const available = CATALOG.filter((w) => !items.some((x) => x.id === w.id))
 
   return (
     <div className="min-h-0 flex-1 overflow-auto">
@@ -241,111 +279,133 @@ function Dashboard() {
 
         {d && <StatBand d={d} />}
 
-        {/* Masonry: cards size to content and pack tightly - no dead space.
-            Drag a tile's handle to reorder (dnd-kit); the DragOverlay keeps the
-            masonry from thrashing while dragging. */}
-        {d && hydrated && (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={(e: DragStartEvent) => {
-              setDragId(e.active.id as WidgetId)
-              setPreDrag(layout)
-            }}
-            onDragOver={onDragOver}
-            onDragEnd={onDragEnd}
-            onDragCancel={onDragCancel}
-          >
-            <SortableContext items={layout} strategy={rectSortingStrategy}>
-              <div className="gap-4 [column-fill:_balance] sm:columns-2 xl:columns-3 [&>*]:mb-4">
-                {layout.map((id) => {
-                  const w = CATALOG_BY_ID[id]
-                  if (!w) return null
-                  return (
-                    <SortableTile
-                      key={id}
-                      id={id}
-                      title={w.title}
-                      description={w.description}
-                      editing={editing}
-                      dragging={dragId !== null}
-                      onRemove={() => remove(id)}
-                    >
-                      {w.render(d)}
-                    </SortableTile>
-                  )
-                })}
-                {layout.length === 0 && (
-                  <div className="flex break-inside-avoid flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border py-10 text-center">
-                    <LayoutGrid className="h-6 w-6 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      No widgets. Use{" "}
-                      <span className="font-medium">Add widget</span> to build
-                      your dashboard.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </SortableContext>
-            <DragOverlay dropAnimation={null}>
-              {dragId ? (
-                <div className="rounded-lg border border-border bg-card p-3.5 text-sm font-medium shadow-lg">
-                  {CATALOG_BY_ID[dragId]?.title}
-                </div>
-              ) : null}
-            </DragOverlay>
-          </DndContext>
+        {/* The widget grid (react-grid-layout, #41): drag the handle to
+            move, drag the corner to resize - both snap to grid cells and only
+            in edit mode. Vertical compaction keeps it gap-free. */}
+        {d && hydrated && <DashboardGrid
+          items={items}
+          editing={editing}
+          interacting={interacting}
+          setInteracting={setInteracting}
+          persist={persist}
+          remove={remove}
+          d={d}
+        />}
+        {d && hydrated && items.length === 0 && (
+          <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border py-10 text-center">
+            <LayoutGrid className="h-6 w-6 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              No widgets. Use <span className="font-medium">Add widget</span>{" "}
+              to build your dashboard.
+            </p>
+          </div>
         )}
       </div>
     </div>
   )
 }
 
-/** A content-sized widget card that won't split across masonry columns, with a
- * drag handle for reordering. We deliberately don't apply dnd-kit's transform
- * to the tile (it would fight the CSS-column masonry) - the DragOverlay shows
- * the drag, and the drop reorders the array. */
-function SortableTile({
-  id,
+/** The grid itself - separated so useContainerWidth only runs when data is
+ * ready (hooks stay above every early return, per the hook-order guard). */
+function DashboardGrid({
+  items,
+  editing,
+  interacting,
+  setInteracting,
+  persist,
+  remove,
+  d,
+}: {
+  items: DashItem[]
+  editing: boolean
+  interacting: boolean
+  setInteracting: (v: boolean) => void
+  persist: (next: DashItem[]) => void
+  remove: (id: WidgetId) => void
+  d: DashboardData
+}) {
+  const { width, containerRef, mounted } = useContainerWidth()
+  // The stop callbacks receive the final layout - one commit point, so a
+  // span can never change while widget bodies are mounted (#42 guard).
+  const onStop = (
+    layout: readonly { i: string; x: number; y: number; w: number; h: number }[]
+  ) => {
+    setInteracting(false)
+    persist(fromRglLayout(layout))
+  }
+  return (
+    <div ref={containerRef}>
+      {mounted && width > 0 && (
+        <Responsive
+          width={width}
+          breakpoints={{ xl: 1100, lg: 800, sm: 520, xs: 0 }}
+          cols={{ xl: 6, lg: 4, sm: 2, xs: 1 }}
+          rowHeight={ROW_HEIGHT}
+          margin={[16, 16]}
+          containerPadding={[0, 0]}
+          compactor={verticalCompactor}
+          layouts={{ xl: toRglLayout(items, metaFor) }}
+          dragConfig={{ enabled: editing, handle: ".dash-drag-handle" }}
+          resizeConfig={{ enabled: editing }}
+          onDragStart={() => setInteracting(true)}
+          onResizeStart={() => setInteracting(true)}
+          onDragStop={onStop}
+          onResizeStop={onStop}
+        >
+          {items.map((it) => {
+            const w = CATALOG_BY_ID[it.id as WidgetId]
+            if (!w) return null
+            return (
+              <div key={it.id}>
+                <WidgetTile
+                  title={w.title}
+                  description={w.description}
+                  fit={w.fit ?? "scroll"}
+                  editing={editing}
+                  interacting={interacting}
+                  onRemove={() => remove(it.id as WidgetId)}
+                >
+                  {w.render(d)}
+                </WidgetTile>
+              </div>
+            )
+          })}
+        </Responsive>
+      )}
+    </div>
+  )
+}
+
+/** One widget card. The grid supplies the height; `fit` says how the body
+ * copes - lists scroll, fixed-size charts centre, the map stretches. */
+const FIT_CLASS: Record<WidgetFit, string> = {
+  scroll: "min-h-0 flex-1 overflow-auto",
+  center: "min-h-0 flex-1 flex flex-col justify-center overflow-hidden",
+  stretch: "min-h-0 flex-1 overflow-hidden",
+}
+
+function WidgetTile({
   title,
   description,
+  fit,
   editing,
-  dragging,
+  interacting,
   onRemove,
   children,
 }: {
-  id: WidgetId
   title: string
   description: string
+  fit: WidgetFit
   editing: boolean
-  dragging: boolean
+  interacting: boolean
   onRemove: () => void
   children: ReactNode
 }) {
-  const { setNodeRef, listeners, attributes, isDragging } = useSortable({
-    id,
-    disabled: !editing,
-  })
-  // While a drag is in flight, the CSS-column masonry re-packs on every pointer
-  // move, so each widget's width changes continuously. A recharts chart reacts
-  // to that through a ResizeObserver, and under a stream of resizes it re-renders
-  // itself into "maximum update depth exceeded" (React #185) - a hard crash of
-  // the whole dashboard, not just the chart. So we unmount the live body during
-  // the drag and hold a static box of the last measured height in its place: no
-  // observer runs, no loop can form, and the masonry still reflows realistically.
-  const bodyRef = useRef<HTMLDivElement>(null)
-  const heightRef = useRef<number | undefined>(undefined)
-  useEffect(() => {
-    if (!dragging && bodyRef.current) {
-      heightRef.current = bodyRef.current.offsetHeight
-    }
-  })
   return (
     <div
-      ref={setNodeRef}
-      className={`group/tile relative break-inside-avoid overflow-hidden rounded-lg border bg-card p-3.5 transition-shadow ${
-        isDragging ? "opacity-40" : ""
-      } ${editing ? "border-dashed border-primary/40" : "border-border"}`}
+      className={`flex h-full flex-col overflow-hidden rounded-lg border bg-card p-3.5 ${
+        editing ? "border-dashed border-primary/40" : "border-border"
+      }`}
     >
       <div className="mb-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -356,16 +416,13 @@ function SortableTile({
         </div>
         {editing && (
           <div className="flex shrink-0 items-center gap-0.5">
-            <button
-              type="button"
-              {...listeners}
-              {...attributes}
-              className="cursor-grab touch-none rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing"
-              title="Drag to reorder"
-              aria-label="Drag to reorder"
+            <span
+              className="dash-drag-handle cursor-grab touch-none rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing"
+              title="Drag to move"
+              aria-label="Drag to move"
             >
               <GripVertical className="h-3.5 w-3.5" />
-            </button>
+            </span>
             <button
               type="button"
               onClick={onRemove}
@@ -377,13 +434,12 @@ function SortableTile({
           </div>
         )}
       </div>
-      {dragging ? (
-        <div
-          className="rounded-md bg-muted/30"
-          style={{ height: heightRef.current ?? 128 }}
-        />
+      {/* While any drag/resize is in flight the body is a static box: no
+          ResizeObserver runs, so recharts can't loop into React #185. */}
+      {interacting ? (
+        <div className="min-h-0 flex-1 rounded-md bg-muted/30" />
       ) : (
-        <div ref={bodyRef}>
+        <div className={FIT_CLASS[fit]}>
           <Suspense
             fallback={
               <div className="h-32 animate-pulse rounded-md bg-muted/40" />

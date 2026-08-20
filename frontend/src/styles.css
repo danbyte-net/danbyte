@@ -481,3 +481,16 @@
   background: color-mix(in oklab, var(--background) 92%, transparent);
   backdrop-filter: blur(8px);
 }
+
+/* ── react-grid-layout (dashboard, #41) ────────────────────────────────────
+   Token-based restyle of the library chrome: the drop placeholder becomes a
+   quiet muted slab instead of the default red, and the corner resize handle
+   inherits the muted foreground so it reads in both themes. */
+.react-grid-item.react-grid-placeholder {
+  background: var(--muted);
+  opacity: 0.55;
+  border-radius: 0.5rem;
+}
+.react-grid-item > .react-resizable-handle::after {
+  border-color: var(--muted-foreground);
+}

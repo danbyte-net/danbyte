@@ -11,7 +11,7 @@ export function OsmMapWidget() {
   // user can't use.
   if (!canDo("site", "view")) return null
   return (
-    <div className="relative h-56 overflow-hidden">
+    <div className="relative h-full min-h-40 overflow-hidden">
       <MiniMap className="h-full w-full" />
       <Link
         to="/site-map"

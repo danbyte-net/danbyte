@@ -50,20 +50,43 @@ export type WidgetId =
   | "map"
   | "floorplan"
 
-// Bento sizes → grid spans on a 6-col, ~168px auto-row grid.
-export type WidgetSize = "sq" | "wide" | "big"
-export const SIZE_CLASS: Record<WidgetSize, string> = {
-  sq: "col-span-2 row-span-2",
-  wide: "col-span-2 row-span-2 xl:col-span-3",
-  big: "col-span-2 row-span-2 md:col-span-4 xl:col-span-4",
-}
+import type { WidgetMeta } from "@/lib/dashboard-layout"
+
+/** How a widget's body copes with a grid-imposed height (#41):
+ * `scroll` - lists/tables scroll internally; `center` - fixed-size charts sit
+ * centred; `stretch` - the child fills the cell (map, floor plan). */
+export type WidgetFit = "scroll" | "center" | "stretch"
 
 export interface WidgetDef {
   id: WidgetId
   title: string
   description: string
-  size: WidgetSize
+  fit?: WidgetFit
   render: (d: DashboardData) => ReactNode
+}
+
+// Default span + resize bounds per widget, in 6-column grid cells (~112px
+// rows). Donuts keep a small ceiling - their charts are fixed-size, so a huge
+// tile is empty border. Lists grow to full width; changelog/tasks/map to
+// near-full dashboard, which is the #41 request.
+const D: WidgetMeta = { span: { w: 2, h: 2 }, min: { w: 2, h: 2 }, max: { w: 6, h: 4 } }
+const DONUT: WidgetMeta = { span: { w: 2, h: 2 }, min: { w: 1, h: 2 }, max: { w: 3, h: 3 } }
+const BIGGY: WidgetMeta = { span: { w: 3, h: 3 }, min: { w: 2, h: 2 }, max: { w: 6, h: 6 } }
+export const LAYOUT_META: Partial<Record<WidgetId, WidgetMeta>> = {
+  "reachable-gauge": DONUT, "ip-status": DONUT, "ip-role": DONUT,
+  "ip-scope": DONUT, "prefix-family": DONUT, "prefix-status": DONUT,
+  "device-status": DONUT, "check-status": DONUT, "alerts-severity": DONUT,
+  "object-counts": { span: { w: 4, h: 2 }, min: { w: 2, h: 2 }, max: { w: 6, h: 4 } },
+  bookmarks: { span: { w: 2, h: 2 }, min: { w: 1, h: 1 }, max: { w: 4, h: 4 } },
+  changelog: BIGGY,
+  "my-tasks": { span: { w: 2, h: 3 }, min: { w: 2, h: 2 }, max: { w: 6, h: 6 } },
+  "cert-health": { span: { w: 2, h: 2 }, min: { w: 2, h: 1 }, max: { w: 6, h: 4 } },
+  map: BIGGY,
+  floorplan: BIGGY,
+}
+
+export function metaFor(id: string): WidgetMeta {
+  return LAYOUT_META[id as WidgetId] ?? D
 }
 
 export const CATALOG: WidgetDef[] = [
@@ -71,63 +94,56 @@ export const CATALOG: WidgetDef[] = [
     id: "bookmarks",
     title: "Bookmarks",
     description: "Your saved pages",
-    size: "wide",
     render: () => <BookmarksWidget />,
   },
   {
     id: "object-counts",
     title: "Inventory",
     description: "Object counts across the tenant",
-    size: "big",
     render: (d) => <ObjectCounts counts={d.counts} />,
   },
   {
     id: "changelog",
     title: "Changelog",
     description: "Recent changes across the tenant - who changed what",
-    size: "wide",
     render: () => <ChangelogWidget />,
   },
   {
     id: "recent-activity",
     title: "Recent activity",
     description: "Latest monitoring status changes",
-    size: "wide",
     render: (d) => <RecentActivity rows={d.recent_activity} />,
   },
   {
     id: "recent-prefixes",
     title: "Recent prefixes",
     description: "Newest subnets",
-    size: "wide",
     render: (d) => <RecentPrefixes rows={d.recent_prefixes} />,
   },
   {
     id: "recent-devices",
     title: "Recent devices",
     description: "Newest devices",
-    size: "wide",
     render: (d) => <RecentDevices rows={d.recent_devices} />,
   },
   {
     id: "recent-ips",
     title: "Recent IP addresses",
     description: "Newest addresses",
-    size: "wide",
     render: (d) => <RecentIps rows={d.recent_ips} />,
   },
   {
     id: "reachable-gauge",
+    fit: "center",
     title: "Reachability",
     description: "Share of checks currently up",
-    size: "sq",
     render: (d) => <RadialGauge value={d.reachable_pct} label="reachable" />,
   },
   {
     id: "ip-status",
+    fit: "center",
     title: "IPs by status",
     description: "Address status breakdown",
-    size: "sq",
     render: (d) => (
       <DistDonut
         data={d.ip_by_status}
@@ -141,9 +157,9 @@ export const CATALOG: WidgetDef[] = [
   },
   {
     id: "ip-role",
+    fit: "center",
     title: "IPs by role",
     description: "Address role breakdown",
-    size: "sq",
     render: (d) => (
       <DistDonut
         data={d.ip_by_role}
@@ -157,9 +173,9 @@ export const CATALOG: WidgetDef[] = [
   },
   {
     id: "ip-scope",
+    fit: "center",
     title: "Public vs private IPs",
     description: "Address reachability split",
-    size: "sq",
     // Scope is a computed classification (public/private/cgnat/special). The
     // IP list applies it server-side via ?scope= and seeds the Scope facet.
     render: (d) => (
@@ -175,9 +191,9 @@ export const CATALOG: WidgetDef[] = [
   },
   {
     id: "prefix-family",
+    fit: "center",
     title: "Prefixes by family",
     description: "IPv4 vs IPv6",
-    size: "sq",
     render: (d) => (
       <DistDonut
         data={d.prefix_by_family}
@@ -191,9 +207,9 @@ export const CATALOG: WidgetDef[] = [
   },
   {
     id: "prefix-status",
+    fit: "center",
     title: "Prefixes by status",
     description: "Container / active / reserved",
-    size: "sq",
     render: (d) => (
       <DistDonut
         data={d.prefix_by_status}
@@ -209,14 +225,13 @@ export const CATALOG: WidgetDef[] = [
     id: "top-prefixes",
     title: "Top prefixes by utilisation",
     description: "Busiest subnets",
-    size: "wide",
     render: (d) => <TopPrefixes data={d.top_prefixes} />,
   },
   {
     id: "device-status",
+    fit: "center",
     title: "Devices by status",
     description: "Operational state",
-    size: "sq",
     render: (d) => (
       <DistDonut
         data={d.device_by_status}
@@ -232,7 +247,6 @@ export const CATALOG: WidgetDef[] = [
     id: "device-type",
     title: "Devices by type",
     description: "Top device types",
-    size: "wide",
     render: (d) => (
       <DistBar
         data={d.device_by_type}
@@ -247,7 +261,6 @@ export const CATALOG: WidgetDef[] = [
     id: "device-site",
     title: "Devices by site",
     description: "Where devices live",
-    size: "wide",
     render: (d) => (
       <DistBar
         data={d.device_by_site}
@@ -262,7 +275,6 @@ export const CATALOG: WidgetDef[] = [
     id: "device-manufacturer",
     title: "Devices by manufacturer",
     description: "Vendor split",
-    size: "wide",
     render: (d) => (
       <DistBar
         data={d.device_by_manufacturer}
@@ -275,9 +287,9 @@ export const CATALOG: WidgetDef[] = [
   },
   {
     id: "check-status",
+    fit: "center",
     title: "Monitoring status",
     description: "Checks by current status",
-    size: "sq",
     render: (d) => (
       <DistDonut
         data={d.check_by_status}
@@ -293,9 +305,9 @@ export const CATALOG: WidgetDef[] = [
   },
   {
     id: "alerts-severity",
+    fit: "center",
     title: "Firing alerts",
     description: "Open alerts by severity",
-    size: "sq",
     render: (d) => (
       <DistDonut
         data={d.alerts_by_severity}
@@ -313,42 +325,38 @@ export const CATALOG: WidgetDef[] = [
     id: "my-tasks",
     title: "My tasks",
     description: "Your open planning tasks, most urgent first",
-    size: "wide",
     render: () => <MyTasksWidget />,
   },
   {
     id: "cert-health",
     title: "Certificate health",
     description: "Expiry buckets across the certificate inventory",
-    size: "wide",
     render: () => <CertHealthWidget />,
   },
   {
     id: "expiring-certs",
     title: "Expiring certificates",
     description: "Certificates expired or expiring within 30 days",
-    size: "wide",
     render: () => <ExpiringCertsWidget />,
   },
   {
     id: "expired-certs",
     title: "Expired certificates",
     description: "Certificates already past their expiry date",
-    size: "wide",
     render: () => <ExpiredCertsWidget />,
   },
   {
     id: "map",
+    fit: "stretch",
     title: "Map",
     description: "Your sites, devices, and cables on a live map",
-    size: "big",
     render: () => <OsmMapWidget />,
   },
   {
     id: "floorplan",
+    fit: "stretch",
     title: "Floor plan",
     description: "A floor plan with live tile status",
-    size: "big",
     render: () => <FloorplanWidget />,
   },
 ]

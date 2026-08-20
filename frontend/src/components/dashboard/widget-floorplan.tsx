@@ -37,11 +37,11 @@ export function FloorplanWidget() {
   })
 
   if (plans.isLoading)
-    return <div className="h-56 animate-pulse rounded-md bg-muted/30" />
+    return <div className="h-full min-h-40 animate-pulse rounded-md bg-muted/30" />
 
   if (!plan)
     return (
-      <div className="flex h-56 items-center justify-center rounded-md border border-dashed border-border p-4 text-center text-[13px] text-muted-foreground">
+      <div className="flex h-full min-h-40 items-center justify-center rounded-md border border-dashed border-border p-4 text-center text-[13px] text-muted-foreground">
         <span>
           No floor plans yet -{" "}
           <Link to="/floorplans" className="link">
@@ -53,7 +53,7 @@ export function FloorplanWidget() {
     )
 
   return (
-    <div className="relative h-56 overflow-hidden rounded-md border border-border bg-muted/20">
+    <div className="relative h-full min-h-40 overflow-hidden rounded-md border border-border bg-muted/20">
       <FloorCanvas
         plan={plan}
         tiles={tiles.data?.results ?? []}

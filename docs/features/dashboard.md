@@ -47,15 +47,21 @@ otherwise. In edit mode each tile gets a drag grip and a remove button.
 |---|---|
 | **Edit layout / Done** | Toggle edit mode on/off. |
 | **Add widget** | Opens a list of widgets you haven't added yet. |
-| **Drag the ⠿ handle** | Reorder - the other tiles re-flow live as you drag, and the order saves on drop. |
+| **Drag the ⠿ handle** | Move the widget - it snaps to grid cells and the others re-pack live. |
+| **Drag the corner grip** | Resize - also snapping to cells. Each widget has sensible min/max sizes, so the changelog can go full-width (or near full-screen) while a small gauge can't be stretched into empty border. |
 | **× on a widget** | Removes that widget. |
-| **Reset** | Restores the built-in default layout. |
+| **Reset** | Drops *your* layout: you fall back to the tenant's admin-set default when one exists, else the built-in layout. |
 | **Set as new-user default** *(admins)* | Saves your current layout as the starting dashboard for new users of the tenant. |
 
+Widgets cope with their given size: lists and tables scroll inside the tile,
+charts sit centred, and the map / floor plan stretch to fill.
+
 !!! note
-    Your own dashboard layout is saved in your browser, so it's per-device. New
-    users start from the tenant's admin-set default (if one is set), otherwise
-    the built-in layout.
+    Your layout (positions **and** sizes) is saved **to your account**, so it
+    follows you across browsers and devices. A layout saved before this
+    existed is picked up from the browser and adopted automatically - nothing
+    resets. New users start from the tenant's admin-set default (if one is
+    set), otherwise the built-in layout.
 
 ## Related
 
