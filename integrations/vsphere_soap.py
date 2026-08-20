@@ -107,8 +107,9 @@ class VSphereSoap:
             from pyVim.connect import SmartConnect
         except ImportError as exc:  # pragma: no cover - depends on the install
             raise VirtAPIError(
-                "Host hardware sync needs pyvmomi. Install it, or turn off "
-                "'Sync host hardware' on this source."
+                "This feature needs pyvmomi (used for host hardware and "
+                "port-group VLANs). Install it, or turn the option off on "
+                "this source."
             ) from exc
         creds = self.source.credentials or {}
         try:

@@ -491,24 +491,31 @@
   opacity: 0.55;
   border-radius: 0.5rem;
 }
-/* The corner resize grip. The library default is a faint 5px triangle that
-   nobody finds; this is an unmissable rounded corner bracket that appears
-   only when handles render (edit mode). */
-.react-grid-item > .react-resizable-handle {
+/* The corner resize grip (a custom handleComponent, not the library's faint
+   triangle): an always-visible rounded corner bracket while editing, filled
+   on hover so the affordance is unmissable. */
+.dash-resize-grip {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
   width: 22px;
   height: 22px;
+  cursor: nwse-resize;
+  z-index: 10;
 }
-.react-grid-item > .react-resizable-handle::after {
-  width: 10px;
-  height: 10px;
-  right: 5px;
-  bottom: 5px;
-  border-right: 2.5px solid var(--muted-foreground);
-  border-bottom: 2.5px solid var(--muted-foreground);
-  border-bottom-right-radius: 4px;
-  opacity: 0.7;
+.dash-resize-grip::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 12px;
+  height: 12px;
+  border-right: 3px solid var(--foreground);
+  border-bottom: 3px solid var(--foreground);
+  border-bottom-right-radius: 5px;
+  opacity: 0.55;
+  transition: opacity 0.1s;
 }
-.react-grid-item > .react-resizable-handle:hover::after {
-  border-color: var(--foreground);
+.dash-resize-grip:hover::after {
   opacity: 1;
 }

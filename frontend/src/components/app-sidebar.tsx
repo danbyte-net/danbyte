@@ -1095,26 +1095,30 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           const anyOpen = labels.some(
             (l) => openGroups[l] ?? navActiveByLabel(l)
           )
+          // Styled exactly like a NavGroup label row, so it reads as part
+          // of the list rather than a stray floating link.
           return (
-            <div className="flex justify-end px-2 pt-1 group-data-[collapsible=icon]:hidden">
-              <button
-                type="button"
-                onClick={() =>
-                  setGroupsOpen(
-                    Object.fromEntries(labels.map((l) => [l, !anyOpen]))
-                  )
-                }
-                className="flex items-center gap-1 rounded-sm px-1 py-0.5 text-[10px] text-muted-foreground opacity-70 hover:opacity-100"
-                title={anyOpen ? "Collapse all" : "Expand all"}
-              >
-                {anyOpen ? (
-                  <ChevronsDownUp className="size-3" />
-                ) : (
-                  <ChevronsUpDown className="size-3" />
-                )}
-                {anyOpen ? "Collapse all" : "Expand all"}
-              </button>
-            </div>
+            <SidebarGroup className="py-0.5 group-data-[collapsible=icon]:hidden">
+              <SidebarGroupLabel asChild>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setGroupsOpen(
+                      Object.fromEntries(labels.map((l) => [l, !anyOpen]))
+                    )
+                  }
+                  className="flex w-full items-center gap-2 hover:text-foreground"
+                  title={anyOpen ? "Collapse all" : "Expand all"}
+                >
+                  {anyOpen ? (
+                    <ChevronsDownUp className="size-4 shrink-0 opacity-60" />
+                  ) : (
+                    <ChevronsUpDown className="size-4 shrink-0 opacity-60" />
+                  )}
+                  <span>{anyOpen ? "Collapse all" : "Expand all"}</span>
+                </button>
+              </SidebarGroupLabel>
+            </SidebarGroup>
           )
         })()}
 

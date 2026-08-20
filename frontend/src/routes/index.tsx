@@ -1,4 +1,11 @@
-import { Suspense, useEffect, useRef, useState, type ReactNode } from "react"
+import {
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+} from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -160,6 +167,9 @@ function Dashboard() {
   }
   const remove = (id: WidgetId) => persist(items.filter((x) => x.id !== id))
   const reset = async () => {
+    // A debounced save from a moments-ago edit must not fire AFTER the
+    // delete and quietly resurrect the layout being reset.
+    if (saveTimer.current) clearTimeout(saveTimer.current)
     // Reset = drop MY layout: server row and local cache go, and the
     // effective layout falls back to the tenant default, then the built-in.
     try {
@@ -346,7 +356,19 @@ function DashboardGrid({
           compactor={verticalCompactor}
           layouts={{ xl: toRglLayout(items, metaFor) }}
           dragConfig={{ enabled: editing, handle: ".dash-drag-handle" }}
-          resizeConfig={{ enabled: editing }}
+          resizeConfig={{
+            enabled: editing,
+            // The library's default grip is a faint 5px triangle nobody
+            // finds. This one is an always-visible corner bracket while in
+            // edit mode - see .dash-resize-grip in styles.css.
+            handleComponent: (axis, ref) => (
+              <span
+                ref={ref as Ref<HTMLSpanElement>}
+                className={`react-resizable-handle react-resizable-handle-${axis} dash-resize-grip`}
+                title="Drag to resize"
+              />
+            ),
+          }}
           onDragStart={() => setInteracting(true)}
           onResizeStart={() => setInteracting(true)}
           onDragStop={onStop}

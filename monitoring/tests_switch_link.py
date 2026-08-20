@@ -266,3 +266,45 @@ class SwitchLinkDriftTests(APITestCase):
 
         got = {s_["ip"] for s_ in self._suggestions()}
         self.assertEqual(got, {"10.0.0.5"})  # a-fw sorts first and wins
+
+    def test_settings_api_round_trips_multiple_sources(self):
+        """The PUT path for arp_source_devices - many=True on the
+        tenant-scoped field is otherwise untested."""
+        fw1 = Device.objects.create(tenant=self.tenant, name="api-fw1")
+        fw2 = Device.objects.create(tenant=self.tenant, name="api-fw2")
+        r = self.client.put(
+            "/api/monitoring/settings/",
+            {"arp_source_devices": [str(fw1.id), str(fw2.id)]},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        got = self.client.get("/api/monitoring/settings/").json()
+        self.assertEqual(
+            sorted(d["name"] for d in got["arp_source_devices_detail"]),
+            ["api-fw1", "api-fw2"],
+        )
+        # ...and clearing works.
+        r = self.client.put(
+            "/api/monitoring/settings/", {"arp_source_devices": []},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(
+            self.client.get("/api/monitoring/settings/").json()[
+                "arp_source_devices_detail"
+            ],
+            [],
+        )
+
+    def test_settings_api_rejects_cross_tenant_source(self):
+        from core.models import Organization, Tenant
+
+        org2 = Organization.objects.create(name="X", slug="x")
+        t2 = Tenant.objects.create(org=org2, name="X", slug="x")
+        alien = Device.objects.create(tenant=t2, name="alien-fw")
+        r = self.client.put(
+            "/api/monitoring/settings/",
+            {"arp_source_devices": [str(alien.id)]},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
