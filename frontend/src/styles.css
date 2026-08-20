@@ -316,6 +316,29 @@
   font-family: var(--font-mono, monospace);
 }
 
+/* Label declutter (full map only - the container carries .sm-zl). Name chips
+   hide until their zoom threshold; the route toggles .sm-zl-sites /
+   .sm-zl-devices on zoomend. Hover and selection always win, so a buried
+   name is one mouse-over away at any zoom. */
+.sm-zl .sm-label,
+.sm-zl .sm-devlabel {
+  display: none;
+}
+.sm-zl.sm-zl-sites .sm-label {
+  display: inline-flex;
+}
+.sm-zl.sm-zl-devices .sm-devlabel {
+  display: inline;
+}
+.sm-zl .sm-marker:hover .sm-label,
+.sm-zl .sm-sel .sm-label {
+  display: inline-flex;
+}
+.sm-zl .sm-marker:hover .sm-devlabel,
+.sm-zl .sm-sel .sm-devlabel {
+  display: inline;
+}
+
 .sm-health {
   position: absolute;
   top: -4px;
@@ -364,6 +387,11 @@
   line-height: 1;
 }
 
+/* A hovered marker surfaces above its neighbours so its label reads even in
+   a pile; selection still outranks it. */
+.sm-marker:hover {
+  z-index: 950 !important;
+}
 .sm-sel {
   z-index: 1000 !important;
 }

@@ -140,6 +140,12 @@ route drawing work on the flat markers exactly as before. The MiniMap (the
 dashboard widget, site/device locators, circuits strip) clusters too, with a
 smaller chip.
 
+Name chips declutter with zoom as well: site names appear once you're
+reasonably close, device names closer still, and hovering or selecting a
+marker always shows its name at any zoom. The **Labels** toggle in the View
+menu (remembered per browser) switches to hover/selection-only if you prefer
+a bare map.
+
 ## Cabling on the map
 
 Every cable whose two ends land on the map draws as a line - you don't need

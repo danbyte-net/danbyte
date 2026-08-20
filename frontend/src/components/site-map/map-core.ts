@@ -7,6 +7,11 @@ import L from "leaflet"
 
 export { markerZ, type MarkerKind } from "./status-colors"
 
+/** Zoom thresholds below which name chips hide (hover/selection always show).
+ * Site names carry from far out; device names only matter once you're close
+ * enough that they wouldn't shingle over each other. */
+export const LABEL_ZOOM = { sites: 9, devices: 15 } as const
+
 /** Swap the basemap in place. Always removes the previous layer first - the
  * MiniMap once keyed this on the payload object and stacked a new tile layer
  * (and attribution line) on every refetch. `className: ""` is meaningful:

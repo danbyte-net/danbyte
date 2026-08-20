@@ -46,6 +46,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { InfoTip } from "@/components/ui/info-tip"
 import {
   Dialog,
   DialogContent,
@@ -90,7 +91,12 @@ import {
 import { FovEditor } from "@/components/site-map/fov-editor"
 import { DevicePicker } from "@/components/device-picker"
 import { buildConnectionsLayer } from "@/components/site-map/connections-layer"
-import { markerZ, observeMapSize, setBaseLayer } from "@/components/site-map/map-core"
+import {
+  LABEL_ZOOM,
+  markerZ,
+  observeMapSize,
+  setBaseLayer,
+} from "@/components/site-map/map-core"
 import {
   createMarkerGroup,
   tagMarker,
@@ -195,6 +201,15 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     localStorage.setItem("site-map:fov", v ? "on" : "off")
     setShowFovState(v)
   }
+  // Labels: on = name chips appear once zoomed close enough (LABEL_ZOOM);
+  // off = hover/selection only. Either way they never shingle at low zoom.
+  const [showLabels, setShowLabelsState] = useState(
+    () => localStorage.getItem("site-map:labels") !== "off"
+  )
+  const setShowLabels = (v: boolean) => {
+    localStorage.setItem("site-map:labels", v ? "on" : "off")
+    setShowLabelsState(v)
+  }
   const [tilesBlocked, setTilesBlocked] = useState(false)
   // After stamping a marker: ask for a name + optional device link.
   const [linkPrompt, setLinkPrompt] = useState<{
@@ -234,6 +249,29 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       setSelected({ kind: "device", id: d.id })
     }
   }, [focus, data.devices, mapReady])
+
+  // Label declutter: pure CSS driven by container classes - no marker
+  // rebuilds. Chips show at/above their zoom threshold (when Labels is on);
+  // hover and selection always show regardless.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const el = map.getContainer()
+    el.classList.add("sm-zl")
+    const applyZoom = () => {
+      const z = map.getZoom()
+      el.classList.toggle("sm-zl-sites", showLabels && z >= LABEL_ZOOM.sites)
+      el.classList.toggle(
+        "sm-zl-devices",
+        showLabels && z >= LABEL_ZOOM.devices
+      )
+    }
+    applyZoom()
+    map.on("zoomend", applyZoom)
+    return () => {
+      map.off("zoomend", applyZoom)
+    }
+  }, [showLabels, mapReady])
 
   // The map container's width changes when the rails/sidebars come and go;
   // Leaflet must be told or it renders gray tiles in the newly-revealed area.
@@ -1209,6 +1247,20 @@ function MapBody({ data }: { data: SiteMapPayload }) {
                 label="Camera FOV cones"
                 checked={showFov}
                 onChange={setShowFov}
+                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+              />
+              <FormCheckbox
+                label={
+                  <span className="flex items-center gap-1">
+                    Labels
+                    <InfoTip>
+                      On: name chips appear as you zoom in. Off: names only on
+                      hover or selection.
+                    </InfoTip>
+                  </span>
+                }
+                checked={showLabels}
+                onChange={setShowLabels}
                 className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
               />
             </PopoverContent>
