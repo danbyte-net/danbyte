@@ -89,6 +89,8 @@ def _load_settings(tenant_ids) -> dict:
             "dns_sync": s.dns_sync_enabled,
             "dns_clear_on_missing": s.dns_clear_on_missing,
             "dns_preserve_if_alive": s.dns_preserve_if_alive,
+            # A tuple so it can key the resolver groups in _sync_dns.
+            "dns_resolvers": tuple(s.dns_resolvers or ()),
         }
     return out
 
@@ -397,6 +399,62 @@ def _ptr_sockaddr(addr: str):
     return (addr, 0, 0, 0) if ":" in addr else (addr, 0)
 
 
+def _split_resolver(entry: str) -> tuple[str, int]:
+    """``10.0.0.45`` or ``10.0.0.45:5353`` -> ``(host, port)``.
+
+    IPv6 needs brackets to be unambiguous, since a bare address is all colons.
+    """
+    entry = (entry or "").strip()
+    if entry.startswith("["):
+        host, _, rest = entry[1:].partition("]")
+        port = rest.lstrip(":")
+        return host, int(port) if port else 53
+    host, sep, port = entry.rpartition(":")
+    if sep and port.isdigit() and ":" not in host:
+        return host, int(port)
+    return entry, 53
+
+
+async def _resolve_ptrs_via(addresses: list[str], resolvers: tuple) -> dict:
+    """Reverse-resolve against specific nameservers, tried in order.
+
+    Asking a named server is the whole point on a split-horizon network, where
+    the Danbyte host's own resolver answers the wrong view - or nothing.
+
+    It **never falls back to the system resolver**: a resolver setting that
+    silently ignores itself is worse than no setting, because the operator gets
+    plausible answers from the wrong place. NXDOMAIN is an answer, so it stops
+    there; only a transport failure advances to the next server. When every
+    server is unreachable the lookup fails, which `dns_preserve_if_alive`
+    already handles as a transient blip.
+    """
+    import dns.asyncresolver
+    import dns.resolver
+    import dns.reversename
+
+    res = dns.asyncresolver.Resolver(configure=False)
+    res.nameservers = [h for h, _ in (_split_resolver(r) for r in resolvers)]
+    ports = {h: p for h, p in (_split_resolver(r) for r in resolvers)}
+    if any(p != 53 for p in ports.values()):
+        res.nameserver_ports = ports
+    res.timeout, res.lifetime = 3, 5
+    sem = asyncio.Semaphore(_concurrency())
+
+    async def _one(addr: str):
+        async with sem:
+            try:
+                answer = await res.resolve(
+                    dns.reversename.from_address(addr), "PTR"
+                )
+                return addr, str(answer[0]).rstrip(".")
+            except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+                return addr, None  # an answer: this address has no PTR
+            except Exception:  # noqa: BLE001 - timeouts, refusals, bad config
+                return addr, None
+
+    return dict(await asyncio.gather(*(_one(a) for a in addresses)))
+
+
 async def _resolve_ptrs(addresses: list[str]) -> dict:
     """Reverse-resolve a list of IPs to hostnames (or None when there's no
     PTR), bounded by the concurrency limit. Uses the system resolver async."""
@@ -417,6 +475,22 @@ async def _resolve_ptrs(addresses: list[str]) -> dict:
     return dict(await asyncio.gather(*(_one(a) for a in addresses)))
 
 
+async def _resolve_batches(groups: dict) -> dict:
+    """``{resolvers: [addr]}`` -> ``{resolvers: {addr: host}}``.
+
+    Grouped rather than flattened because the answer for an address depends on
+    *who was asked*. Two tenants can hold the same address string and point at
+    different servers; collapsing them into one batch would leak one tenant's
+    answer into the other.
+    """
+    keys = list(groups)
+    results = await asyncio.gather(*(
+        _resolve_ptrs_via(groups[k], k) if k else _resolve_ptrs(groups[k])
+        for k in keys
+    ))
+    return dict(zip(keys, results))
+
+
 def _sync_dns(states: list[CheckState], settings_map: dict) -> None:
     """For tenants with DNS sync on, resolve each checked IP's PTR and update
     ``IPAddress.dns_name`` per the preserve/clear policy."""
@@ -432,15 +506,21 @@ def _sync_dns(states: list[CheckState], settings_map: dict) -> None:
     if not targets:
         return
 
-    addresses = [ip.ip_address for ip, _ in targets.values()]
+    # Grouped by resolver, not flattened: the answer depends on who was asked,
+    # so two tenants with the same address and different servers must not share
+    # a lookup. An empty tuple is the host's own resolver, i.e. old behaviour.
+    groups: dict = {}
+    for ip, cfg in targets.values():
+        groups.setdefault(cfg.get("dns_resolvers", ()), []).append(ip.ip_address)
     try:
-        resolved = asyncio.run(_resolve_ptrs(addresses))
+        resolved_by = asyncio.run(_resolve_batches(groups))
     except Exception as e:  # noqa: BLE001 - DNS must never fail the check run
         log.warning("dns sync failed: %s", e)
         return
 
     to_update = []
     for ip_id, (ip, cfg) in targets.items():
+        resolved = resolved_by.get(cfg.get("dns_resolvers", ()), {})
         host = resolved.get(ip.ip_address)
         current = ip.dns_name or ""
         if host:

@@ -681,6 +681,13 @@ class MonitoringSettings(TimestampedModel):
         help_text="Keep the existing dns_name on a failed lookup if the IP is "
         "currently up (transient DNS blip vs. a real removal).",
     )
+    dns_resolvers = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Nameservers to ask for PTR lookups, as IP addresses, tried "
+        "in order. These are queried directly - the Danbyte host does not need "
+        "DNS configured for this. Empty means use the host's own resolver.",
+    )
 
     # ─── alerting policy (A5) ────────────────────────────────────────────
     # Re-page still-firing alerts that nobody has acked/silenced/resolved.

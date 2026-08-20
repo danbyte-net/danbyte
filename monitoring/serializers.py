@@ -7,6 +7,8 @@ is a clean 400, not a runtime ``unknown``.
 """
 from __future__ import annotations
 
+import ipaddress
+
 from django.utils.text import slugify
 from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
@@ -15,6 +17,7 @@ from api.models import Device, DeviceRole, DeviceType, IPAddress, Status, Prefix
 from api.serializers import TenantScopedPrimaryKeyRelatedField
 
 from .checkers import CheckConfigError, get_checker
+from .worker import _split_resolver
 from .models import (
     Alert,
     AlertRule,
@@ -791,12 +794,45 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
     )
     arp_source_device_detail = serializers.SerializerMethodField()
 
+    def validate_dns_resolvers(self, value):
+        """IP literals only, at most three.
+
+        Deliberately **not** SSRF-guarded: an internal resolver on RFC1918
+        space is the entire point of the setting, and the same exemption
+        already applies to admin-configured DNS in acme_engine.
+        """
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Expected a list of addresses.")
+        cleaned = []
+        for raw in value:
+            entry = str(raw or "").strip()
+            if not entry:
+                continue
+            host, port = _split_resolver(entry)
+            try:
+                ipaddress.ip_address(host)
+            except ValueError:
+                raise serializers.ValidationError(
+                    f"«{entry}» is not an IP address. Resolvers are queried "
+                    f"directly, so a hostname would need resolving first."
+                ) from None
+            if not 1 <= port <= 65535:
+                raise serializers.ValidationError(f"«{entry}» has a bad port.")
+            cleaned.append(entry)
+        if len(cleaned) > 3:
+            raise serializers.ValidationError(
+                "Three resolvers is the most that is useful - each one is only "
+                "tried when the one before it fails to respond at all."
+            )
+        return cleaned
+
     class Meta:
         model = MonitoringSettings
         fields = [
             "global_enabled", "default_interval_seconds", "stale_after_scans",
             "stale_after_days", "skip_ip_statuses", "skip_ip_status_detail",
             "dns_sync_enabled", "dns_clear_on_missing", "dns_preserve_if_alive",
+            "dns_resolvers",
             "renotify_enabled", "renotify_interval_minutes",
             "escalate_enabled", "escalate_after_minutes",
             "flap_threshold", "flap_window_minutes",

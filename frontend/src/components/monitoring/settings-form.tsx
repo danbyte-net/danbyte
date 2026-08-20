@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { api, type MonitoringSettings, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { FormText } from "@/components/forms/text"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import {
@@ -108,6 +109,7 @@ export function MonitoringSettingsForm() {
           dns_sync_enabled: draft.dns_sync_enabled,
           dns_clear_on_missing: draft.dns_clear_on_missing,
           dns_preserve_if_alive: draft.dns_preserve_if_alive,
+          dns_resolvers: draft.dns_resolvers,
           renotify_enabled: draft.renotify_enabled,
           renotify_interval_minutes: Number(draft.renotify_interval_minutes),
           escalate_enabled: draft.escalate_enabled,
@@ -235,6 +237,18 @@ export function MonitoringSettingsForm() {
                   Clear the DNS name when the lookup returns nothing
                 </span>
               </label>
+              <FormText
+                label="Nameservers"
+                info="IP addresses, comma separated, asked in this order. They are queried directly, so this machine does not need DNS configured itself - which is the point on a split-horizon network where the host resolves the wrong view. Leave empty to use the host's own resolver. Note that PTR lookups always run here, never on an Outpost."
+                value={(draft.dns_resolvers ?? []).join(", ")}
+                onChange={(v) =>
+                  set(
+                    "dns_resolvers",
+                    v.split(",").map((x) => x.trim()).filter(Boolean)
+                  )
+                }
+                placeholder="10.0.0.45, 10.0.0.46"
+              />
             </div>
           )}
         </Section>

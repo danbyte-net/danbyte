@@ -1,7 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { useMemo } from "react"
 
 import {
   api,
@@ -258,14 +257,15 @@ function DnsNamePage() {
     },
   ]
 
-  const tabs = useMemo(
-    () => [
-      { value: "overview", label: "Overview" },
-      { value: "addresses", label: "Addresses", count: addresses.length },
-      { value: "records", label: "Records", count: rows.length || undefined },
-    ],
-    [addresses.length, rows.length]
-  )
+  // A plain array on purpose. It sits below the loading/error returns above,
+  // so a hook here would run on some renders and not others - which is exactly
+  // the "rendered more hooks than during the previous render" crash. Three
+  // object literals are not worth memoising anyway.
+  const tabs = [
+    { value: "overview", label: "Overview" },
+    { value: "addresses", label: "Addresses", count: addresses.length },
+    { value: "records", label: "Records", count: rows.length || undefined },
+  ]
 
   return (
     <DetailShell

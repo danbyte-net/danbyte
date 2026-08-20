@@ -3898,6 +3898,8 @@ export interface MonitoringSettings {
   skip_ip_statuses: string[]
   skip_ip_status_detail: MonitoringSkipStatus[]
   dns_sync_enabled: boolean
+  /** Nameservers for PTR lookups, tried in order. Empty = the host's own. */
+  dns_resolvers: string[]
   dns_clear_on_missing: boolean
   dns_preserve_if_alive: boolean
   renotify_enabled: boolean

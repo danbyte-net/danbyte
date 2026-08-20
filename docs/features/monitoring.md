@@ -403,6 +403,32 @@ handle the no-result case: keep the existing name when a lookup fails but the ho
 is up (so a transient DNS blip doesn't wipe a name off a live host), or clear the
 name when a lookup returns nothing.
 
+#### Choosing which nameservers to ask
+
+By default the lookup uses whatever resolver the Danbyte host itself uses. On a
+split-horizon network that is often the wrong answer - or no answer - so
+**Nameservers** lets you name the servers to ask, as IP addresses, in order.
+
+They are queried directly, which means **the Danbyte machine does not need DNS
+configured for this to work**; the addresses are enough. A server is only tried
+when the one before it fails to respond at all - "no such record" is a real
+answer, so the list stops there rather than shopping around for a better one.
+
+The list never quietly falls back to the host's resolver. If every server you
+named is unreachable the lookup fails, which is what *keep the existing name
+when a lookup fails but the host is up* is there to absorb. A setting that
+silently ignored itself would be worse than none, because the names it produced
+would look right while coming from the wrong place.
+
+Leave it empty for the previous behaviour.
+
+!!! note "PTR lookups always run on the Danbyte server"
+
+    Even for checks executed remotely by an Outpost, reverse DNS is resolved
+    centrally. An Outpost in a branch office can often reach that branch's DNS
+    when the core server cannot - so name the servers the *core* server can
+    reach, not the ones nearest the hosts being checked.
+
 ## Alerts
 
 Status changes are turned into stateful **alerts** - incidents you can see and act

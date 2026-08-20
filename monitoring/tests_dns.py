@@ -54,7 +54,7 @@ class DnsSyncTests(TestCase):
         st = self._state()
         with patch(
             "monitoring.worker.asyncio.run",
-            return_value={"10.0.0.5": "host5.example.com"},
+            return_value={(): {"10.0.0.5": "host5.example.com"}},
         ):
             _sync_dns([st], self._cfg())
         self.ip.refresh_from_db()
@@ -64,7 +64,7 @@ class DnsSyncTests(TestCase):
         self.ip.dns_name = "old.example.com"
         self.ip.save()
         st = self._state(status="up")
-        with patch("monitoring.worker.asyncio.run", return_value={"10.0.0.5": None}):
+        with patch("monitoring.worker.asyncio.run", return_value={(): {"10.0.0.5": None}}):
             _sync_dns([st], self._cfg(dns_preserve_if_alive=True))
         self.ip.refresh_from_db()
         self.assertEqual(self.ip.dns_name, "old.example.com")  # preserved
@@ -73,7 +73,127 @@ class DnsSyncTests(TestCase):
         self.ip.dns_name = "old.example.com"
         self.ip.save()
         st = self._state(status="down")  # not alive → preserve doesn't apply
-        with patch("monitoring.worker.asyncio.run", return_value={"10.0.0.5": None}):
+        with patch("monitoring.worker.asyncio.run", return_value={(): {"10.0.0.5": None}}):
             _sync_dns([st], self._cfg(dns_preserve_if_alive=True, dns_clear_on_missing=True))
         self.ip.refresh_from_db()
         self.assertEqual(self.ip.dns_name, "")  # cleared
+
+
+class ResolverParsingTests(TestCase):
+    def test_split_resolver(self):
+        from .worker import _split_resolver
+
+        self.assertEqual(_split_resolver("10.0.0.45"), ("10.0.0.45", 53))
+        self.assertEqual(_split_resolver("10.0.0.45:5353"), ("10.0.0.45", 5353))
+        # A bare IPv6 address is all colons, so it must not be read as host:port.
+        self.assertEqual(_split_resolver("2001:db8::1"), ("2001:db8::1", 53))
+        self.assertEqual(_split_resolver("[2001:db8::1]:5353"), ("2001:db8::1", 5353))
+        self.assertEqual(_split_resolver("[2001:db8::1]"), ("2001:db8::1", 53))
+
+
+class ResolverRoutingTests(DnsSyncTests):
+    """Which server gets asked, and who sees the answer."""
+
+    def setUp(self):
+        super().setUp()
+        # A second tenant holding the *same address string* as the first.
+        self.other = Tenant.objects.create(org=self.org, name="Beta", slug="beta")
+        self.other_prefix = Prefix.objects.create(
+            tenant=self.other, cidr="10.0.0.0/8",
+            status=status_for(self.other, "container"),
+        )
+        self.other_ip = IPAddress.objects.create(
+            tenant=self.other, ip_address="10.0.0.5", prefix=self.other_prefix
+        )
+        self.other_template = CheckTemplate.objects.create(
+            tenant=self.other, name="p", slug="p", kind=CheckKind.ICMP
+        )
+
+    def test_tenants_with_different_resolvers_do_not_share_answers(self):
+        """The bug this grouping exists to prevent: the same address resolved
+        by two different servers must not collapse into one answer."""
+        mine = CheckState.objects.create(
+            tenant=self.tenant, target_ip=self.ip, template=self.template,
+            kind="icmp", status="up",
+        )
+        theirs = CheckState.objects.create(
+            tenant=self.other, target_ip=self.other_ip,
+            template=self.other_template, kind="icmp", status="up",
+        )
+        cfg = {
+            self.tenant.id: {"dns_sync": True, "dns_clear_on_missing": False,
+                             "dns_preserve_if_alive": True,
+                             "dns_resolvers": ("10.0.0.45",)},
+            self.other.id: {"dns_sync": True, "dns_clear_on_missing": False,
+                            "dns_preserve_if_alive": True,
+                            "dns_resolvers": ("10.9.9.9",)},
+        }
+        with patch("monitoring.worker.asyncio.run", return_value={
+            ("10.0.0.45",): {"10.0.0.5": "internal.example.com"},
+            ("10.9.9.9",): {"10.0.0.5": "external.example.com"},
+        }):
+            _sync_dns([mine, theirs], cfg)
+        self.ip.refresh_from_db()
+        self.other_ip.refresh_from_db()
+        self.assertEqual(self.ip.dns_name, "internal.example.com")
+        self.assertEqual(self.other_ip.dns_name, "external.example.com")
+
+    def test_configured_resolvers_never_fall_back_to_the_system_one(self):
+        """A resolver setting that quietly ignores itself is worse than none:
+        the operator gets plausible answers from the wrong server."""
+        st = self._state()
+        groups = {}
+
+        async def _capture(g):
+            groups.update(g)
+            return {k: {} for k in g}
+
+        with patch("monitoring.worker._resolve_batches", _capture), \
+                patch("monitoring.worker._resolve_ptrs") as system:
+            _sync_dns([st], self._cfg(dns_resolvers=("10.0.0.45",)))
+        self.assertEqual(list(groups), [("10.0.0.45",)])
+        system.assert_not_called()
+
+    def test_no_resolvers_uses_the_host_resolver(self):
+        """Empty list means today's behaviour, so upgrading changes nothing."""
+        st = self._state()
+        seen = {}
+
+        async def _capture(g):
+            seen.update(g)
+            return {k: {} for k in g}
+
+        with patch("monitoring.worker._resolve_batches", _capture):
+            _sync_dns([st], self._cfg())
+        self.assertEqual(list(seen), [()])  # the empty key = system resolver
+
+
+class ResolverValidationTests(TestCase):
+    """The setting takes IP addresses, and says so rather than failing later."""
+
+    def _clean(self, value):
+        from .serializers import MonitoringSettingsSerializer
+
+        s = MonitoringSettingsSerializer()
+        return s.validate_dns_resolvers(value)
+
+    def test_accepts_addresses_with_and_without_ports(self):
+        self.assertEqual(
+            self._clean(["10.0.0.45", "10.0.0.46:5353", "[2001:db8::1]"]),
+            ["10.0.0.45", "10.0.0.46:5353", "[2001:db8::1]"],
+        )
+        self.assertEqual(self._clean(["", "  "]), [])  # blanks dropped, not errors
+
+    def test_rejects_a_hostname(self):
+        from rest_framework.exceptions import ValidationError
+
+        with self.assertRaises(ValidationError) as e:
+            self._clean(["dc1.danbyte.lan"])
+        # The message has to say why, since "put DNS here" is the obvious guess.
+        self.assertIn("not an IP address", str(e.exception))
+
+    def test_caps_the_list(self):
+        from rest_framework.exceptions import ValidationError
+
+        with self.assertRaises(ValidationError):
+            self._clean(["10.0.0.1", "10.0.0.2", "10.0.0.3", "10.0.0.4"])
