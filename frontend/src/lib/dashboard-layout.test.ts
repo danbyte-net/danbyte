@@ -80,3 +80,28 @@ describe("rgl round trip", () => {
     expect(fromRglLayout(rgl)).toEqual(items)
   })
 })
+
+describe("placeIdsCurated", () => {
+  const CURATED = [
+    { id: "wide", x: 0, y: 0, w: 4, h: 2 },
+    { id: "small", x: 4, y: 0, w: 2, h: 2 },
+  ]
+  it("keeps the template geometry for known ids", async () => {
+    const { placeIdsCurated } = await import("./dashboard-layout")
+    // The v1 list's ORDER doesn't matter - the hand-placed template wins,
+    // which is what stops a migrated tenant default resetting into holes.
+    const items = placeIdsCurated(["small", "wide"], CURATED, metaOf)
+    expect(items).toEqual(CURATED)
+  })
+  it("shelf-packs unknown ids below the template", async () => {
+    const { placeIdsCurated } = await import("./dashboard-layout")
+    const items = placeIdsCurated(["wide", "tall"], CURATED, metaOf)
+    expect(items[0]).toMatchObject({ id: "wide", x: 0, y: 0 })
+    expect(items[1]).toMatchObject({ id: "tall", y: 2 }) // below the template
+  })
+  it("normalizeLayout uses it for v1 arrays when given", async () => {
+    const { normalizeLayout } = await import("./dashboard-layout")
+    const items = normalizeLayout(["small", "wide"], metaOf, CURATED)!
+    expect(items).toEqual(CURATED)
+  })
+})

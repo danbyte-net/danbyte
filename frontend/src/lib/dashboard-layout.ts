@@ -75,6 +75,29 @@ export function placeIds(
   return out
 }
 
+/** Flow ids onto the grid, preferring a curated template's geometry.
+
+ * A v1 layout (and an old tenant default) is only an id LIST - naive shelf
+ * packing of default spans produces rows full of holes. Ids the curated
+ * template knows keep its hand-placed positions; only ids it doesn't know
+ * are shelf-packed below. Vertical compaction closes what gaps remain.
+ */
+export function placeIdsCurated(
+  ids: string[],
+  curated: DashItem[],
+  metaOf: (id: string) => WidgetMeta | undefined
+): DashItem[] {
+  const wanted = new Set(ids)
+  const out = curated.filter((c) => wanted.has(c.id) && metaOf(c.id))
+  const placed = new Set(out.map((c) => c.id))
+  const rest = ids.filter((id) => !placed.has(id))
+  const bottom = out.reduce((m, c) => Math.max(m, c.y + c.h), 0)
+  for (const it of placeIds(rest, metaOf)) {
+    out.push({ ...it, y: it.y + bottom })
+  }
+  return out
+}
+
 /** Parse anything a layout might have been stored as, or null to fall back.
  *
  * Unknown widget ids are dropped (a widget removed from the catalog must not
@@ -83,12 +106,14 @@ export function placeIds(
  */
 export function normalizeLayout(
   raw: unknown,
-  metaOf: (id: string) => WidgetMeta | undefined
+  metaOf: (id: string) => WidgetMeta | undefined,
+  curated?: DashItem[]
 ): DashItem[] | null {
   if (Array.isArray(raw)) {
     // v1: a flat array of widget ids.
     const ids = raw.filter((x): x is string => typeof x === "string" && !!metaOf(x))
-    return ids.length ? placeIds(ids, metaOf) : null
+    if (!ids.length) return null
+    return curated ? placeIdsCurated(ids, curated, metaOf) : placeIds(ids, metaOf)
   }
   if (raw && typeof raw === "object" && (raw as { v?: unknown }).v === 2) {
     const items = (raw as { items?: unknown }).items

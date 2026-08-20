@@ -68,7 +68,7 @@ function loadLocalLayout(): DashItem[] | null {
   if (typeof window === "undefined") return null
   try {
     const raw = window.localStorage.getItem(LS_KEY)
-    return raw ? normalizeLayout(JSON.parse(raw), metaFor) : null
+    return raw ? normalizeLayout(JSON.parse(raw), metaFor, builtinLayout()) : null
   } catch {
     return null
   }
@@ -123,7 +123,7 @@ function Dashboard() {
   useEffect(() => {
     if (resolved.current || pref.isLoading || !q.data) return
     resolved.current = true
-    const server = normalizeLayout(pref.data?.data, metaFor)
+    const server = normalizeLayout(pref.data?.data, metaFor, builtinLayout())
     if (server) {
       setItems(server)
     } else {
@@ -132,7 +132,7 @@ function Dashboard() {
         setItems(local)
         void putServer(local) // one-time adoption of the pre-server layout
       } else {
-        const tenantDefault = normalizeLayout(q.data.default_widgets, metaFor)
+        const tenantDefault = normalizeLayout(q.data.default_widgets, metaFor, builtinLayout())
         setItems(tenantDefault ?? builtinLayout())
       }
     }
@@ -182,7 +182,7 @@ function Dashboard() {
     } catch {
       /* ignore */
     }
-    const tenantDefault = normalizeLayout(q.data?.default_widgets, metaFor)
+    const tenantDefault = normalizeLayout(q.data?.default_widgets, metaFor, builtinLayout())
     setItems(tenantDefault ?? builtinLayout())
   }
 
