@@ -12,7 +12,6 @@ import {
 import { RecentDevices, RecentIps, RecentPrefixes } from "./widget-tables"
 import { BookmarksWidget } from "./widget-bookmarks"
 import { ChangelogWidget } from "./widget-changelog"
-import { OsmMapWidget } from "./widget-osm-map"
 import { ExpiredCertsWidget, ExpiringCertsWidget } from "./widget-certificates"
 import { CertHealthWidget } from "./widget-cert-health"
 import { MyTasksWidget } from "./widget-tasks"
@@ -20,6 +19,10 @@ import { MyTasksWidget } from "./widget-tasks"
 // Lazy - pulls in the floor-plan canvas only when the widget is actually shown.
 const FloorplanWidget = lazy(() =>
   import("./widget-floorplan").then((m) => ({ default: m.FloorplanWidget }))
+)
+// Lazy for the same reason: Leaflet stays out of the dashboard chunk.
+const OsmMapWidget = lazy(() =>
+  import("./widget-osm-map").then((m) => ({ default: m.OsmMapWidget }))
 )
 
 export type WidgetId =

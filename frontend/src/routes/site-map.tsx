@@ -1,5 +1,4 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { renderToStaticMarkup } from "react-dom/server"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   useCallback,
@@ -91,7 +90,12 @@ import {
 import { FovEditor } from "@/components/site-map/fov-editor"
 import { DevicePicker } from "@/components/device-picker"
 import { buildConnectionsLayer } from "@/components/site-map/connections-layer"
-import { TileBadge } from "@/components/floorplan/tile-badge"
+import { markerZ, observeMapSize, setBaseLayer } from "@/components/site-map/map-core"
+import {
+  deviceIcon,
+  freeMarkerIcon,
+  siteIcon,
+} from "@/components/site-map/map-icons"
 import { MapPaletteRail } from "@/components/site-map/palette-rail"
 import { buildFovLayer, type FovSource } from "@/components/site-map/fov-layer"
 import { useMe } from "@/lib/use-me"
@@ -136,76 +140,6 @@ function SiteMapPage() {
     return <p className="p-6 text-sm text-muted-foreground">Loading map…</p>
   if (q.isError) return <QueryError error={q.error} />
   return <MapBody data={q.data!} />
-}
-
-// ── marker rendering ──────────────────────────────────────────────────────
-
-const CHECK_COLOR: Record<string, string> = {
-  up: "var(--color-emerald-500)",
-  degraded: "var(--color-amber-500)",
-  down: "var(--color-red-500)",
-  stale: "var(--color-zinc-400)",
-  unknown: "var(--color-zinc-400)",
-}
-
-function healthRing(check: string | null): string {
-  if (!check) return ""
-  const c = CHECK_COLOR[check] ?? CHECK_COLOR.unknown
-  return `<span class="sm-health" style="background:${c}"></span>`
-}
-
-function siteIcon(s: SiteMapSite, selected = false): L.DivIcon {
-  const count =
-    s.device_count > 0 ? `<span class="sm-count">${s.device_count}</span>` : ""
-  return L.divIcon({
-    className: "sm-marker" + (selected ? " sm-sel" : ""),
-    html:
-      `<span class="sm-pin"></span>${healthRing(s.check)}` +
-      `<span class="sm-label">${escapeHtml(s.name)}${count}</span>`,
-    iconSize: undefined as unknown as L.PointExpression,
-    iconAnchor: [7, 7],
-  })
-}
-
-function deviceIcon(d: SiteMapDevice, selected = false): L.DivIcon {
-  // The floorplan badge - a tinted square with the role colour (a centred dot,
-  // since device roles carry no icon). Same visual language as the palette,
-  // the sidebar, and free markers.
-  const badge = renderToStaticMarkup(<TileBadge color={d.role?.color} />)
-  return L.divIcon({
-    className: "sm-marker" + (selected ? " sm-sel" : ""),
-    html:
-      `<span class="sm-badge">${badge}</span>${healthRing(d.check)}` +
-      `<span class="sm-devlabel" style="left:27px;top:2px">${escapeHtml(d.name)}</span>`,
-    iconAnchor: [12, 12],
-  })
-}
-
-function freeMarkerIcon(m: SiteMapMarker, selected = false): L.DivIcon {
-  const label = m.label || m.device?.name || m.type?.name || ""
-  // The same TileBadge as the palette/sidebar, rendered to static HTML for
-  // the divIcon - a marker on the map looks identical to its sidebar row.
-  // The .sm-badge wrapper gives the ~20% tint a solid backdrop over tiles.
-  const badge = renderToStaticMarkup(
-    <TileBadge color={m.type?.color} icon={m.type?.icon} />
-  )
-  return L.divIcon({
-    className: "sm-marker" + (selected ? " sm-sel" : ""),
-    html:
-      `<span class="sm-badge">${badge}</span>` +
-      (label
-        ? `<span class="sm-devlabel" style="left:27px;top:2px">${escapeHtml(label)}</span>`
-        : ""),
-    iconAnchor: [12, 12],
-  })
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
 }
 
 // ── the map ───────────────────────────────────────────────────────────────
@@ -684,7 +618,9 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       }
     }
     document.addEventListener("securitypolicyviolation", onCspViolation)
+    const unobserve = observeMapSize(map, mapEl.current)
     return () => {
+      unobserve()
       document.removeEventListener("securitypolicyviolation", onCspViolation)
       map.remove()
       mapRef.current = null
@@ -697,20 +633,17 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    baseRef.current?.remove()
     setTilesBlocked(false) // re-detect per basemap
     const cfg =
       basemap === "sat"
         ? data.tiles.satellite
         : { url: data.tiles.url, attribution: data.tiles.attribution }
-    const layer = L.tileLayer(cfg.url, {
+    setBaseLayer(map, baseRef, {
+      url: cfg.url,
       attribution: cfg.attribution,
-      maxZoom: 19,
+      // Satellite imagery escapes the dark-mode tile filter.
       className: basemap === "sat" ? "" : "sm-tiles",
-      referrerPolicy: "strict-origin-when-cross-origin",
     })
-    layer.addTo(map)
-    baseRef.current = layer
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     basemap,
@@ -865,9 +798,11 @@ function MapBody({ data }: { data: SiteMapPayload }) {
 
     if (layers.sites) {
       for (const s of placed) {
+        const isSel = selected?.kind === "site" && selected.id === s.id
         const m = L.marker([s.latitude!, s.longitude!], {
-          icon: siteIcon(s, selected?.kind === "site" && selected.id === s.id),
+          icon: siteIcon(s, { selected: isSel }),
           draggable: editing && s.can_edit,
+          zIndexOffset: markerZ("site", s.check, isSel),
         })
         m.on("dragend", () => {
           const p = m.getLatLng()
@@ -882,13 +817,11 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     }
     if (layers.devices) {
       for (const d of data.devices) {
+        const isSel = selected?.kind === "device" && selected.id === d.id
         const m = L.marker([d.latitude, d.longitude], {
-          icon: deviceIcon(
-            d,
-            selected?.kind === "device" && selected.id === d.id
-          ),
+          icon: deviceIcon(d, { selected: isSel }),
           draggable: editing && d.can_edit,
-          zIndexOffset: -100,
+          zIndexOffset: markerZ("device", d.check, isSel),
         })
         m.on("dragend", () => {
           const p = m.getLatLng()
@@ -902,13 +835,11 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       }
     }
     for (const mk of data.markers) {
+      const isSel = selected?.kind === "marker" && selected.id === mk.id
       const m = L.marker([mk.latitude, mk.longitude], {
-        icon: freeMarkerIcon(
-          mk,
-          selected?.kind === "marker" && selected.id === mk.id
-        ),
+        icon: freeMarkerIcon(mk, { selected: isSel }),
         draggable: editing,
-        zIndexOffset: -50,
+        zIndexOffset: markerZ("marker", null, isSel),
       })
       m.on("dragend", () => {
         const p = m.getLatLng()

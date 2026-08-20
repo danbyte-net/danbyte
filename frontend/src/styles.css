@@ -194,17 +194,36 @@
   position: absolute;
   top: 0;
   left: 0;
-  width: 14px;
-  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
   border-radius: 9999px;
   background: var(--primary);
+  color: var(--primary-foreground);
   border: 2px solid var(--background);
-  box-shadow: 0 0 0 1px var(--border);
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 1px 2px rgb(0 0 0 / 0.15);
+}
+/* A custom pin colour + icon come inline from the icon factory. */
+.sm-pin-icon {
+  width: 9px;
+  height: 9px;
+}
+.sm-pin-mini {
+  width: 12px;
+  height: 12px;
+}
+.sm-pin-mini .sm-pin-icon {
+  width: 7px;
+  height: 7px;
 }
 .sm-label {
   position: absolute;
   top: -3px;
-  left: 18px;
+  left: 21px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -299,12 +318,18 @@
 
 .sm-health {
   position: absolute;
-  top: -3px;
-  left: 9px;
-  width: 8px;
-  height: 8px;
+  top: -4px;
+  left: 10px;
+  width: 9px;
+  height: 9px;
   border-radius: 9999px;
   border: 1.5px solid var(--background);
+}
+.sm-health-mini {
+  top: -3px;
+  left: 7px;
+  width: 8px;
+  height: 8px;
 }
 
 .sm-vertex {

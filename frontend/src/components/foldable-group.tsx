@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { ChevronDown } from "lucide-react"
 
+import { CHECK_TONE } from "@/components/site-map/status-colors"
 import { cn } from "@/lib/utils"
 
 /**
@@ -47,15 +48,9 @@ export function FoldableGroup({
   )
 }
 
-/** Monitoring worst-status → dot colour class; shared by map + floorplan
- *  sidebars so a "down" reads identically everywhere. */
-export const CHECK_TONE: Record<string, string> = {
-  up: "bg-emerald-500",
-  degraded: "bg-amber-500",
-  down: "bg-red-500",
-  stale: "bg-zinc-400",
-  unknown: "bg-zinc-400",
-}
+/** Monitoring worst-status → dot colour class; re-exported from the shared
+ *  status palette so map, MiniMap and sidebars can't drift apart. */
+export { CHECK_TONE }
 
 export function CheckDot({ check }: { check: string | null | undefined }) {
   if (!check) return null

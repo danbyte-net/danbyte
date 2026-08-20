@@ -1,11 +1,8 @@
 import { useEffect, useMemo, useRef } from "react"
-import { renderToStaticMarkup } from "react-dom/server"
 import { useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import L from "leaflet"
 import "leaflet/dist/leaflet.css"
-
-import { TileBadge } from "@/components/floorplan/tile-badge"
 
 import {
   api,
@@ -20,21 +17,19 @@ import {
   buildDrawnCables,
   buildDrawnCablesLayer,
 } from "@/components/site-map/cable-geo-route"
+import {
+  markerZ,
+  observeMapSize,
+  setBaseLayer,
+} from "@/components/site-map/map-core"
+import { deviceIcon, siteIcon } from "@/components/site-map/map-icons"
 import { cn } from "@/lib/utils"
 
-// A read-only OSM mini-map: real tiles, your sites/devices as dots, cables +
-// connection arcs drawn like the full Site map. Reused by the dashboard
-// widget, the circuits strip, the site locator, and device pages. Clicking a
-// site or device navigates to it; the surrounding card carries the "open the
-// full map" affordance.
-
-const HEALTH: Record<string, string> = {
-  up: "#10b981",
-  degraded: "#f59e0b",
-  down: "#ef4444",
-  stale: "#a1a1aa",
-  unknown: "#a1a1aa",
-}
+// A read-only OSM mini-map: real tiles, your sites/devices as the full map's
+// pins (mini variant), cables + connection arcs drawn like the full Site map.
+// Reused by the dashboard widget, the circuits strip, the site locator, and
+// device pages. Clicking a site or device navigates to it; the surrounding
+// card carries the "open the full map" affordance.
 
 export function MiniMap({
   highlightSiteId,
@@ -95,23 +90,29 @@ export function MiniMap({
     })
     map.setView([30, 10], 2)
     mapRef.current = map
+    // Dashboard tiles resize under the grid's hands - keep Leaflet current.
+    const unobserve = observeMapSize(map, el.current)
     return () => {
+      unobserve()
       map.remove()
       mapRef.current = null
     }
   }, [])
 
-  // Tiles (from the deployment config, same as the full map).
+  // Tiles (from the deployment config, same as the full map). setBaseLayer
+  // swaps in place - keyed on the URL, not the payload object, so a refetch
+  // doesn't stack another tile layer + attribution line.
+  const baseRef = useRef<L.TileLayer | null>(null)
+  const tileUrl = data?.tiles.url
+  const tileAttribution = data?.tiles.attribution
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !data) return
-    L.tileLayer(data.tiles.url, {
-      attribution: data.tiles.attribution,
-      maxZoom: 19,
-      className: "sm-tiles",
-      referrerPolicy: "strict-origin-when-cross-origin",
-    }).addTo(map)
-  }, [data])
+    if (!map || !tileUrl) return
+    setBaseLayer(map, baseRef, {
+      url: tileUrl,
+      attribution: tileAttribution ?? "",
+    })
+  }, [tileUrl, tileAttribution])
 
   // Draw everything + fit.
   useEffect(() => {
@@ -145,12 +146,11 @@ export function MiniMap({
 
     for (const s of sitesToShow) {
       const hl = s.id === highlightSiteId
-      const m = L.circleMarker([s.latitude!, s.longitude!], {
-        radius: hl ? 7 : 5,
-        color: "#fff",
-        weight: 1.5,
-        fillColor: HEALTH[s.check ?? "unknown"] ?? "#0ea5e9",
-        fillOpacity: 1,
+      // The full map's site pin, mini variant: site colour + icon + health
+      // dot. The highlighted site gets the primary ring via sm-sel.
+      const m = L.marker([s.latitude!, s.longitude!], {
+        icon: siteIcon(s, { selected: hl, mini: true }),
+        zIndexOffset: markerZ("site", s.check, hl),
       })
       m.bindTooltip(s.name, { direction: "top" })
       m.on("click", () => nav({ to: "/sites/$id", params: { id: s.id } }))
@@ -162,14 +162,9 @@ export function MiniMap({
       const focused = d.id === focusDeviceId
       // Same floor-planner badge square as the full map; the focused device
       // gets the primary ring (via sm-sel) so it's obvious which one this is.
-      const badge = renderToStaticMarkup(<TileBadge color={d.role?.color} />)
       const m = L.marker([d.latitude, d.longitude], {
-        icon: L.divIcon({
-          className: "sm-marker" + (focused ? " sm-sel" : ""),
-          html: `<span class="sm-badge">${badge}</span>`,
-          iconAnchor: [12, 12],
-        }),
-        zIndexOffset: focused ? 200 : 0,
+        icon: deviceIcon(d, { selected: focused, mini: true }),
+        zIndexOffset: markerZ("device", d.check, focused),
       })
       m.bindTooltip(d.name, { direction: "top" })
       m.on("click", () => nav({ to: "/devices/$id", params: { id: d.id } }))
