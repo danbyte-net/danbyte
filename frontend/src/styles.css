@@ -261,15 +261,36 @@
   border: 2px solid var(--background);
   box-shadow: 0 0 0 1px var(--border);
 }
-.leaflet-popup-content-wrapper,
-.leaflet-popup-tip {
+.leaflet-container .leaflet-popup-content-wrapper,
+.leaflet-container .leaflet-popup-tip {
   background: var(--popover);
   color: var(--popover-foreground);
   border: 1px solid var(--border);
   box-shadow: none;
 }
-.leaflet-popup-content {
+.leaflet-container .leaflet-popup-content {
   margin: 10px 12px;
+}
+/* Tooltips (MiniMap names, cable hovers) follow the theme too. */
+.leaflet-container .leaflet-tooltip {
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.leaflet-container .leaflet-tooltip-top:before {
+  border-top-color: var(--border);
+}
+.leaflet-container .leaflet-tooltip-bottom:before {
+  border-bottom-color: var(--border);
+}
+.leaflet-container .leaflet-tooltip-left:before {
+  border-left-color: var(--border);
+}
+.leaflet-container .leaflet-tooltip-right:before {
+  border-right-color: var(--border);
 }
 .sm-pop-title {
   font-size: 13px;
@@ -298,34 +319,38 @@
      map so app overlays always render on top. */
   isolation: isolate;
 }
-/* Attribution must stay readable in both themes - never hidden. */
-.leaflet-control-attribution {
+/* Attribution must stay readable in both themes - never hidden. (Container
+   prefix: leaflet.css loads after this file from the lazy map chunks.) */
+.leaflet-container .leaflet-control-attribution {
   background: color-mix(in oklab, var(--background) 85%, transparent);
   color: var(--muted-foreground);
   font-size: 10px;
 }
-.leaflet-control-attribution a {
+.leaflet-container .leaflet-control-attribution a {
   color: var(--primary);
 }
-/* Zoom buttons + scale bar follow the theme instead of Leaflet's white. */
-.leaflet-bar {
-  border: 1px solid var(--border) !important;
+/* Zoom buttons + scale bar follow the theme instead of Leaflet's white.
+   leaflet.css ships in the lazy map chunks and therefore loads AFTER this
+   file, so plain equal-specificity selectors lose on order - the container
+   prefix (+ !important on the backgrounds Leaflet also !important-adjacent
+   hard-codes) makes these win regardless of load order. */
+.leaflet-container .leaflet-bar {
+  border: 1px solid var(--border);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.1);
 }
-.leaflet-bar a {
-  background: var(--background);
-  color: var(--foreground);
+.leaflet-container .leaflet-bar a {
+  background: var(--background) !important;
+  color: var(--foreground) !important;
   border-bottom-color: var(--border);
 }
-.leaflet-bar a:hover {
-  background: var(--muted);
-  color: var(--foreground);
+.leaflet-container .leaflet-bar a:hover {
+  background: var(--muted) !important;
 }
-.leaflet-bar a.leaflet-disabled {
-  background: var(--muted);
-  color: var(--muted-foreground);
+.leaflet-container .leaflet-bar a.leaflet-disabled {
+  background: var(--muted) !important;
+  color: var(--muted-foreground) !important;
 }
-.leaflet-control-scale-line {
+.leaflet-container .leaflet-control-scale-line {
   background: color-mix(in oklab, var(--background) 85%, transparent);
   color: var(--muted-foreground);
   border-color: var(--muted-foreground);

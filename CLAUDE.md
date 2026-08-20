@@ -178,6 +178,9 @@ Use the active shared system; do not hand-roll another version of existing UI:
 - State and errors: `QueryError`, `apiErrorToast`, and `EmptyState`.
 - Colored catalog objects: `ColorBadge`, `StatusBadge`, `RoleChip`, or the
   existing domain badge. Derive color from object data, never its name.
+- Count/label chips: the squarish `Badge` primitive, one badge per severity
+  (`destructive`/`warning`/`success` variants) - never a hand-rolled
+  `rounded-full` pill. `rounded-full` is for status dots and avatars only.
 - Dates/times: `TimeCell` or the shared time helpers.
 - Tabs: the shared segmented-tabs component.
 

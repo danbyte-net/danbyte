@@ -47,6 +47,14 @@ a lot of data fast - typography and spacing serve that, not decoration.
 - **Mono font**: for every IP, CIDR, MAC, serial, ID, UUID, custom-field key.
 - **Tabular nums**: on every counter, percentage, timestamp.
 - **Radii**: `rounded-md` and `rounded-lg` only. `rounded-full` for status dots and avatars.
+- **Badges are squarish, never pills.** Every count/label chip uses the
+  `Badge` primitive (`rounded-[5px]`) - including chips floating over a
+  canvas (map, floor plan, topology). Do not hand-roll `rounded-full` pill
+  buttons for labels or counts; `rounded-full` stays reserved for status dots
+  and avatars. Severity chips use the semantic variants (`destructive`,
+  `warning`, `success`) as **separate badges per severity**, not one combined
+  pill. Chips overlaying a tinted/tiled canvas sit on a solid
+  `bg-background/95 rounded-md border` backdrop so the tint reads.
 - **Shadows**: don't. Borders define edges. Exception: dropdowns/popovers get `shadow-sm`.
 
 See `/CLAUDE.md` for the canonical class snippets per component (button,

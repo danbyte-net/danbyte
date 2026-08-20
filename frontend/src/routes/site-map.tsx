@@ -1182,11 +1182,13 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       a.check === b.check ? 0 : a.check === "down" ? -1 : 1
     )
   }, [placed, data.devices])
-  const problemIdx = useRef(0)
-  const nextProblem = () => {
-    if (problems.length === 0) return
-    const p = problems[problemIdx.current % problems.length]
-    problemIdx.current += 1
+  const problemIdx = useRef<Record<string, number>>({})
+  const nextProblem = (check: "down" | "degraded") => {
+    const list = problems.filter((p) => p.check === check)
+    if (list.length === 0) return
+    const i = problemIdx.current[check] ?? 0
+    const p = list[i % list.length]
+    problemIdx.current[check] = i + 1
     flyTo(p.lat, p.lng)
     setSelected({ kind: p.kind, id: p.id })
   }
@@ -1426,30 +1428,38 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           <div ref={mapEl} className="absolute inset-0" />
 
           {problems.length > 0 && mode === "view" && (
-            <button
-              onClick={nextProblem}
-              title="Step through the problems on this map"
-              className="absolute top-3 left-3 z-[900] flex items-center gap-1.5 rounded-full border border-border bg-background/95 px-3 py-1.5 text-[12px] font-medium shadow-sm backdrop-blur hover:bg-muted"
-            >
+            // Two separate Badge-primitive chips (never a pill) on a solid
+            // backdrop so the tints read over tiles; each steps through its
+            // own severity.
+            // left-14 clears Leaflet's zoom control in the corner.
+            <div className="absolute top-3 left-14 z-[900] flex items-center gap-1 rounded-md border border-border bg-background/95 p-1 shadow-sm backdrop-blur">
               {problems.some((p) => p.check === "down") && (
-                <span className="flex items-center gap-1 text-red-500">
-                  <span className="size-2 rounded-full bg-red-500" />
-                  <span className="num">
-                    {problems.filter((p) => p.check === "down").length}
-                  </span>{" "}
-                  down
-                </span>
+                <Badge variant="destructive" asChild>
+                  <button
+                    onClick={() => nextProblem("down")}
+                    title="Step through what's down"
+                  >
+                    <span className="num">
+                      {problems.filter((p) => p.check === "down").length}
+                    </span>{" "}
+                    down
+                  </button>
+                </Badge>
               )}
               {problems.some((p) => p.check === "degraded") && (
-                <span className="flex items-center gap-1 text-amber-500">
-                  <span className="size-2 rounded-full bg-amber-500" />
-                  <span className="num">
-                    {problems.filter((p) => p.check === "degraded").length}
-                  </span>{" "}
-                  degraded
-                </span>
+                <Badge variant="warning" asChild>
+                  <button
+                    onClick={() => nextProblem("degraded")}
+                    title="Step through what's degraded"
+                  >
+                    <span className="num">
+                      {problems.filter((p) => p.check === "degraded").length}
+                    </span>{" "}
+                    degraded
+                  </button>
+                </Badge>
               )}
-            </button>
+            </div>
           )}
 
           <MapLegend open={legendOpen} onToggle={toggleLegend} />
@@ -1882,12 +1892,13 @@ function MapLegend({
   // Sits above the Leaflet scale control; collapsed it's just a pill.
   if (!open)
     return (
-      <button
-        onClick={onToggle}
-        className="absolute bottom-9 left-3 z-[900] rounded-full border border-border bg-background/95 px-3 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground"
+      <Badge
+        variant="outline"
+        asChild
+        className="absolute bottom-9 left-3 z-[900] bg-background/95 shadow-sm backdrop-blur"
       >
-        Legend
-      </button>
+        <button onClick={onToggle}>Legend</button>
+      </Badge>
     )
   const line = (color: string, dashed = false) => (
     <span
