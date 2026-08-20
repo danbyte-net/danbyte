@@ -65,6 +65,7 @@ export function packItems(
     w: number
     h: number
     maxW?: number
+    minW?: number
     config?: Record<string, unknown>
   }[]
 ): DashItem[] {
@@ -72,6 +73,7 @@ export function packItems(
     ...b,
     w: Math.min(Math.max(1, b.w), GRID_COLS),
     maxW: Math.min(b.maxW ?? GRID_COLS, GRID_COLS),
+    minW: Math.max(1, b.minW ?? 1),
   }))
   const out: DashItem[] = []
   let y = 0
@@ -83,11 +85,18 @@ export function packItems(
     let guard = 0
     while (rem > 0 && queue.length && guard < 50) {
       guard += 1
-      const idx = queue
-        .slice(0, LOOKAHEAD)
-        .findIndex((b) => b.w <= rem)
-      if (idx === -1) break
+      let idx = queue.slice(0, LOOKAHEAD).findIndex((b) => b.w <= rem)
+      let shrinkTo = 0
+      if (idx === -1) {
+        // Nothing fits at its preferred width - but a chart happy at one
+        // column (minW 1) can shrink into the remainder instead of forcing
+        // a neighbour to stretch.
+        idx = queue.slice(0, LOOKAHEAD).findIndex((b) => b.minW <= rem)
+        if (idx === -1) break
+        shrinkTo = rem
+      }
       const [b] = queue.splice(idx, 1)
+      if (shrinkTo) b.w = shrinkTo
       row.push(b)
       rem -= b.w
     }
@@ -136,6 +145,7 @@ export function placeIds(
         w: Math.min(meta.span.w, GRID_COLS),
         h: meta.span.h,
         maxW: meta.max.w,
+        minW: meta.min.w,
       }))
   )
 }
@@ -163,6 +173,7 @@ export function placeIdsCurated(
       w: Math.min(meta.span.w, GRID_COLS),
       h: meta.span.h,
       maxW: meta.max.w,
+      minW: meta.min.w,
     }))
   return packItems([
     ...known.map((c) => ({
@@ -170,6 +181,7 @@ export function placeIdsCurated(
       w: c.w,
       h: c.h,
       maxW: metaOf(c.id)?.max.w,
+      minW: metaOf(c.id)?.min.w,
     })),
     ...rest,
   ])

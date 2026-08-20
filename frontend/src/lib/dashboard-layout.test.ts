@@ -128,3 +128,20 @@ describe("placeIdsCurated", () => {
     expect(items).toEqual(CURATED)
   })
 })
+
+describe("packItems shrink-to-fit", () => {
+  it("a chart happy at one column shrinks into a remainder", async () => {
+    const { packItems } = await import("./dashboard-layout")
+    const items = packItems([
+      { id: "big", w: 5, h: 2, maxW: 5 },
+      { id: "donut", w: 2, h: 2, maxW: 3, minW: 1 },
+    ])
+    // Without shrink the donut can't fit the 1-column remainder and "big"
+    // can't stretch past its max - the row would end short.
+    expect(items.find((i) => i.id === "donut")).toMatchObject({
+      x: 5,
+      y: 0,
+      w: 1,
+    })
+  })
+})

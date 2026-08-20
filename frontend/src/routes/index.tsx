@@ -212,6 +212,7 @@ function Dashboard() {
           w: it.w,
           h: it.h,
           maxW: metaForItem(it.id).max.w,
+          minW: metaForItem(it.id).min.w,
           config: it.config,
         }))
       )
