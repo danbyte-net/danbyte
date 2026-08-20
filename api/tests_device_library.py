@@ -180,6 +180,35 @@ class DeviceBundleTests(APITestCase):
         self.assertTrue(body["faceplate"])
         self.assertFalse(DeviceType.objects.exists())
 
+    def test_two_new_manufacturers_get_distinct_slugs(self):
+        # Regression for #56: the setUp manufacturer ("Lenovo") holds the
+        # empty slug, so a bare get_or_create(name=...) for any NEW vendor
+        # also produced slug "" and hit the (tenant, slug) unique constraint.
+        bundle = self._export()
+        bundle["name"] = "Widget 1000"
+        bundle["manufacturer"] = "Vendor A"
+        bundle["components"]["inventory_items"][0]["manufacturer"] = "Vendor C"
+        resp = self._import(bundle)
+        self.assertEqual(resp.status_code, 200, resp.content)
+
+        bundle2 = self._export()
+        bundle2["name"] = "Widget 2000"
+        bundle2["manufacturer"] = "Vendor B"
+        resp = self._import(bundle2)
+        self.assertEqual(resp.status_code, 200, resp.content)
+
+        slugs = {
+            m.name: m.slug
+            for m in Manufacturer.objects.filter(
+                tenant=self.tenant, name__startswith="Vendor"
+            )
+        }
+        self.assertEqual(
+            slugs,
+            {"Vendor A": "vendor-a", "Vendor B": "vendor-b",
+             "Vendor C": "vendor-c"},
+        )
+
     def test_existing_type_is_skipped_without_replace(self):
         bundle = self._export()
         bundle["u_height"] = 9

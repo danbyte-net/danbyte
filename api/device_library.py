@@ -229,9 +229,13 @@ def import_bundle(
         manufacturer = None
         mname = (payload.get("manufacturer") or "").strip()
         if mname:
-            manufacturer, _ = Manufacturer.objects.get_or_create(
-                tenant=tenant, name=mname,
-                defaults={"owning_site": owning_site} if owning_site else {},
+            # Not a bare get_or_create: Manufacturer is unique on
+            # (tenant, slug), so two new vendors would both claim the empty
+            # slug and the second import would 500 (issue #56).
+            from .devicetype_import import _get_or_create_manufacturer
+
+            manufacturer = _get_or_create_manufacturer(
+                tenant, mname, owning_site=owning_site
             )
         fields = {
             f: payload.get(f)
@@ -303,8 +307,10 @@ def _import_components(dt, comps: dict, report: dict) -> None:
                     continue
                 kwargs["rear_port_template"] = rear
             elif key == "inventory_items" and row.get("manufacturer"):
-                kwargs["manufacturer"], _ = Manufacturer.objects.get_or_create(
-                    tenant=dt.tenant, name=row["manufacturer"]
+                from .devicetype_import import _get_or_create_manufacturer
+
+                kwargs["manufacturer"] = _get_or_create_manufacturer(
+                    dt.tenant, row["manufacturer"]
                 )
             obj = model.objects.create(device_type=dt, **kwargs)
             made.setdefault(key, {})[obj.name] = obj
