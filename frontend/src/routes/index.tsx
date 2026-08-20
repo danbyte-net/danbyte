@@ -52,6 +52,7 @@ import {
   ROW_HEIGHT,
   fromRglLayout,
   normalizeLayout,
+  packItems,
   toRglLayout,
   type DashItem,
 } from "@/lib/dashboard-layout"
@@ -199,6 +200,24 @@ function Dashboard() {
     setItems(tenantDefault ?? builtinLayout())
   }
 
+  // Re-pack the current widgets, keeping their sizes and settings: dragging
+  // only compacts vertically, so holes accumulate - this closes them in one
+  // click without resetting anything.
+  const tidy = () => {
+    const ordered = [...items].sort((a, b) => a.y - b.y || a.x - b.x)
+    persist(
+      packItems(
+        ordered.map((it) => ({
+          id: it.id,
+          w: it.w,
+          h: it.h,
+          maxW: metaForItem(it.id).max.w,
+          config: it.config,
+        }))
+      )
+    )
+  }
+
   // Edit mode gates dragging/resizing/removal, so the normal dashboard stays
   // clean and read-only until you choose to rearrange it.
   const [editing, setEditing] = useState(false)
@@ -241,6 +260,11 @@ function Dashboard() {
             {editing && canManage && (
               <Button variant="ghost" size="sm" onClick={saveAsDefault}>
                 <LayoutGrid className="h-3.5 w-3.5" /> Set as new-user default
+              </Button>
+            )}
+            {editing && (
+              <Button variant="ghost" size="sm" onClick={tidy}>
+                <LayoutGrid className="h-3.5 w-3.5" /> Tidy
               </Button>
             )}
             {editing && (

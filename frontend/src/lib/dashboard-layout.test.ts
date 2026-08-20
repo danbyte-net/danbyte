@@ -25,7 +25,10 @@ describe("normalizeLayout", () => {
     expect(items.map((i) => i.id)).toEqual(["small", "wide", "tall"])
     expect(items[0]).toMatchObject({ x: 0, y: 0, w: 2, h: 2 })
     expect(items[1]).toMatchObject({ x: 2, y: 0, w: 4, h: 2 })
-    expect(items[2]).toMatchObject({ x: 0, y: 2, w: 2, h: 3 }) // next row
+    // A lone trailing widget stretches to close its row (up to its max) -
+    // partial rows were the last surviving gap class.
+    expect(items[2]).toMatchObject({ x: 0, y: 2, h: 3 })
+    expect(items[2].w).toBe(6) // tall's max.w is 6
   })
 
   it("drops unknown ids rather than wedging the dashboard", () => {

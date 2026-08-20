@@ -46,33 +46,78 @@ export function clampItem(item: DashItem, meta: WidgetMeta): DashItem {
   return { id: item.id, x, y, w, h }
 }
 
-/** Pack sized blocks onto the grid with NO horizontal holes.
+/** Pack sized blocks into FULL rows - every row sums to exactly GRID_COLS.
  *
- * Greedy skyline packing: each block lands at the lowest spot (leftmost on
- * ties) where its width fits. Order is preserved as reading order, so a
- * curated sequence still reads the way it was designed - but any SUBSET of
- * widgets packs dense. This replaced two earlier attempts (shelf packing,
- * then curated fixed positions) that both left holes whenever the widget
- * set didn't match the template exactly.
+ * Three failed attempts taught what "no gaps" really requires here: shelf
+ * packing left row remainders, curated fixed positions left holes for absent
+ * widgets, and greedy skyline packing left 1-column channels nothing 2-wide
+ * can ever fill. So rows are now built to sum to the full width: blocks are
+ * taken in order (with a small look-ahead so a fitting block can jump the
+ * queue), and whatever width remains is absorbed by stretching row members
+ * up to their max widths. Heights still vary; vertical compaction tidies
+ * that, which it is actually good at.
  */
+const LOOKAHEAD = 6
+
 export function packItems(
-  blocks: { id: string; w: number; h: number; config?: Record<string, unknown> }[]
+  blocks: {
+    id: string
+    w: number
+    h: number
+    maxW?: number
+    config?: Record<string, unknown>
+  }[]
 ): DashItem[] {
-  const heights = new Array(GRID_COLS).fill(0)
+  const queue = blocks.map((b) => ({
+    ...b,
+    w: Math.min(Math.max(1, b.w), GRID_COLS),
+    maxW: Math.min(b.maxW ?? GRID_COLS, GRID_COLS),
+  }))
   const out: DashItem[] = []
-  for (const b of blocks) {
-    const w = Math.min(Math.max(1, b.w), GRID_COLS)
-    let bestX = 0
-    let bestY = Infinity
-    for (let x = 0; x + w <= GRID_COLS; x++) {
-      const y = Math.max(...heights.slice(x, x + w))
-      if (y < bestY) {
-        bestY = y
-        bestX = x
-      }
+  let y = 0
+  while (queue.length) {
+    const row: typeof queue = []
+    let rem = GRID_COLS
+    // Fill the row: prefer order, but let a near block that FITS jump ahead
+    // of one that doesn't - that is what closes the row at exactly 6.
+    let guard = 0
+    while (rem > 0 && queue.length && guard < 50) {
+      guard += 1
+      const idx = queue
+        .slice(0, LOOKAHEAD)
+        .findIndex((b) => b.w <= rem)
+      if (idx === -1) break
+      const [b] = queue.splice(idx, 1)
+      row.push(b)
+      rem -= b.w
     }
-    out.push({ id: b.id, x: bestX, y: bestY, w, h: b.h, ...(b.config ? { config: b.config } : {}) })
-    for (let x = bestX; x < bestX + w; x++) heights[x] = bestY + b.h
+    if (!row.length) {
+      // Nothing fits (a block wider than the grid can't happen, but guard).
+      const [b] = queue.splice(0, 1)
+      row.push(b)
+      rem = 0
+    }
+    // Absorb the remainder by widening row members, last first, up to max.
+    for (let i = row.length - 1; i >= 0 && rem > 0; i--) {
+      const grow = Math.min(rem, row[i].maxW - row[i].w)
+      row[i].w += grow
+      rem -= grow
+    }
+    let x = 0
+    let rowH = 0
+    for (const b of row) {
+      out.push({
+        id: b.id,
+        x,
+        y,
+        w: b.w,
+        h: b.h,
+        ...(b.config ? { config: b.config } : {}),
+      })
+      x += b.w
+      rowH = Math.max(rowH, b.h)
+    }
+    y += rowH
   }
   return out
 }
@@ -90,6 +135,7 @@ export function placeIds(
         id,
         w: Math.min(meta.span.w, GRID_COLS),
         h: meta.span.h,
+        maxW: meta.max.w,
       }))
   )
 }
@@ -116,9 +162,15 @@ export function placeIdsCurated(
       id,
       w: Math.min(meta.span.w, GRID_COLS),
       h: meta.span.h,
+      maxW: meta.max.w,
     }))
   return packItems([
-    ...known.map((c) => ({ id: c.id, w: c.w, h: c.h })),
+    ...known.map((c) => ({
+      id: c.id,
+      w: c.w,
+      h: c.h,
+      maxW: metaOf(c.id)?.max.w,
+    })),
     ...rest,
   ])
 }
