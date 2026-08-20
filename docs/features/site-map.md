@@ -116,6 +116,15 @@ dragging a placed device or removing it from the map needs `device.change`.
 Danbyte never geocodes addresses - there's no lookup of your street addresses
 against an external service. You place things yourself.
 
+## Site colors and icons
+
+Every site can carry a **marker color** and a **Lucide icon**, set on the site
+form (*Marker color* / *Marker icon*, next to the coordinates). The map pin
+takes the color and shows the icon inside it; blank means the theme's default
+pin. The same pair exists on locations - there they color the location's badge
+on list and detail pages (locations have no coordinates, so nothing changes on
+the map), and give the upcoming topology views a grouping color to work with.
+
 ## Cabling on the map
 
 Every cable whose two ends land on the map draws as a line - you don't need

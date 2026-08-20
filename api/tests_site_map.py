@@ -70,6 +70,44 @@ class SiteMapTests(TestCase):
         site.refresh_from_db()
         self.assertEqual(str(site.latitude), "40.712800")
 
+    def test_site_color_icon_roundtrip_and_map_payload(self):
+        site = Site.objects.get(name="Placed")
+        r = self.client_api.patch(
+            f"/api/sites/{site.id}/",
+            {"color": "#0ea5e9", "icon": "factory"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["color"], "#0ea5e9")
+        body = self.client_api.get("/api/site-map/").json()
+        placed = next(s for s in body["sites"] if s["name"] == "Placed")
+        self.assertEqual(placed["color"], "#0ea5e9")
+        self.assertEqual(placed["icon"], "factory")
+        # Clearing goes back to "" = theme default, never null.
+        r = self.client_api.patch(
+            f"/api/sites/{site.id}/", {"color": "", "icon": ""}, format="json"
+        )
+        self.assertEqual(r.json()["color"], "")
+        self.assertEqual(r.json()["icon"], "")
+
+    def test_location_color_icon_roundtrip(self):
+        from .models import Location
+
+        site = Site.objects.get(name="Placed")
+        loc = Location.objects.create(
+            tenant=self.tenant, site=site, name="Hall A", slug="hall-a",
+            color="#f59e0b", icon="warehouse",
+        )
+        r = self.client_api.get(f"/api/locations/{loc.id}/")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["color"], "#f59e0b")
+        self.assertEqual(r.json()["icon"], "warehouse")
+        r = self.client_api.patch(
+            f"/api/locations/{loc.id}/", {"color": ""}, format="json"
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["color"], "")
+
     def test_member_without_view_grant_gets_no_sites(self):
         from auth_api.models import UserProfile
 

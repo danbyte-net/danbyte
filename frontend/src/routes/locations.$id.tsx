@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
+import { TileBadge } from "@/components/floorplan/tile-badge"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { QueryError } from "@/components/query-error"
@@ -127,7 +128,16 @@ function Body({ location: l }: { location: Location }) {
       }
       hero={
         <DetailHero
-          title={l.name}
+          title={
+            l.color || l.icon ? (
+              <span className="inline-flex items-center gap-2">
+                <TileBadge color={l.color} icon={l.icon} className="h-6 w-6" />
+                {l.name}
+              </span>
+            ) : (
+              l.name
+            )
+          }
           badges={<StatusBadge status={l.status} />}
           description={l.description}
         />

@@ -256,6 +256,14 @@ class Site(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         max_digits=9, decimal_places=6, null=True, blank=True,
         help_text="GPS longitude (decimal degrees).",
     )
+    # Marker appearance on the site map. Blank = theme default.
+    color = models.CharField(max_length=7, blank=True, default="")
+    icon = models.CharField(
+        max_length=48,
+        blank=True,
+        default="",
+        help_text="Lucide icon name (e.g. building-2, factory, warehouse).",
+    )
     description = models.TextField(blank=True)
     gateway_policy = models.CharField(
         max_length=8,
@@ -5342,6 +5350,14 @@ class Location(NumIdMixin, TimestampedModel):
     status = models.ForeignKey(
         "Status", on_delete=models.PROTECT, null=True, blank=True,
         related_name="locations",
+    )
+    # Visual identity (badges now, topology grouping later). Blank = default.
+    color = models.CharField(max_length=7, blank=True, default="")
+    icon = models.CharField(
+        max_length=48,
+        blank=True,
+        default="",
+        help_text="Lucide icon name (e.g. building, layers, door-closed).",
     )
     description = models.TextField(blank=True, default="")
 

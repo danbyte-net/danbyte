@@ -12,8 +12,10 @@ import type {
   Status,
 } from "@/lib/api"
 import {
+  FormColor,
   FormCombobox,
   FormFooter,
+  FormIcon,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -54,6 +56,8 @@ export function LocationForm({
   const [statusId, setStatusId] = useState<string | null>(
     location?.status?.id ?? null
   )
+  const [color, setColor] = useState(location?.color ?? "")
+  const [icon, setIcon] = useState(location?.icon ?? "")
   const [description, setDescription] = useState(location?.description ?? "")
   // Site is a required FK - surface that client-side instead of leaning on the
   // server 400. Cleared once a site is chosen or the form re-seeds.
@@ -65,6 +69,8 @@ export function LocationForm({
     setSiteId(location.site?.id ?? null)
     setParentId(location.parent?.id ?? null)
     setStatusId(location.status?.id ?? null)
+    setColor(location.color ?? "")
+    setIcon(location.icon ?? "")
     setDescription(location.description)
     setSiteError(null)
     reset()
@@ -102,6 +108,8 @@ export function LocationForm({
         site_id: site,
         parent_id: parentId,
         status_id: statusId,
+        color: color || "",
+        icon: icon || "",
         description: description.trim(),
       }
       return saveObject<Location>({
@@ -187,6 +195,21 @@ export function LocationForm({
           searchPlaceholder="Search locations…"
           emptyText="No locations in this site."
           error={fieldErrors.parent_id}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <FormColor
+          label="Color"
+          value={color}
+          onChange={setColor}
+          error={fieldErrors.color}
+        />
+        <FormIcon
+          label="Icon"
+          value={icon}
+          onChange={setIcon}
+          error={fieldErrors.icon}
         />
       </div>
 

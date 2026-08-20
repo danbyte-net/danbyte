@@ -948,6 +948,10 @@ export interface SiteMapSite {
   name: string
   latitude: number | null
   longitude: number | null
+  /** Marker color (#rrggbb) or "" for the theme default. */
+  color: string
+  /** Lucide icon name shown in the pin, or "". */
+  icon: string
   device_count: number
   floor_plan_count: number
   /** First few floor plans - popover jump-offs into the drill-down. */
@@ -3033,6 +3037,10 @@ export interface Site {
   address: string
   latitude: string | null
   longitude: string | null
+  /** Map marker color (#rrggbb) or "" for the theme default. */
+  color: string
+  /** Lucide icon name shown in the map pin, or "". */
+  icon: string
   description: string
   /** IANA tz name (e.g. "Europe/Copenhagen"), or "" when unset. */
   time_zone: string
@@ -3064,6 +3072,8 @@ export interface SiteWritePayload {
   time_zone?: string
   latitude?: string | null
   longitude?: string | null
+  color?: string
+  icon?: string
   description?: string
   gateway_policy?: SiteGatewayPolicy
   default_prefix_id?: string | null
@@ -3119,6 +3129,10 @@ export interface Location {
   site: SiteOption | null
   parent: LocationOption | null
   status: StatusMini | null
+  /** Badge color (#rrggbb) or "" for the default. */
+  color: string
+  /** Lucide icon name, or "". */
+  icon: string
   description: string
   child_count: number
   device_count: number
@@ -3133,6 +3147,8 @@ export interface LocationWritePayload {
   site_id: string
   parent_id?: string | null
   status_id?: string | null
+  color?: string
+  icon?: string
   description?: string
 }
 

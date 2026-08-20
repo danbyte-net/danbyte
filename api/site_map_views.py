@@ -151,6 +151,8 @@ def site_map(request):
             "name": s.name,
             "latitude": float(s.latitude) if s.latitude is not None else None,
             "longitude": float(s.longitude) if s.longitude is not None else None,
+            "color": s.color,
+            "icon": s.icon,
             "device_count": s._devices,
             "floor_plan_count": s._floor_plans,
             "floor_plans": plans_by_site.get(s.id, []),

@@ -43,7 +43,13 @@ import {
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
-import { FormCombobox, FormSelect, useFieldErrors } from "@/components/forms"
+import {
+  FormColor,
+  FormCombobox,
+  FormIcon,
+  FormSelect,
+  useFieldErrors,
+} from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
 
 export interface SiteFormProps {
@@ -72,6 +78,8 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
   const [timeZone, setTimeZone] = useState(site?.time_zone ?? "")
   const [latitude, setLatitude] = useState(site?.latitude ?? "")
   const [longitude, setLongitude] = useState(site?.longitude ?? "")
+  const [color, setColor] = useState(site?.color ?? "")
+  const [icon, setIcon] = useState(site?.icon ?? "")
   const [description, setDescription] = useState(site?.description ?? "")
   const [gatewayPolicy, setGatewayPolicy] = useState<SiteGatewayPolicy>(
     site?.gateway_policy ?? "first"
@@ -96,6 +104,8 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
     setLocation(site.location)
     setLatitude(site.latitude ?? "")
     setLongitude(site.longitude ?? "")
+    setColor(site.color ?? "")
+    setIcon(site.icon ?? "")
     setDescription(site.description)
     setGatewayPolicy(site.gateway_policy)
     setDefaultPrefixId(site.default_prefix?.id ?? null)
@@ -142,6 +152,8 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
         time_zone: timeZone.trim(),
         latitude: String(latitude).trim() || null,
         longitude: String(longitude).trim() || null,
+        color: color || "",
+        icon: icon || "",
         description: description.trim(),
         gateway_policy: gatewayPolicy,
         ...(isEdit ? { default_prefix_id: defaultPrefixId } : {}),
@@ -255,6 +267,22 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
             onChange={(e) => setLongitude(e.target.value)}
           />
         </Field>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <FormColor
+          label="Marker color"
+          hint="shown on the Site map"
+          value={color}
+          onChange={setColor}
+          error={fieldErrors.color}
+        />
+        <FormIcon
+          label="Marker icon"
+          value={icon}
+          onChange={setIcon}
+          error={fieldErrors.icon}
+        />
       </div>
 
       <Field label="Description" error={fieldErrors.description}>

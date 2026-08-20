@@ -726,6 +726,7 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
             "description",
             "time_zone",
             "latitude", "longitude",
+            "color", "icon",
             "gateway_policy",
             "default_prefix", "default_prefix_id",
             "vrfs", "vrf_ids",
@@ -5418,7 +5419,8 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
     class Meta:
         model = Location
         fields = ["id", "name", "slug", "site", "site_id", "parent", "parent_id",
-                  "status", "status_id",  "description", "child_count",
+                  "status", "status_id", "color", "icon", "description",
+                  "child_count",
                   "device_count", "rack_count",
                   "created_at", "updated_at"]
         read_only_fields = ["id",  "child_count",

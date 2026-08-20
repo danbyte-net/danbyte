@@ -17,6 +17,7 @@ import { LocationDeleteDialog } from "@/components/location-delete-dialog"
 import { siteColumn } from "@/components/cells/site-cell"
 import { LocationCell } from "@/components/cells/location-cell"
 import { StatusBadge } from "@/components/status-badge"
+import { TileBadge } from "@/components/floorplan/tile-badge"
 
 export const Route = createFileRoute("/locations/")({
   component: LocationsPage,
@@ -88,6 +89,13 @@ function LocationsPage() {
                   className="h-3 w-3 shrink-0 text-muted-foreground/40"
                 />
               ))}
+              {(row.original.color || row.original.icon) && (
+                <TileBadge
+                  color={row.original.color}
+                  icon={row.original.icon}
+                  className="mr-1.5 h-4 w-4"
+                />
+              )}
               <Link
                 to="/locations/$id"
                 params={{ id: row.original.id }}

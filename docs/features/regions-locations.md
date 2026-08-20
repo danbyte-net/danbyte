@@ -45,7 +45,10 @@ and devices that live there.
 3. Give it a **name** and a **slug**.
 4. Optionally pick a **parent location** (it must be in the same site), set a
    **status**, and add a description.
-5. Save.
+5. Optionally give it a **color** and a **Lucide icon** - they render as a
+   badge next to the location's name on list and detail pages, the same
+   treatment floor-plan tile types get.
+6. Save.
 
 !!! note "Changing the site clears the parent"
     A location's parent must be in the same site, so if you switch the site on
