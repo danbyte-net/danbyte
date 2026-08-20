@@ -514,6 +514,12 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
                 cluster=guest_cluster_name,
                 host=r.get("node") or "",
                 folders=list(r.get("folders") or []),
+                # The guest's own addresses, as the hypervisor reports them -
+                # this is what an "10.0.9.* is RS" rule matches on. Read here
+                # rather than from IPAM because placement runs before the
+                # addresses are attached, and must not depend on that having
+                # worked.
+                ips=_reported_ips((details.get(vmid) or {}).get("ips")),
             )
             place = placement.resolve(
                 guest_path, rules, site_by_name=site_by_name
@@ -715,6 +721,22 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
             _clear_change(guest, "spec_change")
     _blank_fill(vm, {} if guest.created_vm else specs, source, guest, place,
                 os_info)
+
+
+def _reported_ips(entries) -> list:
+    """Flatten the hypervisor's per-interface address lists into addresses.
+
+    ``entries`` is the same ``[{"mac": .., "ips": [str, ..]}]`` shape both
+    connectors already produce for ``sync_ips``; an ip-scope placement rule
+    matches against these strings.
+    """
+    out = []
+    for entry in entries or []:
+        for addr in entry.get("ips") or []:
+            addr = (addr or "").strip()
+            if addr and addr not in out:
+                out.append(addr)
+    return out
 
 
 def _nonnull(specs: dict) -> dict:
@@ -1459,6 +1481,29 @@ def sync_vcenter(source) -> dict:
                     "id", "name"
                 )
             }
+            # SOAP first, because it is the only source of a host's management
+            # address and an ip-scope rule needs that before placement runs.
+            # Still one call: the addresses ride along with the hardware
+            # retrieval. Skipped entirely when neither feature is asked for.
+            wants_ips = any(r.scope == "ip" for r in rules)
+            hw_by_name: dict = {}
+            if source.sync_host_hardware or wants_ips:
+                from .vsphere_soap import VSphereSoap
+
+                soap = VSphereSoap(source)
+                try:
+                    soap.connect()
+                    hw_by_name = {h["name"]: h for h in soap.hosts()}
+                except VirtAPIError as exc:
+                    # An ip rule that cannot see addresses would silently place
+                    # nothing, so say which capability was lost.
+                    host_warnings.append(
+                        f"Host hardware unavailable: {exc}" if source.sync_host_hardware
+                        else f"Host addresses unavailable, so ip rules cannot match: {exc}"
+                    )
+                finally:
+                    soap.close()
+
             places = {}
             for h in hosts:
                 hn = h.get("name") or ""
@@ -1467,30 +1512,18 @@ def sync_vcenter(source) -> dict:
                         datacenter=maps["dc_of_host"].get(h.get("host"), ""),
                         cluster=host_cluster.get(h.get("host")) or "",
                         host=hn,
+                        ips=list((hw_by_name.get(hn) or {}).get("ips") or []),
                     ),
                     rules, site_by_name=by_name,
                 )
-            # Hardware is a second, SOAP-only round trip, so it only happens
-            # when asked for. A failure there must not cost the whole sync.
-            hw_by_name: dict = {}
-            if source.sync_host_hardware:
-                from .vsphere_soap import VSphereSoap
-
-                soap = VSphereSoap(source)
-                try:
-                    soap.connect()
-                    hw_by_name = {h["name"]: h for h in soap.hosts()}
-                except VirtAPIError as exc:
-                    host_warnings.append(f"Host hardware unavailable: {exc}")
-                finally:
-                    soap.close()
 
             counts["hosts"] = _sync_hosts(
                 source, cluster_name,
                 [{"name": h.get("name") or "",
                   "online": h.get("connection_state") == "CONNECTED",
                   "cluster": host_cluster.get(h.get("host")) or "",
-                  "hardware": hw_by_name.get(h.get("name") or "")}
+                  "hardware": hw_by_name.get(h.get("name") or "")
+                  if source.sync_host_hardware else None}
                  for h in hosts],
                 placements=places, warnings=host_warnings,
             )

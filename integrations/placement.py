@@ -9,9 +9,14 @@ Two things it will never do:
 * **Invent a Site.** Sites are physical facts the operator owns. A rule points
   at a real Site row; the hierarchy fallback only ever *matches* an existing
   Site by name. An unmatched name places nothing and is reported.
-* **Match on IP address.** The original request was ``192.168.110.* = UA``, but
-  a host's management address isn't in the sync payload, and an address is a
-  poor proxy for a location that the operator already models properly.
+* **Invent a Location.** A rule may point at one the operator created, but the
+  hypervisor's folder tree is never minted as Locations - those are physical,
+  and folders encode function.
+
+Addresses *are* matchable (``ip`` scope), because the operator asking for
+``192.168.110.* = UA`` is describing a real convention: management subnets are
+per-site. Both a glob and a CIDR work. A glob only reaches octet boundaries, so anything
+that is not a /8, /16 or /24 needs the CIDR form.
 
 Both hypervisors produce the same path shape, so Proxmox gets rules for free:
 
@@ -21,12 +26,17 @@ Both hypervisors produce the same path shape, so Proxmox gets rules for free:
 from __future__ import annotations
 
 import fnmatch
+import ipaddress
 import re
 from dataclasses import dataclass, field
 
 # Outermost → innermost. Index is specificity: a host rule beats a folder rule
 # beats a cluster rule beats a datacenter rule, whatever their weights.
-SCOPE_ORDER = ["datacenter", "cluster", "folder", "host"]
+#
+# ``ip`` is the most specific of all: an address names one machine, and an
+# operator who writes "10.0.9.* is RS" means it regardless of which folder or
+# cluster the machine happens to sit in.
+SCOPE_ORDER = ["datacenter", "cluster", "folder", "host", "ip"]
 
 # vCenter's built-in top-level folders. They exist in every inventory and carry
 # no operator meaning, so they never appear in a path.
@@ -55,6 +65,8 @@ class PlacementPath:
     host: str = ""
     #: Outermost → innermost, built-ins already stripped.
     folders: list = field(default_factory=list)
+    #: Addresses the hypervisor reports for this object, if any.
+    ips: list = field(default_factory=list)
 
     def values_for(self, scope: str) -> list:
         """Candidate strings for one scope, **innermost first**.
@@ -69,6 +81,8 @@ class PlacementPath:
                 out.append(self.folders[i])
                 out.append("/".join(self.folders[: i + 1]))
             return out
+        if scope == "ip":
+            return list(self.ips)
         return [getattr(self, scope, "") or ""]
 
 
@@ -76,7 +90,7 @@ def strip_builtin_folders(names) -> list:
     return [n for n in names if n and n not in _BUILTIN_FOLDERS]
 
 
-def _matches(pattern: str, value: str) -> bool:
+def _matches(pattern: str, value: str, *, scope: str = "") -> bool:
     pattern = (pattern or "").strip()
     if not pattern or not value:
         return False
@@ -85,6 +99,14 @@ def _matches(pattern: str, value: str) -> bool:
             return re.search(pattern[6:], value, re.IGNORECASE) is not None
         except re.error:
             return False  # a broken rule matches nothing rather than exploding
+    if scope == "ip" and "/" in pattern:
+        # A glob only reaches octet boundaries - no glob expresses a /22, or
+        # any mask that splits an octet. A CIDR says the actual subnet.
+        try:
+            net = ipaddress.ip_network(pattern, strict=False)
+            return ipaddress.ip_address(value) in net
+        except ValueError:
+            return False  # a malformed rule matches nothing
     return fnmatch.fnmatch(value.lower(), pattern.lower())
 
 
@@ -103,7 +125,7 @@ def resolve(path: PlacementPath, rules, *, site_by_name=None) -> Placement:
         except ValueError:
             continue  # unknown scope - ignore rather than guess
         for depth, value in enumerate(path.values_for(rule.scope)):
-            if not _matches(rule.pattern, value):
+            if not _matches(rule.pattern, value, scope=rule.scope):
                 continue
             key = (-rank, depth, rule.weight)
             if best is None or key < best[0]:

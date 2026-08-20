@@ -274,3 +274,61 @@ class PlacementRuleApiTests(TestCase):
         )
         self.assertEqual(cleared.status_code, 200, cleared.content)
         self.assertIsNone(VirtPlacementRule.objects.get(pk=rid).location_id)
+
+
+class IpScopeTests(TestCase):
+    """The reporter's ask: 192.168.110.* = UA, 10.0.9.* = RS.
+
+    Management subnets really are per-site in most estates, so an address is a
+    legitimate way to say where a machine lives."""
+
+    def _rule(self, pattern, site, weight=100):
+        from integrations.placement import SCOPE_ORDER  # noqa: F401
+
+        class R:
+            scope = "ip"
+        R.pattern, R.site, R.weight = pattern, site, weight
+        R.location, R.location_id, R.site_id = None, None, id(site)
+        return R
+
+    def test_glob_and_cidr_both_place(self):
+        ua, rs = object(), object()
+        rules = [self._rule("192.168.110.*", ua), self._rule("10.0.9.0/24", rs)]
+        for addr, expected in (("192.168.110.7", ua), ("10.0.9.5", rs)):
+            path = PlacementPath(ips=[addr])
+            self.assertIs(resolve(path, rules).site, expected)
+
+    def test_a_cidr_expresses_masks_a_glob_cannot(self):
+        """The reason CIDR is supported at all: no glob describes a /22."""
+        site = object()
+        rules = [self._rule("10.0.12.0/22", site)]
+        self.assertIs(resolve(PlacementPath(ips=["10.0.14.9"]), rules).site, site)
+        self.assertIsNone(resolve(PlacementPath(ips=["10.0.16.9"]), rules).site)
+
+    def test_a_machine_with_several_addresses_matches_on_any(self):
+        site = object()
+        rules = [self._rule("10.0.9.0/24", site)]
+        path = PlacementPath(ips=["169.254.1.1", "10.0.9.5"])
+        self.assertIs(resolve(path, rules).site, site)
+
+    def test_ip_beats_a_structural_rule(self):
+        """An operator who writes an address rule means it - it names one
+        machine, so it outranks the folder or cluster it happens to sit in."""
+        by_ip, by_cluster = object(), object()
+
+        class ClusterRule:
+            scope, pattern, weight = "cluster", "cl-*", 1  # even at weight 1
+            location = location_id = None
+            site, site_id = by_cluster, 2
+
+        path = PlacementPath(cluster="cl-01", ips=["10.0.9.5"])
+        rules = [ClusterRule, self._rule("10.0.9.0/24", by_ip, weight=999)]
+        self.assertIs(resolve(path, rules).site, by_ip)
+
+    def test_a_malformed_cidr_matches_nothing_rather_than_exploding(self):
+        rules = [self._rule("10.0.9.0/99", object())]
+        self.assertIsNone(resolve(PlacementPath(ips=["10.0.9.5"]), rules).site)
+
+    def test_no_addresses_reported_places_nothing(self):
+        rules = [self._rule("10.0.9.0/24", object())]
+        self.assertIsNone(resolve(PlacementPath(ips=[]), rules).site)

@@ -34,13 +34,19 @@ export function Field({
   className,
   children,
 }: FieldProps) {
+  // The hint slot beside the label is sized for a word like "optional". A
+  // sentence there squeezes the label into a sliver and wraps into a ragged
+  // tower - which is what every long hint in this codebase was doing. Long ones
+  // drop below the control instead, where they have the full width.
+  const hintBelow = (hint?.length ?? 0) > 40
+
   return (
     // content-start: when a grid stretches this cell to match a taller
     // neighbour (e.g. a checkbox stack), pack label+input at the top instead
     // of distributing the leftover height between them (the "floating input
     // far below its label" bug).
     <div className={cn("grid content-start gap-1.5", className)}>
-      <div className="flex items-baseline justify-between">
+      <div className="flex items-baseline justify-between gap-2">
         <Label className="flex items-center gap-1 text-xs">
           {label}
           {required && (
@@ -55,11 +61,16 @@ export function Field({
               nothing unless a PendingFieldsProvider says so. */}
           <PendingFieldMark label={label} />
         </Label>
-        {hint && (
-          <span className="text-[10px] text-muted-foreground">{hint}</span>
+        {hint && !hintBelow && (
+          <span className="shrink-0 text-[10px] text-muted-foreground">
+            {hint}
+          </span>
         )}
       </div>
       {children}
+      {hint && hintBelow && (
+        <p className="text-[10px] leading-snug text-muted-foreground">{hint}</p>
+      )}
       {error && <p className="text-[11px] text-destructive">{error}</p>}
     </div>
   )

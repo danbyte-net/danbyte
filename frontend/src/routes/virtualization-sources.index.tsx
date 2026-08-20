@@ -448,7 +448,7 @@ export function SourceDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent size="lg">
+      <DialogContent size="3xl">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? `Edit ${kindLabel} source` : `Add ${kindLabel} source`}

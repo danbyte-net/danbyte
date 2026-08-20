@@ -34,6 +34,12 @@ class ReverseDNSUnavailable(RuntimeError):
     """Explicit resolvers were asked for but dnspython isn't installed."""
 
 
+#: Marks a lookup that never got an answer (timeout, refusal, unreachable) as
+#: opposed to one that was answered with "no such record". They are different
+#: facts and collapsing them is dangerous - see :func:`resolve_ptrs`.
+_NO_ANSWER = object()
+
+
 def split_resolver(entry: str) -> tuple[str, int]:
     """``10.0.0.45`` or ``10.0.0.45:5353`` -> ``(host, port)``.
 
@@ -66,8 +72,10 @@ async def _via_system(addresses, concurrency: int, timeout: float) -> dict:
                     timeout=timeout,
                 )
                 return addr, host
-            except (socket.gaierror, OSError, asyncio.TimeoutError):
-                return addr, None
+            except socket.gaierror:
+                return addr, None  # answered: this address has no PTR
+            except (OSError, asyncio.TimeoutError):
+                return addr, _NO_ANSWER  # never got an answer at all
 
     return dict(await asyncio.gather(*(one(a) for a in addresses)))
 
@@ -100,7 +108,7 @@ async def _via_resolvers(addresses, resolvers, concurrency, timeout) -> dict:
             except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
                 return addr, None  # an answer: this address has no PTR
             except Exception:  # noqa: BLE001 - timeouts, refusals, bad config
-                return addr, None
+                return addr, _NO_ANSWER  # the server never answered
 
     return dict(await asyncio.gather(*(one(a) for a in addresses)))
 
@@ -112,19 +120,28 @@ async def resolve_ptrs(
     concurrency: int = 100,
     timeout: float = 3.0,
 ) -> dict:
-    """``{address: hostname or None}``.
+    """``{address: hostname or None}`` - **answered addresses only**.
 
-    ``None`` means "looked, found nothing" - callers must not confuse it with
-    "didn't look", which is why the Outpost protocol keys on the *presence* of
-    the field rather than its value.
+    ``None`` means the servers answered and this address has no PTR. An address
+    whose lookup timed out, was refused, or hit an unreachable server is
+    **absent from the result** instead, because "nobody answered" is not the
+    same fact as "there is no name".
+
+    Collapsing the two is actively dangerous: an Outpost whose local DNS is down
+    would report every address as nameless, and a Danbyte configured to clear
+    missing names would wipe them across the estate. Callers decide what to do
+    about silence; this function refuses to invent an answer for it.
     """
     addresses = list(addresses)
     if not addresses:
         return {}
     resolvers = [r for r in (resolvers or ()) if str(r).strip()]
-    if resolvers:
-        return await _via_resolvers(addresses, resolvers, concurrency, timeout)
-    return await _via_system(addresses, concurrency, timeout)
+    got = (
+        await _via_resolvers(addresses, resolvers, concurrency, timeout)
+        if resolvers
+        else await _via_system(addresses, concurrency, timeout)
+    )
+    return {a: h for a, h in got.items() if h is not _NO_ANSWER}
 
 
 def resolve_ptr(addr: str, resolvers=(), *, timeout: float = 3.0):

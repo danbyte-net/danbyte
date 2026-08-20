@@ -46,7 +46,14 @@ const SCOPES = [
   { value: "cluster", label: "Cluster" },
   { value: "folder", label: "Folder" },
   { value: "host", label: "Host" },
+  { value: "ip", label: "IP address" },
 ]
+
+// The pattern means something different per scope, so the placeholder should
+// too - a glob over names is not a subnet.
+const PATTERN_HINT: Record<string, string> = {
+  ip: "10.0.9.0/24  ·  192.168.110.*",
+}
 
 function SourceDetailPage() {
   const { id } = Route.useParams()
@@ -673,7 +680,12 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
               label="Pattern"
               value={pattern}
               onChange={setPattern}
-              placeholder="Lab*  ·  regex:^dc-0[12]$"
+              placeholder={PATTERN_HINT[scope] ?? "Lab*  ·  regex:^dc-0[12]$"}
+              info={
+                scope === "ip"
+                  ? "A subnet in CIDR form, or a glob. Prefer CIDR - a glob only reaches octet boundaries, so it cannot express a /22. Matches any address the hypervisor reports for the machine. Host addresses come from vSphere over SOAP, so vCenter sources read them on the same call as host hardware."
+                  : undefined
+              }
             />
             <FormSelect
               label="Site"

@@ -553,6 +553,7 @@ class VirtPlacementRule(TimestampedModel):
         ("cluster", "Cluster"),
         ("folder", "Folder"),
         ("host", "Host"),
+        ("ip", "IP address"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

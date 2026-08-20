@@ -254,3 +254,29 @@ class OutpostReportedPtrTests(DnsSyncTests):
             _sync_dns([st], self._cfg())
         self.ip.refresh_from_db()
         self.assertEqual(self.ip.dns_name, "central.example.com")
+
+
+class NoAnswerVsNoPtrTests(TestCase):
+    """"Nobody answered" and "there is no name" are different facts.
+
+    If they collapse, an Outpost whose local DNS is down reports every address
+    as nameless, and a Danbyte set to clear missing names wipes them estate-wide.
+    """
+
+    def test_an_unanswered_lookup_is_absent_not_none(self):
+        import asyncio
+
+        from danbyte_checks.reverse_dns import resolve_ptrs
+
+        # TEST-NET-1 is guaranteed unroutable, so this can only time out.
+        got = asyncio.run(
+            resolve_ptrs(["10.0.0.45"], ["192.0.2.1"], timeout=1.0)
+        )
+        self.assertEqual(got, {})  # absent - not {"10.0.0.45": None}
+
+    def test_an_empty_address_list_is_cheap(self):
+        import asyncio
+
+        from danbyte_checks.reverse_dns import resolve_ptrs
+
+        self.assertEqual(asyncio.run(resolve_ptrs([], ["192.0.2.1"])), {})

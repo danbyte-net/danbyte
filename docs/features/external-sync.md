@@ -83,17 +83,30 @@ the hypervisor's structure and points at a site you already have:
 | **Cluster** | `*-DR` |
 | **Folder** | `Test site` |
 | **Host** | `regex:^esxi-0[12]$` |
+| **IP address** | `10.0.9.0/24` or `192.168.110.*` |
 
 Patterns are globs; prefix with `regex:` for a regular expression. A folder
 pattern matches either the folder's name or its full path
 (`Test site/Linux`).
 
+**Matching on address** covers the common convention where each site has its own
+management subnet - `192.168.110.* = UA`, `10.0.9.* = RS`. Write it as a CIDR
+where you can: a glob only reaches octet boundaries, so nothing but a CIDR
+expresses a `/22`. A rule matches if *any* address the hypervisor reports for
+the machine falls in range.
+
+VM addresses come from the guest tools. **Host** addresses live only in
+vSphere's SOAP API, so a vCenter source reads them on the same call it uses for
+host hardware - if that call fails, the sync says so rather than quietly
+placing nothing.
+
 **A folder rule covers everything nested under it.** Point one rule at
 `Test site` and the VMs in `Test site / Linux` and `Test site / Windows` follow,
 without a rule each.
 
-**Nearest wins:** host beats folder beats cluster beats datacenter, and the
-closest matching folder beats a more distant ancestor. *Weight* only breaks ties
+**Nearest wins:** address beats host beats folder beats cluster beats
+datacenter, and the closest matching folder beats a more distant ancestor. An
+address rule outranks the rest because it names one machine. *Weight* only breaks ties
 within one level, so overriding a single machine never means re-thinking the
 order of everything else.
 
@@ -105,9 +118,6 @@ order of everything else.
   says which name it couldn't resolve and what to do about it.
 - **It never overwrites a site you set.** Placement is blank-fill, like
   everything else a sync writes.
-- **It doesn't match on IP address.** A host's management address isn't in the
-  sync payload at all, and an address is a poor stand-in for a location you
-  already model properly.
 
 Rules apply to Proxmox too - it has no datacenters or folders, so cluster and
 host rules are the useful ones there.

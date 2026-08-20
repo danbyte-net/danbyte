@@ -103,7 +103,7 @@ export function WindowsConnectionDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent size="lg">
+      <DialogContent size="3xl">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? "Edit Windows server" : "Add Windows server"}

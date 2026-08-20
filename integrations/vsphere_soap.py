@@ -65,6 +65,32 @@ def _esxi_version(product) -> str:
     return " ".join(p for p in (name, version) if p)
 
 
+def _vnic_ips(vnics) -> list:
+    """Management addresses of an ESXi host, IPv4 and IPv6.
+
+    These are the addresses an operator means by "192.168.110.* is UA" - a
+    host's management subnet is per-site in most estates. They exist nowhere in
+    the REST API, which is why they ride along with the hardware retrieval.
+    """
+    out = []
+    for vnic in vnics or []:
+        ip = getattr(getattr(vnic, "spec", None), "ip", None)
+        for addr in (
+            getattr(ip, "ipAddress", "") or "",
+            *[
+                getattr(a, "ipAddress", "") or ""
+                for a in (
+                    getattr(getattr(ip, "ipV6Config", None), "ipV6Address", None)
+                    or []
+                )
+            ],
+        ):
+            addr = (addr or "").strip()
+            if addr and addr not in out:
+                out.append(addr)
+    return out
+
+
 class VSphereSoap:
     """A short-lived vim25 session, used for the one thing REST can't answer."""
 
@@ -115,6 +141,9 @@ class VSphereSoap:
             "hardware.systemInfo.model",
             "summary.hardware",
             "summary.config.product",
+            # Management addresses, for ip-scope placement rules. Free: it is
+            # one more path on a retrieval already being made, not a new call.
+            "config.network.vnic",
         ]
         content = self._si.RetrieveContent()
         view = content.viewManager.CreateContainerView(
@@ -160,6 +189,7 @@ class VSphereSoap:
                 "model": (props.get("hardware.systemInfo.model") or "").strip(),
                 "serial": _serial_from(props.get("summary.hardware")),
                 "platform": _esxi_version(props.get("summary.config.product")),
+                "ips": _vnic_ips(props.get("config.network.vnic")),
             })
         return out
 
