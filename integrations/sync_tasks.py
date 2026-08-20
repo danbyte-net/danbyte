@@ -89,7 +89,11 @@ def run_virt_sync(source_id: str) -> dict:
             record_virt_failure(source, exc)
             logger.warning("virt sync %s failed: %s", source.name, exc)
             result = {"error": str(exc)}
-    source.last_sync_log = text_of(log)
+    # Rolling history, not just the last run: keep the newest ~100 lines so
+    # the page still shows what led up to a failure several runs back.
+    fresh = text_of(log)
+    combined = f"{source.last_sync_log}\n{fresh}".strip() if fresh else source.last_sync_log
+    source.last_sync_log = "\n".join(combined.split("\n")[-100:])
     source.save(update_fields=["last_sync_log"])
     return result
 

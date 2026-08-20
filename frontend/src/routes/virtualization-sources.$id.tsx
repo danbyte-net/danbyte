@@ -16,6 +16,7 @@ import {
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
+import { SimpleTable } from "@/components/ui/simple-table"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
@@ -315,9 +316,7 @@ function SourceDetailPage() {
                 Copy log
               </Button>
             </div>
-            <pre className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-muted/20 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
-              {source.last_sync_log}
-            </pre>
+            <SyncLogTable text={source.last_sync_log} />
           </div>
         ) : (
           <EmptyState title="No sync log yet">
@@ -440,6 +439,70 @@ function SourceHosts({ sourceId }: { sourceId: string }) {
  * Not errors and not drift - the sync succeeded. These are things with nowhere
  * to go: an address with no containing prefix, a host with no matching site.
  * Each line names its own fix, so this reads as a to-do list. */
+type LogRow = { time: string; date: string; level: string; message: string }
+
+const LOG_LINE =
+  /^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d),\d+ (\w+) (.*)$/
+
+/** The captured sync log as a table - newest first, warnings standing out. */
+function SyncLogTable({ text }: { text: string }) {
+  const rows: LogRow[] = text
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const m = LOG_LINE.exec(line)
+      return m
+        ? { date: m[1], time: m[2], level: m[3], message: m[4] }
+        : { date: "", time: "", level: "", message: line }
+    })
+    .reverse()
+  return (
+    <SimpleTable
+      columns={[
+        {
+          id: "time",
+          header: "Time",
+          cell: (r: LogRow) => (
+            <span
+              className="font-mono text-[11px] text-muted-foreground"
+              title={r.date}
+            >
+              {r.time}
+            </span>
+          ),
+        },
+        {
+          id: "level",
+          header: "",
+          cell: (r: LogRow) =>
+            r.level && r.level !== "INFO" ? (
+              <Badge
+                variant={r.level === "WARNING" ? "warning" : "destructive"}
+                className="text-[10px]"
+              >
+                {r.level.toLowerCase()}
+              </Badge>
+            ) : null,
+        },
+        {
+          id: "message",
+          header: "Message",
+          flex: true,
+          cell: (r: LogRow) => (
+            <span className="font-mono text-[11px] break-all whitespace-normal">
+              {r.message}
+            </span>
+          ),
+        },
+      ]}
+      data={rows}
+      getRowKey={(_, i) => i}
+      empty="No log lines."
+    />
+  )
+}
+
+
 function SkippedList({ items }: { items: string[] }) {
   if (items.length === 0)
     return (

@@ -2061,14 +2061,22 @@ class SyncLogCaptureTests(SwitchKindTests):
         self.assertIn("linked", log)                # ...including network links
         self.assertIn("vcenter sync", log)          # and the summary line
 
-    def test_a_second_quiet_run_replaces_the_log(self):
-        """The log is the LAST run, not an ever-growing history - the file
-        handler and journal keep history; this is the shareable snapshot."""
+    def test_the_log_is_a_rolling_history(self):
+        """Later runs append rather than replace, so the lines that led up to
+        a failure several runs back are still on the page - bounded to the
+        newest ~100 lines."""
         self._run()
         self._run()
         self.source.refresh_from_db()
-        self.assertNotIn("created VM", self.source.last_sync_log)
-        self.assertIn("vcenter sync", self.source.last_sync_log)
+        log = self.source.last_sync_log
+        self.assertIn("created VM", log)  # the first run's actions survive
+        self.assertEqual(log.count("vcenter sync"), 2)  # both summaries
+
+    def test_the_history_is_bounded(self):
+        for _ in range(3):
+            self._run()
+        self.source.refresh_from_db()
+        self.assertLessEqual(len(self.source.last_sync_log.split("\n")), 100)
 
     def test_a_failed_run_still_stores_its_log(self):
         from integrations.sync_tasks import run_virt_sync
