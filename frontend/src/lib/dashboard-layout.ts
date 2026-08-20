@@ -39,8 +39,11 @@ const clampNum = (v: number, lo: number, hi: number) =>
 
 /** Clamp one item's span to its widget's constraints and the grid width. */
 export function clampItem(item: DashItem, meta: WidgetMeta): DashItem {
-  const w = clampNum(item.w, meta.min.w, Math.min(meta.max.w, GRID_COLS))
-  const h = clampNum(item.h, meta.min.h, meta.max.h)
+  // Max is a resize-UX bound, not a hard cap: the packer may legitimately
+  // stretch past it to keep rows uniform, and re-clamping on load would
+  // reopen the closed hole. Only the grid width is absolute.
+  const w = clampNum(item.w, meta.min.w, GRID_COLS)
+  const h = clampNum(item.h, Math.min(meta.min.h, item.h) || meta.min.h, 12)
   const x = clampNum(item.x, 0, GRID_COLS - w)
   const y = Math.max(0, Math.round(item.y))
   return { id: item.id, x, y, w, h }
@@ -112,19 +115,22 @@ export function packItems(
       row[i].w += grow
       rem -= grow
     }
+    // Uniform row height: a shorter member next to a taller one leaves an
+    // under-space the grid's vertical compaction often CANNOT close (it
+    // stops at the first width mismatch) - the final surviving hole class.
+    // Same height across the row makes a hole geometrically impossible.
+    const rowH = Math.max(...row.map((b) => b.h))
     let x = 0
-    let rowH = 0
     for (const b of row) {
       out.push({
         id: b.id,
         x,
         y,
         w: b.w,
-        h: b.h,
+        h: rowH,
         ...(b.config ? { config: b.config } : {}),
       })
       x += b.w
-      rowH = Math.max(rowH, b.h)
     }
     y += rowH
   }
@@ -248,10 +254,10 @@ export function toRglLayout(
       y: it.y,
       w: it.w,
       h: it.h,
-      minW: meta?.min.w,
-      minH: meta?.min.h,
-      maxW: meta?.max.w,
-      maxH: meta?.max.h,
+      minW: meta ? Math.min(meta.min.w, it.w) : undefined,
+      minH: meta ? Math.min(meta.min.h, it.h) : undefined,
+      maxW: meta ? Math.max(meta.max.w, it.w) : undefined,
+      maxH: meta ? Math.max(meta.max.h, it.h) : undefined,
     }
   })
 }

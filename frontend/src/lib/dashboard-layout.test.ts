@@ -37,12 +37,15 @@ describe("normalizeLayout", () => {
     expect(normalizeLayout(["only-unknown"], metaOf)).toBeNull()
   })
 
-  it("accepts v2 and reclamps spans against current constraints", () => {
+  it("accepts v2 and clamps spans to the grid", () => {
+    // Max spans are a resize-UX bound, not a load-time cap - the packer may
+    // stretch past them to keep rows uniform, and re-clamping on load would
+    // reopen closed holes. Only the grid width is absolute.
     const items = normalizeLayout(
       { v: 2, items: [{ id: "small", x: 0, y: 0, w: 99, h: 0 }] },
       metaOf
     )!
-    expect(items[0]).toMatchObject({ w: 3, h: 1 }) // max.w=3, min.h=1
+    expect(items[0]).toMatchObject({ w: 6, h: 1 }) // grid width, min.h
   })
 
   it("rejects garbage", () => {
