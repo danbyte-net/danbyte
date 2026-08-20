@@ -62,7 +62,7 @@ export function siteIcon(s: SiteMapSite, opts: IconOpts = {}): L.DivIcon {
       healthRing(s.check, mini) +
       label,
     iconSize: undefined as unknown as L.PointExpression,
-    iconAnchor: mini ? [8, 8] : [12, 12],
+    iconAnchor: mini ? [9, 9] : [14, 14],
   })
 }
 
