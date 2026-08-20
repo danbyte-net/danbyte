@@ -303,12 +303,7 @@ function SourceDetailPage() {
       <DetailTab value="log">
         {source.last_sync_log ? (
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="max-w-prose text-sm text-muted-foreground">
-                Everything the last sync did and reported. When filing a bug,
-                copy this whole log into the issue - it says exactly what the
-                sync saw.
-              </p>
+            <div className="flex justify-end">
               <Button
                 variant="outline"
                 size="sm"
