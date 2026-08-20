@@ -93,16 +93,20 @@ Multipoint L2VPN / peer-mesh tunnels as mesh overlays, a wireless
 point-to-point link model, configurable popover fields (the floorplan's
 registry), and antimeridian-aware arcs.
 
-## What used to be here
+## Popovers
 
 - **Sites** - labelled markers with a device count. Click one for a popover
-  with its counts, direct links into its **floor plans** (the map → floor
-  plan drill-down), and a jump to the site page.
+  with the site page's facts - region, address, time zone, coordinates, and
+  its prefix/VLAN/VM/rack/circuit/contact counts - plus direct links into
+  its **floor plans** (the map → floor plan drill-down) and a jump to the
+  site page. Copyable values (address, coordinates) carry a copy button.
 - **Devices** - any device with GPS coordinates: outdoor APs, cameras,
-  gateways, roadside cabinets. Dots are colored by the device's role, with a
-  popover showing status, role, hardware type, its site, and (in edit mode)
-  a *Remove from map* action. Toggle the **Sites** / **Devices** layers in
-  the toolbar.
+  gateways, roadside cabinets. Dots are colored by the device's role. The
+  popover shows the configured detail fields first, then the rest of the
+  device page's facts - manufacturer, platform, serial, asset tag, rack and
+  position, location, cluster, OOB IP, interface/IP counts, coordinates -
+  with copy buttons on the copyable ones, and (in edit mode) a *Remove from
+  map* action. Toggle the **Sites** / **Devices** layers in the toolbar.
 
 ## Placing things
 
