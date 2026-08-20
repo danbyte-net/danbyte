@@ -45,7 +45,11 @@ export function Field({
     // neighbour (e.g. a checkbox stack), pack label+input at the top instead
     // of distributing the leftover height between them (the "floating input
     // far below its label" bug).
-    <div className={cn("grid content-start gap-1.5", className)}>
+    // min-w-0: grid/flex items default to min-width:auto, so a long option
+    // label in a picker trigger widened the whole column and shoved the
+    // neighbouring field aside (#53). Allowing the cell to shrink lets the
+    // trigger's own `truncate` finally do its job.
+    <div className={cn("grid min-w-0 content-start gap-1.5", className)}>
       <div className="flex items-baseline justify-between gap-2">
         <Label className="flex items-center gap-1 text-xs">
           {label}
