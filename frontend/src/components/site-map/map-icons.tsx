@@ -43,9 +43,11 @@ export function siteIcon(s: SiteMapSite, opts: IconOpts = {}): L.DivIcon {
   // A custom pin color gets a white glyph; the default pin keeps the theme's
   // primary-foreground via CSS.
   const style = color ? ` style="background:${color};color:#fff"` : ""
-  const glyph = s.icon
-    ? renderToStaticMarkup(<DynamicIcon name={s.icon} className="sm-pin-icon" />)
-    : ""
+  // Every site pin carries a glyph - the custom icon, or a standard building
+  // so a site reads as "a building" at a glance rather than a bare dot.
+  const glyph = renderToStaticMarkup(
+    <DynamicIcon name={s.icon || "building-2"} className="sm-pin-icon" />
+  )
   const count =
     !mini && s.device_count > 0
       ? `<span class="sm-count">${s.device_count}</span>`
@@ -60,7 +62,7 @@ export function siteIcon(s: SiteMapSite, opts: IconOpts = {}): L.DivIcon {
       healthRing(s.check, mini) +
       label,
     iconSize: undefined as unknown as L.PointExpression,
-    iconAnchor: mini ? [6, 6] : [8, 8],
+    iconAnchor: mini ? [8, 8] : [12, 12],
   })
 }
 

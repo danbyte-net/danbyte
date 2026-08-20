@@ -120,8 +120,8 @@ against an external service. You place things yourself.
 
 Every site can carry a **marker color** and a **Lucide icon**, set on the site
 form (*Marker color* / *Marker icon*, next to the coordinates). The map pin
-takes the color and shows the icon inside it; blank means the theme's default
-pin. The same pair exists on locations - there they color the location's badge
+takes the color and shows the icon inside it; with nothing set, the pin is the
+theme color with a standard building glyph. The same pair exists on locations - there they color the location's badge
 on list and detail pages (locations have no coordinates, so nothing changes on
 the map), and give the upcoming topology views a grouping color to work with.
 

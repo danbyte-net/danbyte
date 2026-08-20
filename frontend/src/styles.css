@@ -197,8 +197,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 24px;
+  height: 24px;
   border-radius: 9999px;
   background: var(--primary);
   color: var(--primary-foreground);
@@ -207,23 +207,33 @@
     0 0 0 1px var(--border),
     0 1px 2px rgb(0 0 0 / 0.15);
 }
-/* A custom pin colour + icon come inline from the icon factory. */
+/* A custom pin colour + icon come inline from the icon factory; without a
+   custom icon the pin carries a standard building glyph. */
 .sm-pin-icon {
+  width: 13px;
+  height: 13px;
+}
+.sm-pin-mini {
+  width: 16px;
+  height: 16px;
+}
+.sm-pin-mini .sm-pin-icon {
   width: 9px;
   height: 9px;
 }
-.sm-pin-mini {
-  width: 12px;
-  height: 12px;
+/* The health dot rides the pin's top-right corner, whatever the pin size. */
+.sm-pin + .sm-health {
+  top: -3px;
+  left: 17px;
 }
-.sm-pin-mini .sm-pin-icon {
-  width: 7px;
-  height: 7px;
+.sm-pin-mini + .sm-health {
+  top: -3px;
+  left: 10px;
 }
 .sm-label {
   position: absolute;
-  top: -3px;
-  left: 21px;
+  top: 2px;
+  left: 30px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
