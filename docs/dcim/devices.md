@@ -12,9 +12,14 @@ detail page.
 
 1. Open **DCIM → Devices** in the sidebar and click **Add device**.
 2. Give it a **name** (must be unique within the tenant).
-3. Pick a **device type** - the hardware model. Don't have it yet? Create it
-   first on the [Device catalog](device-catalog.md) page; it only takes a moment
-   and you'll reuse it for every device of that model.
+3. Pick a **device type** - the hardware model. The box searches as you type;
+   **Search** opens the full picker, which matches on name, model **and part
+   number**, and filters by manufacturer, platform, tag, and artwork. That last
+   one is more useful than it sounds: a rack elevation only draws properly for
+   a type that has images, so *has a front image* answers "which of these will
+   render". Don't have the type yet? Create it first on the
+   [Device catalog](device-catalog.md) page; it only takes a moment and you'll
+   reuse it for every device of that model.
 4. Optionally set the **site**, **location**, **role**, **platform**,
    **cluster**, **status**, **serial number**, and **asset tag**.
 5. Optionally fill the **built-in extras** - **comments**, **airflow**, and

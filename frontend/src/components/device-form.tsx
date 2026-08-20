@@ -30,6 +30,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
+import { DeviceTypePicker } from "@/components/device-type-picker"
 import { RackPicker } from "@/components/rack-picker"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
@@ -456,15 +457,9 @@ export function DeviceForm({
         error={fieldErrors.name}
       />
       <div className="grid grid-cols-2 gap-3">
-        <FormSelect
-          label="Device type"
+        <DeviceTypePicker
           value={deviceTypeId}
           onChange={setDeviceTypeId}
-          noneLabel="No type"
-          options={(types.data?.results ?? []).map((t) => ({
-            value: t.id,
-            label: t.name,
-          }))}
           error={fieldErrors.device_type_id}
         />
         <FormCombobox

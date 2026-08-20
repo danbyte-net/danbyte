@@ -25,6 +25,7 @@ from audit.bulk import apply_and_log_bulk_tags, log_bulk_delete, log_bulk_update
 from auth_api.drf import RBACViewSetMixin, restrict_for_view
 from core.models import Organization, Tag, Tenant, TenantGroup
 from customization.models import CustomField, CustomFieldGroup
+from .filters import apply_tag_filter
 from .models import (
     Aggregate, ASN, AuxPort, AuxPortTemplate,
     Cable, CableRoute, Circuit, CircuitTermination, CircuitType, Cluster,
@@ -2709,9 +2710,29 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
             mfr = self.request.query_params.get("manufacturer")
             if mfr:
                 qs = qs.filter(manufacturer_id=mfr)
+            plat = self.request.query_params.get("platform")
+            if plat:
+                qs = qs.filter(platform_id=plat)
             lc = self.request.query_params.get("lifecycle")
             if lc:
                 qs = _apply_lifecycle_filter(qs, lc)
+            # ?tag=<slug>, repeatable, AND semantics - the shared helper, so
+            # this behaves like every other tag rail in the app.
+            qs = apply_tag_filter(qs, self.request)
+            # Rack elevations only look right when a type has artwork, so
+            # "which of these are drawable" is a real thing to filter on.
+            imagery = self.request.query_params.get("imagery")
+            if imagery == "front":
+                qs = qs.exclude(front_image="")
+            elif imagery == "rear":
+                qs = qs.exclude(rear_image="")
+            elif imagery == "both":
+                qs = qs.exclude(front_image="").exclude(rear_image="")
+            elif imagery == "none":
+                qs = qs.filter(front_image="", rear_image="")
+            elif imagery == "faceplate":
+                # A drawn faceplate, not a photo - what the port map renders.
+                qs = qs.exclude(faceplate=None).exclude(faceplate={})
         return qs.annotate(device_count_annotated=Count("device"))
 
     def perform_create(self, serializer):

@@ -31,10 +31,13 @@ export interface PickerFilter {
   /** Query param sent to the object list endpoint (e.g. "site", "tag"). */
   key: string
   label: string
+  /** Fixed choices, for a filter that isn't a lookup against another table -
+   * "has a front image", "is a child device". Supply this *or* `endpoint`. */
+  options?: { value: string; label: string }[]
   /** Options list endpoint (usually a ?picker=1 shape). */
-  endpoint: string
+  endpoint?: string
   /** Shared react-query key - reuse the app-wide one for this endpoint. */
-  queryKey: string
+  queryKey?: string
   /** Param value for an option (default: its id). Tags use the slug. */
   paramOf?: (o: never) => string
   /** Display label for an option (default: its name). */
@@ -268,14 +271,21 @@ function FilterSelect({
   onChange: (v: string | null) => void
   open: boolean
 }) {
-  const q = usePickerOptions(filter.queryKey, filter.endpoint, open)
-  const options = (q.data?.results ?? []).map((o): SelectOption => {
-    const raw = o as never
-    return {
-      value: filter.paramOf ? filter.paramOf(raw) : o.id,
-      label: filter.textOf ? filter.textOf(raw) : o.name,
-    }
-  })
+  // A fixed-choice filter has nothing to fetch; the query stays disabled.
+  const q = usePickerOptions(
+    filter.queryKey ?? filter.key,
+    filter.endpoint ?? "",
+    open && !!filter.endpoint && !filter.options
+  )
+  const options: SelectOption[] =
+    filter.options ??
+    (q.data?.results ?? []).map((o): SelectOption => {
+      const raw = o as never
+      return {
+        value: filter.paramOf ? filter.paramOf(raw) : o.id,
+        label: filter.textOf ? filter.textOf(raw) : o.name,
+      }
+    })
   return (
     <FormSelect
       label={filter.label}
