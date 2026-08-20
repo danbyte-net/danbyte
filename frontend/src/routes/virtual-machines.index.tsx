@@ -15,6 +15,11 @@ import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/virtual-machines/")({
   component: VirtualMachinesPage,
+  // ?device= narrows to the VMs running on one hypervisor host - the device
+  // page's "Virtual machines" row links here (#54).
+  validateSearch: (s: Record<string, unknown>) => ({
+    device: typeof s.device === "string" ? s.device : undefined,
+  }),
 })
 
 function VirtualMachinesPage() {
@@ -24,12 +29,16 @@ function VirtualMachinesPage() {
   const canDelete = canDo("virtualmachine", "delete")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<VirtualMachine | null>(null)
+  const { device } = Route.useSearch()
 
   const query = useQuery({
-    queryKey: ["virtual-machines", q],
+    queryKey: ["virtual-machines", q, device],
     queryFn: () =>
       api<Paginated<VirtualMachine>>(
-        `/api/virtual-machines/?${new URLSearchParams({ search: q }).toString()}`
+        `/api/virtual-machines/?${new URLSearchParams({
+          search: q,
+          ...(device ? { device } : {}),
+        }).toString()}`
       ),
   })
 

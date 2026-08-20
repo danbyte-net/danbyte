@@ -632,6 +632,18 @@ function DeviceOverview({
   })
   const visibility = visibilityQuery.data ?? DEFAULT_DEVICE_FIELD_VISIBILITY
 
+  // How many VMs run on this device (a hypervisor host). One cheap count -
+  // page_size=1 and read the total.
+  const hostedVmsQuery = useQuery({
+    queryKey: ["device-hosted-vms", d.id],
+    queryFn: () =>
+      api<{ count: number }>(
+        `/api/virtual-machines/?device=${d.id}&page_size=1`
+      ),
+    staleTime: 60_000,
+  })
+  const hostedVms = hostedVmsQuery.data?.count ?? 0
+
   const deviceRows: KvRow[] = [
     { label: "Name", value: mono(d.name), copy: d.name },
     {
@@ -822,7 +834,10 @@ function DeviceOverview({
       : []),
   ]
   const managementRows: KvRow[] = [
-    ...(visibility.cluster
+    // The visibility flag declutters tenants that don't use clusters - but a
+    // SET cluster is real information and always shows (#54): standing on an
+    // ESXi host's page you must be able to see and reach its cluster.
+    ...(visibility.cluster || d.cluster
       ? [
           {
             label: "Cluster",
@@ -836,6 +851,24 @@ function DeviceOverview({
               </Link>
             ) : (
               dash
+            ),
+          } satisfies KvRow,
+        ]
+      : []),
+    // VMs running ON this device - present only when it actually hosts some,
+    // so a plain switch's page doesn't grow a permanent empty row.
+    ...(hostedVms > 0
+      ? [
+          {
+            label: "Virtual machines",
+            value: (
+              <Link
+                to="/virtual-machines"
+                search={{ device: d.id }}
+                className="link num"
+              >
+                {hostedVms} hosted
+              </Link>
             ),
           } satisfies KvRow,
         ]

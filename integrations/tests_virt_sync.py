@@ -2104,3 +2104,30 @@ class SyncLogCaptureTests(SwitchKindTests):
         lines = text_of(h).split("\n")
         self.assertEqual(len(lines), MAX_LINES + 1)  # + the truncation marker
         self.assertIn("truncated", lines[-1])
+
+
+class VmHostFilterTests(SwitchKindTests):
+    """`?device=` on the VM list: the device page's "N hosted" link (#54)."""
+
+    def test_vms_filter_by_host_device(self):
+        from django.contrib.auth import get_user_model
+
+        from api.models import Device, VirtualMachine
+
+        self.sync()
+        host = Device.objects.create(tenant=self.tenant, name="esx-a")
+        vm = VirtualMachine.objects.get(name="web01")
+        vm.device = host
+        vm.save(update_fields=["device"])
+
+        admin = get_user_model().objects.create_superuser("h", "h@x.dk", "pw")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+        r = self.client.get(f"/api/virtual-machines/?device={host.id}")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(
+            [x["name"] for x in r.json()["results"]], ["web01"]
+        )
+        self.assertEqual(r.json()["count"], 1)

@@ -82,7 +82,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<VirtualMachine | null>(null)
   const openDelete = useCallback(() => setDeleting(vm), [vm])
-  const goBack = useCallback(() => nav({ to: "/virtual-machines" }), [nav])
+  const goBack = useCallback(() => nav({ to: "/virtual-machines", search: { device: undefined } }), [nav])
 
   return (
     <DetailShell

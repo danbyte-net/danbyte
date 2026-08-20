@@ -4640,6 +4640,10 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
             src = self.request.query_params.get("virt_source")
             if src:
                 qs = qs.filter(virt_guests__source_id=src).distinct()
+            host = self.request.query_params.get("device")
+            if host:
+                # VMs running on this hypervisor host (#54).
+                qs = qs.filter(device_id=host)
             cluster = self.request.query_params.get("cluster")
             if cluster:
                 qs = qs.filter(cluster_id=cluster)
