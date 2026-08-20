@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { useCallback, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Pencil, Plug, RefreshCw } from "lucide-react"
+import { Copy, Pencil, Plug, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -16,7 +16,6 @@ import {
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
-import { SimpleTable } from "@/components/ui/simple-table"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
@@ -303,21 +302,7 @@ function SourceDetailPage() {
 
       <DetailTab value="log">
         {source.last_sync_log ? (
-          <div className="space-y-2">
-            <div className="flex justify-end">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  void copyText(source.last_sync_log)
-                  toast.success("Sync log copied")
-                }}
-              >
-                Copy log
-              </Button>
-            </div>
-            <SyncLogTable text={source.last_sync_log} />
-          </div>
+          <SyncLogTable text={source.last_sync_log} />
         ) : (
           <EmptyState title="No sync log yet">
             The log of a run appears here after the next sync completes.
@@ -439,12 +424,79 @@ function SourceHosts({ sourceId }: { sourceId: string }) {
  * Not errors and not drift - the sync succeeded. These are things with nowhere
  * to go: an address with no containing prefix, a host with no matching site.
  * Each line names its own fix, so this reads as a to-do list. */
-type LogRow = { time: string; date: string; level: string; message: string }
+type LogRow = {
+  raw: string
+  time: string
+  date: string
+  level: string
+  message: string
+}
 
 const LOG_LINE =
   /^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d),\d+ (\w+) (.*)$/
 
-/** The captured sync log as a table - newest first, warnings standing out. */
+const LOG_COLUMNS: ColumnDef<LogRow>[] = [
+  {
+    id: "time",
+    accessorFn: (r) => `${r.date} ${r.time}`,
+    header: "Time",
+    cell: ({ row }) => (
+      <span
+        className="font-mono text-[11px] text-muted-foreground"
+        title={row.original.date}
+      >
+        {row.original.time}
+      </span>
+    ),
+  },
+  {
+    id: "level",
+    accessorKey: "level",
+    header: "Level",
+    cell: ({ row }) =>
+      row.original.level && row.original.level !== "INFO" ? (
+        <Badge
+          variant={
+            row.original.level === "WARNING" ? "warning" : "destructive"
+          }
+          className="text-[10px]"
+        >
+          {row.original.level.toLowerCase()}
+        </Badge>
+      ) : null,
+  },
+  {
+    id: "message",
+    accessorKey: "message",
+    header: "Message",
+    cell: ({ row }) => (
+      <span className="font-mono text-[11px] break-all whitespace-normal">
+        {row.original.message}
+      </span>
+    ),
+  },
+  {
+    id: "copy",
+    header: "",
+    enableSorting: false,
+    cell: ({ row }) => (
+      <Button
+        size="xs"
+        variant="ghost"
+        title="Copy line"
+        onClick={() => {
+          void copyText(row.original.raw)
+          toast.success("Line copied")
+        }}
+      >
+        <Copy className="h-3.5 w-3.5" />
+      </Button>
+    ),
+  },
+]
+
+/** The captured sync log - newest first, exportable like any other table,
+ * one-click copy per line. */
 function SyncLogTable({ text }: { text: string }) {
   const rows: LogRow[] = text
     .split("\n")
@@ -452,52 +504,16 @@ function SyncLogTable({ text }: { text: string }) {
     .map((line) => {
       const m = LOG_LINE.exec(line)
       return m
-        ? { date: m[1], time: m[2], level: m[3], message: m[4] }
-        : { date: "", time: "", level: "", message: line }
+        ? { raw: line, date: m[1], time: m[2], level: m[3], message: m[4] }
+        : { raw: line, date: "", time: "", level: "", message: line }
     })
     .reverse()
   return (
-    <SimpleTable
-      columns={[
-        {
-          id: "time",
-          header: "Time",
-          cell: (r: LogRow) => (
-            <span
-              className="font-mono text-[11px] text-muted-foreground"
-              title={r.date}
-            >
-              {r.time}
-            </span>
-          ),
-        },
-        {
-          id: "level",
-          header: "",
-          cell: (r: LogRow) =>
-            r.level && r.level !== "INFO" ? (
-              <Badge
-                variant={r.level === "WARNING" ? "warning" : "destructive"}
-                className="text-[10px]"
-              >
-                {r.level.toLowerCase()}
-              </Badge>
-            ) : null,
-        },
-        {
-          id: "message",
-          header: "Message",
-          flex: true,
-          cell: (r: LogRow) => (
-            <span className="font-mono text-[11px] break-all whitespace-normal">
-              {r.message}
-            </span>
-          ),
-        },
-      ]}
+    <DataTable
+      columns={LOG_COLUMNS}
       data={rows}
-      getRowKey={(_, i) => i}
-      empty="No log lines."
+      tableId="virt-sync-log"
+      flexColumn="message"
     />
   )
 }

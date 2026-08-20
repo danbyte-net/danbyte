@@ -1047,42 +1047,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
 
       <SidebarContent className="gap-0">
-        {/* Dashboard sits above the grouped sections - single top-level item. */}
-        <FavoritesSection />
-
-        <SidebarGroup className="py-0.5">
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  size="sm"
-                  className="h-6"
-                  tooltip="Dashboard"
-                >
-                  <Link to="/" activeOptions={{ exact: true }}>
-                    <LayoutDashboard />
-                    <span>Dashboard</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  size="sm"
-                  className="h-6"
-                  tooltip="Notifications"
-                >
-                  <Link to="/notifications" search={{ tab: "you" }}>
-                    <Bell />
-                    <span>Notifications</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
         {/* Collapse/expand every category at once (#43). One state-aware
             button: the label names the action that is available. Hidden in
             the icon rail, where groups are always shown. */}
@@ -1121,6 +1085,43 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             </SidebarGroup>
           )
         })()}
+        {/* Dashboard sits above the grouped sections - single top-level item. */}
+        <FavoritesSection />
+
+        <SidebarGroup className="py-0.5">
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  size="sm"
+                  className="h-6"
+                  tooltip="Dashboard"
+                >
+                  <Link to="/" activeOptions={{ exact: true }}>
+                    <LayoutDashboard />
+                    <span>Dashboard</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  size="sm"
+                  className="h-6"
+                  tooltip="Notifications"
+                >
+                  <Link to="/notifications" search={{ tab: "you" }}>
+                    <Bell />
+                    <span>Notifications</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+
 
         {visibleSections.map((section) => (
           <NavGroup
