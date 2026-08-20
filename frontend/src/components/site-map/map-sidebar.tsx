@@ -10,7 +10,11 @@ import type {
 } from "@/lib/api"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-import { CheckChip, FoldableGroup } from "@/components/foldable-group"
+import {
+  CheckChip,
+  CheckCountChip,
+  FoldableGroup,
+} from "@/components/foldable-group"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { KIND_COLOR } from "@/components/site-map/connections-layer"
 
@@ -42,6 +46,15 @@ const LINK_KIND_TITLE: Record<string, string> = {
   cable: "Cables",
 }
 
+const FOLDS = "site-map:groups"
+
+/** down < degraded < everything else - the sidebar's triage order. */
+function checkRank(check: string | null | undefined): number {
+  return check === "down" ? 0 : check === "degraded" ? 1 : 2
+}
+
+type StatusFilter = "down" | "degraded" | "up" | null
+
 export function MapObjectsSidebar({
   sites,
   devices,
@@ -69,14 +82,23 @@ export function MapObjectsSidebar({
   onPickRoute: (routeId: string, cableId: string | null) => void
 }) {
   const [q, setQ] = useState("")
+  const [status, setStatus] = useState<StatusFilter>(null)
   const filter = q.trim().toLowerCase()
   const match = (name: string) => !filter || name.toLowerCase().includes(filter)
+  const matchStatus = (check: string | null | undefined) =>
+    !status || check === status
 
   const placed = useMemo(
     () => sites.filter((s) => s.latitude !== null),
     [sites]
   )
-  const shownSites = placed.filter((s) => match(s.name))
+  const shownSites = placed
+    .filter((s) => match(s.name) && matchStatus(s.check))
+    .sort(
+      (a, b) =>
+        checkRank(a.check) - checkRank(b.check) ||
+        a.name.localeCompare(b.name, undefined, { numeric: true })
+    )
   const shownMarkers = markers.filter((m) =>
     match(m.label || m.device?.name || m.type?.name || "")
   )
@@ -93,7 +115,7 @@ export function MapObjectsSidebar({
       { title: string; color: string; rows: SiteMapDevice[] }
     >()
     for (const d of devices) {
-      if (!match(d.name)) continue
+      if (!match(d.name) || !matchStatus(d.check)) continue
       const key = d.role?.name ?? "No role"
       const g = map.get(key) ?? {
         title: key,
@@ -106,13 +128,59 @@ export function MapObjectsSidebar({
     return [...map.values()]
       .map((g) => ({
         ...g,
+        down: g.rows.filter((d) => d.check === "down").length,
+        degraded: g.rows.filter((d) => d.check === "degraded").length,
         rows: g.rows.sort((a, b) =>
           a.name.localeCompare(b.name, undefined, { numeric: true })
         ),
       }))
       .sort((a, b) => a.title.localeCompare(b.title))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [devices, filter])
+  }, [devices, filter, status])
+
+  // Everything unhealthy, mixed and worst-first - the sidebar's own triage
+  // list. Hidden while a status filter narrows the sections themselves.
+  const problems = useMemo(() => {
+    if (status) return []
+    const rows: {
+      kind: "site" | "device"
+      id: string
+      name: string
+      check: string
+      lat: number
+      lng: number
+      mono: boolean
+    }[] = []
+    for (const s of shownSites)
+      if (s.check === "down" || s.check === "degraded")
+        rows.push({
+          kind: "site",
+          id: s.id,
+          name: s.name,
+          check: s.check,
+          lat: s.latitude!,
+          lng: s.longitude!,
+          mono: false,
+        })
+    for (const g of deviceGroups)
+      for (const d of g.rows)
+        if (d.check === "down" || d.check === "degraded")
+          rows.push({
+            kind: "device",
+            id: d.id,
+            name: d.name,
+            check: d.check,
+            lat: d.latitude,
+            lng: d.longitude,
+            mono: true,
+          })
+    return rows.sort(
+      (a, b) =>
+        checkRank(a.check) - checkRank(b.check) ||
+        a.name.localeCompare(b.name, undefined, { numeric: true })
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shownSites, deviceGroups, status])
 
   const linkGroups = useMemo(() => {
     const map = new Map<string, SiteMapConnection[]>()
@@ -126,9 +194,9 @@ export function MapObjectsSidebar({
   const total =
     shownSites.length +
     deviceGroups.reduce((n, g) => n + g.rows.length, 0) +
-    shownMarkers.length +
-    shownConnections.length +
-    shownRoutes.length
+    (status
+      ? 0
+      : shownMarkers.length + shownConnections.length + shownRoutes.length)
 
   return (
     <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-border p-3">
@@ -138,20 +206,92 @@ export function MapObjectsSidebar({
         </p>
         <span className="num text-[11px] text-muted-foreground">{total}</span>
       </div>
-      <div className="relative mb-3">
+      <div className="relative mb-2">
         <Search className="absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter jumps straight to the first hit.
+            if (e.key !== "Enter") return
+            const s = shownSites[0]
+            const d = deviceGroups[0]?.rows[0]
+            if (s) {
+              onFocus(s.latitude!, s.longitude!)
+              onSelect({ kind: "site", id: s.id })
+            } else if (d) {
+              onFocus(d.latitude, d.longitude)
+              onSelect({ kind: "device", id: d.id })
+            } else if (shownMarkers[0]) {
+              const m = shownMarkers[0]
+              onFocus(m.latitude, m.longitude)
+              onSelect({ kind: "marker", id: m.id })
+            }
+          }}
           placeholder="Search the map…"
           className="h-8 pl-7 text-[13px]"
         />
       </div>
 
+      <div className="mb-3 flex items-center gap-1">
+        {(
+          [
+            [null, "All"],
+            ["down", "down"],
+            ["degraded", "degraded"],
+            ["up", "up"],
+          ] as [StatusFilter, string][]
+        ).map(([value, label]) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => setStatus(value)}
+            className={cn(
+              "rounded-[4px] px-1.5 py-0.5 text-[10px] font-medium",
+              status === value
+                ? "bg-foreground text-background"
+                : "bg-muted text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {total === 0 && (
         <p className="px-1 text-[13px] text-muted-foreground">
-          {filter ? "No matches." : "Nothing placed yet."}
+          {filter || status ? "No matches." : "Nothing placed yet."}
         </p>
+      )}
+
+      {problems.length > 0 && (
+        <div className="mb-3">
+          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+            Problems
+          </p>
+          {problems.map((p) => (
+            <button
+              key={`${p.kind}:${p.id}`}
+              type="button"
+              onClick={() => {
+                onFocus(p.lat, p.lng)
+                onSelect({ kind: p.kind, id: p.id })
+              }}
+              className={cn(
+                "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left",
+                p.mono ? "font-mono text-[12px]" : "text-[13px]",
+                selected?.kind === p.kind && selected.id === p.id
+                  ? "bg-muted font-medium"
+                  : "hover:bg-muted/60"
+              )}
+            >
+              <span className="min-w-0 truncate">{p.name}</span>
+              <span className="ml-auto shrink-0">
+                <CheckChip check={p.check} />
+              </span>
+            </button>
+          ))}
+        </div>
       )}
 
       {shownSites.length > 0 && (
@@ -174,6 +314,11 @@ export function MapObjectsSidebar({
                   : "hover:bg-muted/60"
               )}
             >
+              <span
+                aria-hidden
+                className="size-2.5 shrink-0 rounded-full border border-background shadow-[0_0_0_1px_var(--border)]"
+                style={{ background: s.color || "var(--primary)" }}
+              />
               <span className="min-w-0 truncate">{s.name}</span>
               <span className="ml-auto flex shrink-0 items-center gap-1.5">
                 <CheckChip check={s.check} />
@@ -197,6 +342,13 @@ export function MapObjectsSidebar({
               title={g.title}
               count={g.rows.length}
               badge={<TileBadge color={g.color} />}
+              storageId={FOLDS}
+              extra={
+                <>
+                  <CheckCountChip check="down" n={g.down} />
+                  <CheckCountChip check="degraded" n={g.degraded} />
+                </>
+              }
             >
               {g.rows.map((d) => (
                 <button
@@ -214,6 +366,11 @@ export function MapObjectsSidebar({
                   )}
                 >
                   <span className="min-w-0 truncate">{d.name}</span>
+                  {filter && d.site && (
+                    <span className="min-w-0 truncate font-sans text-[10px] text-muted-foreground/70">
+                      {d.site.name}
+                    </span>
+                  )}
                   <span className="ml-auto shrink-0">
                     <CheckChip check={d.check} />
                   </span>
@@ -224,7 +381,7 @@ export function MapObjectsSidebar({
         </div>
       )}
 
-      {shownMarkers.length > 0 && (
+      {shownMarkers.length > 0 && !status && (
         <div className="mb-3">
           <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
             Markers
@@ -257,7 +414,7 @@ export function MapObjectsSidebar({
         </div>
       )}
 
-      {shownRoutes.length > 0 && (
+      {shownRoutes.length > 0 && !status && (
         <div className="mb-3">
           <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
             Cable routes
@@ -267,6 +424,7 @@ export function MapObjectsSidebar({
               key={r.id}
               title={r.name}
               count={r.cables.length}
+              storageId={FOLDS}
               badge={
                 <span
                   className="size-2.5 shrink-0 rounded-full"
@@ -313,7 +471,7 @@ export function MapObjectsSidebar({
         </div>
       )}
 
-      {linkGroups.length > 0 && (
+      {linkGroups.length > 0 && !status && (
         <div className="mb-3">
           <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
             Links
@@ -323,6 +481,7 @@ export function MapObjectsSidebar({
               key={kind}
               title={LINK_KIND_TITLE[kind] ?? kind}
               count={rows.length}
+              storageId={FOLDS}
               badge={
                 <span
                   className="size-2.5 shrink-0 rounded-full"

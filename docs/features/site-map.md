@@ -56,7 +56,13 @@ The page is a clone of the floor-plan editor's shell:
   device, FOV, delete); links show their endpoints and metadata.
 - **"On this map"** (Objects) - the far-right objects sidebar: one search
   box over foldable groups - sites, devices by role, markers, and links
-  grouped by kind. Click a row to fly to it.
+  grouped by kind. Click a row to fly to it; Enter in the search box jumps
+  to the first hit. Every site/device row carries its status as a small
+  tinted badge, a **Problems** section at the top collects everything down
+  or degraded (worst first), and the `all · down · degraded · up` chips
+  under the search box filter the whole list. Role-group headers show
+  down/degraded counts even when folded, and fold state is remembered per
+  browser.
 
 Placed markers are fully editable from the inspector: rename, describe,
 link/unlink a device, tune FOV, or delete (or press Delete in Edit mode).
