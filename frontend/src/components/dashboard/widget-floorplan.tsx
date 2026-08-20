@@ -9,16 +9,28 @@ import {
   type Paginated,
 } from "@/lib/api"
 import { FloorCanvas } from "@/components/floorplan/floor-canvas"
+import { FormSelect } from "@/components/forms"
 
-// Dashboard widget: a read-only, auto-fit view of your first floor plan with
-// live tile status (monitoring rings + rack utilisation), and a link into the
-// full editor. Polls /state/ so the status stays honest.
-export function FloorplanWidget() {
+// Dashboard widget: a read-only, auto-fit view of a floor plan with live
+// tile status (monitoring rings + rack utilisation), and a link into the
+// full editor. Polls /state/ so the status stays honest. Which plan is a
+// per-instance setting - the widget can be placed several times, one per
+// floor - falling back to the first plan when unset.
+export function FloorplanWidget({
+  planId,
+  editing,
+  onPlanChange,
+}: {
+  planId?: string
+  editing?: boolean
+  onPlanChange?: (id: string) => void
+}) {
   const plans = useQuery({
-    queryKey: ["floor-plans", "widget"],
-    queryFn: () => api<Paginated<FloorPlan>>("/api/floor-plans/?page_size=1"),
+    queryKey: ["floor-plans", "widget-list"],
+    queryFn: () => api<Paginated<FloorPlan>>("/api/floor-plans/?page_size=100"),
   })
-  const plan = plans.data?.results?.[0]
+  const all = plans.data?.results ?? []
+  const plan = (planId && all.find((x) => x.id === planId)) || all[0]
 
   const tiles = useQuery({
     queryKey: ["floor-plan-tiles", plan?.id],
@@ -53,7 +65,16 @@ export function FloorplanWidget() {
     )
 
   return (
-    <div className="relative h-full min-h-40 overflow-hidden rounded-md border border-border bg-muted/20">
+    <div className="flex h-full min-h-40 flex-col gap-2">
+      {editing && onPlanChange && all.length > 1 && (
+        <FormSelect
+          label="Floor plan"
+          value={plan?.id ?? null}
+          onChange={(v) => v && onPlanChange(v)}
+          options={all.map((x) => ({ value: x.id, label: x.name }))}
+        />
+      )}
+      <div className="relative min-h-0 flex-1 overflow-hidden rounded-md border border-border bg-muted/20">
       <FloorCanvas
         plan={plan}
         tiles={tiles.data?.results ?? []}
@@ -76,6 +97,7 @@ export function FloorplanWidget() {
       >
         Open →
       </Link>
+      </div>
     </div>
   )
 }

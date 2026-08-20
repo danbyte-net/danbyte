@@ -364,6 +364,19 @@ export function FloorCanvas({
     fitTo(svgRef.current, gw, gh)
   }, [plan.id])
 
+  // React attaches onWheel as a PASSIVE listener, so the zoom handler's
+  // preventDefault is silently ignored and the page scrolls under the zoom -
+  // invisible on the fullscreen editor, obvious on the dashboard widget. A
+  // native non-passive listener actually stops the scroll; the React handler
+  // still does the zoom math.
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el) return
+    const stop = (e: WheelEvent) => e.preventDefault()
+    el.addEventListener("wheel", stop, { passive: false })
+    return () => el.removeEventListener("wheel", stop)
+  }, [])
+
   // Parent-driven camera: fit the whole grid, or centre + zoom onto a tile.
   useEffect(() => {
     if (!apiRef) return

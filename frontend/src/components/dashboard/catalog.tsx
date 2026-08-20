@@ -57,12 +57,27 @@ import type { WidgetMeta } from "@/lib/dashboard-layout"
  * centred; `stretch` - the child fills the cell (map, floor plan). */
 export type WidgetFit = "scroll" | "center" | "stretch"
 
+/** Per-instance context handed to a widget's render - only widgets with
+ * settings (the floor plan picker) use it; everyone else ignores it. */
+export type WidgetCtx = {
+  config?: Record<string, unknown>
+  setConfig: (c: Record<string, unknown>) => void
+  editing: boolean
+}
+
 export interface WidgetDef {
   id: WidgetId
   title: string
   description: string
   fit?: WidgetFit
-  render: (d: DashboardData) => ReactNode
+  /** May appear several times on one dashboard (each with its own config). */
+  multi?: boolean
+  render: (d: DashboardData, ctx?: WidgetCtx) => ReactNode
+}
+
+/** Layout item id → catalog id. Multi-instance items are "floorplan#2". */
+export function baseWidgetId(id: string): WidgetId {
+  return id.split("#")[0] as WidgetId
 }
 
 // Default span + resize bounds per widget, in 6-column grid cells (~112px
@@ -386,9 +401,16 @@ export const CATALOG: WidgetDef[] = [
   {
     id: "floorplan",
     fit: "stretch",
+    multi: true,
     title: "Floor plan",
     description: "A floor plan with live tile status",
-    render: () => <FloorplanWidget />,
+    render: (_d, ctx) => (
+      <FloorplanWidget
+        planId={(ctx?.config?.plan as string) || undefined}
+        editing={ctx?.editing}
+        onPlanChange={(id) => ctx?.setConfig({ plan: id })}
+      />
+    ),
   },
 ]
 

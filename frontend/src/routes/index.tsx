@@ -43,6 +43,7 @@ import {
   CATALOG,
   CATALOG_BY_ID,
   DEFAULT_GRID_LAYOUT,
+  baseWidgetId,
   metaFor,
   type WidgetFit,
   type WidgetId,
@@ -59,6 +60,10 @@ export const Route = createFileRoute("/")({ component: Dashboard })
 
 const LS_KEY = "danbyte-dashboard-widgets"
 
+// Layout items may be instances ("floorplan#2"); the catalog is keyed on the
+// base id.
+const metaForItem = (id: string) => metaFor(baseWidgetId(id))
+
 const builtinLayout = (): DashItem[] =>
   DEFAULT_GRID_LAYOUT.map(({ id, x, y, w, h }) => ({ id, x, y, w, h }))
 
@@ -68,7 +73,7 @@ function loadLocalLayout(): DashItem[] | null {
   if (typeof window === "undefined") return null
   try {
     const raw = window.localStorage.getItem(LS_KEY)
-    return raw ? normalizeLayout(JSON.parse(raw), metaFor, builtinLayout()) : null
+    return raw ? normalizeLayout(JSON.parse(raw), metaForItem, builtinLayout()) : null
   } catch {
     return null
   }
@@ -123,7 +128,7 @@ function Dashboard() {
   useEffect(() => {
     if (resolved.current || pref.isLoading || !q.data) return
     resolved.current = true
-    const server = normalizeLayout(pref.data?.data, metaFor, builtinLayout())
+    const server = normalizeLayout(pref.data?.data, metaForItem, builtinLayout())
     if (server) {
       setItems(server)
     } else {
@@ -132,7 +137,7 @@ function Dashboard() {
         setItems(local)
         void putServer(local) // one-time adoption of the pre-server layout
       } else {
-        const tenantDefault = normalizeLayout(q.data.default_widgets, metaFor, builtinLayout())
+        const tenantDefault = normalizeLayout(q.data.default_widgets, metaForItem, builtinLayout())
         setItems(tenantDefault ?? builtinLayout())
       }
     }
@@ -157,15 +162,23 @@ function Dashboard() {
   }
 
   const add = (id: WidgetId) => {
-    if (items.some((x) => x.id === id)) return
+    const def = CATALOG_BY_ID[id]
+    let itemId: string = id
+    if (items.some((x) => x.id === id)) {
+      if (!def?.multi) return
+      // A multi widget gets a fresh instance id: floorplan#2, #3, ...
+      let n = 2
+      while (items.some((x) => x.id === `${id}#${n}`)) n += 1
+      itemId = `${id}#${n}`
+    }
     const meta = metaFor(id)
     const bottom = items.reduce((m, x) => Math.max(m, x.y + x.h), 0)
     persist([
       ...items,
-      { id, x: 0, y: bottom, w: meta.span.w, h: meta.span.h },
+      { id: itemId, x: 0, y: bottom, w: meta.span.w, h: meta.span.h },
     ])
   }
-  const remove = (id: WidgetId) => persist(items.filter((x) => x.id !== id))
+  const remove = (id: string) => persist(items.filter((x) => x.id !== id))
   const reset = async () => {
     // A debounced save from a moments-ago edit must not fire AFTER the
     // delete and quietly resurrect the layout being reset.
@@ -182,7 +195,7 @@ function Dashboard() {
     } catch {
       /* ignore */
     }
-    const tenantDefault = normalizeLayout(q.data?.default_widgets, metaFor, builtinLayout())
+    const tenantDefault = normalizeLayout(q.data?.default_widgets, metaForItem, builtinLayout())
     setItems(tenantDefault ?? builtinLayout())
   }
 
@@ -210,7 +223,9 @@ function Dashboard() {
   }
 
   const d = q.data
-  const available = CATALOG.filter((w) => !items.some((x) => x.id === w.id))
+  const available = CATALOG.filter(
+    (w) => w.multi || !items.some((x) => baseWidgetId(x.id) === w.id)
+  )
 
   return (
     <div className="min-h-0 flex-1 overflow-auto">
@@ -331,7 +346,7 @@ function DashboardGrid({
   interacting: boolean
   setInteracting: (v: boolean) => void
   persist: (next: DashItem[]) => void
-  remove: (id: WidgetId) => void
+  remove: (id: string) => void
   d: DashboardData
 }) {
   const { width, containerRef, mounted } = useContainerWidth()
@@ -341,7 +356,14 @@ function DashboardGrid({
     layout: readonly { i: string; x: number; y: number; w: number; h: number }[]
   ) => {
     setInteracting(false)
-    persist(fromRglLayout(layout))
+    // RGL only reports geometry - per-instance config must survive the move.
+    const byId = new Map(items.map((x) => [x.id, x]))
+    persist(
+      fromRglLayout(layout).map((it) => ({
+        ...it,
+        config: byId.get(it.id)?.config,
+      }))
+    )
   }
   return (
     <div ref={containerRef}>
@@ -354,7 +376,7 @@ function DashboardGrid({
           margin={[16, 16]}
           containerPadding={[0, 0]}
           compactor={verticalCompactor}
-          layouts={{ xl: toRglLayout(items, metaFor) }}
+          layouts={{ xl: toRglLayout(items, metaForItem) }}
           dragConfig={{ enabled: editing, handle: ".dash-drag-handle" }}
           resizeConfig={{
             enabled: editing,
@@ -375,7 +397,7 @@ function DashboardGrid({
           onResizeStop={onStop}
         >
           {items.map((it) => {
-            const w = CATALOG_BY_ID[it.id as WidgetId]
+            const w = CATALOG_BY_ID[baseWidgetId(it.id)]
             if (!w) return null
             return (
               <div key={it.id}>
@@ -385,9 +407,18 @@ function DashboardGrid({
                   fit={w.fit ?? "scroll"}
                   editing={editing}
                   interacting={interacting}
-                  onRemove={() => remove(it.id as WidgetId)}
+                  onRemove={() => remove(it.id)}
                 >
-                  {w.render(d)}
+                  {w.render(d, {
+                    config: it.config,
+                    editing,
+                    setConfig: (c) =>
+                      persist(
+                        items.map((x) =>
+                          x.id === it.id ? { ...x, config: c } : x
+                        )
+                      ),
+                  })}
                 </WidgetTile>
               </div>
             )

@@ -28,6 +28,8 @@ export type DashItem = {
   y: number
   w: number
   h: number
+  /** Per-instance widget settings (e.g. which floor plan to show). */
+  config?: Record<string, unknown>
 }
 
 export type LayoutV2 = { v: 2; items: DashItem[] }
@@ -125,18 +127,21 @@ export function normalizeLayout(
       if (typeof id !== "string") continue
       const meta = metaOf(id)
       if (!meta) continue
-      out.push(
-        clampItem(
-          {
-            id,
-            x: typeof x === "number" ? x : 0,
-            y: typeof y === "number" ? y : 0,
-            w: typeof w === "number" ? w : meta.span.w,
-            h: typeof h === "number" ? h : meta.span.h,
-          },
-          meta
-        )
+      const clamped = clampItem(
+        {
+          id,
+          x: typeof x === "number" ? x : 0,
+          y: typeof y === "number" ? y : 0,
+          w: typeof w === "number" ? w : meta.span.w,
+          h: typeof h === "number" ? h : meta.span.h,
+        },
+        meta
       )
+      const config = (it as { config?: unknown }).config
+      if (config && typeof config === "object" && !Array.isArray(config)) {
+        clamped.config = config as Record<string, unknown>
+      }
+      out.push(clamped)
     }
     return out.length ? out : null
   }

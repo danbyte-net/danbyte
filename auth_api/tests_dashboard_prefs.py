@@ -94,3 +94,26 @@ class DashboardPrefTests(APITestCase):
         self.client.logout()
         r = self.client.get("/api/prefs/dashboard/")
         self.assertIn(r.status_code, (302, 401, 403))
+
+    def test_per_item_config_round_trips(self):
+        """Multi-instance widgets carry settings (which floor plan) on the
+        item; the validator must keep them and bound their size."""
+        import json
+
+        layout = {"v": 2, "items": [
+            {"id": "floorplan", "x": 0, "y": 0, "w": 3, "h": 3,
+             "config": {"plan": "abc-123"}},
+        ]}
+        r = self.client.put("/api/prefs/dashboard/", json.dumps(layout),
+                            content_type="application/json")
+        self.assertEqual(r.status_code, 200, r.content)
+        got = self.client.get("/api/prefs/dashboard/").json()["data"]
+        self.assertEqual(got["items"][0]["config"], {"plan": "abc-123"})
+
+        huge = {"v": 2, "items": [
+            {"id": "floorplan", "x": 0, "y": 0, "w": 3, "h": 3,
+             "config": {"blob": "x" * 3000}},
+        ]}
+        r = self.client.put("/api/prefs/dashboard/", json.dumps(huge),
+                            content_type="application/json")
+        self.assertEqual(r.status_code, 400)

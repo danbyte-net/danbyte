@@ -56,6 +56,11 @@ def _validate_layout(raw_body: bytes) -> dict:
             out[key] = v
         if out["w"] > _MAX_SPAN or out["h"] > _MAX_SPAN:
             raise ValueError(f"item {it['id']}: span too large")
+        config = it.get("config")
+        if config is not None:
+            if not isinstance(config, dict) or len(json.dumps(config)) > 2000:
+                raise ValueError(f"item {it['id']}: config must be a small object")
+            out["config"] = config
         clean.append(out)
     return {"v": 2, "items": clean}
 
