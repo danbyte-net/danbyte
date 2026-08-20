@@ -2,11 +2,15 @@
 and a live zone-record viewer (fetched from the server on demand, not stored)."""
 from __future__ import annotations
 
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from api.models import IPAddress
+from api.serializers import NumIdModelSerializer, StatusMiniSerializer
 from api.viewsets import TenantScopedViewSet
 
 from .models import DnsDrift, DnsRecord, DnsZone
@@ -125,18 +129,50 @@ class DnsZoneViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         return Response({"ok": True, "records": rows})
 
 
+class DnsRecordIPSerializer(NumIdModelSerializer):
+    """Just enough of the IPAM row for the addresses table on a name page.
+
+    Every field here is reachable through the viewset's ``select_related``, so
+    serialising N records costs no extra queries. Adding anything that needs a
+    fresh query - tags, custom fields, the interface chain - would turn the
+    round-robin table into an N+1, so don't.
+    """
+
+    status = StatusMiniSerializer(read_only=True)
+    prefix_cidr = serializers.CharField(source="prefix.cidr", read_only=True,
+                                        default=None)
+    assigned_to = serializers.SerializerMethodField()
+
+    class Meta:
+        model = IPAddress
+        fields = ["id", "ip_address", "status", "prefix", "prefix_cidr",
+                  "assigned_to"]
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_assigned_to(self, obj):
+        """``{kind, id, name}`` for whatever holds this address, else None."""
+        if obj.assigned_device_id:
+            return {"kind": "device", "id": str(obj.assigned_device_id),
+                    "name": obj.assigned_device.name}
+        if obj.assigned_vm_id:
+            return {"kind": "vm", "id": str(obj.assigned_vm_id),
+                    "name": obj.assigned_vm.name}
+        return None
+
+
 class DnsRecordSerializer(serializers.ModelSerializer):
     zone_name = serializers.CharField(source="zone.name", read_only=True)
     connection = serializers.CharField(source="zone.connection_id", read_only=True)
     connection_name = serializers.CharField(
         source="zone.connection.name", read_only=True
     )
+    ip_detail = DnsRecordIPSerializer(source="ip_address", read_only=True)
 
     class Meta:
         model = DnsRecord
         fields = ["id", "zone", "zone_name", "connection", "connection_name",
-                  "name", "record_type", "data", "ip", "ip_address", "ttl",
-                  "managed", "last_seen_at"]
+                  "name", "record_type", "data", "ip", "ip_address", "ip_detail",
+                  "ttl", "managed", "last_seen_at"]
         read_only_fields = fields
 
 
@@ -217,7 +253,10 @@ class DnsRecordViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     tenant_field = "zone__connection__tenant"
     http_method_names = ["get", "post", "patch", "delete"]
     queryset = DnsRecord.objects.select_related(
-        "zone", "zone__connection", "ip_address"
+        "zone", "zone__connection", "ip_address",
+        # Everything DnsRecordIPSerializer reads - see its docstring.
+        "ip_address__status", "ip_address__prefix",
+        "ip_address__assigned_device", "ip_address__assigned_vm",
     ).order_by("name")
     serializer_class = DnsRecordSerializer
     # These POST actions gate on ipaddress.add (checked in the handler), not on
@@ -322,6 +361,10 @@ class DnsRecordViewSet(IntegrationToggleMixin, TenantScopedViewSet):
             qs = qs.filter(ip_address__prefix_id=p["prefix"])
         if p.get("type"):
             qs = qs.filter(record_type=p["type"])
+        if p.get("name"):
+            # Exact, case-insensitive, trailing dot optional: a name page asks
+            # for one name, and `search` would also return web01 for web.
+            qs = qs.filter(name__iexact=p["name"].strip().rstrip("."))
         s = (p.get("search") or "").strip()
         if s:
             qs = qs.filter(name__icontains=s) | qs.filter(data__icontains=s)

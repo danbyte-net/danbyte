@@ -59,6 +59,7 @@ import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { Section } from "@/components/ui/section"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { CustomFieldValues } from "@/components/custom-field-display"
+import { DnsNameLink } from "@/components/cells/dns-name-link"
 import { QueryError } from "@/components/query-error"
 import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
 import { PendingFieldsProvider } from "@/lib/pending-fields"
@@ -869,7 +870,7 @@ function DeviceOverview({
     },
     {
       label: "DNS name",
-      value: mono(d.primary_ip?.dns_name),
+      value: <DnsNameLink name={d.primary_ip?.dns_name} />,
       copy: d.primary_ip?.dns_name || undefined,
     },
     {

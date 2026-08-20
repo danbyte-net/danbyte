@@ -1022,6 +1022,9 @@ class DnsRecord(TimestampedModel):
         indexes = [
             models.Index(fields=["zone", "ip"]),
             models.Index(fields=["ip_address"]),
+            # A name page looks records up by name across every zone, and the
+            # zone-prefixed index above can't serve that.
+            models.Index(fields=["name"]),
         ]
         constraints = [
             models.UniqueConstraint(

@@ -621,7 +621,7 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
   const canSave = pattern.trim().length > 0 && !!siteId && !save.isPending
 
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className="space-y-4">
       {/* The tip is part of the sentence, so it must not wrap onto a line of
           its own - inline-flex keeps the trailing word and the icon together. */}
       <p className="max-w-prose text-sm text-muted-foreground">
@@ -655,8 +655,11 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
       )}
 
       {canEdit && (
-        <div className="space-y-2 border-t border-border pt-4">
-          <div className="grid gap-3 sm:grid-cols-[10rem_1fr_12rem_12rem_6rem] sm:items-end">
+        <div className="space-y-3 rounded-lg border border-border p-4">
+          <p className="text-xs font-medium">
+            {editingId ? "Edit rule" : "Add a rule"}
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[11rem_minmax(14rem,1fr)_13rem_13rem_7rem] lg:items-end">
             <FormSelect
               label="Match on"
               value={scope}
@@ -687,7 +690,7 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
             />
             <FormSelect
               label="Location"
-              hint="Optional, and only locations inside the site above."
+              info="Optional. Only locations inside the site above are offered - a location elsewhere would place the machine where it isn't."
               value={locationId}
               onChange={setLocationId}
               noneLabel="None"
@@ -699,7 +702,7 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
             />
             <FormText
               label="Weight"
-              hint="Breaks ties between rules that match at the same level. Lower wins."
+              info="Only breaks ties between rules that match at the same level - lower wins. Specificity comes first, so a host rule always beats a cluster rule whatever the weights."
               value={weight}
               onChange={setWeight}
             />

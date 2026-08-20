@@ -190,6 +190,31 @@ Only reconciled zones store records (matching the per-zone opt-in); records
 are pruned as they leave the server, and cleared entirely if you switch a
 zone's reconcile off.
 
+### The page for a name
+
+Every DNS name in Danbyte is a link - on an IP, device or VM overview, in any
+IP table's *DNS name* column, and in the records table itself. It opens a page
+for that **name**, showing everything Danbyte knows about it:
+
+- **Addresses** - every address the name resolves to, with each one's status,
+  prefix and what it is assigned to. More than one row is normal: that is round
+  robin, and it is the reason this page is keyed on the name rather than on a
+  single record.
+- **Records** - all record types for the name (A, AAAA, CNAME, MX, TXT…), with
+  their TTL and zone.
+- A **split horizon** badge when the same name exists in more than one zone, so
+  what a client resolves depends on which server it asks. Add `?zone=<id>` to
+  narrow the page to one of them.
+
+The page works for names that are *not* in a synced zone too. Most `DNS name`
+values come from reverse-DNS monitoring filling them in, with no Windows DNS
+record behind them; those names still list their addresses, marked as known
+from reverse DNS.
+
+A record's own id also works as a URL and redirects here. That indirection is
+deliberate: records are keyed on zone, name, type **and value**, so repointing
+an A record replaces the row and its id changes. Names outlive values.
+
 ### Bringing records into IPAM
 
 A record for an address Danbyte doesn't track yet shows **· not in IPAM**.

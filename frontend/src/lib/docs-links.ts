@@ -105,6 +105,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/dhcp-leases": "features/windows-sync/",
   "/dns-zones": "features/windows-sync/",
   "/dns-records": "features/windows-sync/",
+  "/dns-names": "features/windows-sync/",
   "/virtualization-sources": "features/external-sync/",
   "/settings/integrations": "features/external-sync/",
   "/tags": "features/tags-and-custom-fields/",

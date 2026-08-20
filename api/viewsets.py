@@ -1403,6 +1403,10 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
             qs = qs.filter(
                 Q(ip_address__icontains=search) | Q(dns_name__icontains=search)
             )
+        if dns_name := p.get("dns_name"):
+            # Exact, unlike `search` above: the DNS name page asks "which
+            # addresses carry this name", and icontains would over-answer.
+            qs = qs.filter(dns_name__iexact=dns_name.strip().rstrip("."))
         if prefix := p.get("prefix"):
             qs = qs.filter(prefix_id=prefix)
         if vrf := p.get("vrf"):

@@ -11,6 +11,7 @@ import { VlanBadge } from "@/components/cells/vlan-badge"
 import { StatusBadge } from "@/components/status-badge"
 import { RoleChip } from "@/components/role-chip"
 import { CopyButton } from "@/components/kv-card"
+import { DnsNameLink } from "@/components/cells/dns-name-link"
 import { dash } from "@/components/cells/dash"
 import { DeviceCell } from "@/components/cells/device-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
@@ -324,7 +325,7 @@ export function buildIpColumns<T = IPAddress>(
       header: "DNS name",
       cell: ({ row }) => {
         const v = getIp(row.original)?.dns_name
-        return v ? <span className="font-mono text-xs">{v}</span> : dash
+        return v ? <DnsNameLink name={v} className="text-xs" /> : dash
       },
     }),
     assigned: () => ({

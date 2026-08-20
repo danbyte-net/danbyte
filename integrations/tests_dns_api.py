@@ -4,6 +4,8 @@ from __future__ import annotations
 from unittest import mock
 
 from django.contrib.auth.models import User
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APITestCase
 
 from api.models import IPAddress, Prefix
@@ -323,3 +325,90 @@ class DnsApiTests(APITestCase):
         res = self.client.delete(f"/api/dns-zones/{self.zone.id}/")
         self.assertEqual(res.status_code, 400, res.content)
         self.assertTrue(DnsZone.objects.filter(id=self.zone.id).exists())
+
+
+class DnsNamePageTests(DnsApiTests):
+    """The API the DNS-name page stands on: exact-name lookup and a cheap
+    addresses table. Both are load-bearing - `search` over-answers, and the
+    round-robin table is the one place this feature can go N+1."""
+
+    def _round_robin(self):
+        """One name, three A records - two in IPAM, one not."""
+        for addr in ("10.77.0.60", "10.77.0.61", "10.77.0.62"):
+            DnsRecord.objects.create(
+                zone=self.zone, name="www.danbyte.lan", record_type="A",
+                data=addr, ip=addr,
+                ip_address=self.ip if addr == "10.77.0.60" else None,
+            )
+        # A near-miss that `?search=www` would wrongly return.
+        DnsRecord.objects.create(
+            zone=self.zone, name="www01.danbyte.lan", record_type="A",
+            data="10.77.0.70", ip="10.77.0.70",
+        )
+
+    def test_name_filter_is_exact(self):
+        self._round_robin()
+        r = self.client.get("/api/dns-records/?name=www.danbyte.lan")
+        self.assertEqual(r.status_code, 200)
+        names = {row["name"] for row in r.json()["results"]}
+        self.assertEqual(names, {"www.danbyte.lan"})
+        self.assertEqual(len(r.json()["results"]), 3)  # the round robin
+
+        # search is the thing it must not behave like
+        loose = self.client.get("/api/dns-records/?search=www.danbyte.lan")
+        self.assertEqual(len(loose.json()["results"]), 3)
+        self.assertIn(
+            "www01.danbyte.lan",
+            {row["name"] for row in
+             self.client.get("/api/dns-records/?search=www").json()["results"]},
+        )
+
+    def test_name_filter_tolerates_a_trailing_dot(self):
+        """FQDNs are written with one; links carry whatever was displayed."""
+        self._round_robin()
+        r = self.client.get("/api/dns-records/?name=www.danbyte.lan.")
+        self.assertEqual(len(r.json()["results"]), 3)
+
+    def test_addresses_table_does_not_go_n_plus_1(self):
+        """Cost must be flat in the number of records, not equal to some magic
+        number - the fixed overhead here is auth and permission lookups, which
+        is not what this guards. Adding a nested field that needs its own query
+        makes the two counts diverge, and that is the regression to catch."""
+        self._round_robin()
+        url = "/api/dns-records/?name=www.danbyte.lan"
+        with CaptureQueriesContext(connection) as few:
+            self.client.get(url)
+        for n in range(63, 70):  # seven more records on the same name
+            DnsRecord.objects.create(
+                zone=self.zone, name="www.danbyte.lan", record_type="A",
+                data=f"10.77.0.{n}", ip=f"10.77.0.{n}", ip_address=self.ip,
+            )
+        with CaptureQueriesContext(connection) as many:
+            r = self.client.get(url)
+        self.assertEqual(len(r.json()["results"]), 10)
+        self.assertEqual(len(many), len(few))
+
+    def test_ip_detail_carries_status_prefix_and_holder(self):
+        self._round_robin()
+        rows = self.client.get("/api/dns-records/?name=www.danbyte.lan").json()
+        linked = [r for r in rows["results"] if r["ip_detail"]]
+        self.assertEqual(len(linked), 1)
+        detail = linked[0]["ip_detail"]
+        self.assertEqual(detail["ip_address"], "10.77.0.60")
+        self.assertEqual(detail["prefix_cidr"], "10.77.0.0/24")
+        self.assertIsNone(detail["assigned_to"])  # nothing holds it yet
+        # ...and a record with no IPAM row must not invent one.
+        self.assertIsNone(
+            [r for r in rows["results"] if r["data"] == "10.77.0.61"][0]["ip_detail"]
+        )
+
+    def test_ips_can_be_found_by_exact_dns_name(self):
+        """The fallback for a name that only reverse DNS knows about."""
+        IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.77.0.99",
+            prefix=self.ip.prefix, dns_name="mine01.danbyte.lan",
+        )
+        r = self.client.get("/api/ips/?dns_name=mine.danbyte.lan")
+        self.assertEqual(r.status_code, 200)
+        got = [row["ip_address"] for row in r.json()["results"]]
+        self.assertEqual(got, ["10.77.0.60"])  # not the mine01 near-miss

@@ -7159,10 +7159,23 @@ export interface DnsRecord {
   data: string
   ip: string | null
   ip_address: string | null
+  /** The IPAM row, expanded. Null when the address isn't in IPAM. */
+  ip_detail: DnsRecordIP | null
   ttl: string
   /** Authored in Danbyte (editable) vs mirrored from a DNS server (read-only). */
   managed: boolean
   last_seen_at: string | null
+}
+
+/** Just enough of an IPAM row for a DNS addresses table. Everything here is
+ * covered by the viewset's select_related, so it costs no extra query. */
+export interface DnsRecordIP {
+  id: string
+  ip_address: string
+  status: { id: string; name: string; color: string; text_color: string } | null
+  prefix: string | null
+  prefix_cidr: string | null
+  assigned_to: { kind: "device" | "vm"; id: string; name: string } | null
 }
 
 export type DnsRecordType =

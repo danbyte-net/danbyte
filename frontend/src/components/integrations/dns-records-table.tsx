@@ -9,6 +9,7 @@ import { ApiError, api, type DnsRecord, type Paginated } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
+import { DnsNameLink } from "@/components/cells/dns-name-link"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
@@ -50,7 +51,11 @@ export function dnsRecordColumns(showZone: boolean): ColumnDef<DnsRecord>[] {
       accessorKey: "name",
       header: ({ column }) => <SortHeader column={column} label="Name" />,
       cell: ({ row }) => (
-        <span className="font-mono text-xs">{row.original.name}</span>
+        <DnsNameLink
+          name={row.original.name}
+          zone={row.original.zone}
+          className="text-xs"
+        />
       ),
     },
     {

@@ -16,6 +16,7 @@ import {
   DetailStat,
   DetailTab,
 } from "@/components/detail-shell"
+import { DnsNameLink } from "@/components/cells/dns-name-link"
 import { QueryError } from "@/components/query-error"
 import { VmDeleteDialog } from "@/components/vm-delete-dialog"
 import { Badge } from "@/components/ui/badge"
@@ -385,7 +386,7 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
     },
     {
       label: "DNS name",
-      value: mono(vm.primary_ip?.dns_name),
+      value: <DnsNameLink name={vm.primary_ip?.dns_name} />,
       copy: vm.primary_ip?.dns_name || undefined,
     },
   ]

@@ -295,6 +295,8 @@ import { Route as FhrpGroupsIdRouteImport } from './routes/fhrp-groups.$id'
 import { Route as ExportTemplatesNewRouteImport } from './routes/export-templates.new'
 import { Route as ExportTemplatesIdRouteImport } from './routes/export-templates.$id'
 import { Route as DnsZonesIdRouteImport } from './routes/dns-zones.$id'
+import { Route as DnsRecordsIdRouteImport } from './routes/dns-records.$id'
+import { Route as DnsNamesNameRouteImport } from './routes/dns-names.$name'
 import { Route as DevicesNewRouteImport } from './routes/devices.new'
 import { Route as DevicesIdRouteImport } from './routes/devices.$id'
 import { Route as DeviceTypesNewRouteImport } from './routes/device-types.new'
@@ -1844,6 +1846,16 @@ const DnsZonesIdRoute = DnsZonesIdRouteImport.update({
   path: '/dns-zones/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DnsRecordsIdRoute = DnsRecordsIdRouteImport.update({
+  id: '/dns-records/$id',
+  path: '/dns-records/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DnsNamesNameRoute = DnsNamesNameRouteImport.update({
+  id: '/dns-names/$name',
+  path: '/dns-names/$name',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DevicesNewRoute = DevicesNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -2539,6 +2551,8 @@ export interface FileRoutesByFullPath {
   '/device-types/new': typeof DeviceTypesNewRoute
   '/devices/$id': typeof DevicesIdRoute
   '/devices/new': typeof DevicesNewRoute
+  '/dns-names/$name': typeof DnsNamesNameRoute
+  '/dns-records/$id': typeof DnsRecordsIdRoute
   '/dns-zones/$id': typeof DnsZonesIdRoute
   '/export-templates/$id': typeof ExportTemplatesIdRoute
   '/export-templates/new': typeof ExportTemplatesNewRoute
@@ -2886,6 +2900,8 @@ export interface FileRoutesByTo {
   '/device-types/new': typeof DeviceTypesNewRoute
   '/devices/$id': typeof DevicesIdRoute
   '/devices/new': typeof DevicesNewRoute
+  '/dns-names/$name': typeof DnsNamesNameRoute
+  '/dns-records/$id': typeof DnsRecordsIdRoute
   '/dns-zones/$id': typeof DnsZonesIdRoute
   '/export-templates/$id': typeof ExportTemplatesIdRoute
   '/export-templates/new': typeof ExportTemplatesNewRoute
@@ -3290,6 +3306,8 @@ export interface FileRoutesById {
   '/device-types/new': typeof DeviceTypesNewRoute
   '/devices/$id': typeof DevicesIdRoute
   '/devices/new': typeof DevicesNewRoute
+  '/dns-names/$name': typeof DnsNamesNameRoute
+  '/dns-records/$id': typeof DnsRecordsIdRoute
   '/dns-zones/$id': typeof DnsZonesIdRoute
   '/export-templates/$id': typeof ExportTemplatesIdRoute
   '/export-templates/new': typeof ExportTemplatesNewRoute
@@ -3695,6 +3713,8 @@ export interface FileRouteTypes {
     | '/device-types/new'
     | '/devices/$id'
     | '/devices/new'
+    | '/dns-names/$name'
+    | '/dns-records/$id'
     | '/dns-zones/$id'
     | '/export-templates/$id'
     | '/export-templates/new'
@@ -4042,6 +4062,8 @@ export interface FileRouteTypes {
     | '/device-types/new'
     | '/devices/$id'
     | '/devices/new'
+    | '/dns-names/$name'
+    | '/dns-records/$id'
     | '/dns-zones/$id'
     | '/export-templates/$id'
     | '/export-templates/new'
@@ -4445,6 +4467,8 @@ export interface FileRouteTypes {
     | '/device-types/new'
     | '/devices/$id'
     | '/devices/new'
+    | '/dns-names/$name'
+    | '/dns-records/$id'
     | '/dns-zones/$id'
     | '/export-templates/$id'
     | '/export-templates/new'
@@ -4820,6 +4844,8 @@ export interface RootRouteChildren {
   ComplianceRulesNewRoute: typeof ComplianceRulesNewRoute
   DeviceRolesIdRoute: typeof DeviceRolesIdRoute
   DeviceRolesNewRoute: typeof DeviceRolesNewRoute
+  DnsNamesNameRoute: typeof DnsNamesNameRoute
+  DnsRecordsIdRoute: typeof DnsRecordsIdRoute
   DnsZonesIdRoute: typeof DnsZonesIdRoute
   IpsIdRoute: typeof IpsIdRoute
   IpsBulkEditRoute: typeof IpsBulkEditRoute
@@ -6900,6 +6926,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DnsZonesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dns-records/$id': {
+      id: '/dns-records/$id'
+      path: '/dns-records/$id'
+      fullPath: '/dns-records/$id'
+      preLoaderRoute: typeof DnsRecordsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dns-names/$name': {
+      id: '/dns-names/$name'
+      path: '/dns-names/$name'
+      fullPath: '/dns-names/$name'
+      preLoaderRoute: typeof DnsNamesNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/devices/new': {
       id: '/devices/new'
       path: '/new'
@@ -8804,6 +8844,8 @@ const rootRouteChildren: RootRouteChildren = {
   ComplianceRulesNewRoute: ComplianceRulesNewRoute,
   DeviceRolesIdRoute: DeviceRolesIdRoute,
   DeviceRolesNewRoute: DeviceRolesNewRoute,
+  DnsNamesNameRoute: DnsNamesNameRoute,
+  DnsRecordsIdRoute: DnsRecordsIdRoute,
   DnsZonesIdRoute: DnsZonesIdRoute,
   IpsIdRoute: IpsIdRoute,
   IpsBulkEditRoute: IpsBulkEditRoute,

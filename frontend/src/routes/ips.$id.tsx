@@ -35,6 +35,7 @@ import { IpDeleteDialog } from "@/components/ip-delete-dialog"
 import { IpMonitoring } from "@/components/monitoring/ip-monitoring"
 import { CertificatesPanel } from "@/components/monitoring/certificates-panel"
 import { IpMonitoringSummary } from "@/components/monitoring/ip-monitoring-summary"
+import { DnsNameLink } from "@/components/cells/dns-name-link"
 import { QueryError } from "@/components/query-error"
 import {
   DnsRecordsTable,
@@ -263,11 +264,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
     },
     {
       label: "DNS name",
-      value: ip.dns_name ? (
-        <span className="font-mono">{ip.dns_name}</span>
-      ) : (
-        <span className="text-muted-foreground">-</span>
-      ),
+      value: <DnsNameLink name={ip.dns_name} />,
       copy: ip.dns_name,
     },
     {
