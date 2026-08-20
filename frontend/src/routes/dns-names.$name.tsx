@@ -1,6 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
+import { useState } from "react"
+import { toast } from "sonner"
 
 import {
   api,
@@ -9,6 +11,17 @@ import {
   type Paginated,
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { IpPicker } from "@/components/ip-picker"
+import { apiErrorToast } from "@/lib/api-toast"
+import { useMe } from "@/lib/use-me"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { dash } from "@/components/cells/dash"
@@ -17,7 +30,10 @@ import { KvCard, mono, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { StatusBadge } from "@/components/status-badge"
 import { TimeCell } from "@/components/cells/time-ago"
-import { DnsRecordsTable } from "@/components/integrations/dns-records-table"
+import {
+  DnsRecordsTable,
+  DnsTypeBadge,
+} from "@/components/integrations/dns-records-table"
 import { useUrlTab } from "@/lib/use-url-tab"
 
 const TABS = ["overview", "records", "addresses"] as const
@@ -56,6 +72,52 @@ function DnsNamePage() {
       api<Paginated<IPAddress>>(
         `/api/ips/?dns_name=${encodeURIComponent(name)}&page_size=500`
       ),
+  })
+
+  const { canDo } = useMe()
+  const qc = useQueryClient()
+  const [assigning, setAssigning] = useState(false)
+  const [pickedIp, setPickedIp] = useState<string | null>(null)
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["dns-records"] })
+    qc.invalidateQueries({ queryKey: ["ips", "dns-name", name] })
+  }
+
+  // Create the IPAM row a DNS record points at. Reuses the record's own import
+  // action, which picks the containing prefix and reports when there isn't one.
+  const importOne = useMutation({
+    mutationFn: (recordId: string) =>
+      api<{ ok: boolean; reason?: string }>(
+        `/api/dns-records/${recordId}/import/`,
+        { method: "POST" }
+      ),
+    onSuccess: (r) => {
+      if (r.ok) {
+        toast.success("Added to IPAM")
+        refresh()
+      } else if (r.reason === "no_prefix") {
+        toast.error("No prefix covers that address - create one first.")
+      } else {
+        toast.error("Could not add that address.")
+      }
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  // Point an address Danbyte already tracks at this name.
+  const assign = useMutation({
+    mutationFn: (ipId: string) =>
+      api(`/api/ips/${ipId}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ dns_name: name }),
+      }),
+    onSuccess: () => {
+      toast.success(`Assigned to ${name}`)
+      setAssigning(false)
+      setPickedIp(null)
+      refresh()
+    },
+    onError: (e) => apiErrorToast(e),
   })
 
   if (records.isLoading || ips.isLoading)
@@ -127,9 +189,7 @@ function DnsNamePage() {
       value: types.length ? (
         <span className="flex flex-wrap gap-1">
           {types.map((t) => (
-            <Badge key={t} variant="outline" className="text-[10px]">
-              {t}
-            </Badge>
+            <DnsTypeBadge key={t} type={t} />
           ))}
         </span>
       ) : (
@@ -256,6 +316,26 @@ function DnsNamePage() {
       ),
     },
   ]
+  // Same rule as the records table: only offer the column when some row can
+  // use it, so it never renders as an empty sliver.
+  if (canDo("ipaddress", "add") && addresses.some((a) => !a.ipId))
+    addressColumns.push({
+      id: "import",
+      header: "",
+      enableSorting: false,
+      cell: ({ row }) =>
+        row.original.ipId ? null : (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 px-2 text-xs"
+            disabled={importOne.isPending}
+            onClick={() => importOne.mutate(row.original.key)}
+          >
+            Add to IPAM
+          </Button>
+        ),
+    })
 
   // A plain array on purpose. It sits below the loading/error returns above,
   // so a hook here would run on some renders and not others - which is exactly
@@ -273,6 +353,13 @@ function DnsNamePage() {
       backLabel="DNS records"
       title={name}
       presence={{ type: "dnsname", id: name }}
+      actions={
+        canDo("ipaddress", "change") ? (
+          <Button variant="outline" onClick={() => setAssigning(true)}>
+            Assign IP
+          </Button>
+        ) : undefined
+      }
       hero={
         <DetailHero
           title={name}
@@ -280,9 +367,7 @@ function DnsNamePage() {
           badges={
             <>
               {types.map((t) => (
-                <Badge key={t} variant="outline" className="text-[10px]">
-                  {t}
-                </Badge>
+                <DnsTypeBadge key={t} type={t} />
               ))}
               {managed && (
                 <Badge variant="secondary" className="text-[10px]">
@@ -346,6 +431,30 @@ function DnsNamePage() {
           </div>
         )}
       </DetailTab>
+
+      <Dialog open={assigning} onOpenChange={setAssigning}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign an IP to {name}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Sets the address's DNS name. This records what Danbyte knows - it
+            does not create a record on a DNS server.
+          </p>
+          <IpPicker value={pickedIp} onChange={setPickedIp} />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAssigning(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!pickedIp || assign.isPending}
+              onClick={() => pickedIp && assign.mutate(pickedIp)}
+            >
+              {assign.isPending ? "Assigning..." : "Assign"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <DetailTab value="records">
         {rows.length === 0 ? (

@@ -35,10 +35,23 @@ export function useDnsEnabled(): boolean {
   return !!q.data?.dns
 }
 
-const TYPE_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
-  A: "default",
-  AAAA: "default",
+const TYPE_VARIANT: Record<string, "info" | "secondary" | "outline"> = {
+  // Address records are the ones operators scan for, so they carry the colour.
+  A: "info",
+  AAAA: "info",
   PTR: "secondary",
+}
+
+/** A DNS record type, coloured consistently.
+ *
+ * Exported so the records table and the name page agree - two mappings for the
+ * same badge is how they drift apart. */
+export function DnsTypeBadge({ type }: { type: string }) {
+  return (
+    <Badge variant={TYPE_VARIANT[type] ?? "outline"} className="text-[10px]">
+      {type}
+    </Badge>
+  )
 }
 
 /** Column factory for stored DNS records - reused by the zone page, the prefix
@@ -62,14 +75,7 @@ export function dnsRecordColumns(showZone: boolean): ColumnDef<DnsRecord>[] {
       id: "type",
       accessorKey: "record_type",
       header: ({ column }) => <SortHeader column={column} label="Type" />,
-      cell: ({ row }) => (
-        <Badge
-          variant={TYPE_VARIANT[row.original.record_type] ?? "outline"}
-          className="text-[10px]"
-        >
-          {row.original.record_type}
-        </Badge>
-      ),
+      cell: ({ row }) => <DnsTypeBadge type={row.original.record_type} />,
     },
     {
       id: "data",
@@ -206,9 +212,17 @@ export function DnsRecordsTable({
     onError: (e) => apiErrorToast(e),
   })
 
+  // Booleans, not `rows`, because `rows` is a fresh array every render and
+  // would rebuild the columns each time.
+  const anyToImport = rows.some((r) => !r.ip_address)
+  const anyManaged = rows.some((r) => r.managed)
+
   const columns = useMemo(() => {
     const cols = dnsRecordColumns(showZone)
-    if (canImport)
+    // Only add an action column when some row can actually use it. Synced
+    // records already in IPAM can do neither, and an always-empty column
+    // renders as a narrow unexplained sliver at the right edge.
+    if (canImport && anyToImport)
       cols.push({
         id: "import",
         header: "",
@@ -226,7 +240,7 @@ export function DnsRecordsTable({
             </Button>
           ),
       })
-    if (editable && (canChange || canDelete))
+    if (editable && anyManaged && (canChange || canDelete))
       cols.push({
         id: "actions",
         header: "",
@@ -260,7 +274,10 @@ export function DnsRecordsTable({
           ) : null,
       })
     return cols
-  }, [showZone, canImport, importOne, editable, canChange, canDelete, del])
+  }, [
+    showZone, canImport, anyToImport, anyManaged, importOne,
+    editable, canChange, canDelete, del,
+  ])
 
   if (query.isError) return <QueryError error={query.error} />
   const table =

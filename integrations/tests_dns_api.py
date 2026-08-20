@@ -412,3 +412,19 @@ class DnsNamePageTests(DnsApiTests):
         self.assertEqual(r.status_code, 200)
         got = [row["ip_address"] for row in r.json()["results"]]
         self.assertEqual(got, ["10.77.0.60"])  # not the mine01 near-miss
+
+    def test_assigning_an_ip_to_a_name_is_a_plain_ip_patch(self):
+        """The name page's Assign action writes dns_name, nothing more - it
+        records what Danbyte knows and must not imply a server-side change."""
+        r = self.client.patch(
+            f"/api/ips/{self.ip.id}/",
+            {"dns_name": "www.danbyte.lan"}, content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.ip.refresh_from_db()
+        self.assertEqual(self.ip.dns_name, "www.danbyte.lan")
+        # ...and the name page now finds it by exact name.
+        found = self.client.get("/api/ips/?dns_name=www.danbyte.lan").json()
+        self.assertEqual(
+            [x["ip_address"] for x in found["results"]], ["10.77.0.60"]
+        )
