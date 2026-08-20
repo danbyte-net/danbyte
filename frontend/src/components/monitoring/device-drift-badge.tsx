@@ -305,7 +305,7 @@ export function DeviceDriftBadge({
       <TooltipContent
         side="top"
         variant="panel"
-        className="max-w-md flex-col items-start gap-1"
+        className="max-w-md flex-col items-start gap-1 overflow-hidden"
       >
         <span className="font-medium">
           {n} SNMP {n === 1 ? "difference" : "differences"}

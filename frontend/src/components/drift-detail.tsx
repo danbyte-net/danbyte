@@ -33,6 +33,14 @@ export function driftKey(item: SnmpDriftItem): string {
   }
 }
 
+// Every drift row uses these. `min-w-0 flex-wrap` lets the row break between
+// chips, and `break-all` lets a single long token (an interface description,
+// a port-group name) break too - without both, text paints outside the
+// popover frame instead of wrapping (issue #44).
+const ROW = "flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5"
+const MONO = "min-w-0 break-all font-mono"
+
+
 function val(v: string | boolean): string {
   if (typeof v === "boolean") return v ? "enabled" : "disabled"
   return v || "-"
@@ -41,23 +49,23 @@ function val(v: string | boolean): string {
 export function DriftDescription({ item }: { item: SnmpDriftItem }) {
   if (item.kind === "device_field") {
     return (
-      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <span className={ROW}>
         <span className="text-muted-foreground">{item.label}</span>
-        <span className="font-mono line-through opacity-60">
+        <span className={`${MONO} line-through opacity-60`}>
           {item.intended || "-"}
         </span>
         <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-        <span className="font-mono">{item.observed}</span>
+        <span className={MONO}>{item.observed}</span>
       </span>
     )
   }
   if (item.kind === "interface_missing") {
     return (
-      <span className="flex items-center gap-2">
+      <span className={ROW}>
         <Badge variant="secondary">new interface</Badge>
-        <span className="font-mono">{item.name}</span>
+        <span className={MONO}>{item.name}</span>
         {item.observed.mac && (
-          <span className="font-mono text-[11px] text-muted-foreground">
+          <span className={`${MONO} text-[11px] text-muted-foreground`}>
             {item.observed.mac}
           </span>
         )}
@@ -66,36 +74,36 @@ export function DriftDescription({ item }: { item: SnmpDriftItem }) {
   }
   if (item.kind === "interface_mismatch") {
     return (
-      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <span className="font-mono">{item.name}</span>
+      <span className={ROW}>
+        <span className={MONO}>{item.name}</span>
         <span className="text-muted-foreground">{item.field}</span>
-        <span className="font-mono line-through opacity-60">
+        <span className={`${MONO} line-through opacity-60`}>
           {val(item.intended)}
         </span>
         <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-        <span className="font-mono">{val(item.observed)}</span>
+        <span className={MONO}>{val(item.observed)}</span>
       </span>
     )
   }
   if (item.kind === "ip_missing") {
     return (
-      <span className="flex items-center gap-2">
+      <span className={ROW}>
         <Badge variant="secondary">discovered IP</Badge>
-        <span className="font-mono">{item.ip}</span>
+        <span className={MONO}>{item.ip}</span>
         <span className="text-muted-foreground">on</span>
-        <span className="font-mono">{item.name}</span>
+        <span className={MONO}>{item.name}</span>
       </span>
     )
   }
   if (item.kind === "part_status") {
     return (
-      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <span className="font-mono">{item.name}</span>
-        <span className="font-mono line-through opacity-60">
+      <span className={ROW}>
+        <span className={MONO}>{item.name}</span>
+        <span className={`${MONO} line-through opacity-60`}>
           {item.intended}
         </span>
         <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-        <span className="font-mono capitalize">{item.observed}</span>
+        <span className={`${MONO} capitalize`}>{item.observed}</span>
         {/* The value the agent actually returned - "Failed" is a conclusion,
             "Critical" is the evidence for it. */}
         {item.raw && (
@@ -109,10 +117,10 @@ export function DriftDescription({ item }: { item: SnmpDriftItem }) {
   }
   if (item.kind === "part_missing") {
     return (
-      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <span className={ROW}>
         <Badge variant="secondary">new part</Badge>
-        <span className="font-mono">{item.name}</span>
-        <span className="font-mono capitalize text-muted-foreground">
+        <span className={MONO}>{item.name}</span>
+        <span className={`${MONO} capitalize text-muted-foreground`}>
           {item.observed}
         </span>
         {item.raw && (
@@ -123,20 +131,20 @@ export function DriftDescription({ item }: { item: SnmpDriftItem }) {
   }
   if (item.kind === "switch_link_suggested") {
     return (
-      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <span className={ROW}>
         <Badge variant="secondary">switch link</Badge>
-        <span className="font-mono">{item.ip}</span>
-        <span className="font-mono line-through opacity-60">{item.intended}</span>
+        <span className={MONO}>{item.ip}</span>
+        <span className={`${MONO} line-through opacity-60`}>{item.intended}</span>
         <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-        <span className="font-mono">{item.observed}</span>
+        <span className={MONO}>{item.observed}</span>
       </span>
     )
   }
   // stale
   return (
-    <span className="flex items-center gap-2">
+    <span className={ROW}>
       <Badge variant="secondary">not seen on device</Badge>
-      <span className="font-mono">{item.name}</span>
+      <span className={MONO}>{item.name}</span>
     </span>
   )
 }
@@ -158,7 +166,7 @@ export function DriftBadge({ items }: { items: SnmpDriftItem[] }) {
           drift
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-80" align="start" onClick={(e) => e.stopPropagation()}>
+      <PopoverContent className="w-80 overflow-hidden" align="start" onClick={(e) => e.stopPropagation()}>
         <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold">
           <GitCompareArrows className="h-3.5 w-3.5 text-amber-500" />
           Config drift
