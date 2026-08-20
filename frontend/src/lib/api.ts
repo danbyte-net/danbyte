@@ -7143,7 +7143,12 @@ export interface VirtChange {
   id: string
   source: string
   source_name: string
-  kind: "new_guest" | "spec_change" | "removed_guest" | "iface_extra"
+  kind:
+    | "new_guest"
+    | "spec_change"
+    | "removed_guest"
+    | "iface_extra"
+    | "iface_change"
   kind_display: string
   vmid: number
   node: string

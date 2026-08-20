@@ -43,12 +43,12 @@ _NET_KEY = re.compile(r"^net(\d+)$")
 
 
 def _parse_net(value: str) -> dict:
-    """Parse a Proxmox netX config value into {mac, name, bridge, tag}.
+    """Parse a Proxmox netX config value into {mac, name, bridge, tag, mtu}.
 
     QEMU: ``virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0,tag=10``
     LXC:  ``name=eth0,bridge=vmbr0,hwaddr=AA:…,ip=dhcp``
     """
-    out = {"mac": "", "name": "", "bridge": "", "tag": None}
+    out = {"mac": "", "name": "", "bridge": "", "tag": None, "mtu": None}
     m = _MAC_RE.search(value or "")
     if m:
         out["mac"] = m.group(1).lower()
@@ -61,6 +61,8 @@ def _parse_net(value: str) -> dict:
             out["bridge"] = v
         elif k == "tag" and v.isdigit():
             out["tag"] = int(v)
+        elif k == "mtu" and v.isdigit():
+            out["mtu"] = int(v)
     return out
 
 
@@ -539,7 +541,9 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
                 # An interface Danbyte has but the hypervisor doesn't is either
                 # stale bookkeeping or the operator's - see _reconcile_interfaces.
                 if seen_ifaces:
-                    _reconcile_interfaces(guest, seen_ifaces, now, fresh_changes)
+                    _reconcile_interfaces(
+                        guest, seen_ifaces, now, fresh_changes, apply
+                    )
                 attached, unplaced = sync_ips(
                     source, guest, d.get("ips"), nets=d.get("nets"),
                     prefixes=prefixes, warnings=warnings, net_vrfs=net_vrfs,
@@ -602,21 +606,76 @@ def _desired_specs(resource: dict) -> dict:
     }
 
 
-def _reconcile_interfaces(guest, seen_names, now, fresh_changes) -> None:
-    """Deal with VM interfaces the hypervisor no longer reports.
+#: Interface fields the sync can compare, and how to read each side. Only
+#: fields a hypervisor genuinely reports belong here: one that is never stated
+#: would read as "Danbyte disagrees with nothing" on every single interface.
+_IFACE_FIELDS = ("mac_address", "mtu", "vlan_vid")
 
-    Two different situations, and conflating them would lose operator data:
+
+def _iface_value(iface, field):
+    """The Danbyte side of a comparable field."""
+    if field == "vlan_vid":
+        # iface.vlan_id is the FK column; the 802.1Q tag is VLAN.vlan_id.
+        return iface.vlan.vlan_id if iface.vlan_id else None
+    return getattr(iface, field, None)
+
+
+def _iface_drift(iface, reported: dict) -> dict:
+    """``{field: {danbyte, hypervisor}}`` for genuine disagreements only.
+
+    Three things are deliberately *not* drift:
+
+    * a field the hypervisor didn't report (key absent, or ``None``) - silence
+      is not a claim;
+    * a field empty on the Danbyte side - blank-fill handles that, and calling
+      it drift would ask the operator to approve filling in a blank;
+    * a MAC that differs only in case or separator style.
+    """
+    out = {}
+    for field in _IFACE_FIELDS:
+        theirs = reported.get(field)
+        if theirs in (None, ""):
+            continue
+        ours = _iface_value(iface, field)
+        if ours in (None, ""):
+            continue  # blank-fill territory, not disagreement
+        if field == "mac_address":
+            if _norm_mac(ours) == _norm_mac(theirs):
+                continue
+        elif ours == theirs:
+            continue
+        out[field] = {"danbyte": ours, "hypervisor": theirs}
+    return out
+
+
+def _norm_mac(value) -> str:
+    """Compare MACs by their digits - ``AA:BB`` and ``aa-bb`` are one address."""
+    return "".join(c for c in str(value or "").lower() if c.isalnum())
+
+
+def _reconcile_interfaces(guest, seen, now, fresh_changes, apply=False) -> None:
+    """Deal with VM interfaces the hypervisor no longer reports, and with those
+    whose fields disagree.
+
+    Two different situations for a missing NIC, and conflating them would lose
+    operator data:
 
     * a NIC **the sync created** that has vanished is stale bookkeeping - prune
       it, exactly as ``_sync_disks`` prunes its own disks;
     * a NIC **the operator created** is theirs. It may be a typo, or it may be
       a NIC they are about to add on the hypervisor. Either way, deleting it is
       not the sync's call - it is raised as drift for a human to resolve.
+
+    For a NIC that exists on both sides, a differing MAC, MTU or VLAN is raised
+    as ``iface_change``. Mirror mode applies it directly for sync-created rows,
+    matching how ``spec_change`` treats a sync-created VM.
     """
     from api.models import VMInterface
 
     if guest.vm is None:
         return
+    seen_names = [r["name"] for r in seen]
+    _diff_interfaces(guest, seen, now, fresh_changes, apply)
     extra = list(
         VMInterface.objects.filter(vm=guest.vm).exclude(name__in=seen_names)
     )
@@ -634,6 +693,42 @@ def _reconcile_interfaces(guest, seen_names, now, fresh_changes) -> None:
         )
     else:
         _clear_change(guest, "iface_extra")
+
+
+def _diff_interfaces(guest, seen, now, fresh_changes, apply) -> None:
+    """Raise (or apply) per-interface field drift."""
+    from api.models import VMInterface
+
+    by_name = {
+        i.name: i for i in VMInterface.objects.filter(vm=guest.vm).select_related("vlan")
+    }
+    drifted, applied = {}, []
+    for reported in seen:
+        iface = by_name.get(reported.get("name"))
+        if iface is None:
+            continue
+        diff = _iface_drift(iface, reported)
+        if not diff:
+            continue
+        # Mirror mode owns the rows it created; an adopted interface is the
+        # operator's and is always raised rather than silently rewritten.
+        if apply and iface.created_interface:
+            fields = []
+            for field, pair in diff.items():
+                if field == "vlan_vid":
+                    continue  # a VLAN row is resolved by _link_network, not here
+                setattr(iface, field, pair["hypervisor"])
+                fields.append(field)
+            if fields:
+                iface.save(update_fields=fields)
+                applied.append(iface.name)
+                continue
+        drifted[iface.name] = diff
+    if drifted:
+        _queue_change(guest, "iface_change", {"interfaces": drifted}, now,
+                      fresh_changes)
+    else:
+        _clear_change(guest, "iface_change")
 
 
 def _owned_by_another_source(vm, source) -> bool:
@@ -1166,16 +1261,27 @@ def _sync_interfaces(guest, cfg: dict) -> tuple[int, list]:
             continue
         parsed = _parse_net(str(value))
         name = parsed["name"] or key  # LXC names its NIC; QEMU keeps netX
-        seen.append(name)
+        # Report what the hypervisor actually said, so _reconcile_interfaces can
+        # diff it. Absent keys mean "not reported" and are never treated as
+        # disagreement - see _iface_drift.
+        seen.append({"name": name, "mac_address": parsed["mac"],
+                     "mtu": parsed["mtu"], "vlan_vid": parsed["tag"]})
         iface = VMInterface.objects.filter(vm=guest.vm, name=name).first()
         if iface is None:
             iface = VMInterface.objects.create(
                 vm=guest.vm, name=name, mac_address=parsed["mac"],
-                created_interface=True,
+                mtu=parsed["mtu"], created_interface=True,
             )
-        elif parsed["mac"] and not iface.mac_address:
-            iface.mac_address = parsed["mac"]
-            iface.save(update_fields=["mac_address"])
+        else:
+            fill = []
+            if parsed["mac"] and not iface.mac_address:
+                iface.mac_address = parsed["mac"]
+                fill.append("mac_address")
+            if parsed["mtu"] and iface.mtu is None:
+                iface.mtu = parsed["mtu"]
+                fill.append("mtu")
+            if fill:
+                iface.save(update_fields=fill)
         n += 1
     return n, seen
 
@@ -1643,7 +1749,11 @@ def _sync_vcenter_interfaces(guest, nics) -> tuple[int, list]:
         nic = nic or {}
         name = nic.get("label") or f"nic-{key}"
         mac = (nic.get("mac_address") or "").lower()
-        seen.append(name)
+        # vCenter's VM NIC payload carries no MTU and no speed, so those keys
+        # stay absent rather than being reported as empty - a field the
+        # hypervisor never states must never read as disagreement. The VLAN
+        # arrives separately, through the port group in _link_network.
+        seen.append({"name": name, "mac_address": mac})
         iface = VMInterface.objects.filter(vm=guest.vm, name=name).first()
         if iface is None:
             VMInterface.objects.create(
@@ -1741,7 +1851,45 @@ def apply_change(change) -> None:
                 fields.append(field)
             if fields:
                 vm.save(update_fields=fields)
+    elif change.kind == "iface_change":
+        _accept_iface_change(guest, change.detail or {})
     change.delete()
+
+
+def _accept_iface_change(guest, detail: dict) -> None:
+    """Take the hypervisor's values for the interfaces in this change.
+
+    VLAN is reported as a plain tag number, and turning one into a VLAN row is
+    ``_link_network``'s job (it owns the site/group scoping and the
+    created_vlan bookkeeping). Accepting here re-points the interface at a VLAN
+    the tenant already has with that vid, and leaves it alone otherwise rather
+    than minting a half-specified one.
+    """
+    from api.models import VLAN, VMInterface
+
+    if guest.vm is None:
+        return
+    by_name = {i.name: i for i in VMInterface.objects.filter(vm=guest.vm)}
+    for name, diff in (detail.get("interfaces") or {}).items():
+        iface = by_name.get(name)
+        if iface is None:
+            continue
+        fields = []
+        for field, pair in (diff or {}).items():
+            value = pair.get("hypervisor")
+            if field == "vlan_vid":
+                vlan = VLAN.objects.filter(
+                    tenant=guest.source.tenant, vlan_id=value
+                ).first()
+                if vlan is None:
+                    continue
+                iface.vlan = vlan
+                fields.append("vlan")
+            else:
+                setattr(iface, field, value)
+                fields.append(field)
+        if fields:
+            iface.save(update_fields=fields)
 
 
 def ignore_change(change) -> None:

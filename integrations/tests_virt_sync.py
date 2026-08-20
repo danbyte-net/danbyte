@@ -1811,3 +1811,116 @@ class PlatformSyncTests(TestCase):
         self.sync()
         self.assertEqual(Platform.objects.count(), 0)
         self.assertIsNone(VirtualMachine.objects.get(name="web01").platform_id)
+
+
+class InterfaceFieldDriftTests(InterfaceDriftTests):
+    """Issue #38: an interface on both sides whose *fields* disagree.
+
+    Presence drift already worked; a MAC, MTU or VLAN that differed between
+    Danbyte and the hypervisor went unnoticed entirely.
+    """
+
+    def _iface(self):
+        return VMInterface.objects.get(vm__name="router-vm", name="net0")
+
+    def _change(self):
+        from integrations.models import VirtChange
+
+        return VirtChange.objects.filter(kind="iface_change").first()
+
+    def test_a_matching_interface_is_not_drift(self):
+        self.sync()
+        self.sync()
+        self.assertIsNone(self._change())
+
+    def test_a_differing_mac_is_drift(self):
+        self.sync()
+        iface = self._iface()
+        iface.mac_address = "aa:bb:cc:00:11:99"
+        iface.created_interface = False  # operator-owned, so it is raised
+        iface.save(update_fields=["mac_address", "created_interface"])
+
+        self.sync()
+        change = self._change()
+        self.assertIsNotNone(change, "a differing MAC should be raised")
+        diff = change.detail["interfaces"]["net0"]["mac_address"]
+        self.assertEqual(diff["danbyte"], "aa:bb:cc:00:11:99")
+        self.assertEqual(diff["hypervisor"], "aa:bb:cc:00:11:22")
+
+    def test_mac_formatting_is_not_drift(self):
+        """AA-BB-CC and aa:bb:cc are the same address, not a disagreement."""
+        self.sync()
+        iface = self._iface()
+        iface.mac_address = "AA-BB-CC-00-11-22"
+        iface.created_interface = False
+        iface.save(update_fields=["mac_address", "created_interface"])
+
+        self.sync()
+        self.assertIsNone(self._change())
+
+    def test_a_blank_danbyte_field_is_filled_not_flagged(self):
+        """Blank-fill stays blank-fill: asking a human to approve filling in an
+        empty field would make the inbox useless."""
+        self.sync()
+        iface = self._iface()
+        iface.mac_address = ""
+        iface.created_interface = False
+        iface.save(update_fields=["mac_address", "created_interface"])
+
+        self.sync()
+        self.assertIsNone(self._change())
+        self.assertEqual(self._iface().mac_address, "aa:bb:cc:00:11:22")
+
+    def test_a_field_the_hypervisor_never_reports_is_not_drift(self):
+        """Proxmox states no MTU here, so Danbyte's MTU is not contradicted.
+        Treating silence as disagreement would flag every interface."""
+        self.sync()
+        iface = self._iface()
+        iface.mtu = 9000
+        iface.created_interface = False
+        iface.save(update_fields=["mtu", "created_interface"])
+
+        self.sync()
+        self.assertIsNone(self._change())
+        self.assertEqual(self._iface().mtu, 9000)  # and it is left alone
+
+    def test_mirror_mode_applies_it_to_its_own_rows(self):
+        """A sync-created interface is the sync's to correct, like spec_change
+        does for a sync-created VM."""
+        self.sync()
+        iface = self._iface()
+        self.assertTrue(iface.created_interface)
+        iface.mac_address = "aa:bb:cc:00:11:99"
+        iface.save(update_fields=["mac_address"])
+
+        self.sync()  # source is sync_mode="auto"
+        self.assertEqual(self._iface().mac_address, "aa:bb:cc:00:11:22")
+        self.assertIsNone(self._change())
+
+    def test_accepting_takes_the_hypervisor_value(self):
+        from integrations.virt_sync import apply_change
+
+        self.sync()
+        iface = self._iface()
+        iface.mac_address = "aa:bb:cc:00:11:99"
+        iface.created_interface = False
+        iface.save(update_fields=["mac_address", "created_interface"])
+        self.sync()
+
+        apply_change(self._change())
+        self.assertEqual(self._iface().mac_address, "aa:bb:cc:00:11:22")
+        self.assertIsNone(self._change())
+
+    def test_drift_clears_when_the_operator_fixes_it(self):
+        self.sync()
+        iface = self._iface()
+        iface.mac_address = "aa:bb:cc:00:11:99"
+        iface.created_interface = False
+        iface.save(update_fields=["mac_address", "created_interface"])
+        self.sync()
+        self.assertIsNotNone(self._change())
+
+        iface.mac_address = "aa:bb:cc:00:11:22"
+        iface.save(update_fields=["mac_address"])
+        self.sync()
+        self.assertIsNone(self._change())

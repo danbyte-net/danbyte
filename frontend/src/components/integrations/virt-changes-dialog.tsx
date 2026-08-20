@@ -30,6 +30,14 @@ const KIND_VARIANT: Record<
   spec_change: "secondary",
   removed_guest: "destructive",
   iface_extra: "secondary",
+  iface_change: "secondary",
+}
+
+// Interface fields as they appear in an iface_change payload.
+const IFACE_LABELS: Record<string, string> = {
+  mac_address: "MAC",
+  mtu: "MTU",
+  vlan_vid: "VLAN",
 }
 
 // Spec fields as they appear in change payloads, with display labels and
@@ -78,6 +86,40 @@ function ChangeDetail({ c }: { c: VirtChange }) {
     return (
       <span className="flex flex-wrap items-center gap-1">
         {chips.length ? chips : <span className="text-xs">Create VM</span>}
+      </span>
+    )
+  }
+  if (c.kind === "iface_extra") {
+    // {names: [...]}. Without this the generic branch below rendered it as
+    // "names · undefined → undefined".
+    const names = (c.detail as { names?: string[] }).names ?? []
+    return (
+      <span className="flex flex-wrap items-center gap-1">
+        {names.map((n) => (
+          <SpecChip key={n} label="Not on hypervisor" value={n} />
+        ))}
+      </span>
+    )
+  }
+  if (c.kind === "iface_change") {
+    // {interfaces: {name: {field: {danbyte, hypervisor}}}}
+    const ifaces = (c.detail as {
+      interfaces?: Record<
+        string,
+        Record<string, { danbyte: unknown; hypervisor: unknown }>
+      >
+    }).interfaces ?? {}
+    return (
+      <span className="flex flex-wrap items-center gap-1">
+        {Object.entries(ifaces).flatMap(([name, fields]) =>
+          Object.entries(fields).map(([key, v]) => (
+            <SpecChip
+              key={`${name}.${key}`}
+              label={`${name} ${IFACE_LABELS[key] ?? key}`}
+              value={`${v.danbyte ?? "-"} → ${v.hypervisor ?? "-"}`}
+            />
+          ))
+        )}
       </span>
     )
   }

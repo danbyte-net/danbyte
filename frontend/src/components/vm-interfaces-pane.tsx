@@ -58,6 +58,13 @@ import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useSaveObject } from "@/lib/save-object"
 
+/** Field keys as an iface_change payload spells them. */
+const IFACE_DRIFT_LABELS: Record<string, string> = {
+  mac_address: "MAC",
+  mtu: "MTU",
+  vlan_vid: "VLAN",
+}
+
 export function VMInterfacesPane({
   vmId,
   vmName,
@@ -106,6 +113,24 @@ export function VMInterfacesPane({
     () => new Set(driftNames ? driftNames.split("\u0000") : []),
     [driftNames]
   )
+  // Fields that disagree, per interface (issue #38). Serialised for the same
+  // reason as above - a fresh object each render rebuilds the table.
+  const fieldDriftJson = JSON.stringify(
+    Object.assign(
+      {},
+      ...(drift.data?.results ?? [])
+        .filter((c) => c.kind === "iface_change")
+        .map((c) => (c.detail as { interfaces?: object }).interfaces ?? {})
+    )
+  )
+  const fieldDrift = useMemo(
+    () =>
+      JSON.parse(fieldDriftJson) as Record<
+        string,
+        Record<string, { danbyte: unknown; hypervisor: unknown }>
+      >,
+    [fieldDriftJson]
+  )
 
   const invalidate = () =>
     qc.invalidateQueries({ queryKey: ["vm-interfaces", vmId] })
@@ -122,6 +147,36 @@ export function VMInterfacesPane({
         cell: ({ row }) => (
           <span className="inline-flex items-center gap-2">
             <span className="font-mono font-medium">{row.original.name}</span>
+            {fieldDrift[row.original.name] && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="warning" className="gap-1 text-[10px]">
+                    <GitCompareArrows className="h-3 w-3" />
+                    drift
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent variant="panel" className="max-w-72">
+                  <p className="mb-1">
+                    The hypervisor reports different values for this interface:
+                  </p>
+                  <ul className="space-y-0.5">
+                    {Object.entries(fieldDrift[row.original.name]).map(
+                      ([field, v]) => (
+                        <li key={field} className="font-mono text-[11px]">
+                          {IFACE_DRIFT_LABELS[field] ?? field}:{" "}
+                          {String(v.danbyte ?? "-")} &rarr;{" "}
+                          {String(v.hypervisor ?? "-")}
+                        </li>
+                      )
+                    )}
+                  </ul>
+                  <p className="mt-1">
+                    Review it on the source&rsquo;s changes list to take the
+                    hypervisor&rsquo;s values, or edit here to keep yours.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            )}
             {notOnHypervisor.has(row.original.name) && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -293,7 +348,7 @@ export function VMInterfacesPane({
     ],
     // notOnHypervisor matters: without it the columns are built once with an
     // empty drift set and the badge never appears on a direct page load.
-    [canEdit, canDelete, canAddIp, vmId, vmName, notOnHypervisor]
+    [canEdit, canDelete, canAddIp, vmId, vmName, notOnHypervisor, fieldDrift]
   )
 
   if (q.isLoading)

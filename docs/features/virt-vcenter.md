@@ -126,6 +126,28 @@ Rules:
 - VM templates are skipped; the sync is read-only - Danbyte never changes the
   hypervisor.
 
+### Interface drift
+
+An interface that exists on both sides but whose **MAC, MTU or VLAN disagrees**
+is raised as a change on the source's review list, alongside the existing
+*not on the hypervisor* flag. The VM's **Components** tab shows an amber
+**drift** badge on the interface, listing each field as `yours → theirs`.
+
+Accepting takes the hypervisor's values; leaving it alone keeps yours, and the
+flag clears by itself once the two agree again. In Automatic mode a
+**sync-created** interface is corrected silently - the same rule that lets
+Automatic mode mirror a sync-created VM's specs - while an interface you made
+is always raised rather than rewritten.
+
+Three things are deliberately not drift:
+
+- **A field the hypervisor doesn't report.** vCenter states no MTU for a VM
+  NIC, so an MTU you set is left alone. Silence is not a contradiction, and
+  treating it as one would flag every interface you own.
+- **A field that is empty in Danbyte.** That is blank-filled, as always -
+  asking you to approve filling in a blank would make the review list useless.
+- **A MAC written differently.** `AA-BB-CC` and `aa:bb:cc` are one address.
+
 ## See also
 
 - [Proxmox VE sync](virt-proxmox.md) - the sibling connector.

@@ -898,6 +898,7 @@ class VirtChange(TimestampedModel):
         ("spec_change", "Specs changed"),
         ("removed_guest", "VM removed from hypervisor"),
         ("iface_extra", "Interface not on hypervisor"),
+        ("iface_change", "Interface fields differ"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
