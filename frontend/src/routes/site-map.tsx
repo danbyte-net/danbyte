@@ -1910,7 +1910,7 @@ function MapLegend({
     />
   )
   return (
-    <div className="absolute bottom-9 left-3 z-[900] w-52 rounded-lg border border-border bg-background/95 p-3 text-[11px] shadow-sm backdrop-blur">
+    <div className="absolute bottom-9 left-3 z-[900] w-fit rounded-lg border border-border bg-background/95 p-3 text-[11px] shadow-sm backdrop-blur">
       <div className="mb-2 flex items-center justify-between">
         <span className="font-medium">Legend</span>
         <button
@@ -1921,22 +1921,22 @@ function MapLegend({
           <X className="size-3" />
         </button>
       </div>
-      <div className="grid gap-1.5 text-muted-foreground">
+      <div className="grid gap-1.5 whitespace-nowrap text-muted-foreground">
         <span className="flex items-center gap-2">
           <span className="flex size-5 shrink-0 items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground shadow-[0_0_0_1px_var(--border)]">
             <Building2 className="size-3" />
           </span>
-          Site - its own color and icon
+          Site
         </span>
         <span className="flex items-center gap-2">
           <TileBadge color="#8b5cf6" />
-          Device / marker, in its role color
+          Device / marker
         </span>
         <span className="flex items-center gap-2">
           <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full border-2 border-primary bg-background px-1 text-[10px] font-semibold text-foreground shadow-[0_0_0_1px_var(--border)]">
             5
           </span>
-          Markers close together - click to zoom
+          Cluster - click to zoom
         </span>
         <span className="flex items-center gap-2">
           <span className="flex shrink-0 items-center gap-1">
@@ -1948,7 +1948,7 @@ function MapLegend({
               />
             ))}
           </span>
-          Monitoring: up · degraded · down
+          Up · degraded · down
         </span>
         <span className="flex items-center gap-2">
           {line(KIND_COLOR.circuit)}
@@ -1960,7 +1960,11 @@ function MapLegend({
         </span>
         <span className="flex items-center gap-2">
           {line(KIND_COLOR.cable)}
-          Cable ({line(KIND_COLOR.cable, true)} = no drawn route)
+          Cable
+        </span>
+        <span className="flex items-center gap-2">
+          {line(KIND_COLOR.cable, true)}
+          Cable without a drawn route
         </span>
       </div>
     </div>

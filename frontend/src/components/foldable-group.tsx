@@ -52,6 +52,31 @@ export function FoldableGroup({
  *  status palette so map, MiniMap and sidebars can't drift apart. */
 export { CHECK_TONE }
 
+/** Mini status badge - the Badge primitive's semantic tints at list-row
+ *  scale, showing the status word itself. Friendlier than a bare dot. */
+const CHECK_CHIP: Record<string, string> = {
+  up: "bg-emerald-500/15 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300",
+  degraded: "bg-amber-500/15 text-amber-800 dark:bg-amber-400/15 dark:text-amber-300",
+  down: "bg-destructive/10 text-destructive dark:bg-destructive/20",
+  stale: "bg-muted text-muted-foreground",
+  unknown: "bg-muted text-muted-foreground",
+}
+
+export function CheckChip({ check }: { check: string | null | undefined }) {
+  if (!check) return null
+  return (
+    <span
+      className={cn(
+        "inline-flex h-4 shrink-0 items-center rounded-[4px] px-1 text-[10px] font-medium",
+        CHECK_CHIP[check] ?? CHECK_CHIP.unknown
+      )}
+      title={`Monitoring: ${check}`}
+    >
+      {check}
+    </span>
+  )
+}
+
 export function CheckDot({ check }: { check: string | null | undefined }) {
   if (!check) return null
   return (

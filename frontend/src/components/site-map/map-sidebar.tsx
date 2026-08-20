@@ -10,7 +10,7 @@ import type {
 } from "@/lib/api"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-import { CheckDot, FoldableGroup } from "@/components/foldable-group"
+import { CheckChip, FoldableGroup } from "@/components/foldable-group"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { KIND_COLOR } from "@/components/site-map/connections-layer"
 
@@ -174,10 +174,12 @@ export function MapObjectsSidebar({
                   : "hover:bg-muted/60"
               )}
             >
-              <CheckDot check={s.check} />
               <span className="min-w-0 truncate">{s.name}</span>
-              <span className="num ml-auto text-[11px] text-muted-foreground/70">
-                {s.device_count}
+              <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                <CheckChip check={s.check} />
+                <span className="num text-[11px] text-muted-foreground/70">
+                  {s.device_count}
+                </span>
               </span>
             </button>
           ))}
@@ -211,8 +213,10 @@ export function MapObjectsSidebar({
                       : "hover:bg-muted/60"
                   )}
                 >
-                  <CheckDot check={d.check} />
                   <span className="min-w-0 truncate">{d.name}</span>
+                  <span className="ml-auto shrink-0">
+                    <CheckChip check={d.check} />
+                  </span>
                 </button>
               ))}
             </FoldableGroup>
