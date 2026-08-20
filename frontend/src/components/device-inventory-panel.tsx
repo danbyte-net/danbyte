@@ -17,7 +17,11 @@ interface DeviceInventory {
 // host. Lets a user verify the export without curling the API.
 export function DeviceInventoryPanel({ deviceId }: { deviceId: string }) {
   const q = useQuery({
-    queryKey: ["device-inventory", deviceId],
+    // NOT ["device-inventory", id] - that key belongs to the hardware parts
+    // pane (a paginated /api/inventory-items/ response). Sharing one key
+    // across two response shapes poisoned whichever consumer mounted second
+    // and crashed its tab (#48).
+    queryKey: ["device-ansible-inventory", deviceId],
     queryFn: () => api<DeviceInventory>(`/api/devices/${deviceId}/inventory/`),
     staleTime: 60_000,
   })
@@ -58,7 +62,7 @@ export function DeviceInventoryPanel({ deviceId }: { deviceId: string }) {
                 Groups
               </div>
               <div className="flex flex-wrap gap-1">
-                {data.groups.map((g) => (
+                {(data.groups ?? []).map((g) => (
                   <span
                     key={g}
                     className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
@@ -69,7 +73,7 @@ export function DeviceInventoryPanel({ deviceId }: { deviceId: string }) {
               </div>
               <p className="mt-1.5 text-[11px] text-muted-foreground">
                 A play can target any of these, e.g.{" "}
-                <span className="font-mono">hosts: {data.groups[0]}</span>.
+                <span className="font-mono">hosts: {(data.groups ?? [])[0]}</span>.
               </p>
             </div>
 
