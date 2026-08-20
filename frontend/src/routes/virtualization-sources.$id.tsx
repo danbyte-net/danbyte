@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
+import { copyText } from "@/lib/clipboard"
 import { RowActions } from "@/components/row-actions"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { buildVmColumns } from "@/components/columns/vm-columns"
@@ -58,7 +59,7 @@ const PATTERN_HINT: Record<string, string> = {
 function SourceDetailPage() {
   const { id } = Route.useParams()
   const [tab, setTab] = useUrlTab<
-    "overview" | "vms" | "hosts" | "placement" | "skipped"
+    "overview" | "vms" | "hosts" | "placement" | "skipped" | "log"
   >("overview")
 
   const query = useQuery({
@@ -271,6 +272,7 @@ function SourceDetailPage() {
           count: ruleCount.data?.count || undefined,
         },
         { value: "skipped", label: "Skipped", count: skipped.length },
+        { value: "log", label: "Sync log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}
@@ -296,6 +298,37 @@ function SourceDetailPage() {
 
       <DetailTab value="skipped">
         <SkippedList items={skipped} />
+      </DetailTab>
+
+      <DetailTab value="log">
+        {source.last_sync_log ? (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="max-w-prose text-sm text-muted-foreground">
+                Everything the last sync did and reported. When filing a bug,
+                copy this whole log into the issue - it says exactly what the
+                sync saw.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  void copyText(source.last_sync_log)
+                  toast.success("Sync log copied")
+                }}
+              >
+                Copy log
+              </Button>
+            </div>
+            <pre className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-muted/20 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
+              {source.last_sync_log}
+            </pre>
+          </div>
+        ) : (
+          <EmptyState title="No sync log yet">
+            The log of a run appears here after the next sync completes.
+          </EmptyState>
+        )}
       </DetailTab>
 
       {editing && (

@@ -513,6 +513,9 @@ class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
 
     last_sync_at = models.DateTimeField(null=True, blank=True)
     last_sync_status = models.CharField(max_length=16, blank=True, default="")
+    # Everything the last run logged (bounded) - shown on the source page with
+    # a copy button, so a user can hand it over without shell access.
+    last_sync_log = models.TextField(blank=True, default="")
     last_sync_error = models.TextField(blank=True, default="")
 
     class Meta:

@@ -7125,6 +7125,8 @@ export interface VirtualizationSource {
   last_sync_at: string | null
   last_sync_status: string
   last_sync_error: string
+  /** Everything the last run logged - copyable for bug reports. */
+  last_sync_log: string
   created_at: string
   updated_at: string
 }

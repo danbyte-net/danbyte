@@ -122,6 +122,23 @@ order of everything else.
 Rules apply to Proxmox too - it has no datacenters or folders, so cluster and
 host rules are the useful ones there.
 
+## The sync log
+
+Every virtualization source keeps the full log of its **last run** on its
+detail page (**Sync log** tab): each VM created or adopted, interface,
+switch, network, VLAN, link, placement, prune, and every warning - followed
+by the run summary. **Copy log** puts the whole thing on the clipboard.
+
+When reporting a sync problem, paste that log into the issue - it says
+exactly what the sync saw and did, and needs no shell or container access to
+retrieve.
+
+Operators with shell access have the same lines (with history) in the
+journal (`journalctl --user -u danbyte-workers`), in `docker logs
+danbyte-workers-1` on a container install, and in
+`/var/log/danbyte/danbyte.log` when `DANBYTE_LOG_DIR` is set - see
+[Turn on /var/log/danbyte logging](../getting-started/upgrading.md#turn-on-varlogdanbyte-logging).
+
 ## Where synced addresses land
 
 Every connection states which **VRF** the addresses it discovers belong to:

@@ -78,12 +78,20 @@ def run_virt_sync(source_id: str) -> dict:
     if not integration_enabled(source.tenant, "virtualization"):
         return {"skipped": "toggle-off"}
     engine = sync_vcenter if source.kind == "vcenter" else sync_proxmox
-    try:
-        return engine(source)
-    except Exception as exc:  # noqa: BLE001 - the row carries the error
-        record_virt_failure(source, exc)
-        logger.warning("virt sync %s failed: %s", source.name, exc)
-        return {"error": str(exc)}
+    from .synclog import capture_sync_log, text_of
+
+    # Everything this run logs is also stored on the source row, so a user can
+    # copy it off the source page instead of needing shell/container access.
+    with capture_sync_log() as log:
+        try:
+            result = engine(source)
+        except Exception as exc:  # noqa: BLE001 - the row carries the error
+            record_virt_failure(source, exc)
+            logger.warning("virt sync %s failed: %s", source.name, exc)
+            result = {"error": str(exc)}
+    source.last_sync_log = text_of(log)
+    source.save(update_fields=["last_sync_log"])
+    return result
 
 
 def enqueue_due_virt_syncs() -> int:

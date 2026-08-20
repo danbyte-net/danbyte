@@ -2032,3 +2032,67 @@ class InterfaceFieldDriftTests(InterfaceDriftTests):
         iface.save(update_fields=["mac_address"])
         self.sync()
         self.assertIsNone(self._change())
+
+
+class SyncLogCaptureTests(SwitchKindTests):
+    """Each run's log lands on the source row, so a user can hand it over
+    from the UI without shell or container access."""
+
+    def setUp(self):
+        super().setUp()
+        from integrations.models import IntegrationSettings
+
+        IntegrationSettings.objects.create(
+            tenant=self.tenant, virtualization_enabled=True
+        )
+
+    def _run(self):
+        from integrations.sync_tasks import run_virt_sync
+
+        with mock.patch("integrations.virt_client.VCenterClient", FakeVCenter):
+            return run_virt_sync(str(self.source.id))
+
+    def test_the_run_log_is_stored_on_the_source(self):
+        self._run()
+        self.source.refresh_from_db()
+        log = self.source.last_sync_log
+        self.assertIn("created VM", log)            # actions...
+        self.assertIn("created virtual switch", log)
+        self.assertIn("linked", log)                # ...including network links
+        self.assertIn("vcenter sync", log)          # and the summary line
+
+    def test_a_second_quiet_run_replaces_the_log(self):
+        """The log is the LAST run, not an ever-growing history - the file
+        handler and journal keep history; this is the shareable snapshot."""
+        self._run()
+        self._run()
+        self.source.refresh_from_db()
+        self.assertNotIn("created VM", self.source.last_sync_log)
+        self.assertIn("vcenter sync", self.source.last_sync_log)
+
+    def test_a_failed_run_still_stores_its_log(self):
+        from integrations.sync_tasks import run_virt_sync
+
+        class Boom:
+            def __init__(self, source): ...
+            def login(self):
+                raise RuntimeError("credentials exploded")
+            def close(self): ...
+
+        with mock.patch("integrations.virt_client.VCenterClient", Boom):
+            run_virt_sync(str(self.source.id))
+        self.source.refresh_from_db()
+        self.assertIn("failed", self.source.last_sync_log)
+
+    def test_capture_is_bounded(self):
+        import logging
+
+        from integrations.synclog import MAX_LINES, capture_sync_log, text_of
+
+        lg = logging.getLogger("danbyte.virt_sync")
+        with capture_sync_log() as h:
+            for i in range(MAX_LINES + 50):
+                lg.info("line %d", i)
+        lines = text_of(h).split("\n")
+        self.assertEqual(len(lines), MAX_LINES + 1)  # + the truncation marker
+        self.assertIn("truncated", lines[-1])

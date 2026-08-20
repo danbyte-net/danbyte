@@ -246,7 +246,7 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
     # `kind` is what the hypervisor actually says, when it says anything.
     # Falling back to the connector guesses, which labelled every vCenter
     # switch "standard" even when it was distributed.
-    vswitch, _ = VirtualSwitch.objects.get_or_create(
+    vswitch, made_switch = VirtualSwitch.objects.get_or_create(
         tenant=source.tenant, cluster=c, name=bridge,
         defaults={
             "kind": kind or (
@@ -255,6 +255,9 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
             "created_switch": True,
         },
     )
+    if made_switch:
+        logger.info("created virtual switch %r (kind=%s) on cluster %r",
+                    bridge, vswitch.kind, c.name)
     # A switch created before the type was known gets corrected once, but an
     # operator's own choice is left alone.
     if kind and vswitch.created_switch and vswitch.kind != kind:
@@ -263,15 +266,21 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
     vlan = None
     if tag is not None:
         grp = _network_group(source, c)
-        vlan, _ = VLAN.objects.get_or_create(
+        vlan, made_vlan = VLAN.objects.get_or_create(
             tenant=source.tenant, group=grp, vlan_id=tag,
             defaults={"name": name or f"{bridge} VLAN {tag}"},
         )
+        if made_vlan:
+            logger.info("created VLAN %s (%s) in group %r",
+                        tag, vlan.name, grp.name)
     ext_key = f"{bridge}:{tag}" if tag is not None else bridge
-    vn, _ = VirtNetwork.objects.get_or_create(
+    vn, made_net = VirtNetwork.objects.get_or_create(
         source=source, ext_key=ext_key,
         defaults={"name": name or ext_key},
     )
+    if made_net:
+        logger.info("created network %r on switch %r", vn.name or ext_key,
+                    bridge)
     changed = ["last_seen_at"]
     vn.last_seen_at = now
     if vn.vswitch_id is None:
@@ -290,16 +299,21 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
         if iface is not None:
             from .models import VirtNetworkLink
 
-            VirtNetworkLink.objects.update_or_create(
+            _, made_link = VirtNetworkLink.objects.update_or_create(
                 network=vn, vm_interface=iface,
                 defaults={"last_seen_at": now},
             )
+            if made_link:
+                logger.info("linked %s/%s to network %r",
+                            guest.vm.name, iface.name, vn.name or ext_key)
             # Blank-fill the access VLAN (never overwrite operator intent).
             if vlan is not None and iface.vlan_id is None:
                 iface.vlan = vlan
                 if not iface.mode:
                     iface.mode = "access"
                 iface.save(update_fields=["vlan", "mode"])
+                logger.info("blank-filled %s/%s access VLAN to %s",
+                            guest.vm.name, iface.name, vlan.vlan_id)
     return 1
 
 
@@ -586,9 +600,11 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
             # Links the hypervisor stopped stating this pass are gone. Guarded
             # on the toggle: with networks sync off nothing is refreshed, and
             # pruning then would silently disconnect every VM.
-            VirtNetworkLink.objects.filter(network__source=source).exclude(
-                last_seen_at=now
-            ).delete()
+            gone, _ = VirtNetworkLink.objects.filter(
+                network__source=source
+            ).exclude(last_seen_at=now).delete()
+            if gone:
+                logger.info("pruned %d stale network link(s)", gone)
         _prune_changes(source, fresh_changes)
         counts["pending"] = VirtChange.objects.filter(
             source=source, ignored=False
@@ -609,6 +625,8 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
     source.record_skipped(warnings, summary=summary)
     source.save(update_fields=["last_sync_at", "last_sync_status",
                                "last_sync_error", "last_sync_skipped"])
+    for line in warnings:
+        logger.warning("%s", line)
     logger.info("%s sync %s (%s): %s", label, source.name, source.sync_mode, counts)
     return counts
 
@@ -792,6 +810,8 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
             guest.vm = adopted
             guest.created_vm = False
             guest.save(update_fields=["vm", "created_vm"])
+            logger.info("adopted existing VM %r for guest %s",
+                        adopted.name, guest.vmid)
             _blank_fill(adopted, specs, source, guest, place, os_info)
             _clear_change(guest, "new_guest")
             return
@@ -805,6 +825,8 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
             guest.vm = vm
             guest.created_vm = True
             guest.save(update_fields=["vm", "created_vm"])
+            logger.info("created VM %r (%s vCPU, %s MB)", name,
+                        specs.get("vcpus"), specs.get("memory_mb"))
             _blank_fill(vm, {}, source, guest, place, os_info)  # node → device
             counts["vms_created"] += 1
         else:
@@ -908,6 +930,9 @@ def _queue_change(guest, kind, detail, now, fresh_changes) -> None:
         row.vm = guest.vm
         row.last_seen_at = now
         row.save(update_fields=["detail", "vm", "last_seen_at"])
+    else:
+        logger.info("queued %s change for review: %s",
+                    kind, guest.vm.name if guest.vm_id else guest.vmid)
     fresh_changes.add((guest.id, kind))
 
 
@@ -1042,6 +1067,9 @@ def _apply_placement(obj, place, changed: list) -> None:
     if getattr(obj, "site_id", None) is None:
         obj.site = place.site
         changed.append("site")
+        logger.info("placed %s %r into site %r (%s)",
+                    type(obj).__name__.lower(), str(obj), place.site.name,
+                    place.reason)
     if (
         place.location is not None
         and hasattr(obj, "location_id")
@@ -1226,6 +1254,7 @@ def _sync_hosts(source, cluster_name: str, hosts, *, placements=None,
                 description=f"Synced from «{source.name}»",
             )
             made += 1
+            logger.info("created host device %r", h.get("name"))
         # Adopted or fresh: blank-fill the cluster link and the resolved site.
         # A Device the operator already models is theirs - nothing is restyled.
         changed = []
@@ -1289,6 +1318,8 @@ def _sync_interfaces(guest, cfg: dict) -> tuple[int, list]:
                 vm=guest.vm, name=name, mac_address=parsed["mac"],
                 mtu=parsed["mtu"], created_interface=True,
             )
+            logger.info("created interface %s/%s (%s)", guest.vm.name, name,
+                        parsed["mac"] or "no mac")
         else:
             fill = []
             if parsed["mac"] and not iface.mac_address:
@@ -1814,6 +1845,8 @@ def _sync_vcenter_interfaces(guest, nics) -> tuple[int, list]:
             VMInterface.objects.create(
                 vm=guest.vm, name=name, mac_address=mac, created_interface=True
             )
+            logger.info("created interface %s/%s (%s)", guest.vm.name, name,
+                        mac or "no mac")
         elif mac and not iface.mac_address:
             iface.mac_address = mac
             iface.save(update_fields=["mac_address"])

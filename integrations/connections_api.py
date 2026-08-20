@@ -247,9 +247,11 @@ class VirtualizationSourceSerializer(
                   "sync_host_hardware", "sync_platforms",
                   *AddressPlacementSerializerMixin.PLACEMENT_FIELDS,
                   "enabled", "pending_count", "last_sync_at", "last_sync_status",
-                  "last_sync_error", "created_at", "updated_at"]
+                  "last_sync_error", "last_sync_log",
+                  "created_at", "updated_at"]
         read_only_fields = ["id", "kind_display", "credentials_set",
                             "pending_count", "last_sync_at", "last_sync_status",
+                            "last_sync_log",
                             "last_sync_error", "created_at", "updated_at",
                             *AddressPlacementSerializerMixin.PLACEMENT_READ_ONLY]
 
