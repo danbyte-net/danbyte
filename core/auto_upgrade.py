@@ -51,9 +51,18 @@ def check_and_upgrade(now=None) -> dict:
         _upgrade_running,
         start_upgrade,
     )
-    from .version import DEFAULT_RELEASE_REPO, is_newer, system_version
+    from .version import (
+        DEFAULT_RELEASE_REPO,
+        is_newer,
+        self_upgrade_supported,
+        system_version,
+    )
 
     s = DeploymentSettings.load()
+    # A container can't upgrade itself (see version.deployment_method), so the
+    # scheduled tick never even tries - it would only ever half-apply.
+    if not self_upgrade_supported():
+        return {"skipped": "containerized"}
     if s.disable_update_check:
         return {"skipped": "airgapped"}
     if not s.auto_update_enabled:

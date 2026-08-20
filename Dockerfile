@@ -33,8 +33,12 @@ COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
 
 # ─── 3. Python application runtime ───────────────────────────────────────────
 FROM docker.io/library/python:3.13-slim AS runtime
+# Marks this as the container deployment: in-app self-upgrade is refused here
+# (a process in a container can't rebuild its image or recreate itself), and
+# the Updates page points to `docker compose build` instead. See core/version.
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    DANBYTE_DEPLOYMENT=docker
 
 WORKDIR /app
 

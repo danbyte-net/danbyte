@@ -31,6 +31,8 @@ export const Route = createFileRoute("/settings/updates")({
 function UpdatesSettingsPage() {
   const { canManageDeployment: canManage, isLoading } = useMe()
   const qc = useQueryClient()
+  // A container can't upgrade itself; the server refuses and we disable the
+  // buttons so it's clear rather than a failed click.
 
   // Instant, network-free: version + environment. Renders immediately even
   // when the release-repo check below is slow/failing/disabled (airgapped).
@@ -39,6 +41,7 @@ function UpdatesSettingsPage() {
     queryFn: () => api<SystemInfo>("/api/system/info/"),
     enabled: canManage,
   })
+  const selfUpgradeOff = info.data?.self_upgrade_supported === false
   const updates = useQuery({
     queryKey: ["system-updates"],
     queryFn: () => api<SystemUpdates>("/api/system/updates/"),
@@ -201,6 +204,31 @@ function UpdatesSettingsPage() {
           </span>
           .
         </p>
+        {info.data && info.data.self_upgrade_supported === false && (
+          <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-[13px]">
+            <p className="font-medium">
+              This is a container (Docker) deployment - it can&rsquo;t upgrade
+              itself.
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              A process inside a container can&rsquo;t rebuild its own image or
+              recreate itself, so the in-app upgrade is disabled here. Upgrade
+              from the host:
+            </p>
+            <pre className="mt-2 overflow-x-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed">
+{`git -C /opt/danbyte fetch --tags
+git -C /opt/danbyte checkout <version>
+docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml up -d`}
+            </pre>
+            <p className="mt-2 text-muted-foreground">
+              See{" "}
+              <a className="link" href="/docs/deployment/docker/" target="_blank"
+                 rel="noreferrer">Deploying with Docker</a>{" "}
+              for the full procedure.
+            </p>
+          </div>
+        )}
         {settings.data?.disable_update_check ? (
           <p className="mt-1 text-[13px] text-muted-foreground">
             Airgapped mode is on - the release repo is never contacted. Upgrade
@@ -375,7 +403,7 @@ function UpdatesSettingsPage() {
         <input
           type="file"
           accept=".tar.gz,.tgz,application/gzip"
-          disabled={uploadUpgrade.isPending || upgrading}
+          disabled={uploadUpgrade.isPending || upgrading || selfUpgradeOff}
           onChange={(e) => {
             const f = e.target.files?.[0]
             if (f) uploadUpgrade.mutate(f)
@@ -437,7 +465,7 @@ function UpdatesSettingsPage() {
                     size="sm"
                     variant="outline"
                     className="ml-auto h-7 text-xs"
-                    disabled={upgrade.isPending || upgrading}
+                    disabled={upgrade.isPending || upgrading || selfUpgradeOff}
                     onClick={() => doUpgrade(r.tag)}
                   >
                     Upgrade to this

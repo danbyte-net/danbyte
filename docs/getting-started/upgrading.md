@@ -41,7 +41,15 @@ current `/opt` layout.
     build - no hard refresh needed. If a tab ever seems stuck after an upgrade,
     a normal reload always clears it.
 
-=== "In-app (recommended)"
+!!! warning "Docker/Podman: upgrade from the host, not in-app"
+    The in-app upgrade below is for **bare-metal / systemd** installs. On a
+    **container** deployment it is disabled - a process inside a container can't
+    rebuild its own image or recreate itself, so it could only half-apply (new
+    database schema, old running code, e.g. an unexpected *`is_uplink`* error).
+    The Updates page detects this and shows the host commands instead. See
+    [Deploying with Docker → Upgrading](docker.md#upgrading).
+
+=== "In-app (recommended, systemd installs)"
 
     **Settings → Updates → Upgrade.** One click checks out the new release,
     installs dependencies, migrates the database, rebuilds the frontend,
@@ -53,7 +61,8 @@ current `/opt` layout.
       (A migration that already ran is *not* auto-reverted - the backup is your
       net there.)
     - Turn on **automatic updates** on the same page to track new releases
-      hands-off.
+      hands-off. (Automatic updates are also skipped on container deployments,
+      for the same reason - they would only half-apply.)
     - **Airgapped install?** Tick **Settings → Updates → Airgapped install
       (disable update check)**. Danbyte then never contacts the release repo -
       no version check, no auto-update - and you upgrade only by uploading a

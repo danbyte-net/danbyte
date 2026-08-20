@@ -159,12 +159,28 @@ URL to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`.
 
 ## Upgrading
 
+!!! warning "A container can't upgrade itself - do it from the host"
+    The in-app upgrade (**Settings → Updates**) is **disabled on Docker/Podman
+    deployments**, and the page shows the commands below instead. A process
+    inside a container can't rebuild its own image or recreate the container it
+    runs in, so a self-upgrade can only ever *half*-apply: it may migrate the
+    database and even swap files inside the running container, but the app
+    processes keep executing the **old** code. That mismatch - new schema, old
+    code - surfaces as confusing errors like *"a required field was left empty
+    (`is_uplink`)"* on an otherwise healthy-looking box. Always upgrade a
+    container deployment from the host, with the commands here.
+
 ```bash
-git pull
+git -C /opt/danbyte fetch --tags
+git -C /opt/danbyte checkout <version>   # e.g. v0.12.0
 docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 ```
 
-The backend re-runs migrations on start; the named volumes keep your data.
+`--build` is what makes this a real upgrade: it **rebuilds the images** from the
+checked-out source, so the recreated containers actually run the new code. A
+plain `up -d` without `--build` would relaunch the *old* image. The backend
+re-runs migrations on start; the named volumes keep your data.
+
 `up -d` also creates services added since your last pull - check that
 `scheduler` is among them, because a stack upgraded from before it existed has
 never run any periodic work:
@@ -172,6 +188,17 @@ never run any periodic work:
 ```bash
 docker compose -f docker-compose.prod.yml ps scheduler
 ```
+
+!!! tip "Confirm the upgrade took"
+    After it settles, the running version should match the tag you checked out:
+
+    ```bash
+    curl -s localhost/api/health/    # {"status":"ok",...,"version":"0.12.0"}
+    ```
+
+    If `version` still shows the old number, the app processes weren't replaced -
+    usually a missing `--build`, or containers that weren't recreated. Re-run the
+    command above.
 
 ## Podman specifics
 

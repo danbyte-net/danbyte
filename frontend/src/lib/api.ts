@@ -4047,6 +4047,10 @@ export interface SystemInfo {
   postgres: string
   redis: string
   platform: string
+  /** "docker" or "systemd" - decides whether in-app upgrade can work. */
+  deployment: string
+  /** False in a container: self-upgrade is refused, use the compose commands. */
+  self_upgrade_supported: boolean
 }
 
 /** GET /api/system/updates - current version + the release repo's versions. */

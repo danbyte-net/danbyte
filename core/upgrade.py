@@ -716,6 +716,30 @@ def _store_uploaded_bundle(upload) -> None:
             out.write(chunk)
 
 
+# In a container the in-app upgrade cannot complete: the web process can't
+# rebuild its own image or recreate the container it runs in. Refuse with the
+# host commands rather than half-apply (which strands old code against a new
+# schema - the classic "is_uplink" mismatch). Bare-metal/systemd is fine.
+_CONTAINER_UPGRADE_MSG = (
+    "This is a container (Docker) deployment, which can't upgrade itself - a "
+    "process inside a container can't rebuild its image or recreate itself. "
+    "Upgrade from the host instead: `git -C /opt/danbyte fetch --tags && "
+    "git -C /opt/danbyte checkout <version>`, then `docker compose -f "
+    "docker-compose.prod.yml build && docker compose -f docker-compose.prod.yml "
+    "up -d`. See the docs: Deploying with Docker."
+)
+
+
+def _refuse_if_containerized():
+    """Return a 409 Response when self-upgrade can't work here, else None."""
+    from .version import self_upgrade_supported
+
+    if self_upgrade_supported():
+        return None
+    return Response({"detail": _CONTAINER_UPGRADE_MSG, "deployment": "docker"},
+                    status=409)
+
+
 @extend_schema(
     summary="Start an upgrade to a release tag (users.manage only)",
     tags=["system"],
@@ -760,6 +784,8 @@ def system_upgrade(request):
             {"detail": f"'{version}' is not a release in the configured repo."},
             status=400,
         )
+    if (blocked := _refuse_if_containerized()) is not None:
+        return blocked
     # Atomic single-slot lock - blocks a concurrent request even during the
     # bundle-download window (before the systemd unit is active).
     lock_owner = _acquire_upgrade_lock()
@@ -826,6 +852,8 @@ def system_upgrade_upload(request):
             {"detail": "bundle must be a .tar.gz produced by the release build."},
             status=400,
         )
+    if (blocked := _refuse_if_containerized()) is not None:
+        return blocked
     # Claim the slot before writing the bundle path, so two concurrent uploads
     # can't stream over the same file and both launch.
     lock_owner = _acquire_upgrade_lock()

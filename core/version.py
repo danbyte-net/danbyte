@@ -12,6 +12,44 @@ from danbyte import __version__
 DEFAULT_RELEASE_REPO = "https://github.com/danbyte-net/danbyte"
 
 
+def deployment_method() -> str:
+    """How this install runs, which decides whether it can upgrade itself.
+
+    * ``"docker"`` - a container. The upgrade machinery drives ``systemd-run``
+      + ``docker compose`` from the *host*, and a process inside a container
+      can neither rebuild its own image nor recreate the container it runs in.
+      So in-app upgrade is refused here; the host runs ``docker compose build``.
+    * ``"systemd"`` - a bare-metal/systemd install, where the web process can
+      hand the upgrade to a transient user unit that outlives the restart.
+
+    Detection prefers an explicit build-time marker (``DANBYTE_DEPLOYMENT``),
+    then the container runtime's own tell-tales, so it is right even when the
+    marker is missing on an older image.
+    """
+    import os
+
+    declared = (os.environ.get("DANBYTE_DEPLOYMENT") or "").strip().lower()
+    if declared in ("docker", "container", "compose"):
+        return "docker"
+    if declared in ("systemd", "bare", "baremetal", "host"):
+        return "systemd"
+    # No marker: fall back to runtime tell-tales. Docker writes /.dockerenv;
+    # Podman writes /run/.containerenv.
+    if os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv"):
+        return "docker"
+    return "systemd"
+
+
+def self_upgrade_supported() -> bool:
+    """Whether the in-app upgrade can actually complete in this environment.
+
+    False in a container: see :func:`deployment_method`. The Updates page reads
+    this to disable the button and show the compose commands instead, and the
+    upgrade endpoints refuse rather than half-apply an upgrade.
+    """
+    return deployment_method() != "docker"
+
+
 def _git(*args) -> str:
     try:
         out = subprocess.run(
@@ -81,6 +119,8 @@ def system_info() -> dict:
         "postgres": _postgres_version(),
         "redis": _redis_version(),
         "platform": platform.platform(terse=True),
+        "deployment": deployment_method(),
+        "self_upgrade_supported": self_upgrade_supported(),
     }
 
 

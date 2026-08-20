@@ -705,6 +705,34 @@ class SystemUpgradeApiTests(APITestCase):
         self.assertEqual(launch.call_args.args[0], "v0.1.0")
         self.assertTrue(launch.call_args.args[1])
 
+    def test_containerized_refuses_self_upgrade(self):
+        """A Docker deployment can't rebuild its own image, so the endpoint
+        refuses with the host commands instead of half-applying an upgrade."""
+        from unittest.mock import patch
+        rel = [{"tag": "v0.1.0", "name": "0.1.0", "body": "", "published_at": None,
+                "prerelease": False, "has_binary": False}]
+        with patch("core.github.list_releases", return_value=rel), \
+             patch("core.version.deployment_method", return_value="docker"), \
+             patch("core.upgrade._launch") as launch:
+            r = self.client.post("/api/system/upgrade/",
+                                  {"version": "v0.1.0"}, format="json")
+        self.assertEqual(r.status_code, 409, r.content)
+        self.assertEqual(r.json().get("deployment"), "docker")
+        self.assertIn("docker compose", r.json()["detail"])
+        launch.assert_not_called()
+
+    def test_containerized_refuses_bundle_upload(self):
+        from io import BytesIO
+        from unittest.mock import patch
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        bundle = SimpleUploadedFile("danbyte-0.1.0.tar.gz", b"x", "application/gzip")
+        with patch("core.version.deployment_method", return_value="docker"), \
+             patch("core.upgrade._launch") as launch:
+            r = self.client.post("/api/system/upgrade/upload/",
+                                  {"bundle": bundle}, format="multipart")
+        self.assertEqual(r.status_code, 409, r.content)
+        launch.assert_not_called()
+
     def test_airgapped_rejects_repo_version(self):
         # disable_update_check → the repo-version path is refused (upload only),
         # and _valid_target must never reach out to list releases.
@@ -811,6 +839,39 @@ class AutoUpgradeTests(APITestCase):
             r = check_and_upgrade()
         self.assertEqual(r.get("upgrading"), "v9.9.9")
         up.assert_called_once_with("v9.9.9", "owner")
+
+    def test_containerized_skips_auto_upgrade_before_any_fetch(self):
+        """The scheduled tick never even reaches the repo in a container - it
+        could only half-apply, so it doesn't try."""
+        from unittest.mock import patch
+
+        from core.auto_upgrade import check_and_upgrade
+        self.s.auto_update_enabled = True
+        self.s.save()
+        with patch("core.version.deployment_method", return_value="docker"), \
+             patch("core.github.list_releases") as lr, \
+             patch("core.upgrade.start_upgrade") as up:
+            r = check_and_upgrade()
+        self.assertEqual(r, {"skipped": "containerized"})
+        lr.assert_not_called()
+        up.assert_not_called()
+
+    def test_deployment_method_detection(self):
+        import os
+        from unittest.mock import patch
+
+        from core.version import deployment_method, self_upgrade_supported
+        with patch.dict(os.environ, {"DANBYTE_DEPLOYMENT": "docker"}):
+            self.assertEqual(deployment_method(), "docker")
+            self.assertFalse(self_upgrade_supported())
+        with patch.dict(os.environ, {"DANBYTE_DEPLOYMENT": "systemd"}):
+            self.assertEqual(deployment_method(), "systemd")
+            self.assertTrue(self_upgrade_supported())
+        # No marker + no container tell-tales → assume a normal host.
+        with patch.dict(os.environ, {}, clear=False), \
+             patch("os.path.exists", return_value=False):
+            os.environ.pop("DANBYTE_DEPLOYMENT", None)
+            self.assertEqual(deployment_method(), "systemd")
 
     def test_airgapped_skips_before_any_fetch(self):
         # disable_update_check must short-circuit even with auto-update ON, and
