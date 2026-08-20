@@ -85,6 +85,37 @@ export const LAYOUT_META: Partial<Record<WidgetId, WidgetMeta>> = {
   floorplan: BIGGY,
 }
 
+/** The built-in layout, hand-placed on the 6-column grid rather than flowed:
+ * two big anchors up top, the status rings in a band, work queues, then the
+ * tables, and the floor plan full-width at the bottom. This is also what
+ * "Reset" gives you (when the tenant has no admin default). */
+export const DEFAULT_GRID_LAYOUT: {
+  id: WidgetId
+  x: number
+  y: number
+  w: number
+  h: number
+}[] = [
+  { id: "changelog", x: 0, y: 0, w: 3, h: 3 },
+  { id: "map", x: 3, y: 0, w: 3, h: 3 },
+  { id: "reachable-gauge", x: 0, y: 3, w: 2, h: 2 },
+  { id: "check-status", x: 2, y: 3, w: 2, h: 2 },
+  { id: "alerts-severity", x: 4, y: 3, w: 2, h: 2 },
+  { id: "my-tasks", x: 0, y: 5, w: 2, h: 3 },
+  { id: "recent-activity", x: 2, y: 5, w: 2, h: 3 },
+  { id: "bookmarks", x: 4, y: 5, w: 2, h: 3 },
+  { id: "ip-status", x: 0, y: 8, w: 2, h: 2 },
+  { id: "device-status", x: 2, y: 8, w: 2, h: 2 },
+  { id: "expiring-certs", x: 4, y: 8, w: 2, h: 2 },
+  { id: "top-prefixes", x: 0, y: 10, w: 3, h: 2 },
+  { id: "recent-devices", x: 3, y: 10, w: 3, h: 2 },
+  { id: "recent-prefixes", x: 0, y: 12, w: 3, h: 2 },
+  { id: "recent-ips", x: 3, y: 12, w: 3, h: 2 },
+  { id: "device-type", x: 0, y: 14, w: 3, h: 2 },
+  { id: "device-site", x: 3, y: 14, w: 3, h: 2 },
+  { id: "floorplan", x: 0, y: 16, w: 6, h: 3 },
+]
+
 export function metaFor(id: string): WidgetMeta {
   return LAYOUT_META[id as WidgetId] ?? D
 }

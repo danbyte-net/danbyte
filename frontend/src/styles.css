@@ -491,6 +491,24 @@
   opacity: 0.55;
   border-radius: 0.5rem;
 }
+/* The corner resize grip. The library default is a faint 5px triangle that
+   nobody finds; this is an unmissable rounded corner bracket that appears
+   only when handles render (edit mode). */
+.react-grid-item > .react-resizable-handle {
+  width: 22px;
+  height: 22px;
+}
 .react-grid-item > .react-resizable-handle::after {
-  border-color: var(--muted-foreground);
+  width: 10px;
+  height: 10px;
+  right: 5px;
+  bottom: 5px;
+  border-right: 2.5px solid var(--muted-foreground);
+  border-bottom: 2.5px solid var(--muted-foreground);
+  border-bottom-right-radius: 4px;
+  opacity: 0.7;
+}
+.react-grid-item > .react-resizable-handle:hover::after {
+  border-color: var(--foreground);
+  opacity: 1;
 }

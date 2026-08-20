@@ -7,10 +7,6 @@ import {
   LabelList,
   Pie,
   PieChart,
-  PolarGrid,
-  PolarRadiusAxis,
-  RadialBar,
-  RadialBarChart,
   XAxis,
   YAxis,
 } from "recharts"
@@ -198,7 +194,11 @@ export function DistBar({ data, link }: { data: DashDist[]; link?: DistLink }) {
   )
 }
 
-/** A radial gauge with a big % in the centre - the "hero" KPI. */
+/** A percentage ring - the "hero" KPI.
+ *
+ * Same visual language as DistDonut (ring geometry, size, centre type scale):
+ * it used to be a RadialBarChart with its own sizing, which made this one
+ * tile read as a different product from the donuts beside it. */
 export function RadialGauge({
   value,
   label,
@@ -209,29 +209,25 @@ export function RadialGauge({
   color?: string
 }) {
   if (value == null) return <Empty hint="No checks yet." />
-  const data = [{ name: label, value, fill: color }]
-  const angle = 90 + (value / 100) * 360
+  const data = [
+    { name: label, value, fill: color },
+    { name: "remainder", value: 100 - value, fill: "var(--muted)" },
+  ]
   return (
     <ChartContainer
       config={{ value: { label } }}
-      className="mx-auto aspect-square h-[180px]"
+      className="mx-auto aspect-square h-[170px]"
     >
-      <RadialBarChart
-        data={data}
-        startAngle={90}
-        endAngle={angle}
-        innerRadius="72%"
-        outerRadius="100%"
-      >
-        <PolarGrid
-          gridType="circle"
-          radialLines={false}
-          stroke="none"
-          className="first:fill-muted last:fill-background"
-          polarRadius={[86, 70]}
-        />
-        <RadialBar dataKey="value" background cornerRadius={12} />
-        <PolarRadiusAxis tick={false} tickLine={false} axisLine={false}>
+      <PieChart>
+        <Pie
+          data={data}
+          dataKey="value"
+          nameKey="name"
+          innerRadius="62%"
+          strokeWidth={4}
+          startAngle={90}
+          endAngle={-270}
+        >
           <Label
             content={({ viewBox }) => {
               if (!viewBox || !("cx" in viewBox) || viewBox.cx == null)
@@ -243,13 +239,13 @@ export function RadialGauge({
                     x={cx}
                     y={cy - 2}
                     className="fill-foreground"
-                    style={{ fontSize: 30, fontWeight: 700 }}
+                    style={{ fontSize: 22, fontWeight: 700 }}
                   >
                     {value}%
                   </tspan>
                   <tspan
                     x={cx}
-                    y={cy + 18}
+                    y={cy + 16}
                     className="fill-muted-foreground"
                     style={{ fontSize: 11 }}
                   >
@@ -259,11 +255,12 @@ export function RadialGauge({
               )
             }}
           />
-        </PolarRadiusAxis>
-      </RadialBarChart>
+        </Pie>
+      </PieChart>
     </ChartContainer>
   )
 }
+
 
 /** Top prefixes by utilisation - fills the tile. */
 export function TopPrefixes({ data }: { data: DashTopPrefix[] }) {

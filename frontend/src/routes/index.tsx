@@ -35,7 +35,7 @@ import { QueryError } from "@/components/query-error"
 import {
   CATALOG,
   CATALOG_BY_ID,
-  DEFAULT_LAYOUT,
+  DEFAULT_GRID_LAYOUT,
   metaFor,
   type WidgetFit,
   type WidgetId,
@@ -44,7 +44,6 @@ import {
   ROW_HEIGHT,
   fromRglLayout,
   normalizeLayout,
-  placeIds,
   toRglLayout,
   type DashItem,
 } from "@/lib/dashboard-layout"
@@ -53,7 +52,8 @@ export const Route = createFileRoute("/")({ component: Dashboard })
 
 const LS_KEY = "danbyte-dashboard-widgets"
 
-const builtinLayout = () => placeIds(DEFAULT_LAYOUT, metaFor)
+const builtinLayout = (): DashItem[] =>
+  DEFAULT_GRID_LAYOUT.map(({ id, x, y, w, h }) => ({ id, x, y, w, h }))
 
 /** The locally cached layout - accepts the old v1 id array AND v2, so an
  * existing user's arrangement upgrades in place instead of resetting. */
