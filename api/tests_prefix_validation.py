@@ -73,3 +73,23 @@ class PrefixCidrValidationTests(APITestCase):
         garbage.refresh_from_db()
         self.assertEqual(broken.cidr, "10.9.9.9/32")
         self.assertEqual(garbage.cidr, "banana")
+
+
+class PrefixBulkImportValidationTests(PrefixCidrValidationTests):
+    """The bulk importer bypasses DRF serializers and validates with
+    full_clean - the model-level clean() must close the same #47 hole."""
+
+    def test_bulk_import_rejects_a_maskless_address(self):
+        from api.bulk_import import import_rows
+
+        res = import_rows(Prefix, self.tenant, [{"cidr": "10.0.0.7"}])
+        self.assertEqual(res["created"], 0, res)
+        self.assertTrue(res["errors"], "the row must fail, not silently skip")
+        self.assertFalse(Prefix.objects.filter(cidr="10.0.0.7").exists())
+
+    def test_bulk_import_accepts_valid_cidr(self):
+        from api.bulk_import import import_rows
+
+        res = import_rows(Prefix, self.tenant, [{"cidr": "10.44.0.0/24"}])
+        self.assertEqual(res["created"], 1, res)
+        self.assertTrue(Prefix.objects.filter(cidr="10.44.0.0/24").exists())

@@ -2021,6 +2021,25 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     def __str__(self) -> str:
         return self.cidr
 
+    def clean(self):
+        # Model-level so every full_clean() path is covered - the CSV bulk
+        # importer deliberately bypasses DRF serializers, and without this a
+        # spreadsheet with a maskless address recreated the #47 ghost prefix.
+        # The serializer keeps its richer, field-specific messages for the API.
+        super().clean()
+        from django.core.exceptions import ValidationError
+
+        raw = (self.cidr or "").strip()
+        if "/" not in raw:
+            raise ValidationError(
+                {"cidr": "Include a prefix length in CIDR notation, "
+                         "e.g. 10.0.10.0/24 or 2001:db8:1::/64."}
+            )
+        try:
+            self.cidr = str(ipaddress.ip_network(raw, strict=True))
+        except ValueError as exc:
+            raise ValidationError({"cidr": f"Not a valid prefix: {exc}."}) from None
+
     def save(self, *args, **kwargs):
         # A location implies its site - keep the prefix's site in sync so
         # site-scoped queries (and auto_assign_site) have a single source.
